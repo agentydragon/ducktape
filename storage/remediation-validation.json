@@ -1,18 +1,18 @@
 {
-  "validated_at_utc": "2026-11-10T22:20:35.301975+00:00",
-  "scope": "The follow-up questions, storage page and root index; earlier inventory, remediation and observability snapshots retain their original observation windows.",
+  "validated_at_utc": "2026-11-10T22:40:35.206189+00:00",
+  "scope": "Seaweed volume fullness comparison and the root index. Earlier inventory, remediation, observability and follow-up observations retain their original windows.",
   "files_sha256": {
-    "index.html": "5161ca4a621059a79799e6a584940e210347eaf3730a353601607ccb39d69096",
+    "index.html": "15943173f1e9aedfad28b5d72b83e3e1366338e215d8d4f35d4dcb1e3a3f0762",
     "storage/index.html": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
-    "storage/remediation.js": "8bb6d27e342bee5064c578efe4ec6c1363c65f9a49307b8cb13b5aef6306c768",
-    "storage/remediation-evidence.json": "3dffb746da5f8365165f3bd7cb681a64b09a3ad9e4f23b1cf615c1ab4045a7e2",
+    "storage/remediation.js": "1a491dc133b6865e0281ca715095cfafd993c60aa56252e6804bb0b5b8943131",
+    "storage/remediation-evidence.json": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "browser_test": {
-    "question_cards_invocation": "https://app.buildbuddy.io/invocation/0af161ab-a1f8-492d-b5dc-bf6465b44e36",
-    "index_invocation": "https://app.buildbuddy.io/invocation/b3af6d2e-4241-41c6-9ad3-4d18dc913a5b",
-    "initial_index_attempt": "One shard timed out before the browser fixture started in the question-cards invocation; the separate index invocation passed all four shards, reusing three cached passes.",
+    "volume_fullness_invocation": "https://app.buildbuddy.io/invocation/62adef33-e966-41d3-82c7-c68511e10b3e",
+    "index_invocation": "https://app.buildbuddy.io/invocation/62adef33-e966-41d3-82c7-c68511e10b3e",
+    "initial_attempt": "An earlier volume suite failed because its screenshot selector matched no element; the corrected suite passed, and the final run checks the formatted report and index bytes.",
     "execution": "Bazel remote execution with a temporary harness serving byte-identical copies of the listed files and pinned CDN resources.",
     "cases": [
       "1280x900 light",
@@ -21,24 +21,16 @@
       "390x844 dark"
     ],
     "checks": [
-      "All five question cards and source links",
+      "Three HDD nodes and their nine chart bars",
+      "Six HDD and SSD volume rows with sampled values",
+      "Fullness navigation and Grafana link",
       "No page-wide horizontal overflow",
       "System theme changes",
-      "Storage index link",
-      "Budget and mutually exclusive ClickHouse scenario controls",
-      "Decision filtering and persistence after reload"
+      "Storage index link"
     ],
-    "captures": [
-      "home-card",
-      "langfuse-compression",
-      "seaweed-compression",
-      "zot-usage",
-      "zot-retention",
-      "clickhouse-resize",
-      "controls"
-    ],
-    "result": "Question cards and index suites passed in their respective invocations."
+    "captures": ["hdd-chart", "volume-table", "home-card"],
+    "result": "Fullness and index suites passed."
   },
-  "visual_review": "Inspected the follow-up cards on desktop and mobile in light and dark themes, and the root index; source links and values are legible.",
-  "prior_validation": "https://github.com/agentydragon/ducktape/blob/4eb9edee98/storage/remediation-validation.json"
+  "visual_review": "Inspected the HDD chart on desktop and mobile in light and dark themes, the volume table, and the root index.",
+  "prior_validation": "https://github.com/agentydragon/ducktape/blob/08f402b6401bfe33996d8f917d2a627a2eeda740/storage/remediation-validation.json"
 }

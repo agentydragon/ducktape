@@ -474,5 +474,93 @@
         ]
       }
     ]
+  },
+  "seaweed_volume_fullness": {
+    "observed_utc": "2026-11-10 around 22:30–22:33 UTC",
+    "note": "Non-atomic read-only snapshot. Filesystem and LVM data percentages use different denominators; thin-pool free is shared with other workloads. The previous pool-budget observations keep their original timestamp.",
+    "method": "Mapped Seaweed volume-server mounts to PVCs and PVs via Kubernetes; ran df -B1 /data0 in each volume pod; queried the volume-level LINSTOR allocated_size_kib and pool capacities; cross-checked each LV and pool with lvs data_percent. All six volume pods were Ready and diskful copies UpToDate. All six PVs specify discard; active mounts were checked on 103711 and 1001419.",
+    "filesystem_percent_definition": "100 * used / (used + available), as in df; ext4 reserved blocks are excluded from the denominator.",
+    "volume_allocation_note": "Volume-level allocation is an estimate of this thin LV, not a breakdown to add to filesystem bytes; LVM percentages cross-check it. Nested layer_data_list storage allocation fields differed and were not used.",
+    "source_dashboard": "https://grafana.allegedly.works/d/piraeus-storage",
+    "volumes": [
+      {
+        "node": "102453",
+        "tier": "HDD",
+        "pv": "pvc-a4e75a80-9cde-4106-8da1-500808790ee3",
+        "pvc_size_gib": 2500,
+        "filesystem_size_bytes": 2641062379520,
+        "filesystem_used_bytes": 1082997530624,
+        "filesystem_available_bytes": 1432421134336,
+        "linstor_allocated_kib": 1100454016,
+        "lvm_lv_used_percent": 41.97,
+        "pool_free_kib": 2532937390,
+        "pool_total_kib": 3898626048
+      },
+      {
+        "node": "103656",
+        "tier": "HDD",
+        "pv": "pvc-c4703b65-af9b-4a3e-abac-5cc575b559c4",
+        "pvc_size_gib": 1700,
+        "filesystem_size_bytes": 1795558334464,
+        "filesystem_used_bytes": 736573693952,
+        "filesystem_available_bytes": 967699812352,
+        "linstor_allocated_kib": 748843200,
+        "lvm_lv_used_percent": 42.0,
+        "pool_free_kib": 1008119306,
+        "pool_total_kib": 1940930560
+      },
+      {
+        "node": "103711",
+        "tier": "HDD",
+        "pv": "pvc-6de83aa1-2fb2-4137-b5cc-8df4736434c2",
+        "pvc_size_gib": 1700,
+        "filesystem_size_bytes": 1795558334464,
+        "filesystem_used_bytes": 849808097280,
+        "filesystem_available_bytes": 854465409024,
+        "linstor_allocated_kib": 859386752,
+        "lvm_lv_used_percent": 48.2,
+        "pool_free_kib": 933076421,
+        "pool_total_kib": 1945124864
+      },
+      {
+        "node": "1001419",
+        "tier": "SSD",
+        "pv": "pvc-39925644-3750-4300-b5a1-92be2524e26b",
+        "pvc_size_gib": 250,
+        "filesystem_size_bytes": 263077892096,
+        "filesystem_used_bytes": 2418012160,
+        "filesystem_available_bytes": 247221334016,
+        "linstor_allocated_kib": 7603839,
+        "lvm_lv_used_percent": 2.9,
+        "pool_free_kib": 293751509,
+        "pool_total_kib": 491716608
+      },
+      {
+        "node": "104952",
+        "tier": "SSD",
+        "pv": "pvc-3794e62d-892b-4fb1-9b96-8b44d66fe7bb",
+        "pvc_size_gib": 250,
+        "filesystem_size_bytes": 263077892096,
+        "filesystem_used_bytes": 2925408256,
+        "filesystem_available_bytes": 246713937920,
+        "linstor_allocated_kib": 8102021,
+        "lvm_lv_used_percent": 3.09,
+        "pool_free_kib": 300171679,
+        "pool_total_kib": 431157248
+      },
+      {
+        "node": "104963",
+        "tier": "SSD",
+        "pv": "pvc-5c33769c-8d26-4949-b3db-ff20ff18829d",
+        "pvc_size_gib": 250,
+        "filesystem_size_bytes": 263077892096,
+        "filesystem_used_bytes": 756862976,
+        "filesystem_available_bytes": 248882483200,
+        "linstor_allocated_kib": 5978190,
+        "lvm_lv_used_percent": 2.28,
+        "pool_free_kib": 393517222,
+        "pool_total_kib": 431157248
+      }
+    ]
   }
 }
