@@ -38,6 +38,7 @@ from pathlib import Path
 import humanize
 from tabulate import tabulate
 
+from devinfra.gc import output_base_gc
 from devinfra.gc.output_base_gc import (
     FileIdentity,
     Inspection,
@@ -152,36 +153,59 @@ def _inspect_entry(contents_dir: Path, *, uid: int, points: set[Path]) -> CacheE
 def inventory(contents: Path, *, uid: int, points: set[Path]) -> list[CacheEntry | ReviewEntry]:
     """Every `<hash>/<uuid>` entry under `contents` (already resolved), or what stands where
     one should; Bazel's own `_trash/` and `gc_lock` are structure, not entries."""
-    items: list[CacheEntry | ReviewEntry] = []
-    for hash_dir in sorted(contents.iterdir()):
-        if hash_dir.name in (_TRASH, _GC_LOCK):
-            continue
-        if not _HASH_RE.fullmatch(hash_dir.name):
-            items.append(ReviewEntry(hash_dir, ReviewEntryReason.MALFORMED_NAME))
-            continue
-        try:
-            is_dir = stat.S_ISDIR(hash_dir.lstat().st_mode)
-        except OSError as error:
-            items.append(ReviewEntry(hash_dir, ReviewEntryReason.CANNOT_STAT, detail=error.strerror))
-            continue
-        if not is_dir:
-            items.append(ReviewEntry(hash_dir, ReviewEntryReason.NOT_A_DIRECTORY))
-            continue
-        try:
-            children = sorted(hash_dir.iterdir())
-        except OSError as error:
-            items.append(ReviewEntry(hash_dir, ReviewEntryReason.CANNOT_LIST, detail=str(error)))
-            continue
-        names = {child.name for child in children}
-        for child in children:
-            if child.name.endswith(RECORDED_INPUTS_SUFFIX):
-                if child.name.removesuffix(RECORDED_INPUTS_SUFFIX) not in names:
-                    items.append(ReviewEntry(child, ReviewEntryReason.MISSING_CONTENTS))
-            elif _UUID_RE.fullmatch(child.name):
-                items.append(_inspect_entry(child, uid=uid, points=points))
-            else:
-                items.append(ReviewEntry(child, ReviewEntryReason.MALFORMED_NAME))
+    return [item for bucket in cache_buckets(contents) for item in inventory_bucket(bucket, uid=uid, points=points)]
+
+
+def cache_buckets(contents: Path) -> list[Path]:
+    return [path for path in sorted(contents.iterdir()) if path.name not in (_TRASH, _GC_LOCK)]
+
+
+def inventory_bucket(hash_dir: Path, *, uid: int, points: set[Path]) -> list[CacheEntry | ReviewEntry]:
+    return [inspect_cache_candidate(candidate, uid=uid, points=points) for candidate in list_cache_bucket(hash_dir)]
+
+
+def list_cache_bucket(hash_dir: Path) -> list[Path | ReviewEntry]:
+    """Discover a hash bucket's candidates without inspecting each entry."""
+    if not _HASH_RE.fullmatch(hash_dir.name):
+        return [ReviewEntry(hash_dir, ReviewEntryReason.MALFORMED_NAME)]
+    try:
+        is_dir = stat.S_ISDIR(hash_dir.lstat().st_mode)
+    except OSError as error:
+        return [ReviewEntry(hash_dir, ReviewEntryReason.CANNOT_STAT, detail=error.strerror)]
+    if not is_dir:
+        return [ReviewEntry(hash_dir, ReviewEntryReason.NOT_A_DIRECTORY)]
+    try:
+        children = sorted(hash_dir.iterdir())
+    except OSError as error:
+        return [ReviewEntry(hash_dir, ReviewEntryReason.CANNOT_LIST, detail=str(error))]
+    names = {child.name for child in children}
+    items: list[Path | ReviewEntry] = []
+    for child in children:
+        if child.name.endswith(RECORDED_INPUTS_SUFFIX):
+            if child.name.removesuffix(RECORDED_INPUTS_SUFFIX) not in names:
+                items.append(ReviewEntry(child, ReviewEntryReason.MISSING_CONTENTS))
+        elif _UUID_RE.fullmatch(child.name):
+            items.append(child)
+        else:
+            items.append(ReviewEntry(child, ReviewEntryReason.MALFORMED_NAME))
     return items
+
+
+def inspect_cache_candidate(candidate: Path | ReviewEntry, *, uid: int, points: set[Path]) -> CacheEntry | ReviewEntry:
+    return _inspect_entry(candidate, uid=uid, points=points) if isinstance(candidate, Path) else candidate
+
+
+def classify_entry(
+    item: CacheEntry | ReviewEntry, referrers: dict[Path, set[Path]], prunable_bases: set[Path]
+) -> EntryInspection:
+    if isinstance(item, ReviewEntry):
+        return item
+    linked_from = frozenset(referrers.get(item.contents, ()))
+    if not linked_from:
+        return PrunableEntry(item)
+    if linked_from <= prunable_bases:
+        return RetainedEntry(item, RetainedEntryReason.ONLY_PRUNABLE_REFERRERS, linked_from)
+    return RetainedEntry(item, RetainedEntryReason.REFERENCED, linked_from)
 
 
 def references(bases: Iterable[Path], contents: Path) -> dict[Path, set[Path]]:
@@ -242,17 +266,7 @@ def scan_repo_contents_cache(
         progress.start_phase("repo-cache", len(items))
     inspections: list[EntryInspection] = []
     for item in items:
-        inspection: EntryInspection
-        if isinstance(item, ReviewEntry):
-            inspection = item
-        else:
-            linked_from = frozenset(referrers.get(item.contents, ()))
-            if not linked_from:
-                inspection = PrunableEntry(item)
-            elif linked_from <= prunable_bases:
-                inspection = RetainedEntry(item, RetainedEntryReason.ONLY_PRUNABLE_REFERRERS, linked_from)
-            else:
-                inspection = RetainedEntry(item, RetainedEntryReason.REFERENCED, linked_from)
+        inspection = classify_entry(item, referrers, prunable_bases)
         inspections.append(inspection)
         progress.record("repo-cache", verdict_of(inspection))
     return inspections
@@ -307,7 +321,7 @@ def trash_prunable_entries(
     cache lock; `empty_trash` removes the moved directories after the lock is released.
 
     Revalidation runs under the lock against a fresh listing of the bases (the root's plus
-    `session_bases`, which the caller globbed moments before) and a fresh link pass over
+    freshly discovered session bases and any supplied by the caller) and a fresh link pass over
     them: an entry some base linked to since the scan, or whose directory was replaced, is
     skipped. Removal mirrors Bazel's GC — recorded inputs first, so no command can pick the
     entry up, then the directory renamed into `_trash/` — and the trash is emptied after the
@@ -320,7 +334,8 @@ def trash_prunable_entries(
     trashed: list[tuple[Path, Path]] = []
     try:
         with _gc_lock(contents):
-            base_paths = [base for base, _ in list_output_bases(output_user_root, session_bases=session_bases)]
+            sessions = sorted(set(session_bases) | set(output_base_gc.session_env_output_bases()))
+            base_paths = [base for base, _ in list_output_bases(output_user_root, session_bases=sessions)]
             referrers = references(base_paths, contents)
             points = mount_points(mountinfo_path=mountinfo_path)
             for index, candidate in enumerate(candidates, start=1):
@@ -437,6 +452,7 @@ def render_report(
     include_kept: bool,
     include_sizes: bool,
     include_prunable: bool = False,
+    measured_sizes: dict[Path, int | None] | None = None,
 ) -> str:
     contents = contents.resolve()
     visible = [
@@ -449,7 +465,10 @@ def render_report(
         measured = [item for item in inspections if include_kept or not isinstance(item, RetainedEntry)]
         for index, item in enumerate(measured, start=1):
             logger.info("Measuring repo-cache entry size %d/%d %s", index, len(measured), entry_path(item))
-            sizes[entry_path(item)] = allocated_bytes(entry_path(item))
+            path = entry_path(item)
+            sizes[path] = (
+                measured_sizes[path] if measured_sizes is not None and path in measured_sizes else allocated_bytes(path)
+            )
     headers = ["STATUS", "LAST USED", "ENTRY", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")

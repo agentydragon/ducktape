@@ -270,6 +270,20 @@ def test_delete_sees_a_base_created_since_the_scan(
     assert cache.unreferenced.is_dir()
 
 
+def test_delete_sees_a_session_base_created_since_the_scan(
+    cache: FakeCache, proc: Path, mountinfo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidates = _prunable(cache, proc, mountinfo)
+    session = make_base(tmp_path / "new-session", tmp_path / "workspace", name="bazel-output-base")
+    link_external(session, "late_repo", cache.unreferenced)
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", lambda: [session])
+
+    [result] = _delete(cache, candidates, mountinfo)
+
+    assert isinstance(result, Skipped)
+    assert cache.unreferenced.is_dir()
+
+
 def test_delete_skips_a_replaced_entry(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
     candidates = _prunable(cache, proc, mountinfo)
     replacement = cache.contents / "replacement"

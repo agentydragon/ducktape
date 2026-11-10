@@ -426,6 +426,17 @@ def list_output_bases(root: Path, *, session_bases: Sequence[Path]) -> list[tupl
     return [*hashed, *((base, BaseLayout.SESSION_ENV) for base in session_bases)]
 
 
+def inspect_listed_base(
+    base: Path, *, layout: BaseLayout, uid: int, points: set[Path], proc_root: Path = Path("/proc")
+) -> Inspection:
+    if base.name.startswith(_QUARANTINE_PREFIX):
+        try:
+            return ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
+        except OSError as error:
+            return ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
+    return inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
+
+
 def scan_output_user_root(
     root: Path,
     *,
@@ -443,14 +454,7 @@ def scan_output_user_root(
         progress.start_phase("bases", len(candidates))
     for index, (base, layout) in enumerate(candidates, start=1):
         logger.info("Scanning output base %d/%d %s", index, len(candidates), base)
-        inspection: Inspection
-        if base.name.startswith(_QUARANTINE_PREFIX):
-            try:
-                inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
-            except OSError as error:
-                inspection = ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
-        else:
-            inspection = inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
+        inspection = inspect_listed_base(base, layout=layout, uid=uid, points=points, proc_root=proc_root)
         progress.record("bases", verdict_of(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base)
         yield inspection

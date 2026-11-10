@@ -47,7 +47,7 @@ _running_git_lock = threading.Lock()
 
 
 def interrupt_running_git() -> None:
-    """Kill every in-flight `git` child.
+    """Kill interruptible in-flight `git` children; admitted mutations finish.
 
     Worker threads blocked on a `git` child (often in uninterruptible disk reads) otherwise
     delay process exit until the child finishes on its own — many seconds on a cold disk.
@@ -57,16 +57,18 @@ def interrupt_running_git() -> None:
             process.kill()
 
 
-def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def git(repo: Path, *args: str, check: bool = True, interruptible: bool = True) -> subprocess.CompletedProcess[str]:
     command = ["git", "-C", os.fspath(repo), *args]
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
-        with _running_git_lock:
-            _running_git.add(process)
+        if interruptible:
+            with _running_git_lock:
+                _running_git.add(process)
         try:
             stdout, stderr = process.communicate()
         finally:
-            with _running_git_lock:
-                _running_git.discard(process)
+            if interruptible:
+                with _running_git_lock:
+                    _running_git.discard(process)
     if check and process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)

@@ -9,10 +9,9 @@ description: >-
 
 # Clean Workspaces
 
-`workspace-gc` runs **one joint scan** over four coupled domains and classifies them
-together (the domains depend on each other: a branch checked out in a live worktree can't be
-deleted; an output base orphans when its workspace worktree is removed; a repo-cache entry is
-unreferenced once the bases linking to it are gone):
+`workspace-gc` processes four coupled domains through a shared work queue (a branch checked
+out in a live worktree can't be deleted; an output base orphans when its workspace worktree is
+removed; a repo-cache entry is unreferenced once the bases linking to it are gone):
 
 - **worktrees** — local worktrees whose work is already merged;
 - **branches** — local branches whose work is already in the default branch;
@@ -21,13 +20,13 @@ unreferenced once the bases linking to it are gone):
 - **repo-cache** — entries of Bazel's repo contents cache that no output base links to.
 
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
-`workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
-result, scoped to one domain.
+`workspace-gc bazel-bases` and `workspace-gc repo-cache` scope the work to one domain.
 All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
 immediately before removing it, skipping one that changed.
-With a deletion flag, independent worktrees and output bases can be removed while other items
-are still being scanned; the findings describe each item as observed, not a single snapshot.
-Branches and repo-cache entries wait for the removals their eligibility depends on.
+With a deletion flag, removals start while other items are being scanned; completed work can
+unlock further work. Findings describe each item as observed, not a single snapshot. The live
+queue shows ready, running, dependency-waiting, and finished counts; each bar covers only work
+discovered so far, so it can move backward as new work is added.
 Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
 them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
 anything you would miss.

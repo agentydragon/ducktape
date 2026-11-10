@@ -8,6 +8,11 @@ py_library(
 )
 
 py_library(
+    name = "work_queue",
+    srcs = ["work_queue.py"],
+)
+
+py_library(
     name = "output_base_gc",
     srcs = ["output_base_gc.py"],
     visibility = ["//visibility:public"],
@@ -69,9 +74,41 @@ py_library(
         ":foreign_clone_gc",
         ":git_repo",
         ":output_base_gc",
+        ":worktree_gc",
+    ],
+)
+
+py_library(
+    name = "workspace_jobs",
+    srcs = ["workspace_jobs.py"],
+    deps = [
+        ":branch_gc",
+        ":foreign_clone_gc",
+        ":git_repo",
+        ":output_base_gc",
         ":pull_request",
-        ":scan_progress",
+        ":removal",
+        ":repo_contents_cache_gc",
         ":verdict",
+        ":work_queue",
+        ":workspace_scan",
+        ":worktree_gc",
+    ],
+)
+
+py_library(
+    name = "workspace_queue",
+    srcs = ["workspace_queue.py"],
+    deps = [
+        ":branch_gc",
+        ":foreign_clone_gc",
+        ":git_repo",
+        ":output_base_gc",
+        ":removal",
+        ":repo_contents_cache_gc",
+        ":work_queue",
+        ":workspace_jobs",
+        ":workspace_scan",
         ":worktree_gc",
     ],
 )
@@ -89,9 +126,10 @@ py_library(
         ":pull_request",
         ":removal",
         ":repo_contents_cache_gc",
-        ":scan_progress",
         ":verdict",
-        ":workspace_scan",
+        ":work_queue",
+        ":workspace_jobs",
+        ":workspace_queue",
         ":worktree_gc",
         "@pypi//humanize",
         "@pypi//rich",
@@ -183,12 +221,9 @@ py_test(
     name = "test_workspace_scan",
     srcs = ["test_workspace_scan.py"],
     deps = [
-        ":branch_gc",
         ":conftest",
         ":output_base_gc",
-        ":scan_progress",
         ":workspace_scan",
-        ":worktree_gc",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -199,19 +234,34 @@ py_test(
     name = "test_workspace_gc",
     srcs = ["test_workspace_gc.py"],
     deps = [
+        ":branch_gc",
         ":conftest",
         ":git_repo",
         ":output_base_gc",
         ":pull_request",
         ":removal",
         ":repo_contents_cache_gc",
+        ":work_queue",
         ":workspace_gc",
+        ":workspace_jobs",
+        ":workspace_queue",
         ":workspace_scan",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_work_queue",
+    srcs = ["test_work_queue.py"],
+    deps = [
+        ":conftest",
+        ":work_queue",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 

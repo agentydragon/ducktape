@@ -1,243 +1,37 @@
-import threading
-from collections.abc import Sequence
-from enum import StrEnum
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, workspace_scan
-from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch, RetainedBranchReason
 from devinfra.gc.conftest import GitRepo, make_base
-from devinfra.gc.output_base_gc import Inspection, PrunableBase, RetainedBase, ReviewBase
-from devinfra.gc.scan_progress import NULL_PROGRESS
-from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
+from devinfra.gc.output_base_gc import RetainedBase, RetainedBaseReason
 
 
-def _add(repo: GitRepo, name: str, branch: str) -> Path:
-    return repo.worktree(name, branch).path
+def test_annotate_base_flags_only_a_prunable_worktree_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    item = RetainedBase(tmp_path / "base", workspace, RetainedBaseReason.WORKSPACE_EXISTS, 0, False)
+
+    prunable = workspace_scan.annotate_base(item, {workspace})
+    kept = workspace_scan.annotate_base(item, set())
+    assert isinstance(prunable, RetainedBase)
+    assert isinstance(kept, RetainedBase)
+    assert prunable.workspace_is_prunable_worktree
+    assert not kept.workspace_is_prunable_worktree
 
 
-def _scan(
-    repo: GitRepo, proc: Path, mountinfo: Path, output_user_root: Path | None = None, session_bases: Sequence[Path] = ()
-) -> workspace_scan.WorkspaceScan:
-    return workspace_scan.scan_workspace(
-        repo.path,
-        main="main",
-        default_branch="main",
-        pr_states={},
-        session_bases=session_bases,
-        output_user_root=output_user_root,
-        proc_root=proc,
-        mountinfo_path=mountinfo,
-    )
-
-
-class RecordingProgress:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, int, int, str]] = []
-        self.totals: dict[str, int] = {}
-        self.done: dict[str, int] = {}
-        self.lock = threading.Lock()
-
-    def start_phase(self, phase: str, total: int) -> None:
-        with self.lock:
-            self.totals[phase] = total
-            self.done[phase] = 0
-
-    def record(self, phase: str, category: str) -> None:
-        with self.lock:
-            self.done[phase] += 1
-            self.calls.append((phase, self.done[phase], self.totals[phase], category))
-
-
-def test_interrupt_abandons_queued_items_without_waiting_for_them() -> None:
-    """Regression: a Ctrl+C used to wait for every worker to finish its whole slice."""
-    release = threading.Event()
-    safety = threading.Timer(10, release.set)  # unblocks workers if the interrupt is not prompt
-    safety.start()
-
-    def classify_one(item: int) -> int:
-        if item == 0:
-            raise KeyboardInterrupt
-        release.wait()
-        return item
-
-    try:
-        with pytest.raises(KeyboardInterrupt):
-            workspace_scan.parallel_classify(
-                list(range(50)),
-                lambda: classify_one,
-                phase="items",
-                noun="item",
-                progress=NULL_PROGRESS,
-                category_of=lambda _: "KEEP",
-                describe=str,
-                workers=2,
-            )
-        prompt = not release.is_set()
-    finally:
-        release.set()
-        safety.cancel()
-    assert prompt
-
-
-def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinfo: Path) -> None:
-    prunable_wt = _add(repo, "wt_merged", "merged")  # empty branch → prunable worktree
-    kept_wt = _add(repo, "wt_kept", "kept")
-    (kept_wt / "scratch").write_text("x\n")  # dirty → retained worktree
-
-    scan = _scan(repo, proc, mountinfo)
-
-    worktrees = {item.worktree.path: item for item in scan.worktrees}
-    assert isinstance(worktrees[prunable_wt], PrunableWorktree)
-    assert isinstance(worktrees[kept_wt], RetainedWorktree)
-
-    branches = {item.branch.name: item for item in scan.branches}
-    # Held by a prunable worktree → eligible, with the worktree recorded for apply ordering.
-    assert isinstance(branches["merged"], PrunableBranch)
-    assert branches["merged"].checkout == prunable_wt
-    # Held by a retained worktree → not provably deletable.
-    assert isinstance(branches["kept"], RetainedBranch)
-    assert (branches["kept"].reason, branches["kept"].checkout) == (RetainedBranchReason.HELD_BY_WORKTREE, kept_wt)
-    # The default branch, checked out on the main worktree, is always kept.
-    assert branches["main"].reason is RetainedBranchReason.DEFAULT_BRANCH
-
-
-def test_scan_workspace_reports_progress(repo: GitRepo, proc: Path, mountinfo: Path) -> None:
-    """The progress sink drives the CLI's live indicator (workspace_gc._ProgressReporter).
-
-    Branches classify from a thread pool, so this pins the guarantee that matters for a
-    concurrent reporter: every completion still reports a distinct `done` count that reaches
-    `total`, whichever worker reports it.
-    """
-    _add(repo, "wt_a", "branch_a")
-    _add(repo, "wt_b", "branch_b")
-
-    progress = RecordingProgress()
-
-    workspace_scan.scan_workspace(
-        repo.path,
-        main="main",
-        default_branch="main",
-        pr_states={},
-        session_bases=(),
-        proc_root=proc,
-        mountinfo_path=mountinfo,
-        progress=progress,
-    )
-
-    worktree_calls = [call[1:] for call in progress.calls if call[0] == "worktrees"]
-    branch_calls = [call[1:] for call in progress.calls if call[0] == "branches"]
-    assert worktree_calls[-1][:2] == (2, 2)  # wt_a, wt_b
-    assert branch_calls[-1][:2] == (3, 3)  # main, branch_a, branch_b
-    assert sorted(done for done, _, _ in branch_calls) == [1, 2, 3]
-    assert sum(call[3] == "PRUNE" for call in progress.calls if call[0] == "worktrees") == 2
-    assert sum(call[3] == "PRUNE" for call in progress.calls if call[0] == "branches") == 2
-    assert sum(call[3] == "KEEP" for call in progress.calls if call[0] == "branches") == 1
-
-
-def test_base_whose_workspace_is_a_prunable_worktree_is_annotated(
-    repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path
+def test_base_worktrees_covers_only_retained_base_workspaces(
+    repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    prunable_wt = _add(repo, "wt_merged", "merged")  # a prunable worktree, still on disk
+    monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
+    workspace = repo.worktree("wt_workspace", "has_base").path
+    repo.worktree("wt_unrelated", "no_base")
     root = tmp_path / "output"
-    make_base(root, prunable_wt.resolve())  # its workspace is that worktree
-
-    scan = _scan(repo, proc, mountinfo, output_user_root=root)
-
-    (base,) = scan.bases
-    # The workspace exists (the worktree is still there), so the base is retained for now …
-    assert isinstance(base, RetainedBase)
-    # … but flagged because pruning the worktree would orphan it.
-    assert base.workspace_is_prunable_worktree
-
-
-def test_base_with_absent_workspace_is_prunable(repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path) -> None:
-    root = tmp_path / "output"
-    make_base(root, tmp_path / "gone")
-
-    scan = _scan(repo, proc, mountinfo, output_user_root=root)
-
-    assert [type(base) for base in scan.bases] == [PrunableBase]
-
-
-def test_session_env_bases_join_the_scan_under_the_same_rules(
-    repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path
-) -> None:
-    prunable_wt = _add(repo, "wt_merged", "merged")
-    root = tmp_path / "output"
-    root.mkdir()
-    sessions = tmp_path / "session-env"
-    orphaning = make_base(sessions / "session-on-worktree", prunable_wt.resolve(), name="bazel-output-base")
-    orphaned = make_base(sessions / "session-on-gone", tmp_path / "gone", name="bazel-output-base")
-
-    scan = _scan(repo, proc, mountinfo, output_user_root=root, session_bases=[orphaning, orphaned])
-
-    by_path = {base.path: base for base in scan.bases}
-    orphaning_base = by_path[orphaning]
-    assert isinstance(orphaning_base, RetainedBase)
-    assert orphaning_base.workspace_is_prunable_worktree
-    assert isinstance(by_path[orphaned], PrunableBase)
-
-
-def _verdict(base: Inspection) -> tuple[type, Path, StrEnum | None, bool]:
-    """Everything a base's row is rendered from, so the comparison is not just the class."""
-    reason = base.reason if isinstance(base, RetainedBase | ReviewBase) else None
-    return (type(base), base.path, reason, isinstance(base, RetainedBase) and base.workspace_is_prunable_worktree)
-
-
-def _annotated(repo: GitRepo, proc: Path, mountinfo: Path, root: Path) -> list[Inspection]:
-    bases = list(output_base_gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
-    return workspace_scan.annotate_bases(repo.path, bases, main="main", pr_states={}, proc_root=proc)
-
-
-def test_annotate_bases_matches_the_joint_scan(repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path) -> None:
-    """The bases-only path must reach the same verdicts as `scan_workspace`.
-
-    It skips branch classification and every worktree that is not a base workspace, so this
-    pins that the shortcut does not change an answer — including the annotation, which is the
-    one thing the shortcut still has to look at worktrees for.
-    """
-    prunable_wt = _add(repo, "wt_merged", "merged")
-    _add(repo, "wt_unrelated", "unrelated")  # never a base workspace; the fast path skips it
-    root = tmp_path / "output"
-    make_base(root, prunable_wt.resolve())
-    make_base(root, (repo.path.parent / "gone").resolve())  # workspace absent → prunable base
-
-    joint = _scan(repo, proc, mountinfo, output_user_root=root).bases
-    fast = _annotated(repo, proc, mountinfo, root)
-
-    assert [_verdict(item) for item in fast] == [_verdict(item) for item in joint]
-    assert any(isinstance(item, PrunableBase) for item in fast)
-    assert any(isinstance(item, RetainedBase) and item.workspace_is_prunable_worktree for item in fast)
-
-
-def test_annotate_bases_needs_no_worktree_scan_when_no_base_has_a_workspace(
-    repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path
-) -> None:
-    """With no retained base pointing at a live worktree there is nothing to annotate."""
-    _add(repo, "wt_merged", "merged")
-    root = tmp_path / "output"
-    make_base(root, (repo.path.parent / "gone").resolve())
-
-    (base,) = _annotated(repo, proc, mountinfo, root)
-
-    assert isinstance(base, PrunableBase)
-
-
-def test_base_workspace_branches_covers_only_base_workspaces(
-    repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path
-) -> None:
-    """The PR query is scoped to base workspaces, not every branch in the repo."""
-    workspace_wt = _add(repo, "wt_workspace", "has_base")
-    _add(repo, "wt_unrelated", "no_base")
-    root = tmp_path / "output"
-    make_base(root, workspace_wt.resolve())
+    make_base(root, workspace.resolve())
 
     bases = list(output_base_gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
 
-    assert workspace_scan.base_workspace_branches(repo.path, bases) == {"has_base"}
+    assert {worktree.branch for worktree in workspace_scan.base_worktrees(repo.path, bases)} == {"has_base"}
 
 
 if __name__ == "__main__":

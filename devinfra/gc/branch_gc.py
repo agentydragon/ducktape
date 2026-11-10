@@ -216,7 +216,7 @@ def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[
             return Skipped(name, "branch no longer exists")
         if tip.stdout.strip() != expected_tip:
             return Skipped(name, "branch moved since the scan")
-        outcome = git_repo.git(repo, "branch", "-D", name, check=False)
+        outcome = git_repo.git(repo, "branch", "-D", name, check=False, interruptible=False)
     except (OSError, subprocess.SubprocessError) as error:
         return Failed(name, str(error))
     if outcome.returncode == 0:
