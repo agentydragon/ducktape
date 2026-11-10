@@ -46,6 +46,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import cilium, node_scheduling, piraeus
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine_pool import container_disk_pool_template
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import mimir
@@ -68,6 +69,7 @@ _VM_SHUTDOWN_GRACE_SECONDS = 87_000
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
+PINS_DIR = f"{OUTPUT_DIR}/image-pins"
 AUTOSCALER_NAME = f"{NAME}-autoscaler"
 AUTOSCALER_OUTPUT_DIR = f"{GENERATED_ROOT}/{AUTOSCALER_NAME}"
 
@@ -109,8 +111,8 @@ _DEMAND_QUERY = (
 # and not retained; an idle worker uses 0.75 GiB. test_firecracker reserves 6 GiB (its EstimatedMemory),
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
-# KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
-_IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
+# Custom 5 GiB root-disk image derived from KubeVirt's digest-pinned Ubuntu 24.04 cloud image.
+_IMAGE = f"git.allegedly.works/ducktape-ci/{NAME}:unset"  # image-pins supplies the published tag.
 _HTTPS_HOSTS = ("remote.buildbuddy.io", "buildbuddy.bbcr.io", "archive.ubuntu.com", "security.ubuntu.com")
 _GUEST_FILES = (
     "bootstrap.sh",
@@ -178,6 +180,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
     return container_disk_pool_template(
         labels=_WORKER_LABELS,
         image=_IMAGE,
+        image_pull_secret=pull_credentials.SECRET_NAME,
         # Only OVH nodes carry the SSD pool sized for this disk.
         node_selector={"topology.kubernetes.io/region": "hil"},
         cpu=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu(
@@ -320,6 +323,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     runfiles_root = Runfiles.CreateOrRaise().root()
     k8s.KubeConfigMap(
         chart,
@@ -510,6 +514,8 @@ def buildbuddy_kvm_worker(
     chart: Chart,
     directory: RenderedDirectory,
     executor: Kustomization,
+    external_secrets_config: Kustomization,
+    forgejo_images: Kustomization,
     kubevirt: Kustomization,
     monitoring_crds: Kustomization,
     piraeus: Kustomization,
@@ -532,7 +538,9 @@ def buildbuddy_kvm_worker(
                 ),
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds, piraeus),
+        depends_on=flux_kustomization_depends_on_many(
+            executor, external_secrets_config, forgejo_images, kubevirt, monitoring_crds, piraeus
+        ),
     )
 
 

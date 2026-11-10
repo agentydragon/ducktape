@@ -128,6 +128,7 @@ def chart(app: App) -> Chart:
             "agentplane-staging",
             "agents-infra",
             "airlock",
+            "buildbuddy-executor",
             "claude-session-sync",
             "cli-proxy-api",
             "cpap-sync",

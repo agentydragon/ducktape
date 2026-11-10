@@ -3,8 +3,9 @@
 A KubeVirt `VirtualMachinePool` of one to three VMs, each containing a BuildBuddy executor for the manual
 `kvm-vm` pool; BuildBuddy schedules across them, one action per VM. Required pod anti-affinity keeps
 the members on different nodes without naming a node, so one node failure or its disk contention
-reaches only one worker. Each VM boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
-vCPUs, 8 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cache.
+reaches only one worker. Each VM boots the `ducktape-ci/buildbuddy-kvm-worker` Ubuntu 24.04 image
+with four vCPUs, 8 GiB RAM, a 5 GiB root disk, and an 80 GiB work disk for Docker layers, action
+workspaces and cache.
 The disk is a blank image on a filesystem volume from `piraeus-ssd-local-delete`, created per VM by a CDI
 `DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
 raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
@@ -24,9 +25,12 @@ have longer outer deadlines. This covers normal pool scale-in, not node or host 
 out this template update in a quiet window: existing VMs retain the old short stop deadlines
 until replaced, so the update can interrupt active work. Before enabling autoscaling, verify
 both VMs were replaced from the new template and re-registered.
-Cloud-init installs Ubuntu's Docker package and the native
-[worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
-image build. Docker package installation uses the Ubuntu repositories at first boot.
+The custom image starts from KubeVirt's digest-pinned Ubuntu 24.04 cloud image and enlarges its
+root disk to 5 GiB. Ubuntu cloud-init's `growpart` and `resizefs` modules expand the root partition
+and filesystem on first boot. The separate 80 GiB work disk still holds Docker layers, action
+workspaces and cache. Cloud-init installs Ubuntu's Docker package and the native
+[worker configuration](../../../devinfra/buildbuddy/kvm/worker/); package installation uses the
+Ubuntu repositories at first boot.
 Both Docker's data root and containerd's image store use the work disk; Docker 29's
 containerd image store does not follow Docker's `data-root` setting.
 Actions also bind K3s's data directory from the ext4 work disk so its nested overlayfs

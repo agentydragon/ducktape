@@ -53,6 +53,7 @@ def container_disk_pool_template(
     *,
     labels: Mapping[str, str],
     image: str,
+    image_pull_secret: str | None = None,
     cpu: VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu,
     resources: VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources,
     node_selector: Mapping[str, str] | None = None,
@@ -70,7 +71,8 @@ def container_disk_pool_template(
     match them) and boot `image` as an ephemeral containerDisk under EFI without Secure Boot, reaching
     the pod network through masquerade on `ports`. Each of `disks` attaches as a virtio disk the guest
     finds at `/dev/disk/by-id/virtio-<key>`; a disk backed by one of `data_volume_templates` gets its own
-    volume per VM. `readiness_probe` decides when a member counts as ready, and so when the pool moves on during a rollout. The
+    volume per VM. `image_pull_secret` scopes private registry credentials to that containerDisk. `readiness_probe`
+    decides when a member counts as ready, and so when the pool moves on during a rollout. The
     remaining argument names are the corresponding VMI fields.
     """
     return VirtualMachinePoolSpecVirtualMachineTemplate(
@@ -118,7 +120,7 @@ def container_disk_pool_template(
                         VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
                             name=_ROOT_DISK,
                             container_disk=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesContainerDisk(
-                                image=image, image_pull_policy="IfNotPresent"
+                                image=image, image_pull_policy="IfNotPresent", image_pull_secret=image_pull_secret
                             ),
                         ),
                         *disks.values(),
