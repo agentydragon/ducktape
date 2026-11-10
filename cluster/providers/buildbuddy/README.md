@@ -77,8 +77,7 @@ not what a compromised provider process can access.
 ## LiteLLM ownership handoff
 
 The cluster manages `litellm/live-tests` with `Observe`, `Create`, and `Update`
-policies. Its former Terraform resource had a destroy provisioner that deletes
-BuildBuddy `OPENAI_API_KEY`; it was forgotten from state using a `removed` block
-with `destroy = false`. The remaining Terraform CR is suspended and can be
-retired in a later change after checking deletion behavior and Flux ownership.
-The BuildBuddy admin credential remains independently owned.
+policies. The former `litellm-buildbuddy-sync` Terraform state was emptied using
+a `removed` block with `destroy = false`. Both retired state schemas were then
+removed without running their former destroy provisioners. The BuildBuddy admin
+credential remains independently owned.

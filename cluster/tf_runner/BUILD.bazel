@@ -1,5 +1,4 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -29,21 +28,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-go_binary(
-    name = "buildbuddy-secret-sync",
-    srcs = ["buildbuddy_secret_sync.go"],
-    importpath = "github.com/agentydragon/ducktape/cluster/tf_runner/buildbuddy_secret_sync",
-    race = "off",
-    deps = ["@org_golang_x_crypto//nacl/box"],
-)
-
-pkg_tar(
-    name = "buildbuddy_secret_sync_layer",
-    srcs = [":buildbuddy-secret-sync"],
-    mode = "0755",
-    package_dir = "/usr/local/bin",
 )
 
 provider_plugin_layer(
@@ -83,7 +67,6 @@ oci_image(
     tars = [
         ":providers_layer",
         ":tofurc_layer",
-        ":buildbuddy_secret_sync_layer",
     ],
 )
 
