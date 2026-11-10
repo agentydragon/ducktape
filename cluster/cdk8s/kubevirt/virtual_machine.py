@@ -136,11 +136,9 @@ def container_disk_vm(
     tolerations: Sequence[VirtualMachineSpecTemplateSpecTolerations] | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
-    pod_labels: Mapping[str, str] | None = None,
 ) -> VirtualMachine:
     """A VM (always running by default) on `container_disk_template`, which takes the remaining
-    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)` too, plus
-    `pod_labels` for a Service or monitor that selects several VMs.
+    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)`.
     """
     labels = {"app.kubernetes.io/name": name}
     return VirtualMachine(
@@ -149,7 +147,7 @@ def container_disk_vm(
         metadata=ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations),
         run_strategy=run_strategy,
         template=container_disk_template(
-            labels=domain_labels(name) | labels | dict(pod_labels or {}),
+            labels=domain_labels(name) | labels,
             image=image,
             cpu=cpu,
             resources=resources,
