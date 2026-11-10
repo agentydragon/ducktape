@@ -3,6 +3,7 @@
 import yaml
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecIgnore, KustomizationSpecIgnoreTarget
 from keda_scaledobject_crds.sh import keda
 from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecMaxUnavailable,
@@ -353,7 +354,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
         selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
         virtual_machine_template=_pool_worker_template(),
-        # HPA owns replicas. KubeVirt defaults to one before the autoscaler starts.
+        # The pool controller defaults to one, but the /scale subresource fails
+        # unless the field exists. Flux ignores subsequent HPA updates to it.
+        replicas=1,
         # A template change replaces at most one VM at a time.
         max_unavailable=VirtualMachinePoolSpecMaxUnavailable.from_number(1),
     )
@@ -517,6 +520,18 @@ def buildbuddy_kvm_worker(
         directory,
         timeout="15m",
         suspend=False,
+        ignore=[
+            KustomizationSpecIgnore(
+                paths=["/spec/replicas"],
+                target=KustomizationSpecIgnoreTarget(
+                    group="pool.kubevirt.io",
+                    version="v1beta1",
+                    kind="VirtualMachinePool",
+                    name=NAME,
+                    namespace=NAMESPACE,
+                ),
+            )
+        ],
         depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds, piraeus),
     )
 
