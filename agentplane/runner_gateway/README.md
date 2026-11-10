@@ -48,6 +48,10 @@ the same cache, and new proxied calls are refused while it is unsynced or a watc
 losing a Runner observation, the owning Gateway retries after one second without waiting for an event.
 Each attempt claims a fresh Lease epoch and validates the current workload and Runner boot before
 serving calls. A replica refused by a foreign Lease holder retries its claim every heartbeat interval.
+When an observer ends, the Gateway first removes its callable connection and closes the direct Runner
+stream, then clears only its exact holder, Lease UID and epoch by a Kubernetes resource-version update.
+This lets another replica claim without waiting 30 seconds after a graceful stop; an ungraceful death
+still uses the conservative locally observed Lease duration. The connection epoch remains monotonic.
 For a RAM-suspended Firecracker launcher, Pod readiness loss ends the observation and proxy calls
 are refused. On resume, the same Pod and Runner boot ID reconnect under a higher Lease epoch;
 the Gateway forwards each execution request only once and does not replay one whose outcome was

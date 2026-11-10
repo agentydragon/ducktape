@@ -25,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -100,6 +101,27 @@ func (p *pauseAfterBootIDUpdate) Leases(namespace string) coordinationclient.Lea
 type pausedBootIDLeases struct {
 	coordinationclient.LeaseInterface
 	parent *pauseAfterBootIDUpdate
+}
+
+type inspectReleaseCoordination struct {
+	coordinationclient.CoordinationV1Interface
+	inspect func()
+}
+
+func (c *inspectReleaseCoordination) Leases(namespace string) coordinationclient.LeaseInterface {
+	return &inspectReleaseLeases{LeaseInterface: c.CoordinationV1Interface.Leases(namespace), inspect: c.inspect}
+}
+
+type inspectReleaseLeases struct {
+	coordinationclient.LeaseInterface
+	inspect func()
+}
+
+func (l *inspectReleaseLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
+	if lease.Spec.HolderIdentity == nil {
+		l.inspect()
+	}
+	return l.LeaseInterface.Update(ctx, lease, options)
 }
 
 func (p *pausedBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
@@ -307,7 +329,7 @@ func TestSupersededClaimCannotInstallConnectionBeforeBootID(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("observer did not start its first watch")
 	}
-	newEpoch, err := g.records.claim(t.Context(), destination.identity, destination.podUID)
+	newEpoch, _, err := g.records.claim(t.Context(), destination.identity, destination.podUID)
 	if err != nil || newEpoch < 2 {
 		t.Fatalf("failed to supersede the original claim: epoch %d, %v", newEpoch, err)
 	}
@@ -411,13 +433,28 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	destination.target = listener.Addr().String()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	var connection *runnerConnection
+	var observedConnection atomic.Pointer[runnerConnection]
+	releaseChecked := atomic.Bool{}
+	g.records.coordination = &inspectReleaseCoordination{CoordinationV1Interface: g.records.coordination, inspect: func() {
+		if ctx.Err() == nil {
+			t.Error("Lease released before old observer watch context was canceled")
+		}
+		if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
+			t.Errorf("Lease released while old connection was locally callable: %v", err)
+		}
+		old := observedConnection.Load()
+		if old == nil || old.direct.conn.GetState() != connectivity.Shutdown {
+			t.Error("Lease released before direct Runner connection closed")
+		}
+		releaseChecked.Store(true)
+	}}
 	finished := make(chan error, 1)
 	go func() { finished <- g.observeRunner(ctx, destination) }()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	poll := time.NewTicker(time.Millisecond)
 	defer poll.Stop()
-	var connection *runnerConnection
 	for connection == nil {
 		select {
 		case err := <-finished:
@@ -428,6 +465,7 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 			connection, _ = g.connections.holder(string(f.sandbox.UID))
 		}
 	}
+	observedConnection.Store(connection)
 	if _, err := connection.runner.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +533,7 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 		t.Fatalf("Runner connection did not publish its identities: %v", lease.Annotations)
 	}
 	other := f.newGateway(t, "test-other-gateway", "192.0.2.31")
-	if _, err := other.records.claim(t.Context(), destination.identity, destination.podUID); status.Code(err) != codes.Unavailable {
+	if _, _, err := other.records.claim(t.Context(), destination.identity, destination.podUID); status.Code(err) != codes.Unavailable {
 		t.Fatalf("another live Gateway stole Runner ownership: %v", err)
 	}
 	cancel()
@@ -504,8 +542,22 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	case <-time.After(time.Second):
 		t.Fatal("Runner observation did not stop")
 	}
+	if !releaseChecked.Load() {
+		t.Fatal("Runner observer stopped without releasing its Lease")
+	}
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
 		t.Fatalf("closed Runner connection remained callable: %v", err)
+	}
+	newEpoch, _, err := other.records.claim(t.Context(), destination.identity, destination.podUID)
+	if err != nil || newEpoch <= connection.epoch {
+		t.Fatalf("stopped Gateway did not hand off the runner Lease immediately: epoch=%d, err=%v", newEpoch, err)
+	}
+	route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(t.Context(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(route.Endpoints) != 1 || len(route.Endpoints[0].Addresses) != 1 || route.Endpoints[0].Addresses[0] != "192.0.2.31" {
+		t.Fatalf("control route did not follow the new holder: %+v", route.Endpoints)
 	}
 }
 
