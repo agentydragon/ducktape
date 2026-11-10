@@ -1119,6 +1119,12 @@ pub struct AnalysisInputs {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Named and default imports of this chunk, by local name, bound to a
+    /// provider cell that is never rebound
+    /// (`crate::cross_module_purity::resolve_stable_imports`). A read of any
+    /// other import is an order-dependent effect; empty in strictly per-chunk
+    /// paths, where every import stays one.
+    pub stable_imports: BTreeSet<String>,
     /// Bare imported callable capabilities, retaining the evidence that
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.

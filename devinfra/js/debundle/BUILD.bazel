@@ -746,6 +746,7 @@ rust_library(
         "purity/graph_purity_tests.rs",
         "purity/mod.rs",
         "purity/native_rows.rs",
+        "purity/order_dependent_reads.rs",
         "purity/purity_type.rs",
         "purity/redundant_hints.rs",
         "purity/redundant_hints_tests.rs",
