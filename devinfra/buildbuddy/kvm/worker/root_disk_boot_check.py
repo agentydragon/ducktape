@@ -40,10 +40,10 @@ def ext4_size(raw_disk: Path, start_lba: int) -> int:
     with raw_disk.open("rb") as disk:
         disk.seek(start_lba * 512 + 1024)
         superblock = disk.read(1024)
-    if struct.unpack_from("<H", superblock, 56)[0] != 0xEF53:
+    if int.from_bytes(superblock[56:58], "little") != 0xEF53:
         raise AssertionError("partition 1 does not contain an ext4 superblock")
-    block_count = struct.unpack_from("<I", superblock, 4)[0]
-    block_size = 1024 << struct.unpack_from("<I", superblock, 24)[0]
+    block_count = int.from_bytes(superblock[4:8], "little")
+    block_size = 1024 << int.from_bytes(superblock[24:28], "little")
     return block_count * block_size
 
 
