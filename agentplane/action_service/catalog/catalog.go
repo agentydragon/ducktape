@@ -494,34 +494,85 @@ func jsonObject(value map[string]any) (json.RawMessage, error) {
 // hasOnlyStringMapKeys keeps YAML mappings valid as JSON objects across Go JSON implementations, which may stringify
 // non-string map keys while marshaling.
 func hasOnlyStringMapKeys(value reflect.Value) bool {
+	return hasOnlyStringMapKeysIn(value, make(map[mapKeyScanReference]struct{}))
+}
+
+type mapKeyScanReference struct {
+	typeOf   reflect.Type
+	pointer  uintptr
+	length   int
+	capacity int
+}
+
+func hasOnlyStringMapKeysIn(value reflect.Value, active map[mapKeyScanReference]struct{}) bool {
 	if !value.IsValid() {
 		return true
 	}
 	switch value.Kind() {
-	case reflect.Interface, reflect.Pointer:
-		return value.IsNil() || hasOnlyStringMapKeys(value.Elem())
+	case reflect.Interface:
+		return value.IsNil() || hasOnlyStringMapKeysIn(value.Elem(), active)
+	case reflect.Pointer:
+		if value.IsNil() {
+			return true
+		}
+		return withMapKeyScanReference(value, active, func() bool {
+			return hasOnlyStringMapKeysIn(value.Elem(), active)
+		})
 	case reflect.Map:
-		entries := value.MapRange()
-		for entries.Next() {
-			key := entries.Key()
-			if key.Kind() == reflect.Interface {
-				if key.IsNil() {
+		if value.IsNil() {
+			return true
+		}
+		return withMapKeyScanReference(value, active, func() bool {
+			entries := value.MapRange()
+			for entries.Next() {
+				key := entries.Key()
+				if key.Kind() == reflect.Interface {
+					if key.IsNil() {
+						return false
+					}
+					key = key.Elem()
+				}
+				if key.Kind() != reflect.String || !hasOnlyStringMapKeysIn(entries.Value(), active) {
 					return false
 				}
-				key = key.Elem()
 			}
-			if key.Kind() != reflect.String || !hasOnlyStringMapKeys(entries.Value()) {
-				return false
-			}
+			return true
+		})
+	case reflect.Slice:
+		if value.IsNil() {
+			return true
 		}
-	case reflect.Slice, reflect.Array:
+		return withMapKeyScanReference(value, active, func() bool {
+			for i := 0; i < value.Len(); i++ {
+				if !hasOnlyStringMapKeysIn(value.Index(i), active) {
+					return false
+				}
+			}
+			return true
+		})
+	case reflect.Array:
 		for i := 0; i < value.Len(); i++ {
-			if !hasOnlyStringMapKeys(value.Index(i)) {
+			if !hasOnlyStringMapKeysIn(value.Index(i), active) {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+// Track only the current path: recursive values are invalid JSON, while shared acyclic values are valid.
+func withMapKeyScanReference(value reflect.Value, active map[mapKeyScanReference]struct{}, scan func() bool) bool {
+	reference := mapKeyScanReference{typeOf: value.Type(), pointer: value.Pointer()}
+	if value.Kind() == reflect.Slice {
+		reference.length = value.Len()
+		reference.capacity = value.Cap()
+	}
+	if _, exists := active[reference]; exists {
+		return false
+	}
+	active[reference] = struct{}{}
+	defer delete(active, reference)
+	return scan()
 }
 
 // limit is value as a whole number from minimum to maximum, or fallback when it is absent.

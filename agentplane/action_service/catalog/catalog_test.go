@@ -104,6 +104,50 @@ func TestJSONObjectChecksMapKeysInsideSequences(t *testing.T) {
 	}
 }
 
+func TestNewRejectsCyclicProgrammaticSettings(t *testing.T) {
+	mapCycle := map[string]any{}
+	mapCycle["self"] = mapCycle
+
+	sliceCycle := make([]any, 1)
+	sliceCycle[0] = sliceCycle
+
+	var pointerCycle any
+	pointerCycle = &pointerCycle
+
+	for name, value := range map[string]any{
+		"map":     mapCycle,
+		"slice":   sliceCycle,
+		"pointer": pointerCycle,
+	} {
+		t.Run(name, func(t *testing.T) {
+			settings := Settings{
+				"group": {
+					Title:       "Group",
+					Description: "A group",
+					Executor: &executorSettings{kind: &mcpExecutorSettings{
+						Description: "An MCP server",
+						Config:      map[string]any{"value": value},
+					}},
+				},
+			}
+			if _, err := New(settings); err == nil {
+				t.Fatal("accepted cyclic programmatic settings")
+			}
+		})
+	}
+}
+
+func TestJSONObjectAllowsSharedAcyclicValues(t *testing.T) {
+	shared := map[string]any{"key": "value"}
+	got, err := jsonObject(map[string]any{"first": shared, "second": shared})
+	if err != nil {
+		t.Fatalf("jsonObject() error = %v", err)
+	}
+	if want := `{"first":{"key":"value"},"second":{"key":"value"}}`; string(got) != want {
+		t.Errorf("jsonObject() = %s, want %s", got, want)
+	}
+}
+
 // New's own refusals of what yaml.v3 decodes; config_test holds yaml.v3's.
 func TestRefusalsDoNotEchoValues(t *testing.T) {
 	for name, document := range map[string]string{
