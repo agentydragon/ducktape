@@ -253,8 +253,8 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
     )
     assert identity["metadata"]["uid"]
 
-    # Only the identity inventory watch is served by this fixture. The browser's
-    # change request continues through the real app, Gateway, database, and API server.
+    # Policy watches supply the identity picker and the page's unrelated empty policy tables.
+    # The change request continues through the real app, Gateway, database, and API server.
     class IdentityWatch(policy_service_pb2_grpc.PolicyServiceServicer):
         @override
         async def WatchIdentities(
@@ -272,6 +272,22 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
                 )
             )
             yield policy_service_pb2.WatchIdentitiesResponse(snapshot_complete=Empty())
+            await asyncio.Event().wait()
+
+        @override
+        async def WatchPolicyBindings(
+            self, request: policy_service_pb2.WatchPolicyBindingsRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[policy_service_pb2.WatchPolicyBindingsResponse]:
+            yield policy_service_pb2.WatchPolicyBindingsResponse(snapshot=policy_service_pb2.PolicyBindingChunk())
+            yield policy_service_pb2.WatchPolicyBindingsResponse(snapshot_complete=Empty())
+            await asyncio.Event().wait()
+
+        @override
+        async def WatchPolicySets(
+            self, request: policy_service_pb2.WatchPolicySetsRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[policy_service_pb2.WatchPolicySetsResponse]:
+            yield policy_service_pb2.WatchPolicySetsResponse(snapshot=policy_service_pb2.PolicySetChunk())
+            yield policy_service_pb2.WatchPolicySetsResponse(snapshot_complete=Empty())
             await asyncio.Event().wait()
 
     policy = grpc.aio.server()
@@ -329,8 +345,8 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         await page.get_by_role("option", name="browser-identity").click()
         await expect(panel.get_by_text("The next identity can read anything earlier agents left")).to_be_visible()
         await panel.get_by_role("button", name="Change identity").click()
-        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": "browser-identity"}
         await expect(panel.get_by_text("Current: browser-identity")).to_be_visible()
+        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": "browser-identity"}
 
 
 async def _seed_navigation_threads(
