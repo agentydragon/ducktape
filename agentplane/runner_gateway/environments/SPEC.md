@@ -19,6 +19,8 @@ used to request an explicit resume. `kubernetes_diagnostics` retains the raw San
 current-incarnation Pod projection, including the raw Pod status consumed by the frontend's
 conditions and container diagnostics. Raw Kubernetes status supplements `observed_state`; it does
 not replace its canonical fields.
+`identity_name` reflects the optional `Sandbox.spec.identity.name`; it is absent when the Sandbox has
+no Identity.
 
 A Firecracker Sandbox retains its launcher Pod and incarnation UID while RAM is checkpointed.
 `stopStage: Stopped` therefore projects `Suspended` even with an incarnation; `Suspending`
