@@ -252,6 +252,9 @@ message Session {
   // The exact ServiceAccount bound to this Session, if established. Absence means its identity
   // is not yet known, not that a current account with the same name owns it.
   agentplane.proto.ServiceAccountIdentity execution_identity = 15;
+  // The Identity incarnation this Session executes as, recorded from its Sandbox's
+  // `spec.identity` at creation beside execution_identity; absent when the Sandbox named none.
+  agentplane.proto.Identity identity = 16;
 }
 
 message CreateSessionResponse {
