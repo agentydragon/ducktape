@@ -167,7 +167,7 @@ class _Run:
             for path, item in self.cache_by_path.items()
             if path not in self.cache_attempted
         )
-        return sum(map(len, self.waiting_branches.values())) + cache
+        return sum(map(len, self.waiting_branches.values())) + cache + len(self.cache_waiting)
 
     def _queue_branch(self, name: str, holder: Path | None) -> None:
         context = self._context()

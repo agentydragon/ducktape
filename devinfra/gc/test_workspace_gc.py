@@ -514,6 +514,48 @@ async def test_unreferenced_cache_entry_is_deleted_while_base_inspection_is_bloc
     assert not base.exists()
 
 
+async def test_progress_counts_cache_entries_waiting_for_a_batch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "output"
+    contents = repo_contents_cache_gc.repo_contents_cache(root)
+    for char in "abc":
+        make_cache_entry(contents, char * 64, f"{char * 8}-{char * 4}-{char * 4}-{char * 4}-{char * 12}")
+    release = threading.Event()
+    trash = repo_contents_cache_gc.trash_prunable_entries
+
+    def trash_after_waiting(*args: Any, **kwargs: Any) -> repo_contents_cache_gc.TrashedEntries:
+        assert release.wait(10), "waiting cache entries were not reported"
+        return trash(*args, **kwargs)
+
+    class Observer:
+        max_waiting = 0
+
+        def update(self, queue: WorkQueue[workspace_jobs.Event], *, waiting: int) -> None:
+            self.max_waiting = max(self.max_waiting, waiting)
+            if waiting:
+                release.set()
+
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
+    monkeypatch.setattr(repo_contents_cache_gc, "trash_prunable_entries", trash_after_waiting)
+    observer = Observer()
+    options = workspace_queue.Options(
+        domains=frozenset({workspace_queue.Domain.REPO_CACHE}),
+        root=root,
+        session_bases=(),
+        workers=3,
+        apply=True,
+        sizes=False,
+        delete_foreign_clones=False,
+        repo=None,
+        pr_source=workspace_gc._without_prs,
+    )
+
+    report = await workspace_queue.run(options, observer)
+    assert observer.max_waiting > 0
+    assert len(report.cache_removals) == 3
+
+
 def test_queue_discovers_and_deletes_session_output_bases(
     repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
