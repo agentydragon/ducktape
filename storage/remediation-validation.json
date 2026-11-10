@@ -48,6 +48,7 @@
     },
     "browser_test": {
       "target": "//x/storage_followups_layout_preview:layout_test",
+      "invocation_url": "https://app.buildbuddy.io/invocation/ed04fc42-66df-4f69-a856-68d6842679c3",
       "execution": "RBE with real jsDelivr and esm.sh resources; exact report files copied from this branch.",
       "cases": [
         "1280x900 light",
@@ -68,7 +69,8 @@
         "Zot intervention",
         "Seaweed compression context"
       ],
-      "result": "Pending; no pass or screenshot review claimed yet."
+      "runner_status": "The invocation remained at 'Waiting for available remote runner'; no test actions or screenshot artifacts were produced before the local wait was stopped.",
+      "result": "Pending; no RBE pass or screenshot review claimed."
     }
   }
 }
