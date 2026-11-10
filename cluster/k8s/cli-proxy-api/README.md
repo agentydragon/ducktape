@@ -115,8 +115,9 @@ The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
 
 `@ducktape_cli_proxy_api//:image` builds the backend and bundled management UI;
 `//third_party/cli_proxy_api_tests:tests` runs upstream authentication tests and boots
-the packaged container. Backend and UI source pins use the open OIDC PRs linked in
-<../../../third_party/cli_proxy_api/README.md>; remaining patches add build glue, an
+the packaged container. The backend carries the closed OIDC PR as a patch and the UI
+uses the corresponding fork, as described in <../../../third_party/cli_proxy_api/README.md>;
+other patches add build glue, an
 immutable panel, and request timing. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
 its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
 upstream panel updater.
