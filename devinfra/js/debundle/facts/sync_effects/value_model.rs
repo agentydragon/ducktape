@@ -55,6 +55,23 @@ impl Values {
         self.0.insert(value).is_none()
     }
 
+    /// Insert the values not already present and report whether any was.
+    /// A probe copies nothing, while a persistent insert copies its path even
+    /// for a present value.
+    pub(super) fn extend_absent<'v>(
+        &mut self,
+        values: impl IntoIterator<Item = &'v AbstractValue>,
+    ) -> bool {
+        let absent: Vec<_> = values
+            .into_iter()
+            .filter(|value| !self.0.contains(*value))
+            .cloned()
+            .collect();
+        let changed = !absent.is_empty();
+        self.0.extend(absent);
+        changed
+    }
+
     pub(super) fn remove(&mut self, value: &AbstractValue) -> bool {
         self.0.remove(value).is_some()
     }
@@ -66,6 +83,18 @@ impl Values {
     pub(super) fn is_disjoint(&self, other: &Self) -> bool {
         self.iter().all(|value| !other.contains(value))
     }
+}
+
+/// A transient value set as a sorted, deduplicated vector: the elements and
+/// iteration order of the `Values` the same items would build, without
+/// persistent-set insertion. For inputs that are only iterated.
+pub(super) fn ordered_values(
+    values: impl IntoIterator<Item = AbstractValue>,
+) -> Vec<AbstractValue> {
+    let mut values: Vec<_> = values.into_iter().collect();
+    values.sort_unstable();
+    values.dedup();
+    values
 }
 
 impl std::ops::Deref for Values {
