@@ -20,9 +20,28 @@ K3S_PERSISTENCE_PROPERTIES = {
     "test.snapshot-read-policy": "newest",
 }
 
-# Match the dedicated VM worker's four-vCPU budget.
+# Sized for test_firecracker, the only test CI gates on pool kvm-vm; the manual KubeVirt variant under x/vm_kvm is
+# not measured. Explicit values, because a compute unit ties 2.5 GB of memory to each CPU. Measured on one passing,
+# uncached run at commit 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy invocation
+# f6ad2fda-409c-446f-8ade-8ac18f5da377 (2026-11-10):
+# - Memory: the K3s node working set peaked at 2,942 MiB and resident memory at 1,699 MiB in
+#   `test.outputs/memory/working-sets.jsonl` (`bbapi artifact cat <invocation> working-sets.jsonl`). The same
+#   samples' usage including page cache reached 7,861 MiB, which is not need. Guest memory in use, MemTotal less
+#   MemAvailable, peaked at 2.8 GiB on both workers; that was sampled over the VM console during the run and not
+#   retained. 6GB is about twice the peak working set.
+# - CPU: four matches the worker's four vCPUs. Eight were no faster (warm means 251.064 s at four, 268.020 s at eight):
+#   https://github.com/agentydragon/ducktape/blob/791540fbaa160bde261e469adfdd2fcc84f378ec/devinfra/buildbuddy/debug/2026_11_09_hil_kvm_worker_canary.md
+# - Disk: the whole work disk held 15 of 79 GB shortly after the run, including the executor's file cache and image
+#   store, read with `df -B1G /var/lib/k3s-env` in a kvm-vm action; not retained.
+# Verified at BuildBuddy invocation ff1d84df-d048-4872-aa6b-0886c2363230 (2026-11-10): the test action carries these
+# three values and the executor assigned 6.44 GB (BuildBuddy reads 6GB as 6 GiB) and 4000 milli-CPU, as
+# `buildbuddy_remote_execution_assigned_ram_bytes` and `..._assigned_milli_cpu` show in Mimir. The execution
+# platform's default of three compute units still rides along; the explicit values win. Do not clear it with an empty
+# value: invocation 90e96273-cba5-4176-825b-8af7119ddb5d did, and the executor then assigned only 1.03 GB and 1000 m.
 KVM_EXEC_PROPERTIES = {
-    "test.EstimatedComputeUnits": "4",
+    "test.EstimatedCPU": "4",
+    "test.EstimatedFreeDiskBytes": "20GB",
+    "test.EstimatedMemory": "6GB",
     "test.Pool": "kvm-vm",
     "test.init-dockerd": "false",
     "test.recycle-runner": "false",
@@ -256,6 +275,15 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         properties |= K3S_PERSISTENCE_PROPERTIES | {
             "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
         }
+    exec_properties = K3S_EXEC_PROPERTIES | properties
+    if require_kvm:
+        # The KVM worker is sized by the explicit values in KVM_EXEC_PROPERTIES; compute units or the default disk
+        # request left here would be a second, conflicting size.
+        exec_properties = {
+            key: value
+            for key, value in exec_properties.items()
+            if key not in ("EstimatedComputeUnits", "EstimatedFreeDiskBytes")
+        }
     py_test(
         name = name,
         size = "enormous",
@@ -263,7 +291,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         main = main,
         data = data,
         env = env,
-        exec_properties = K3S_EXEC_PROPERTIES | properties,
+        exec_properties = exec_properties,
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
