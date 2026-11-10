@@ -344,8 +344,8 @@ function LangfuseEvidence({ data }) {
         <//>
       <//>
       <${Figure}
-        title="Lossless compression sample"
-        caption="33 objects, 20.7 MB total; sampled by metadata pages, prefix and month, not by byte weight. This is not a fleet-wide savings estimate."
+        title="Compressing fetched S3 JSON"
+        caption="33 S3 GET bodies, 20.7 MB total, sampled by metadata pages, prefix and month, not by byte weight. Some stored chunks are already compressed by SeaweedFS, so this experiment does not measure additional disk savings."
         slug="langfuse-compression-sample"
       >
         <${BarChart}
@@ -422,6 +422,43 @@ function LangfuseEvidence({ data }) {
           <//>
         <//>
       <//>
+    <//>
+  <//>`;
+}
+
+function StorageQuestions({ data }) {
+  const followups = data.followup_questions;
+  return html`<${Stack}
+    component="section"
+    id="storage-questions"
+    gap="md"
+    my="xl"
+  >
+    <${Title} order=${2}>Storage questions answered<//>
+    <${Text} c="dimmed" size="sm">
+      ${`Read-only follow-up observations: ${followups.observed_utc}. Values describe that window, not live state.`}
+    <//>
+    <${SimpleGrid} cols=${{ base: 1, lg: 2 }} spacing="md">
+      ${followups.questions.map(
+        (item) =>
+          html`<${Paper}
+            component="article"
+            withBorder
+            p="md"
+            radius="md"
+            key=${item.id}
+            data-question=${item.id}
+          >
+            <${Stack} gap="sm">
+              <${Title} order=${3}>${item.question}<//>
+              <${Text} fw=${600}>${item.answer}<//>
+              ${item.details.map((detail, index) => html`<${Text} size="sm" key=${index}>${detail}<//>`)}
+              <${Group} gap="md">
+                ${item.sources.map((source) => html`<${Anchor} size="sm" href=${source.url} key=${source.url}>${source.label}<//>`)}
+              <//>
+            <//>
+          <//>`,
+      )}
     <//>
   <//>`;
 }
@@ -759,6 +796,7 @@ export function StorageRemediation() {
       <${Anchor} href="#budget">Budget scenario<//>
       <${Anchor} href="#langfuse">Langfuse evidence<//>
       <${Anchor} href="#observability">Mimir and Loki<//>
+      <${Anchor} href="#storage-questions">Storage questions<//>
       <${Anchor} href="#options">Options<//>
       <${Anchor} href="#prior-inventory">9 Nov inventory<//>
       <${Anchor} href="./remediation-evidence.json">Evidence JSON<//>
@@ -769,6 +807,7 @@ export function StorageRemediation() {
       but it does not shrink a PVC. Seaweed's HDD volumes are single-copy at the
       Piraeus layer; Seaweed provides two object copies.
     <//>
+    <${StorageQuestions} data=${data} />
     <${BudgetScenario} data=${data} />
     <${LangfuseEvidence} data=${data} />
     <${ObservabilityEvidence} data=${data} />

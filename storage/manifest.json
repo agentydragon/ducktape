@@ -14,9 +14,10 @@
   "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements.",
   "historical_report_html_sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
   "historical_visual_validation": "The prior presentation-validation.json applies to the original 2026-11-09 report bytes identified by historical_report_html_sha256, not the modified report.",
-  "remediation_script_sha256": "9c7dcd3b05c8dedb365841f954328f12931b508b8fbf81d7362e778da5cc14d4",
-  "remediation_evidence_sha256": "365283a84edf8fa94b0d22540e2387b2525abd8cb5883bd24c10f7749793ddc5",
+  "remediation_script_sha256": "8bb6d27e342bee5064c578efe4ec6c1363c65f9a49307b8cb13b5aef6306c768",
+  "remediation_evidence_sha256": "3dffb746da5f8365165f3bd7cb681a64b09a3ad9e4f23b1cf615c1ab4045a7e2",
   "remediation_snapshot_utc": "2026-11-10T19:20:23Z",
   "remediation_validation": "remediation-validation.json",
-  "observability_snapshot_utc": "2026-11-10T21:12:00Z–21:28:00Z"
+  "observability_snapshot_utc": "2026-11-10T21:12:00Z–21:28:00Z",
+  "followup_observations_utc": "2026-11-10"
 }
