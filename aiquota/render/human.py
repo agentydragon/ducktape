@@ -106,20 +106,15 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
         error_line = f"  {pv.error_summary}"
         if substantive:
             error_line += " · showing available data"
-        lines.append(Text(error_line))
+        lines.append(Text(error_line, style="red"))
         if details and pv.error_detail is not None:
             lines.append(Text(f"    error: {pv.error_detail}"))
 
-    lines.extend(_credit_lines(pv, now, tz, details))
     if pv.status is not None:
-        lines.append(Text(f"  {pv.status}"))
+        urgent = pv.stale_since is None and not any(window.reset_pending for window in pv.display_windows)
+        lines.append(Text(f"  {pv.status}", style="red" if urgent else "yellow"))
 
-    if pv.burn is not None and substantive:
-        lines.append(Text(f"  {format_burn(pv.burn, now, tz)}"))
-        if details:
-            schedule = format_peak_schedule(pv.burn, tz)
-            if schedule:
-                lines.append(Text(f"    {schedule}"))
+    lines.extend(_credit_lines(pv, now, tz, details))
 
     if (
         result is not None
@@ -136,13 +131,12 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
         )
         lines.append(Text(f"  Banked resets: {summary}"))
 
-    if pv.display_windows:
-        lines.extend(
-            Text(_format_window_line(window, widths, details), style=_TINTS[window.tint])
-            for window in pv.display_windows
-        )
-    elif not substantive and pv.error_summary is None:
-        lines.append(Text("  No quota or credit data available"))
+    if pv.burn is not None and substantive:
+        lines.append(Text(f"  {format_burn(pv.burn, now, tz)}"))
+        if details:
+            schedule = format_peak_schedule(pv.burn, tz)
+            if schedule:
+                lines.append(Text(f"    {schedule}"))
 
     extra = result.extra_spend if result is not None else None
     if extra is not None and extra.used_usd > 0:
@@ -151,6 +145,14 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
                 f"  Extra spend this month: {_usd(extra.used_usd)} of {_usd(extra.monthly_limit_usd, whole=True)} limit"
             )
         )
+
+    if pv.display_windows:
+        lines.extend(
+            Text(_format_window_line(window, widths, details), style=_TINTS[window.tint])
+            for window in pv.display_windows
+        )
+    elif not substantive and pv.error_summary is None:
+        lines.append(Text("  No quota or credit data available"))
 
     return Text("\n").join(lines)
 

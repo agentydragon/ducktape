@@ -121,9 +121,9 @@
 # name: test_renders_shared_fixture[extra_enabled_not_burning]
   '''
   Claude
+    Extra spend this month: $2,324.85 of $4,600 limit
     5h:   6% used  ↻ 2h      leaves ~90% unused at reset
     7d:   2% used  ↻ 5d      leaves ~93% unused at reset
-    Extra spend this month: $2,324.85 of $4,600 limit
   
   Codex
     5h:  30% used  ↻ 3h 30m  on pace
@@ -139,9 +139,9 @@
   '''
   Claude
     Included quota exhausted · extra usage enabled
+    Extra spend this month: $3,141.59 of $5,000 limit
     5h:  50% used  ↻ 3h 30m  exhausts ~2h before reset
     7d: 100% used  ↻ 4d 21h  exhausted
-    Extra spend this month: $3,141.59 of $5,000 limit
   
   Codex
     Banked resets: 2 · next known expiry Sep 20 · 1 expiry unknown
@@ -192,8 +192,8 @@
 # name: test_renders_shared_fixture[paid_credits]
   '''
   Codex
-    Paid credits: 2,746 credits
     Included quota exhausted · paid credits available
+    Paid credits: 2,746 credits
     Banked resets: 0
     5h: 100% used  ↻ 1h 30m  exhausted
     7d:  38% used  ↻ 3d 14h  leaves ~22% unused at reset
@@ -237,8 +237,8 @@
 # name: test_renders_shared_fixture[reset_pending]
   '''
   Codex
-    Paid credits: 2,746 credits
     Reset time passed · awaiting updated usage
+    Paid credits: 2,746 credits
     5h: 100% used  ↻ awaiting update
   '''
 # ---
@@ -247,8 +247,8 @@
   Claude
     Stale data · last observed 1d ago
     Refresh failed · showing available data
-    Prepaid balance: $123.45
     Reset time passed · awaiting updated usage
+    Prepaid balance: $123.45
     5h:  35% used  ↻ awaiting update
     7d:  72% used  ↻ 4d 3h
   

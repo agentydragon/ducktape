@@ -97,8 +97,8 @@ def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_det
 def test_paid_mode_keeps_each_window_row_and_marks_actionable_state(quota_fixture: Callable[[str], AllQuotas]) -> None:
     rendered = human.render(quota_fixture("paid_credits"), now=_NOW, tz=UTC)
 
-    assert "Codex\n  Paid credits: 2,746 credits" in rendered
     assert "Included quota exhausted · paid credits available" in rendered
+    assert rendered.index("Included quota exhausted") < rendered.index("Paid credits: 2,746 credits")
     assert "5h: 100% used  ↻ 1h 30m" in rendered
     assert "7d:  38% used  ↻ 3d 14h" in rendered
 
@@ -147,6 +147,15 @@ def test_stale_observation_is_marked_without_showing_pace_or_forecast(
     assert "Stale data · last observed 20m ago" in rendered
     assert "pace " not in rendered
     assert "leaves" not in rendered
+
+
+def test_warnings_and_spend_precede_readings_and_windows(quota_fixture: Callable[[str], AllQuotas]) -> None:
+    fallback = human.render(quota_fixture("stale_fallback"), now=_NOW, tz=UTC)
+    assert fallback.index("Stale data") < fallback.index("Prepaid balance") < fallback.index("% used")
+    assert fallback.index("Refresh failed") < fallback.index("Prepaid balance")
+
+    spend = human.render(quota_fixture("extra_enabled_not_burning"), now=_NOW, tz=UTC)
+    assert spend.index("Extra spend this month") < spend.index("% used")
 
 
 def test_expired_reset_waits_for_new_usage_and_suppresses_forecast(quota_fixture: Callable[[str], AllQuotas]) -> None:
