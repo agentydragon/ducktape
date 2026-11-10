@@ -133,7 +133,7 @@ restrict access and retention while enabled. Authorization and other request hea
 
 Backend transport failures and forwarding-slot acquisition timeouts also emit warnings when request
 body logging is disabled. Each warning carries the request `id`, method, path without its query, and
-verified namespace or Identity, and Pod, when available. Transport warnings include the inner error text, such as a
+verified subject kind and name (plus namespace for a ServiceAccount) and Pod when available. Transport warnings include the inner error text, such as a
 DNS lookup or connection failure; the `url.Error` wrapper is unwrapped so its URL, credentials, and
 query are not logged. The caller's request query, body, and headers are omitted. A request canceled
 while waiting for a forwarding slot exits without writing a gateway error.
