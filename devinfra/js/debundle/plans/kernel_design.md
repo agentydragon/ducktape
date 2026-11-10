@@ -45,19 +45,25 @@ the family when every leaf has completed; the contract is in
   row refused, and the global summary invoked the elements' stored callbacks.
   So admission must be decided before execution starts, from what the kernel
   can prove it supports for the root's whole reachable body, not from the
-  root's surface shape. Today the iteration roots admit only receivers whose
-  elements are all primitive (`roots/operands.rs`,
-  `root_array_iteration`). A better predicate would classify each operation
-  of the callback's ordered plan by whether the kernel completes it for the
-  argument kinds the snapshot supplies. Nothing on `devel` gives that:
-  `CallableBodyFacts::ordered_plan` certifies syntactic coverage only, and the
-  provider's operation-support receipt does not exist yet.
+  root's surface shape, or the root must be attempted and rewound. Iteration
+  roots take the attempted lane (`roots/body.rs`, #15262): the kernel row
+  runs first and the owner keeps it only if it seals; otherwise
+  `rewind_root_attempt` restores the path state, observations and the
+  run-wide accumulators, and the flat lane runs as if the attempt never
+  ran. The filter (`roots/operands.rs`, `root_array_iteration`) is cheap and
+  has no side effects. The cost is a second execution of every refused
+  attempt: in the e2e suite about 123 iteration roots attempt and about 105
+  of them rewind, most in `intrinsic_array_iteration_test`. A root over
+  record elements does not seal yet even when every read is covered: an
+  own-data read leaves the owner's initialization domains unknown
+  (`EffectCoverageFragment::lexical_operation`), so row 13 has nothing to
+  seal until it does (§ Forks and joins, field reads).
 
   Separately, an array literal inside a callback loses its writability
   witness on the callback's second invocation (the allocation site is pooled),
-  so a row nested in a kernel row refuses from the second element on
-  (`effect_tv_array_iteration_test`, `a_row_inside_a_legacy_row_callback_stays_legacy`
-  keeps the outer root on the flat lane to stay a depth control).
+  so a row nested in a kernel row refuses from the second element on and its
+  root rewinds (`effect_tv_array_iteration_test`,
+  `unsealed_iteration_roots_rewind_to_the_flat_lane`).
 
 - **Field reads under a fork.** An own-data read leaves the initialization
   domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on

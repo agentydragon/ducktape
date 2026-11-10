@@ -2,7 +2,6 @@
 //! selected ordered initializer an owner executes with. Preparatory
 //! classifier proofs that read the prefix run here, before the body.
 
-use super::super::array_transfer::{self, ArrayMethodSelection};
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, object_own_data_read_property,
 };
@@ -370,7 +369,6 @@ pub(super) fn prepare<'source>(
         .filter(|body| {
             (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
-                || root_array_iteration
                 || provider_root_calls
                 || selected_audited_initializer.is_some())
                 && (calls
@@ -401,7 +399,6 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
-                || root_array_iteration
                 || provider_root_calls
                 || root_construction
                 || calls.iter().any(|call| {
@@ -417,8 +414,9 @@ pub(super) fn prepare<'source>(
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
         });
-    // Every other initializer whose root calls are all local: a call with
-    // arguments, an IIFE, a call inside a comma. The body phase runs it
+    // Every other initializer whose root calls are all local (a call with
+    // arguments, an IIFE, a call inside a comma) or whose one call is an
+    // array iteration row. The body phase runs it
     // through the kernel and keeps that execution only if it seals the owner.
     let attempted_initializer =
         (ordered_initializer.is_none() && initializer_source.is_none() && root_shape)
@@ -427,7 +425,7 @@ pub(super) fn prepare<'source>(
             .filter(admitted_body)
             .filter(|_| {
                 calls.iter().any(|call| call.kind == CallKind::Call)
-                    && executor.ordered_root_calls_are_local(calls)
+                    && (executor.ordered_root_calls_are_local(calls) || root_array_iteration)
             })
             .and_then(|body| {
                 Some((
@@ -470,13 +468,15 @@ pub(super) fn prepare<'source>(
     }
 }
 
-/// The root's one invocation is an `Array.prototype` iteration row the
-/// kernel executes (`native/array_iteration.rs`): the original method on a
-/// dense literal array of primitives in the current prefix, with a local
-/// callback that has no live captures. Nothing runs between this check and the method's
-/// GetValue, so the kernel selects the same row; the row still rechecks the
-/// receiver after the arguments and after every callback.
-fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool {
+/// Whether the root's one invocation is worth attempting as an
+/// `Array.prototype` iteration row (`native/array_iteration.rs`): a supported
+/// row over a module binding holding one dense literal array, with a local
+/// callback that has no live captures. A cheap filter with no side effects:
+/// the attempt runs through `body::execute`, which keeps the kernel
+/// execution only if it seals the owner and otherwise rewinds to the flat
+/// lane (`plans/kernel_design.md` § Root admission). The row itself proves
+/// the method, the receiver and every callback.
+fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
     let invocations: Vec<_> = calls
         .iter()
         .filter(|call| {
@@ -506,45 +506,26 @@ fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool
     if proof.row.member != property || !supported_row(proof.row.result, call.args.len()) {
         return false;
     }
+    let prefix = &executor.state.world.module.prefix_values;
     let callback = match call.args.first() {
         Some(ValueExpr::Alloc(Kind::Function, key)) => {
             Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))])
         }
         Some(ValueExpr::Binding(binding)) if executor.initialized_local_binding(binding) => {
-            match executor.state.world.module.prefix_values.get(binding) {
+            match prefix.get(binding) {
                 Some(values) => values.clone(),
                 None => return false,
             }
         }
         _ => return false,
     };
-    if admitted_callback(index, &callback).is_err() || !executor.initialized_local_binding(receiver)
-    {
-        return false;
-    }
-    let Some(receivers) = executor
-        .state
-        .world
-        .module
-        .prefix_values
-        .get(receiver)
-        .cloned()
-    else {
-        return false;
-    };
-    let Some((ArrayMethodSelection::Iteration(selection), _)) =
-        array_transfer::select_method(executor, &receivers, property)
-    else {
-        return false;
-    };
-    // A refused row summarizes the remainder with global reach. Admit only
-    // receivers whose elements are primitive, so a callback reaches no
-    // element's stored capabilities; object elements keep the flat lane.
-    array_transfer::iteration_snapshot(executor, &selection).is_ok_and(|(slots, _)| {
-        slots
-            .iter()
-            .all(|slot| !slot.is_empty() && slot.iter().all(AbstractValue::is_primitive))
-    })
+    admitted_callback(index, &callback).is_ok()
+        && executor.initialized_local_binding(receiver)
+        && prefix.get(receiver).is_some_and(|values| {
+            matches!(values.iter().collect::<Vec<_>>().as_slice(),
+                [AbstractValue::Value(Value::Alloc(Kind::Object, array))]
+                    if executor.state.world.arrays.dense.contains_key(array))
+        })
 }
 
 /// Canonical source identity is independent of leaf/value admission. Retain

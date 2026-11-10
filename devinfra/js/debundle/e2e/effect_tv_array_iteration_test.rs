@@ -274,7 +274,7 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
 /// A row nested in the callback of a legacy row stays legacy: the legacy row
 /// invokes its callback with `array_iteration_depth > 0`, and only a
 /// depth-zero invocation takes the kernel prologue. The outer root has two
-/// calls, so it is not admitted to the ordered lane and its row is legacy.
+/// calls, so it is not attempted on the ordered lane and its row is legacy.
 /// The split is valid; it becomes provable when the outer row runs in the
 /// kernel (L4e).
 #[test]
@@ -368,4 +368,58 @@ fn an_empty_receiver_keeps_its_receipt() {
     assert_preserved_entry_output(&fixture, "7 \n");
     assert_iteration_receipt(&fixture, "map", "empty receiver");
     assert_commuting_relocation(&fixture, "empty receiver");
+}
+
+/// Roots the kernel attempts but cannot seal rewind to the flat lane: the
+/// legacy gate still accepts the split with Node parity, and the effect
+/// verdict stays pending. A refused attempt must leave nothing behind.
+#[test]
+fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
+    let many: Vec<String> = (0..300).map(|index| index.to_string()).collect();
+    let many = many.join(", ");
+    for (declarations, initializer, members, expected) in [
+        (
+            // The inner `[x]` site is pooled: its writability witness is gone
+            // on the second invocation, so the inner row refuses.
+            "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];".to_owned(),
+            "outer.map(wrap)",
+            &["wrap", "outer", "result"][..],
+            "7 2,4\n".to_owned(),
+        ),
+        (
+            "class Thing { constructor(name) { this.name = name; } }\nconst names = ['a', 'b'];".to_owned(),
+            "names.map((name) => new Thing(name))",
+            &["Thing", "names", "result"][..],
+            "7 [object Object],[object Object]\n".to_owned(),
+        ),
+        (
+            "const items = [1, 2];".to_owned(),
+            "items.map((x) => { items.push(x); return x; })",
+            &["items", "result"][..],
+            "7 1,2\n".to_owned(),
+        ),
+        (
+            format!("const items = [{many}];"),
+            "items.map((x) => x)",
+            &["items", "result"][..],
+            format!("7 {}\n", (0..300).map(|index| index.to_string()).collect::<Vec<_>>().join(",")),
+        ),
+        (
+            "let later = 0;\nconst items = [{ size: 1, executor: () => later }, { size: 2, executor: () => later }];".to_owned(),
+            "items.reduce((total, entry) => total + entry.size, 0)",
+            &["later", "items", "result"][..],
+            "7 3\n".to_owned(),
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, String(result));\n"
+        );
+        let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("run", &members)],
+        ));
+        assert_preserved_entry_output(&fixture, &expected);
+        assert_effect_verdict_pending(&fixture, "incomplete", initializer);
+    }
 }
