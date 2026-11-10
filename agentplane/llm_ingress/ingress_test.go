@@ -1230,3 +1230,20 @@ func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
 		t.Fatalf("status=%d backend requests=%+v", response.StatusCode, got)
 	}
 }
+
+func TestIdentityCallerIsLoggedByKindAndNameNotAsAnEmptyAccount(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	attrs := requestLogAttrs("request-id", request, auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"}, PodName: "sandbox-a", PodUID: "pod-a-uid",
+	})
+	logged := map[any]any{}
+	for i := 0; i+1 < len(attrs); i += 2 {
+		logged[attrs[i]] = attrs[i+1]
+	}
+	if logged["subject_kind"] != "identity" || logged["subject_name"] != "agent-a" || logged["pod"] != "sandbox-a" {
+		t.Fatalf("Identity caller log attributes = %v, want its kind, name and Pod", logged)
+	}
+	if _, ok := logged["namespace"]; ok {
+		t.Fatalf("Identity caller logged an account namespace: %v", logged)
+	}
+}
