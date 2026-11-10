@@ -382,6 +382,8 @@ struct Classifier<'a> {
     literals: &'a FxHashMap<Binding, FxHashMap<String, bool>>,
     /// Bindings that only ever hold one `Symbol(…)` or `Symbol.for(…)`.
     symbols: &'a FxHashSet<Binding>,
+    /// Bindings that only ever hold one array literal.
+    arrays: &'a FxHashSet<Binding>,
     /// Literals the statement reads a property of.
     pristine: Vec<Binding>,
     upgrades: &'a FxHashSet<Upgrade>,
@@ -425,6 +427,8 @@ pub struct DerivedCounts {
     pub lazy_modules: usize,
     /// Those of `lazy_modules` whose body is in this chunk.
     pub local_lazy_modules: usize,
+    /// Imports that only ever hold a primitive.
+    pub primitive_imports: usize,
 }
 
 #[derive(Default)]
@@ -1253,10 +1257,33 @@ impl Classifier<'_> {
             },
             Expr::Array(array) => {
                 for element in array.elems.iter().flatten() {
-                    if element.spread.is_some() {
+                    if element.spread.is_none() {
+                        self.pure(&element.expr)?;
+                        continue;
+                    }
+                    // Spreading an array literal no impure statement has
+                    // reached reads its elements through the intrinsic
+                    // array iterator.
+                    let spread = match &*element.expr {
+                        Expr::Ident(array)
+                            if self.upgrades.contains(&Upgrade::LiteralMemberReads) =>
+                        {
+                            self.bindings
+                                .get(&array.to_id())
+                                .copied()
+                                .filter(|binding| self.arrays.contains(binding))
+                        }
+                        _ => None,
+                    };
+                    let Some(spread) = spread else {
+                        return Err(ImpureCause::Conversion);
+                    };
+                    if !self.untouched(vec![("Array", &["@@iterator"])], None) {
                         return Err(ImpureCause::Conversion);
                     }
-                    self.pure(&element.expr)?;
+                    self.eager.push(spread);
+                    self.deep.push(spread);
+                    self.pristine.push(spread);
                 }
                 Ok(())
             }
@@ -1663,6 +1690,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut classes: FxHashSet<Binding> = FxHashSet::default();
     let mut literals: FxHashMap<Binding, FxHashMap<String, bool>> = FxHashMap::default();
     let mut symbols: FxHashSet<Binding> = FxHashSet::default();
+    let mut arrays: FxHashSet<Binding> = FxHashSet::default();
     for (source, declared) in sources.iter().zip(&declared_by_unit) {
         let [binding] = declared.as_slice() else {
             continue;
@@ -1701,6 +1729,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         match init {
             Some(Expr::Class(_)) => {
                 classes.insert(*binding);
+            }
+            Some(Expr::Array(_)) => {
+                arrays.insert(*binding);
             }
             // `Symbol('tag')`, `Symbol.for('tag')`.
             Some(Expr::Call(CallExpr {
@@ -1744,6 +1775,10 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             _ => {}
         }
     }
+    let mut derived_primitive_imports = 0;
+    let found = options
+        .derive
+        .then(|| crate::derive::derive(module, unresolved, options.program.as_ref()));
     let mut primitives: FxHashSet<Binding> = FxHashSet::default();
     if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
         // The initializer of each binding declared by one identifier
@@ -1769,6 +1804,18 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 candidates.push((*binding, declarator.init.as_deref()));
             }
         }
+        // An import that only ever holds a primitive, by its exporting
+        // chunk's declaration. Off an import cycle that chunk has run before
+        // this one starts, so the binding already holds its one value.
+        let settled = options
+            .program
+            .as_ref()
+            .is_some_and(|program| !program.on_import_cycle);
+        if let (Some(found), true) = (&found, settled) {
+            let imported = found.primitive_imports.iter();
+            primitives.extend(imported.filter_map(|id| bindings.get(id).copied()));
+            derived_primitive_imports = found.primitive_imports.len();
+        }
         loop {
             let before = primitives.len();
             for (binding, init) in &candidates {
@@ -1789,10 +1836,12 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut intrinsics_denied = 0;
     let mut premise_uses: std::collections::BTreeMap<PremiseKind, usize> = Default::default();
     let mut premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
-    let mut derived = DerivedCounts::default();
-    if options.derive {
+    let mut derived = DerivedCounts {
+        primitive_imports: derived_primitive_imports,
+        ..DerivedCounts::default()
+    };
+    if let Some(found) = &found {
         // An author premise on the same callee wins.
-        let found = crate::derive::derive(module, unresolved, options.program.as_ref());
         let binding = |id: &Id| bindings.get(id).copied();
         let mut callee = |id: &Id, kind: PremiseKind, count: &mut usize| {
             if let Some(binding) = binding(id) {
@@ -1903,6 +1952,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             classes: &classes,
             literals: &literals,
             symbols: &symbols,
+            arrays: &arrays,
             pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,

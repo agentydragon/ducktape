@@ -133,3 +133,15 @@ const base = { a: 1 }; Object.defineProperty(base, 'g', { enumerable: true, get(
 const o = { ...base };
 var later = 1;
 console.log(o.g);
+### commutes same: spreading array literals
+-
+const a = [1, 2]; const b = [3]; let state = 0;
+state = 1;
+const all = [...a, ...b, 4];
+console.log(state, all.join());
+### ordered differs: the spread array is changed between
+-
+const a = [1]; function grow() { a.push(2); }
+grow();
+const all = [...a];
+console.log(all.length);

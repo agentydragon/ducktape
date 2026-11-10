@@ -20,6 +20,9 @@ export function guard(check, next) { async function run(input) { if (await check
 export class Store { items = []; index = new Map(); constructor(name) { this.name = name; } }
 let made = 0;
 export class Counted { id = ++made; }
+export const PREFIX = 'app'; export const SIZE = 4 * 2;
+export let mutable = 1;
+export function setMutable(value) { mutable = value; }
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -153,3 +156,21 @@ import { Counted } from './dep.js';
 const a = new Counted();
 const b = new Counted();
 console.log(a.id, b.id);
+### commutes same: a template over an imported primitive, across an impure statement
+-
+import { PREFIX, SIZE } from './dep.js'; let state = 0;
+state = 1;
+const label = `${PREFIX}-button-${SIZE + 1}`;
+console.log(state, label);
+### commutes same: an imported primitive as a computed key
+-
+import { PREFIX } from './dep.js'; let state = 0;
+state = 1;
+const table = { [PREFIX]: 1 };
+console.log(state, table.app);
+### ordered differs: an imported binding its chunk assigns is no primitive
+-
+import { mutable, setMutable } from './dep.js';
+setMutable(5);
+const doubled = mutable * 2;
+console.log(doubled);

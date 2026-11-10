@@ -384,6 +384,14 @@ premises tier 0 refuses all 39.
   function or class written in place. A helper written
   differently is not recognized; the premise kinds `lazy_module`,
   `interop_namespace` and `allocator` state the same contracts by hand.
+- **Primitive imports.** An imported binding only ever holds a primitive
+  when its exporting chunk declares it once, never assigns it, and
+  initializes it with operators over literals and other such bindings. Off
+  an import cycle the exporting chunk has run before the importer starts, so
+  the binding already holds its one value: it joins the importer's
+  primitive-only bindings and needs no ordering. On a cycle, or without the
+  program, it stays a foreign read. A member of an imported object literal is
+  not covered: nothing shows the exporting chunk left the object as written.
 - **Members of a lazy module.** `ns.member` and `ns.default.member`, where
   `ns` is a lazy module's exports directly or through the interop helper, are
   resolved to the single top-level `exports.member = …` of the module body
@@ -490,7 +498,9 @@ Two rules ride on those upgrades and the first four:
   `Symbol(…)`, or an entry of a literal table written as a primitive (under
   the rule for property reads of literals).
 - `{ ...table }` copies data properties when `table` only ever holds one
-  plain object literal that no impure statement can have reached.
+  plain object literal that no impure statement can have reached, and
+  `[...list]` reads elements when `list` only ever holds one such array
+  literal and the census leaves `Array.prototype[Symbol.iterator]` alone.
 
 Conversions the corpus still has (19 statements in `main` and `editor`) are
 mostly not of that kind: tests of the host (`typeof document < "u"`,

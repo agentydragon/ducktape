@@ -547,6 +547,8 @@ struct Resolver<'a> {
     roles: FxHashMap<(usize, Id), Role>,
     /// Per allocator binding or class.
     facts: FxHashMap<(usize, Id), Facts>,
+    /// Per binding: whether it only ever holds a primitive.
+    primitive: FxHashMap<(usize, Id), bool>,
     /// Those of the body being classified.
     current: Facts,
     namer: String,
@@ -750,6 +752,77 @@ impl<'a> Resolver<'a> {
         match self.role(chunk, &callee_ident(callee)?.to_id()) {
             Role::Lazy(lazy) => Some(lazy),
             _ => None,
+        }
+    }
+
+    /// Whether the binding only ever holds a number, string, boolean,
+    /// `null` or `undefined`: declared once, never assigned, initialized by
+    /// operators over literals and other such bindings, in whichever chunk
+    /// declares it.
+    fn primitive_binding(&mut self, chunk: usize, id: &Id) -> bool {
+        let key = (chunk, id.clone());
+        if let Some(known) = self.primitive.get(&key) {
+            return *known;
+        }
+        // A binding defined through itself is not known to be one.
+        self.primitive.insert(key.clone(), false);
+        let primitive =
+            if let Some((specifier, export)) = self.chunks[chunk].imports.get(id).cloned() {
+                match self
+                    .provider(chunk, &specifier)
+                    .map(|provider| (provider, self.chunks[provider].exports.get(&export)))
+                {
+                    Some((provider, Some(Export::Local(local)))) => {
+                        let local = local.clone();
+                        self.primitive_binding(provider, &local)
+                    }
+                    _ => false,
+                }
+            } else {
+                match self.chunks[chunk].defs.get(id).copied() {
+                    Some(Def::Value(value)) => self.primitive_value(chunk, value),
+                    _ => false,
+                }
+            };
+        self.primitive.insert(key, primitive);
+        primitive
+    }
+
+    /// The rule of tier 0's `primitive`, over the bindings of any chunk.
+    fn primitive_value(&mut self, chunk: usize, expr: &Expr) -> bool {
+        match expr {
+            Expr::Paren(paren) => self.primitive_value(chunk, &paren.expr),
+            Expr::Lit(Lit::Num(_) | Lit::Str(_) | Lit::Bool(_) | Lit::Null(_)) => true,
+            Expr::Ident(ident) => {
+                ident.ctxt != self.chunks[chunk].unresolved
+                    && self.primitive_binding(chunk, &ident.to_id())
+            }
+            Expr::Tpl(template) => template
+                .exprs
+                .iter()
+                .all(|part| self.primitive_value(chunk, part)),
+            Expr::Unary(unary) => {
+                matches!(
+                    unary.op,
+                    UnaryOp::Minus
+                        | UnaryOp::Plus
+                        | UnaryOp::Bang
+                        | UnaryOp::Tilde
+                        | UnaryOp::Void
+                        | UnaryOp::TypeOf
+                ) && self.primitive_value(chunk, &unary.arg)
+            }
+            Expr::Bin(binary) => {
+                !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf)
+                    && self.primitive_value(chunk, &binary.left)
+                    && self.primitive_value(chunk, &binary.right)
+            }
+            Expr::Cond(cond) => {
+                self.primitive_value(chunk, &cond.test)
+                    && self.primitive_value(chunk, &cond.cons)
+                    && self.primitive_value(chunk, &cond.alt)
+            }
+            _ => false,
         }
     }
 
@@ -1506,6 +1579,10 @@ pub struct Derived {
     pub classes: Vec<(Id, Vec<Id>, Vec<&'static str>)>,
     /// Bindings holding the function-naming helper.
     pub namers: Vec<Id>,
+    /// Imported bindings that only ever hold a primitive: their exporting
+    /// chunk declares them once, never assigns them, and initializes them
+    /// with operators over literals and other such bindings.
+    pub primitive_imports: Vec<Id>,
     /// `binding.path` that is an allocator.
     pub members: Vec<(Id, String)>,
     /// Bindings holding a lazy module's thunk, and whether its body is in
@@ -1532,6 +1609,7 @@ pub fn derive(
         program,
         roles: FxHashMap::default(),
         facts: FxHashMap::default(),
+        primitive: FxHashMap::default(),
         current: Facts::default(),
         namer: canonical(NAMER),
         common_js: canonical(COMMON_JS),
@@ -1548,6 +1626,13 @@ pub fn derive(
     let mut uses = MemberUses::default();
     resolver.chunks[0].module.visit_with(&mut uses);
     let mut derived = Derived::default();
+    let mut imported: Vec<Id> = resolver.chunks[0].imports.keys().cloned().collect();
+    imported.sort();
+    for id in imported {
+        if resolver.primitive_binding(0, &id) {
+            derived.primitive_imports.push(id);
+        }
+    }
     for id in bindings {
         match resolver.role(0, &id) {
             Role::Allocator | Role::AllocatorClass => {
