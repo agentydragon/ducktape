@@ -3730,9 +3730,8 @@ node leaves with the last of them.
 **Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
 Kubernetes clients for state envtest can hold:
 
-Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
-`recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
-`sandboxes/sandboxreader/reader_test.go`.
+Go `clientfake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags, `recreateSandbox`),
+`notification_service/main_test.go`.
 
 One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
