@@ -325,7 +325,9 @@ for process in /proc/[0-9]*; do
   case "$args" in
     "/bin/codex exec-server --listen "*)
       pid="${process##*/}"
-      started=$(awk '{print $22}' "$process/stat")
+      set -- $(cat "$process/stat")
+      shift 21
+      started="$1"
       if [ "$mode" = kill ]; then kill -KILL "$pid"; fi
       printf '%s:%s\\n' "$pid" "$started"
       exit 0
