@@ -154,11 +154,7 @@ class RecordCache:
             return
         try:
             self.client.put_object(
-                Bucket=self.bucket,
-                Key=self.key,
-                Body=compressed,
-                ContentType="application/json",
-                ContentEncoding="deflate",
+                Bucket=self.bucket, Key=self.key, Body=compressed, ContentType="application/octet-stream"
             )
             logger.info("Saved %d output records to private cache", len(self.entries))
             self.dirty = False
