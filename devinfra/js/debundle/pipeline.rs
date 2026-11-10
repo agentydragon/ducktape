@@ -407,6 +407,76 @@ impl ContractAudit {
     }
 }
 
+/// One prepared input for `spec lint --probe-analysis`: each probe withholds
+/// one authored annotation from a copy of the spec and recomputes analysis,
+/// graph, gate and reconstruction on the same prepared input, writing its
+/// reports and full graphs under its own root for comparison.
+pub struct AnnotationProbe {
+    spec: TransformSpec,
+    prepared: PreparedTransform,
+}
+
+/// How one probe run ended.
+#[derive(Debug)]
+pub enum AnnotationProbeRun {
+    /// Final acceptance passed; reports are complete under the run's root.
+    Accepted,
+    /// The run failed (a gate rejection, an analysis or reconstruction error).
+    Rejected(anyhow::Error),
+    /// The probe itself could not run (an invalid edited spec, an I/O error).
+    Inconclusive(anyhow::Error),
+}
+
+impl AnnotationProbe {
+    pub fn prepare(cli: &TransformRequest, expected_spec: &TransformSpec) -> Result<Self> {
+        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec), None)?;
+        Ok(Self { spec, prepared })
+    }
+
+    /// The spec the input was prepared for; probes edit copies of it.
+    pub fn spec(&self) -> &TransformSpec {
+        &self.spec
+    }
+
+    /// Run `spec` on the prepared input with reports and full graphs under
+    /// `out_root`. Input changes since preparation abort the probe.
+    pub fn run(&self, spec: &TransformSpec, out_root: &Path) -> Result<AnnotationProbeRun> {
+        self.prepared
+            .provenance
+            .verify(&CurrentRoots::default())
+            .context("probe inputs changed after preparation")?;
+        if let Err(error) = validate_transform_spec(spec) {
+            return Ok(AnnotationProbeRun::Inconclusive(error));
+        }
+        let outcome = run_prepared_transform(
+            spec,
+            self.prepared.clone(),
+            TransformRunOptions {
+                output: RunOutput::Accepted,
+                artifacts: RunArtifacts::ReportsOnly {
+                    out_root: out_root.to_path_buf(),
+                },
+                graph_reports: GraphReportSelection::Full,
+                ..audit_options()
+            },
+            false,
+            AnalysisMode::Compute,
+            false,
+        );
+        self.prepared
+            .provenance
+            .verify(&CurrentRoots::default())
+            .context("probe inputs changed during a probe")?;
+        Ok(match outcome {
+            Ok(_) => AnnotationProbeRun::Accepted,
+            Err(error) if error.chain().any(|cause| cause.is::<std::io::Error>()) => {
+                AnnotationProbeRun::Inconclusive(error)
+            }
+            Err(error) => AnnotationProbeRun::Rejected(error),
+        })
+    }
+}
+
 /// Sink selection never changes the analyzed or materialized source scope.
 fn validate_report_chunk_selection(
     selector: &str,

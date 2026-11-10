@@ -221,20 +221,18 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
-- **F5 — Extend `spec lint` to the remaining premise kinds.** `spec lint`
-  (SPEC.md § Spec lint) reports unused `commuting_statements` entries and
-  redundant `admission_overrides` as `inferable`, and classifier-redundant
-  `purity: pure` hints as `inconclusive`. The other premises
-  (`host_behavior` keys, `native_operation_inputs`,
-  `native_call_identity_inputs`, `initializer_call_effect_inputs`,
-  `trusted_dataflow_summaries`, `deferred_global_publications`,
-  `program_premises`, `chunk_export_purity`) record uses only. Most are
-  analysis inputs, so withholding one changes the facts: an `inferable` verdict
-  needs the chunk's facts recomputed without it and the resulting graph
-  compared, which is not a probe against cached analysis. Design that probe
-  (incremental re-analysis per annotation, or a no-use proof that implies an
-  identical graph) before adding a kind; the same probe would promote purity
-  hints from `inconclusive`. Report what it cannot decide as `inconclusive`.
+- **F5 — Extend `spec lint --probe-analysis` to the remaining premise
+  kinds.** The probe (SPEC.md § Spec lint) withholds one annotation from an
+  in-memory spec copy and reruns the whole program on the prepared input;
+  `purity: pure` hints use it. Add, one kind per change: `host_behavior` keys,
+  `native_operation_inputs`, `native_call_identity_inputs`,
+  `initializer_call_effect_inputs`, `trusted_dataflow_summaries`,
+  `deferred_global_publications`, `program_premises`, `chunk_export_purity`.
+  Each needs its withholding edit and any report that names the annotation by
+  construction excluded from the comparison; anything else that differs means
+  the annotation is used. Cost is one full run per probe: rerun only affected
+  chunks, and run independent probes in parallel, once a measurement on a real
+  spec shows it matters.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was
