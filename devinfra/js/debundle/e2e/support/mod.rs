@@ -348,6 +348,51 @@ fn copy_generated_tree(source: &Path, destination: &Path) -> std::io::Result<()>
     Ok(())
 }
 
+/// What the authoritative gate decided for a fixture, and how its source and
+/// the entry emitted for that spec run under Node.
+pub struct GateOutcome {
+    pub accepted: bool,
+    pub source: CommandResult,
+    pub emitted: CommandResult,
+    /// The entry chunk's `candidate_relocation_assessment.json`.
+    pub assessment: Value,
+}
+
+/// `debundle run --emit-on-rejection` over a spec the gate may accept or
+/// refuse: any exit other than acceptance or the gate-only rejection panics.
+pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
+    let setup = prepare_fixture(&opts);
+    let result = spawn_transform_with_args(&setup.spec_path, &["--graphs", "--emit-on-rejection"]);
+    let accepted = match result.status.code() {
+        Some(0) => true,
+        Some(3) => false,
+        code => {
+            preserve_failed_fixture_reports(&setup, opts.chunk_id);
+            panic!(
+                "debundler exited {code:?}\nstdout:\n{}\nstderr:\n{}",
+                result.stdout, result.stderr
+            )
+        }
+    };
+    let app_root = setup.out_root.join(APP_DIR);
+    mirror_runtime_extra_files(&app_root, opts.extra_files, true);
+    GateOutcome {
+        accepted,
+        source: run_node_script(&setup.snapshot_root.join(format!("{}.js", opts.chunk_id))),
+        emitted: run_node_script(
+            &app_root
+                .join(path_from_module_path(opts.chunk_id))
+                .join("entry.js"),
+        ),
+        assessment: read_json(
+            &setup
+                .report_root
+                .join(opts.chunk_id)
+                .join("candidate_relocation_assessment.json"),
+        ),
+    }
+}
+
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
 /// `cycles.json` whose modules include every one of `modules`.
 pub fn expect_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) -> Value {

@@ -154,7 +154,8 @@ Probing accepted fixtures cannot find a hole no fixture exercises. The
 systematic check is a generated differential: enumerate provider state
 shapes, the paths an importer takes to their reader and writer, and both
 statement orders, and require that every split the gate accepts runs like
-its source under Node.
+its source under Node
+(`e2e/foreign_state_node_differential_sweep_test.rs`).
 
 ## Defects
 
