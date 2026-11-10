@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import logging
 import shutil
@@ -506,20 +507,33 @@ class _Run:
 
     async def run(self) -> Report:
         self.seed()
+        loop = asyncio.get_running_loop()
+        next_update = loop.time()
+        reporting = self.observer is not NULL_OBSERVER
         try:
             while self.queue:
                 for started in self.queue.start():
                     logger.info("Starting %s: %s", started.phase, jobs.describe(started))
-                self.observer.update(self.queue, waiting=self.waiting())
-                item, result = await self.queue.next()
+                if reporting and loop.time() >= next_update:
+                    self.observer.update(self.queue, waiting=self.waiting())
+                    next_update = loop.time() + 0.2
+                if reporting:
+                    try:
+                        async with asyncio.timeout(max(0, next_update - loop.time())):
+                            item, result = await self.queue.next()
+                    except TimeoutError:
+                        continue
+                else:
+                    item, result = await self.queue.next()
                 if isinstance(result, WorkFailure):
                     self._record_stopped(item, result)
                     raise result.error
                 logger.info("Finished %s: %s (%s)", item.phase, jobs.describe(item), result.outcome)
                 self.handle(result.value)
-                self.observer.update(self.queue, waiting=self.waiting())
             if self.waiting_branches or self.cache_waiting or self.cache_batch_active:
                 raise RuntimeError("work queue drained with unresolved dependencies")
+            if reporting:
+                self.observer.update(self.queue, waiting=self.waiting())
         except BaseException as error:
             for item in self.queue.stop():
                 if isinstance(item, jobs.EmptyCacheTrash):
@@ -527,7 +541,8 @@ class _Run:
             git_repo.interrupt_running_git()
             for stopped_item, stopped_result in await self.queue.drain():
                 self._record_stopped(stopped_item, stopped_result)
-            self.observer.update(self.queue, waiting=self.waiting())
+            if reporting:
+                self.observer.update(self.queue, waiting=self.waiting())
             if isinstance(error, Exception):
                 raise QueueError(error, self.report()) from error
             raise QueueInterrupted(self.report()) from error
