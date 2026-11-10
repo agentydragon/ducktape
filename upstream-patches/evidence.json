@@ -11,8 +11,8 @@
       "status": "Released",
       "priority": "High",
       "impact": "Dead staging mounts can leave workloads stuck until manual cleanup.",
-      "upstream": "PR #325 adds bounded statfs probing and safe detach; present in v1.4.35 and newer. Ducktape declares v1.4.30.",
-      "next_step": "Upgrade and exercise dead-mount recovery before closing the issue.",
+      "upstream": "PR #325 adds bounded statfs probing and safe detach; present in v1.4.35 and newer. On November 10, Ducktape deployed v1.4.38 to the controller and all six node drivers; six OnDelete mount pods still run v1.4.29 or v1.4.30.",
+      "next_step": "Complete the mount rollout safely and verify dead-mount and consumer recovery. Review for recurrence at least one month after the full rollout before closing the issue.",
       "links": [
         {
           "label": "Our issue",
@@ -23,8 +23,8 @@
           "url": "https://github.com/seaweedfs/seaweedfs-csi-driver/pull/325"
         },
         {
-          "label": "Declared pin",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/cluster/cdk8s/seaweedfs_csi.py"
+          "label": "CSI upgrade",
+          "url": "https://github.com/agentydragon/ducktape/pull/15303"
         }
       ]
     },
@@ -36,8 +36,8 @@
       "status": "Released",
       "priority": "High",
       "impact": "Restarting the leader after followers restored snapshots caused a leader outage.",
-      "upstream": "Raft PR #16 is included from SeaweedFS 4.49. Declared server 4.52 includes the fix; /cluster/status can still return 200 without a leader.",
-      "next_step": "Verify the rollout and election scenario; assess readiness separately.",
+      "upstream": "Raft PR #16 is included from SeaweedFS 4.49. Ducktape deployed 4.53 on November 10; /cluster/status can still return 200 without a leader.",
+      "next_step": "Verify the snapshot-election scenario and readiness separately; review recurrence after one month. The 4.53 rollout replaced all six volume servers concurrently.",
       "links": [
         {
           "label": "Our issue",
@@ -48,8 +48,8 @@
           "url": "https://github.com/seaweedfs/raft/pull/16"
         },
         {
-          "label": "Server declaration",
-          "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/cluster/cdk8s/seaweedfs/cluster.py"
+          "label": "Server upgrade",
+          "url": "https://github.com/agentydragon/ducktape/pull/15308"
         }
       ]
     },
@@ -183,7 +183,7 @@
       "priority": "High",
       "impact": "Finalization clears a channel while its worker can still read it.",
       "upstream": "Issue #7064 was closed after upstream changed the worker to capture the channel and writer. v8.0.62 contains the changed code; the original PR #7068 closed unmerged after an equivalent change landed.",
-      "next_step": "Run the race-enabled test on the release and remove our patch only after our pinned source includes the fix.",
+      "next_step": "The v8.0.63 upgrade PR removes our patch; confirm race-enabled tests, finish CI and merge before treating the local fix as retired.",
       "links": [
         {
           "label": "Our patch",
@@ -204,6 +204,10 @@
         {
           "label": "Upstream fix history",
           "url": "https://github.com/router-for-me/CLIProxyAPI/pull/7068"
+        },
+        {
+          "label": "Upgrade PR",
+          "url": "https://github.com/agentydragon/ducktape/pull/15291"
         }
       ]
     },
@@ -449,7 +453,7 @@
       "priority": "Medium",
       "impact": "Our controller image and CRD are built from a fork to consume per-module artifacts.",
       "upstream": "Our PR #1901 merged on 28 October; the latest stable release checked predates it.",
-      "next_step": "Wait for a containing release, then validate the image and CRD before switching.",
+      "next_step": "Review the open PR to build from the upstream commit, then switch to an upstream release once one containing the change is available and validated.",
       "links": [
         {
           "label": "Upstream PR",
@@ -458,6 +462,10 @@
         {
           "label": "Local package",
           "url": "https://github.com/agentydragon/ducktape/blob/5720cbd391b4d02dd84d98c75c9e73801d6d3059/third_party/tofu_controller/README.md"
+        },
+        {
+          "label": "Upstream-source PR",
+          "url": "https://github.com/agentydragon/ducktape/pull/15294"
         }
       ]
     },
@@ -553,7 +561,7 @@
       "priority": "Medium",
       "impact": "Older Gazelle parser warns on PEP 758 and PEP 696 syntax.",
       "upstream": "The parser migration is in 2.5.0 release candidates; PEP 696 remains an open grammar issue.",
-      "next_step": "Adopt a stable release and verify warnings; track PEP 696 independently.",
+      "next_step": "Review the RC trial PR: Gazelle generated no BUILD drift and warnings fell from 24 to one. Track the remaining PEP 696 issue and adopt the stable release when available.",
       "links": [
         {
           "label": "Our issue",
@@ -566,6 +574,10 @@
         {
           "label": "PEP 696",
           "url": "https://github.com/tree-sitter/tree-sitter-python/issues/346"
+        },
+        {
+          "label": "RC trial PR",
+          "url": "https://github.com/agentydragon/ducktape/pull/15300"
         }
       ]
     },
