@@ -86,27 +86,6 @@ class GitstatusdService:
         self._clear_watchers()
 
 
-class DiscoveryService:
-    def __init__(
-        self,
-        is_scanning: Callable[[], bool],
-        periodic: Callable[[], Awaitable[object]] | None = None,
-        cancel_periodic: Callable[[], None] | None = None,
-    ) -> None:
-        self._periodic = periodic
-        self._cancel = cancel_periodic
-        # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
-        self.is_scanning = is_scanning
-
-    async def start(self) -> None:
-        if self._periodic:
-            await self._periodic()
-
-    async def stop(self) -> None:
-        if self._cancel:
-            self._cancel()
-
-
 async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:
     """Discover worktrees under a directory.
 

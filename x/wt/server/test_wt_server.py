@@ -89,5 +89,21 @@ async def test_failed_initial_discovery_fails_the_startup_handshake(real_config,
     assert "scan refused" in handshakes[-1]["error_message"]
 
 
+async def test_stop_cancels_periodic_discovery(real_config):
+    daemon = WtDaemon(real_config)
+    started = asyncio.Event()
+
+    async def pending_discovery():
+        started.set()
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(pending_discovery())
+    daemon.discovery_task = task
+    await started.wait()
+    await daemon.stop()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

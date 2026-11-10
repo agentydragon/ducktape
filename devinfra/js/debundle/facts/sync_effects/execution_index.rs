@@ -36,6 +36,7 @@ use crate::facts::at_init_fallback::{
 use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
+use crate::facts::collector::UnresolvedCallSourceCollector;
 use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
@@ -631,8 +632,14 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 }
 
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
+    let mut heritage_inputs = UnresolvedCallSourceCollector::default();
+    if let Some(heritage) = class.super_class.as_deref() {
+        heritage.visit_with(&mut heritage_inputs);
+    }
     let mut facts = ClassValueFacts {
         super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
+        super_class_inputs: heritage_inputs.idents,
+        super_class_inputs_incomplete: heritage_inputs.inline_fn,
         lexical_heritage: class
             .super_class
             .as_deref()

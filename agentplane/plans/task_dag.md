@@ -3654,7 +3654,6 @@ service-to-service TokenReview (operator, 2026-11-10); that is not dead and is n
 ```mermaid
 flowchart LR
     REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit]
-    FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
     TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
@@ -3724,16 +3723,6 @@ code as it is, without cutover narration; no compatibility branch, optional-with
 showing exactly the deployed services and the traffic between them in `cluster/cdk8s/agentplane`.
 Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
 node leaves with the last of them.
-
-#### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
-
-**Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
-Kubernetes clients for state envtest can hold:
-
-Go `clientfake` or `kubernetes/fake`: `runner_gateway/gateway/records_test.go`,
-`sandboxes/sandboxreader/reader_test.go` (both in #15563).
-
-One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 

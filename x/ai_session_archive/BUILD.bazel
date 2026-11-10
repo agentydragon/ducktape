@@ -5,6 +5,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "models",
@@ -303,6 +304,7 @@ py_test(
     name = "test_initial_import",
     srcs = ["test_initial_import.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -557,6 +559,7 @@ py_test(
     name = "test_codex_title_rename",
     srcs = ["test_codex_title_rename.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":codex_titles_testing",
@@ -593,6 +596,7 @@ py_test(
     name = "test_codex_title_retry",
     srcs = ["test_codex_title_retry.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":codex_titles_testing",
@@ -634,6 +638,7 @@ py_test(
     name = "test_claude_title_projection",
     srcs = ["test_claude_title_projection.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
