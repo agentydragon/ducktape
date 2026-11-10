@@ -83,9 +83,15 @@ Left of the callback family:
 - **Invoking a retained result.** `wrapped()` runs a provider closure, which
   is an unsummarized provider body: it needs the provider program registry
   above, and then the retained callback's own receipt at that call.
-- **Factories without a derived summary** (author-asserted callback
-  factories, namespace-member factories, factories called with anything but
-  one inline function) keep the flattened lane's callback-factory arms.
+- **Factories the ordered lane does not substitute**: author-asserted
+  callback factories, namespace-member factories, factories whose body reads a
+  provider cell, and factories called with anything but one inline function
+  keep the flattened lane's callback-factory arms.
+- **Sealing a summarized root.** A summarized call has no lexical receipt, so
+  a root with one stays a committed ordered root with an unsealed ledger
+  (`OrderedRootInitializerUncovered`). Moving these roots to
+  `attempted_initializer` needs an imported-callable identity in the lexical
+  receipt (the reference head's `LocalBodyIdentity::ImportedCallable`).
 
 The flat lane `invoke_with_cells` still takes bodies with an ordered plan
 behind four gates; its `CLEANUP` in `interpreter.rs` names the kernel rule each

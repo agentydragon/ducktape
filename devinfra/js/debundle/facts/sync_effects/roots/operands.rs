@@ -10,9 +10,10 @@ use super::super::interpreter::{
 };
 use super::super::local_operations::LocalBody;
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use super::super::value_model::{Context, ValueExpr};
+use super::super::value_model::{AbstractValue, Context, MemberKey, ValueExpr, Values};
 use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKind};
 use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
@@ -41,9 +42,9 @@ pub(super) struct RootOperands<'source> {
     /// Roots this owner added while no opaque call consumed them; a fully
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
-    /// The owner's result is a callback factory's private carrier: its
-    /// callback is reached only through the result binding, so the owner is
-    /// no reachability root of its own.
+    /// The owner's one call is a substituted retaining factory whose result
+    /// is its private carrier: the callback is reached only through the
+    /// result binding, so the owner is no reachability root of its own.
     pub(super) private_factory_result: bool,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
     /// An initializer the body phase runs through the kernel and keeps as
@@ -239,7 +240,10 @@ pub(super) fn prepare<'source>(
         &private_constructor_result_owners,
         closed_result.as_ref(),
     );
-    let private_factory_result = closed_result.is_some();
+    // The proof is the flattened lane's; the ordered lane relies on it only
+    // for the call it substitutes.
+    let private_factory_result = closed_result.is_some()
+        && matches!(calls.as_slice(), [call] if executor.retaining_factory_summary(call).is_some());
     if let Some(proof) = closed_result {
         executor.record_callback_factory_use_fact(proof.proof_use);
     }
@@ -490,4 +494,62 @@ fn ordered_effect_source<'source>(
     source
         .matches(owner, binding, span)
         .then_some((source, binding, span))
+}
+
+impl Executor<'_, '_> {
+    /// Native and imported calls whose proofs still project source operands
+    /// retain their established whole-owner path. This chooses a source
+    /// family before execution; the ordered call transfer still checks each
+    /// actual target and never retries a failed invocation.
+    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+        calls
+            .iter()
+            .filter(|call| call.kind == CallKind::Call)
+            .all(|call| self.ordered_root_call_is_local(call))
+    }
+
+    fn ordered_root_call_is_local(&self, call: &Call) -> bool {
+        let (targets, member) = match &call.callee {
+            ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
+                Some(Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Function,
+                    *key,
+                ))])),
+                false,
+            ),
+            ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
+                self.state.world.module.prefix_values.get(binding).cloned(),
+                false,
+            ),
+            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
+                let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+                    return false;
+                };
+                if !self.initialized_local_binding(receiver) {
+                    return false;
+                }
+                let targets = self
+                    .state
+                    .world
+                    .module
+                    .prefix_values
+                    .get(receiver)
+                    .and_then(|values| {
+                        self.present_own_data_read(values, property)
+                            .map(|read| read.values)
+                    });
+                (targets, true)
+            }
+            _ => return false,
+        };
+        let Some(targets) = targets else {
+            return false;
+        };
+        let Some((key, callable)) = self.local_call_target(&targets) else {
+            return false;
+        };
+        !callable.generator
+            && !self.inputs.index.async_callables.contains(&key)
+            && (!member || self.method_receiver_is_unused(&targets))
+    }
 }

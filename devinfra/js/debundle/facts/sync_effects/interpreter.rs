@@ -9399,62 +9399,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             )
     }
 
-    /// Native and imported calls whose proofs still project source operands
-    /// retain their established whole-owner path. This chooses a source
-    /// family before execution; the ordered call transfer still checks each
-    /// actual target and never retries a failed invocation.
-    pub(super) fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
-        calls
-            .iter()
-            .filter(|call| call.kind == CallKind::Call)
-            .all(|call| self.ordered_root_call_is_local(call))
-    }
-
-    pub(super) fn ordered_root_call_is_local(&self, call: &Call) -> bool {
-        let (targets, member) = match &call.callee {
-            ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
-                Some(Values::from([AbstractValue::Value(Value::Alloc(
-                    Kind::Function,
-                    *key,
-                ))])),
-                false,
-            ),
-            ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
-                self.state.world.module.prefix_values.get(binding).cloned(),
-                false,
-            ),
-            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
-                let ValueExpr::Binding(receiver) = receiver.as_ref() else {
-                    return false;
-                };
-                if !self.initialized_local_binding(receiver) {
-                    return false;
-                }
-                let targets = self
-                    .state
-                    .world
-                    .module
-                    .prefix_values
-                    .get(receiver)
-                    .and_then(|values| {
-                        self.present_own_data_read(values, property)
-                            .map(|read| read.values)
-                    });
-                (targets, true)
-            }
-            _ => return false,
-        };
-        let Some(targets) = targets else {
-            return false;
-        };
-        let Some((key, callable)) = self.local_call_target(&targets) else {
-            return false;
-        };
-        !callable.generator
-            && !self.inputs.index.async_callables.contains(&key)
-            && (!member || self.method_receiver_is_unused(&targets))
-    }
-
     pub(super) fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
         if self.inputs.index.callback_factory_imports.contains(id) {
             return Values::from([AbstractValue::CallbackFactory]);
@@ -10306,8 +10250,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         //   (`Unproved::CaptureStore` summarizes the remainder today).
         // - free reads outside module, summarized-import, imported-primitive
         //   and intact-native bindings: global-object reads, and reads of a
-        //   callback-factory import that has no derived summary, with their
-        //   global-cell provenance.
+        //   callback-factory import the ordered lane does not substitute,
+        //   with their global-cell provenance.
         // - `established_writes`: member-write proofs (fresh local records,
         //   borrowed parameters, array iteration) in the kernel's own-data
         //   store.
@@ -10650,7 +10594,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         transfer_complete
     }
 
-    fn method_receiver_is_unused(&self, targets: &Values) -> bool {
+    pub(super) fn method_receiver_is_unused(&self, targets: &Values) -> bool {
         self.inputs.index.dynamic_scope_owners.is_empty()
             && !targets.is_empty()
             && targets.iter().all(|target| {

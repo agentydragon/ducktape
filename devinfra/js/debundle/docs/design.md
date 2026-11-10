@@ -4012,8 +4012,9 @@ an unknown call in the importer.
 **A callback handed to a summarized call is a deferred effect.** The summary
 proves the provider body invokes no argument and writes only its own
 allocations, so the call's receipt covers creating and retaining the callback
-and nothing the callback does. A callback-factory import with a derived
-summary is substituted on the ordered lane
+and nothing the callback does. A callback-factory import with
+source-inferred evidence and a derived summary that reads no provider cell is
+substituted on the ordered lane
 (`roots/call_operands.rs`, `retaining_factory_result`): its result is the
 audited carrier of the callback, and a later call, read or publication of the
 result reaches the callback through that carrier with no receipt of its own.

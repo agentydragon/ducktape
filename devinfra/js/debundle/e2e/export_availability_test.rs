@@ -47,7 +47,8 @@ fn isolated_initializer_and_export_alias_are_available_after_splitting() {
 
 /// Valid splits waiting on the provider-initialization proof: each provider
 /// binding is initialized before the importer calls it, but its initializer
-/// is not a proved-available hoisted or isolated export.
+/// is not a proved-available hoisted or isolated export. The effect verdict
+/// accepts the order; the legacy gate's ordering veto refuses it.
 #[test]
 fn unproved_provider_initializers_stay_pending() {
     for provider in [
@@ -65,6 +66,7 @@ fn unproved_provider_initializers_stay_pending() {
                     "export const factory = callback => ({ invoke: callback });",
                 ),
             ]),
+            "accepted_within_checked_scope",
             "42\n",
         );
     }
@@ -83,6 +85,7 @@ fn namespace_import_of_a_factory_stays_pending() {
         )
         .with_extra_chunks(&[("static/peer", "export const factory = callback => ({ invoke: callback });")])
         .with_unassigned_mode(unassigned_mode_inline()),
+        "accepted_within_checked_scope",
         "42\n",
     );
 }

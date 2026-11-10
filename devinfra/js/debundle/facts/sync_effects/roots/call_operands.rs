@@ -36,7 +36,10 @@ impl Executor<'_, '_> {
             && !call.has_spread
             && matches!(call.args.as_slice(), [ValueExpr::Alloc(Kind::Function, _)])
             && summary.invocation == ForeignInvocation::Call
-            && summary.returns == BTreeSet::from([ForeignReturn::FreshAllocation]))
+            && summary.returns == BTreeSet::from([ForeignReturn::FreshAllocation])
+            // The summary proves nothing about the writers of a provider
+            // cell its body reads, so such a call keeps the flattened lane.
+            && summary.provider_cell_reads.is_empty())
         .then_some(summary)
     }
 

@@ -6160,9 +6160,9 @@ pub(super) struct ExecutionIndex {
     /// callback. Lowered values cannot establish this source prerequisite.
     pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
     pub(super) foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
-    /// The derived summary of an import that also carries callback-factory
-    /// evidence. The evidence keeps the call's timing and result consumers;
-    /// the summary is the receipt for the provider body's effects.
+    /// The derived summary of an import whose callback-factory evidence is
+    /// all source-inferred. The evidence keeps the call's timing and result
+    /// consumers; the summary is the receipt for the provider body's effects.
     pub(super) callback_factory_call_summaries:
         BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
     pub(super) inline_callback_factory_imports: BTreeSet<Id>,
@@ -9594,9 +9594,18 @@ impl ExecutionIndex {
                             .names_imported_callable(local.sym.as_ref())
                     {
                         if summary.supports_callback_factory() {
-                            index
-                                .callback_factory_call_summaries
-                                .insert(local.to_id(), call.clone());
+                            // An author-asserted factory keeps its contract's
+                            // consumers alone.
+                            if summary.callback_factory_evidence().iter().all(|evidence| {
+                                matches!(
+                                    evidence,
+                                    crate::analysis_inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
+                                )
+                            }) {
+                                index
+                                    .callback_factory_call_summaries
+                                    .insert(local.to_id(), call.clone());
+                            }
                         } else {
                             index
                                 .foreign_call_imports

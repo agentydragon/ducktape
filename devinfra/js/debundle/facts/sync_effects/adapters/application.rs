@@ -281,12 +281,7 @@ impl LocalExecutionContext<'_, '_, '_> {
             return None;
         }
         self.substituted_summary(call.kind, &call.callee)
-            .or_else(|| {
-                self.executor
-                    .retaining_factory_summary(call)
-                    .filter(|summary| summary.provider_cell_reads.is_empty())
-                    .cloned()
-            })
+            .or_else(|| self.executor.retaining_factory_summary(call).cloned())
     }
 
     /// The kernel evaluated `new`'s callee and arguments in order. A checked

@@ -3379,12 +3379,14 @@ of imported bindings that have a published summary, and uses the ordered plan
 too: each imported call is replaced by its summary, and under the summary's
 premises the effect verdict treats the call as touching no global property,
 heap, host or importer lexical cell. A summarized body invokes no argument, so
-a callback passed to it is only created at the call. An import that also
-carries callback-factory evidence is replaced the same way when it is called
-with one inline function and its summary returns only a fresh allocation: the
-evidence keeps the call's timing and result consumers, the result retains the
-callback, and every later use of the result still reaches it. A summary whose
-body reads a private provider cell carries no such receipt. A callback that
+a callback passed to it is only created at the call. An import whose
+callback-factory evidence is source-inferred is replaced the same way when it
+is called with one inline function, its summary returns only a fresh allocation
+and its body reads no private provider cell: the evidence keeps the call's
+timing and result consumers, the result retains the callback, and every later
+use of the result still reaches it. An author-asserted factory keeps its
+contract's consumers alone. A summary whose body reads a private provider cell
+carries no such receipt. A callback that
 captures a live cell of the activation creating it leaves the receiving call
 without a receipt (`callback_captures_live_cell`). The summary is not a
 receipt for the root's lexical binding effects.

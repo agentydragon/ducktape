@@ -304,28 +304,6 @@ per product:
   Canonical guards (`typeof X<"u"&&…`) show up in Claude Web and Tana
   Desktop examples.
 
-## Rerun after Wave 3 slice 3 PR 2 (2026-11-10)
-
-`debundle_node_parity/` records only (one per fixture run), branch against
-its `devel` base `3cb00014f2`; the pattern-rule scripts were not available,
-so the per-owner counts above are not recomputed.
-
-| Class                                 | Base | Branch |
-| ------------------------------------- | ---: | -----: |
-| Both accept                           | 1492 |   1512 |
-| Legacy accepts, effect `incomplete`   |  392 |    396 |
-| Both refuse                           | 1194 |   1191 |
-| Legacy-accepted with divergent output |   25 |     26 |
-
-Existing fixtures: two `imported_callback_timing_test` runs moved from
-`incomplete` to accepted, and three `initializer_call_effect_input_test` runs
-from both-refuse to legacy-accepted with an `incomplete` effect verdict (same
-Node output as the source). Nothing moved toward refusal. The rest of the
-difference is the new `provider_summary_effect_test` cases; the added
-divergent run is its provider-cell control. Most S3 havoc is untouched: it is
-namespace-member and author-asserted factories, which have no derived
-summary, and invocations of a retained result.
-
 ## Re-running
 
 The scripts are heuristic one-offs, kept outside the repository at

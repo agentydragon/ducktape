@@ -13,14 +13,16 @@ export function next() { return ++count; }\n\
 export function peek() { return count; }\n";
 
 /// Stateless providers that take a callback. `defer` and `hold` retain it in
-/// their fresh result and `run` invokes it; `counted` also reads a provider
-/// cell.
+/// their fresh result, `lazy` behind an accessor, and `run` invokes it.
 const CALLBACK_PEER: &str = "export function literal() { return 3; }\n\
 export function make(input) { return { input }; }\n\
 export function defer(callback) { return () => callback(); }\n\
 export function hold(callback) { return { run() { return callback(); } }; }\n\
-export function run(callback) { return callback(); }\n\
-let count = 0;\n\
+export function lazy(callback) { return { get value() { return callback(); } }; }\n\
+export function run(callback) { return callback(); }\n";
+
+/// A retaining factory that also reads the provider cell `next` writes.
+const COUNTING_PEER: &str = "let count = 0;\n\
 export function next() { return ++count; }\n\
 export function counted(callback) { const id = count; return () => id + callback(); }\n";
 
@@ -28,12 +30,19 @@ export function counted(callback) { const id = count; return () => id + callback
 /// static imports run first: `second` is evaluated before every earlier
 /// statement of the source.
 fn second_first<'a>(source: &'a str, peers: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
-    FixtureOpts::new(
-        source,
-        vec![logical_module("second", &[Member::new("second")])],
-    )
-    .with_extra_chunks(peers)
-    .with_unassigned_mode(unassigned_mode_inline())
+    moved_first(source, peers, &["second"])
+}
+
+/// As `second_first`, moving every binding in `moved`.
+fn moved_first<'a>(
+    source: &'a str,
+    peers: &'a [(&'a str, &'a str)],
+    moved: &[&'static str],
+) -> FixtureOpts<'a> {
+    let members: Vec<_> = moved.iter().map(|binding| Member::new(binding)).collect();
+    FixtureOpts::new(source, vec![logical_module("second", &members)])
+        .with_extra_chunks(peers)
+        .with_unassigned_mode(unassigned_mode_inline())
 }
 
 #[test]
@@ -151,10 +160,17 @@ fn assert_relocations(peer: &str, cases: &[(&str, &str, &str)]) {
     }
 }
 
-/// Both gates refuse the reordering, and the program emitted anyway prints
-/// `diverged` where the source prints `preserved`.
-fn assert_refused_divergence(opts: FixtureOpts<'_>, source: &str, preserved: &str, diverged: &str) {
-    let peers = [("static/peer", CALLBACK_PEER)];
+/// Both gates refuse the reordering with the effect status `refusal`, and the
+/// program emitted anyway prints `diverged` where the source prints
+/// `preserved`.
+fn assert_refused_divergence(
+    peer: &str,
+    source: &str,
+    moved: &[&'static str],
+    refusal: &str,
+    (preserved, diverged): (&str, &str),
+) {
+    let peers = [("static/peer", peer)];
     let colocated = run_fixture(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&peers)
@@ -162,7 +178,7 @@ fn assert_refused_divergence(opts: FixtureOpts<'_>, source: &str, preserved: &st
     );
     assert_preserved_entry_output(&colocated, preserved);
 
-    let reordered = run_emit_on_rejection_fixture(opts);
+    let reordered = run_emit_on_rejection_fixture(moved_first(source, &peers, moved));
     assert_node_output(&reordered.entry_path(), diverged, "");
     let assessment = reordered.candidate_relocation_assessment();
     assert!(
@@ -170,7 +186,7 @@ fn assert_refused_divergence(opts: FixtureOpts<'_>, source: &str, preserved: &st
         "{assessment:#}"
     );
     assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
-    assert_eq!(assessment["status"], "blocked_by_effect", "{assessment:#}");
+    assert_eq!(assessment["status"], refusal, "{assessment:#}");
 }
 
 /// A root that mixes local calls with summarized imported calls runs on the
@@ -205,13 +221,29 @@ fn roots_mixing_local_and_summarized_calls_relocate() {
     );
 }
 
-/// The local call of each mixed root writes the global property the other
-/// root's summarized call takes as its argument.
+/// The local call of each mixed root writes the global property that the
+/// other root's summarized call takes as its argument: through the local
+/// call's result, or read back as the next operand of the same root.
 #[test]
 fn mixed_root_whose_local_call_writes_the_other_roots_argument_is_refused_and_diverges() {
-    let peers = [("static/peer", CALLBACK_PEER)];
-    let source = "import { make } from './peer.js';\nfunction bump() { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; }\nconst first = make(bump());\nconst second = make(bump());\nconsole.log(first.input, second.input);\n";
-    assert_refused_divergence(second_first(source, &peers), source, "1 2\n", "2 1\n");
+    for (source, outputs) in [
+        (
+            "import { make } from './peer.js';\nfunction bump() { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; }\nconst first = make(bump());\nconst second = make(bump());\nconsole.log(first.input, second.input);\n",
+            ("1 2\n", "2 1\n"),
+        ),
+        (
+            "import { make } from './peer.js';\nfunction bump() { globalThis.n = (globalThis.n ?? 0) + 1; return 0; }\nconst first = [bump(), make(globalThis.n)];\nconst second = [bump(), make(globalThis.n)];\nconsole.log(first[1].input, second[1].input);\n",
+            ("1 2\n", "2 1\n"),
+        ),
+    ] {
+        assert_refused_divergence(
+            CALLBACK_PEER,
+            source,
+            &["second"],
+            "blocked_by_effect",
+            outputs,
+        );
+    }
 }
 
 /// A summarized provider body invokes no argument, so a callback it receives
@@ -250,13 +282,13 @@ fn callbacks_passed_to_summarized_imports_relocate() {
 /// the global property the moved statement reads happens at the call.
 #[test]
 fn callback_invoked_by_the_provider_is_refused_and_diverges() {
-    let peers = [("static/peer", CALLBACK_PEER)];
     let source = "import { run } from './peer.js';\nglobalThis.n = 1;\nconst first = run(() => { globalThis.n = 2; return 0; });\nconst second = globalThis.n;\nconsole.log(first, second);\n";
     assert_refused_divergence(
-        second_first(source, &peers),
+        CALLBACK_PEER,
         source,
-        "0 2\n",
-        "0 undefined\n",
+        &["second"],
+        "blocked_by_effect",
+        ("0 2\n", "0 undefined\n"),
     );
 }
 
@@ -307,46 +339,46 @@ fn retaining_factory_calls_relocate() {
     );
 }
 
-/// The factory call's receipt covers the creation only. Each invocation of
-/// the result runs the retained callback, so moving the second invocation
-/// (with the creation) ahead of the first hands out the counter values the
-/// other way round.
+/// The factory call's receipt covers the creation only. Each use of the
+/// result that runs the retained callback (a call, or a read of the accessor
+/// that holds it) is its own effect, so moving the second use (with the
+/// creation) ahead of the first hands out the counter values the other way
+/// round.
 #[test]
 fn retained_callback_invoked_after_the_swap_point_is_refused_and_diverges() {
-    let peers = [("static/peer", CALLBACK_PEER)];
-    let source = "import { defer } from './peer.js';\nconst bump = defer(() => { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; });\nconst first = bump();\nconst second = bump();\nconsole.log(first, second);\n";
-    assert_refused_divergence(
-        FixtureOpts::new(
+    for (source, refusal) in [
+        (
+            "import { defer } from './peer.js';\nconst bump = defer(() => { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; });\nconst first = bump();\nconst second = bump();\nconsole.log(first, second);\n",
+            "blocked_by_effect",
+        ),
+        (
+            "import { lazy } from './peer.js';\nconst bump = lazy(() => { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; });\nconst first = bump.value;\nconst second = bump.value;\nconsole.log(first, second);\n",
+            "incomplete",
+        ),
+    ] {
+        assert_refused_divergence(
+            CALLBACK_PEER,
             source,
-            vec![logical_module(
-                "second",
-                &[Member::new("bump"), Member::new("second")],
-            )],
-        )
-        .with_extra_chunks(&peers)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        source,
-        "1 2\n",
-        "2 1\n",
-    );
+            &["bump", "second"],
+            refusal,
+            ("1 2\n", "2 1\n"),
+        );
+    }
 }
 
 /// `counted` retains its callback but also reads the provider cell `next`
-/// writes, so its summary is no receipt: both gates refuse, and the emitted
-/// order reads the counter before the increment (the source prints `1 1`).
+/// writes, so the call is not substituted and has no receipt: the emitted
+/// order reads the counter before the increment.
 #[test]
-fn retaining_factory_reading_a_provider_cell_has_no_effect_receipt() {
-    let peers = [("static/peer", CALLBACK_PEER)];
+fn retaining_factory_reading_a_provider_cell_is_refused_and_diverges() {
     let source = "import { counted, next } from './peer.js';\nconst first = next();\nconst second = counted(() => 0);\nconsole.log(first, second());\n";
-    let reordered = run_emit_on_rejection_fixture(second_first(source, &peers));
-    assert_node_output(&reordered.entry_path(), "1 0\n", "");
-    let assessment = reordered.candidate_relocation_assessment();
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
+    assert_refused_divergence(
+        COUNTING_PEER,
+        source,
+        &["second"],
+        "incomplete",
+        ("1 1\n", "1 0\n"),
     );
-    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
-    assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
 }
 
 /// Valid relocations waiting on call-effect coverage for callees with live
