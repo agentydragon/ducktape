@@ -1203,8 +1203,9 @@ pub enum BuiltinGlobalRoot {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum AdmissionCheck {
-    /// A1: no direct `eval(...)` at any depth, and no `(0, eval)(...)` at
-    /// module top level.
+    /// A1: no `eval(...)` / `(0, eval)(...)` at module top level, and no
+    /// direct `eval(...)` in a chunk the assignment splits, reorders or
+    /// renames.
     A1Eval,
     /// A3: no dynamic `import()` of a debundled internal module
     /// (same-chunk literal target, or non-literal specifier at

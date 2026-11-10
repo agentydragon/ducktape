@@ -2285,10 +2285,14 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   effect summary would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
   `chunk_analysis::compute_chunk_facts` next to the A2 bail)
-  rejects a direct `eval(...)` call at any depth, and a seq-indirect
-  `(0, eval)(...)` call at module top level (looking through parens
-  and comma sequences to the callee), with the offending statement
-  ordinal in the diagnostic. An indirect `eval`, `Function(...)` or
+  rejects a direct `eval(...)` at module top level and a seq-indirect
+  `(0, eval)(...)` call there (looking through parens and comma
+  sequences to the callee), with the offending statement ordinal in
+  the diagnostic. A direct `eval` in a lazy body is refused once the
+  chunk's assignment is known, if the emitted tree splits the chunk
+  across modules, reorders it or renames a binding
+  (`chunk_analysis::check_transformed_chunk_admission`); an unchanged
+  chunk keeps every name the string code may use. An indirect `eval`, `Function(...)` or
   `new Function(...)` in a lazy body runs in global scope: every
   input chunk is parsed and emitted as an ES module, so no module
   binding is visible to it and it is an ordinary opaque call. Aliased
@@ -2782,7 +2786,7 @@ It does not establish:
   violations).** The `I` graph is incomplete in this case;
   cycle-freeness in `I` doesn't imply cycle-freeness in the
   actual evaluation graph. The admission scan rejects direct `eval`
-  calls at any depth and the module-top shapes (seq-indirect `eval` calls,
+  calls in a transformed chunk and the module-top shapes (seq-indirect `eval` calls,
   non-`url` `import.meta` use, eager non-literal `import()`),
   but cannot rule out the rest statically. The shapes that remain
   pure input-shape contracts on the bundler:

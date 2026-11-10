@@ -707,6 +707,16 @@ pub(super) fn finish_logical_chunk(
         );
         coarsening_rounds += 1;
     };
+    chunk_analysis::check_transformed_chunk_admission(
+        chunk_id,
+        &runtime_ast.module,
+        projection
+            .chunk_analysis_inputs
+            .get(chunk_id)
+            .map(|inputs| inputs.admission_overrides)
+            .unwrap_or_default(),
+        assignment_analysis.splits_or_reorders() || sealed_renames.renames_any(),
+    )?;
     let redundant_purity_hints = analysis.redundant_purity_hints;
     let stable_set_intervals = program_summary
         .stable_set_spreads

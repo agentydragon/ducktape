@@ -14,7 +14,9 @@
 //!
 //! Notable residual gaps (documented, not checked):
 //!
-//! - **A1**: a direct `eval` is refused at any depth, an indirect
+//! - **A1**: a direct `eval` in a lazy body is refused only once the
+//!   assignment splits, reorders or renames the chunk
+//!   ([`enforce_split_admission`]); an indirect
 //!   `(0, eval)(...)` only at module top level: in a lazy body it runs in
 //!   global scope, where module bindings are invisible. Aliased eval
 //!   (`const e = eval; e(...)`) is unchecked.
@@ -73,6 +75,10 @@ struct AdmissionViolation {
     /// the dependency graph reports.
     ordinal: usize,
     description: String,
+    /// Benign while the emitted tree is the source as one module in source
+    /// order, under its own names: enforced by
+    /// [`enforce_split_admission`] once the assignment is known.
+    split_only: bool,
 }
 
 /// Scan `module` for admission violations and `bail!` on any that the
@@ -90,6 +96,10 @@ pub(super) fn enforce_chunk_admission(
     let (suppressed, fatal): (Vec<_>, Vec<_>) = violations
         .into_iter()
         .partition(|violation| overrides.contains(violation.check));
+    let fatal: Vec<_> = fatal
+        .into_iter()
+        .filter(|violation| !violation.split_only)
+        .collect();
     let mut notices: Vec<(AdmissionCheck, &str, Vec<usize>)> = Vec::new();
     for violation in &suppressed {
         match notices.iter_mut().find(|(check, description, _)| {
@@ -131,29 +141,54 @@ pub(super) fn enforce_chunk_admission(
                  Remove it from chunk_analysis_options.{chunk_id}.admission_overrides.",
         );
     }
-    if !fatal.is_empty() {
-        let rendered = fatal
-            .iter()
-            .map(|violation| {
-                format!(
-                    "  statement #{ordinal}: [{check}] {description}",
-                    ordinal = violation.ordinal,
-                    check = violation.check,
-                    description = violation.description,
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} fails input-chunk admission \
-             (docs/design.md §\"Conditions on the input chunk\"):\n{rendered}\n\
-             The realizability theorem does not cover these shapes. Rework the chunk, or — \
-             after auditing that the shape is benign here — opt out per check via \
-             `chunk_analysis_options.{chunk_id}.admission_overrides` (e.g. `[{first}]`).",
-            first = fatal[0].check,
-        );
-    }
+    refuse(chunk_id, &fatal)?;
     Ok(redundant)
+}
+
+/// The admission violations that are benign only while the emitted tree is
+/// the source unchanged: a lazy direct `eval` reads and writes bindings by
+/// name, so it breaks once the chunk is split across modules, reordered or
+/// renamed. Refuses them when `transformed`, unless overridden.
+pub(super) fn enforce_split_admission(
+    chunk_id: &str,
+    module: &Module,
+    overrides: AdmissionOverrides,
+    transformed: bool,
+) -> Result<()> {
+    if !transformed {
+        return Ok(());
+    }
+    let fatal: Vec<_> = scan_admission_violations(module, &|_| DynamicImportTarget::External)
+        .into_iter()
+        .filter(|violation| violation.split_only && !overrides.contains(violation.check))
+        .collect();
+    refuse(chunk_id, &fatal)
+}
+
+fn refuse(chunk_id: &str, fatal: &[AdmissionViolation]) -> Result<()> {
+    let Some(first) = fatal.first() else {
+        return Ok(());
+    };
+    let rendered = fatal
+        .iter()
+        .map(|violation| {
+            format!(
+                "  statement #{ordinal}: [{check}] {description}",
+                ordinal = violation.ordinal,
+                check = violation.check,
+                description = violation.description,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    bail!(
+        "materialize_logical_modules: chunk {chunk_id} fails input-chunk admission \
+         (docs/design.md §\"Conditions on the input chunk\"):\n{rendered}\n\
+         The realizability theorem does not cover these shapes. Rework the chunk, or — \
+         after auditing that the shape is benign here — opt out per check via \
+         `chunk_analysis_options.{chunk_id}.admission_overrides` (e.g. `[{first}]`).",
+        first = first.check,
+    );
 }
 
 fn scan_admission_violations(
@@ -193,6 +228,7 @@ impl AdmissionScan<'_> {
             check,
             ordinal: self.ordinal,
             description,
+            split_only: false,
         });
     }
 
@@ -274,12 +310,15 @@ impl Visit for AdmissionScan<'_> {
             // visible: an ordinary opaque call.
             Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "eval") =>
             {
-                self.record(
-                    AdmissionCheck::A1Eval,
-                    "direct `eval(...)` call in a lazy body — it can read and write any \
-                     binding in scope by name, which the analysis cannot see"
+                self.violations.push(AdmissionViolation {
+                    check: AdmissionCheck::A1Eval,
+                    ordinal: self.ordinal,
+                    description: "direct `eval(...)` call in a lazy body — it can read and \
+                                  write any binding in scope by name, which the analysis \
+                                  cannot see, once the chunk is split, reordered or renamed"
                         .to_string(),
-                );
+                    split_only: true,
+                });
             }
             _ => {}
         }

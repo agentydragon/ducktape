@@ -9,8 +9,8 @@
 //! `realizability_test.rs::top_level_await_is_rejected`.
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, assert_entry_output, expect_rejection_containing_all, logical_module,
-    run_fixture,
+    FixtureOpts, Member, assert_entry_output, chunk_rename, expect_rejection_containing_all,
+    logical_module, run_fixture,
 };
 
 // --- A1: no direct `eval`, and no `eval` at module top level ---------------
@@ -63,6 +63,48 @@ export { A, reader };
 "#,
             vec![logical_module("mod_x", &[Member::new("A")])],
         ),
+        &["a1_eval", "#0", "admission_overrides"],
+    );
+}
+
+#[test]
+fn direct_eval_in_an_unsplit_chunk_is_allowed() {
+    // The emitted tree is the source as one module in source order under
+    // its own names, so the string code finds every binding it names.
+    let source = r#"function reader() {
+  return eval("A + 1");
+}
+const A = 1;
+console.log(reader());
+export { A, reader };
+"#;
+    for modules in [
+        vec![],
+        vec![logical_module(
+            "mod_x",
+            &[Member::new("reader"), Member::new("A")],
+        )],
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, modules));
+        assert_entry_output(&fixture, "2\n");
+    }
+}
+
+#[test]
+fn direct_eval_in_a_renamed_chunk_is_rejected() {
+    // A rename changes the name the string code reads.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"function reader() {
+  return eval("A + 1");
+}
+const A = 1;
+console.log(reader());
+export { A, reader };
+"#,
+            vec![],
+        )
+        .with_chunk_renames(chunk_rename("renamed", "A")),
         &["a1_eval", "#0", "admission_overrides"],
     );
 }
