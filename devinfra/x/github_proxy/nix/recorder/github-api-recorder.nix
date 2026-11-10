@@ -45,7 +45,7 @@ in
       description = "Outbound TCP connection recorder (GitHub API attribution)";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
-      # -B line inside the wrapper: bpftrace's stdout is a pipe and then a file, so
+      # -B line: bpftrace's stdout is a pipe and then a file, so
       # without line buffering records sit in libc's block buffer instead of
       # reaching the log.
       path = [
@@ -54,7 +54,7 @@ in
       ];
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${lib.getExe pkgs.bash} ${./github-api-recorder.sh} ${./github-api-recorder.bt}";
+        ExecStart = "${lib.getExe pkgs.bpftrace} -B line ${./github-api-recorder.bt}";
         Restart = "on-failure";
         RestartSec = 30;
         StandardOutput = "append:${logFile}";
