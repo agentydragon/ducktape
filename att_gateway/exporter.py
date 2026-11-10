@@ -75,10 +75,6 @@ def _gauge(name: str, documentation: str, value: float, labels: dict[str, str] |
     return family
 
 
-def _counter(name: str, documentation: str, value: float) -> CounterMetricFamily:
-    return CounterMetricFamily(name, documentation, value=value)
-
-
 def _sysinfo_metrics(sysinfo: SysInfo) -> Iterator[Metric]:
     yield _gauge(
         "att_gateway_info",
@@ -118,10 +114,18 @@ def _broadband_metrics(broadband: Broadband) -> Iterator[Metric]:
             counters.transmit_errors,
         ),
     ):
-        yield _counter(f"att_gateway_wan_{direction}_packets", f"WAN IPv4 packets, {direction}, since boot.", packets)
-        yield _counter(f"att_gateway_wan_{direction}_bytes", f"WAN IPv4 bytes, {direction}, since boot.", octets)
-        yield _counter(f"att_gateway_wan_{direction}_drops", f"WAN IPv4 drops, {direction}, since boot.", drops)
-        yield _counter(f"att_gateway_wan_{direction}_errors", f"WAN IPv4 errors, {direction}, since boot.", errors)
+        yield CounterMetricFamily(
+            f"att_gateway_wan_{direction}_packets", f"WAN IPv4 packets, {direction}, since boot.", value=packets
+        )
+        yield CounterMetricFamily(
+            f"att_gateway_wan_{direction}_bytes", f"WAN IPv4 bytes, {direction}, since boot.", value=octets
+        )
+        yield CounterMetricFamily(
+            f"att_gateway_wan_{direction}_drops", f"WAN IPv4 drops, {direction}, since boot.", value=drops
+        )
+        yield CounterMetricFamily(
+            f"att_gateway_wan_{direction}_errors", f"WAN IPv4 errors, {direction}, since boot.", value=errors
+        )
     yield _gauge(
         "att_gateway_pon_state",
         "ITU-T G.984/G.9807 ONU state number; 5 (O5, Operation) is the only one carrying traffic.",
