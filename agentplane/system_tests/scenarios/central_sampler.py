@@ -392,7 +392,9 @@ async def _wait_for_executor_dispatch_after(
         stream.cancel()
 
 
-async def _wait_for_failed_gateway_resume(deployed: CentralStack, session_id: str, after_cursor: int) -> int:
+async def _wait_for_failed_gateway_resume(
+    deployed: CentralStack, session_id: str, after_cursor: int, read_call_id: str
+) -> int:
     """A failed resume in retained History proves its preceding event prefix is complete."""
     resume_intents: set[str] = set()
     read_cell_result = None
@@ -410,7 +412,7 @@ async def _wait_for_failed_gateway_resume(deployed: CentralStack, session_id: st
                     continue
                 payload = json.loads(boundary.payload)
                 if boundary.boundary == "cell" and boundary.direction == "result":
-                    if payload.get("call_id") == "read-live-process":
+                    if payload.get("call_id") == read_call_id:
                         read_cell_result = payload
                     continue
                 if boundary.boundary != "executor":
@@ -459,7 +461,7 @@ async def _roll_gateway_for_central_session(
     cluster: Cluster,
     deployed: CentralStack,
     *,
-    failed_resume_after: tuple[str, int] | None = None,
+    failed_resume_after: tuple[str, int, str] | None = None,
     hold_down_seconds: float = 0,
     kill_native_server: bool = False,
 ) -> tuple[CentralStack, float, str, str, tuple[str, str, str] | None]:
@@ -484,15 +486,11 @@ async def _roll_gateway_for_central_session(
             for item in gateway_slices
             for endpoint in item.get("endpoints") or []
         ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
-        if kill_native_server:
-            executor_pod, executor_pod_uid = await _sandbox_executor_pod(cluster, deployed.sandbox)
-            old_process = await _exec_server_process(cluster, executor_pod, "kill")
-            killed_native = (executor_pod, executor_pod_uid, old_process)
         if failed_resume_after is not None:
-            session_id = failed_resume_after[0]
+            session_id, _, read_call_id = failed_resume_after
             failed_resume_cursor = await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
             folded_through = await _wait_for_active_history_through(deployed, session_id, failed_resume_cursor)
-            (undeclared_outputs_dir() / "central-sampler-gateway-outage.json").write_text(
+            (undeclared_outputs_dir() / f"central-sampler-gateway-outage-{read_call_id}.json").write_text(
                 json.dumps(
                     {
                         "session_id": session_id,
@@ -504,6 +502,10 @@ async def _roll_gateway_for_central_session(
                 )
                 + "\n"
             )
+        if kill_native_server:
+            executor_pod, executor_pod_uid = await _sandbox_executor_pod(cluster, deployed.sandbox)
+            old_process = await _exec_server_process(cluster, executor_pod, "kill")
+            killed_native = (executor_pod, executor_pod_uid, old_process)
         if hold_down_seconds:
             await asyncio.sleep(hold_down_seconds)
     finally:
@@ -658,7 +660,9 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             old_gateway_uid,
             new_gateway_uid,
             killed_native,
-        ) = await _roll_gateway_for_central_session(cluster, deployed, failed_resume_after=(session_id, cursor))
+        ) = await _roll_gateway_for_central_session(
+            cluster, deployed, failed_resume_after=(session_id, cursor, "read-live-process")
+        )
         assert killed_native is None
         assert outage_seconds < 25, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
         request = await asyncio.wait_for(model.request(), timeout=45)
@@ -812,7 +816,12 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             old_gateway_uid,
             new_gateway_uid,
             killed_native,
-        ) = await _roll_gateway_for_central_session(cluster, deployed, kill_native_server=True)
+        ) = await _roll_gateway_for_central_session(
+            cluster,
+            deployed,
+            failed_resume_after=(session_id, cursor, "read-expiring-process"),
+            kill_native_server=True,
+        )
         assert killed_native is not None
         executor_pod, executor_pod_uid, old_exec_server = killed_native
         request = await asyncio.wait_for(model.request(), timeout=45)
