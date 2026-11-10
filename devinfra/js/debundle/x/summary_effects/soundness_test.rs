@@ -9,9 +9,11 @@ use summary_effects::tier0;
 const HEADER: &str =
     "let state = 0;\nlet holder;\nfunction noop() {}\nfunction second() { state = 1; }\n";
 const HEADER_UNITS: usize = 4;
-const ALL_UPGRADES: [tier0::Upgrade; 2] = [
+const ALL_UPGRADES: [tier0::Upgrade; 4] = [
     tier0::Upgrade::PrimitiveBindings,
     tier0::Upgrade::NativeAllocators,
+    tier0::Upgrade::IntrinsicHeritage,
+    tier0::Upgrade::IntrinsicMemberReads,
 ];
 const FIXTURES: [&str; 2] = [
     include_str!("soundness_fixtures.txt"),
@@ -190,8 +192,170 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "const a = new Promise(() => {});",
             "const a = new RegExp('x');",
             "const a = Object.freeze({ get x() { return 1; }, ...{} });",
+            // The chunk modifies what the allocation depends on.
+            "Map.prototype.set = function () {}; const a = new Map([['k', 1]]);",
+            "Array.prototype[Symbol.iterator] = function* () {}; const a = new Set([1]);",
+            "globalThis.Map = class {}; const a = new Map();",
+            "const proto = Set.prototype; const a = new Set([1]);",
+            "function patch(target) {} patch(Map); const a = new Map();",
+            "Object.defineProperty(Object, 'freeze', { value() {} }); const a = Object.freeze({});",
         ] {
             assert!(!last_is_pure(impure), "{impure}");
         }
+        // A write to an unrelated property leaves the allocation pure.
+        for pure in [
+            "Array.prototype.at = function () {}; const a = new Set([1]);",
+            "Object.defineProperty(Array.prototype, 'at', { value() {} }); const a = new Set([1]);",
+            "Error.stackTraceLimit = 50; const a = class extends Error {};",
+        ] {
+            assert!(last_is_pure(pure), "{pure}");
+        }
+        // Classes extending an intrinsic constructor.
+        for pure in [
+            "class A extends Error { constructor() { super('x'); } }",
+            "const A = class extends TypeError {};",
+            "class A extends Array {}",
+        ] {
+            assert!(last_is_pure(pure), "{pure}");
+        }
+        for impure in [
+            "class B {} class A extends B {}",
+            "class A extends DOMException {}",
+            "class A extends (0, Error) {}",
+            "globalThis.Error = class {}; class A extends Error {}",
+            "Error = class {}; class A extends Error {}",
+            "class A extends Error { static x = 1; }",
+        ] {
+            assert!(!last_is_pure(impure), "{impure}");
+        }
+        // Reads of intrinsic data properties.
+        for pure in [
+            "const a = Object.prototype.toString;",
+            "const a = Math.PI;",
+            "const a = Object.assign;",
+            "const a = Symbol.iterator;",
+            "const a = { has: Object.prototype.hasOwnProperty, max: Number.MAX_SAFE_INTEGER };",
+        ] {
+            assert!(last_is_pure(pure), "{pure}");
+        }
+        for impure in [
+            // The prototype object itself, an accessor, a deeper path.
+            "const a = Array.prototype;",
+            "const a = Object.prototype.__proto__;",
+            "const a = Function.prototype.caller;",
+            "const a = Map.prototype.size;",
+            "const a = RegExp.lastMatch;",
+            "const a = Object.prototype.toString.call;",
+            "const a = navigator.platform;",
+            "const o = {}; const a = o.x;",
+            // The chunk writes the property read.
+            "Object.assign = () => {}; const a = Object.assign;",
+            "Object.prototype.toString = () => ''; const a = Object.prototype.toString;",
+            "Math[k] = 1; const a = Math.PI;",
+            "window[k] = 1; const a = Math.PI;",
+        ] {
+            assert!(!last_is_pure(impure), "{impure}");
+        }
+    });
+}
+
+fn tier0(source: &str, exports_reachable: bool) -> tier0::Tier0 {
+    let parsed = js_ast::parse_js_module("fixture", source).expect("the source parses");
+    let unresolved = swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+    let options = tier0::Options {
+        exports_reachable,
+        upgrades: ALL_UPGRADES.into_iter().collect(),
+        what_if_pure: Default::default(),
+    };
+    tier0::analyze(&parsed.module, unresolved, &options)
+}
+
+/// Another chunk in an import cycle with this one can call this chunk's
+/// exports while this chunk initializes. Tier 0 sees that only when told.
+#[test]
+fn tier0_export_cycle_needs_the_precondition() {
+    js_ast::with_swc_globals(|| {
+        let source = "import { run } from './other.js';\n\
+            export function probe() { return later; }\n\
+            run();\n\
+            var later = 1;\n";
+        // Unit 2 calls into the other chunk; unit 3 defines what `probe` reads.
+        assert_eq!(tier0(source, false).conflict(2, 3), None);
+        assert_eq!(
+            tier0(source, true).conflict(2, 3),
+            Some(tier0::Conflict::ReachEscaped)
+        );
+    });
+}
+
+/// Compiler output shapes that dominate a large private consumer corpus,
+/// with the verdict tier 0 gives each pair.
+#[test]
+fn tier0_synthetic_shape_families() {
+    js_ast::with_swc_globals(|| {
+        use tier0::Conflict::{BothImpure, ReachEscaped, ReachOwn};
+
+        // The TypeScript decorator helper over two classes.
+        let decorators = tier0(
+            "import { imported } from './dep.js';\n\
+             var decorate = function (decorators, target, key, desc) {\n\
+               var r = desc;\n\
+               for (var i = decorators.length - 1; i >= 0; i--) r = decorators[i](target, key, r) || r;\n\
+               return r && Object.defineProperty(target, key, r), r;\n\
+             };\n\
+             function local(target, key) {}\n\
+             class A { m() {} }\n\
+             class B { m() {} }\n\
+             decorate([local], A.prototype, 'm', null);\n\
+             decorate([imported], B.prototype, 'm', null);\n\
+             var unrelated = { n: 1 };\n",
+            false,
+        );
+        let (class_a, class_b, on_a, on_b, unrelated) = (3, 4, 5, 6, 7);
+        // Decorator statements keep their mutual order.
+        assert_eq!(decorators.conflict(on_a, on_b), Some(BothImpure));
+        // Each stays after its own class.
+        assert_eq!(decorators.conflict(class_a, on_a), Some(ReachOwn));
+        assert_eq!(decorators.conflict(class_b, on_b), Some(ReachOwn));
+        // The first may cross the other class; the second may not cross the
+        // class the first one leaked.
+        assert_eq!(decorators.conflict(class_b, on_a), None);
+        assert_eq!(decorators.conflict(class_a, on_b), Some(ReachEscaped));
+        // An unrelated definition moves freely.
+        assert_eq!(decorators.conflict(on_a, unrelated), None);
+        assert_eq!(decorators.conflict(on_b, unrelated), None);
+
+        // A local factory called with an object literal.
+        let factories = tier0(
+            "var registry = [];\n\
+             function make(options) { registry.push(options); return { ...options }; }\n\
+             var first = make({ a: 1 });\n\
+             var second = make({ b: 2 });\n\
+             var unrelated = () => 3;\n\
+             var table = { first: 1 };\n",
+            false,
+        );
+        let (registry, first, second, unrelated, table) = (0, 2, 3, 4, 5);
+        assert_eq!(factories.conflict(first, second), Some(BothImpure));
+        // The factory's registry stays ahead of every call.
+        assert_eq!(factories.conflict(registry, first), Some(ReachOwn));
+        assert_eq!(factories.conflict(first, unrelated), None);
+        assert_eq!(factories.conflict(second, table), None);
+
+        // A wrapper called with a function expression.
+        let wrappers = tier0(
+            "import { wrap } from './dep.js';\n\
+             var Component = wrap(function () { return dependency; });\n\
+             var dependency = 1;\n\
+             var other = wrap(() => 2);\n\
+             var unrelated = 'x';\n",
+            false,
+        );
+        let (component, dependency, other, unrelated) = (1, 2, 3, 4);
+        // The wrapper may call the function at once.
+        assert_eq!(wrappers.conflict(component, dependency), Some(ReachOwn));
+        assert_eq!(wrappers.conflict(component, other), Some(BothImpure));
+        assert_eq!(wrappers.conflict(component, unrelated), None);
+        assert_eq!(wrappers.conflict(other, unrelated), None);
     });
 }

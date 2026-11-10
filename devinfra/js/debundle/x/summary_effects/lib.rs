@@ -5,6 +5,7 @@ mod bits;
 pub mod effects;
 pub mod generate;
 mod helpers;
+pub mod intrinsics;
 pub mod model;
 pub mod orders;
 pub mod pairs;

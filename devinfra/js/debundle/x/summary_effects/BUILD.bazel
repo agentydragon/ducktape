@@ -9,6 +9,7 @@ rust_library(
         "effects.rs",
         "generate.rs",
         "helpers.rs",
+        "intrinsics.rs",
         "lib.rs",
         "model.rs",
         "orders.rs",

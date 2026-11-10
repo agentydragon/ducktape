@@ -30,6 +30,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::helpers::assigned_ids;
+use crate::intrinsics::{Census, census};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, clap::ValueEnum,
@@ -116,9 +117,11 @@ pub struct Tier0 {
     own_reach: FxHashMap<usize, FxHashSet<Binding>>,
     pub bindings: usize,
     pub refused: bool,
-    /// Per intrinsic family: the pure definitions that depend on it being
+    /// Per intrinsic global: the pure definitions that depend on it being
     /// unmodified.
-    pub families_used: std::collections::BTreeMap<IntrinsicFamily, usize>,
+    pub families_used: std::collections::BTreeMap<&'static str, usize>,
+    /// What the chunk itself writes on globals.
+    pub census: Census,
 }
 
 const NEVER: u32 = u32::MAX;
@@ -157,22 +160,44 @@ pub enum Upgrade {
     PrimitiveBindings,
     /// Allocations by intrinsic constructors and functions from a fixed
     /// list, with arguments that cannot run code (`native_allocation`).
-    /// Each depends on its intrinsic family being unmodified.
     NativeAllocators,
+    /// A class extending an intrinsic constructor from `HERITAGE`.
+    IntrinsicHeritage,
+    /// A read of a data property of an intrinsic namespace or prototype,
+    /// such as `Object.prototype.toString` or `Math.PI`.
+    IntrinsicMemberReads,
 }
 
-/// The intrinsic family a recognized native allocation depends on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IntrinsicFamily {
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-    TypedArray,
-    Object,
-    Symbol,
-}
+/// The global a recognized intrinsic use depends on, with the properties of
+/// it or of its prototype that must be untouched.
+type Dependency = (&'static str, &'static [&'static str]);
+
+/// Intrinsic constructors a class may extend: the definition reads the
+/// global binding and its `prototype`, a non-writable data property.
+const HERITAGE: [&str; 11] = [
+    "Error",
+    "TypeError",
+    "RangeError",
+    "SyntaxError",
+    "ReferenceError",
+    "EvalError",
+    "URIError",
+    "Array",
+    "Map",
+    "Set",
+    "Promise",
+];
+
+/// Globals whose own properties are all data properties.
+const NAMESPACES: [&str; 14] = [
+    "Object", "Array", "Function", "String", "Number", "Boolean", "Symbol", "Math", "JSON",
+    "Reflect", "Date", "Promise", "Map", "Set",
+];
+
+/// Globals whose `prototype` holds only data properties, apart from the
+/// names in `PROTOTYPE_ACCESSORS`.
+const DATA_PROTOTYPES: [&str; 6] = ["Object", "Array", "Function", "String", "Number", "Boolean"];
+const PROTOTYPE_ACCESSORS: [&str; 3] = ["__proto__", "caller", "arguments"];
 
 const TYPED_ARRAYS: [&str; 9] = [
     "Int8Array",
@@ -197,10 +222,12 @@ struct Classifier<'a> {
     imports: &'a FxHashSet<Binding>,
     /// Bindings proven to only ever hold a primitive.
     primitives: &'a FxHashSet<Binding>,
-    native_allocators: bool,
+    upgrades: &'a FxHashSet<Upgrade>,
+    census: &'a Census,
     unresolved: SyntaxContext,
     eager: Vec<Binding>,
-    families: Vec<IntrinsicFamily>,
+    /// The globals the accepted intrinsic uses depend on.
+    intrinsics: Vec<&'static str>,
 }
 
 /// Whether `expr` evaluates to a number, string, boolean, `null` or
@@ -343,10 +370,11 @@ impl Classifier<'_> {
     /// - `Object.create(null)`: a fresh object without a prototype.
     /// - `Symbol()`, `Symbol(p)`, `Symbol.for(p)` over a primitive `p`:
     ///   `ToString` of a primitive.
-    fn native_allocation(&mut self, expr: &Expr) -> Option<IntrinsicFamily> {
-        if !self.native_allocators {
+    fn native_allocation(&mut self, expr: &Expr) -> Option<Vec<Dependency>> {
+        if !self.upgrades.contains(&Upgrade::NativeAllocators) {
             return None;
         }
+        const ARRAY_ITERATION: Dependency = ("Array", &["@@iterator"]);
         match expr {
             Expr::New(new) => {
                 let name = self.global(&new.callee)?;
@@ -356,13 +384,13 @@ impl Classifier<'_> {
                 }
                 let args: Vec<&Expr> = args.iter().map(|arg| &*arg.expr).collect();
                 match (name.as_str(), args.as_slice()) {
-                    ("Map", []) => Some(IntrinsicFamily::Map),
-                    ("Set", []) => Some(IntrinsicFamily::Set),
-                    ("WeakMap", []) => Some(IntrinsicFamily::WeakMap),
-                    ("WeakSet", []) => Some(IntrinsicFamily::WeakSet),
+                    ("Map", []) => Some(vec![("Map", &[])]),
+                    ("Set", []) => Some(vec![("Set", &[])]),
+                    ("WeakMap", []) => Some(vec![("WeakMap", &[])]),
+                    ("WeakSet", []) => Some(vec![("WeakSet", &[])]),
                     ("Set", [elements]) => self
                         .array_of(elements, |this, element| this.primitive_arg(element))
-                        .then_some(IntrinsicFamily::Set),
+                        .then(|| vec![("Set", &["add"] as &[_]), ARRAY_ITERATION]),
                     ("Map", [entries]) => self
                         .array_of(entries, |this, entry| match entry {
                             Expr::Array(pair) => match pair.elems.as_slice() {
@@ -380,10 +408,16 @@ impl Classifier<'_> {
                             },
                             _ => false,
                         })
-                        .then_some(IntrinsicFamily::Map),
-                    (name, [arg]) if TYPED_ARRAYS.contains(&name) => (small_length(arg)
-                        || self.array_of(arg, |this, element| this.primitive_arg(element)))
-                    .then_some(IntrinsicFamily::TypedArray),
+                        .then(|| vec![("Map", &["set"] as &[_]), ARRAY_ITERATION]),
+                    (name, [arg]) => {
+                        let typed = *TYPED_ARRAYS.iter().find(|typed| **typed == name)?;
+                        if small_length(arg) {
+                            Some(vec![(typed, &[])])
+                        } else {
+                            self.array_of(arg, |this, element| this.primitive_arg(element))
+                                .then(|| vec![(typed, &[] as &[_]), ARRAY_ITERATION])
+                        }
+                    }
                     _ => None,
                 }
             }
@@ -408,15 +442,18 @@ impl Classifier<'_> {
                     ("Object", Some("freeze"), [literal @ (Expr::Object(_) | Expr::Array(_))]) => {
                         self.pure(literal)
                             .is_ok()
-                            .then_some(IntrinsicFamily::Object)
+                            .then(|| vec![("Object", &["freeze"] as &[_])])
                     }
                     ("Object", Some("create"), [Expr::Lit(Lit::Null(_))]) => {
-                        Some(IntrinsicFamily::Object)
+                        Some(vec![("Object", &["create"])])
                     }
-                    ("Symbol", None, []) => Some(IntrinsicFamily::Symbol),
-                    ("Symbol", None | Some("for"), [description]) => self
+                    ("Symbol", None, []) => Some(vec![("Symbol", &[])]),
+                    ("Symbol", None, [description]) => self
                         .primitive_arg(description)
-                        .then_some(IntrinsicFamily::Symbol),
+                        .then(|| vec![("Symbol", &[] as &[_])]),
+                    ("Symbol", Some("for"), [description]) => self
+                        .primitive_arg(description)
+                        .then(|| vec![("Symbol", &["for"] as &[_])]),
                     _ => None,
                 }
             }
@@ -424,10 +461,73 @@ impl Classifier<'_> {
         }
     }
 
+    /// A read of a data property of an intrinsic namespace (`Math.PI`,
+    /// `Object.assign`) or prototype (`Object.prototype.toString`). The
+    /// value is a primitive or an intrinsic function; reading it runs no
+    /// code and cannot throw. The `prototype` object itself is not accepted:
+    /// holding it would let later code write the intrinsic unseen.
+    fn intrinsic_member_read(&self, expr: &Expr) -> Option<Vec<Dependency>> {
+        if !self.upgrades.contains(&Upgrade::IntrinsicMemberReads) {
+            return None;
+        }
+        let Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(prop),
+            ..
+        }) = expr
+        else {
+            return None;
+        };
+        let prop: &str = &prop.sym;
+        let (global, on_prototype) = match &**obj {
+            Expr::Member(MemberExpr {
+                obj: root,
+                prop: MemberProp::Ident(prototype),
+                ..
+            }) if &*prototype.sym == "prototype" => (self.global(root)?, true),
+            other => (self.global(other)?, false),
+        };
+        let list: &[&'static str] = if on_prototype {
+            &DATA_PROTOTYPES
+        } else {
+            &NAMESPACES
+        };
+        let global = *list.iter().find(|name| **name == global)?;
+        let accepted = if on_prototype {
+            !PROTOTYPE_ACCESSORS.contains(&prop)
+        } else {
+            prop != "prototype"
+        };
+        // The property name is checked against the census by the caller.
+        accepted.then(|| vec![(global, &[] as &[_])])
+    }
+
+    /// Whether the chunk leaves every dependency untouched; records them.
+    fn untouched(&mut self, dependencies: Vec<Dependency>, extra_prop: Option<&str>) -> bool {
+        let ok = dependencies.iter().all(|(global, props)| {
+            let mut props: Vec<&str> = props.to_vec();
+            props.extend(extra_prop);
+            self.census.untouched(global, &props)
+        });
+        if ok {
+            self.intrinsics
+                .extend(dependencies.iter().map(|(global, _)| *global));
+        }
+        ok
+    }
+
     /// A class whose definition runs nothing: no `extends`, static block,
     /// static initializer, computed key or decorator.
-    fn class(&self, class: &Class) -> Result<(), ImpureCause> {
-        if class.super_class.is_some() || !class.decorators.is_empty() {
+    fn class(&mut self, class: &Class) -> Result<(), ImpureCause> {
+        let heritage = match &class.super_class {
+            None => true,
+            Some(heritage) if self.upgrades.contains(&Upgrade::IntrinsicHeritage) => self
+                .global(heritage)
+                .and_then(|name| HERITAGE.iter().find(|known| **known == name).copied())
+                .is_some_and(|global| self.untouched(vec![(global, &[])], None)),
+            Some(_) => false,
+        };
+        if !heritage || !class.decorators.is_empty() {
             return Err(ImpureCause::ClassEagerPart);
         }
         for member in &class.body {
@@ -462,9 +562,22 @@ impl Classifier<'_> {
             self.eager.extend(reads);
             return Ok(());
         }
-        if let Some(family) = self.native_allocation(expr) {
-            self.families.push(family);
+        if let Some(dependencies) = self.native_allocation(expr)
+            && self.untouched(dependencies, None)
+        {
             return Ok(());
+        }
+        if let Some(dependencies) = self.intrinsic_member_read(expr) {
+            let prop = match expr {
+                Expr::Member(MemberExpr {
+                    prop: MemberProp::Ident(prop),
+                    ..
+                }) => prop.sym.to_string(),
+                _ => unreachable!("an intrinsic member read is a named member"),
+            };
+            if self.untouched(dependencies, Some(&prop)) {
+                return Ok(());
+            }
         }
         match expr {
             Expr::Paren(paren) => self.pure(&paren.expr),
@@ -810,7 +923,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     }
 
     let mut refused = false;
-    let mut families_used: std::collections::BTreeMap<IntrinsicFamily, usize> = Default::default();
+    let mut families_used: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    let object_aliases = crate::helpers::prepass(module, unresolved).object_aliases;
+    let census = census(module, unresolved, &object_aliases);
     let mut units = Vec::with_capacity(sources.len());
     for (source, declared) in sources.iter().zip(declared_by_unit) {
         let mut scan = Scan {
@@ -823,10 +938,11 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             bindings: &bindings,
             imports: &imports,
             primitives: &primitives,
-            native_allocators: options.upgrades.contains(&Upgrade::NativeAllocators),
+            upgrades: &options.upgrades,
+            census: &census,
             unresolved,
             eager: Vec::new(),
-            families: Vec::new(),
+            intrinsics: Vec::new(),
         };
         let (kind, assigned) = match source {
             Source::Item(item) => {
@@ -844,8 +960,8 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         };
         refused |= scan.refused;
         if kind == Kind::Pure {
-            for family in &classifier.families {
-                *families_used.entry(*family).or_default() += 1;
+            for global in &classifier.intrinsics {
+                *families_used.entry(*global).or_default() += 1;
             }
         }
         let mut mentions: Vec<Binding> = scan.mentions.into_iter().collect();
@@ -953,6 +1069,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         bindings: binding_count,
         refused,
         families_used,
+        census,
     }
 }
 

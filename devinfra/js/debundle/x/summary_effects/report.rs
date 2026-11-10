@@ -615,7 +615,13 @@ pub struct Tier0Report {
     pub kinds: KindCounts,
     pub impure_causes: BTreeMap<ImpureCause, usize>,
     /// Pure definitions that depend on an intrinsic family being unmodified.
-    pub intrinsic_families_used: BTreeMap<tier0::IntrinsicFamily, usize>,
+    pub intrinsic_families_used: BTreeMap<&'static str, usize>,
+    /// Globals the chunk itself writes: how many, and how many of them in a
+    /// way the census cannot name (replaced, escaping, computed key).
+    pub globals_written: usize,
+    pub globals_written_unnamed: usize,
+    /// With `--examples`: per written global, the property names, or `*`.
+    pub globals_written_detail: BTreeMap<String, Vec<String>>,
     pub all_pairs: u64,
     pub all_pairs_conflicting: u64,
     pub all_pairs_by_class: BTreeMap<String, u64>,
@@ -775,6 +781,27 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         kinds,
         impure_causes,
         intrinsic_families_used: analysis.families_used.clone(),
+        globals_written: analysis.census.written.len(),
+        globals_written_unnamed: analysis
+            .census
+            .written
+            .values()
+            .filter(|writes| writes.any)
+            .count(),
+        globals_written_detail: analysis
+            .census
+            .written
+            .iter()
+            .filter(|_| with_examples)
+            .map(|(global, writes)| {
+                let mut props: Vec<String> = writes.props.iter().cloned().collect();
+                props.sort();
+                if writes.any {
+                    props.insert(0, "*".to_string());
+                }
+                (global.clone(), props)
+            })
+            .collect(),
         all_pairs: (n * n.saturating_sub(1) / 2) as u64,
         all_pairs_conflicting,
         all_pairs_by_class,

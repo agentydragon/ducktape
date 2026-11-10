@@ -81,6 +81,103 @@ one component.
   Whether a chunk is in such a cycle is a whole-program fact the real pipeline
   has; the prototype takes it as a flag.
 
+### `tier0` upgrades
+
+Each widens "pure definition" by one bounded rule (`--upgrade`), with tests
+for the near-misses that must stay impure. Stress assignment, cumulative:
+
+| Upgrade                                               | `main` unproven | `main` modules (largest) | `editor` unproven | `editor` modules (largest) |
+| ----------------------------------------------------- | --------------: | -----------------------: | ----------------: | -------------------------: |
+| none                                                  |             784 |                170 (167) |             2,383 |                  111 (111) |
+| operators over primitive-only bindings                |             521 |                170 (167) |             2,107 |                    50 (44) |
+| + intrinsic allocators (`new Map()`, typed arrays, …) |             521 |                170 (167) |             2,076 |                    50 (44) |
+| + `class X extends <intrinsic>`                       |             521 |                170 (167) |             1,153 |                    46 (40) |
+| + intrinsic member reads                              |             521 |                170 (167) |             1,153 |                    46 (40) |
+
+The committed spec stays at 0 unproven pairs throughout.
+
+The intrinsic rules consult a census of what the chunk itself writes on
+globals (`x/summary_effects/intrinsics.rs`): a use is pure only if the global
+binding and the properties the use depends on are untouched, and a global used
+as a value anywhere counts as touched. That census costs `main` its eleven
+`new Map()`-style statements (`typeof WeakMap == "function" ? WeakMap : Map`
+aliases the constructors; without the census the allocator rule gives 515
+unproven pairs and 167 modules) and both chunks every `Object.*` read. `main`
+writes `Array.prototype.at` and `Error.prepareStackTrace`; neither disables a
+rule, because each rule names the properties it depends on. The census sees one
+chunk; writes by other chunks are a per-program fact.
+
+A callee summary for local functions that only allocate was not built. The
+statements it was meant for are not allocator calls: in `editor`, 160 of 172
+local-callee statements are `X = wrap(importedNamespace.jsxs(…))`, and the
+rest store into a parameter (`zero(table)`, the class-field helper).
+
+What is left is cross-chunk. Estimates only (`--what-if-pure`, unsound: it
+counts statements impure for a cause as pure), with the first two upgrades:
+
+| Counted as pure                    | `main` unproven / modules | `editor` unproven / modules |
+| ---------------------------------- | ------------------------: | --------------------------: |
+| nothing                            |                 515 / 167 |                  2,076 / 50 |
+| calls of imported functions        |                  268 / 94 |                  2,036 / 47 |
+| calls of members                   |                 420 / 119 |                  1,704 / 47 |
+| calls of local functions           |                 497 / 167 |                    650 / 50 |
+| all three                          |                  123 / 35 |                    383 / 44 |
+| all three and `X.p = …` statements |                   18 / 10 |                    371 / 44 |
+
+### Import cycles
+
+`tier0` assumes no other chunk can call this chunk's exports while it
+initializes. That holds unless the chunk is in an import cycle (a static
+cycle, or a dynamic `import()` of it from code that runs during its
+initialization). `--exports-reachable` drops the assumption; the fixture
+`tier0_export_cycle_needs_the_precondition` shows the pair it then refuses.
+
+### Shapes from a large private consumer corpus
+
+`tier0_synthetic_shape_families` fixes the verdicts for three generic shapes.
+
+- **Decorator helper** `decorate([d], Class.prototype, "m", null)`: decorator
+  statements keep their mutual order; each stays after its own class; a later
+  one also stays after every class an earlier one named; unrelated
+  definitions move freely. Whether the decorators are local or imported makes
+  no difference to `tier0`.
+- **Factory with an object literal** `var x = make({…})`: the calls keep their
+  mutual order and stay after what `make` references; unrelated definitions
+  move freely. `tier0` does not tell a pure factory from a registering one.
+- **Wrapper with a function** `var C = wrap(function () { … })`: `C` stays
+  after every binding the function references, since the wrapper may call it
+  at once; wrappers keep their mutual order.
+
+### Composing with the precise engine
+
+`tier0` is complete: it gives every statement a verdict. The execution-based
+engine sometimes proves more for one statement. A statement's impure verdict
+can be replaced by a precise effect set under these conditions.
+
+- **The set is complete and the statement makes no opaque call.** `tier0`
+  charges an impure statement with everything unknown code could run. A precise
+  set that omits that is sound only when no unknown code runs.
+- **The statement leaks nothing, or stays ordered with every impure
+  statement.** Reach stamps assume impure statements never pass each other. A
+  precise statement that stores a function where unknown code can find it, then
+  moves ahead of an impure statement `H`, lets `H` run that function, which
+  `reach(H)` did not count. So the interface needs a `leaks` bit next to
+  `complete`; a leaking statement keeps its place among impure statements even
+  when its own effects are precise.
+- **Against an impure statement, compare with its reach, not with cells.**
+  `tier0` has no heap cells for `H`. A precise statement may cross `H` only if
+  it is leak-free, its bindings are outside `reach(H)` and `H`'s writes, and
+  every object it reads or writes is one it allocated and never leaked.
+- **Against a pure definition, compare bindings.** A pure definition writes
+  its binding and reads its eager reads; a complete precise set names its
+  binding reads and writes.
+- **Two precise, complete, leak-free statements** commute when their cell sets
+  are disjoint.
+
+The precise statement still counts as leaking everything it mentions when
+stamps are computed for later impure statements; the stamps come from syntax
+and do not change.
+
 ## Soundness fixtures
 
 `x/summary_effects/soundness_test` holds 129 small programs. For each, Node's
@@ -97,7 +194,7 @@ conflict for that pair.
   statement, a definition read through a leaked closure, a function-valued
   `var` observed by `typeof`, a class in its temporal dead zone.
 
-Both analyses refuse all 129. `points-to` first accepted 6 of the first 74;
+Both analyses refuse all 129, `tier0` with and without its upgrades. `points-to` first accepted 6 of the first 74;
 both causes were prototype bugs (a constraint on a bare global identifier was
 never applied, so arguments of `new Map(x)` did not escape; `instanceof` did
 not call `Symbol.hasInstance`), not gaps in the formulation.
