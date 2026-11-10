@@ -225,8 +225,8 @@
       "sha256": "oafEbvVhizs90iOC6SXiVX4M+FRvWkDaimjt4iYLJGI="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-07988b43b8d4/ci_latency.skill",
-      "sha256": "B5iLQ7jUw9xqz8o0yhMT/giGzc+IT9nJ58W3Cwd1zkU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-b464509e5ba6/ci_latency.skill",
+      "sha256": "tGRQnlumDqE5b7C+2DovYWEHDz/02pGsGP+grjNw/Ec="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
