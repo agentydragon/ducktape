@@ -182,8 +182,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   certificate and trust roots. The sidecar establishes destination
   TLS through an exact opaque CONNECT route; the destination verifies the actual peer and live
   Sandbox credential. No caller header selects the subject.
-  An Identity caller is refused as unauthenticated: the Rules API does not yet answer for one.
-  The response contains only that ServiceAccount and its redacted rules: hosts, methods, paths,
+  The response contains only the caller -- its ServiceAccount, or its Identity by name -- and its
+  redacted rules: hosts, methods, paths,
   credential descriptions, placeholders and presentation targets, never Secret names, keys or
   values. Missing, ambiguous, invalid or stale credentials fail before reading rules; unavailable
   verification returns gRPC `Unavailable`. The response is an informational snapshot of the

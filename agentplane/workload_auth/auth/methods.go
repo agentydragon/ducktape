@@ -33,6 +33,7 @@ type Rule struct {
 	kind              ruleKind
 	resolver          *Resolver
 	principalResolver PrincipalResolver
+	subjectResolver   SubjectResolver
 	accounts          sets.Set[Account]
 	delegation        *delegationPolicy
 }
@@ -54,9 +55,14 @@ func AnyAccount(principalResolver PrincipalResolver) Rule {
 // Accounts admits a caller proving, by a bearer resolver reviews, one of accounts. No accounts admits nobody.
 // AnySubject admits any workload this resolver authenticates, a ServiceAccount or an Identity
 // subject. A ServiceAccount caller is admitted as AnyAccount admits it; an Identity caller only as
-// an IdentityAdmission, so the handler must read Admitted.
-func AnySubject(resolver *Resolver) Rule {
-	return Rule{kind: ruleAnySubject, resolver: resolver}
+// an IdentityAdmission, so the handler must read Admitted. Only a TokenReview Resolver also supports
+// delegated calls.
+func AnySubject(subjectResolver SubjectResolver) Rule {
+	resolver, isTokenReview := subjectResolver.(*Resolver)
+	if isTokenReview && resolver == nil {
+		subjectResolver = nil
+	}
+	return Rule{kind: ruleAnySubject, resolver: resolver, subjectResolver: subjectResolver}
 }
 
 func Accounts(resolver *Resolver, accounts []Account) Rule {
@@ -251,7 +257,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	default:
 		return nil, errMethodNotAllowed
 	}
-	if rule.kind == ruleAnyAccount && rule.principalResolver == nil || rule.kind == ruleAnySubject && rule.resolver == nil {
+	if rule.kind == ruleAnyAccount && rule.principalResolver == nil || rule.kind == ruleAnySubject && rule.subjectResolver == nil {
 		return nil, errMethodNotAllowed
 	}
 	resolveContext := ctx
@@ -292,7 +298,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		return WithReviewedCaller(admitted, caller), nil
 	} else if rule.kind == ruleAnySubject {
 		var subject Subject
-		if subject, err = rule.resolver.ResolveSubject(resolveContext); err != nil {
+		if subject, err = rule.subjectResolver.ResolveSubject(resolveContext); err != nil {
 			return nil, err
 		}
 		if identity, ok := subject.(IdentityPrincipal); ok {

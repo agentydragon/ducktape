@@ -79,11 +79,10 @@ func (a *Authenticator) Authenticate(ctx context.Context, state *tls.ConnectionS
 	return Authenticated{Subject: principal, Mode: mode, Bearer: token}, err
 }
 
-// Resolve adapts a native gRPC call to the same authentication policy used by
+// ResolveSubject adapts a native gRPC call to the same authentication policy used by
 // the forward listener. TLS identity comes only from gRPC's authenticated peer
-// credentials; callers cannot supply an identity header. It proves only a ServiceAccount
-// caller and refuses an Identity one.
-func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
+// credentials; callers cannot supply an identity header.
+func (a *Authenticator) ResolveSubject(ctx context.Context) (auth.Subject, error) {
 	var state *tls.ConnectionState
 	if remote, ok := peer.FromContext(ctx); ok {
 		switch info := remote.AuthInfo.(type) {
@@ -99,22 +98,19 @@ func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
 	bearer := md.Get("authorization")
 	caller, err := a.Authenticate(ctx, state, bearer, len(bearer) > 0)
 	if err == nil {
-		if principal, ok := caller.Subject.(auth.Principal); ok {
-			return principal, nil
-		}
-		return auth.Principal{}, status.Error(codes.Unauthenticated, "workload authentication refused")
+		return caller.Subject, nil
 	}
 	if ctx.Err() != nil {
-		return auth.Principal{}, status.FromContextError(ctx.Err()).Err()
+		return nil, status.FromContextError(ctx.Err()).Err()
 	}
 	var rejection *Rejection
 	if !errors.As(err, &rejection) {
-		return auth.Principal{}, status.Error(codes.Internal, "workload authentication failed")
+		return nil, status.Error(codes.Internal, "workload authentication failed")
 	}
 	if rejection.Reason == decision.Unavailable {
-		return auth.Principal{}, status.Error(codes.Unavailable, "workload authentication unavailable")
+		return nil, status.Error(codes.Unavailable, "workload authentication unavailable")
 	}
-	return auth.Principal{}, status.Error(codes.Unauthenticated, "workload authentication refused")
+	return nil, status.Error(codes.Unauthenticated, "workload authentication refused")
 }
 
 // VerifyProjected keeps the presented destination tokens bound to the caller's Pod. A standing

@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -154,7 +155,7 @@ func ofSubject(namespace, name string) *egressadminpb.DecisionFilter {
 
 func ofIdentity(name string) *egressadminpb.DecisionFilter {
 	return &egressadminpb.DecisionFilter{Scope: &egressadminpb.DecisionFilter_Identity{
-		Identity: &egressadminpb.IdentitySubject{Name: name},
+		Identity: &egressrulespb.IdentitySubject{Name: name},
 	}}
 }
 

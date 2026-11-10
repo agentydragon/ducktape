@@ -3060,8 +3060,8 @@ states rollback and verifies callers after image/config convergence.
 **In progress (identity-consumers, 2026-11-10), consumers first: the proxy decides an Identity
 caller by its `identity:{name}` bindings, impersonates any account it holds a use rule for, and
 history records it by name; the proxy test shows two Identities acting as one account, one losing
-its use rule without the other noticing. Left: the Rules API answering an Identity, and the exit
-in the egress harness once `SANDBOX_IDENTITY_SPEC` writes one.** Until then every SVID resolves to
+its use rule without the other noticing, and the Rules API answers an Identity. Left: the exit in
+the egress harness once `SANDBOX_IDENTITY_SPEC` writes one.** Until then every SVID resolves to
 a ServiceAccount. The Kubernetes-audience projected
 token is removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only
 `projectedWorkloadToken` source, so the source, the sidecar's `X-Agentplane-Workload-Token`

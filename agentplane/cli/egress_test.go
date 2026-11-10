@@ -71,6 +71,13 @@ func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 	}
 }
 
+func TestRulesTextNamesAnIdentityCaller(t *testing.T) {
+	stdout, err := rulesText([]byte(`{"identity":{"name":"test-agent"},"policies":[{"name":"test-policy","rules":[{"hosts":["open.example.test"]}]}]}`))
+	if want := "identity test-agent\ntest-policy  open.example.test  *  *"; err != nil || strings.TrimSpace(stdout) != want {
+		t.Errorf("stdout %q, error %v; want %q", stdout, err, want)
+	}
+}
+
 // egressFake records the actual gRPC metadata received from the CLI.
 type egressFake struct {
 	egressrulespb.UnimplementedEgressRulesServer
