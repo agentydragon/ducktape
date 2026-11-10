@@ -143,7 +143,11 @@ MCP/parent CLI acceptance. The [managed-guidance rollout record](../central_samp
 discharges that deployment hold. Staging tool exposure is active. Natural-agent usability remains
 an operator follow-up; no model exercise is dispatched. Focused regression-test additions and Bazel
 runs remain authorized; broad disruption exercises remain waived. Revisit reliability work when
-normal use exposes a concrete regression.
+normal use exposes a concrete regression. First such regression, 2026-11-10: three staging rollouts in four minutes
+(#15439, #15440) cost every central Session its exec-server session and wedged one on a lost
+JavaScript host; fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the automatic
+settlement of host loss in flight; the executor's survival across control-plane rolls is
+[`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
 | Lane          | Next reviewable outcome                                                                                            | Prerequisite / stopping point                                     |
 | ------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
@@ -178,15 +182,14 @@ creates the Identity a launched Sandbox runs as; the contract phase and the cuto
 it is answered the lanes below are the dispatchable work, in the order that makes the switch
 smaller and safer; each is independent of the others and of question 11.
 
-| Lane                | Next reviewable outcome                                                         | Why now                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Expand, last piece  | `SERVICES_IDENTITY_PRINCIPAL`: merge #15389, render its settings                | Unblocks the sampler and the MCP edge acting for an Identity                            |
-| Standing workloads  | `STANDING_WORKLOAD_IDENTITY`: Haku and the `haku-ci` relay run as Identities    | First real Identity traffic on staging; shrinks the cutover PR                          |
-| Messaging           | `SESSION_IDENTITY_MESSAGING`: same-Identity sends and wakes implied             | A prerequisite of the switch that needs no decision                                     |
-| Lifecycle authority | `ENVIRONMENT_RULE_TYPE_DESIGN` then `ENVIRONMENT_LIFECYCLE_RULES`               | The one missing rule type; gates sub-agent delegation and the deferred self-read branch |
-| Central Sessions    | `CENTRAL_SESSION_DELEGATED_ACTING`: the sampler acts for a Session's Identity   | The central-sampler half of the migration; independent of environment-free Sessions     |
-| App                 | `APP_IDENTITIES_UI`: the session form's identity picker, then the finish dialog | What the switch renders in the launch path                                              |
-| Tests               | `APP_AGENT_TOKEN_DECISION`: the spike                                           | Removes the last agent-side TokenReview path                                            |
+| Lane                | Next reviewable outcome                                                            | Why now                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Expand, last piece  | `SERVICES_IDENTITY_PRINCIPAL`: #15389 merged; #15442 renders its settings          | Unblocks the sampler and the MCP edge acting for an Identity                            |
+| Standing workloads  | `STANDING_WORKLOAD_IDENTITY`: Haku and the `haku-ci` relay run as Identities       | First real Identity traffic on staging; shrinks the cutover PR                          |
+| Lifecycle authority | `ENVIRONMENT_RULE_TYPE_DESIGN` then `ENVIRONMENT_LIFECYCLE_RULES`                  | The one missing rule type; gates sub-agent delegation and the deferred self-read branch |
+| Central Sessions    | `CENTRAL_SESSION_DELEGATED_ACTING`: landed; its manifest waits for the switch      | The central-sampler half of the migration; independent of environment-free Sessions     |
+| App                 | `APP_IDENTITIES_UI`: the permission-request card; the picker lands with the switch | What the switch renders in the launch path                                              |
+| Tests               | `APP_AGENT_TOKEN_DECISION`: the spike                                              | Removes the last agent-side TokenReview path                                            |
 
 The environment-free central Session (`CENTRAL_SESSION_WITHOUT_ENVIRONMENT`, section 13) is part of
 the same goal but gated by three non-identity decisions (`CENTRAL_SESSION_CREATION_CONTRACT`,
@@ -199,7 +202,6 @@ flowchart LR
     subgraph IDENTITY_TRACK[Identity and Sessions migration]
         SERVICES_IDENTITY_PRINCIPAL[#15389] --> CENTRAL_SESSION_DELEGATED_ACTING
         STANDING_WORKLOAD_IDENTITY --> IDENTITY_CUTOVER
-        SESSION_IDENTITY_MESSAGING --> SANDBOX_IDENTITY_SPEC
         ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
         QUESTION_11[Decision: who mints a launched Sandbox's Identity] --> SANDBOX_IDENTITY_SPEC
         SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
@@ -2610,7 +2612,14 @@ and a shared Environment, including caller authority, failure/retry and migratio
 
 ### `CENTRAL_SESSION_CREATION_CONTRACT` — opening a central Session without an Environment
 
-**Decision.** Define the smallest zero-Environment creation and command contract consistent with
+**Decision; drafted for review in [#15436](https://github.com/agentydragon/ducktape/pull/15436)
+(central-session-design, 2026-11-10): [creation contract](central_session_contract.md#1-central_session_creation_contract-opening-with-zero-environments).**
+Recommended there: a new `central_sampler {}` placement variant with the Identity named in
+`CreateSessionRequest`; `setup_script` and `cwd` rejected at creation and moved to attachments;
+`central_sampler_v1` retired in the same cutover, each executor becoming the Session's first
+attachment; central openings adopt the native opening-outcome contract; an Identity caller creates a
+Session as I under `create_session` with target `boundIdentity: I`. Waits on the operator's answer to
+that section's question. Define the smallest zero-Environment creation and command contract consistent with
 the chosen Session UUID and Dispatcher-owned logical reservation: central owner/placement, immutable
 request and retry identity, owner unavailable or materialization rejected, and observable progress.
 Decide how optional setup, cwd and Environment-dependent instructions behave without an executor;
@@ -2626,7 +2635,16 @@ Environment exists, with exact acceptance and unknown-outcome boundaries.
 
 ### `SESSION_ATTACHMENT_CONTRACT` — Session-to-Environment relationships
 
-**Decision; finalize with the reviewed Session identity contract.** Define native required placement
+**Decision; drafted for review in [#15436](https://github.com/agentydragon/ducktape/pull/15436)
+(central-session-design, 2026-11-10): [attachment contract](central_session_contract.md#2-session_attachment_contract-environments-a-session-may-use).**
+Recommended there: Dispatcher-owned desired attachments (`AttachEnvironment`/`DetachEnvironment` on
+SessionDispatcher, caller-chosen attachment ID, Session-local name, exact target UID, optional cwd,
+desired versus observed state, a per-Session revision and a `session_attachment_transition` table as
+the History handoff source), applied by the sampler and fenced per executor call by the Gateway's
+UID, incarnation and Identity checks; `create_session` on the target is the attach grant, detach
+needs only Session write authority, attachment is not a grant, and nothing wakes an attachment
+implicitly; native placement stays unattachable. Waits on the operator's answer to that section's
+question. Define native required placement
 versus central zero-or-more attachments; who may attach, detach, inspect, execute and wake; and
 whether a default target is allowed. Decide attachment identity, exact Environment UID, revision,
 desired versus observed status, operation targeting and incarnation fencing, concurrent
@@ -2861,22 +2879,32 @@ stores. This does not decide central attachment policy.
 
 ### `SESSION_AND_INBOX_LIFETIME` — decide Session and inbox lifetimes
 
-**Decision; Dispatcher row retention implemented, inbox lifetime still open.** [#14314](https://github.com/agentydragon/ducktape/pull/14314)
+**Decision; Dispatcher row retention (#14314) and Notification's inbox retention after a missing or
+replaced Sandbox are implemented; the rest is drafted for review in
+[#15436](https://github.com/agentydragon/ducktape/pull/15436) (central-session-design, 2026-11-10):
+[lifetime contract](central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion).**
+Recommended there: retain inbox, subscriptions and Session row until an explicit `DeleteSession` on
+SessionDispatcher, scoped first to central Sessions and native Sessions whose required Environment is
+deleted (the sampler seals and exports before dropping; Notification retires the inbox on
+`NOT_FOUND` and keeps entries operator-readable under existing retention; History is never deleted);
+central notices deliver through `SubmitInput` with zero attachments; a Session stranded by a
+same-name Identity replacement stays operator-only. Receipt retention stays with
+`SESSION_DELETION_FENCE`. Waits on the operator's answer to that section's question.
+[#14314](https://github.com/agentydragon/ducktape/pull/14314)
 retains the Dispatcher Session row and exact placement for native and current central V1 Sessions
 after the required Sandbox UID is deleted. Cleanup tombstones the deleted UID and exposes
 `required_environment=DELETED` separately from materialization: `WAITING` becomes `FAILED`,
 `IN_PROGRESS` becomes `UNKNOWN`, and accepted or terminal evidence remains. A replacement cannot
 receive the retained Session's work. Central V1 still requires its exact executor Environment;
 retaining its Session row does not provide environment-free admission or an alternate target.
-Notification's stale-destination check still retires the inbox and cancels subscriptions after
-confirming that its recorded Sandbox is absent or replaced. Those transitions are not a cross-service
-transaction. The central Session lifetime direction is indefinite, and app archive is separate. The
+Notification's worker keeps the inbox and subscriptions live while the recorded Sandbox is absent or
+replaced and waits for the exact UID (`store.ObserveStale`); explicit retirement stays an API call.
+Those transitions are not a cross-service transaction. The central Session lifetime direction is indefinite, and app archive is separate. The
 selected Dispatcher identity policy is to forget a Session only upon a future explicit Session
 deletion; that API is not implemented. The treatment of other services' data remains open.
 
 The selected remaining policy is to keep the inbox and subscriptions until explicit Session
-deletion, even when a required Environment disappears. Notification still retires stale-destination
-inboxes and cancels subscriptions; #14314 does not change that behavior. Do not silently bind a
+deletion, even when a required Environment disappears, which Notification now does. Do not silently bind a
 replacement or claim lost native state is recoverable. The intended inbox behavior is to keep
 collecting authorized events and messages while delivery is unavailable and preserve unread contents,
 but that behavior remains unimplemented. Revisit sustained collection cost only if evidence warrants
@@ -3081,37 +3109,33 @@ Sandbox `kubectl` has no path until the switch. An Identity caller's `CreateSess
 What stays provisional, each tracked by the node that removes it: the delegation envelope's effective
 caller is a ServiceAccount (`SERVICES_IDENTITY_PRINCIPAL`, #15389 in review); every
 `WorkloadCredential` names a ServiceAccount subject (`STANDING_WORKLOAD_IDENTITY` for the standing
-records, `SANDBOX_IDENTITY_SPEC` for Sandboxes, `IDENTITY_CUTOVER` for boxes); a same-Identity send
-still needs a `session_inbox_access` binding and an Identity caller's wake is not authorized
-(`SESSION_IDENTITY_MESSAGING`); no explicit environment rule type exists, so an Identity caller gets
-no resume, wake or create (`ENVIRONMENT_RULE_TYPE_DESIGN`); the central sampler acts as itself, never
-for a Session's Identity (`CENTRAL_SESSION_DELEGATED_ACTING`); an MCP edge Connection is bound to a
+records, `SANDBOX_IDENTITY_SPEC` for Sandboxes, `IDENTITY_CUTOVER` for boxes); no explicit environment rule type exists, so an Identity caller gets
+no resume, wake or create (`ENVIRONMENT_RULE_TYPE_DESIGN`); the central sampler's delegated acting is in the code but not enabled on staging
+(`CENTRAL_SESSION_DELEGATED_ACTING`); an MCP edge Connection is bound to a
 ServiceAccount and the edge forwards a token minted for it (`IDENTITY_CUTOVER`).
 
 **The switch gate is one decision:** who creates the Identity a launched Sandbox runs as
 ([open question 11](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). Everything
-below the switch waits on it; nothing above it does. The lanes that do not wait are
-`STANDING_WORKLOAD_IDENTITY`, `SESSION_IDENTITY_MESSAGING`, `ENVIRONMENT_RULE_TYPE_DESIGN`,
-`CENTRAL_SESSION_DELEGATED_ACTING` (after #15389), the remaining `APP_IDENTITIES_UI` slices and
-the `APP_AGENT_TOKEN_DECISION` spike. The migration's lanes and order are in
+below the switch waits on it; nothing above it does. Same-Identity messaging and wakes landed on 2026-11-10 (#15437, #15438), as did the sampler's
+delegated acting (#15439, #15440). The lanes that do not wait are `STANDING_WORKLOAD_IDENTITY`,
+`ENVIRONMENT_RULE_TYPE_DESIGN`, the remaining `APP_IDENTITIES_UI` slices and the
+`APP_AGENT_TOKEN_DECISION` spike. The migration's lanes and order are in
 [Identity and Sessions migration](#identity-and-sessions-migration-2026-11-10).
 
 ```mermaid
 flowchart LR
     APP_AGENT_TOKEN_DECISION[Candidate: spike then decide the app's agent token]
-    SERVICES_IDENTITY_PRINCIPAL[In review #15389: the delegation envelope names an Identity]
+    SERVICES_IDENTITY_PRINCIPAL[In review #15442: the delegation settings on staging]
     CENTRAL_SESSION_ACTING_DESIGN[Settled design: a central Session acting as its identity]
-    CENTRAL_SESSION_DELEGATED_ACTING[Blocked on #15389: the sampler acts for a Session's Identity]
-    SERVICES_IDENTITY_PRINCIPAL --> CENTRAL_SESSION_DELEGATED_ACTING
+    CENTRAL_SESSION_DELEGATED_ACTING[Landed; manifest after the switch]
     CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
+    SANDBOX_IDENTITY_SPEC -->|manifest flip| CENTRAL_SESSION_DELEGATED_ACTING
     STANDING_WORKLOAD_IDENTITY[Candidate: standing workloads run as Identities]
-    SESSION_IDENTITY_MESSAGING[Candidate: same-Identity sends and wakes are implied]
     ENVIRONMENT_RULE_TYPE_DESIGN[Decision: explicit environment lifecycle rules]
     ENVIRONMENT_LIFECYCLE_RULES[Blocked: Identity callers resume, wake and create under rules]
     ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     SANDBOX_IDENTITY_SPEC[Blocked on question 11: a Sandbox acts as its identity]
-    SESSION_IDENTITY_MESSAGING -->|wake-on-send for Identity-run Sessions| SANDBOX_IDENTITY_SPEC
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
     SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
@@ -3124,7 +3148,6 @@ flowchart LR
     STANDING_WORKLOAD_IDENTITY --> IDENTITY_CUTOVER
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and inboxes authorized by identity]
-    SESSION_IDENTITY_MESSAGING --> SESSION_IDENTITY_AUTHZ
 ```
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
@@ -3214,8 +3237,13 @@ The design is settled as far as this migration needs; its implementation is
 
 ### `CENTRAL_SESSION_DELEGATED_ACTING` — the sampler acts for a Session's Identity
 
-**In flight on top of #15389 (central-session-delegated-acting, dispatched 2026-11-10); lands after
-`SERVICES_IDENTITY_PRINCIPAL`, whose envelope it uses.**
+**Landed: #15439 (LLM ingress attribution, typed envelope provenance, the sampler's
+`agentplane_ingress` connection auth) and #15440 (History `Push` delegated mode and the exporter)
+merged 2026-11-10. Blocked on `SANDBOX_IDENTITY_SPEC` for the manifest that enables it:
+`central_sampler_identity_callers` at LLM ingress, `ingress.sampler_identity_callers` at History and
+the sampler's `agentplane_ingress` connection, once central Sessions' executor Sandboxes name an
+Identity. The sampler makes no Notification calls today, so nothing to delegate there; the
+code-mode `tools`-as-Actions slice is not started.
 Implement `CENTRAL_SESSION_ACTING_DESIGN` for the Sessions that exist today, `central_sampler_v1`
 with one executor Sandbox, whose Identity Dispatcher already records from that Sandbox: the
 sampler's Go handler makes its History, Notification and Action Service calls for a Session as a
@@ -3231,8 +3259,9 @@ where a Sandbox-hosted agent's would be.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
-**In review: [#15389](https://github.com/agentydragon/ducktape/pull/15389), the last piece
-(identity-consumers, 2026-11-10).** The rest is on staging, including the proxy's half that was
+**Landed: #15389 merged 2026-11-10 (`d0ec1fb8f3`); left: [#15442](https://github.com/agentydragon/ducktape/pull/15442),
+the manifest rendering its `delegation.identity_callers` for the Runner Gateway and History (in
+review, identity-delegation-manifests, 2026-11-10). This node closes when #15442 is applied.** The rest is on staging, including the proxy's half that was
 `EGRESS_IDENTITY_RULES`: the proxy decides an Identity caller by the bindings naming it,
 impersonates any account it holds a use rule for and records the decision by kind and name
 ([egress SPEC](../egress/SPEC.md) § Decision); the Rules API answers an Identity. The seam is
@@ -3244,15 +3273,14 @@ its environment's current one, so a bypassed identity change strands Sessions ra
 re-attributing them. An Identity caller's Action boxes run on the default ServiceAccount with
 unowned records (#15385), so deleting the Identity revokes their credentials and deletes nothing.
 
-#15389 adds an Identity effective caller to the `Delegation` envelope beside the ServiceAccount
+#15389 added an Identity effective caller to the `Delegation` envelope beside the ServiceAccount
 one, with Dispatcher and History accepting either (migration 00017 records the delegated Identity
 attribution); the Action Service's Session delegation executor and the MCP edge's delegated path
 can then act for an Identity. A manifest change rendering the new receiver settings for the Runner
 Gateway and History follows its images. What this node does not do: `CreateSession` still takes
 no Identity (a central Session's comes from its executor Sandbox; an environment-free one is
 `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`), EnvironmentService admits no Identity caller
-(`ENVIRONMENT_LIFECYCLE_RULES`), and an Identity caller's wake is unauthorized
-(`SESSION_IDENTITY_MESSAGING`). The Kubernetes-audience projected token stays the only
+(`ENVIRONMENT_LIFECYCLE_RULES`). Same-Identity sends and wakes landed in #15437 and #15438. The Kubernetes-audience projected token stays the only
 `projectedWorkloadToken` source: command boxes keep it until `IDENTITY_CUTOVER`, and the source, the
 sidecar's `X-Agentplane-Workload-Token` forwarding, the proxy's second TokenReview per tunnel and
 the egress `TODO.md` entry go with it. **Exit:** #15389 merged and its settings rendered; the
@@ -3260,8 +3288,13 @@ existing service tests pass with identity principals.
 
 ### `STANDING_WORKLOAD_IDENTITY` — standing workloads run as Identities
 
-**In flight (standing-workload-identity, dispatched 2026-11-10; the operator chose it over waiting
-for the cutover; split out of `IDENTITY_CUTOVER`).** Haku UI, Anki and
+**In review: [#15450](https://github.com/agentydragon/ducktape/pull/15450) (standing-workload-identity,
+2026-11-10; the operator chose it over waiting for the cutover; split out of `IDENTITY_CUTOVER`).
+`WorkloadCredential.spec.subject.identity.uid` became optional there (operator, 2026-11-10): git
+cannot know the UID of an Identity applied beside the record; a record naming a `uid` pins that
+incarnation, one without follows the live Identity of that name; the Sandbox Controller and the
+Action Service keep pinning. Nothing existed only to carry the ServiceAccount subjects beyond one
+Role rule and a caller label, which the PR drops. Exit evidence waits for the Flux apply.** Haku UI, Anki and
 Jupyter already present SVIDs whose `WorkloadCredential` subjects are the ServiceAccounts
 `haku-sandbox/haku-ui` and, for the `haku-ci` egress relay, `haku-ci/haku-ci-egress`, held for policy
 binding only (operator, 2026-11-10). Move them first: cdk8s renders two Flux-owned `Identity`s in
@@ -3277,25 +3310,6 @@ boxes until `SESSION_SA_PRINCIPAL_REMOVAL` and `IDENTITY_CUTOVER`. The PR states
 runs reach their hosts and the proxy's decisions name the Identities. **Exit:** the proxy's
 decision log on staging shows `haku-ci` egress decided for the relay's Identity, and no
 `WorkloadCredential` in `haku-sandbox` or `haku-ci` names a ServiceAccount.
-
-### `SESSION_IDENTITY_MESSAGING` — same-Identity sends and wakes are implied
-
-**In flight (session-identity-messaging, dispatched 2026-11-10; the implementable half of
-`SESSION_IDENTITY_AUTHZ`).**
-Messaging between Sessions of the same Identity is implied, and so is the resume or wake such a send
-causes under the recipient's resume policy; only a send across Identities needs `session_inbox_access`
-(operator, 2026-11-10; [plan](identity_and_kubernetes_accounts.md#identity-lifetime)). Today
-Notification's `SendMessage` requires that binding even for a same-Identity send (#15374), the
-recipient does not see the sending Identity, and Dispatcher's wake-on-send treats an Identity
-caller like an unattributed sender (`TODO` in `runner_gateway/dispatcher/delivery_wake.go`). Admit a
-same-Identity send without a binding, record and show the sending Identity, and authorize an
-Identity caller's wake exactly as a ServiceAccount caller's, under the target Sandbox's existing
-resume policy. No new rule type: the cross-Identity case keeps `session_inbox_access`, and a direct
-resume or wake request by an Identity stays with `ENVIRONMENT_LIFECYCLE_RULES`. Nothing on staging
-sends to an Identity-run Session before the switch, so this is code-only until then; it precedes
-`SANDBOX_IDENTITY_SPEC` because after the switch every Session is Identity-run. **Exit:**
-Notification and Dispatcher tests for a same-Identity send with no binding, a cross-Identity send
-refused without one, and an Identity sender waking a suspended recipient.
 
 ### `ENVIRONMENT_RULE_TYPE_DESIGN` — explicit environment lifecycle rules
 
@@ -3330,16 +3344,17 @@ another Identity stops matching.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
-**Blocked on open question 11, who creates a launched Sandbox's `Identity`
-([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)), and on
-`SESSION_IDENTITY_MESSAGING`, without which no Identity-run Session can be woken by a message.** The
+**Blocked on open question 11 only, who creates a launched Sandbox's `Identity`
+([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).** The
 consumers-first hold is discharged: the services and proxy accept Identity subjects on staging since
 2026-11-10 (#15391 and the images before it). Draft #15239 holds the controller part and must be
 rebuilt on the answer to question 11 rather than rebased.
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
 only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
 Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes
-its acting identity again, while credentials stay UID-fenced. Acting in a workload is implied for
+its acting identity again, while the controller's credentials, which pin the UID, stop working
+(a `WorkloadCredential` pins an incarnation only when its requester names the `uid`; operator,
+2026-11-10). Acting in a workload is implied for
 its bound Identity, but lifecycle control (resume, wake, suspend, delete, rebind, create Sessions)
 needs an explicit grant, and deleting the Identity revokes the Sandbox's credentials without
 deleting it ([plan](identity_and_kubernetes_accounts.md#identity-lifetime); operator, 2026-11-10).
@@ -3394,8 +3409,7 @@ ServiceAccount path.
 Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
 a Session whose recorded execution identity differs), so the switch needs a step that either
 rewrites those Sessions' execution identity or retires them. On staging no Sandboxes run during the
-switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity caller's wake-on-send
-is `SESSION_IDENTITY_MESSAGING` (TODO in `runner_gateway/dispatcher/delivery_wake.go`).
+switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity sender's queued work wakes the Sandbox acting as that Identity since #15438.
 
 **Exit:** controller tests for a Sandbox with and without a live identity; and a Sandbox with no
 Kubernetes use rule has nothing in the accounts namespace.
@@ -3425,15 +3439,16 @@ services' tests pass without one.
 
 ### `APP_IDENTITIES_UI` — identities in the app
 
-**Paused; the first slice landed (`app/frontend/identities/`: the list with bindings, expiries and
-the accounts its use rules reach, the identity page, references, origin, and delete refused while
-referenced or from git). Remaining slices are candidates, parallel with the service work.**
+**Paused; landed so far: the identities list with bindings, expiries and the accounts its use
+rules reach, the identity page, references, origin and delete refused while referenced or from git
+(`app/frontend/identities/`); the session form showing an existing environment's Identity
+(#15443); optional identity cleanup on Sandbox deletion (#15444); a stopped environment's identity
+changed or cleared, guarded against placed Sessions (#15445). Remaining slices are candidates.**
 `PolicyService` already watches Identities and deletes one for it (#15151;
-[Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). Left: the session form with placement and identity, the
-set selector hidden for an existing identity; the permission-request approval card with new
-temporary account, widen shared, or deny; the finish dialog defaulting to delete an identity the
-app minted for that session; changing a stopped environment's identity, warning that the new
-identity reads what earlier ones left, and the identities an environment has run as on its page. The Connection consent page (`/#/connection-enrollments/{handle}`) and
+[Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). Left: the new-environment identity picker (lands with `SANDBOX_IDENTITY_SPEC`, since
+`CreateEnvironment` takes no Identity before it); the permission-request approval card with new
+temporary account, widen shared, or deny; the finish dialog's default to delete an app-minted
+identity once the app mints any (question 11); the identities an environment has run as on its page. The Connection consent page (`/#/connection-enrollments/{handle}`) and
 the OAuth clients tab's rebind picker choose an Identity from the edge's `connection_identities`
 instead of a ServiceAccount, a Connection's **View grants** shows that Identity's bindings, and an
 identity's page lists the Connections bound to it beside its Sandboxes and Sessions (operator,
@@ -3470,7 +3485,7 @@ Identity keeps reading, steering, interrupting and cancelling its own Identity-r
 The design builds on the existing [delegated authorization](../docs/delegated_authorization.md)
 (a platform component acting for an Identity, the envelope naming that Identity, #15389), takes the
 grant to create a Session from `ENVIRONMENT_RULE_TYPE_DESIGN`'s `create_session` operation, the
-messaging from `SESSION_IDENTITY_MESSAGING`, settles which Identity the
+messaging that landed in #15437 and #15438, settles which Identity the
 sub-Session runs as with open question 11 of the
 [plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), and covers Sessions with
 no environment (`CENTRAL_SESSION_ACTING_DESIGN`). What a sub-Session of the same Identity may do follows the plan's
@@ -3480,7 +3495,7 @@ type is decided; the sub-Session's Identity waits for question 11. **Exit:** a d
 
 ### `SESSION_IDENTITY_AUTHZ` — Session reads and inboxes authorized by identity
 
-**Design, not started (operator, 2026-11-10); the send half is `SESSION_IDENTITY_MESSAGING`.** Who
+**Design, not started (operator, 2026-11-10); the send half landed (#15437, #15438).** Who
 may send to a Session's inbox, read and manage that inbox, and read its History is decided today
 through the Sandbox hosting it:
 
@@ -3498,7 +3513,7 @@ read a Session, whichever Sandbox (if any) hosts it. A central-sampler Session h
 Sandboxes run as Identities (`IDENTITY_CUTOVER`). It also depends on open question 11 of the
 [plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), who creates a launched
 Sandbox's Identity. The Sandbox-anchored sites carry `TODO(SESSION_IDENTITY_AUTHZ)`. The send rule
-is settled and implemented by `SESSION_IDENTITY_MESSAGING`; what remains here is inbox ownership and
+is settled and implemented (#15437, #15438); what remains here is inbox ownership and
 History reads keyed on the Session's Identity and the bindings naming it (a read rule type of its
 own, operator 2026-10-21; reconcile with the held `THREAD_READ_POLICY_DESIGN`). **Exit:** a
 decided design for inbox and History-read authorization keyed on the Session's Identity, and
