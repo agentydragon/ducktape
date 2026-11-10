@@ -464,7 +464,8 @@ DAG and job attempts.
 
 Apply the [pool inventory, queue evidence and reporting guidance](references/executor_queues.md)
 to these layers. Attribute a queue to its actual scheduler and eligible capacity,
-not merely to the service hosting the logs.
+not merely to the service hosting the logs. For work routed to the in-cluster
+`kvm-vm` pool, consult its executor dashboard as described in that guidance.
 
 Break time into **observed** mutually exclusive intervals where possible; note
 unknown and overlapping intervals explicitly:

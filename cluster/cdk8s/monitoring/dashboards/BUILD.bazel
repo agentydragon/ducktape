@@ -30,6 +30,12 @@ py_library(
 )
 
 grafana_dashboard_visual_test(
+    name = "buildbuddy_executor_pool_dashboard_visual_test",
+    dashboard = ":buildbuddy-executor-pool.json",
+    fixture_data = ":visual_fixtures/buildbuddy-executor-pool.json",
+)
+
+grafana_dashboard_visual_test(
     name = "piraeus_query_backed_visual_test",
     src = "test_piraeus_dashboard_visual.py",
     dashboard = ":piraeus-storage.json",
