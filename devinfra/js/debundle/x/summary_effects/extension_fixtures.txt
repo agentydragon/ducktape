@@ -145,3 +145,21 @@ const a = [1]; function grow() { a.push(2); }
 grow();
 const all = [...a];
 console.log(all.length);
+### commutes same: a guarded polyfill of one static across a read of another
+-
+let unused;
+Object.entriesOf || (Object.entriesOf = function (o) { return Object.entries(o); });
+const keys = Object.keys;
+console.log(keys({ a: 1 }).length, typeof Object.entriesOf);
+### ordered differs: a guarded polyfill across a read of the static it defines
+-
+let unused;
+if (!Object.entriesOf) Object.entriesOf = function () {};
+const entriesOf = Object.entriesOf;
+console.log(typeof entriesOf);
+### ordered differs: a guarded polyfill of a standard static across a read of it
+-
+delete Object.fromEntries;
+Object.fromEntries || (Object.fromEntries = function () { return 'polyfill'; });
+const fromEntries = Object.fromEntries;
+console.log(typeof fromEntries);

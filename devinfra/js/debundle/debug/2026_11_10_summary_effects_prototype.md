@@ -555,11 +555,14 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 22 programs run under Node in both orders (9
-admitted with Node agreeing, 13 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 27 programs run under Node in both orders (11
+admitted with Node agreeing, 16 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
-statement, a property the literal lacks). The 129 order-dependent statements
+statement, a property the literal lacks, a guarded polyfill
+`G.m || (G.m = f)` against a read of `G.m`). A named write refuses only
+reads of that member: the polyfill commutes with a read of another static of
+the same global. The 129 order-dependent statements
 of § Soundness fixtures are refused with all eight upgrades on.
 
 Excalidraw, stress assignment, program-wide census, unproven pairs / authored
