@@ -43,7 +43,7 @@ func (e *Executor) Actions() map[string]catalog.ActionDefinition {
 func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *worker.Lease) (store.ExecutionOutcome, error) {
 	recorded, ok := request.Caller.(store.ServiceAccountCaller)
 	if !ok {
-		return worker.Failed("caller_not_service_account",
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT,
 			"sandboxes run as their calling ServiceAccount, and this request's caller is not one"), nil
 	}
 	if caller := recorded.Account; caller.Namespace != e.binding.Namespace {

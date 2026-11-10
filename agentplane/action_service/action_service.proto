@@ -603,6 +603,8 @@ enum ExecutionErrorKind {
   EXECUTION_ERROR_KIND_TARGET_NOT_FOUND = 35;
   EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET = 36;
   EXECUTION_ERROR_KIND_WAIT_UNAVAILABLE = 37;
+  // The executor runs as or forwards a calling ServiceAccount, and the caller is an Identity.
+  EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT = 38;
 }
 
 // The Environment Service's answer to a resume that did not take effect.

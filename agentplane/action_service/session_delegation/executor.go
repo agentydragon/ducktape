@@ -80,7 +80,7 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	if !ok {
 		// The delegation envelope names a ServiceAccount, as the Session APIs authorize by one.
 		// TODO: refuse an Identity caller at submission, so no operator approves a doomed request.
-		return worker.Failed("caller_not_service_account",
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT,
 			"Session delegation forwards a calling ServiceAccount, and this request's caller is not one"), nil
 	}
 	delegated, err := e.delegatedContext(ctx, request, caller)
