@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import App, Chart, JsonPatch
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -18,7 +18,7 @@ NAME = "litellm-buildbuddy-sync"
 def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, TF_MODULE, disable_resource_name_hashes=True)
     buildbuddy_api_key = SecretRef(namespace=terraform.NAMESPACE, name="buildbuddy-org-admin-api-key").key("api-key")
-    terraform.gitops_terraform(
+    writer = terraform.gitops_terraform(
         chart,
         "terraform",
         module=module,
@@ -26,6 +26,9 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         additional_vars=[terraform.secret_var("buildbuddy_api_key", buildbuddy_api_key)],
         env=[terraform.secret_env("BUILDBUDDY_API_KEY", buildbuddy_api_key)],
     )
+    # Keep the writer stopped until its state ownership is removed and the
+    # BuildBuddy Terraform provisioning can be retired without a destroy.
+    writer.add_json_patch(JsonPatch.add("/spec/suspend", True))
     return chart
 
 
