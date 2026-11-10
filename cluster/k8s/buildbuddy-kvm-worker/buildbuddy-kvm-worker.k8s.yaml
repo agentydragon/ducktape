@@ -1128,6 +1128,7 @@ spec:
                   package_update: true
                   packages:
                   - docker.io
+                  - prometheus-node-exporter
                   fs_setup:
                   - device: /dev/disk/by-id/virtio-work
                     filesystem: ext4
@@ -1219,6 +1220,8 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
+            - port: "9100"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: Service
@@ -1233,6 +1236,10 @@ spec:
       port: 9090
       protocol: TCP
       targetPort: 9090
+    - name: node-metrics
+      port: 9100
+      protocol: TCP
+      targetPort: 9100
   selector:
     app.kubernetes.io/part-of: buildbuddy-kvm-worker
   type: ClusterIP
@@ -1246,6 +1253,8 @@ spec:
   endpoints:
     - path: /metrics
       port: metrics
+    - path: /metrics
+      port: node-metrics
   selector:
     matchLabels:
       app.kubernetes.io/part-of: buildbuddy-kvm-worker
@@ -1263,7 +1272,7 @@ spec:
           annotations:
             description: No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
             summary: No KVM worker is ready
-          expr: absent(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics"} == 1)
+          expr: absent(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1)
           for: 2m
           labels:
             severity: critical

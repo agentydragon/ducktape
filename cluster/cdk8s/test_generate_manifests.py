@@ -126,11 +126,11 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         for doc in documents
         if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
     )
-    port = next(port for port in service["spec"]["ports"] if port["name"] == "metrics")
+    ports = {port["name"]: port for port in service["spec"]["ports"]}
     pod_labels = pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["metadata"]["labels"]
     assert service["spec"]["selector"].items() <= pod_labels.items()
     assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
-    assert monitor["spec"]["endpoints"][0]["port"] == port["name"]
+    assert {endpoint["port"] for endpoint in monitor["spec"]["endpoints"]} == ports.keys()
     for policy in (
         doc
         for doc in documents
@@ -140,7 +140,7 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         assert rule["fromEndpoints"] == [
             {"matchLabels": {"app.kubernetes.io/name": "alloy-node", "k8s:io.kubernetes.pod.namespace": "monitoring"}}
         ]
-        assert [p["port"] for p in rule["toPorts"][0]["ports"]] == [str(port["port"])]
+        assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
 
 
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
@@ -192,6 +192,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
     cloud_init = yaml.safe_load(user_data)
+    assert "prometheus-node-exporter" in cloud_init["packages"]
     mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
     assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
     assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"

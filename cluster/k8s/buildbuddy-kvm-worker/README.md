@@ -57,7 +57,8 @@ bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
 bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 ```
 
-The outer policy admits only node-local Alloy to the executor's metrics port, and egress to DNS, BuildBuddy and its registry, Ubuntu package
+The guest's `prometheus-node-exporter` exposes CPU, memory and filesystem metrics alongside the executor's own metrics.
+The outer policy admits only node-local Alloy to those metrics ports, and egress to DNS, BuildBuddy and its registry, Ubuntu package
 repositories over TLS, and Zot. Use
 `virtctl -n buildbuddy-executor console buildbuddy-kvm-worker-0` for diagnostics. Rotate the key too if
 the guest was compromised.
