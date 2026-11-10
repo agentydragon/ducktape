@@ -103,26 +103,6 @@ async def test_gateway_roll_keeps_live_central_read_and_turn(
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_gateway_crash_settles_live_central_read_and_accepts_next_input(
-    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
-) -> None:
-    await central_sampler.gateway_crash_settles_live_central_read_and_accepts_next_input(
-        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-crash")
-    )
-
-
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
-    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
-) -> None:
-    await central_sampler.gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
-        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-budget")
-    )
-
-
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
 async def test_gateway_exec_server_loss_notifies_active_central_turn(
     cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:

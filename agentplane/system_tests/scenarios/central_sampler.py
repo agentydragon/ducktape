@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import re
+import signal
 from contextlib import aclosing
 from pathlib import Path
 from uuid import uuid4
@@ -541,6 +543,42 @@ async def _wait_for_cell_result_in_history(
             await asyncio.sleep(0.1)
 
 
+async def _kill_gateway_process(cluster: Cluster, pod: dict[str, object], crictl_command: tuple[str, ...]) -> None:
+    """SIGKILL the exact Gateway container, bypassing its orderly Lease release."""
+    metadata = pod["metadata"]
+    assert isinstance(metadata, dict)
+    current = json.loads(await cluster.kubectl("get", "pod", metadata["name"], "-o", "json"))
+    assert current["metadata"]["uid"] == metadata["uid"], current["metadata"]
+    (container,) = [status for status in current["status"]["containerStatuses"] if status["name"] == "runner-gateway"]
+    container_id = container["containerID"].removeprefix("containerd://")
+    assert container_id, container
+    assert container_id != container["containerID"], container
+    process = await asyncio.create_subprocess_exec(
+        *crictl_command,
+        "--runtime-endpoint",
+        "unix:///run/k3s/containerd/containerd.sock",
+        "inspect",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+    if process.returncode:
+        raise RuntimeError(f"crictl inspect exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+    inspected = json.loads(stdout)
+    assert inspected["status"]["id"] == container_id, inspected["status"]
+    pid = inspected["info"]["pid"]
+    assert isinstance(pid, int), pid
+    assert pid > 1, pid
+    pidfd = os.pidfd_open(pid)
+    try:
+        executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
+        assert executable.name == "runner-gateway", executable
+        signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+    finally:
+        os.close(pidfd)
+
+
 async def _roll_gateway_for_central_session(
     cluster: Cluster,
     deployed: CentralStack,
@@ -549,6 +587,7 @@ async def _roll_gateway_for_central_session(
     hold_down_seconds: float = 0,
     kill_native_server: bool = False,
     abrupt: bool = False,
+    crictl_command: tuple[str, ...] | None = None,
     wait_for_read_failure: CodexModel | None = None,
 ) -> tuple[
     CentralStack, float, str, str, tuple[str, str, str] | None, tuple[ModelRequest[ResponsesRequest], str, str] | None
@@ -567,14 +606,13 @@ async def _roll_gateway_for_central_session(
             await cluster.kubectl("get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json")
         )
         assert old_lease["spec"]["holderIdentity"] == old_pod["metadata"]["name"], old_lease
+        assert crictl_command is not None
     try:
         if abrupt:
-            await cluster.kubectl(
-                "delete", "pod", old_pod["metadata"]["name"], "--grace-period=0", "--force", "--wait=true"
-            )
+            assert crictl_command is not None
+            await _kill_gateway_process(cluster, old_pod, crictl_command)
         await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
-        if not abrupt:
-            await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
+        await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
         if old_lease is not None:
             lease = json.loads(
                 await cluster.kubectl(
@@ -882,7 +920,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
 
 
 async def gateway_crash_settles_live_central_read_and_accepts_next_input(
-    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, crictl_command: tuple[str, ...]
 ) -> None:
     """A killed Gateway leaves its Lease held; the active read still settles truthfully."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
@@ -955,7 +993,11 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
             )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-crash-process")
         recovered, _, _, _, killed_native, read_failure = await _roll_gateway_for_central_session(
-            cluster, deployed, failed_resume_after=(session_id, cursor, "read-crash-process"), abrupt=True
+            cluster,
+            deployed,
+            failed_resume_after=(session_id, cursor, "read-crash-process"),
+            abrupt=True,
+            crictl_command=crictl_command,
         )
         assert killed_native is None
         assert read_failure is None
