@@ -144,6 +144,7 @@ function sampleQuotas(): AllQuotasView {
 describe("QuotaBoard", () => {
   it("puts fresh exhaustion above readings and styles it as urgent; pending resets are warnings", () => {
     const quotas = sampleQuotas();
+    quotas.providers[0]!.display_windows[0]!.exhausted = true;
     render(quotas);
     let card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     let status = card.querySelector(".aiquota-status-row")!;

@@ -147,8 +147,8 @@
     Stale data · last observed 5m ago
     Refresh failed · showing available data
     Included quota exhausted
-    5h: 100% used  ↻ 1h 55m
     Extra spend this month: $25.50 of $100 limit
+    5h: 100% used  ↻ 1h 55m
   '''
 # ---
 # name: test_renders_shared_fixture[hot]
@@ -173,13 +173,13 @@
   '''
   Claude
     Reset time passed · awaiting updated usage
+    Extra spend this month: $25.50 of $100 limit
     5h: 100% used  ↻ awaiting update
     7d: 100% used  ↻ 23h 58m          exhausted
-    Extra spend this month: $25.50 of $100 limit
   
   Codex
-    Paid credits: 500 credits
     Reset time passed · awaiting updated usage
+    Paid credits: 500 credits
     5h: 100% used  ↻ awaiting update
     7d: 100% used  ↻ 23h 58m          exhausted
   '''
@@ -304,13 +304,13 @@
   Claude
     Stale data · last observed 15m ago
     Included quota exhausted
-    5h: 100% used  ↻ 1h 45m
     Extra spend this month: $25.50 of $100 limit
+    5h: 100% used  ↻ 1h 45m
   
   Codex
     Stale data · last observed 15m ago
-    Paid credits: 500 credits
     Included quota exhausted
+    Paid credits: 500 credits
     5h: 100% used  ↻ 1h 45m
   '''
 # ---
