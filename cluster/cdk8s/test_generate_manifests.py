@@ -1061,3 +1061,24 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_buildbuddy_secret_stays_paused_while_terraform_owns_it(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    staged = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "buildbuddy.m.allegedly.works/v1alpha1" and doc.get("kind") == "Secret"
+    )
+    terraform = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
+        and doc.get("kind") == "Terraform"
+        and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
+    )
+    assert terraform["metadata"]["namespace"] == "flux-system"
+    assert staged["metadata"]["annotations"]["crossplane.io/paused"] == "true"
+    assert "Delete" not in staged["spec"]["managementPolicies"]

@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: buildbuddy-provider-credentials-reader
+  namespace: litellm
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: buildbuddy-provider-credentials-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - buildbuddy-org-admin-api-key
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: buildbuddy-provider-credentials-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: buildbuddy-provider-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: buildbuddy-provider-credentials-reader
+    namespace: litellm
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-buildbuddy-provider-credentials-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - litellm
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: buildbuddy-provider-credentials-reader
+      remoteNamespace: flux-system
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-crossplane-provider-credentials
+  namespace: litellm
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-org-admin-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-buildbuddy-provider-credentials-secret-store
+  target:
+    creationPolicy: Owner
+    name: buildbuddy-crossplane-provider-credentials
+---
+apiVersion: buildbuddy.m.allegedly.works/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: default
+  namespace: litellm
+spec:
+  credentials:
+    secretRef:
+      key: api-key
+      name: buildbuddy-crossplane-provider-credentials
+      namespace: litellm
+    source: Secret
+---
+apiVersion: buildbuddy.m.allegedly.works/v1alpha1
+kind: Secret
+metadata:
+  annotations:
+    crossplane.io/external-name: OPENAI_API_KEY
+    crossplane.io/paused: "true"
+  name: live-tests
+  namespace: litellm
+spec:
+  forProvider:
+    valueSecretRef:
+      key: api-key
+      name: litellm-key-buildbuddy-live-tests
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default

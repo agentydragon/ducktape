@@ -44,6 +44,21 @@ package_group(
 )
 
 py_library(
+    name = "buildbuddy_provider",
+    srcs = ["buildbuddy_provider.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":manifest_roots",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
+        "//cluster/cdk8s/providers/crossplane:provider",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "buildbuddy_executor",
     srcs = ["buildbuddy_executor.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -1573,6 +1588,7 @@ py_library(
         ":artifact_generators",
         ":buildbuddy_executor",
         ":buildbuddy_kvm_worker",
+        ":buildbuddy_provider",
         ":claude_sandbox_secrets",
         ":claude_session_sync",
         ":cpap_sync",
@@ -1724,6 +1740,7 @@ py_library(
         "//cluster/cdk8s/kubevirt:operators",
         "//cluster/cdk8s/kyverno:app",
         "//cluster/cdk8s/kyverno:policies",
+        "//cluster/cdk8s/litellm:buildbuddy_crossplane",
         "//cluster/cdk8s/litellm:buildbuddy_sync",
         "//cluster/cdk8s/litellm:crossplane_keys",
         "//cluster/cdk8s/litellm:database",
