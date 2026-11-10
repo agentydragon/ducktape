@@ -1,0 +1,15 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        HotkeyLabel = ({ color: ANYTHING, keyLabel: ANYTHING, isCustomColor: ANYTHING, isShade: ANYTHING }) =>
+          ANYTHING("div", { className: "color-picker__button__hotkey-label", ANYTHING }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - HotkeyLabel
+  - match: |
+      var ANYTHING = ANYTHING,
+        PickerHeading = ({ children: ANYTHING }) =>
+          ANYTHING("div", { className: "color-picker__heading", ANYTHING }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - PickerHeading

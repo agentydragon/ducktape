@@ -374,6 +374,7 @@ rust_library(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
     deps = [
         "//devinfra/js/debundle:artifact",
         "//devinfra/js/debundle:binding_targets",
