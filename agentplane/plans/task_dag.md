@@ -3555,13 +3555,6 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
 - **The OAuth MCP fixture image** (`action_service/testing/oauth_mcp_server.py` and its deployment
   wiring): check whether an existing MCP image (the Everything image) can serve the tool surface with
   Dex, then delete the custom fixture. Source: `TODO` at the fixture.
-- **Write-only Action Service fields,
-  [#11417](https://github.com/agentydragon/ducktape/pull/11417):** drops the `heartbeat_at` write on
-  `action_execution` that nothing reads, `store.ExecutionClaim.ExpiresAt`, `mcpexec.Executor.tools`
-  and settings no deployment sets. Partly overtaken: on devel `policy_resync_seconds` and
-  `policies.NoMatchReason` are already gone, while `github_visibility` (`action_service/config.go`,
-  `settings.py`; rendered by no cdk8s module), the `heartbeat_at` write (`store/executions.go`) and
-  `ExecutionClaim.ExpiresAt` remain. Rebase and recheck each item before merging.
 - **`cluster/cdk8s/agentplane/test_sandbox_service.py`** is named for the retired Sandbox Service;
   rename it for what it tests. The other item section 9 knew, `docs/operator_federation.md` saying
   "Event & Notification Hub", is gone on devel. Source: `REFACTOR_COHERENCE_AUDIT`.
@@ -3696,6 +3689,9 @@ phase (section 14): expand → switch → contract leaves each transitional piec
   - Plan exits: [`identity_and_kubernetes_accounts.md`](identity_and_kubernetes_accounts.md#exit)
     moves to `docs/` and the SPECs and is deleted, `agent_rbac.md` is rewritten, and section 14 and
     `AGENT_PRINCIPAL_MODEL_DESIGN` (section 5) leave this DAG.
+- **The Action Service's rollout that stops writing `action_execution.heartbeat_at`** (2026-11-10;
+  nothing reads it): drop the column in a new Action Service migration once no older replica runs, so
+  none writes it mid-roll.
 - **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
   per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
 - **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records

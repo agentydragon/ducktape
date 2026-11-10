@@ -474,9 +474,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	visibility, err := policies.NewVisibility(
-		c.GitHubVisibility.APIBaseURL, time.Duration(c.GitHubVisibility.CacheTTLSeconds*float64(time.Second)),
-	)
+	visibility, err := policies.NewVisibility(policies.GitHubAPIBaseURL, policies.VisibilityTTL)
 	if err != nil {
 		return err
 	}
