@@ -161,6 +161,7 @@ elsewhere in the repo are not the live implementation.
 
 ## Bazel integration and profiling
 
+`debundle_product.bzl` declares a corpus's standard target family;
 `pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action, and
 `debundle_cli.bzl` provides a runfiles-backed launcher for graph queries; profile
 with `perf_wrapper.sh`: <docs/bazel_integration.md>.
