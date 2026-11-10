@@ -33,6 +33,12 @@ from x.ai_session_archive.models import (
     TranscriptStatus,
 )
 from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
+from x.ai_session_archive.statuses import (
+    CodexMetadataStatus,
+    SnapshotFileStatus,
+    SnapshotInventoryStatus,
+    SnapshotProcessingStatus,
+)
 
 MAX_EVENT_PAGE_SIZE = 500
 MAX_DELTA_DEPTH = 63
@@ -67,9 +73,9 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
         state = _snapshot_import_state(inventory_status, processing_status, codex_metadata_status)
         machine_progress.known_snapshot_count += 1
         if (
-            inventory_status == "complete"
-            and processing_status == "complete"
-            and codex_metadata_status in ("complete", "partial")
+            inventory_status == SnapshotInventoryStatus.COMPLETE
+            and processing_status == SnapshotProcessingStatus.COMPLETE
+            and codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL)
         ):
             machine_progress.completed_snapshot_count += 1
         if state in (
@@ -78,11 +84,11 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
             SnapshotImportState.CODEX_METADATA_FAILED,
         ):
             machine_progress.failed_snapshot_count += 1
-        if codex_metadata_status == "pending":
+        if codex_metadata_status == CodexMetadataStatus.PENDING:
             machine_progress.codex_metadata_pending_snapshot_count += 1
-        elif codex_metadata_status == "failed":
+        elif codex_metadata_status == CodexMetadataStatus.FAILED:
             machine_progress.codex_metadata_failed_snapshot_count += 1
-        elif codex_metadata_status == "partial":
+        elif codex_metadata_status == CodexMetadataStatus.PARTIAL:
             machine_progress.codex_metadata_partial_snapshot_count += 1
         snapshots_by_machine.setdefault(machine_id, []).append((captured_at, state))
 
@@ -92,7 +98,13 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
             progress[machine_id].oldest_unfinished_snapshot_at = unfinished[0][0]
             progress[machine_id].oldest_unfinished_snapshot_state = unfinished[0][1]
 
-    processed_statuses = {"not_indexed", "unclassified", "deleted", "complete", "partial"}
+    processed_statuses = {
+        SnapshotFileStatus.NOT_INDEXED,
+        SnapshotFileStatus.UNCLASSIFIED,
+        SnapshotFileStatus.DELETED,
+        SnapshotFileStatus.COMPLETE,
+        SnapshotFileStatus.PARTIAL,
+    }
     for machine_id, file_status, count in session.execute(
         select(SnapshotFileRow.machine_id, SnapshotFileRow.status, func.count())
         .group_by(SnapshotFileRow.machine_id, SnapshotFileRow.status)
@@ -103,9 +115,9 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
             continue
         if file_status in processed_statuses:
             machine_progress.processed_file_count += count
-        elif file_status == "pending":
+        elif file_status == SnapshotFileStatus.PENDING:
             machine_progress.pending_file_count += count
-        elif file_status == "failed":
+        elif file_status == SnapshotFileStatus.FAILED:
             machine_progress.failed_file_count += count
 
     return [progress[machine.id] for machine in machines]
@@ -114,17 +126,17 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
 def _snapshot_import_state(
     inventory_status: str, processing_status: str, codex_metadata_status: str
 ) -> SnapshotImportState:
-    if inventory_status == "failed":
+    if inventory_status == SnapshotInventoryStatus.FAILED:
         return SnapshotImportState.INVENTORY_FAILED
-    if processing_status == "failed":
+    if processing_status == SnapshotProcessingStatus.FAILED:
         return SnapshotImportState.PROCESSING_FAILED
-    if codex_metadata_status == "failed":
+    if codex_metadata_status == CodexMetadataStatus.FAILED:
         return SnapshotImportState.CODEX_METADATA_FAILED
-    if inventory_status != "complete":
+    if inventory_status != SnapshotInventoryStatus.COMPLETE:
         return SnapshotImportState.INVENTORY_PENDING
-    if codex_metadata_status == "pending":
+    if codex_metadata_status == CodexMetadataStatus.PENDING:
         return SnapshotImportState.CODEX_METADATA_PENDING
-    if processing_status != "complete":
+    if processing_status != SnapshotProcessingStatus.COMPLETE:
         return SnapshotImportState.PROCESSING_PENDING
     return SnapshotImportState.COMPLETE
 
@@ -142,7 +154,7 @@ def _session_summary_query() -> Any:
         )
         .join(FileVersionRow, FileVersionRow.id == SnapshotFileRow.file_version_id)
         .where(FileVersionRow.session_id == SessionRow.id)
-        .where(SnapshotFileRow.status.in_(("complete", "partial")))
+        .where(SnapshotFileRow.status.in_((SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)))
         .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
         .limit(1)
         .scalar_subquery()
@@ -156,16 +168,20 @@ def _session_summary_query() -> Any:
             & (ResticSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id),
         )
         .where(FileVersionRow.session_id == SessionRow.id)
-        .where(SnapshotFileRow.status.in_(("complete", "partial")))
+        .where(SnapshotFileRow.status.in_((SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)))
         .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
         .limit(1)
         .scalar_subquery()
     )
     has_pending_file = exists(
-        select(1).where(SnapshotFileRow.session_id == SessionRow.id, SnapshotFileRow.status == "pending")
+        select(1).where(
+            SnapshotFileRow.session_id == SessionRow.id, SnapshotFileRow.status == SnapshotFileStatus.PENDING
+        )
     )
     has_failed_file = exists(
-        select(1).where(SnapshotFileRow.session_id == SessionRow.id, SnapshotFileRow.status == "failed")
+        select(1).where(
+            SnapshotFileRow.session_id == SessionRow.id, SnapshotFileRow.status == SnapshotFileStatus.FAILED
+        )
     )
     return select(
         SessionRow,

@@ -18,6 +18,7 @@ py_library(
     srcs = ["database.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":statuses",
         "//util:db_url",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
@@ -103,6 +104,7 @@ py_library(
         ":database",
         ":models",
         ":record_json",
+        ":statuses",
         "@pypi//sqlalchemy",
     ],
 )
@@ -154,6 +156,7 @@ py_library(
         ":models",
         ":record_json",
         ":restic",
+        ":statuses",
         ":usage_observations",
         "@pypi//sqlalchemy",
     ],
@@ -650,4 +653,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "statuses",
+    srcs = ["statuses.py"],
 )
