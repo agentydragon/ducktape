@@ -234,3 +234,15 @@ let state = 0; let other = 0;
 state = 1;
 other = 2;
 console.log(state + other);
+### commutes same: a callee that is both pure and a callback factory
+{"callees":[{"callee":{"by":"import","specifier":"./dep.js","export":"factory"},"kind":"pure_call"},{"callee":{"by":"import","specifier":"./dep.js","export":"factory"},"kind":"callback_factory"}]}
+import { factory } from './dep.js';
+const a = factory(() => later);
+const b = factory(() => 2);
+var later = 1; console.log(a.fn() + b.fn());
+### commutes same: a pure site on calls of a callback factory
+{"callees":[{"callee":{"by":"import","specifier":"./dep.js","export":"factory"},"kind":"callback_factory"}],"sites":[{"unit":1,"kind":"pure"},{"unit":2,"kind":"pure"}]}
+import { factory } from './dep.js';
+const a = factory(() => 1);
+const b = factory(() => 2);
+console.log(a.fn() + b.fn());

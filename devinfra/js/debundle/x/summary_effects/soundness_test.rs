@@ -210,6 +210,8 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "const patch = (target, name = 'set') => { target[name] = 1; }; patch(Map.prototype); const a = new Map([['k', 1]]);",
             "const root = typeof globalThis === 'object' ? globalThis : window; root.Map = class {}; const a = new Map();",
             "const root = globalThis; root[k] = 1; const a = new Map();",
+            "window[`Ma${suffix}`] = class {}; const a = new Map();",
+            "window[prefix + 'Map'] = class {}; const a = new Map();",
             "(function (root) { root.Map = class {}; })(globalThis); const a = new Map();",
             "((root, name) => { root[name] = 1; })(window, 'Map'); const a = new Map();",
             // A store through `.prototype` of something an escaped
@@ -227,6 +229,9 @@ fn tier0_upgrades_stop_at_their_near_misses() {
         for pure in [
             "const proto = Set.prototype; const a = new Set([1]);",
             "window[Symbol.for('tag')] = true; const a = new Map();",
+            "window[`callback_${id}`] = () => {}; const a = new Map();",
+            "window['callback_' + id] = () => {}; const a = new Map();",
+            "window[0] = 1; const a = new Map();",
             "function listen(target) { target.onload = null; } listen(window); const a = new Map();",
             "function check(target) { return typeof target; } check(Map); const a = new Map();",
             "const supported = [Map, Set].every(Boolean); const a = new Map();",
@@ -464,7 +469,7 @@ fn tier0_derivation_matches_node() {
                     upgrades: ALL_UPGRADES.into_iter().collect(),
                     what_if_pure: Default::default(),
                     program: Some(
-                        summary_effects::program::load(&directory, &chunk, None)
+                        summary_effects::program::load(&directory, &chunk, None, &[])
                             .expect("the program loads"),
                     ),
                     premises: Default::default(),
@@ -730,4 +735,85 @@ fn tier0_derivation_classifies_callee_families() {
             assert!(impure(derived_kind(source)), "{family}");
         }
     });
+}
+
+/// Whether `chunk` under `directory` is on an import cycle.
+fn on_cycle(directory: &std::path::Path, chunk: &str, roots: &[String]) -> bool {
+    js_ast::with_swc_globals(|| {
+        summary_effects::program::load(directory, &directory.join(chunk), None, roots)
+            .expect("the program loads")
+            .on_import_cycle
+    })
+}
+
+fn scratch(name: &str, files: &[(&str, &[u8])]) -> std::path::PathBuf {
+    let directory =
+        std::env::temp_dir().join(format!("summary_effects_{name}_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a scratch directory");
+    for (file, contents) in files {
+        std::fs::write(directory.join(file), contents).expect("writing a chunk");
+    }
+    directory
+}
+
+/// A dynamic `import()` settles in a later job, so it closes a cycle only
+/// when a top-level `await` somewhere lets evaluation be suspended.
+#[test]
+fn program_cycles_through_dynamic_imports_need_top_level_await() {
+    let a = b"import './b.js';\nexport function probe() { return later; }\nvar later = 1;\n";
+    let settled = scratch(
+        "settled",
+        &[
+            ("a.js", a),
+            ("b.js", b"import('./a.js').then((m) => m.probe());\n"),
+        ],
+    );
+    assert!(!on_cycle(&settled, "a.js", &[]));
+    let awaited = scratch(
+        "awaited",
+        &[
+            ("a.js", a),
+            ("b.js", b"import('./a.js').then((m) => m.probe());\n"),
+            ("c.js", b"await 0;\n"),
+        ],
+    );
+    assert!(on_cycle(&awaited, "a.js", &[]));
+    let fixed = scratch(
+        "static",
+        &[
+            ("a.js", a),
+            ("b.js", b"import { probe } from './a.js';\nprobe();\n"),
+        ],
+    );
+    assert!(on_cycle(&fixed, "a.js", &[]));
+    for directory in [settled, awaited, fixed] {
+        std::fs::remove_dir_all(directory).expect("removing the scratch directory");
+    }
+}
+
+/// Absolute specifiers under a declared root name chunks of the program,
+/// and a chunk with bytes that are not UTF-8 still loads.
+#[test]
+fn program_resolves_rooted_specifiers_and_reads_any_bytes() {
+    let directory = scratch(
+        "rooted",
+        &[
+            (
+                "a.js",
+                b"import '/$virtual/root/b.js';\nexport const a = 1;\n",
+            ),
+            (
+                "b.js",
+                b"import { a } from '/$virtual/root/a.js';\nexport const b = a;\n",
+            ),
+            ("c.js", b"export const text = '\xff\xfe';\n"),
+        ],
+    );
+    assert!(!on_cycle(&directory, "a.js", &[]));
+    assert!(on_cycle(
+        &directory,
+        "a.js",
+        &["/$virtual/root/".to_string()]
+    ));
+    std::fs::remove_dir_all(directory).expect("removing the scratch directory");
 }

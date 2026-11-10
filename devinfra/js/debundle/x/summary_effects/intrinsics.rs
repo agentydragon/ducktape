@@ -36,6 +36,12 @@ pub struct Census {
     pub written: FxHashMap<String, Writes>,
     /// A store on the global object under an unknown key.
     pub all: bool,
+    /// Where: the program chunk's index, `None` for the chunk the census
+    /// was taken of, and the byte offset of the store's target.
+    pub all_sites: Vec<(Option<usize>, u32)>,
+    /// What the keys of other computed stores on the global object start
+    /// with.
+    prefixes: Vec<String>,
     /// Globals whose object or prototype flows where the census does not
     /// follow.
     escaped: FxHashSet<String>,
@@ -47,9 +53,18 @@ pub struct Census {
 }
 
 impl Census {
+    /// Marks the census as that of program chunk `index`.
+    pub fn locate(&mut self, index: usize) {
+        for (chunk, _) in &mut self.all_sites {
+            *chunk = Some(index);
+        }
+    }
+
     /// Adds what another chunk writes.
     pub fn merge(&mut self, other: Census) {
         self.all |= other.all;
+        self.all_sites.extend(other.all_sites);
+        self.prefixes.extend(other.prefixes);
         self.escaped_all |= other.escaped_all;
         self.escaped.extend(other.escaped);
         self.unfollowed_prototype_stores.any |= other.unfollowed_prototype_stores.any;
@@ -70,7 +85,12 @@ impl Census {
     /// Whether the chunk leaves the global binding and these properties of
     /// it (or of its `prototype`) untouched.
     pub fn untouched(&self, global: &str, props: &[&str]) -> bool {
-        if self.all {
+        if self.all
+            || self
+                .prefixes
+                .iter()
+                .any(|prefix| global.starts_with(prefix.as_str()))
+        {
             return false;
         }
         let clear =
@@ -133,6 +153,7 @@ fn key(prop: &MemberProp, unresolved: SyntaxContext) -> Option<String> {
         MemberProp::PrivateName(_) => None,
         MemberProp::Computed(computed) => match strip(&computed.expr) {
             Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
+            Expr::Lit(Lit::Num(number)) => Some(number.value.to_string()),
             Expr::Member(MemberExpr {
                 obj,
                 prop: MemberProp::Ident(name),
@@ -161,6 +182,27 @@ fn key(prop: &MemberProp, unresolved: SyntaxContext) -> Option<String> {
             _ => None,
         },
     }
+}
+
+/// What a computed key certainly starts with: `` `cb_${id}` ``, `"cb_" + id`.
+fn key_prefix(prop: &MemberProp) -> Option<String> {
+    fn prefix(expr: &Expr) -> Option<String> {
+        match strip(expr) {
+            Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
+            Expr::Tpl(template) => template
+                .quasis
+                .first()?
+                .cooked
+                .as_ref()
+                .map(|cooked| cooked.to_string_lossy().to_string()),
+            Expr::Bin(binary) if binary.op == BinaryOp::Add => prefix(&binary.left),
+            _ => None,
+        }
+    }
+    let MemberProp::Computed(computed) = prop else {
+        return None;
+    };
+    prefix(&computed.expr).filter(|prefix| !prefix.is_empty())
 }
 
 /// The expressions whose value `expr` may take: itself, or the operands a
@@ -429,19 +471,27 @@ impl Visitor<'_> {
         }
     }
 
+    fn unnamed_global_store(&mut self, target: &Expr) {
+        self.census.all = true;
+        self.census.all_sites.push((None, target.span().lo.0));
+    }
+
     fn writes(&mut self, global: String) -> &mut Writes {
         self.census.written.entry(global).or_default()
     }
 
     /// Records a write to the object `target` names, under `prop`.
-    fn write(&mut self, target: &Expr, prop: Option<String>) {
+    fn write(&mut self, target: &Expr, prop: Option<String>, prefix: Option<String>) {
         self.consume(target);
         let taint = self.flow.taint(target);
         for intrinsic in &taint {
             match (intrinsic, &prop) {
                 // `globalThis.Map = …` replaces the binding.
                 (Intrinsic::GlobalObject, Some(name)) => self.writes(name.clone()).any = true,
-                (Intrinsic::GlobalObject, None) => self.census.all = true,
+                (Intrinsic::GlobalObject, None) => match &prefix {
+                    Some(prefix) => self.census.prefixes.push(prefix.clone()),
+                    None => self.unnamed_global_store(target),
+                },
                 (Intrinsic::Object(global) | Intrinsic::Prototype(global), Some(name)) => {
                     self.writes(global.clone()).props.insert(name.clone());
                 }
@@ -481,7 +531,7 @@ impl Visitor<'_> {
         };
         for intrinsic in &rooted {
             match intrinsic {
-                Intrinsic::GlobalObject => self.census.all = true,
+                Intrinsic::GlobalObject => self.unnamed_global_store(target),
                 Intrinsic::Object(global) | Intrinsic::Prototype(global) => {
                     self.writes(global.clone()).any = true;
                 }
@@ -580,7 +630,11 @@ impl Visit for Visitor<'_> {
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         match &assign.left {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                self.write(&member.obj, key(&member.prop, self.flow.unresolved));
+                self.write(
+                    &member.obj,
+                    key(&member.prop, self.flow.unresolved),
+                    key_prefix(&member.prop),
+                );
             }
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                 if binding.id.ctxt == self.flow.unresolved {
@@ -596,7 +650,11 @@ impl Visit for Visitor<'_> {
 
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
         if let Expr::Member(member) = strip(&update.arg) {
-            self.write(&member.obj, key(&member.prop, self.flow.unresolved));
+            self.write(
+                &member.obj,
+                key(&member.prop, self.flow.unresolved),
+                key_prefix(&member.prop),
+            );
         }
         update.visit_children_with(self);
     }
@@ -605,7 +663,11 @@ impl Visit for Visitor<'_> {
         match unary.op {
             UnaryOp::Delete => {
                 if let Expr::Member(member) = strip(&unary.arg) {
-                    self.write(&member.obj, key(&member.prop, self.flow.unresolved));
+                    self.write(
+                        &member.obj,
+                        key(&member.prop, self.flow.unresolved),
+                        key_prefix(&member.prop),
+                    );
                 }
             }
             UnaryOp::TypeOf | UnaryOp::Bang | UnaryOp::Void => self.consume(&unary.arg),
@@ -625,7 +687,7 @@ impl Visit for Visitor<'_> {
                     },
                     _ => None,
                 };
-                self.write(&target.expr, prop);
+                self.write(&target.expr, prop, None);
             }
         }
         for (_, value) in self.flow.arguments(call) {

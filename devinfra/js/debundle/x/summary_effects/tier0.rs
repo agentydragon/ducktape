@@ -404,8 +404,9 @@ pub struct DerivedCounts {
 
 #[derive(Default)]
 pub struct ResolvedPremises {
-    callees: FxHashMap<Binding, (PremiseKind, usize)>,
-    members: FxHashMap<(Binding, String), (PremiseKind, usize)>,
+    /// Per callee: every kind it was given, and its target argument.
+    callees: FxHashMap<Binding, (Vec<PremiseKind>, usize)>,
+    members: FxHashMap<(Binding, String), (Vec<PremiseKind>, usize)>,
     /// Per imported binding: its source, numbered from 1.
     providers: FxHashMap<Binding, u32>,
     /// Per derived allocator: the bindings a call of it reads.
@@ -415,6 +416,32 @@ pub struct ResolvedPremises {
     literal_params: FxHashMap<Binding, Vec<usize>>,
     pub given: usize,
     pub matched: usize,
+}
+
+/// What a call or construction of a callee with these kinds is. A callee
+/// that is both pure and a callback factory only allocates and retains its
+/// arguments.
+fn call_kind(kinds: &[PremiseKind], constructs: bool) -> Option<PremiseKind> {
+    let has = |kind: &PremiseKind| kinds.contains(kind);
+    if constructs {
+        return [PremiseKind::PureNew, PremiseKind::AllocatorNew]
+            .into_iter()
+            .find(has);
+    }
+    if has(&PremiseKind::Allocator)
+        || (has(&PremiseKind::PureCall) && has(&PremiseKind::CallbackFactory))
+    {
+        return Some(PremiseKind::Allocator);
+    }
+    [
+        PremiseKind::PureCall,
+        PremiseKind::CallbackFactory,
+        PremiseKind::LazyModule,
+        PremiseKind::InteropNamespace,
+        PremiseKind::FunctionNamer,
+    ]
+    .into_iter()
+    .find(has)
 }
 
 impl ResolvedPremises {
@@ -715,7 +742,7 @@ impl Classifier<'_> {
     }
 
     /// The premise on a callee expression, with the binding it reads.
-    fn premise(&self, callee: &Expr) -> Option<(PremiseKind, usize, Binding)> {
+    fn premise(&self, callee: &Expr) -> Option<(Vec<PremiseKind>, usize, Binding)> {
         match callee {
             Expr::Paren(paren) => self.premise(&paren.expr),
             // `(0, ns.member)(…)`.
@@ -725,8 +752,8 @@ impl Classifier<'_> {
             },
             Expr::Ident(ident) => {
                 let binding = *self.bindings.get(&ident.to_id())?;
-                let (kind, target) = *self.premises.callees.get(&binding)?;
-                Some((kind, target, binding))
+                let (kinds, target) = self.premises.callees.get(&binding)?;
+                Some((kinds.clone(), *target, binding))
             }
             Expr::Member(MemberExpr {
                 obj,
@@ -749,8 +776,8 @@ impl Classifier<'_> {
                     _ => return None,
                 };
                 let binding = *self.bindings.get(&namespace.to_id())?;
-                let (kind, target) = *self.premises.members.get(&(binding, path))?;
-                Some((kind, target, binding))
+                let (kinds, target) = self.premises.members.get(&(binding, path))?;
+                Some((kinds.clone(), *target, binding))
             }
             _ => None,
         }
@@ -767,14 +794,17 @@ impl Classifier<'_> {
             Expr::New(new) => (&*new.callee, new.args.as_deref().unwrap_or_default(), true),
             _ => return false,
         };
-        let Some((kind, _, callee_binding)) = self.premise(callee) else {
+        let Some((kinds, _, callee_binding)) = self.premise(callee) else {
+            return false;
+        };
+        let Some(kind) = call_kind(&kinds, constructs) else {
             return false;
         };
         let lazy_call = |expr: &Expr| {
             matches!(expr, Expr::Call(CallExpr { callee: Callee::Expr(callee), args, .. })
             if args.is_empty() && matches!(
                 self.premise(callee),
-                Some((PremiseKind::LazyModule, _, _))
+                Some((kinds, _, _)) if kinds.contains(&PremiseKind::LazyModule)
             ))
         };
         let applies = match kind {
@@ -874,16 +904,18 @@ impl Classifier<'_> {
             }) => (&**callee, args.as_slice()),
             other => (other, &[] as &[ExprOrSpread]),
         };
-        let Some((kind, _, binding)) = self.premise(callee) else {
+        let Some((kinds, _, binding)) = self.premise(callee) else {
             return false;
         };
-        match kind {
-            PremiseKind::Decorator => {}
-            PremiseKind::ContainedDecorator => {
-                self.providers.push(self.premises.provider(binding));
-            }
-            _ => return false,
-        }
+        // The stronger kind wins.
+        let kind = if kinds.contains(&PremiseKind::Decorator) {
+            PremiseKind::Decorator
+        } else if kinds.contains(&PremiseKind::ContainedDecorator) {
+            self.providers.push(self.premises.provider(binding));
+            PremiseKind::ContainedDecorator
+        } else {
+            return false;
+        };
         if args
             .iter()
             .any(|arg| arg.spread.is_some() || !self.premised_argument(&arg.expr))
@@ -916,9 +948,12 @@ impl Classifier<'_> {
         let Callee::Expr(callee) = &call.callee else {
             return false;
         };
-        let Some((PremiseKind::DecoratorHelper, target_arg, helper)) = self.premise(callee) else {
+        let Some((kinds, target_arg, helper)) = self.premise(callee) else {
             return false;
         };
+        if !kinds.contains(&PremiseKind::DecoratorHelper) {
+            return false;
+        }
         if call.args.iter().any(|arg| arg.spread.is_some()) {
             return false;
         }
@@ -1316,7 +1351,12 @@ fn resolve_premises(
         ..ResolvedPremises::default()
     };
     for premise in &premises.callees {
-        let value = (premise.kind, premise.target_arg);
+        let add = |entry: &mut (Vec<PremiseKind>, usize)| {
+            entry.0.push(premise.kind);
+            if premise.kind == PremiseKind::DecoratorHelper {
+                entry.1 = premise.target_arg;
+            }
+        };
         let (targets, member): (Vec<Binding>, Option<&String>) = match &premise.callee {
             PremisedCallee::Import { specifier, export } => (
                 imported
@@ -1351,10 +1391,13 @@ fn resolve_premises(
         for binding in targets {
             match member {
                 Some(member) => {
-                    resolved.members.insert((binding, member.clone()), value);
+                    add(resolved
+                        .members
+                        .entry((binding, member.clone()))
+                        .or_default());
                 }
                 None => {
-                    resolved.callees.insert(binding, value);
+                    add(resolved.callees.entry(binding).or_default());
                 }
             }
         }
@@ -1498,7 +1541,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         let mut callee = |id: &Id, kind: PremiseKind, count: &mut usize| {
             if let Some(binding) = binding(id) {
                 *count += 1;
-                premises.callees.entry(binding).or_insert((kind, 0));
+                premises.callees.entry(binding).or_insert((vec![kind], 0));
             }
         };
         for allocator in &found.allocators {
@@ -1555,7 +1598,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 premises
                     .members
                     .entry((binding, path.clone()))
-                    .or_insert((PremiseKind::Allocator, 0));
+                    .or_insert((vec![PremiseKind::Allocator], 0));
             }
         }
     }
@@ -1633,6 +1676,13 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 classifier.eager = scan.eager.iter().copied().collect();
                 classifier.deep = classifier.eager.clone();
                 classifier.providers.clear();
+                Kind::Pure
+            }
+            // The site premise says more than a contained callee's kind.
+            Kind::Pure if site == Some(SiteKind::Pure) && !classifier.providers.is_empty() => {
+                site_premise_uses += 1;
+                classifier.providers.clear();
+                classifier.lazy_uses.clear();
                 Kind::Pure
             }
             Kind::Pure if !classifier.providers.is_empty() => Kind::Contained,

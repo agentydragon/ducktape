@@ -51,6 +51,10 @@ struct Cli {
     /// `alias<TAB>original` lines map imported file names to stored ones.
     #[arg(long, requires = "program_chunks")]
     program_file_list: Option<PathBuf>,
+    /// A prefix of absolute import specifiers that stands for the
+    /// `--program-chunks` directory. Repeatable.
+    #[arg(long, requires = "program_chunks")]
+    program_specifier_root: Vec<String>,
     /// Tier 0: derive callee contracts from their bodies, across chunks with
     /// `--program-chunks`.
     #[arg(long)]
@@ -136,6 +140,7 @@ fn main() -> Result<()> {
         (cli.exports_reachable, cli.upgrade, cli.what_if_pure);
     let (program_chunks, chunk_path) = (cli.program_chunks, cli.chunk.clone());
     let (program_file_list, derive) = (cli.program_file_list, cli.derive);
+    let specifier_roots = cli.program_specifier_root;
     // Minified chunks nest expressions deeper than the default stack.
     let rendered = std::thread::Builder::new()
         .stack_size(STACK_BYTES)
@@ -160,6 +165,7 @@ fn main() -> Result<()> {
                                     root,
                                     &chunk_path,
                                     program_file_list.as_deref(),
+                                    &specifier_roots,
                                 )
                             })
                             .transpose()?;

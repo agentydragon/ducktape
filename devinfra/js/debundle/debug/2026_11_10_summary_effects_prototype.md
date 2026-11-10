@@ -161,10 +161,30 @@ assumption holds and what the analysis fell back to.
 | Escaped intrinsics are modified only through `.prototype` stores | none: a stated premise for `intrinsic_families_escaped`                                                                                                                                |                                            |
 | Intrinsics unmodified by unknown code                            | none: a stated premise for `intrinsic_families_used`                                                                                                                                   |                                            |
 
+A dynamic `import()` closes a cycle only when some chunk of the program has
+a top-level `await`. Its promise settles in a later job, and without a
+top-level `await` a module graph evaluates in one job, so no job can run
+while the chunk is half evaluated; the callbacks of `import()` run after.
+With a top-level `await` anywhere, evaluation can be suspended, and the
+earlier rule stands: a dependency that dynamically imports the chunk, or a
+chunk that statically reaches it, or an unknown specifier, counts.
+
+`--program-file-list` maps imported file names to chunks stored under an
+alias, and `--program-specifier-root <prefix>` makes absolute specifiers
+under that prefix name files of the chunk directory. An import that resolves
+to no chunk is no edge, so a program whose imports do not resolve has a
+vacuous cycle verdict.
+
 `import.meta.require("<literal>")` counts as a static import wherever it is
 written: it evaluates the required chunk before it returns, so a chunk that
 requires one that statically imports it is on a cycle. A `require` of anything
 but a string literal, in the chunk or its dependencies, counts as a cycle.
+
+A computed store on the global object refuses every intrinsic use, unless its
+key is a number, a symbol, or starts with a literal prefix
+(``window[`cb_${id}`]``), which touches only globals whose names start so.
+`global_object_unnamed_store_sites` lists the refusing stores as chunk index
+(in path order) and byte offset.
 
 The escape premise does not cover an intrinsic obtained without naming it
 (`[].constructor`, `Object.getPrototypeOf(x)`) or through a destructuring
@@ -235,6 +255,13 @@ that declares the binding. The call may be written `f(…)`, `ns.member(…)` or
 chunk), `premise_uses` per kind, `site_premise_uses` and
 `premised_reading_imports`.
 
+A callee may be given several kinds. One that is both `pure_call` and
+`callback_factory` only allocates and retains its arguments: its call is a
+pure definition that reads neither its callbacks' bodies nor its argument
+objects. A callee that is both `decorator` and `callback_factory` is a
+decorator where a helper applies it and contained where it is called. A site
+`pure` premise overrides a contained callee.
+
 A callee premise applies only where every argument is itself a pure
 definition (literals, functions, bindings, nested premised calls) and none is
 spread.
@@ -290,13 +317,13 @@ Two points differ from what was asked, both for soundness:
   mutually ordered. Only `decorator` (no private state) lets two classes'
   decorator statements pass each other.
 
-`premise_fixtures.txt` holds 37 programs, each run under Node in both orders:
-15 where a premise lets a swap through and Node agrees, 18 where the premises
+`premise_fixtures.txt` holds 39 programs, each run under Node in both orders:
+17 where a premise lets a swap through and Node agrees, 18 where the premises
 hold but the swap is observable and tier 0 refuses, and 4 where a premise is
 false (a `pure_call` that counts, a `callback_factory` that calls its
 callback, a `decorator` that writes a shared registry, a `decorator` that
 reads outside state) and tier 0 accepts a swap Node observes. Without
-premises tier 0 refuses all 37.
+premises tier 0 refuses all 39.
 
 ### Derived contracts
 

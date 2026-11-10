@@ -657,6 +657,9 @@ pub struct Tier0Report {
     /// use is then refused), or flows where the census does not follow it
     /// (every intrinsic then counts as escaped).
     pub global_object_written_unnamed: bool,
+    /// Where: the program chunk's index in path order (`null` for this
+    /// chunk) and the byte offset of the store.
+    pub global_object_unnamed_store_sites: Vec<(Option<usize>, u32)>,
     pub global_object_escaped: bool,
     pub unfollowed_prototype_store_names: usize,
     pub unfollowed_prototype_store_unnamed: bool,
@@ -911,6 +914,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .filter(|global| analysis.census.escaped(global))
             .collect(),
         global_object_written_unnamed: analysis.census.all,
+        global_object_unnamed_store_sites: analysis.census.all_sites.clone(),
         global_object_escaped: analysis.census.escaped_all,
         unfollowed_prototype_store_names: analysis.census.unfollowed_prototype_stores.props.len(),
         unfollowed_prototype_store_unnamed: analysis.census.unfollowed_prototype_stores.any,
