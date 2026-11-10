@@ -3046,6 +3046,9 @@ flowchart LR
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
     SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
     SESSION_SA_PRINCIPAL_REMOVAL --> SESSION_IDENTITY_AUTHZ
+    SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
+    SESSION_IDENTITY_AUTHZ --> SESSION_SUBAGENT_DELEGATION
+    CENTRAL_SESSION_ACTING_DESIGN --> SESSION_SUBAGENT_DELEGATION
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and sends authorized by identity]
@@ -3312,6 +3315,21 @@ its SA, RoleBindings, grant, credential, set and use binding are gone with no co
 deleting an identity removes everything it owned; a Firecracker guest's relay authenticates with the
 SVID. The Policy Controller's envtests run no garbage collector, so these scenarios are the first to
 show account-owned objects going with their account. **Exit:** the scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
+
+### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
+
+**Design, not started (operator, 2026-11-10).** How a Session asks Agentplane to create a new
+Session, a sub-agent, and then messages it: the way one Session delegates to another. Dispatcher's
+`CreateSession` refuses an Identity caller (`PermissionDenied`), deliberately retired pending this
+node: it had admitted an Identity for a Sandbox acting as that Identity, which is the implicit
+authority acting-as does not confer. Privileged platform components keep creating Sessions, and an
+Identity keeps reading, steering, interrupting and cancelling its own Identity-recorded Sessions.
+The design builds on the existing [delegated authorization](../docs/delegated_authorization.md)
+(a platform component acting for an Identity, the envelope naming that Identity), decides who may
+create and message a sub-Session under `SESSION_IDENTITY_AUTHZ`, settles which Identity the
+sub-Session runs as with open question 11 of the
+[plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), and covers Sessions with
+no environment (`CENTRAL_SESSION_ACTING_DESIGN`). **Exit:** a decided design and the PRs it implies.
 
 ### `SESSION_IDENTITY_AUTHZ` — Session reads and sends authorized by identity
 
