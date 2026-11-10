@@ -219,7 +219,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
 		testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID), ownedSpec, nil, nil,
-		SessionExecution{Principal: ownerAccount, Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity}); err != nil {
+		SessionExecution{Principal: ownerAccount, Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed the Identity's Session: %v", err)
 	}
 	ownerAttribution := &IdentityAttribution{Identity: ownerIdentity, Pod: &PodIdentity{Name: owner.Principal.PodName, UID: owner.Principal.PodUID}}
@@ -304,7 +304,7 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 
 	sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
-		testPlacement(spec, sandbox.Name, sandbox.UID), spec, nil, nil, SessionExecution{Identity: named}, IdentityCaller{Identity: named}); err != nil {
+		testPlacement(spec, sandbox.Name, sandbox.UID), spec, nil, nil, SessionExecution{Identity: named}, IdentityCaller{Identity: named, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed an Identity-run Session: %v", err)
 	}
 	for _, commandID := range []string{"identity-run-input", "identity-run-stranded"} {
