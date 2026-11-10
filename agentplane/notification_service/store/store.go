@@ -53,6 +53,8 @@ type AccountOwner struct {
 }
 
 // IdentityOwner is the Identity incarnation the Dispatcher recorded the Session as executing as.
+// An Identity-owned inbox keeps `owner_namespace`/`owner_name`, which name the destination Sandbox
+// (the ServiceAccount is named after it), and `owner_identity_{name,uid}` say who owns it.
 type IdentityOwner struct {
 	Identity   model.Identity
 	SandboxUID string

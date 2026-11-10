@@ -3164,8 +3164,9 @@ methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given
 `policy_namespace`) for that Identity's Sessions. History, once given its `policy_namespace`, binds
 an Identity runner's Sessions to the Identity incarnation pinned to its Sandbox and retains their
 execution Identity, and its read API serves an Identity SVID that Identity incarnation's Sessions. Notification's inboxes
-are also owned by the Session's Dispatcher-recorded Identity, which reads and manages them; creating
-subscriptions and messaging still need a ServiceAccount. A Sandbox naming an Identity without a
+are also owned by the Session's Dispatcher-recorded Identity, which reads and manages them, and an
+Identity caller subscribes its own Identity-run Sessions and sends and follows messages under bindings
+naming it. A Sandbox naming an Identity without a
 managed ServiceAccount runs Identity-run Sessions, which Dispatcher places and delivers and Notification's
 worker delivers to by the Identity alone. EnvironmentService and wake-on-send still
 need a ServiceAccount.** History's execution
@@ -3227,6 +3228,11 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
 
 Dispatcher and Notification already serve a Sandbox that names an Identity and has no managed
 ServiceAccount: its Sessions are Identity-run and its inboxes the Identity's (#15360), a precondition for deleting the per-Sandbox ServiceAccount here.
+In-Sandbox agents subscribe and message each other as Identities (#15374), a precondition for the
+switch: an agent's ServiceAccount stops existing. Before the switch, a privileged `CreateSession` on a
+Sandbox naming an Identity can race its ServiceAccount's creation; nothing sets `spec.identity`
+before the switch, so the switch design accepts that window and closes it by deleting the
+ServiceAccount path.
 
 Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
 a Session whose recorded execution identity differs), so the switch needs a step that either
