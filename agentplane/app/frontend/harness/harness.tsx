@@ -207,7 +207,6 @@ const SANDBOXES: EnvironmentDescriptor[] = [
   visualSandbox(
     {
       target: { name: "ready-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000a1b2", namespace: "agentplane-visual" },
-      identityName: "referenced-identity",
       observedState: {
         createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
         operatingMode: OperatingMode.RUNNING,
