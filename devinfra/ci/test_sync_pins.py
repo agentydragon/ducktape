@@ -167,15 +167,21 @@ def test_rollback_selects_existing_a_instead_of_newer_b_without_release_job(
     sync_pins.main(["--source-commit", SOURCE])
     result = Sources.model_validate_json(source.read_text())
     assert result.pins["bbr"].url == f"{sync_pins.BASE}/{a.tag_name}/wheel.whl"
-    # A second (pin-only) CI run advertises A too: no rewrite/output/commit loop.
+    # The sync commit has a new SHA and its own CI run, but still builds A.
+    pin_commit = "3" * 40
+    pin_run = run(source=pin_commit, identity=201, jobs=lambda **_: [])
+    repo.get_branch = lambda _: SimpleNamespace(commit=SimpleNamespace(sha=pin_commit))
+    repo.get_workflow = lambda _: SimpleNamespace(get_runs=lambda **_: [pin_run])
+    identity = str(invocation_id(run_id="201", attempt="1", role="build"))
+    monkeypatch.setattr(sync_pins, "read_build", {identity: dataclasses.replace(normal(), commit_sha=pin_commit)}.get)
     before = source.stat().st_mtime_ns
     (tmp_path / "github-output").unlink()
-    sync_pins.main(["--source-commit", SOURCE])
+    sync_pins.main(["--source-commit", pin_commit])
     assert source.stat().st_mtime_ns == before
     assert not (tmp_path / "github-output").exists()
     # A late older-source B run can never become eligible for this checkout.
     repo.get_workflow = lambda _: SimpleNamespace(get_runs=lambda **_: [run(source="1" * 40, identity=999)])
-    sync_pins.main(["--source-commit", SOURCE])
+    sync_pins.main(["--source-commit", pin_commit])
     assert source.stat().st_mtime_ns == before
 
 
