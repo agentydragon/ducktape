@@ -88,6 +88,9 @@ class CommandSandbox(Construct):
         self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         rules = platform_routes.egress_rules(env.namespace)
+        # A box runs as its caller's ServiceAccount, whose Kubernetes-audience token the proxy
+        # substitutes for the API server credential; the identity catalog renders no such credential.
+        self.kubernetes_token = not env.identity_catalog
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
             self,
             env,
@@ -106,6 +109,7 @@ class CommandSandbox(Construct):
                 ca_file=_SIDECAR_TRUST_DIR / cluster_ca.BUNDLE_KEY,
                 auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
             ),
+            kubernetes_token=self.kubernetes_token,
         )
         _pod_template(
             self,
@@ -173,6 +177,7 @@ def _pod_template(
                 k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
             ],
             image_pull_secret_name=scope.image_pull_secret_name,
+            kubernetes_token=scope.kubernetes_token,
             # Keep command boxes in the environment's runner zone alongside LiteLLM.
             node_selector=(
                 {node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None

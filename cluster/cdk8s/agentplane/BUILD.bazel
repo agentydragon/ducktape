@@ -1264,8 +1264,6 @@ py_test(
         ":staging",
         "//:conftest",
         "//agentplane:crd_group",
-        "//agentplane/egress:kubernetes_audience",
-        "//agentplane/egress:sidecar_config",
         "//agentplane/env:config",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/workload_auth:audience",

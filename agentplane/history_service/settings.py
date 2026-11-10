@@ -62,6 +62,13 @@ class Settings(YamlFileSettings):
     log_levels: LogLevels
     rpc: Listener
     kubeconfig: Path | None = None
+    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+    #   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+    policy_namespace: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Namespace holding the Identities a Sandbox SVID may name; absent refuses Identity writers.",
+    )
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.

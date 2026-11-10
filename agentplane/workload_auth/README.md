@@ -29,6 +29,8 @@ Deleting the record or replacing its credential ID revokes the certificate. `Res
 listener allows SPIFFE. Listener credential selection does not grant method authorization, and
 delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
 bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
+`SVIDResolver.IdentitySubjectsOnly` refuses records naming a ServiceAccount, for a listener whose
+ServiceAccount callers keep presenting bearers (History's read API).
 
 History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
 terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
@@ -56,7 +58,8 @@ each full method name to the `Rule` admitting its callers and refuses any method
 `AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
 TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
 only the identity fields it proves. `Accounts` applies an explicit account allowlist. `SVIDOrAccounts` admits current Sandbox SVIDs
-and applies the account allowlist only to bearer callers, preserving History's sampler writer policy.
+and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
+an SVID naming an Identity is admitted as `AnySubject` admits it.
 `ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver` and
 admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmission`.
 `ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity

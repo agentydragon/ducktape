@@ -68,8 +68,8 @@ func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				writer := storage.Writer{Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID}
-				return c.failure(c.run(admitted.Context(), writer, principal.Account))
+				writer := storage.ServiceAccountWriter{Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID}
+				return c.failure(c.run(admitted.Context(), accountPusher{writer}))
 			})
 			if err != nil {
 				t.Fatal(err)

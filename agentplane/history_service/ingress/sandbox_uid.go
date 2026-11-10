@@ -15,7 +15,7 @@ import (
 // SandboxUIDResolver finds the Sandbox incarnation that owns the ServiceAccount its runner
 // authenticates as, which the controller names for the Sandbox itself.
 type SandboxUIDResolver interface {
-	Resolve(context.Context, storage.Writer) (string, error)
+	Resolve(context.Context, storage.ServiceAccountWriter) (string, error)
 }
 
 // ServiceAccountSandboxUIDResolver follows the Sandbox controller's ownerReference on each
@@ -30,7 +30,7 @@ func NewServiceAccountSandboxUIDResolver(client kubernetes.Interface) *ServiceAc
 	return &ServiceAccountSandboxUIDResolver{client: client, byUID: make(map[string]string)}
 }
 
-func (r *ServiceAccountSandboxUIDResolver) Resolve(ctx context.Context, writer storage.Writer) (string, error) {
+func (r *ServiceAccountSandboxUIDResolver) Resolve(ctx context.Context, writer storage.ServiceAccountWriter) (string, error) {
 	account, err := r.client.CoreV1().ServiceAccounts(writer.Namespace).Get(ctx, writer.Name, metav1.GetOptions{})
 	if err != nil {
 		return "", err

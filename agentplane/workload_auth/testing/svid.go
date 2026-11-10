@@ -150,6 +150,14 @@ func NewIdentityWorkload(t *testing.T, api *kubeapiserver.Server, namespace, nam
 	if err := workload.Objects.Create(ctx, identity); err != nil {
 		t.Fatal(err)
 	}
+	return RunAs(t, workload, identity)
+}
+
+// RunAs replaces workload's record with one naming identity, an existing Identity, as a Sandbox
+// running as it would have; several workloads may run as one Identity.
+func RunAs(t *testing.T, workload Workload, identity *policyapi.Identity) IdentityWorkload {
+	t.Helper()
+	ctx := t.Context()
 	// A record's subject changes only with a new binding, so the record is replaced.
 	record := workload.Record
 	if err := workload.Objects.Delete(ctx, record); err != nil {
@@ -169,7 +177,11 @@ func NewIdentityWorkload(t *testing.T, api *kubeapiserver.Server, namespace, nam
 		Identity: identity,
 		Subject: auth.IdentityPrincipal{
 			Identity: auth.Identity{Name: identity.Name, UID: string(identity.UID)},
-			PodName:  workload.Principal.PodName, PodUID: workload.Principal.PodUID,
+			Workload: auth.Workload{Namespace: record.Namespace, Name: record.Name, Owner: auth.ControllerOwner{
+				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
+				Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID),
+			}},
+			PodName: workload.Principal.PodName, PodUID: workload.Principal.PodUID,
 		},
 	}
 }

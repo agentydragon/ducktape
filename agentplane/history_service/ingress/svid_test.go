@@ -2,6 +2,7 @@ package ingress
 
 import (
 	"net"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -9,14 +10,19 @@ import (
 	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -194,5 +200,154 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	}
 	if page.FeedState.GetSealed() != nil {
 		t.Fatalf("revoked stream recorded seal %v", page.FeedState.GetSealed())
+	}
+}
+
+const testPolicyNamespace = "test-history-policies"
+
+// serveSVIDIngress serves service on a SPIFFE listener admitting Push as History does, resolving
+// Identity subjects in testPolicyNamespace, and returns a client for a workload certificate URI.
+func serveSVIDIngress(t *testing.T, service *Service, namespace string) func(uri string) testIngress {
+	t.Helper()
+	ca := transporttesting.NewCA(t)
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
+	rpc := listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		TLS:           &listener.TLS{CertFile: serverCredentials.CertFile, KeyFile: serverCredentials.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serverCredentials.CAFile}},
+	}
+	principals, err = principals.WithListenerAuthentication(rpc, svids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS, err := rpc.ServerCredentials(transport.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.SVIDOrAccounts(principals, nil)}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
+	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
+	go func() { _ = server.Serve(socket) }()
+	t.Cleanup(server.Stop)
+	return func(uri string) testIngress {
+		security, err := ca.Issue(t, uri).ClientCredentials(transport.HistoryIngressURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection, err := grpc.NewClient(socket.Addr().String(), grpc.WithTransportCredentials(security), grpc.WithNoProxy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}
+	}
+}
+
+func announceExecuting(sessionID uuid.UUID, identity *policyapi.Identity, principal *auth.Principal) *session_ingresspb.PushFrame {
+	frame := announce(sessionID, 0, "")
+	attached := frame.GetAnnounce()
+	if identity != nil {
+		attached.ExecutionIdentity = &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}
+	}
+	if principal != nil {
+		attached.ExecutionPrincipal = &identitypb.ServiceAccountIdentity{
+			Account: &identitypb.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name},
+			Uid:     principal.ServiceAccountUID,
+		}
+	}
+	return frame
+}
+
+// readsAs reports whether a read scoped to identity lists sessionID.
+func readsAs(t *testing.T, history *storage.Store, identity *policyapi.Identity, sessionID uuid.UUID) bool {
+	t.Helper()
+	sessions, err := history.WithReadScope(storage.OwnedByIdentity(storage.Identity{Name: identity.Name, UID: string(identity.UID)})).
+		RecordedSessions(t.Context(), 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.ContainsFunc(sessions, func(session storage.RecordedSession) bool { return session.SessionID == sessionID })
+}
+
+func TestAnIdentityRunnerWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
+	namespace := "history-identity-" + uuid.NewString()
+	first := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "test-first-sandbox", testPolicyNamespace)
+	sibling := workloadauthtesting.RunAs(t, workloadauthtesting.NewWorkload(t, kube, namespace, "test-sibling-sandbox"), first.Identity)
+	other := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "test-other-sandbox", testPolicyNamespace)
+	account := workloadauthtesting.NewWorkload(t, kube, namespace, "test-account-sandbox")
+	// The Sandbox Controller owns the ServiceAccount a Sandbox runs as; envtest runs no controller.
+	serviceAccount, err := kube.Clientset.CoreV1().ServiceAccounts(namespace).Get(t.Context(), first.Sandbox.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceAccount.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(first.Sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind))}
+	if _, err := kube.Clientset.CoreV1().ServiceAccounts(namespace).Update(t.Context(), serviceAccount, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := newService(t, testTiming)
+	service.SandboxUIDs = NewServiceAccountSandboxUIDResolver(kube.Clientset)
+	connect := serveSVIDIngress(t, service, namespace)
+
+	session := uuid.New()
+	pushed := connect(first.URI).open(t, "")
+	pushed.send(append([]*session_ingresspb.PushFrame{announceExecuting(session, first.Identity, &first.Principal)}, entries(1)...)...)
+	pushed.acknowledged(1, false)
+	if !readsAs(t, service.History, first.Identity, session) || readsAs(t, service.History, other.Identity, session) {
+		t.Fatal("an Identity-run Session reads by exactly its execution Identity")
+	}
+	for name, workload := range map[string]workloadauthtesting.Workload{
+		"the same Identity in another Sandbox": sibling.Workload,
+		"another Identity":                     other.Workload,
+		"a ServiceAccount":                     account,
+	} {
+		refused := connect(workload.URI).open(t, "")
+		refused.send(announce(session, 1, ""))
+		if code := refused.refused(); code != codes.PermissionDenied {
+			t.Fatalf("%s pushed the Session: %v", name, code)
+		}
+	}
+	for name, frame := range map[string]*session_ingresspb.PushFrame{
+		"another execution Identity":                announceExecuting(uuid.New(), other.Identity, nil),
+		"a ServiceAccount its Sandbox does not own": announceExecuting(uuid.New(), nil, &account.Principal),
+	} {
+		refused := connect(first.URI).open(t, "")
+		refused.send(frame)
+		if code := refused.refused(); code != codes.PermissionDenied {
+			t.Fatalf("an Identity runner announced %s: %v", name, code)
+		}
+	}
+
+	// A same-named successor Identity in the same Sandbox is another writer.
+	first.Delete(t)
+	if err := first.Objects.Delete(t.Context(), first.Identity); err != nil {
+		t.Fatal(err)
+	}
+	if !readsAs(t, service.History, first.Identity, session) {
+		t.Fatal("a retained Session stopped reading once its Sandbox and Identity were deleted")
+	}
+	successor := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testPolicyNamespace, Name: first.Identity.Name},
+		Spec:       policyapi.IdentitySpec{Description: "test successor agent"},
+	}
+	if err := first.Objects.Create(t.Context(), successor); err != nil {
+		t.Fatal(err)
+	}
+	recreated := workloadauthtesting.RunAs(t, workloadauthtesting.NewWorkload(t, kube, namespace, "test-recreated-sandbox"), successor)
+	refused := connect(recreated.URI).open(t, "")
+	refused.send(announce(session, 1, ""))
+	if code := refused.refused(); code != codes.PermissionDenied {
+		t.Fatalf("a successor Identity pushed its predecessor's Session: %v", code)
 	}
 }

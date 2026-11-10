@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -268,4 +269,38 @@ func TestWorkerEstablishesOwnerBeforeItsFirstSourceRead(t *testing.T) {
 	if inbox.OwnerUID == nil || *inbox.OwnerUID != "test-account-uid" {
 		t.Fatalf("owner UID was not persisted: %v", inbox.OwnerUID)
 	}
+}
+
+// An inbox whose Session the Dispatcher recorded as executing as an Identity alone, its Sandbox having
+// no ServiceAccount, is that Identity incarnation's: its notices are delivered, and a same-named
+// successor recorded for the Session is an owner mismatch.
+func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.T) {
+	h := newHarness(t, debounce(0, 300))
+	identity := model.Identity{Name: "test-identity", UID: "test-identity-uid"}
+	h.dispatcher.accountUID = ""
+	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
+	subscription, err := h.store.SubscribeAsIdentity(t.Context(), identity, model.Subscribe{
+		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",
+		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.postponeSources(t)
+	h.addEvents(t, subscription, 1, 2)
+
+	h.step(t)
+	page, err := h.store.Read(t.Context(), store.IdentityOwner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
+	if err != nil || page.Notice == nil || !page.Notice.Attempted || len(h.dispatcher.submitted()) != 1 {
+		t.Fatalf("the Identity's inbox %+v (%v), submitted %d; want one attempted notice", page, err, len(h.dispatcher.submitted()))
+	}
+
+	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: "test-successor-uid"}
+	h.addEvents(t, subscription, 3, 3)
+	h.makeDue(t, subscription.InboxID)
+	h.step(t)
+	if row := h.row(t, subscription.InboxID); row.deliveryError == nil || *row.deliveryError != "OwnerMismatchError" {
+		t.Fatalf("delivery error %v, want OwnerMismatchError", row.deliveryError)
+	}
+	requireEqual(t, len(h.dispatcher.submitted()), 1)
 }

@@ -41,7 +41,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -370,7 +370,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	})
 	request := uuid.New()
 
-	events, err := f.source.Events(t.Context(), testOwner, request, 1, "test-account-uid")
+	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0, "test-account-uid")
+	_, err = f.source.Events(t.Context(), store.AccountOwner{Account: model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
@@ -408,7 +408,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 		}
 	})
 
-	events, err := f.source.Events(t.Context(), testOwner, uuid.New(), 0, "test-account-uid")
+	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, uuid.New(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

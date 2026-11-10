@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const identitySandboxUID = "00000000-0000-4000-8000-000000009021"
@@ -35,8 +36,9 @@ type identityCatalog struct {
 	identity *identitypb.Identity
 }
 
+// GetExecutionAccount finds no account when account is nil: the Sandbox's managed ServiceAccount is absent.
 func (c *identityCatalog) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
-	return c.account, true, nil
+	return c.account, c.account != nil, nil
 }
 
 func (c *identityCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
@@ -52,6 +54,65 @@ type placingRunner struct {
 func (r *placingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, _ string, _ *sessionpb.SessionSpec, _ *string, execution SessionExecution) error {
 	r.placed <- execution
 	return nil
+}
+
+// serveIdentitySVIDs serves a Dispatcher over inventory that admits workload SVIDs, resolving
+// Identity subjects in policyNamespace, and returns its store and a client presenting a certificate
+// for a workload URI.
+func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace string, inventory *authorityInventory) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
+	t.Helper()
+	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := auth.NewResolver(tokenReviewStub{}, authorityTestAudience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := transporttesting.NewCA(t)
+	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
+	listenerConfig := listener.Config{
+		ListenAddress: ":8080",
+		TLS:           &listener.TLS{CertFile: serverCredential.CertFile, KeyFile: serverCredential.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+	}
+	serverTLS, err := listenerConfig.TLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.NextProtos = []string{"h2"}
+	workloadAuth, err := tokens.WithListenerAuthentication(listenerConfig, svids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := testStore(t, 10)
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	service := &Service{
+		Store: store, DispatcherCallers: sets.New[auth.Account](),
+		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
+	}
+	server := grpc.NewServer(append(Methods(auth.ReviewedServiceAccountOrIdentity(workloadAuth)).ServerOptions(time.Second),
+		grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	netListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(netListener) }()
+	t.Cleanup(server.Stop)
+	dial := func(uri string) dispatcherpb.SessionDispatcherClient {
+		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection, err := grpc.NewClient(netListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return dispatcherpb.NewSessionDispatcherClient(connection)
+	}
+	return store, dial
 }
 
 func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
@@ -76,6 +137,10 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	stored, err := store.GetSession(ctx, placed)
 	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) || !proto.Equal(stored.ExecutionPrincipal, owner) {
 		t.Fatalf("stored Session executes as %v / %v (%v), want %v beside %v", stored.ExecutionIdentity, stored.ExecutionPrincipal, err, named, owner)
+	}
+	read, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: placed})
+	if err != nil || !proto.Equal(read.GetSession().GetIdentity(), named) {
+		t.Fatalf("GetSession reads the Session as executing as %v (%v), want %v", read.GetSession().GetIdentity(), err, named)
 	}
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, account: owner, identity: named}
@@ -137,57 +202,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerAccount, accountFound: true, identity: ownerIdentity}
 
-	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokens, err := auth.NewResolver(tokenReviewStub{}, authorityTestAudience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca := transporttesting.NewCA(t)
-	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
-	listenerConfig := listener.Config{
-		ListenAddress: ":8080",
-		TLS:           &listener.TLS{CertFile: serverCredential.CertFile, KeyFile: serverCredential.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
-	}
-	serverTLS, err := listenerConfig.TLSConfig(environment_runtime_transport.SessionDispatcherURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTLS.NextProtos = []string{"h2"}
-	workloadAuth, err := tokens.WithListenerAuthentication(listenerConfig, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
-	service := &Service{
-		Store: store, DispatcherCallers: sets.New[auth.Account](),
-		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
-	}
-	server := grpc.NewServer(append(Methods(auth.ReviewedServiceAccountOrIdentity(workloadAuth)).ServerOptions(time.Second),
-		grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	netListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(netListener) }()
-	t.Cleanup(server.Stop)
-	client := func(uri string) dispatcherpb.SessionDispatcherClient {
-		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		connection, err := grpc.NewClient(netListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = connection.Close() })
-		return dispatcherpb.NewSessionDispatcherClient(connection)
-	}
+	store, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, inventory)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	createRequest := func(sessionID string) *dispatcherpb.CreateSessionRequest {
@@ -266,5 +281,83 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}
 	if _, err := ownerClient.CancelDispatch(ctx, &dispatcherpb.CancelDispatchRequest{CommandId: "identity-owned-input"}); err != nil {
 		t.Fatalf("Identity caller CancelDispatch of its own command: %v", err)
+	}
+}
+
+// A Sandbox naming an Identity whose managed ServiceAccount is absent runs its Sessions as that
+// Identity alone: its Identity opens and writes to them, the Dispatcher places and delivers them
+// recording no ServiceAccount, and strands them once the Sandbox names another Identity.
+func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
+	api, err := kubeapiserver.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := api.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	const policyNamespace = "test-identity-run-policies"
+	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "identity-run", policyNamespace)
+	named := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
+	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
+	store, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, &authorityInventory{sandbox: sandbox, identity: named})
+	ownerClient := client(owner.URI)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+
+	sessionID := uuid.NewString()
+	if _, err := ownerClient.CreateSession(ctx, &dispatcherpb.CreateSessionRequest{
+		SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}},
+	}); err != nil {
+		t.Fatalf("CreateSession on a Sandbox without its ServiceAccount: %v", err)
+	}
+	stored, err := store.GetSession(ctx, sessionID)
+	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) || stored.ExecutionPrincipal != nil {
+		t.Fatalf("Session executes as %v / %v (%v), want %v alone", stored.ExecutionIdentity, stored.ExecutionPrincipal, err, named)
+	}
+	for _, commandID := range []string{"identity-run-input", "identity-run-stranded"} {
+		if _, err := ownerClient.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
+			CommandId: commandID, SessionId: sessionID, ExpectedSandboxUid: sandbox.UID, Text: "input",
+		}); err != nil {
+			t.Fatalf("SubmitInput to an Identity-run Session: %v", err)
+		}
+	}
+
+	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: sandbox}, identity: named}
+	runner := &placingRunner{acceptingRunner: acceptingRunner{calls: make(chan string, 2)}, placed: make(chan SessionExecution, 1)}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	lease, err := worker.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)
+	if err != nil || lease == nil {
+		t.Fatalf("acquire delivery owner: %#v %v", lease, err)
+	}
+	worker.owners[sandbox.UID] = *lease
+	if err := worker.processSession(ctx, sessionID); err != nil {
+		t.Fatalf("place Session: %v", err)
+	}
+	select {
+	case execution := <-runner.placed:
+		if !proto.Equal(execution.Identity, named) || execution.Principal != nil {
+			t.Fatalf("placed Session executes as %v / %v, want %v alone", execution.Identity, execution.Principal, named)
+		}
+	default:
+		t.Fatal("Session was not placed")
+	}
+	if err := worker.processSession(ctx, sessionID); err != nil {
+		t.Fatalf("deliver input: %v", err)
+	}
+	if delivered, err := store.GetDispatch(ctx, "identity-run-input"); err != nil || delivered.State != AdmittedState {
+		t.Fatalf("input to an Identity-run Session: %#v %v, want admitted", delivered, err)
+	}
+
+	// The Sandbox now names a same-named successor: queued work is stranded, not delivered as it.
+	catalog.identity = &identitypb.Identity{Name: named.Name, Uid: "00000000-0000-4000-8000-0000000090b2"}
+	if err := worker.processSession(ctx, sessionID); err != nil {
+		t.Fatalf("process stranded input: %v", err)
+	}
+	if stranded, err := store.GetDispatch(ctx, "identity-run-stranded"); err != nil || stranded.State != FailedState || stranded.Reason != "execution_identity_changed" {
+		t.Fatalf("input under a replaced Identity: %#v %v, want failed execution_identity_changed", stranded, err)
 	}
 }

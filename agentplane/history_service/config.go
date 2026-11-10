@@ -37,8 +37,12 @@ type config struct {
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
 	Kubeconfig            string          `mapstructure:"kubeconfig"`
-	Ingress               ingressConfig   `mapstructure:"ingress"`
-	FoldConcurrency       int             `mapstructure:"fold_concurrency"`
+	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity writers.
+	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+	//   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	PolicyNamespace string        `mapstructure:"policy_namespace"`
+	Ingress         ingressConfig `mapstructure:"ingress"`
+	FoldConcurrency int           `mapstructure:"fold_concurrency"`
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
 	FoldPageSize             int     `mapstructure:"fold_page_size"`
 	FoldIntervalSeconds      float64 `mapstructure:"fold_interval_s"`

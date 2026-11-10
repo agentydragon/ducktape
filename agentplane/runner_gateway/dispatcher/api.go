@@ -560,7 +560,9 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		return nil, err
 	}
 	// The Dispatcher is the authority for the Identity a Session executes as: the one its Sandbox
-	// names now, read live with its UID, recorded once beside the ServiceAccount.
+	// names now, read live with its UID, recorded once beside the ServiceAccount. A Sandbox naming an
+	// Identity whose managed ServiceAccount is absent runs as that Identity alone: its Session
+	// records no ServiceAccount.
 	identity, identityFound, err := s.executionIdentity(ctx, current)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
@@ -569,34 +571,29 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 	}
-	execution := &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
+	execution := SessionExecution{Identity: identity}
+	if accountFound {
+		execution.Principal = account
+	} else if identity == nil {
+		// Only a privileged open reaches the store without the account; delivery binds its UID.
+		execution.Principal = &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
+	}
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
-		if c.Privileged {
-			if accountFound {
-				execution = account
-			}
-		} else {
-			if !accountFound || account == nil || !sameServiceAccountIdentity(account, c.ServiceAccountIdentity) {
-				return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
-			}
-			execution = account
+		if !c.Privileged && (!accountFound || account == nil || !sameServiceAccountIdentity(account, c.ServiceAccountIdentity)) {
+			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
 	case IdentityCaller:
 		// An Identity caller opens a Session only on a Sandbox naming its exact Identity.
-		if !identityFound || !sameIdentity(identity, c.Identity) {
+		if identity == nil || !sameIdentity(identity, c.Identity) {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
-		if !accountFound || account == nil {
-			return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
-		}
-		execution = account
 	}
 	if !identityFound {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
 	}
 	row, err = s.Store.CreateSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
-		request.GetSpec(), request.SetupScript, nil, SessionExecution{Principal: execution, Identity: identity}, caller)
+		request.GetSpec(), request.SetupScript, nil, execution, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}

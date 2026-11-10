@@ -83,9 +83,33 @@ type Identity struct {
 // incarnation runs in once its owner has named it: provenance, never the subject.
 type IdentityPrincipal struct {
 	Identity Identity
+	Workload Workload
 	PodName  string
 	PodUID   string
 }
+
+// Workload is the WorkloadCredential an SVID was issued under: provenance, never the subject. A
+// destination that pins state to the workload's owner (History pins a Session to its Sandbox)
+// reads Owner.
+type Workload struct {
+	Namespace, Name string
+	Owner           WorkloadOwner
+}
+
+// WorkloadOwner is a WorkloadCredential's controller: a ControllerOwner, or StandingWorkload.
+type WorkloadOwner interface{ isWorkloadOwner() }
+
+// ControllerOwner is the record's controller owner reference, such as the Sandbox whose runner the
+// credential authenticates. It names an object in the record's namespace.
+type ControllerOwner struct {
+	APIVersion, Kind, Name, UID string
+}
+
+// StandingWorkload is a record with no controller owner, which no owner revokes.
+type StandingWorkload struct{}
+
+func (ControllerOwner) isWorkloadOwner()  {}
+func (StandingWorkload) isWorkloadOwner() {}
 
 // Subject is a verified workload: a ServiceAccount Principal, or an IdentityPrincipal, which only
 // a workload SVID yields.

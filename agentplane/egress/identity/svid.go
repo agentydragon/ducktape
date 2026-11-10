@@ -45,7 +45,8 @@ func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resol
 		}, nil
 	case resolver.Identity:
 		return auth.IdentityPrincipal{
-			Identity: auth.Identity{Name: subject.Name, UID: string(subject.UID)}, PodName: podName, PodUID: podUID,
+			Identity: auth.Identity{Name: subject.Name, UID: string(subject.UID)}, Workload: auth.WorkloadOf(resolved),
+			PodName: podName, PodUID: podUID,
 		}, nil
 	default:
 		panic(fmt.Sprintf("unknown subject %T", resolved.Subject))

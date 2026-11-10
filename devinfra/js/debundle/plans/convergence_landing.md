@@ -76,10 +76,12 @@ into reasonable modules (<target_architecture.md> § Contract).
      the kernel lanes and the legacy gate are deleted in that order.
    - _Execution-based kept:_ Wave 3 resumes with rows ranked by the second
      measurement, and the monotone-delta pool fix is the performance path.
-4. **Until the decision:** no new Wave 3 coverage rows are dispatched. Slices
-   already in review finish (row 13, the early-exit rows after their rework).
-   The monotone-delta pool fix continues, because it is the fallback's only
-   route to the cost target and is contained.
+4. **Until the decision:** the seam between the two evaluators is frozen.
+   Soundness fixes only; no new Wave 3 coverage rows (row 13 landed; the
+   early-exit rows were reverted and are parked); no performance
+   implementation on the execution-based engine. Its measured ceiling is
+   about 3–5× from a sound delta, and the changes that would go further loosen
+   verdicts (<analysis_performance.md>).
 
 Every kernel slice gets a second, independent review before it is marked
 ready: the author's suite and audit share the author's model of the engine.

@@ -29,7 +29,7 @@ import (
 const testPageSize = 8
 
 var (
-	testWriter = storage.Writer{Namespace: "test-sandbox-namespace", Name: "test-sandbox-runner", UID: "test-runner-account-uid"}
+	testWriter = storage.ServiceAccountWriter{Namespace: "test-sandbox-namespace", Name: "test-sandbox-runner", UID: "test-runner-account-uid"}
 	testOrigin = time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 )
 

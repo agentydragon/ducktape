@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -43,8 +44,8 @@ type Timing struct {
 	SilenceLimit time.Duration
 }
 
-// Service is the SessionJournalIngress server. Each call uses the principal admitted by the RPC method, and the
-// Session it announces is bound to the ServiceAccount that first pushed it.
+// Service is the SessionJournalIngress server. Each call uses the subject admitted by the RPC method, and the
+// Session it announces is bound to the ServiceAccount or Identity that first pushed it.
 type Service struct {
 	session_ingresspb.UnimplementedSessionJournalIngressServer
 	SandboxUIDs     SandboxUIDResolver
@@ -55,19 +56,59 @@ type Service struct {
 
 type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
 
+// pusher is a Push caller: an accountPusher or an identityPusher.
+type pusher interface{ isPusher() }
+
+// accountPusher is a runner or central sampler authenticated as a ServiceAccount.
+type accountPusher struct{ storage.ServiceAccountWriter }
+
+// identityPusher is a runner authenticated as an Identity, with the Sandbox owning its workload
+// credential.
+type identityPusher struct {
+	writer  storage.IdentityWriter
+	sandbox storage.Sandbox
+}
+
+func (accountPusher) isPusher()  {}
+func (identityPusher) isPusher() {}
+
 func (s *Service) Push(stream pushStream) error {
 	ctx := stream.Context()
-	principal, err := auth.Caller(ctx)
+	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return err
+	}
+	var caller pusher
+	if identity, ok := admission.(auth.IdentityAdmission); ok {
+		if caller, err = newIdentityPusher(identity.Caller); err != nil {
+			return err
+		}
+	} else {
+		principal, err := auth.Caller(ctx)
+		if err != nil {
+			return err
+		}
+		caller = accountPusher{storage.ServiceAccountWriter{
+			Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID,
+		}}
 	}
 	frames := readFrames(stream)
 	defer frames.stop()
 	c := &pushCall{history: s.History, timing: s.Timing, stream: stream, frames: frames, log: slog.Default(), service: s}
-	writer := storage.Writer{
-		Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID,
+	return c.failure(c.run(ctx, caller))
+}
+
+// newIdentityPusher pins an Identity runner to the Sandbox that controls its workload credential, as
+// the Sandbox controller's ownerReference names it. A record no Sandbox controls writes no history.
+func newIdentityPusher(caller auth.IdentityPrincipal) (identityPusher, error) {
+	owner, ok := caller.Workload.Owner.(auth.ControllerOwner)
+	if !ok || owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind || owner.UID == "" {
+		return identityPusher{}, status.Error(codes.PermissionDenied, "the workload credential is not a Sandbox's")
 	}
-	return c.failure(c.run(ctx, writer, principal.Account))
+	return identityPusher{
+		writer:  storage.IdentityWriter{Identity: storage.Identity{Name: caller.Identity.Name, UID: caller.Identity.UID}},
+		sandbox: storage.Sandbox{Namespace: caller.Workload.Namespace, Name: owner.Name, UID: owner.UID},
+	}, nil
 }
 
 type pushCall struct {
@@ -79,7 +120,7 @@ type pushCall struct {
 	service *Service
 }
 
-func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.Account) error {
+func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	first, timedOut, err := c.frames.next(c.timing.SilenceLimit)
 	switch {
 	case errors.Is(err, io.EOF):
@@ -93,8 +134,10 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 	sampler := first.GetSamplerAnnounce()
 	var sandboxUID string
 	var executionPrincipal *storage.ExecutionPrincipal
+	var executionIdentity *storage.Identity
 	if sampler != nil {
-		if !slices.Contains(c.service.SamplerAccounts, account) {
+		account, ok := caller.(accountPusher)
+		if !ok || !slices.Contains(c.service.SamplerAccounts, auth.Account{Namespace: account.Namespace, Name: account.Name}) {
 			return status.Error(codes.PermissionDenied, "central sampler producer is not authorized")
 		}
 		announce = sampler.GetSession()
@@ -117,28 +160,52 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		if announce.GetSpec().GetPlacement().GetCentralSamplerV1() != nil {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
-		if c.service.SandboxUIDs != nil {
-			var err error
-			sandboxUID, err = c.service.SandboxUIDs.Resolve(ctx, writer)
-			if err != nil {
-				return err
+		switch caller := caller.(type) {
+		case accountPusher:
+			if c.service.SandboxUIDs != nil {
+				var err error
+				sandboxUID, err = c.service.SandboxUIDs.Resolve(ctx, caller.ServiceAccountWriter)
+				if err != nil {
+					return err
+				}
 			}
+		case identityPusher:
+			sandboxUID = caller.sandbox.UID
 		}
 	}
 	if identity := announce.GetExecutionPrincipal(); identity != nil {
 		if identity.GetAccount().GetNamespace() == "" || identity.GetAccount().GetName() == "" || identity.GetUid() == "" {
 			return status.Error(codes.InvalidArgument, "execution principal is incomplete")
 		}
+		executionPrincipal = &storage.ExecutionPrincipal{
+			Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName(), UID: identity.GetUid(),
+		}
 		if sampler != nil {
 			owner := sampler.GetExecutor().GetOwner()
 			if owner == nil || identity.GetAccount().GetNamespace() != owner.GetNamespace() || identity.GetAccount().GetName() != owner.GetName() {
 				return status.Error(codes.PermissionDenied, "session execution principal does not match its executor")
 			}
-		} else if identity.GetAccount().GetNamespace() != writer.Namespace || identity.GetAccount().GetName() != writer.Name || identity.GetUid() != writer.UID {
-			return status.Error(codes.PermissionDenied, "session execution principal does not match the runner account")
+		} else if err := c.checkRunnerPrincipal(ctx, caller, *executionPrincipal); err != nil {
+			return err
 		}
-		executionPrincipal = &storage.ExecutionPrincipal{
-			Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName(), UID: identity.GetUid(),
+	}
+	// The Dispatcher records the Identity a Session executes as; only a writer that can vouch for it
+	// is retained: an Identity runner running as it, or a configured central sampler relaying it.
+	if identity := announce.GetExecutionIdentity(); identity != nil {
+		if identity.GetName() == "" || identity.GetUid() == "" {
+			return status.Error(codes.InvalidArgument, "execution identity is incomplete")
+		}
+		announced := storage.Identity{Name: identity.GetName(), UID: identity.GetUid()}
+		switch caller := caller.(type) {
+		case identityPusher:
+			if announced != caller.writer.Identity {
+				return status.Error(codes.PermissionDenied, "session execution identity does not match the runner identity")
+			}
+			executionIdentity = &announced
+		case accountPusher:
+			if sampler != nil {
+				executionIdentity = &announced
+			}
 		}
 	}
 	sessionID, err := uuid.Parse(announce.GetSessionId())
@@ -154,12 +221,18 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 	if err := auth.RevalidateStream(ctx); err != nil {
 		return err
 	}
-	if sampler != nil {
-		executor := sampler.GetExecutor()
-		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, writer,
-			executor.GetTarget().GetNamespace(), executor.GetTarget().GetName(), sandboxUID, executionPrincipal)
-	} else {
-		checkpoint, err = c.history.BindWriter(ctx, sessionID, writer, sandboxUID, executionPrincipal)
+	switch caller := caller.(type) {
+	case accountPusher:
+		if sampler != nil {
+			executor := sampler.GetExecutor()
+			checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.ServiceAccountWriter, storage.Sandbox{
+				Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
+			}, executionPrincipal, executionIdentity)
+		} else {
+			checkpoint, err = c.history.BindWriter(ctx, sessionID, caller.ServiceAccountWriter, sandboxUID, executionPrincipal)
+		}
+	case identityPusher:
+		checkpoint, err = c.history.BindIdentityWriter(ctx, sessionID, caller.writer, caller.sandbox, executionPrincipal, executionIdentity)
 	}
 	if err != nil {
 		return err
@@ -184,6 +257,29 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		return err
 	}
 	return c.receive(ctx, j)
+}
+
+// checkRunnerPrincipal admits a runner's announced execution ServiceAccount: a ServiceAccount runner's
+// own, or the ServiceAccount the Identity runner's Sandbox controls.
+func (c *pushCall) checkRunnerPrincipal(ctx context.Context, caller pusher, principal storage.ExecutionPrincipal) error {
+	switch caller := caller.(type) {
+	case accountPusher:
+		if principal != storage.ExecutionPrincipal(caller.ServiceAccountWriter) {
+			return status.Error(codes.PermissionDenied, "session execution principal does not match the runner account")
+		}
+	case identityPusher:
+		if c.service.SandboxUIDs == nil {
+			return status.Error(codes.PermissionDenied, "session execution principal cannot be verified")
+		}
+		controller, err := c.service.SandboxUIDs.Resolve(ctx, storage.ServiceAccountWriter(principal))
+		if err != nil {
+			return err
+		}
+		if controller != caller.sandbox.UID {
+			return status.Error(codes.PermissionDenied, "session execution principal is not the runner Sandbox's account")
+		}
+	}
+	return nil
 }
 
 func (c *pushCall) receive(ctx context.Context, j *journal) error {

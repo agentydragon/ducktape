@@ -18,8 +18,8 @@ cutover still changes.
 
 ## Target: one identity, three credential forms
 
-Operator direction, 2026-11-10, pending final confirmation. This is the contract the cutover works
-toward; none of it has landed. The Agentplane `Identity` is the one identity source. Each credential
+Operator decision, 2026-11-10. This is the contract the cutover works toward;
+[where the migration stands](#where-the-migration-stands) says how far it has got. The Agentplane `Identity` is the one identity source. Each credential
 form below is an explicit, named mapping to one `Identity`:
 
 1. **X.509 SVID over mTLS**, for in-cluster workloads: a `WorkloadCredential` names the Identity.
@@ -50,6 +50,27 @@ Other bearer forms are not planned and no task depends on them; if we wanted, we
 bearer tokens resolving to the same `Identity`. The paths that do not meet this yet, with the
 bucket each falls in, are the
 [workload identity lifecycle's inventory](workload_identity_lifecycle.md#remaining-paths).
+
+## Where the migration stands
+
+The transport is in place; the subject it resolves to is still a ServiceAccount. Verified against
+the code on 2026-11-10:
+
+| Area                        | Today                                                                                                                                                                                                                                                                                                       | Goal                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Identity` kind             | Exists (`policy/api/v1alpha1/types.go`); a `PolicyBinding` subject may name one, which only `policy/reader`'s Identity lookups resolve. Staging renders none: the catalog is behind `identity_catalog=False` (`cluster/cdk8s/agentplane/staging.py`)                                                        | Every agent binding names an `Identity`; the ServiceAccount subject is gone (`IDENTITY_CUTOVER`)                      |
+| Sandbox identity            | `Sandbox.spec.identity` and its only-while-stopped admission rule exist (`sandboxes/api/types.go`); the controller ignores it and creates and binds the Sandbox's own ServiceAccount (`sandbox_controller/identity.go`)                                                                                     | The controller acts as `spec.identity` and creates no account (`SANDBOX_IDENTITY_SPEC`)                               |
+| Sandbox egress              | SVID over mTLS, resolved through the live `WorkloadCredential`, whose subject is the Sandbox's own ServiceAccount; an Identity subject is refused (`egress/identity/svid.go`). `kubectl` substitutes a forwarded Pod-bound projected token                                                                  | The decision keys on the `Identity`; `kubectl` acts as a shared account by impersonation (`EGRESS_IDENTITY_RULES`)    |
+| Environment Runtime control | Gateway and runner authenticate each other by SVID; the runner's certificate is the Sandbox's `WorkloadCredential`'s, subject the Sandbox's ServiceAccount (`sandbox_controller/environment_runtime_credential.go`, [runner control](../docs/runner_control.md))                                            | Unchanged transport; the record names the `Identity`                                                                  |
+| Service principal           | `auth.Principal` is ServiceAccount-shaped (`workload_auth/auth/auth.go`); `SVIDResolver` refuses an Identity subject (`workload_auth/auth/svid.go`); the delegation envelope's effective caller is a ServiceAccount (`workload_auth/auth/delegation.go`)                                                    | An Identity `Principal` and effective caller (`SERVICES_IDENTITY_PRINCIPAL`)                                          |
+| Session identity            | `SessionSpec` has no identity (`proto/session.proto`). `CreateSession` derives the execution principal from the placed Sandbox's own ServiceAccount and pins its UID (`runner_gateway/dispatcher/api.go`); delivery refuses an account whose name is not the Sandbox's or whose UID changed (`delivery.go`) | `CreateSession` names an `Identity`; Dispatcher holds the Session-to-Identity binding (`SERVICES_IDENTITY_PRINCIPAL`) |
+| History                     | Rows pin `execution_principal_*` and `writer_*` ServiceAccount namespace, name and UID (`history_service/migrations/history/00011_final_schema.sql`)                                                                                                                                                        | Identity name and UID, with the workload incarnation as provenance                                                    |
+| App API                     | Operator OIDC cookie session, or a TokenReview bearer for `agentplane-agent` (`app/go/auth/auth.go`, `caller`)                                                                                                                                                                                              | `APP_AGENT_TOKEN_DECISION`                                                                                            |
+| MCP edge                    | OAuth tokens resolve to a Connection bound to a ServiceAccount (staging: `claude-ai`); the edge forwards a TokenRequest for it; `connection_identities` is parsed but unread (`mcp_edge/config.go`, `mcp_edge/connections/service.go`)                                                                      | Connections bind to an `Identity`; the edge delegates as itself (`IDENTITY_CUTOVER`, [below](#mcp-edge))              |
+
+Session work built before the cutover keeps these ServiceAccount pins working and adds no new
+ServiceAccount-keyed contract; [`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
+states the Session rules against the goal.
 
 ## What this separates
 
@@ -85,6 +106,12 @@ changes. Deleting an environment never deletes the identity; deleting the identi
 environment naming it unable to start (`IdentityMissing`). A leaked identity costs nothing while
 nothing authenticates as it, but its bindings stay latent authority for whoever can later run as it.
 
+Identities that exist for a single Session stay wanted from the app (operator, 2026-11-10): "create
+a Session with a fresh identity just for it". Who creates one, how its lifetime follows the
+Session's, its cleanup, and whether it ever needs a Kubernetes account of its own are open under
+[`SESSION_IDENTITY_PROVISIONING_DESIGN`](task_dag.md#session_identity_provisioning_design--session-scoped-identities);
+open question 7 below is the creator half.
+
 A managed account's `EgressCredential` and one-rule `PolicySet` are emitted by the controller and
 owned by the account, so a temporary account's grants, use bindings, credential and set go with its
 one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)).
@@ -105,7 +132,10 @@ different identity is placed on or attached to the environment (operator, 2026-1
 the identity out from under a harness); `EnvironmentService`, in Dispatcher's process, refuses with
 the Sessions named. A bypass such as `kubectl edit` is caught by Dispatcher's delivery and wake path
 refusing a mismatched Session, so it strands Sessions rather than re-attributing them. Workspace and
-state volumes carry over, and the app says the next agent sees what the previous one left.
+state volumes carry over: the next identity reads whatever the previous one left, including anything
+privileged it wrote there. That is an accepted risk of choosing to change an environment's identity,
+not something the controllers prevent (operator, 2026-11-10); the app shows it when an identity
+change is requested, and the environment's page lists the identities it has run as.
 
 ## Central Sessions with no environment
 

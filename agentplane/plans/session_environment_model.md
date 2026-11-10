@@ -35,16 +35,12 @@ tracks these prerequisites and the later data-preserving migration.
 Decisions still needed include the Session/environment principal and privilege relationship;
 attachment authorization, revision and History publication; inbox and History behavior after
 Environment deletion; explicit Session-deletion and command-receipt retention; and which component
-wakes a suspended environment under which authorization. Since 2026-11-05,
-Agentplane-owned identities with SPIFFE workload authentication are the selected
-direction ([log](#discussion)). Independent identities may share one Kubernetes
-account, and no account is auto-provisioned per identity. The discussion proposed a
-shared low-privilege default account plus separate or temporary accounts on request;
-exact account and binding/grant shapes, provisioning and identity-provider choices
-remain proposed or open. The existing ServiceAccount-first Session direction stands
-until cutover. The related
-[Agentplane principal decision](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)
-covers identity provisioning and trust boundaries.
+wakes a suspended environment under which authorization. A Session's principal is an
+Agentplane `Identity` ([Sessions, identities and environments](#sessions-identities-and-environments));
+identities may share a Kubernetes account and none is auto-provisioned. Today Sessions still pin the
+Sandbox's own ServiceAccount; the
+[identity plan](identity_and_kubernetes_accounts.md#where-the-migration-stands) states what is true
+now and what changes at the cutover.
 
 <a id="central-session-environment-independence"></a>
 
@@ -360,7 +356,7 @@ Describe the binding's capabilities, paths, resource constraints and availabilit
 
 Multiple Sessions can use the same environment. They may share filesystem, processes, credentials and resource limits. Separate Sessions or different cwd values do not imply isolation from one another.
 
-For a native harness, built-in local tools operate with the environment's actual workload authority. For a central harness, tool access should carry an explicit effective principal through the Gateway to the exact environment. Existing ServiceAccount- and Sandbox-scoped policy remains in force until a reviewed extension replaces it; central Sessions independent of an environment need an explicit authorization scope of their own.
+For a native harness, built-in local tools operate with the environment's actual workload authority. For a central harness, executor tools reach the exact environment through the Gateway and act with that environment's SVID-verified Identity, which must be the Session's; with no environment, the sampler calls Agentplane services as a delegating actor for the Session's Identity ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)). ServiceAccount- and Sandbox-scoped policy stays in force until the identity cutover replaces it.
 
 <a id="principals"></a>
 
@@ -370,247 +366,103 @@ without an Environment. The older Sandbox-only orchestration rule is not a compl
 and [`DELIVERY_DESTINATION_AUTHORITY_DESIGN`](task_dag.md#delivery_destination_authority_design--assign-session-send-authority-and-internal-fences)
 track the open target and authority choices.
 
-## Sessions, ServiceAccounts and environments
+## Sessions, identities and environments
+
+A Session's principal is one Agentplane `Identity` (operator, 2026-11-05 and 2026-11-10); the model,
+its three credential forms and the code it replaces are in the
+[identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms), and
+what is true today versus the goal is its
+[migration status](identity_and_kubernetes_accounts.md#where-the-migration-stands). A Kubernetes
+ServiceAccount is only an account an Identity may act as toward the Kubernetes API. The Session-side
+decisions are
+[`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
+and the nodes it gates.
 
 **Operator requirement, 2026-11-04:** Sessions using the same Environment must have the same
 verified identity. Native placement and central attachment must enforce that invariant against the
-actual authenticated workload identity, including concurrent admission and identity changes. A
-Session ID, directory, nominal grant or caller-supplied account name is not isolation or proof of
-identity. The initial identity is a Kubernetes ServiceAccount; lifecycle and authorization details
-remain open. See
-[`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission).
+identity the workload's SVID resolves to, including concurrent admission and identity changes. A
+Session ID, directory, nominal grant or caller-supplied identity name is not isolation or proof of
+identity.
 
-Initial direction: the Session uses a namespaced SA name as its durable principal, consistent with
-Kubernetes RBAC and name-based PolicyBindings. A replacement object of the same name is the same
-named principal with a new UID. Authenticate and record the current UID for provenance and fence
-old Pod credentials, observations and already accepted operations; the name alone is not proof.
-A Session initially selects an authorized existing SA without transferring ownership. The operator
-is comfortable deferring Session-managed SA creation and deletion; if selected later, Dispatcher is
-the proposed owner.
-An Agentplane-owned principal mapped to external accounts remains a separate future option.
-Cardinalities, reassignment and the exact implementation remain open.
-
-Name-based ownership has an explicit consequence: an authorized same-name SA replacement can
-receive the principal's PolicyBindings, Kubernetes RoleBindings and Session access. Restrict who may
-create or recreate that name, create workloads using it, request its tokens and grant permissions;
-an SA name supplied by a caller is not authentication or authority. A managed-SA reconciler could
-recreate an accidentally deleted object while the Session still desires it, but whether to do that
-and how to request durable revocation remain open. For an unmanaged SA, disappearance makes the
-principal unavailable until an authorized owner restores it. Already admitted work and old tokens
-remain fenced to their actual incarnations, not automatically replayed or handed to a replacement.
-Current Session and History implementations pin SA UIDs; coordinate the contract and data changes
-before allowing name-based ownership, preserving recorded actor and writer UID provenance.
+The durable principal is the Identity's namespace and name; a same-name replacement is the same
+named principal with a new UID. Authenticate and record the current UID for provenance and fence old
+credentials, observations and already accepted operations; the name alone is not proof. Name-keyed
+bindings follow a replacement, so restrict who may create or recreate the Identity, write a
+`WorkloadCredential` naming it and bind policy to it.
 
 ```text
-Session S1 ── principal P ── Environment E1
-Session S2 ── principal P ── Environment E1
-Session S1 ── principal P ── Environment E2  // central attachment
-Session S3 ── principal Q ── Environment E3
+Session S1 ── Identity P ── Environment E1
+Session S2 ── Identity P ── Environment E1
+Session S1 ── Identity P ── Environment E2  // central attachment
+Session S3 ── Identity Q ── Environment E3
 // S3 cannot attach E1 while Q != P.
 ```
 
 ### Why the restriction fits today's isolation boundary
 
-Native harnesses can run broad commands in their environment. Co-resident Sessions can communicate through files or processes and can reach ambient egress access and credentials available there. A shared environment is therefore a shared trust domain under the current configuration, even with separate Session IDs, working directories, or action-level policies. Using different ServiceAccounts as labels while routing both agents through the same unrestricted environment would not establish meaningful privilege separation. Explicit agent-to-agent channels are appropriate for trust boundaries; same-environment Sessions can bypass those channels.
+Native harnesses can run broad commands in their environment. Co-resident Sessions can communicate through files or processes and can reach ambient egress access and credentials available there. A shared environment is therefore a shared trust domain under the current configuration, even with separate Session IDs, working directories, or action-level policies. Using different identities as labels while routing both agents through the same unrestricted environment would not establish meaningful privilege separation. Explicit agent-to-agent channels are appropriate for trust boundaries; same-environment Sessions can bypass those channels.
 
-Equality is an _admission rule_, not a complete authorization design or an isolation guarantee. Independently authorize who may create a Session as P, operate it, attach E, execute or wake E, and read retained history. Do not permit a caller to select an arbitrary privileged ServiceAccount merely by naming it. If a Session has narrower restrictions than P while it has unrestricted access to E, it may still obtain E’s ambient P authority; enforce meaningful narrower privilege with a separate environment or a real isolation mechanism.
+Equality is an _admission rule_, not a complete authorization design or an isolation guarantee. Independently authorize who may create a Session as P, operate it, attach E, execute or wake E, and read retained history. Do not permit a caller to select an arbitrary privileged Identity merely by naming it. If a Session has narrower restrictions than P while it has unrestricted access to E, it may still obtain E’s ambient P authority; enforce meaningful narrower privilege with a separate environment or a real isolation mechanism.
 
-### Why the per-environment ServiceAccount exists
+### Where a Session's identity comes from
 
-The operator clarified that each Sandbox gets a separate ServiceAccount so PolicyBinding CRs can attach and detach permission sets for that individual agent at the Sandbox level. An account is not just a way to authenticate a Pod: it is currently the subject at which per-agent egress, Actions, inbox and Kubernetes grants are assigned.
+Today `SessionSpec` has no identity: `CreateSession` derives the execution principal from the placed
+Sandbox's own ServiceAccount and pins its UID. That per-Sandbox account exists so `PolicyBinding`s
+can attach permission sets to one agent. In the goal the permission handle is
+the Identity: `CreateSession` names it (`SERVICES_IDENTITY_PRINCIPAL`), Dispatcher holds the
+Session-to-Identity binding, and the reference is neither a credential nor authority to act as it.
+A central Session keeps its Identity with zero Environments; the sampler acts for it as a delegating
+actor ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)),
+never by holding the agent's key, and its own ServiceAccount never becomes the agent's.
 
-**Operator direction, 2026-11-04:** use SAs as agent identities first, while leaving a later
-Agentplane-owned principal and Kubernetes account adapter open. A caller can select an authorized
-existing SA that the Session does not manage. Automatic creation and deletion of a separate SA
-for every Session is desirable later but not required now. A central-sampler Session may need its
-identity and permissions without an Environment. If Session-managed SA provisioning is selected
-later, Dispatcher is its proposed owner; creation, deletion, bindings, credentials, sharing and
-attachment lifetimes still need a contract. See
-[`SESSION_MANAGED_IDENTITY`](task_dag.md#session_managed_identity--provision-a-session-managed-sa).
+**Changing permissions is different from changing identity.** Policy readers converge on a changed
+binding without replacing the running workload; revocation is not globally instantaneous, and
+existing connections and already obtained information have their own behavior.
 
-**Candidate Session spec:** the operator suggests putting the agent ServiceAccount in the Session's
-spec. This could make the Session's intended identity explicit at creation and keep it independent
-of whether a central Session has an attached Environment. Decide whether the named SA reference
-belongs in the spec or a separate Session-owned association. Today `SessionSpec` has no identity field: the Dispatcher
-opening names a Sandbox, while other records carry an `execution_principal` separately. Decide
-where the identity intent and resulting UID belong, how the caller is authorized to select it,
-whether it can change, and how its account lifetime and permissions are managed. A spec reference does not by itself grant
-impersonation authority or supply a credential; define authenticated delegation for central work
-and validate compatible identity when an Environment is attached. No wire or storage change is
-selected by this candidate.
+**Shared-Identity tradeoff:** several Sessions and environments may act as one Identity, and grants
+to it combine additively across all of them, so a grant intended for one applies to every other. A
+separate Identity is the way to keep per-agent permission granularity. An agent that needs more can
+request an approved, expiring grant on its Identity
+([`AGENT_PERMISSION_REQUESTS`](task_dag.md#agent_permission_requests--an-action-type-and-approval-view-for-permission-requests)):
+Agentplane Actions, scoped egress credential substitution, or use of a Kubernetes account, which the
+egress proxy impersonates ([egress SPEC](../egress/SPEC.md#decision)). External accounts such as a
+GitHub bot stay shared rather than becoming a unique account per Session.
 
-**Initial Sandbox direction:** the operator favors keeping one fixed ServiceAccount name for each
-Sandbox throughout that Sandbox's lifetime. A same-name replacement has a new object UID but the
-same named principal; old workload and operation evidence must not be treated as its evidence. This does not
-select Sandbox ownership of the account, prohibit sharing an account between Sandboxes, or prevent
-normal token rotation and permission changes. The Session identity is independent of Environment
-lifetime; whether its identity association can change remains a separate decision.
+### Session-scoped identities and native creation order
 
-**Changing permissions is different from changing identity.** The Sandbox controller already updates its PolicyBinding when `spec.policySets` changes without replacing the running Pod. Policy readers converge independently, so revocation is not globally instantaneous; existing connections and already obtained information have their own behavior. This preserves an individual Sandbox’s permission handle while keeping its current SA and Pod.
+A Session may name an authorized existing Identity, including its Environment's, without owning it
+or changing its grants, and Session cleanup never deletes such an Identity. Identities that exist only for one Session
+are still wanted from the app (operator, 2026-11-10): "create a Session with a fresh identity just
+for it". Who creates one, how its lifetime and cleanup follow the Session, and whether it ever needs
+a Kubernetes account are open under
+[`SESSION_IDENTITY_PROVISIONING_DESIGN`](task_dag.md#session_identity_provisioning_design--session-scoped-identities).
+It needs no Kubernetes object for Agentplane calls: egress and services authenticate the SVID's
+Identity, and a central Session is acted for under Dispatcher's binding.
 
-**Shared-SA tradeoff:** PolicyBindings name a ServiceAccount subject, and matching grants combine additively. If two environments use the same SA, their bindings’ grants can combine for that subject, so a grant intended for one can apply to the other. A shared SA therefore changes the current per-Sandbox permission granularity unless policy is redesigned with additional trustworthy scope. Sharing may be right for environments intentionally in the same privilege domain; it is not automatically equivalent to today’s per-agent permission assignment.
+Native placement names an existing exact Environment UID, and central sampler V1 one fixed executor
+Environment. A Session bringing its Identity to a new Environment can create the Environment unbound
+and bind it before start, since `Sandbox.spec.identity` changes only while nothing runs and each
+start gets a fresh `WorkloadCredential`; SVID mTLS authenticates Environment Runtime control and
+egress alike, so a running incarnation never changes identity. The sequence, who may bind, and
+recovery of abandoned or concurrently claimed Environments are
+[`ENVIRONMENT_IDENTITY_BINDING_DESIGN`](task_dag.md#environment_identity_binding_design--environment-identity-binding-and-session-creation-order).
+Using an already bound Environment needs neither.
 
-An agent that needs additional permissions can request an approved PolicyBinding for its existing
-SA; this can grant Kubernetes roles, Agentplane Actions or scoped egress credential substitution.
-The current [temporary-grant guidance](../action_service/docs/agents/kubernetes.md#request-a-temporary-policybinding)
-uses a Kubernetes admin Action, and [`AGENT_PERMISSION_REQUESTS`](task_dag.md#agent_permission_requests--an-action-type-and-approval-view-for-permission-requests)
-tracks a dedicated request and approval view. A grant applies to the SA and therefore to every
-workload or Session able to use it; it is not per-Session isolation. A separate SA for extra
-Kubernetes permissions could be used without changing an Environment's Pod-bound identity. Decided
-2026-11-05: the egress proxy impersonates the second account, under an identity's use rule, through
-the `kubernetesServiceAccount` credential source
-([egress SPEC](../egress/SPEC.md#decision)).
-The GitHub bot case can instead use an existing EgressCredential, a matching host/method/path
-egress rule and a PolicyBinding for the effective caller; external GitHub permissions and those of
-any shared SA remain shared rather than becoming a unique external account for each Session.
+### Changing an environment's or a Session's identity
 
-### Session-managed SA and native creation order
+An environment's identity may change while it is stopped and no Session of another Identity is
+placed on or attached to it; the workspace carries over
+([identity plan](identity_and_kubernetes_accounts.md#changing-an-environments-identity)). A
+Session's own identity reassignment is not supported: Dispatcher, the sampler and the retained
+Runtime record treat the execution principal as immutable, and History pins writer and principal
+associations. If reassignment becomes a feature, define how the Session and its attached
+environments change together, fence old work and credentials, and record identity provenance for
+History; never replay uncertain effects.
 
-Today the form selects PolicySets for a new Sandbox, whose controller creates and owns its SA and
-binding; Sessions created in that Sandbox share it. Initially a Session may use an authorized
-existing SA without taking ownership or changing its grants. Preserve the web's preset and editable
-PolicySets where it creates an Environment or an explicit grant, and show when the chosen SA is
-shared. Creating a new Session-managed SA and letting Dispatcher reconcile its identity intent,
-binding, observed UID and status remains a later option, not a prerequisite. No new identity
-service is selected. Actual delegation for central-sampler calls must prove both actor and effective
-caller; an SA reference alone cannot authenticate or authorize a call.
-
-An environment-hosted Session spec currently requires an already existing exact Environment UID;
-central sampler V1 also requires one fixed executor Environment. One candidate resolves the ordering:
-create an **unbound, non-running Environment resource**, persist the Session with that placement and
-managed-SA intent, provision the SA, bind the exact Environment to that SA, then start its workload
-and materialize the Session. The Session could instead use an authorized existing SA already bound to
-an Environment. Pre-provisioning an SA and other reservation approaches remain alternatives; this
-sequence is not yet a chosen API or implemented behavior. Using an already bound Environment and
-its existing SA does not require a Session-managed SA or an unbound-Environment creation API.
-
-The review must settle who may claim and bind an Environment, how competing claims are serialized,
-who cleans up abandoned unbound Environments or partially provisioned SAs, and how retries and
-uncertain cross-system writes recover without adopting foreign objects or reusing an old UID's
-evidence. A valid same-name replacement represents the same named principal. An unbound
-Environment must not start with a default or unverified SA. Once bound, reject unbinding or changing
-the SA name for that Environment's lifetime: its retained workspace or other state may contain
-sensitive data. Deleting the SA object does not erase the binding; a same-name replacement is the
-same named principal, while old workload evidence stays fenced. A bound Environment cannot receive
-extra grants merely because a different Session is created. Decide what the user sees while
-provisioning, and how the form offers creation versus selection of an existing identity. Reconcile Session deletion with any other Session or
-Environment using its managed SA: blocking deletion or explicitly changing identity ownership are
-possible policies, not yet selected. Deleting a Session never deletes an unmanaged SA.
-
-SPIFFE URI mTLS identifies the Environment Runtime and Gateway on the control connection; it does
-not supply the agent's outbound authority. Egress currently authenticates a Pod-bound SA token and
-uses the Pod's projected credentials. Binding before workload start can preserve control mTLS while
-selecting the workload identity; changing the SA of an already-running Pod needs replacement or a
-separately designed credential mechanism. See
-[`ENVIRONMENT_IDENTITY_BINDING_DESIGN`](task_dag.md#environment_identity_binding_design--environment-sa-binding-and-session-creation-order).
-
-**Later option: materialization cost.** Per-Session SA management is not required initially. A
-distinct live SA, PolicyBinding and possibly native RBAC objects
-for every retained Session could accumulate in Kubernetes. Compare eager creation with reserving
-the Session's SA name and materializing it only when an authorized operation needs it. The operator
-expects fewer than 10,000 Sessions in existence at present and considers eager SAs likely acceptable;
-this is a working scale assumption, not a measured capacity limit. Eager creation is a reasonable
-first candidate, with lazy creation revisited if observed scale warrants it. Measure the
-object counts and control-plane costs rather than assuming a bottleneck. A Session that only needs
-provider-side work might avoid a Kubernetes object, but the current delegated-authentication path
-requires the effective SA to exist and match its UID, and an Environment uses a Pod-projected SA
-token. Deferring an SA until explicit Kubernetes API access would therefore not support every
-current Agentplane call. Decide whether to materialize at first Agentplane authorization, represent
-a reserved-but-unavailable identity until then, or design an independent logical principal; the
-latter is more than lazy creation of a Kubernetes object. Keep selected PolicySets and authorization
-intent durable without granting access based only on an unverified name. See
-[`SESSION_SA_PROVISIONING_DESIGN`](task_dag.md#session_sa_provisioning_design--when-to-materialize-session-sas).
-
-### Changing the associated ServiceAccount
-
-The operator earlier suggested the association need not be immutable, but now requires the initial
-Environment binding to reject unbinding or changing its SA name once bound. A Session's own identity
-reassignment remains a separate question. For an ordinary Kubernetes Pod, `spec.serviceAccountName`
-cannot be changed after creation, so a different mounted identity also needs a replacement Pod. For
-VM Sandboxes the launcher Pod obtains its SA through the existing launcher admission and relay;
-establish the exact VM/VMI replacement procedure separately. A different credential or delegation
-architecture might support another approach, but the existing Pod-bound egress design does not
-simply switch SA by editing a policy binding.
-
-Reassignment is not currently supported by the Session contract: the Dispatcher, sampler and retained Runtime record treat their execution principal as immutable, and History pins writer and principal associations. If reassignment becomes a feature, define how the Session and its attached environments change together, handle other Sessions sharing the environment and other environments attached to the Session, fence old work and credentials, and record identity provenance for History. Preserve old authorization/receipt evidence and never replay uncertain effects. Do not present reassignment as a necessary first implementation or a decided product feature.
-
-### Agentplane identity with Kubernetes as a downstream system
-
-The operator proposed that Agentplane’s identity need not be Kubernetes’s ServiceAccount. Treating Kubernetes as a downstream system is plausible: a PolicySet can grant an Agentplane principal Kubernetes access, and a Kubernetes adapter can reconcile an external account and its RoleBindings, just as another adapter might provision a Moodle identity and role. This is a conceptual model, not a requirement to create a separate identity service or make every agent have every external account.
-
-```text
-Session ── acts as ── Agentplane principal P ── PolicyBindings ── PolicySets
-                              │
-             ┌────────────────┼────────────────────┐
-             ▼                ▼                    ▼
-      Agentplane services   Kubernetes account   Other provider account
-      effective principal   + RoleBindings       + provider roles
-
-Environment workload credential ── authenticated association ──► P
-```
-
-An Agentplane principal must have a stable, independently managed identity and a verifiable association to the exact environment workload or authenticated delegated caller. A Pod token can remain evidence of a workload’s identity while Agentplane maps the verified workload to P; neither an arbitrary HTTP header nor a Session ID proves P. The shared egress proxy sees the environment workload, not automatically which of several co-resident Sessions issued a request. Under the current broad local execution model, allow only Sessions with the same verified identity in one Environment.
-
-### Existing patterns and possible building blocks
-
-This is commonly called **identity lifecycle management** or **identity governance and administration (IGA)**: define identities and desired access, then provision and reconcile accounts and entitlements across systems. Provisioning, authentication, runtime authorization and credential delivery are distinct functions. An identity provider can authenticate an agent while an independent provisioner reconciles external accounts; neither automatically determines Agentplane's Session/environment authority.
-
-| Building block                       | What it covers                                                                                                                                                                                                         | Boundary                                                                                                                                                                                           |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SCIM 2.0                             | Standard HTTP protocol for managing supported users, groups and related identity attributes in a remote service.                                                                                                       | Requires a compatible provider and target implementation; each system supports different schemas and entitlements. It does not standardize every resource permission or grant a Session authority. |
-| OIDC / OAuth 2.0                     | Federated authentication or delegated authorization and token issuance for supported services.                                                                                                                         | Separate from creating and maintaining downstream accounts and resource-specific roles; support and machine-to-machine flows differ by target.                                                     |
-| IGA provisioning system              | Identity lifecycle, desired entitlements, reconciliation and a connector catalog. [midPoint](https://docs.evolveum.com/midpoint/) is one open-source example to evaluate.                                              | May be excessive for Agentplane's scale. Verify actual connectors, non-human identity support, operations and ownership before selecting one.                                                      |
-| Kubernetes-style provider controller | A controller reconciles desired external resources through a provider adapter; [Crossplane managed resources](https://docs.crossplane.io/v2.4/get-started/get-started-with-managed-resources/) illustrate the pattern. | Generic resource reconciliation is not a complete identity-governance system, and a provider for a specific target and permission shape may not exist.                                             |
-| Workload identity                    | Pod-bound tokens or standards such as [SPIFFE](https://spiffe.io/docs/latest/spiffe/concepts/) can authenticate an environment or service.                                                                             | Proving a workload identity alone does not provision accounts, decide Session authority, or make different Sessions in an unrestricted environment isolated.                                       |
-
-**Possible shape:** Agentplane declares the desired principal, relationship to Sessions and environments, and assigned permissions; an adapter reconciles the relevant external account and grants, using SCIM where supported and provider-specific APIs where necessary. The existing Policy Controller already plays a narrower version of this role for Kubernetes RoleBindings. Alternatively an external identity system could be authoritative for principal lifecycle or entitlements, with Agentplane consuming them. Choose one authority for each fact, define ownership of external accounts and grants, and expose reconciliation or failure status; do not silently run competing controllers or assume a vendor owns the whole model.
-
-**Research first:** compare a standard provisioning system or a provider adapter with the existing policy controller by tracing one real provider and Kubernetes end to end. Check non-human accounts, supported grants, explicit trust and delegation, credential delivery without exposing reusable secrets to agents, idempotent reconciliation, revocation and stale/unknown outcomes. External identity products and services named in discussion are examples, not selected dependencies.
-
-Standards and examples: [SCIM protocol](https://datatracker.ietf.org/doc/html/rfc7644) · [one identity provider's outbound SCIM support](https://docs.goauthentik.io/add-secure-apps/providers/scim/) · [midPoint resources and provisioning](https://docs.evolveum.com/midpoint/reference/master/resources/) · [Crossplane managed resources](https://docs.crossplane.io/v2.4/get-started/get-started-with-managed-resources/).
-
-### What the current implementation actually couples
-
-| Boundary                        | Current behavior                                                                                                                                                                                                                                                 | Effect of decoupling                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Kubernetes API via egress       | The Kubernetes credential uses `projectedWorkloadToken`: the sidecar supplies its own Pod’s token for the API audience, and egress verifies that it is bound to the same Pod as the authenticated hop before substitution. Kubernetes authorizes that actual SA. | The substitution point exists, but it cannot currently substitute an unrelated principal’s token as this source. A broker or new source would need to obtain and protect the chosen Kubernetes account’s credential, authenticate the P-to-account mapping, scope and rotate credentials, and preserve auditing and revocation. Do not expose the token to the workload. |
-| Agentplane policy               | `PolicyBinding.spec.subject` is a namespaced SA; egress, Actions and inbox readers match SA subjects. Kubernetes RoleBindings are generated for the SA.                                                                                                          | Bind PolicySets to P or explicitly map P to current SA subjects, and ensure every reader agrees on effective identity and policy. Reconcile Kubernetes-native grants as an adapter; preserve policy freshness, additive rules and same-name UID safeguards.                                                                                                              |
-| Agentplane service calls        | TokenReview / workload-auth returns an SA and sometimes Pod UID. Actions, Notification, History, Dispatcher, Environment Service and LLM ingress use these identities in authentication, policy, ownership or attribution. Their contracts differ.               | Translate authenticated workloads or trusted delegated actors into P with method-specific authority. Audit each service’s ownership, idempotency, read scope, Pod proof and provenance; never treat the sampler’s own service account or a caller-provided P as proof.                                                                                                   |
-| Lifecycle and persisted records | Sandbox controller owns the per-Sandbox SA and binding; Session and History records pin execution and writer SA identities; the central sampler currently binds an executor and principal.                                                                       | Define P’s independent lifetime and the authenticated P↔workload↔external-account links, preserve historical actor and execution identity, and handle revocation, deletion/recreation, migration, wake and queued work. Keep Session ID, principal, workload credential and external account distinct.                                                                   |
-
-**Scope and sequence:** start by deciding the semantic identity and permission subject; a first implementation might use existing SAs and delegation as adapters without changing all authentication at once. A prototype should follow one concrete agent action end to end, then cover a Kubernetes API request and one Agentplane service with real policy and UID checks. Inventory direct and delegated consumers, credential sources and RBAC reconciliation before estimating the full migration. Dynamically obtaining and substituting a different Kubernetes SA's token would require a new credential source or broker; the identity plan chose proxy impersonation instead (decided 2026-11-05).
-
-**Policy granularity:** a stable principal with individual external or per-environment accounts does not itself decide whether two environments share grants. Specify whether the principal or each environment is the PolicyBinding subject, what an agent is permitted to do through each attachment, and how its authority is propagated. Avoid accidentally widening privileges by unioning per-environment grants or using an unrestricted environment as a privilege boundary.
-
-### The current implementation makes ServiceAccount lifetime the hard part
-
-Today each Sandbox controller creates a ServiceAccount named after that Sandbox and owns it and its PolicyBinding; deletion removes them. Current admission and authorization deliberately check the exact account UID and its Sandbox controller ownerReference. This is closer to one account _per environment_ than an environment selecting a long-lived shared account. A central Session that survives all environments cannot keep operating as an account deleted with one of them, and two environments cannot currently select one existing ServiceAccount just by updating a field.
-
-The [shared-account Environment provisioner](task_dag.md#environment_shared_account--environments-using-a-named-existing-sa)
-can support a verified same-SA caller, but does not settle whether the long-term Session identity is
-an SA or an independent Agentplane principal mapped to SAs. That mapping and who may provision or
-delegate it remain decisions under `SESSION_IDENTITY_CONTRACT` and `AGENT_PRINCIPAL_MODEL_DESIGN`.
-A Sandbox still holds one fixed SA throughout its lifetime in the initial model.
-
-### Long-lived shared ServiceAccount
-
-Manage principal P independently of environment lifetime, authorize environments to run as P, and allow several environments to reference P. This makes namespaced ServiceAccount equality straightforward and uses existing policy subjects, but requires changing Sandbox account and PolicyBinding ownership, token projection, UID checks and managed deletion. Its shared subject also combines grants across environments under current policy semantics. Define revocation, who may bind P and how replacement incarnations are authenticated and fenced.
-
-### Logical principal backed by workload accounts
-
-Give Sessions and environments a durable logical principal while keeping distinct per-environment ServiceAccounts, each explicitly mapped to that principal. Enforce equivalence and allowed delegation at every relevant service; this preserves per-environment token identities but introduces a mapping authority, more policy and a greater drift risk. No additional identity service is assumed.
-
-**Future option:** an Agentplane-owned principal could have independently managed permission bindings
-and treat Kubernetes identity as an adapter. The initial implementation uses SAs directly. Revisit
-the broader design after accounting for per-agent PolicyBinding granularity and migration of stored
-identities and historical attribution. Keep principal distinct from Session UUID, requester, service
-broker, workload authentication and journal writer; do not assume an online identity-switch feature.
-
-For a central Session with no environment, the principal still exists and the sampler must exercise authorized capabilities under that principal through an appropriate authenticated delegation or broker path. A stored ServiceAccount name is neither a bearer token nor authority to impersonate it; the central sampler’s own ServiceAccount must not silently become the agent’s. Calls made _inside_ an environment use that environment’s actual Pod/relay and egress identity; verify that this agrees with the Session principal and each destination’s authorization contract. Losing an Environment alone does not imply the agent identity disappeared: the human-operator-only fallback applies when the relevant Sandbox-owned ServiceAccount has actually disappeared, not merely when a Session has no attached Environment. The rights of a surviving independent identity still need their reviewed authorization contract.
-
-**Open cases:** which principal owns a Session when the creator is a human or another agent; who grants acting as P; whether, how and when Session SA associations may change; whether absence is a supported state or only a cardinality limit; recreation and intentional revocation; historical access when P is absent; central Session creation without any environment; multiple exact environments for P; and what is allowed when policies are revoked or an environment is replaced. An Environment's first SA binding cannot be removed or changed in the initial model. A same-name replacement can receive the named principal's grants and Session access under the future contract; preserve actual UID provenance and fence stale effects, and do not treat SA deletion alone as guaranteed durable revocation.
-
-Current source contracts: [Sandbox identities and ownership](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/sandbox_controller/SPEC.md#identity) · [Dispatcher admission and identity](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/SPEC.md) · [egress workload identity](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/egress/README.md#serviceaccount-permissions) · [delegated authorization](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/docs/delegated_authorization.md) · [central sampler identity](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/SPEC.md) · [PolicySets and PolicyBindings](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/docs/adr_policy_sets.md) · [Kubernetes Pod ServiceAccount assignment](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/) · [egress authentication and substitution](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/egress/SPEC.md) · [shared workload authentication](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/workload_auth/README.md) · [inbox identity and scope](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/notification_service/docs/api.md).
+**Open cases:** which Identity owns a Session when the creator is a human or another agent; who
+grants acting as it; historical access once it is gone; and what is allowed when policies are
+revoked or an environment is replaced. Deleting an Identity is not guaranteed durable revocation of a
+declaratively managed one.
 
 <a id="failures"></a>
 
@@ -768,10 +620,11 @@ replaced Sandbox are distinct observations; none proves an in-flight effect fail
 Decide which component owns and observes each transition, how Dispatcher and Notification converge
 without a cross-database transaction, and how retries, deletion races, exact-UID fencing,
 authorization and History handoff work. The operator's direction for a retained Session whose
-Sandbox-owned ServiceAccount has disappeared is human-operator-only read and administration,
-through an operator-authenticated entry point such as the app using explicitly privileged service
-credentials. The selected future named-principal model allows an authorized same-name replacement to
-act as that principal; other workloads are not authorized by the original account's disappearance.
+principal has disappeared (today the Sandbox-owned ServiceAccount, in the goal its `Identity`) is
+human-operator-only read and administration, through an operator-authenticated entry point such as
+the app using explicitly privileged service credentials. The named-principal model allows an
+authorized same-name replacement to act as that principal; other workloads are not authorized by the
+original principal's disappearance.
 Current UID-pinned access remains in force until the coordinated cutover. Backend maintenance retains
 narrowly authorized service operations. Preserve retained messages and History unless their own reviewed policy permits cleanup.
 App archive remains separate. Complete forgetting in Dispatcher **when an explicit Session deletion
@@ -983,9 +836,9 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 ## Decisions this proposal asks for
 
-**Highest-value decisions before implementation:** choose the identity and authority relationship between Sessions, environments and ServiceAccounts, including ServiceAccount lifetime. Also specify the Dispatcher/backend handoff and unattended wake policy. The operator has selected Dispatcher-owned logical reservation, ongoing central Session lifetime, and eventual History recording of attachment transitions; implementation details remain below.
+**Highest-value decisions before implementation:** choose the authority relationship between Sessions, environments and their `Identity`, including Session-scoped Identity lifetime. Also specify the Dispatcher/backend handoff and unattended wake policy. The operator has selected Dispatcher-owned logical reservation, ongoing central Session lifetime, and eventual History recording of attachment transitions; implementation details remain below.
 
-**Priority A · Who can own and use a central Session with no environment?** Today the Dispatcher derives the Session execution principal from a Sandbox-owned ServiceAccount and History scopes normal reads to the retained execution principal. A central Session with zero environments needs a durable principal or ownership scope independent of any attached environment, plus explicit create, read, send and attachment authorization. Recommend retaining the real initiating principal separately from the sampler’s service identity and checking environment-specific permissions at each attachment and operation; choose the precise owner identity and lifetime before claiming zero-environment support.
+**Priority A · Who can own and use a central Session with no environment?** Today the Dispatcher derives the Session execution principal from a Sandbox-owned ServiceAccount and History scopes normal reads to the retained execution principal. A central Session with zero environments needs a durable principal independent of any attached environment, its `Identity` named at `CreateSession`, plus explicit create, read, send and attachment authorization. Recommend retaining the real initiating principal separately from the sampler’s service identity and checking environment-specific permissions at each attachment and operation; settle who may name or create that Identity and its lifetime before claiming zero-environment support.
 
 **Agreed · What Dispatcher reserves.** The Dispatcher’s committed Session row establishes logical existence, including when the environment Runtime or central sampler is unavailable. Its placement and request are authoritative; the owner creates runtime/continuation state on demand and retains the native ID where appropriate. Report a later materialization rejection separately; correct a rejected creation request by opening a new Session for the first implementation. Decide how a lost native ID is recovered without replay. No cross-database atomicity or mandatory wake is implied.
 
@@ -1127,6 +980,13 @@ the plan proposes a managed-account object only for accounts Agentplane creates.
 impersonation versus TokenRequest and rollout implementation remain open in the
 [identity plan](identity_and_kubernetes_accounts.md). The operator accepted one
 incompatible cutover with downtime, not a staged migration.
+
+**2026-11-10 · One identity source; Session-scoped identities stay wanted.** The
+operator made the Agentplane `Identity` the single agent identity, reached by SVIDs,
+the MCP edge's OAuth tokens, and Kubernetes authentication toward the Kubernetes API
+alone, so agent identity is not tied to the API server. A Session's principal is
+therefore an Identity, not a ServiceAccount. Identities that exist only for one
+Session remain wanted from the app; their provisioning is open.
 
 **Still open:** directory availability and stale-route fencing; the boundary with
 harness owners; command-receipt, inbox and History cleanup/provenance; cross-store

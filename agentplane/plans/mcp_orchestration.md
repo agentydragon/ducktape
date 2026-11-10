@@ -18,8 +18,9 @@ Session commands, interrupts and reads with
 [`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments),
 [`DELIVERY_DESTINATION_AUTHORITY_DESIGN`](task_dag.md#delivery_destination_authority_design--assign-session-send-authority-and-internal-fences)
 and [`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
-before extending backend grants. The actual future target and identity representation remain open;
-existing backend enforcement continues until replaced.
+before extending backend grants. The subject becomes an Agentplane `Identity`
+([identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms));
+the actual future target remains open, and existing backend enforcement continues until replaced.
 
 Claude.ai is the first client, but nothing here is specific to it: the same Actions serve any MCP Connection, and an
 orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](../docs/agent_cli.md)
