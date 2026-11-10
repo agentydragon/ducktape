@@ -14,23 +14,19 @@ The image publication roster pushes it to `ghcr.io/agentydragon/tofu-controller`
 Forgejo: see `cluster/cdk8s/tofu_controller_release.py`). The cluster runs it through the
 upstream Helm chart with the image, CRD and RBAC swapped in by that module.
 
-## Staged rollout
+## Coordinated rollout
 
-The controller and runner must use matching protocols. The upstream commit changed how state
-locks are reported, so the v0.16.5 runner cannot be paired safely with this controller. CI
-publishes both the controller and a runner built from the same upstream commit, but the live
-HelmRelease image pins stay on the old pair until both new images are available. Then update
-both pins together in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml`. In the
-same change, add `--feature-gates=ExternalArtifact=true` to the controller Deployment through
-the HelmRelease post-renderer in `cluster/cdk8s/tofu_controller_release.py`. The pinned chart
-does not expose this flag, upstream defaults it to false, and the current fork does not accept
-it. Verify a Terraform reconciliation and its runner after Flux applies the change. Keep the
-pins manual until image automation can update the pair together; independent policies can
-publish mismatched protocols during future upgrades too.
+The controller and runner must use matching protocols. Update both pins together in
+`cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml`; keep them manual until image
+automation can update the pair together.
 
-Drain in-flight reconciliations and confirm old runner pods are gone before activating the new
-controller: a running runner with the current TLS secret can otherwise be reused across the
-controller restart. Resume reconciliation after the matched pair and feature gate are active.
+Before switching the pair, suspend Terraform reconciliations and wait for in-flight work and old
+runner pods to finish. A running runner with the current TLS secret can otherwise be reused across
+the controller restart. After the new controller is ready, resume reconciliation and verify a
+Terraform reconciliation and its runner.
+
+The HelmRelease post-renderer enables `--feature-gates=ExternalArtifact=true`; the pinned chart
+does not expose this flag and upstream defaults it to false.
 
 ## Source
 
