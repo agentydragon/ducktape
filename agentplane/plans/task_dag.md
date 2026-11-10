@@ -3033,7 +3033,7 @@ ServiceAccount and the edge forwards a token minted for it (`IDENTITY_CUTOVER`).
 ```mermaid
 flowchart LR
     WORKLOAD_AUTH_CUTOVER[In review: bearer hop removal]
-    APP_AGENT_TOKEN_DECISION[Decision: the app's agent token]
+    APP_AGENT_TOKEN_DECISION[Spike then decide: the app's agent token]
     CENTRAL_SESSION_ACTING_DESIGN[Decision: a central Session acting as its identity]
     SERVICES_IDENTITY_PRINCIPAL -->|implementation waits| CENTRAL_SESSION_ACTING_DESIGN
     APP_IDENTITIES_UI[In progress: identities in the app]
@@ -3060,12 +3060,27 @@ workloads reach the proxy and Rules by SVID; then remove this node.
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
 
-**Decision; operator to weigh in.** The app's `agentplane-agent` bearer, used by system tests and
-scripts, is the one agent-side TokenReview path with no node. Alternatives are the
-[lifecycle plan's open question](workload_identity_lifecycle.md#open-questions) 1. Recommendation:
-system tests stop calling the app's API. No implementation node until the operator answers. Backend
-services calling each other as themselves keep TokenReview (operator, 2026-11-10;
-[plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)).
+**Decision pending a spike (operator, 2026-11-10).** The app's `agentplane-agent` bearer, used by
+system tests and scripts, is the one agent-side TokenReview path with no node. Both test boundaries
+stay valid: end-to-end flows through the app's API as a user would, and service-level scenarios
+that drive backend services in-cluster by SVID. Dex in the heavy k3s suites (another image and Pod)
+is not wanted; an auth-off mode in the shipped app is not either.
+
+Candidate: **test-minted OIDC ID tokens.** The app's `caller()` (`app/go/auth/auth.go`) gains a
+bearer branch that verifies an ID token with go-oidc against the configured issuer and client ID and
+yields the same operator `Caller` as a cookie session. Production keys come from the discovered
+issuer; the system-test fixture configures a static key set for a test-only issuer, and the test
+process signs short-lived tokens for a fixed test operator, so no issuer Pod runs. The app refuses
+static keys combined with the production issuer. Staging live suites use a token from the real
+issuer. Once callers move, the `agentplane-agent` TokenReview path is deleted.
+
+**Next: spike, then decide.** Prototype the bearer branch and fixture on one app suite, and measure
+against today's TokenReview path: suite wall time, per-request auth latency, app and fixture memory,
+images and Pods added (expected none), and code size. Adopt only if the delta is acceptable to the
+operator; otherwise this node records the measured result. Backend services calling each other as
+themselves keep TokenReview (operator, 2026-11-10;
+[plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)). Alternatives
+are the [lifecycle plan's open question](workload_identity_lifecycle.md#open-questions) 1.
 
 ### `CENTRAL_SESSION_ACTING_DESIGN` — a central Session acting as its identity
 
