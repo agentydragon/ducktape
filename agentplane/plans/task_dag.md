@@ -2403,6 +2403,17 @@ until it exists and is authorized again; a same-name replacement acts as the nam
 as the old incarnation. Operator-only access to a Session whose Identity is gone stays distinct from
 a live Identity whose Session has no Environment.
 
+**Rebind boundary to review:** #15445 serializes an `EnvironmentService` identity change with
+Dispatcher Session admission, but a direct Kubernetes `Sandbox.spec.identity` edit bypasses that
+guard. Delivery and wake reject a mismatch, which can strand an existing Session. The service
+rechecks the chosen Identity's UID before patching a name-only reference; deletion and same-name
+recreation after that read can make the patch name the replacement. Decide whether those outcomes
+are acceptable under the existing name-based and fail-closed contract or whether direct writers and
+replacement need a stronger coordination boundary. Recommendation: retain that contract until the
+tradeoff is reviewed, rather than silently choosing UID-bound Sandbox references. Cover bypass,
+replacement between the final read and patch, accepted work and recovery in
+`SESSION_IDENTITY_ENFORCEMENT`; do not assume a Kubernetes/PostgreSQL transaction.
+
 **Exit:** reviewed examples for a central Session with zero Environments naming an existing
 Identity, two same-Identity Sessions sharing an Environment, a permission request for that Identity,
 and rejection of a different Identity, covering creation, placement, delegation, cleanup and denial;
@@ -2836,6 +2847,13 @@ Those transitions are not a cross-service transaction. The central Session lifet
 selected Dispatcher identity policy is to forget a Session only upon a future explicit Session
 deletion; that API is not implemented. The treatment of other services' data remains open.
 
+#15444 treats every retained Session naming an Identity as a cleanup reference, including one on
+the deleted Sandbox; #15445 refuses a rebind when any retained Session on that Sandbox names a
+different Identity incarnation. Without a terminal Session projection or deletion API these checks
+can conservatively prevent cleanup or rebinding. Settle which retained Sessions still constrain
+each action and how they are retired in this lifetime decision and `SESSION_LIFETIME_IMPLEMENTATION`;
+do not treat app archive as finish or discard retained History to unblock either action.
+
 The selected remaining policy is to keep the inbox and subscriptions until explicit Session
 deletion, even when a required Environment disappears, which Notification now does. Do not silently bind a
 replacement or claim lost native state is recoverable. The intended inbox behavior is to keep
@@ -3068,6 +3086,9 @@ flowchart LR
     ENVIRONMENT_LIFECYCLE_RULES[Blocked: Identity callers resume, wake and create under rules]
     ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
+    IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
+    IDENTITY_DELETE_CREDENTIAL_GUARD[Candidate: include name-only credential references]
+    STANDING_WORKLOAD_IDENTITY -. if UID-optional records land .-> IDENTITY_DELETE_CREDENTIAL_GUARD
     SANDBOX_IDENTITY_SPEC[Blocked on question 11: a Sandbox acts as its identity]
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
@@ -3370,6 +3391,35 @@ Sessions from before the switch are retired at the switch, not migrated: no Sand
 then. **Exit:** no Session-facing code path, column or wire field names a ServiceAccount, and the
 services' tests pass without one.
 
+### `IDENTITY_CLEANUP_REFERENCE_DECISION` — decide cleanup reference guarantees
+
+**Decision; independent of the other app slices.** #15444's Sandbox-delete dialog scans the live
+Sandbox inventory, PolicyBindings and retained Sessions before it calls `DeleteIdentity`. The
+Policy Controller separately checks unowned PolicyBindings and UID-matching WorkloadCredentials;
+neither scan is atomic with creating a reference. A Sandbox or Session can begin naming the Identity
+after the browser scan. The [operator UI plan](identity_and_kubernetes_accounts.md#operator-ui)
+currently accepts an advisory check, with a concurrent launch failing closed if the Identity is
+gone. Decide whether that failure and the recovery of a stranded reference are acceptable, or
+whether to coordinate creation and deletion at backend owners. Recommendation: preserve the
+accepted advisory contract until reviewed; a UID/resourceVersion precondition on the Identity alone
+does not serialize references in Kubernetes and Dispatcher.
+
+Cover already referenced, concurrently created, removed and same-name replacement cases, as well
+as failures and recovery. `IDENTITY_DELETE_CREDENTIAL_GUARD` separately handles existing name-only
+credential references if UID-optional records land. **Exit:** a reviewed reference contract and
+independently actionable follow-ups, without changing the existing rule by implication.
+
+### `IDENTITY_DELETE_CREDENTIAL_GUARD` — include name-only credentials in Identity deletion checks
+
+**Candidate alongside [#15450](https://github.com/agentydragon/ducktape/pull/15450); independent
+of the reference-race decision.** That PR proposes WorkloadCredentials without an Identity UID that
+resolve to the live Identity by name. `DeleteIdentity` currently counts a credential only when its
+subject name **and UID** match, so an existing name-only credential would be missed even though it
+can act as that Identity. Include it in the refusal once that subject form is supported, retaining
+the distinction from a UID-pinned credential for a different incarnation. Test name-only,
+matching-UID and mismatched-UID records and their removal; this point-in-time check does not resolve
+the concurrent-creation race in `IDENTITY_CLEANUP_REFERENCE_DECISION`.
+
 ### `APP_IDENTITIES_UI` — identities in the app
 
 **Paused; landed so far: the identities list with bindings, expiries and the accounts its use
@@ -3380,8 +3430,11 @@ changed or cleared, guarded against placed Sessions (#15445). Remaining slices a
 `PolicyService` already watches Identities and deletes one for it (#15151;
 [Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). Left: the new-environment identity picker (lands with `SANDBOX_IDENTITY_SPEC`, since
 `CreateEnvironment` takes no Identity before it); the permission-request approval card with new
-temporary account, widen shared, or deny; the finish dialog's default to delete an app-minted
-identity once the app mints any (question 11); the identities an environment has run as on its page. The Connection consent page (`/#/connection-enrollments/{handle}`) and
+temporary account, widen shared, or deny; a Thread finish action that offers Identity cleanup after
+the authoritative Session finish/lifetime contract and its selected backend operation exist
+(`SESSION_AND_INBOX_LIFETIME`, `SESSION_LIFETIME_IMPLEMENTATION`); the finish dialog's default to
+delete an app-minted identity once the app mints any (question 11); the identities an environment
+has run as on its page. Thread finish's prerequisites do not block the other slices. The Connection consent page (`/#/connection-enrollments/{handle}`) and
 the OAuth clients tab's rebind picker choose an Identity from the edge's `connection_identities`
 instead of a ServiceAccount, a Connection's **View grants** shows that Identity's bindings, and an
 identity's page lists the Connections bound to it beside its Sandboxes and Sessions (operator,
@@ -3392,6 +3445,17 @@ deleted. The landed slice shows every identity not applied from git as of unknow
 app and the Dispatcher start minting identities (question 11, `SESSION_MANAGED_IDENTITY`) they
 stamp an origin marker on each, which `identities/origin.ts` then reads. The session form's
 identity picker is the slice to do next: it is what a launch under question 11's answer renders.
+The environment page reads only its current Sandbox-owned WorkloadCredential at the last check;
+revoked records do not supply a complete identity history. Choose a retained source and retention
+contract before claiming to show earlier identities.
+
+The merged #15444 and #15445 slices have no recorded k3s system test or post-Flux staging proof as
+of 2026-11-10. #15445's browser test exercises a running refusal by `EnvironmentService` and a
+stopped patch against the API server, not a Kubernetes admission refusal. When verifying a staging
+rollout, check the applied app/Gateway revisions and, with disposable resources, the stopped and
+running rebind cases and the credential-refused cleanup/retry path. `IDENTITY_SYSTEM_TESTS` owns
+cutover scenarios; missing live evidence alone is not a separate gate when suitable automated
+evidence exists.
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
