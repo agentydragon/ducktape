@@ -17,7 +17,9 @@ refetches the invocation's whole build event stream (33 MB on a sweep) per file,
 ~4.4 s per artifact (~16 min for a commit's ~294 files). The artifact listing already
 carries each blob's `bytestream://` URI; the publisher passes exact destinations to
 `bbapi blob download` in two manifest calls, one for output records and one for their
-selected screenshot payloads. Each call downloads up to eight blobs concurrently (<20 s for a commit's files).
+selected screenshot payloads. Each call downloads up to eight blobs concurrently.
+The publisher logs phase starts and workload counts; Actions timestamps on those
+lines show the time spent listing, downloading, building, and uploading.
 
 ## Which PR a run is for
 

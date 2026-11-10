@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import subprocess
 import tempfile
@@ -20,6 +21,8 @@ from urllib.parse import urlsplit
 
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
 from devinfra.testing.output_records import OutputRecord
+
+logger = logging.getLogger(__name__)
 
 _PREFIX = "test.outputs/test-outputs/"
 _RECORDS = _PREFIX + "records/"
@@ -223,14 +226,9 @@ def collect_outputs(
     run: Runner = subprocess.run,
 ) -> CollectedOutputs:
     """List test artifacts once per invocation, then collect their output records."""
-    return collect_listed_outputs(
-        list_ci_artifacts(invocations, bbapi=bbapi, run=run, require_all=True),
-        repository,
-        destination,
-        targets=targets,
-        bbapi=bbapi,
-        run=run,
-    )
+    logger.info("Listing test artifacts from %d invocation(s)", len(invocations))
+    listed = list_ci_artifacts(invocations, bbapi=bbapi, run=run, require_all=True)
+    return collect_listed_outputs(listed, repository, destination, targets=targets, bbapi=bbapi, run=run)
 
 
 def collect_listed_outputs(
@@ -264,7 +262,9 @@ def collect_listed_outputs(
                 staged = staging_root / hashlib.sha256(repr(key).encode()).hexdigest() / f"{index}.json"
                 staged.parent.mkdir(parents=True, exist_ok=True)
                 downloads.append((item, staged))
+    logger.info("Listed %d artifacts; downloading %d output records", len(listed), len(downloads))
     download_error = _download_records(downloads, destination=destination, bbapi=bbapi, run=run)
+    logger.info("Selecting outputs from %d records", len(downloads))
     contents = {id(item): path.read_bytes() for item, path in downloads if path.is_file()}
     sources: list[SourceResult] = []
     for key, items in by_result.items():
