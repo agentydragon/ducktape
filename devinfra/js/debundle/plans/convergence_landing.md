@@ -110,7 +110,8 @@ lane's heap-content facts).
   the attempted lane as their slices are touched; each move states what the
   rewind restores and shows no legacy verdict changed.
 - A refused attempt runs the root twice. Each slice reports how many e2e roots
-  attempt and rewind; the cost gate below applies.
+  attempt and rewind, from the effect-coverage report's `root_attempts`
+  (sealed, and rewound by typed reason); the cost gate below applies.
 
 ## Canonical-spec check
 

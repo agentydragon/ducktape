@@ -477,3 +477,23 @@ fn an_unsealed_store_attempt_is_labelled_and_rewound() {
     assert_effect_verdict_pending(&fixture, "incomplete", "generator store");
     assert_owner_coverage_refusal(&fixture, "unproved_statement_operation", "generator store");
 }
+
+/// The effect-coverage report counts each chunk's root attempts: a store
+/// that seals, and one whose generator creation leaves the ledger open, so
+/// the executor rewinds it to the flat lane.
+#[test]
+fn the_coverage_report_counts_sealed_and_rewound_root_attempts() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = { value: 0 };\nconst other = { value: 0 };\nrecord.value = 1;\nother.value = function* () {};\nconsole.log(record.value, typeof other.value);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "1 function\n");
+    let report = fixture.effect_translation_validation();
+    let attempts = &report["coverage"]["root_attempts"];
+    assert_eq!(attempts["sealed"], 1, "{report:#}");
+    assert_eq!(
+        attempts["rewound"],
+        serde_json::json!({ "open_effect_ledger": 1 }),
+        "{report:#}"
+    );
+}

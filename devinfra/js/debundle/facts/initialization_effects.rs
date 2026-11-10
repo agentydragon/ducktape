@@ -128,6 +128,37 @@ pub enum OwnerInitializationCoverageRefusalReason {
     RefusalUnavailable,
 }
 
+/// Why a root's kernel attempt did not seal its owner, so the executor
+/// rewound it and the flattened lane ran (`roots/body.rs`). The first failing
+/// condition of the seal, in its check order.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAttemptRewind {
+    IncompleteExecution,
+    UnknownCall,
+    PrecisionLoss,
+    UninitializedRead,
+    FallbackOnlyEffect,
+    OpenEffectLedger,
+    LexicalReceiptUnsealed,
+}
+
+/// The outcome of one root's kernel attempt.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAttempt {
+    Sealed,
+    Rewound(RootAttemptRewind),
+}
+
+/// Per chunk: how many roots the attempted lane ran, and why the rewound
+/// ones did not seal.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RootAttemptCounts {
+    pub sealed: usize,
+    pub rewound: BTreeMap<RootAttemptRewind, usize>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct OwnerInitializationCoverageRefusal {
     pub reason: OwnerInitializationCoverageRefusalReason,
@@ -153,6 +184,7 @@ pub struct InitializationEffects<'a> {
     pub execution_losses: &'a [ExecutionPrecisionLoss],
     pub opaque_heap: bool,
     pub owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
+    pub root_attempt: Option<RootAttempt>,
 }
 
 impl InitializationEffects<'_> {
@@ -212,6 +244,10 @@ impl StatementFacts {
             execution_losses: &[],
             opaque_heap: own_heap.opaque,
             owner_coverage_refusal: None,
+            root_attempt: self
+                .synchronous_calls
+                .as_ref()
+                .and_then(|calls| calls.root_attempt),
         };
         // These statement kinds execute no body at module evaluation. In
         // particular their lazy reads and export heap opacity are irrelevant.

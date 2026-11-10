@@ -392,7 +392,7 @@ pub(super) fn prepare<'source>(
     //   `attempted_initializer` at L4e. They keep an unsealed kernel
     //   execution (`OrderedRootInitializerUncovered`); folding them earlier
     //   would rerun it on the flat lane and change what the legacy gate
-    //   reads. `body::seals_owner` decides every other root call.
+    //   reads. `body::attempt_seal` decides every other root call.
     let ordered_initializer = ((initializer_source.is_none()
         || checked_split_binding_copy
         || selected_audited_initializer.is_some())

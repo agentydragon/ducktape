@@ -125,7 +125,8 @@ pub use evaluation_effects::{
 };
 pub use initialization_effects::{
     InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
-    OwnerInitializationCoverageRefusalReason, UnknownEffectCoverage,
+    OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptCounts, RootAttemptRewind,
+    UnknownEffectCoverage,
 };
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
