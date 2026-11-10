@@ -620,7 +620,9 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 	deadline := start.Add(time.Duration(yieldMS) * time.Millisecond)
 	for {
 		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
-		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(time.Duration(waitMS+eRPCSlackMS)*time.Millisecond))
+		attemptTimeout := time.Duration(waitMS+eRPCSlackMS) * time.Millisecond
+		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(attemptTimeout))
+		pageCtx = context.WithValue(pageCtx, executorReadAttemptTimeoutKey{}, attemptTimeout)
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS, ObservedOutput: output})
 		cancel()
 		if rpcErr != nil {
@@ -710,6 +712,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			return progressed, err
 		}
 		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(timeout))
+		pageCtx = context.WithValue(pageCtx, executorReadAttemptTimeoutKey{}, timeout)
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536, ObservedOutput: readOutput})
 		cancel()
 		if rpcErr != nil {

@@ -1496,6 +1496,51 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
+func TestProcessReadsKeepShortPerAttemptDeadlines(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		attemptTimeout time.Duration
+		read           func(*Executor) error
+	}{
+		{"foreground", 5 * time.Second, func(e *Executor) error {
+			_, err := e.readProcess(t.Context(), "running-process", 0)
+			return err
+		}},
+		{"reconciliation", 50 * time.Millisecond, func(e *Executor) error {
+			_, err := e.ReconcileProcesses(t.Context(), 50*time.Millisecond)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, owner := claimedExecutorStore(t)
+			if err := store.RegisterProcess(t.Context(), owner, "running-process", false); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.ProcessResult(t.Context(), owner, "running-process", nil, "running", nil, false); err != nil {
+				t.Fatal(err)
+			}
+			reads := 0
+			client := &fakeExecutionClient{read: func(ctx context.Context, _ *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+				reads++
+				deadline, ok := ctx.Deadline()
+				if !ok || time.Until(deadline) > tc.attemptTimeout+time.Second {
+					t.Fatalf("read RPC lost its short page deadline: deadline=%v, expected within %s", deadline, tc.attemptTimeout)
+				}
+				return &executorpb.ReadProcessResponse{Status: completedExecutionStatus()}, nil
+			}}
+			e := newFakeExecutor(t, store, owner, client)
+			e.rpcTimeout = 30 * time.Second
+			if err := tc.read(e); err != nil {
+				t.Fatal(err)
+			}
+			if reads != 1 {
+				t.Fatalf("unexpected read count: %d", reads)
+			}
+			assertNoUnresolvedNestedIntents(t, store, owner)
+		})
+	}
+}
+
 func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	if err := store.RegisterProcess(t.Context(), owner, "old-process", false); err != nil {

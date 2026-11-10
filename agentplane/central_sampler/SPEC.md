@@ -487,6 +487,9 @@ the reconnect window, and a final read or fresh-session handshake, plus five sec
 outcome journaling (up to 185 seconds with the default 30-second RPC and initialization limits);
 caller cancellation and shutdown drain stop the wait. Other
 typed operations keep their ordinary RPC deadline and are never replayed.
+The original and retried read RPCs keep their prior per-page deadline (the requested wait plus
+five seconds for foreground reads, or the reconciliation page timeout); only the enclosing read
+operation can wait through the reconnect window.
 The exact native rejection `unknown session id <retained-id>` with JSON-RPC code `-32600` is definitive
 session loss only when both its native response frames and semantic rejection result are durably
 recorded. The sampler then abandons live process handles while retaining observed output, clears the

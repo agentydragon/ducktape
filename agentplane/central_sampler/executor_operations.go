@@ -758,11 +758,22 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	return encoded, nil
 }
 
+type executorReadAttemptTimeoutKey struct{}
+
 func (e *Executor) callWithReadDeadline(ctx context.Context, method executionMethod, request proto.Message) (proto.Message, error) {
-	if method != executorMethodProcessRead || e.rpcTimeout <= 0 {
+	if method != executorMethodProcessRead {
 		return e.call(ctx, method, request)
 	}
-	readCtx, cancel := context.WithTimeout(ctx, e.rpcTimeout)
+	attemptTimeout := e.rpcTimeout
+	if pageTimeout, ok := ctx.Value(executorReadAttemptTimeoutKey{}).(time.Duration); ok {
+		if attemptTimeout <= 0 || pageTimeout < attemptTimeout {
+			attemptTimeout = pageTimeout
+		}
+	}
+	if attemptTimeout <= 0 {
+		return e.call(ctx, method, request)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
 	defer cancel()
 	return e.call(readCtx, method, request)
 }
@@ -776,6 +787,9 @@ func addTimeout(base, extra time.Duration) time.Duration {
 }
 
 func (e *Executor) readBudget(normal time.Duration) time.Duration {
+	if normal <= 0 {
+		return normal
+	}
 	// Leave room for the original read, a retained-session reconnect, and
 	// either a retried read or a fresh open after definitive native loss.
 	return addTimeout(addTimeout(max(normal, e.rpcTimeout), e.reconnectTimeout), addTimeout(max(e.rpcTimeout, e.initializeTimeout), 5*time.Second))
