@@ -353,7 +353,7 @@ func (m *CodeModeHost) dispatch(host *Host, frame *codeFrame, raw []byte) error 
 				return fmt.Errorf("unexpected duplicate code-mode response %d", *frame.ID)
 			}
 			var queued bool
-			journaled, queued = pending.session.enqueueProtocol(raw, *frame.ID, "receive")
+			journaled, queued = pending.session.enqueueProtocol(raw, *frame.ID)
 			if !queued {
 				m.mu.Unlock()
 				pending.session.fail(errors.New("code-mode evidence queue is full"))
@@ -405,7 +405,7 @@ func (m *CodeModeHost) dispatch(host *Host, frame *codeFrame, raw []byte) error 
 				m.mu.Unlock()
 				return fmt.Errorf("duplicate active code-mode delegate ID %d", *frame.ID)
 			}
-			journaled, queued := runtime.enqueueProtocol(raw, *frame.ID, "receive")
+			journaled, queued := runtime.enqueueProtocol(raw, *frame.ID)
 			if !queued {
 				m.mu.Unlock()
 				runtime.fail(errors.New("code-mode evidence queue is full"))
@@ -433,7 +433,7 @@ func (m *CodeModeHost) dispatch(host *Host, frame *codeFrame, raw []byte) error 
 		}
 		runtime := m.active[frame.SessionID]
 		if runtime != nil {
-			if _, queued := runtime.enqueueProtocol(raw, 0, "receive"); !queued {
+			if _, queued := runtime.enqueueProtocol(raw, 0); !queued {
 				m.mu.Unlock()
 				runtime.fail(errors.New("code-mode evidence queue is full"))
 				return nil

@@ -144,10 +144,19 @@ async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
             raise TimeoutError("History watch ended before sampler setup finished")
 
 
-async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, kind: str, phase: str) -> None:
+async def _wait_for_execution_progress(
+    deployed: CentralStack,
+    session_id: str,
+    kind: event_pb2.ExecutionProgress.Kind,
+    phase: event_pb2.ExecutionProgress.Phase,
+) -> None:
     with tracer.start_as_current_span(
         "system_test.sampler.execution",
-        attributes={"session.id": session_id, "execution.kind": kind, "execution.phase": phase},
+        attributes={
+            "session.id": session_id,
+            "execution.kind": event_pb2.ExecutionProgress.Kind.Name(kind),
+            "execution.phase": event_pb2.ExecutionProgress.Phase.Name(phase),
+        },
     ):
         events = deployed.sampler.FollowEvents(
             sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
@@ -161,7 +170,7 @@ async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, 
                     progress = event.execution_progress
                     if progress.kind == kind and progress.phase == phase:
                         return
-            raise TimeoutError(f"History ended before Session {session_id} {kind} reached {phase!r}")
+            raise TimeoutError(f"History ended before Session {session_id=} {kind=} reached {phase=}")
         finally:
             events.cancel()
 
@@ -269,7 +278,12 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                     model=MODEL,
                 ).events
             )
-        await _wait_for_execution_progress(deployed, interrupted_session_id, "cell", "live")
+        await _wait_for_execution_progress(
+            deployed,
+            interrupted_session_id,
+            event_pb2.ExecutionProgress.KIND_CELL,
+            event_pb2.ExecutionProgress.PHASE_LIVE,
+        )
         host_pid_file, host_pid = await _sampler_code_mode_host_pid(cluster, deployed)
         # A yielded cell returns control to sampling. Hold that continuation explicitly so
         # B's request is the next scripted exchange and A remains active until interruption.
@@ -340,7 +354,12 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             await model.reply(request, Reasoning(reasoning), ShellCall("read-prepared-marker", tool_command))
             # Require the executor process to be running before interrupting Session A; B's shell
             # command sleeps for ten seconds so it can finish and return its real-executor output.
-            await _wait_for_execution_progress(deployed, session_id, "process", "running")
+            await _wait_for_execution_progress(
+                deployed,
+                session_id,
+                event_pb2.ExecutionProgress.KIND_PROCESS,
+                event_pb2.ExecutionProgress.PHASE_RUNNING,
+            )
             assert await _read_code_mode_host_pid(host_pid_file) == host_pid
             interruption = await deployed.dispatcher.InterruptTurn(
                 session_dispatcher_pb2.InterruptTurnRequest(
@@ -546,7 +565,9 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         assert any(output.call_id == "start-pre-resume-process" for output in request.tool_outputs)
         await model.reply(request, Text("The pre-resume process is running."))
         await _wait_for_turn_status(deployed, session_id, first_command_id, event_pb2.TURN_STATUS_COMPLETED)
-        await _wait_for_execution_progress(deployed, session_id, "process", "running")
+        await _wait_for_execution_progress(
+            deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
+        )
 
         previous_incarnation = deployed.incarnation_uid
         await client.suspend_sandbox(target)

@@ -25,8 +25,8 @@ type SVIDResolver struct {
 	records *resolver.Resolver
 }
 
-func NewSVIDResolver(objects client.Reader, namespaces []string) (*SVIDResolver, error) {
-	records, err := resolver.New(objects, namespaces)
+func NewSVIDResolver(objects client.Reader, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
+	records, err := resolver.New(objects, namespaces, identities)
 	if err != nil {
 		return nil, err
 	}
@@ -34,8 +34,8 @@ func NewSVIDResolver(objects client.Reader, namespaces []string) (*SVIDResolver,
 }
 
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
-func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string) (*SVIDResolver, error) {
-	records, err := resolver.NewKubernetes(config, namespaces)
+func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
+	records, err := resolver.NewKubernetes(config, namespaces, identities)
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +69,15 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 	if err != nil {
 		return Principal{}, ErrInvalidBearer
 	}
+	// CLEANUP(added 2026-11-10): an Identity subject yields an Identity Principal in
+	// SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md); until then no service authorizes one.
+	account, ok := resolved.Subject.(resolver.ServiceAccount)
+	if !ok {
+		return Principal{}, ErrInvalidBearer
+	}
 	principal := Principal{
-		Account:           Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name},
-		ServiceAccountUID: string(resolved.Subject.UID),
+		Account:           Account{Namespace: account.Namespace, Name: account.Name},
+		ServiceAccountUID: string(account.UID),
 	}
 	if resolved.Pod != nil {
 		principal.PodName, principal.PodUID = resolved.Pod.Name, string(resolved.Pod.UID)

@@ -572,6 +572,11 @@ pub struct ChunkFactAnalysis {
     /// `Array`). Surfaced for the same trust-surface-shrinking
     /// reason as `redundant_purity_hints`.
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
+    /// Author-declared `purity: pure` hints no statement of this chunk reads
+    /// by name. The classifier consults a hint only at a direct call of the
+    /// name, and the code graph only at a read of the name as an import, so
+    /// these hints changed no fact (docs/premise_provenance.md).
+    pub unconsulted_purity_hints: BTreeSet<String>,
 }
 
 fn apply_initializer_binding_effects(
