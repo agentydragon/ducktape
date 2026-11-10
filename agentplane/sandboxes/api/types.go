@@ -130,6 +130,10 @@ type SandboxSpec struct {
 	// +kubebuilder:validation:MaxLength=32
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m')",message="idleSuspendAfter is at least one minute"
 	IdleSuspendAfter *metav1.Duration `json:"idleSuspendAfter,omitempty"`
+	// Identity is who the Sandbox's workloads act as. It may be set, changed or cleared only while
+	// nothing runs, so an incarnation never changes identity; the next start acts as the new one.
+	// "Nothing runs" is the controller's last status report: never reconciled, or stopStage Stopped.
+	Identity *IdentityRef `json:"identity,omitempty"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
@@ -143,6 +147,12 @@ type SandboxSpec struct {
 	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
 	// +kubebuilder:validation:MaxLength=65536
 	Bootstrap string `json:"bootstrap,omitempty"`
+}
+
+// IdentityRef names an Identity in the Sandbox's namespace.
+type IdentityRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
 }
 
 // ResumePolicy contains independent explicit-resume permissions for an ordinary execution account.
@@ -353,6 +363,7 @@ const (
 // +kubebuilder:printcolumn:name="Running",type=string,JSONPath=".status.conditions[?(@.type==\"Running\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="a Sandbox name is at most 63 characters"
+// +kubebuilder:validation:XValidation:rule="(has(self.spec.identity) == has(oldSelf.spec.identity) && (!has(self.spec.identity) || self.spec.identity == oldSelf.spec.identity)) || !has(oldSelf.status) || !has(oldSelf.status.operatingMode) || (has(oldSelf.status.stopStage) && oldSelf.status.stopStage == 'Stopped')",message="spec.identity changes only while nothing runs"
 type Sandbox struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

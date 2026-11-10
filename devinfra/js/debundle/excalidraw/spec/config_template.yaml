@@ -1,0 +1,7 @@
+# Author decisions for the Excalidraw corpus. `gen_inputs.py` adds `inputs` and
+# an `inline_in_entry` policy for every chunk not configured here.
+main_chunk_id: main
+module_roots:
+  editor: editor
+  main: main
+write_js_tree: true

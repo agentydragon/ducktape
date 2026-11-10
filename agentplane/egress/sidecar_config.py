@@ -52,7 +52,7 @@ class SpiffeProxyAuth(BaseModel):
         return value
 
 
-# CLEANUP(added 2026-11-09): Remove once no non-Sandbox workload (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer and the proxy's `forward.auth` lists only `spiffe`.
+# CLEANUP(added 2026-11-09): Remove with the proxy's bearer `forward.auth` entry; no workload projects a proxy-hop bearer since command boxes present SVIDs.
 class KubernetesBearerProxyAuth(BaseModel):
     """The sidecar-only projected bearer used to authenticate the central proxy hop."""
 

@@ -11,7 +11,9 @@ pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks
 use frontend_elaboration::ResolvedMemberSite;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 use source_identity::{ChunkId, StatementId};
-use staged_analysis::chunk_facts::{ChunkFacts, ChunkFactsContext, compute_logical_chunk_facts};
+use staged_analysis::chunk_facts::{
+    ChunkFacts, ChunkFactsContext, LogicalChunkFacts, compute_logical_chunk_facts,
+};
 use staged_analysis::progress::emit_debundle_progress;
 
 use super::commuting_statements::resolve_chunk_commuting_statements;
@@ -36,6 +38,7 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
+use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, PurityHintOwner};
 use analysis::{
     BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
     ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
@@ -58,7 +61,7 @@ use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
     COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT,
     EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
-    SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
+    SELECTOR_DIAGNOSTICS_REPORT, SPEC_LINT_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
@@ -422,7 +425,11 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let (mut analysis, imported_callables) = compute_logical_chunk_facts(
+    let LogicalChunkFacts {
+        facts: mut analysis,
+        imported_callables,
+        redundant_admission_overrides,
+    } = compute_logical_chunk_facts(
         ChunkFactsContext {
             artifact,
             artifact_indexes,
@@ -490,6 +497,38 @@ pub(super) fn finish_logical_chunk(
                 .iter()
                 .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
                 .collect::<Vec<_>>(),
+        )?;
+    }
+    if let Some(report_out_dir) = report_emission.rejection_dir() {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            SPEC_LINT_REPORT,
+            &ChunkSpecLint {
+                findings: spec_lint_findings(
+                    chunk_id,
+                    &precomputed.unused_commuting_statements,
+                    &redundant_admission_overrides,
+                    &analysis.redundant_purity_hints,
+                    &analysis.unconsulted_purity_hints,
+                    graph_context.resolved_member_sites,
+                )
+                .into_iter()
+                .chain(
+                    projection
+                        .chunk_analysis_inputs
+                        .get(chunk_id)
+                        .is_some_and(|inputs| inputs.trusted_dataflow_summaries)
+                        .then(|| {
+                            LintFinding::trusted_dataflow_summaries(
+                                chunk_id,
+                                analysis.consumed_trusted_dataflow_summaries(),
+                            )
+                        }),
+                )
+                .collect(),
+                consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
+            },
         )?;
     }
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
@@ -1175,6 +1214,69 @@ enum GateOutcome<'a> {
 /// --dry-run` mode) the accept path writes nothing, but a rejection
 /// still writes rejection evidence (and explicitly selected full graphs) so
 /// the documented `debundle gate list/describe` follow-up works.
+/// The chunk's `spec lint` findings whose signal the run computes anyway:
+/// unused `commuting_statements` entries, admission overrides that suppress
+/// nothing, `purity: pure` hints no statement reads by name, and those the
+/// classifier infers without the hint.
+fn spec_lint_findings(
+    chunk_id: &str,
+    unused_commuting_statements: &[analysis::CommutingStatementsUnused],
+    redundant_admission_overrides: &[spec::AdmissionCheck],
+    redundant_purity_hints: &[analysis::RedundantPurityHint],
+    unconsulted_purity_hints: &BTreeSet<String>,
+    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+) -> Vec<LintFinding> {
+    let purity_owner = |binding: &str| {
+        resolved_member_sites
+            .values()
+            .flatten()
+            .find(|site| {
+                site.provider_chunk == chunk_id
+                    && site
+                        .declaration
+                        .as_ref()
+                        .is_some_and(|declaration| declaration.binding == binding)
+            })
+            .map_or_else(
+                || PurityHintOwner::InputBinding {
+                    binding: binding.to_owned(),
+                },
+                |site| {
+                    PurityHintOwner::LogicalMember(spec::ResolvedMemberSelector {
+                        module: site.module.clone(),
+                        name: site.name.clone(),
+                    })
+                },
+            )
+    };
+    unused_commuting_statements
+        .iter()
+        .map(|unused| LintFinding::unused_commuting_statements(chunk_id, unused))
+        .chain(
+            redundant_admission_overrides
+                .iter()
+                .map(|check| LintFinding::redundant_admission_override(chunk_id, *check)),
+        )
+        .chain(
+            unconsulted_purity_hints.iter().map(|binding| {
+                LintFinding::unconsulted_purity_hint(chunk_id, purity_owner(binding))
+            }),
+        )
+        .chain(
+            redundant_purity_hints
+                .iter()
+                .filter(|hint| !unconsulted_purity_hints.contains(&hint.binding_name))
+                .map(|hint| {
+                    LintFinding::redundant_purity_hint(
+                        chunk_id,
+                        hint,
+                        purity_owner(&hint.binding_name),
+                    )
+                }),
+        )
+        .collect()
+}
+
 /// The chunk's `selector_diagnostics.json`, where `spec validate` collects
 /// per-chunk reports; nothing to write while no outcome was recorded.
 fn write_selector_diagnostics(

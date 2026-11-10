@@ -1,4 +1,4 @@
-"""Check actual overlap and cancellation before sharing live suite fixtures."""
+"""Harness order, model routing and failure identification before sharing live suite fixtures."""
 
 import asyncio
 from unittest.mock import AsyncMock, create_autospec
@@ -24,43 +24,35 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Client:
     return mocked
 
 
-async def test_both_harnesses_overlap_and_receive_their_own_models(client: Client) -> None:
-    peers = asyncio.Barrier(2)
-    seen: dict[session_pb2.Harness, str] = {}
+async def test_claude_finishes_before_codex_starts_each_with_its_own_model(client: Client) -> None:
+    events: list[tuple[str, session_pb2.Harness, str]] = []
 
     async def run(harness: session_pb2.Harness, model: str) -> None:
-        seen[harness] = model
-        await peers.wait()
+        events.append(("start", harness, model))
+        # Yield to the loop: a concurrent peer would start here.
+        await asyncio.sleep(0)
+        events.append(("end", harness, model))
 
-    async with asyncio.timeout(2):
+    await harness_pair.run_harness_pair(client, run)
+    assert events == [
+        ("start", session_pb2.HARNESS_CLAUDE, "claude-model"),
+        ("end", session_pb2.HARNESS_CLAUDE, "claude-model"),
+        ("start", session_pb2.HARNESS_CODEX, "codex-model"),
+        ("end", session_pb2.HARNESS_CODEX, "codex-model"),
+    ]
+
+
+async def test_a_claude_failure_names_its_harness_and_codex_does_not_run(client: Client) -> None:
+    ran: list[session_pb2.Harness] = []
+
+    async def run(harness: session_pb2.Harness, model: str) -> None:
+        ran.append(harness)
+        raise ValueError("scenario failed")
+
+    with pytest.raises(ValueError, match="scenario failed") as failure:
         await harness_pair.run_harness_pair(client, run)
-    assert seen == {session_pb2.HARNESS_CLAUDE: "claude-model", session_pb2.HARNESS_CODEX: "codex-model"}
-
-
-async def test_failure_identifies_the_harness_and_finishes_peer_cleanup(client: Client) -> None:
-    peer_started = asyncio.Event()
-    cleaned = False
-
-    async def run(harness: session_pb2.Harness, model: str) -> None:
-        nonlocal cleaned
-        if harness == session_pb2.HARNESS_CLAUDE:
-            await peer_started.wait()
-            raise ValueError("scenario failed")
-        try:
-            peer_started.set()
-            await asyncio.Event().wait()
-        finally:
-            cleaned = True
-
-    async with asyncio.timeout(2):
-        with pytest.raises(ExceptionGroup) as failure:
-            await harness_pair.run_harness_pair(client, run)
-    assert cleaned
-    assert len(failure.value.exceptions) == 1
-    error = failure.value.exceptions[0]
-    assert isinstance(error, ValueError)
-    assert str(error) == "scenario failed"
-    assert error.__notes__ == ["harness=HARNESS_CLAUDE"]
+    assert ran == [session_pb2.HARNESS_CLAUDE]
+    assert failure.value.__notes__ == ["harness=HARNESS_CLAUDE"]
 
 
 if __name__ == "__main__":

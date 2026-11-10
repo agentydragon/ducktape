@@ -41,11 +41,11 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:app.kubernetes.io/name: haku-egress-proxy
-            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+            app.kubernetes.io/name: haku-ci-egress
+            k8s:io.kubernetes.pod.namespace: haku-ci
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "3128"
               protocol: TCP
   endpointSelector:
     matchExpressions:
@@ -148,8 +148,7 @@ data:
     container:
       docker_host: tcp://localhost:2375
       options: --add-host host.docker.internal:host-gateway -e DOCKER_HOST=tcp://host.docker.internal:2375
-        -e HTTP_PROXY=http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
-        -e HTTPS_PROXY=http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+        -e HTTP_PROXY=http://haku-ci-egress.haku-ci.svc.cluster.local:3128 -e HTTPS_PROXY=http://haku-ci-egress.haku-ci.svc.cluster.local:3128
         -e 'NO_PROXY=127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8'
         -e SSL_CERT_FILE=/egress-proxy-ca/ca-certificates.crt -e CURL_CA_BUNDLE=/egress-proxy-ca/ca-certificates.crt
         -e GIT_SSL_CAINFO=/egress-proxy-ca/ca-certificates.crt -e REQUESTS_CA_BUNDLE=/egress-proxy-ca/ca-certificates.crt
@@ -206,9 +205,9 @@ spec:
               - name: DOCKER_HOST
                 value: tcp://localhost:2375
               - name: HTTP_PROXY
-                value: http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+                value: http://haku-ci-egress.haku-ci.svc.cluster.local:3128
               - name: HTTPS_PROXY
-                value: http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+                value: http://haku-ci-egress.haku-ci.svc.cluster.local:3128
               - name: NO_PROXY
                 value: 127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8
               - name: SSL_CERT_FILE
@@ -291,9 +290,9 @@ spec:
               - name: DOCKER_TLS_CERTDIR
                 value: ""
               - name: HTTP_PROXY
-                value: http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+                value: http://haku-ci-egress.haku-ci.svc.cluster.local:3128
               - name: HTTPS_PROXY
-                value: http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080
+                value: http://haku-ci-egress.haku-ci.svc.cluster.local:3128
               - name: NO_PROXY
                 value: 127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8
               - name: SSL_CERT_FILE
@@ -354,7 +353,7 @@ spec:
           - emptyDir: {}
             name: bazel-cache
           - configMap:
-              name: haku-egress-proxy-ca-cert
+              name: agentplane-egress-ca
             name: egress-proxy-ca
   maxReplicaCount: 4
   pollingInterval: 15

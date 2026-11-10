@@ -52,9 +52,13 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
-   bundled vendor singleton/importmap behavior. Node probes already run;
-   browser loading is the missing contract, not a missing vendor schema.
+3. **Public browser smoke.** The Excalidraw corpus, its accepted spec and its
+   browser smoke landed (<excalidraw/README.md>); the smoke loads swapped
+   packages through an import map. Remaining per
+   <plans/excalidraw_live_smoke.md>: lazy-chunk coverage and the public
+   canonical-spec check.
+   Node probes already run; browser loading is the missing contract, not a
+   missing vendor schema.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
@@ -221,24 +225,23 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
-- **F5 — One report of annotations the engine could have inferred.** Today
-  each annotation kind answers "was this needed?" differently:
-  `purity: pure` hints get a `modules.json.redundant_purity_hints` probe,
-  `admission_overrides` get a redundancy notice, an unused
-  `commuting_statements` entry is a warning by authored identity, and the other
-  premises (`host_behavior` keys, `native_operation_inputs`,
-  `native_call_identity_inputs`, `initializer_call_effect_inputs`,
-  `trusted_dataflow_summaries`, `deferred_global_publications`,
-  `program_premises`, `chunk_export_purity`) record uses only, which SPEC.md
-  says is not an unused-contract verdict. Give every author annotation the
-  same check: rerun the decision it feeds with the annotation withheld, and
-  report it as inferable when the verdict and emitted order are unchanged.
-  Report by authored identity (module, member, YAML path, source location)
-  with a removal suggestion, as a warning in `run` and `spec validate` output
-  and one machine-readable list; removal stays an explicit, reviewed spec
-  edit. An unused or inferable annotation is a warning, never a failure; a
-  contradicted premise still fails. Bound the cost: probe per annotation
-  against cached analysis, not a full rerun each.
+- **F5 — Decide the remaining premise kinds from provenance.**
+  <docs/premise_provenance.md> lists where each premise is consumed, whether
+  every read records its use, and what the default `spec lint` decides. Paused
+  behind the architecture convergence; resume one kind per change, outside
+  `facts/sync_effects/`, linting each the same way (never consumed →
+  `inferable`, consumed → probe):
+  - a per-statement use list written at each classifier arm for read
+    `purity: pure` hints and `pure_new` / `pure_members` (never a
+    `ProofDependencies` field); unread `purity: pure` hints are already linted;
+  - `predefined_globals`: three blockers and a structural alternative in
+    <docs/premise_provenance.md#predefined_globals>;
+  - per-chunk or parallel `--probe-analysis` runs, to bound probe cost on
+    large inputs;
+  - the hot-path kinds (`reentry_free_builtin_modules` / `_bun_modules` static
+    closure, `initializer_call_effect_inputs`, `deferred_global_publications`,
+    `initializer_purity`, `no_reentry_*`), probe-only until the
+    `callback_values` performance work lands.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was
@@ -295,6 +298,23 @@ closure`, conflating unresolved host requests, missing captured chunks,
   pins, structural members, imports, anonymous claims, repeated declarations
   and path-case aliases; accepted rows must reconcile with `modules.json`,
   while unresolved statuses never infer identity by spelling.
+
+- **Vendor swaps on a production esbuild corpus (Excalidraw).** Observed while
+  authoring <excalidraw/spec/vendor_marks.yaml>:
+  - A `partial_swap` package whose subpath is JSON (`open-color.json`) fails
+    `DebundleProjectAnalysis` with the bare parser error
+    `failed to parse <path>: ExpectedSemiForExprStmt`, naming neither the mark
+    nor the package. Reject non-JS subpaths at spec validation with the mark's
+    identity, or support JSON defaults as `swap` does.
+  - A `partial_swap` package has one subpath, so a chunk exporting values from
+    several entry files of one package (roughjs `bin/rough.js`,
+    `bin/generator.js`, `bin/math.js`) cannot be swapped. Next action: decide
+    whether a symbol may name its own subpath.
+  - `chunk_renames` selectors accept only `binding` names, so renaming a
+    residual binding requires a minified-name pin; the corpus renames through
+    module members instead.
+  - `(e => e)({...})`, an immediately invoked local identity arrow, is an
+    `unknown_call` initializer, which put `APP_STATE_STORAGE_CONF` on the side-effect chain.
 
 ### Pipeline performance and architecture cleanup
 

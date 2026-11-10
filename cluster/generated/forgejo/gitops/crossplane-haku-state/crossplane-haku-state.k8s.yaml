@@ -264,14 +264,11 @@ spec:
       }
 
       # Write credentials for the haku-state git consumers, copied into haku-sandbox
-      # (cluster/cdk8s/haku/workspaces.py). Reflector mirrors that copy into:
-      #   - haku-egress-proxy: the isolated OpenClaw spike's iron-proxy substitutes
-      #     the password into Forgejo Authorization headers; the agent sees only a
-      #     placeholder.
-      #   - flux-system: basic auth for the haku-state GitRepository, which the
-      #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
-      #     constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
-      #     pushes; the haku user is just the only principal on the repo.
+      # (cluster/cdk8s/haku/workspaces.py). Reflector mirrors that copy into
+      # flux-system: basic auth for the haku-state GitRepository, which the
+      # haku-state-workloads Kustomization reconciles into haku-sandbox under a
+      # constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
+      # pushes; the haku user is just the only principal on the repo.
       # Agentplane staging reads only the password through ESO, with an exact-name source grant
       # in cluster/cdk8s/agentplane/egress_staging_credentials.py; it is not a Reflector target.
       # The haku-sandbox copy serves in-cluster scan runs / the self-hosted worker + the

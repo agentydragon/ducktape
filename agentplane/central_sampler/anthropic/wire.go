@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 // Wire structs declare fields in JSON key order: their encoding stays byte-identical to the
@@ -209,4 +209,6 @@ type streamEvent struct {
 	WireEvent string `json:"wire_event"`
 }
 
-func (streamEvent) Kind() protocol.ProviderEvidenceKind { return protocol.EvidenceAnthropicEvent }
+func (streamEvent) Kind() eventpb.ExecutionProgress_Kind {
+	return eventpb.ExecutionProgress_KIND_PROVIDER_ANTHROPIC
+}

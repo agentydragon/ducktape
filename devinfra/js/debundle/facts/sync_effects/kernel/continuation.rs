@@ -1096,7 +1096,7 @@ impl LocalContinuation {
                     && !matches!(
                         &callee,
                         EvaluatedCallee::Member {
-                            array_push: Some(_),
+                            array_method: Some(_),
                             ..
                         }
                     )
@@ -1784,7 +1784,7 @@ fn evaluated_callee(
                     receiver: Values::new(),
                     targets: completing(result.allocation.values, frame),
                     selection_dependencies: None,
-                    array_push: None,
+                    array_method: None,
                 });
             }
             let result = value_of(context, frame, &ValueExpr::Binding(receiver.clone()))?;
@@ -1795,16 +1795,16 @@ fn evaluated_callee(
                     receiver: receivers,
                     targets: Values::new(),
                     selection_dependencies: None,
-                    array_push: None,
+                    array_method: None,
                 });
             }
             frame.inputs.extend(receivers.iter().cloned());
             let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-            let mut array_push = None;
+            let mut array_method = None;
             let result = if let Some((selection, effects)) =
                 context.array_method_callee(&receivers, property)
             {
-                array_push = Some(Box::new(selection));
+                array_method = Some(Box::new(selection));
                 LocalValueResult {
                     allocation: AllocationValue::opaque(Values::new()),
                     effects,
@@ -1825,7 +1825,7 @@ fn evaluated_callee(
                 receiver: receivers,
                 targets: completing(result.allocation.values, frame),
                 selection_dependencies,
-                array_push,
+                array_method,
             })
         }
     }

@@ -2330,6 +2330,59 @@ The per-chunk `modules.json.redundant_purity_hints` report disables each tested
 on retaining other chunk-local purity hints. These diagnostics do not change
 acceptance or edit the spec. Remove hints individually and revalidate. A missing
 entry is inconclusive. Probe scope: <docs/purity_soundness.md#redundant-purity-hints>.
+`spec lint` lists these hints as `inconclusive` (§ Spec lint).
+
+## Spec lint
+
+`debundle spec lint` lists the author annotations the engine may already
+infer, for one exact source/spec pair. It runs the `spec validate` pass (the
+ordinary dry-run pipeline with the shared resolver and gate) once and reads each
+chunk's `spec_lint.json`, which `run` writes whenever it writes a report
+directory. Every finding has `rule: inferable_annotation`, the chunk, the
+annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
+`commuting_statements`) and a `verdict`:
+
+- `inferable`: withholding the annotation leaves the dependency graph, and so
+  the gate verdict and emitted order, unchanged. An unused
+  `commuting_statements` entry (§ Commuting statements;
+  `reason` `no_sequenced_edge` or `summarized_endpoints`) and an
+  `admission_overrides` check the chunk does not violate
+  (`no_admission_violation`) are inferable.
+- `inferable` (`never_consumed`): a `host_behavior.reentry_free_operations`
+  entry no chunk's analysis consumed. Its only reader records every use it
+  grants, so an absent record means no fact used it
+  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk.
+- `inconclusive`: a probe suggests the annotation is unnecessary but does not
+  establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
+  the fact it supported may have another derivation. While any chunk is
+  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint whose name no statement of its chunk reads is `inferable` (`never_consumed`): the classifier consults a hint only at a direct call of the name and the code graph only at a read of the name as an import. A read hint the classifier infers without the hint
+  (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
+  hint are not rerun.
+
+`spec lint --probe-analysis` decides `purity: pure` hints (logical-module and
+`chunk_renames` annotations) and consumed `reentry_free_operations` entries
+instead of leaving them as leads. It
+prepares the input once, runs the whole program as a baseline and then once per
+hint with only that hint withheld from an in-memory copy of the spec, each run
+writing its reports and full graphs to a fresh directory. A hint is `inferable`
+(`withheld_run_unchanged`) when its run is accepted and every report is
+identical to the baseline's: dependency graphs with their precision losses,
+atomic groups and module contents. Only the hint diagnostics a withheld hint
+changes by construction (`spec_lint.json`, `modules.json`'s
+`redundant_purity_hints`) are excluded. A rejected or different run means the
+hint is used and produces no finding. A baseline that is not accepted
+(`baseline_not_accepted`), a run that cannot execute (`probe_failed`) and a hint
+past `--max-probes` (`not_probed`) are `inconclusive`; `--probe-chunk` limits
+probing to named chunks and skips program-wide entries. Each probe costs one full pipeline run on the prepared
+input, reported per hint under `probes`. One hint is withheld at a time: two
+hints each reported inferable are not proven jointly removable.
+
+Findings are warnings: lint exits 0 whenever the pass produced reports, never
+edits the spec, and removal stays a reviewed edit followed by validation. A
+chunk the pass stopped before is listed in `unlinted_chunks`; its annotations
+are unchecked, not clean. Annotations a run consumes, and the other premise
+kinds, produce no finding; no finding is not a verdict that an annotation is
+needed.
 
 ## Chunk-export contract audit
 
@@ -3321,9 +3374,16 @@ calls or a call with a field-value operand, and has no direct
 binding/global/property writes or dynamic scope.
 Every call must initially select a synchronous local callable;
 member callees require a present ordinary data slot and
-an unused implicit receiver. Native and imported whole-owner proof families
-retain their established dispatch until their value transfers accept evaluated
-operands. Evaluated return values pass directly to initializer publication;
+an unused implicit receiver. A root whose every call is a direct call of an
+imported binding with a published summary uses the ordered plan too: each call
+is replaced by its summary, and under the summary's premises the effect verdict
+treats the call as touching no global property, heap, host or importer lexical
+cell. A summary whose body reads a private provider cell carries no such
+receipt. The summary is not a receipt for the root's lexical binding effects.
+Construction of an imported class keeps its established dispatch, since the
+class binding can be in its TDZ. Other native and imported whole-owner proof
+families retain their established dispatch until their value transfers accept
+evaluated operands. Evaluated return values pass directly to initializer publication;
 the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths
@@ -4257,6 +4317,13 @@ required to continue. A call rejected by the ordered operand path retains its
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
 `non_local_target`, or `unsupported_receiver`. It names
 the first ordered admission check that refused the already evaluated operands.
+An `unsupported_operation` / `array_iteration` reason names why a selected
+`Array.prototype` iteration method was not executed: `array_iteration_row_unsupported`
+(`some`, `every`, `find`, `findIndex`, `flatMap`, or `reduce` without an initial
+value), `array_iteration_intrinsics_changed`, `array_iteration_receiver_unproved`,
+`array_iteration_callback_unsupported`, `array_iteration_capturing_callback`, or
+`array_iteration_callback_incomplete`. Callbacks that already ran keep their
+effects; the remainder is summarized.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
 transfer do not carry this admission reason.

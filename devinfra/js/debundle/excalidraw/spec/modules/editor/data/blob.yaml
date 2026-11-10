@@ -1,0 +1,10 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        blobToArrayBuffer = (ANYTHING) =>
+          "arrayBuffer" in ANYTHING
+            ? ANYTHING
+            : AST_CONTAINS_STRING("Couldn't convert blob to ArrayBuffer"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - blobToArrayBuffer

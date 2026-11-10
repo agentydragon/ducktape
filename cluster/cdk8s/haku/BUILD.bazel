@@ -109,9 +109,12 @@ py_library(
     name = "namespace",
     srcs = ["namespace.py"],
     deps = [
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/agentplane:egress",
+        "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",

@@ -655,6 +655,28 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
     )
 }
 
+/// Run `debundle spec lint --spec <path> --format json <extra_args>` and parse
+/// its report; panics on a non-zero exit.
+pub fn spec_lint_json(spec_path: &Path, extra_args: &[&str]) -> Value {
+    let bin = debundler_path();
+    let out = command_result(
+        Command::new(&bin)
+            .args(["spec", "lint", "--spec"])
+            .arg(spec_path)
+            .args(["--format", "json"])
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    );
+    assert!(
+        out.status.success(),
+        "spec lint exited non-zero: {}",
+        out.stderr
+    );
+    serde_json::from_str(&out.stdout)
+        .unwrap_or_else(|err| panic!("parse spec lint json: {err}\nstdout:\n{}", out.stdout))
+}
+
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.entry_path, expected_stdout, "");
 }

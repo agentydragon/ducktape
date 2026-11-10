@@ -198,6 +198,23 @@ func TestParsePEMRequiresRuntimeServerAuthUsage(t *testing.T) {
 	}
 }
 
+// The launcher serves the workload CA, an intermediate, as the bundle alone: the leaf's chain carries
+// the intermediate, which verifies against it, and the cluster root above it is not in the bundle.
+func TestParsePEMAcceptsAnIntermediateAsTheWholeBundle(t *testing.T) {
+	root := environmentruntimetransporttesting.NewCA(t)
+	workloadCA := root.Intermediate(t)
+	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"
+	config := issueRuntime(t, workloadCA, identity)
+	response, err := ParsePEM(readFile(t, config.CertFile), readFile(t, config.KeyFile), readFile(t, workloadCA.RootFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(readFile(t, workloadCA.RootFile))
+	if got := response.GetSvids()[0].GetBundle(); !bytes.Equal(got, block.Bytes) {
+		t.Fatal("served bundle is not the workload CA alone")
+	}
+}
+
 func TestParsePEMNormalizesPKCS8AndRejectsMismatchedKeys(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	identity := "spiffe://agentplane/agent-ns/sandbox-uid/credential-id"

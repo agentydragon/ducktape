@@ -44,7 +44,7 @@ spec:
     requests:
       cpu: 50m
       memory: 384Mi
-  image: chrislusf/seaweedfs:4.52
+  image: chrislusf/seaweedfs:4.53
   master:
     affinity:
       podAntiAffinity:

@@ -18,6 +18,7 @@ behavior.
 | Rename a binding                     | [Rename without moving](docs/spec_editing.md#workflow-renaming-a-binding-without-moving)                                                     | Name change and collision check                                                                             |
 | Rename or merge module files         | [Rename a module](docs/spec_editing.md#renaming-or-disabling-a-module) or [merge modules](docs/spec_editing.md#workflow-merging-two-modules) | Gated YAML edit preserving claims and metadata                                                              |
 | Stabilize selectors                  | [Bulk conversion loop](docs/selectors.md#bulk-conversion-loop)                                                                               | Reviewed anchors, exact-source validation, and remaining debt                                               |
+| Prune inferable annotations          | [Spec lint](docs/cli.md#running-the-pipeline)                                                                                                | Typed `inferable`/`inconclusive` findings by authored identity; removal is a reviewed edit                  |
 | Diagnose a rejected edit             | [Assignment diagnosis](skills/shared/workflow.md#diagnose-a-rejected-assignment)                                                             | Source-backed cause and justified spec, analysis or contract repair                                         |
 | Break a sequenced-only cycle         | [Proposing commutations](docs/spec_editing.md#workflow-proposing-commutations)                                                               | Ranked `commuting_statements` draft with each inerted edge's explanation, audited and applied by the author |
 | Plan, delegate, or integrate work    | [Shared work procedures](skills/shared/workflow.md)                                                                                          | Scoped plans, isolated copied inputs, completed execution evidence, and validated integration               |
@@ -160,6 +161,7 @@ elsewhere in the repo are not the live implementation.
 
 ## Bazel integration and profiling
 
+`debundle_product.bzl` declares a corpus's standard target family;
 `pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action, and
 `debundle_cli.bzl` provides a runfiles-backed launcher for graph queries; profile
 with `perf_wrapper.sh`: <docs/bazel_integration.md>.

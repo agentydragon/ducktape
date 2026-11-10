@@ -4,8 +4,9 @@ Builds the backend and management UI from pinned commits of the open OIDC PRs:
 [CLIProxyAPI #6761](https://github.com/router-for-me/CLIProxyAPI/pull/6761) and
 [Management Center #505](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505).
 Source archives come from the author forks; exact revisions and checksums are in
-`MODULE.bazel`. OIDC implementation and tests come directly from those commits. The
-backend uses `rules_go`; the frontend uses Vite through `rules_js`; `rules_oci`
+`MODULE.bazel`. The OIDC implementation and tests start from those commits, with
+downstream changes documented below. The backend uses `rules_go`; the frontend uses
+Vite through `rules_js`; `rules_oci`
 packages both into a Debian 13 distroless image with CA certificates and CGO runtime
 libraries. Go and npm dependencies are isolated from Ducktape's application graphs.
 
@@ -29,12 +30,19 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
   request's arrival to the upstream request going out, its response headers, its first body
   chunk, and the first byte back to the client. It works with `request-log` off, so the
   split reaches Loki from stdout without writing request bodies anywhere.
+- `patches/oidc-cookie-path.patch`: scopes the OIDC login and session cookies to their
+  management routes, so same-origin model requests do not carry their values into request
+  logs. The scoped cookies use the `__Secure-` prefix because `__Host-` requires `Path=/`.
+  Management OIDC endpoints also expire any legacy root-scoped `__Host-` cookies they
+  receive, using the original root path so browsers remove the matching entries.
 
 The OIDC source pins track open PRs, not released upstream support. Move both pins
 to upstream releases when those releases include the feature. Remove `bundled-panel.patch` when the upstream panel has an equivalent
 read-only/no-download contract or the deployment no longer requires it. Remove
 `bazel.patch` when the pinned upstream sources provide compatible BUILD metadata. Remove
 `upstream-timing.patch` when upstream logs per-request upstream timing to stdout.
+Remove `oidc-cookie-path.patch` when upstream scopes both OIDC cookies to their management
+routes with compatible cookie prefixes.
 Each removal requires the test suite and image build below to pass.
 
 Source revisions and checksums are in `MODULE.bazel`. The binary is installed at
@@ -67,7 +75,10 @@ retained. Logout terminates the local session, not the identity-provider session
 Cookie-authenticated management requests require `X-Management-CSRF: 1`, reject
 foreign origins, and reject cross-site fetches. Browser sessions authenticate only v8 management requests; legacy v0 requests
 require a management key. Keep browser UI and management API on the same
-origin. Explicit management keys continue to work without browser cookies.
+origin. Explicit management keys continue to work without browser cookies. After
+upgrading, a browser may retain an old root-scoped session cookie until its first
+management session check/login/callback/logout or its prior expiry (at most one hour);
+the server's process-local session store is revoked on restart.
 
 ## Updating upstream
 

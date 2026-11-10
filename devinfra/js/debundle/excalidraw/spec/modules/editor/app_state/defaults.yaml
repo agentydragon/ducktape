@@ -1,0 +1,7 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        getDefaultAppState = () => ({ showWelcomeScreen: !1, ANYTHING }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - getDefaultAppState

@@ -313,7 +313,8 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                         if (
                             frame.entry.event.HasField("execution_progress")
                             and frame.entry.event.execution_progress.operation_id == "compact"
-                            and frame.entry.event.execution_progress.phase == "completed"
+                            and frame.entry.event.execution_progress.phase
+                            == event_pb2.ExecutionProgress.PHASE_COMPLETED
                         ):
                             break
             finally:
@@ -634,7 +635,7 @@ async def test_restart_cannot_reconstruct_live_javascript(
             try:
                 async with asyncio.timeout(10):
                     async for frame in stream:
-                        if frame.entry.event.execution_progress.phase == "blocked":
+                        if frame.entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_BLOCKED:
                             break
             finally:
                 stream.cancel()

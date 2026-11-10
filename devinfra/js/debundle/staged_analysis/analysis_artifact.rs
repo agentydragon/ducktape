@@ -284,6 +284,11 @@ mod tests {
                         .get(&name)
                         .cloned()
                         .unwrap_or_default(),
+                    stable_imports: program_summary
+                        .stable_imports
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_default(),
                     ..AnalysisInputs::default()
                 };
                 let facts = analysis::facts::analyze_chunk(module, &inputs, None);

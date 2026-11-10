@@ -211,6 +211,10 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 
 ## Identity
 
+- `spec.identity` names an `Identity` in the Sandbox's namespace. Admission lets it be set, changed
+  or cleared only while nothing runs: before the controller's first status report, or at
+  `status.stopStage: Stopped`. The controller does not read it yet; the bullets below are what it
+  does today.
 - Every Sandbox gets a ServiceAccount of its name, which its Pods run as, replacing the template's.
 - While `spec.policySets` names PolicySets, the Sandbox has one `PolicyBinding` of its name binding
   that account to exactly those sets, with no expiry. Clearing the list deletes it. Other bindings
