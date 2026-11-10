@@ -1,7 +1,7 @@
 # Agentplane egress proxy
 
 The central proxy of Agentplane's credentialless egress: a Go forward proxy that proves each
-Sandbox caller's Runtime SVID or an existing non-Sandbox caller's Pod-bound bearer over verified TLS, decides the request from the `egress` rules of `PolicySet`s a
+caller's workload SVID over mTLS, decides the request from the `egress` rules of `PolicySet`s a
 `PolicyBinding` grants it, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the kinds compose into
 one decision is in <../docs/egress_composition.md>. Transport choices and rejected alternatives are in
 <docs/design.md>.
@@ -20,10 +20,9 @@ One Go package per concern:
 - `cmd`: the `egress-proxy` entry point and its settings.
 - `proxy`: CONNECT tunnels intercepted with a forged leaf, and plain HTTP proxying, on `net/http`.
   Every request passes identity, policy, credential and address checks before anything is dialed.
-  One forward listener on port 8888 accepts an explicit list of hop authentication modes.
-- `identity`: the shared `workload_auth` resolver behind the existing token hop, translating a
-  refused bearer into the reason the client sees. SVID requests resolve the URI to a live Sandbox
-  before using its ServiceAccount as the policy subject.
+  One forward listener on port 8888 authenticates workload SVIDs.
+- `identity`: resolves each request's SVID to its live `WorkloadCredential` before using its
+  ServiceAccount as the policy subject, and reviews the projected tokens offered for substitution.
 - `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
   placeholder directs it to, and substitution. The bindings and their egress rules are a
   `../policy/reader` index. No I/O.
@@ -45,17 +44,13 @@ One Go package per concern:
 
 Also here:
 
-- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. Its tagged
-  `proxy.transport.auth` selects hop authentication: `spiffe` presents the sidecar-held SVID in the
-  TLS handshake, while `kubernetes_bearer` sends the Pod-bound token as `Proxy-Authorization`.
-  Plaintext proxy transport supports only bearer auth; TLS verifies the proxy's certificate trust
-  and fixed SPIFFE identity, `spiffe://agentplane/egress-proxy`, with either auth mode. The sidecar
-  validates a bearer token at startup and rereads it for each request. Its
-  projected Kubernetes-audience tokens in `audience_token_files` remain separate destination
+- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It presents the
+  sidecar-held SVID in the TLS handshake to the proxy, whose certificate trust and fixed SPIFFE
+  identity, `spiffe://agentplane/egress-proxy`, it verifies; `proxy.transport` keeps its tagged
+  `mode: tls` and `auth.mode: spiffe`, their only values. Its projected Kubernetes-audience tokens in `audience_token_files` remain separate destination
   credentials for central egress-rule substitution; they never authenticate the proxy hop.
   It also hosts local generic gRPC routes to Agentplane services, each with an explicit transport:
-  `plaintext`, `tls_connect` with the sidecar SVID, or `tls_bearer_connect` with a route-specific
-  bearer token. The runtime uses no Python interpreter. Its
+  `plaintext`, or `tls_connect` with the sidecar SVID. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and accepts no flags.
 - Workload HTTP routes carry only the upstream authority and exact service URI. Their destination
@@ -106,7 +101,7 @@ Action, LLM and Rules verify workload SVIDs themselves; central carries their TL
 never asserts the caller.
 
 The real-binary `test_proxy.py` harness checks accepted SVIDs, revocation, wrong-Pod destination
-tokens, forged subjects, expired and forged leaves, and refusal of bearer-only hop authentication.
+tokens, forged subjects, expired and forged leaves, and refusal of bearer hop authentication.
 
 ## BuildBuddy clients
 
@@ -192,7 +187,7 @@ sends no bearer; `GetHealth` does not. `Watch` is not served.
 
 The shared gRPC listener also serves Rules under the forward hop's shared authentication policy.
 
-The shared port serves native gRPC over TLS; Rules accepts the same explicitly configured SVID or bearer authentication as the forward hop, while probes and
+The shared port serves native gRPC over TLS; Rules accepts the same SVID authentication as the forward hop, while probes and
 operator bearer methods use the same verified TLS listener with their own method policy. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.
 

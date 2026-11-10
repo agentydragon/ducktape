@@ -376,6 +376,37 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         // separately by the ordered operation that produced it.
         EffectCoverageFragment::no_effects()
     }
+    /// Only an admitted root statement stores to a module binding: a root
+    /// initializer has its own binding identity, and a callable's store
+    /// would need the closure's view of the binding.
+    fn store_module_binding(
+        &mut self,
+        binding: &Id,
+        values: &Values,
+    ) -> Option<EffectCoverageFragment> {
+        if !matches!(self.scope, LocalExecutionScope::Root)
+            || self.outcome.root_binding_effect_identity.is_some()
+            || !self.executor.inputs.top_bindings.contains(binding)
+            || self
+                .executor
+                .module_binding_store_refusal(binding)
+                .is_some()
+        {
+            return None;
+        }
+        // The flattened lane's join, which the owner's assignment phase
+        // repeats: the statement may be one of several writers.
+        if self.executor.inputs.needed_bindings.contains(binding) {
+            let world = self.executor.state.world_mut();
+            let possible = world.module.prefix_values.entry_or_default(binding);
+            let before = possible.len();
+            possible.extend(values.iter().cloned());
+            if possible.len() != before {
+                world.revision.bump_prefix();
+            }
+        }
+        Some(EffectCoverageFragment::module_binding_store())
+    }
     fn prefix_tracked_receiver(&self, binding: &Id, receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
             || (!receivers.is_empty()

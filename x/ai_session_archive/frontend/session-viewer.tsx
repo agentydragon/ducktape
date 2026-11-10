@@ -416,18 +416,18 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
   }, [sessionId, loadedSessionScope, loadingSessions, sessions, location.search, navigate]);
 
+  // Scroll and layout callbacks can call these again before a render publishes isFetchingNextPage.
+  // cancelRefetch: false joins the in-flight page; the default would abort it and refetch.
   const loadMoreSessions = (): void => {
-    if (sessionsQuery.hasNextPage && !sessionsQuery.isFetchingNextPage) void sessionsQuery.fetchNextPage();
+    if (sessionsQuery.hasNextPage) void sessionsQuery.fetchNextPage({ cancelRefetch: false });
   };
 
   const loadEarlierEvents = (): void => {
-    if (eventQuery.hasNextPage && !eventQuery.isFetchingNextPage) void eventQuery.fetchNextPage();
+    if (eventQuery.hasNextPage) void eventQuery.fetchNextPage({ cancelRefetch: false });
   };
 
   const loadMoreRelatedSessions = (): void => {
-    if (childSessionsQuery.hasNextPage && !childSessionsQuery.isFetchingNextPage) {
-      void childSessionsQuery.fetchNextPage();
-    }
+    if (childSessionsQuery.hasNextPage) void childSessionsQuery.fetchNextPage({ cancelRefetch: false });
   };
 
   const sessionPath = (targetId: string): string => {

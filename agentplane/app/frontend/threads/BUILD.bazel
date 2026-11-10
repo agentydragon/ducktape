@@ -457,6 +457,17 @@ ts_library(
 )
 
 agentplane_vitest_test(
+    name = "live_test",
+    srcs = ["live.test.ts"],
+    # `live` reaches `@mantine/core` through `stream_status`; its hooks import react-dom at load.
+    data = ["//:node_modules/react-dom"],
+    deps = [
+        ":live",
+        "//:node_modules/vitest",
+    ],
+)
+
+agentplane_vitest_test(
     name = "command_delivery_test",
     srcs = ["command_delivery.test.ts"],
     deps = [

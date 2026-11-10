@@ -79,7 +79,8 @@ Two layers, and the split matters:
 1. **The app's `public-coder-agent-egress` NetworkPolicy is the fence.** The OpenClaw Pod may
    reach DNS, the Agentplane staging gateway on its proxy port, and in-cluster LiteLLM. It has no
    direct Internet or ClickHouse route. The `HTTP_PROXY` variables point to the local relay; the
-   relay alone mounts the projected workload token.
+   relay alone mounts the workload SVID, which needs a standing `WorkloadCredential` rendered
+   before the Deployment is scaled up (`cluster/cdk8s/public_coder/egress.py`).
 2. **Agentplane's `public-coder-openclaw` policy is the egress allowlist.** It scopes destinations
    and credential substitution for the public-coder ServiceAccount. Every widening is a reviewable
    diff in `cluster/cdk8s/public_coder/egress.py` and the Agentplane policy controller.

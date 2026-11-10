@@ -191,6 +191,12 @@ debundle_e2e_test(
     ],
 )
 
+# 820 debundler runs, each followed by two Node runs.
+debundle_e2e_test(
+    name = "foreign_state_node_differential_sweep_test",
+    timeout = "moderate",
+)
+
 debundle_e2e_test(
     name = "foreign_cell_read_order_test",
     deps = [
@@ -271,7 +277,18 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "effect_tv_root_statements_test",
-    deps = [":graph_support"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_root_binding_stores_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(

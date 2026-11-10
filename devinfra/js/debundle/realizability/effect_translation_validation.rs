@@ -12,8 +12,8 @@ use analysis::DependencyGraph;
 use analysis::analysis_inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis::facts::{
     CellOverlap, CellOverlapIndex, InitializationEffectEvidence, InitializationEffects,
-    OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, StatementFacts,
-    UnknownEffectCoverage,
+    OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, RootAttempt,
+    RootAttemptCounts, StatementFacts, UnknownEffectCoverage,
 };
 use analysis::graph::{AppliedCommutingPremise, CellOverlapReport, EffectCellReport};
 use analysis::ids::ModuleId;
@@ -52,6 +52,7 @@ pub struct EffectCoverageReport {
     pub covered_owner_dependencies: analysis::analysis_inputs::ProofDependencies,
     pub unknown_coverage: BTreeMap<UnknownEffectCoverage, usize>,
     pub owner_coverage_refusals: BTreeMap<OwnerInitializationCoverageRefusalReason, usize>,
+    pub root_attempts: RootAttemptCounts,
     pub legacy_dataflow_opaque_statements: usize,
     pub incomplete_execution_statements: usize,
     pub precision_loss_statements: usize,
@@ -565,6 +566,7 @@ fn assess_effect_relocation<E>(
         covered_owner_dependencies: Default::default(),
         unknown_coverage: BTreeMap::new(),
         owner_coverage_refusals: BTreeMap::new(),
+        root_attempts: RootAttemptCounts::default(),
         legacy_dataflow_opaque_statements: 0,
         incomplete_execution_statements: 0,
         precision_loss_statements: 0,
@@ -583,6 +585,13 @@ fn assess_effect_relocation<E>(
                 .owner_coverage_refusals
                 .entry(refusal.reason)
                 .or_default() += 1;
+        }
+        match effect.root_attempt {
+            Some(RootAttempt::Sealed) => coverage.root_attempts.sealed += 1,
+            Some(RootAttempt::Rewound(reason)) => {
+                *coverage.root_attempts.rewound.entry(reason).or_default() += 1;
+            }
+            None => {}
         }
         coverage.legacy_dataflow_opaque_statements +=
             usize::from(!effect.dataflow_opacity.is_empty());

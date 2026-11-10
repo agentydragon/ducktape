@@ -1,6 +1,6 @@
 """Static OpenClaw's Agentplane egress attachment.
 
-Only the relay holds the Pod-bound token. Credential values stay in the gateway's
+Only the relay holds the workload SVID. Credential values stay in the gateway's
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
@@ -19,9 +19,8 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PlaintextRouteTransport, PlatformRoute, PlatformRoutes
+from agentplane.egress.platform_routes import PlatformRoute, PlatformRoutes
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress, platform_routes
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
@@ -51,8 +50,14 @@ CLICKHOUSE_CREDENTIAL = "public-coder-clickhouse"
 AIQUOTA_CREDENTIAL = "aiquota-read"
 BRAVE_CREDENTIAL = "brave-search"
 MATRIX_CREDENTIAL = "public-coder-matrix"
-TOKEN_VOLUME = "agentplane-egress-token"
-_TOKEN_DIR = "/var/run/agentplane-egress"
+# The standing record's Secret (cluster/cdk8s/haku/ui_egress.py renders Haku's), named after the
+# Deployment. Nothing renders this one while the Deployment is at zero replicas: reviving it needs
+# that record and `public-coder-agent` in staging's `standing_workload_namespaces` first.
+SVID_SECRET = "svid-public-coder-agent"
+SVID_VOLUME = "agentplane-svid"
+_SVID_DIR = Path("/var/run/agentplane-svid")
+_TRUST_VOLUME = "agentplane-egress-ca"
+_TRUST_DIR = Path("/etc/agentplane-egress-ca")
 SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 _SETTINGS_CONFIG_MAP = "openclaw-egress-sidecar"
 _SETTINGS_VOLUME = "egress-sidecar-settings"
@@ -61,15 +66,12 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
-    # CLEANUP(added 2026-11-09): the proxy's forward listener is TLS-only, so this plaintext bearer
-    # relay cannot authenticate; public-coder-agent is scaled to zero. Remove with the sidecar's
-    # bearer proxy-hop auth once no non-Sandbox workload projects a proxy-hop bearer, or port to
-    # TLS + SVID if the deployment is revived.
     settings = sidecar_config.Settings(
         proxy=sidecar_config.Proxy(
             address=f"{GATEWAY.fqdn}:{GATEWAY.pod_port}",
-            transport=sidecar_config.PlaintextProxyTransport(
-                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(_TOKEN_DIR) / "token")
+            transport=sidecar_config.TLSProxyTransport(
+                ca_file=_TRUST_DIR / egress.CA_BUNDLE_KEY,
+                auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
             ),
         ),
         platform_routes=PlatformRoutes(
@@ -78,9 +80,7 @@ def add_relay_settings(scope: Construct) -> PodWiring:
                 RULES_ROUTE.name: PlatformRoute(
                     service_prefixes=RULES_ROUTE.service_prefixes,
                     upstream=f"{RULES_ROUTE.service.fqdn}:{RULES_ROUTE.service.pod_port}",
-                    # Public Coder remains on its parked bearer route while staging runners use
-                    # the SVID transport in the shared route descriptor.
-                    transport=PlaintextRouteTransport(token_file=Path(_TOKEN_DIR) / "token"),
+                    transport=RULES_ROUTE.transport,
                 )
             },
         ),
@@ -117,24 +117,19 @@ def relay_container(settings: PodWiring) -> k8s.Container:
             timeout_seconds=1,
             failure_threshold=1,
         ),
-        volume_mounts=[k8s.VolumeMount(name=TOKEN_VOLUME, mount_path=_TOKEN_DIR, read_only=True), settings.mount],
+        volume_mounts=[
+            k8s.VolumeMount(name=SVID_VOLUME, mount_path=str(_SVID_DIR), read_only=True),
+            k8s.VolumeMount(name=_TRUST_VOLUME, mount_path=str(_TRUST_DIR), read_only=True),
+            settings.mount,
+        ],
     )
 
 
-def token_volume() -> k8s.Volume:
-    return k8s.Volume(
-        name=TOKEN_VOLUME,
-        projected=k8s.ProjectedVolumeSource(
-            default_mode=0o440,
-            sources=[
-                k8s.VolumeProjection(
-                    service_account_token=k8s.ServiceAccountTokenProjection(
-                        audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
-                    )
-                )
-            ],
-        ),
-    )
+def relay_volumes() -> list[k8s.Volume]:
+    return [
+        k8s.Volume(name=SVID_VOLUME, secret=k8s.SecretVolumeSource(secret_name=SVID_SECRET, default_mode=0o440)),
+        k8s.Volume(name=_TRUST_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=CA_BUNDLE_NAME)),
+    ]
 
 
 def add_gateway_resources(
@@ -253,7 +248,7 @@ def add_gateway_resources(
                     **LABELS,
                     "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT,
                 },
-                ports=[GATEWAY.pod_port, RULES_ROUTE.service.pod_port],
+                ports=[GATEWAY.pod_port],
             )
         ],
         egress=[client.HTTP.egress()],

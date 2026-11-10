@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -10,13 +11,27 @@ import aiohttp
 import pytest
 import pytest_bazel
 
-from agentplane.egress.sidecar_config import READINESS_PATH, KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
+from agentplane.egress.sidecar_config import READINESS_PATH, Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
+from agentplane.testing.tls import (
+    CertificateAuthority,
+    issue_workload_leaf,
+    make_ca,
+    server_tls_context,
+    workload_uri,
+    write_ca,
+)
 from util.net import Listener, listen_tcp
 
 
 @pytest.fixture
-async def central() -> AsyncIterator[Listener]:
+def ca() -> CertificateAuthority:
+    return make_ca("agentplane-egress-sidecar-test")
+
+
+@pytest.fixture
+async def central(ca: CertificateAuthority, tmp_path: Path) -> AsyncIterator[Listener]:
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             await reader.readuntil(b"\r\n\r\n")
@@ -29,24 +44,28 @@ async def central() -> AsyncIterator[Listener]:
             writer.close()
             await writer.wait_closed()
 
+    directory = tmp_path / "central"
+    directory.mkdir()
+    security = server_tls_context(*issue_workload_leaf(ca, EGRESS_PROXY_URI, directory))
+    # The sidecar's hop requires the proxy to ask for its SVID, as the real one does.
+    security.verify_mode = ssl.CERT_REQUIRED
+    security.load_verify_locations(cadata=ca.cert_pem.decode())
     with listen_tcp() as listener:
-        server = await asyncio.start_server(handle, sock=listener.socket)
+        server = await asyncio.start_server(handle, sock=listener.socket, ssl=security)
         async with server:
             yield listener
 
 
 @pytest.fixture
-def token_file(tmp_path: Path) -> Path:
-    path = tmp_path / "token"
-    path.write_text("token-1\n")
-    return path
-
-
-@pytest.fixture
-def proxy_config(central: Listener, token_file: Path) -> Proxy:
+def proxy_config(central: Listener, ca: CertificateAuthority, tmp_path: Path) -> Proxy:
+    directory = tmp_path / "sidecar"
+    directory.mkdir()
+    cert_file, key_file = issue_workload_leaf(ca, workload_uri("test-ns", "test-sandbox", "credential-id"), directory)
     return Proxy(
         address=f"{central.host}:{central.port}",
-        transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=token_file)),
+        transport=TLSProxyTransport(
+            ca_file=write_ca(ca, tmp_path, "root")[0], auth=SpiffeProxyAuth(cert_file=cert_file, key_file=key_file)
+        ),
     )
 
 

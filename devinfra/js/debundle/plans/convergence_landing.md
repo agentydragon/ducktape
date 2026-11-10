@@ -63,20 +63,22 @@ Every PR in this plan:
    and do not land either.
 4. Has no `#[cfg(test)]` hooks or forced-target overrides in production modules
    (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
-5. Keeps the legacy gate authoritative until the flip PR. A refusal the legacy
-   gate would not have made is a regression unless the PR proves the acceptance
-   was unsafe with a Node divergence. The reverse also holds: an acceptance
-   the legacy gate would not have made is a regression unless the effect
-   verdict accepts the same candidate and the PR shows Node parity with
-   `swapped_pairs > 0`. A slice feeds the legacy gate through the facts it
+5. Keeps the legacy gate authoritative until the flip PR, and guards one
+   direction only. An acceptance the legacy gate would not have made is a
+   regression unless the effect verdict accepts the same candidate and the PR
+   shows Node parity with `swapped_pairs > 0`. A refusal it would not have
+   made is over-restriction: allowed, listed in the PR, and where a canonical
+   spec loses an acceptance that spec is migrated in gaffer-private
+   (§ Compatibility). A slice feeds the legacy gate through the facts it
    reads, so the PR compares every e2e evaluation's legacy verdict, effect
    status and emitted order with its `devel` base (the `DEBUNDLE_TV_AUDIT=1`
-   records) and lists each difference with its evidence. "No difference" is a
-   stated result, not an assumption: three of the first Wave 3 slices changed
-   legacy inputs without saying so (§ Root admission below).
+   records) and lists each difference; a refusal that became an acceptance
+   carries its evidence. "No difference" is a stated result, not an
+   assumption: three of the first Wave 3 slices changed legacy inputs without
+   saying so (§ Root admission below).
 6. Keeps every `devel` test or replaces it with a stronger one in the forms of
    item 3. A refusal that becomes an acceptance needs a relocation with Node
-   parity; an acceptance that becomes a refusal needs a Node divergence. The
+   parity; an acceptance that becomes a refusal is listed (item 5). The
    tests #14552 dropped are listed in § Test debt; the slice that owns them
    restores the behavior they protected in those forms.
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
@@ -108,7 +110,8 @@ lane's heap-content facts).
   the attempted lane as their slices are touched; each move states what the
   rewind restores and shows no legacy verdict changed.
 - A refused attempt runs the root twice. Each slice reports how many e2e roots
-  attempt and rewind; the cost gate below applies.
+  attempt and rewind, from the effect-coverage report's `root_attempts`
+  (sealed, and rewound by typed reason); the cost gate below applies.
 
 ## Canonical-spec check
 
@@ -172,17 +175,27 @@ network access:
 
 3. Compare each product's ordinary gate and translation-validation summaries
    and emitted-file inventory against the same build at the slice's `devel`
-   base. A new rejection, a changed emitted order or changed emitted bytes is a
-   regression unless the PR shows the old acceptance was unsafe with a Node
-   divergence. Run the focused runtime targets named in `DUCKTAPE_PINNING.md`
-   when the slice touches browser or vendor loading.
+   base. A changed emitted order or changed emitted bytes is attributed to the
+   rule that caused it, with the reordered statements checked against source.
+   A new rejection is attributed the same way and the spec is migrated
+   (§ Compatibility). Run the focused runtime targets named in
+   `DUCKTAPE_PINNING.md` when the slice touches browser or vendor loading.
 
 Not every spec passes cleanly at the current pin; that is the recorded state,
-not a target. A slice may update a gaffer-private spec for compatibility with a
-changed contract (new premise key, renamed field, explicit claim replacing a
-removed implicit rule) in a paired gaffer-private PR, and must not make a spec
-pass by weakening an obligation. A slice does not have to make a spec more
-correct than it is today.
+not a target. A slice does not have to make a spec more correct than it is
+today.
+
+## Compatibility
+
+Debundle's only consumers are the gaffer-private specs and BUILD files, and no
+analysis output is stored between pins. So nothing here is kept for
+compatibility: spec keys, premise shapes, saved-analysis and report schemas,
+Bazel target and output names, and legacy-gate acceptances that a slice
+over-restricts may all change. The change lands without a shim, and the
+consumer is migrated in the gaffer-private PR that moves the pin (new premise
+key, renamed field, explicit claim replacing a removed implicit rule,
+co-location where an acceptance was lost). A migration must not make a spec
+pass by weakening an obligation.
 
 ## Debt inventory
 
@@ -335,14 +348,14 @@ audit's missing-coverage classes (<../debug/2026_11_09_l4c_discrepancy_audit.md>
 the flip as much as rows 2–7 do. "Evaluations" is the audit's e2e count
 touching the rule.
 
-| Order | Slice                                                                                                                                                                                                                                                                                                                                                                                                                      | Evaluations | Needs                  |
-| ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------: | ---------------------- |
-|     9 | **PR 1 landed** for root field stores: `receiver.property = value` on a writable module-record slot runs through the kernel (own-data read and store close their domains); an unsealed attempt rewinds to the flat lane. Left: global publications and stores that add a property (`unproved_field_store`), bare assignments to module bindings (needs a module-cell store rule in `BindingContext`), bare call statements |         110 | none                   |
-|    10 | **Landed** for local calls with arguments, IIFEs and comma initializers: an unsealed kernel attempt rewinds to the flat lane. Left: destructured call results (pattern initialization in the kernel)                                                                                                                                                                                                                       |          75 | none                   |
-|    11 | Non-invoking literal coverage                                                                                                                                                                                                                                                                                                                                                                                              |  unmeasured | measure in next audit  |
-|    12 | Call-effect coverage for callees with live captures (`(x) => out.push(x)` with `out` local gets open coverage today), which rows 2 and 3 need for callbacks                                                                                                                                                                                                                                                                |  unmeasured | forks                  |
-|    13 | **Landed**: field reads on element records inside a callback, as reads of prefix-tracked receivers (`entries.reduce((t, e) => t + e.size, 0)` seals; a store through another name rewinds)                                                                                                                                                                                                                                 |          11 | row 2, row 9 read rule |
-|    14 | Object spread inside a callback (`tools.map((tool) => ({ ...tool }))`): the other gate for record-element roots (<kernel_design.md> § Root admission)                                                                                                                                                                                                                                                                      |  unmeasured | row 2                  |
+| Order | Slice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Evaluations | Needs                  |
+| ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------: | ---------------------- |
+|     9 | **Landed** for root stores: `receiver.property = value` on a writable module-record slot (PR 1) and `binding = value` to an initialized, mutable, unexported, uncaptured module binding (PR 2, `BindingContext::store_module_binding`), each a kernel attempt rewound to the flat lane unless it seals. Left: stores that add a property (prototype-chain setter absence, extensibility, an `ObjectShape` write); bare call statements (the ordered-initializer call admission for a statement root); stores in call-free compound initializers (an ordered lane for them); captured and exported binding stores (the closure's and the importer's view). Global publications stay with row 4 |         110 | none                   |
+|    10 | **Landed** for local calls with arguments, IIFEs and comma initializers: an unsealed kernel attempt rewinds to the flat lane. Left: destructured call results (pattern initialization in the kernel)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |          75 | none                   |
+|    11 | Non-invoking literal coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |  unmeasured | measure in next audit  |
+|    12 | Call-effect coverage for callees with live captures (`(x) => out.push(x)` with `out` local gets open coverage today), which rows 2 and 3 need for callbacks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |  unmeasured | forks                  |
+|    13 | **Landed**: field reads on element records inside a callback, as reads of prefix-tracked receivers (`entries.reduce((t, e) => t + e.size, 0)` seals; a store through another name rewinds)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |          11 | row 2, row 9 read rule |
+|    14 | Object spread inside a callback (`tools.map((tool) => ({ ...tool }))`): the other gate for record-element roots (<kernel_design.md> § Root admission)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |  unmeasured | row 2                  |
 
 **Order from here.** Wave 3 is ordered by what the canonical inputs need, not
 by reference-head case counts: at `fa49ae5ed1` the flip would refuse Tana Web,

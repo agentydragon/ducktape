@@ -350,7 +350,7 @@ def _deployment(scope: Construct) -> None:
                     ],
                     containers=[_openclaw_container(), public_coder_egress.relay_container(relay_settings)],
                     volumes=[
-                        public_coder_egress.token_volume(),
+                        *public_coder_egress.relay_volumes(),
                         relay_settings.volume,
                         k8s.Volume(
                             name="data",
@@ -498,10 +498,7 @@ def _network_policies(scope: Construct) -> None:
                 ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer(public_coder_egress.GATEWAY.pods.namespace, public_coder_egress.GATEWAY.pods.selector)],
-                    ports=[
-                        _tcp(public_coder_egress.GATEWAY.pod_port),
-                        _tcp(public_coder_egress.RULES_ROUTE.service.pod_port),
-                    ],
+                    ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]

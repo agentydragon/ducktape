@@ -19,14 +19,14 @@ import (
 // TLS. Only deployment-configured exact authorities enter here. The destination
 // verifies the workload SVID and owns all authorization inside the connection.
 func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request, client *connection, host string, port int) {
-	hop, supplied := request.Header[proxyAuthorization]
+	_, supplied := request.Header[proxyAuthorization]
 	request.Header.Del(proxyAuthorization)
 	request.Header.Del(identity.ProjectedTokenHeader)
 	refuse := func(reason decision.Reason, caller *authenticated) {
 		p.record(request, client, host, port, outcome{decision: policy.Denied{Reason: reason}, caller: caller})
 		deny(w, reason)
 	}
-	caller, err := p.authenticate(request.Context(), client, hop, supplied, nil)
+	caller, err := p.authenticate(request.Context(), client, supplied, nil)
 	if err != nil {
 		refuse(decision.TokenRejected, nil)
 		return
@@ -57,7 +57,7 @@ func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request,
 		refuse(decision.Unavailable, caller)
 		return
 	}
-	securedCaller, err := p.authenticate(request.Context(), client, nil, false, nil)
+	securedCaller, err := p.authenticate(request.Context(), client, false, nil)
 	if err != nil || securedCaller.principal.Account != caller.principal.Account ||
 		securedCaller.principal.PodUID != caller.principal.PodUID {
 		refuse(decision.TokenRejected, caller)

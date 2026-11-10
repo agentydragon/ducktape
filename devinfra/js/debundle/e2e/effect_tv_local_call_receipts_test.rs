@@ -782,9 +782,11 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
     assert_preserved_entry_output(&fixture, "41 0\n");
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
+        // The later rebinding is a covered root binding store: its rebind is
+        // the binding's cell, which the earlier receipt's reads record.
         assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "only later rebinding and output remain uncovered: {report:#}"
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only the output remains uncovered: {report:#}"
         );
     }
 }

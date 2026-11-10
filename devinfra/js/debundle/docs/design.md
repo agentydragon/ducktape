@@ -3960,14 +3960,14 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module          | Owns                                                                                                                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.           |
-| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                        |
-| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                              |
-| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary. |
-| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                                       |
-| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                |
+| Module          | Owns                                                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.               |
+| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                            |
+| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                  |
+| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary.     |
+| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer; root `x.p = v` and `x = v` statements as kernel attempts. |
+| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                    |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -3991,6 +3991,19 @@ fresh result commits through the native `plan`/`commit` path. A refusal at any
 check keeps the effects of the callbacks that already ran and summarizes the
 remainder. Only depth-zero invocations take the kernel prologue, so a row
 inside the callback of a legacy array-iteration row stays legacy.
+
+A store to a module-level binding that the body does not declare, and that no
+active cell holds, goes to `BindingContext::store_module_binding`. The
+adapter checks the binding before recording anything and returns the store's
+effects; `None` refuses it as `Unproved::CaptureStore`, which is the provider
+adapter's only answer. The application adapter accepts only a root expression
+statement (`roots/operands.rs` admits `binding = value`). The binding must be
+an unimported, non-`const` binding that is initialized at the prefix (or a
+`var`), that no closure reads or rebinds, and that is not exported. Its
+fragment covers the global, heap and host domains and leaves lexical coverage
+unknown, so it seals the statement but never a lexical binding-effect receipt.
+The rebind is the owner's syntactic write of the binding's cell, the cell its
+readers record.
 
 **A covered own-data read needs a prefix-tracked receiver.**
 `BindingContext::prefix_tracked_receiver` answers whether an evaluated

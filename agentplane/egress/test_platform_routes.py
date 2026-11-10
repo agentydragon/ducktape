@@ -17,8 +17,9 @@ from agentplane.egress.platform_routes import (
     PlatformRoute,
     PlatformRoutes,
 )
-from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
+from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.testing.tls import issue_workload_leaf, make_ca, workload_uri, write_ca
 
 UNARY = "/test.Echo/Unary"
 STREAM = "/test.Echo/Stream"
@@ -94,7 +95,22 @@ def token_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
+def unused_proxy(tmp_path: Path) -> Proxy:
+    """A proxy hop the sidecar requires at startup and the plaintext route never dials."""
+    ca = make_ca("agentplane-egress-sidecar-test")
+    cert_file, key_file = issue_workload_leaf(ca, workload_uri("test-ns", "test-sandbox", "credential-id"), tmp_path)
+    return Proxy(
+        address="127.0.0.1:1",
+        transport=TLSProxyTransport(
+            ca_file=write_ca(ca, tmp_path, "root")[0], auth=SpiffeProxyAuth(cert_file=cert_file, key_file=key_file)
+        ),
+    )
+
+
+@pytest.fixture
+async def route_channel(
+    upstream: tuple[Upstream, int], token_file: Path, unused_proxy: Proxy
+) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
     route_config = PlatformRoutes(
         listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
@@ -107,13 +123,7 @@ async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> Asy
         },
     )
     async with (
-        SidecarProcess(
-            proxy=Proxy(
-                address="127.0.0.1:1",
-                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=token_file)),
-            ),
-            platform_routes=route_config,
-        ) as sidecar,
+        SidecarProcess(proxy=unused_proxy, platform_routes=route_config) as sidecar,
         grpc.aio.insecure_channel(
             f"{sidecar.platform_route_listener.host}:{sidecar.platform_route_listener.port}"
         ) as channel,

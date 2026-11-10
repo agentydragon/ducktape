@@ -6008,6 +6008,8 @@ pub(super) struct ExecutionIndex {
     pub(super) class_spans: BTreeMap<u32, Span>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
+    /// Top-level `const` declarations, exported or not: a store throws.
+    pub(super) top_const_bindings: BTreeSet<Id>,
     pub(super) other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     pub(super) plain_data_objects: BTreeSet<u32>,
@@ -6107,8 +6109,8 @@ pub(super) struct ExecutionIndex {
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     pub(super) top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     pub(super) ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
-    /// Top-level `receiver.property = value` statements lowered from their
-    /// exact source expression. Lowering selects nothing: `roots/operands`
+    /// Top-level `receiver.property = value` and `binding = value` statements
+    /// lowered from their exact source expression. Lowering selects nothing: `roots/operands`
     /// admits one.
     pub(super) ordered_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Canonical owner/binding/initializer identity, independent of the
@@ -6237,6 +6239,7 @@ impl Default for ExecutionIndex {
             class_spans: BTreeMap::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
+            top_const_bindings: BTreeSet::new(),
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
@@ -9421,6 +9424,15 @@ impl ExecutionIndex {
                     .insert(declaration.class.span.lo.0, id.clone());
                 index.class_ids.insert(id);
             }
+            if let Some(declaration) = var_decl_of_item(item.as_module_item())
+                && declaration.kind == VarDeclKind::Const
+            {
+                for declarator in &declaration.decls {
+                    index
+                        .top_const_bindings
+                        .extend(binding_targets::binding_names(&declarator.name));
+                }
+            }
         }
         for (ordinal, item) in body.iter().enumerate() {
             let owner = SourceUnitOrdinal(ordinal);
@@ -9444,7 +9456,7 @@ impl ExecutionIndex {
             }
             if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
                 && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
-                && body.root_field_store_statement().is_some()
+                && body.root_store_statement().is_some()
             {
                 index.ordered_statements.insert(owner, body);
             }
