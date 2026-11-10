@@ -128,11 +128,6 @@ def proxy_trust_mounts() -> list[k8s.VolumeMount]:
     ]
 
 
-def egress_mounts() -> list[k8s.VolumeMount]:
-    """Proxy trust mounts needed by sandbox tools."""
-    return proxy_trust_mounts()
-
-
 def bazelrc_mount() -> k8s.VolumeMount:
     """Bazel's system rc, for a box that only runs commands. A runner leaves it out: crossing a
     container's memory limit kills every process in it, and a build that did would take the agent's
