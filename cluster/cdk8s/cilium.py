@@ -25,14 +25,8 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from cluster.cdk8s.providers.cilium.clusterwide_network_policy import ClusterwideNetworkPolicy
-from cluster.cdk8s.providers.cilium.network_policy import (
-    EgressRule,
-    Entity,
-    Protocol,
-    dns_egress as _dns_egress,
-    fqdn_fence as _fqdn_fence,
-)
-from cluster.cdk8s.service_ref import Pods
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Protocol, dns_egress as _dns_egress
+from cluster.cdk8s.service_ref import Pods, ServiceRef
 
 # kube-dns's own selector -- every environment's DNS egress rule selects it the same way.
 KUBE_DNS_LABELS = {"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
@@ -100,23 +94,6 @@ def open_internet_egress(
     return [dns_egress(protocols=["ANY"], resolves=["*"]), EgressRule.to_entities(*entities, ports=ports)]
 
 
-def fqdn_fence(
-    *groups: Sequence[str], resolves_also: Sequence[str] = (), port: int = 443
-) -> list[CiliumNetworkPolicySpecEgress]:
-    """An FQDN allowlist's two halves from one host list: the DNS rule admitting exactly the
-    names `groups` hold plus `resolves_also`, then one toFQDNs rule per group on TCP `port`.
-
-    The DNS rule is not redundant with toFQDNs. The DNS proxy matches the query name before
-    any destination identity exists, so it is the only layer that can fence a name resolving
-    to a node IP, which toFQDNs cannot select (cluster/docs/cilium_network_policy.md); and
-    Cilium has no way to share one list between the two rule kinds, so deriving both here is
-    what keeps them equal. Both halves bound the selected Pod's own resolution and
-    connections, not those of the workloads behind a proxy. SNI is not pinned: serverNames
-    cannot carry the patterns a group may hold.
-    """
-    return _fqdn_fence(KUBE_DNS_LABELS, *groups, resolves_also=resolves_also, port=port)
-
-
 def _to_ports(*ports: tuple[int, Protocol]) -> list[CiliumClusterwideNetworkPolicySpecEgressToPorts]:
     return [
         CiliumClusterwideNetworkPolicySpecEgressToPorts(
@@ -136,16 +113,13 @@ def force_proxy_egress(
     *,
     name: str,
     namespaces: Sequence[str],
-    proxy_namespace: str,
-    proxy_name: str,
-    proxy_port: int,
+    proxy: ServiceRef,
     cluster_ports: Sequence[int] | None,
     kube_apiserver: bool,
 ) -> ClusterwideNetworkPolicy:
     """Force the external egress of every Pod in `namespaces` through a proxy: admit kube-dns
     (plain L4), in-cluster traffic on TCP `cluster_ports` (any port when `None`), the
-    kube-apiserver when `kube_apiserver`, and the Pods named `proxy_name` in `proxy_namespace` on
-    TCP `proxy_port`. Cilium policies are additive, so any other egress policy selecting these
+    kube-apiserver when `kube_apiserver`, and `proxy`'s Pods on its pod port. Cilium policies are additive, so any other egress policy selecting these
     Pods widens this one.
     """
     return ClusterwideNetworkPolicy(
@@ -181,15 +155,8 @@ def force_proxy_egress(
                 else []
             ),
             CiliumClusterwideNetworkPolicySpecEgress(
-                to_endpoints=[
-                    CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                        match_labels={
-                            "k8s:io.kubernetes.pod.namespace": proxy_namespace,
-                            "k8s:app.kubernetes.io/name": proxy_name,
-                        }
-                    )
-                ],
-                to_ports=_to_ports((proxy_port, "TCP")),
+                to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=proxy.pods.cilium)],
+                to_ports=_to_ports((proxy.pod_port, "TCP")),
             ),
         ],
     )

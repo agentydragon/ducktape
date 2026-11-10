@@ -3,7 +3,7 @@ standing SVID to the egress proxy for every runner.
 
 A relay rather than a per-Pod sidecar because the build steps run inside rootless dind, whose
 slirp4netns network cannot reach the runner Pod's loopback; job containers reach a cluster
-Service, as they reached haku-egress-proxy. It also keeps the SVID's key out of the privileged
+Service. It also keeps the SVID's key out of the privileged
 runner Pod: the Secret is mounted here alone. A standing record proves no Pod, so every replica is
 the same caller (agentplane/docs/workload_authentication.md § Standing workloads), and whatever
 reaches this Service acts as that caller: its ingress admits only the runner Pods.

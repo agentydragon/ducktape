@@ -187,13 +187,6 @@ def deny_all_egress() -> list[CiliumNetworkPolicySpecEgressDeny]:
     return [CiliumNetworkPolicySpecEgressDeny(to_entities=[CiliumNetworkPolicySpecEgressDenyToEntities.ALL])]
 
 
-def dns_allowlist(*names: str) -> list[str]:
-    """The matchers a DNS rule carries for `names`: patterns first, then exact names, each
-    sorted, so the rule is stable under regrouping the toFQDNs side."""
-    unique = set(names)
-    return sorted(name for name in unique if "*" in name) + sorted(name for name in unique if "*" not in name)
-
-
 def dns_egress(
     labels: dict[str, str], *, protocols: Sequence[Protocol] = ("UDP", "TCP"), resolves: Sequence[str] | None = None
 ) -> CiliumNetworkPolicySpecEgress:
@@ -218,27 +211,6 @@ def dns_egress(
             )
         ],
     )
-
-
-def fqdn_fence(
-    dns_labels: dict[str, str], *groups: Sequence[str], resolves_also: Sequence[str] = (), port: int = 443
-) -> list[CiliumNetworkPolicySpecEgress]:
-    """An FQDN allowlist's two halves from one host list, resolved through the DNS server matching
-    `dns_labels`: the DNS rule admitting exactly the names `groups` hold plus `resolves_also`, then
-    one toFQDNs rule per group on TCP `port`.
-
-    The DNS rule is not redundant with toFQDNs. The DNS proxy matches the query name before
-    any destination identity exists, so it is the only layer that can fence a name resolving
-    to a node IP, which toFQDNs cannot select; and Cilium has no way to share one list between
-    the two rule kinds, so deriving both here is what keeps them equal. Both halves bound the
-    selected Pod's own resolution and connections, not those of the workloads behind a proxy.
-    SNI is not pinned: serverNames cannot carry the patterns a group may hold.
-    """
-    hosts = [host for group in groups for host in group]
-    return [
-        dns_egress(dns_labels, protocols=["ANY"], resolves=dns_allowlist(*hosts, *resolves_also)),
-        *(_egress_to_fqdns(group, port=port, server_names=None) for group in groups),
-    ]
 
 
 class NetworkPolicy(_CiliumNetworkPolicy):

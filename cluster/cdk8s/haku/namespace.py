@@ -1,4 +1,4 @@
-"""haku-sandbox, Haku's compute namespace, and its one ingress boundary."""
+"""haku-sandbox, Haku's compute namespace, its one ingress boundary and its egress fence."""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressFromEndpoints,
 )
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.agentplane import egress
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -51,8 +53,7 @@ def chart(app: App) -> Chart:
     # admits independently of these rules. A future cross-namespace consumer = one explicit
     # fromEndpoints entry here.
     #
-    # Egress is unchanged -- the mitmproxy CCNP owns that direction. Operator-owned (Haku has no
-    # netpol RBAC). Security model: haku/docs/security.md.
+    # Operator-owned (Haku has no netpol RBAC). Security model: haku/docs/security.md.
     NetworkPolicy(
         chart,
         "ingress",
@@ -73,6 +74,20 @@ def chart(app: App) -> Chart:
                 ]
             )
         ],
+    )
+    # The egress fence: kube-dns, the kube-apiserver, in-cluster Services (which authenticate their
+    # own callers), and Agentplane egress, the only door to the public internet. Workloads reach it
+    # through their egress sidecars, which present standing SVIDs (ui_egress.py); what each may
+    # reach is its account's PolicySets. Named for the proxy it used to force, since renaming would
+    # replace rather than adopt the live policy.
+    cilium.force_proxy_egress(
+        chart,
+        "egress",
+        name="haku-sandbox-force-proxy-egress",
+        namespaces=[NAMESPACE],
+        proxy=egress.proxy(STAGING_NAMESPACE),
+        cluster_ports=None,
+        kube_apiserver=True,
     )
     return chart
 
