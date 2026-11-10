@@ -198,6 +198,17 @@ pub(super) enum LogicalOperator {
     NullishCoalescing,
 }
 
+/// The target of an admitted root store statement.
+#[derive(Clone, Copy)]
+pub(super) enum RootStore<'a> {
+    Field {
+        receiver: &'a Id,
+        property: &'a str,
+    },
+    /// A module-level binding the statement does not declare.
+    Binding(&'a Id),
+}
+
 #[derive(Debug, Clone)]
 pub(super) enum LocalArrayElement {
     Hole,
@@ -1127,23 +1138,31 @@ impl LocalBody {
         Self::without_constructions(body)
     }
 
-    /// `receiver.property = value` as the whole root statement, where the
-    /// value runs no code and stores nothing: a primitive literal, a binding
-    /// read or a function/arrow creation. The store is the statement's only
-    /// heap operation, so a writable slot found at the prefix is the slot
-    /// the store reaches. Selection only; the kernel's store rule proves it.
-    pub(super) fn root_field_store_statement(&self) -> Option<(&Id, &str)> {
+    /// `target = value` as the whole root statement, where the value runs no
+    /// code and stores nothing: a primitive literal, a binding read or a
+    /// function/arrow creation. The store is the statement's only operation,
+    /// so what the prefix proves about its target is what the store reaches.
+    /// Selection only; the kernel's store rules prove it.
+    pub(super) fn root_store_statement(&self) -> Option<RootStore<'_>> {
         self.root_span?;
-        let [
-            LocalOperation::Evaluate(LocalExpression::AssignField {
+        let [LocalOperation::Evaluate(store)] = self.operations.as_ref() else {
+            return None;
+        };
+        let (target, value) = match store {
+            LocalExpression::AssignField {
                 receiver,
                 property,
                 value,
                 ..
-            }),
-        ] = self.operations.as_ref()
-        else {
-            return None;
+            } => (
+                RootStore::Field {
+                    receiver,
+                    property: property.as_str(),
+                },
+                value,
+            ),
+            LocalExpression::Assign { binding, value, .. } => (RootStore::Binding(binding), value),
+            _ => return None,
         };
         matches!(
             value.as_ref(),
@@ -1153,7 +1172,7 @@ impl LocalBody {
                     DeferredCallableCreation::Function(_) | DeferredCallableCreation::Arrow(_)
                 )
         )
-        .then_some((receiver, property.as_str()))
+        .then_some(target)
     }
 
     /// Exact terminal source call, with no other root operation or operand.

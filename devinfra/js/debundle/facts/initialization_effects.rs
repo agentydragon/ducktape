@@ -98,6 +98,20 @@ pub enum OwnerInitializationCoverageRefusalReason {
     /// write). A store whose value can run code keeps
     /// `UnsupportedOwnerKind`.
     UnprovedFieldStore,
+    /// A root `binding = value` statement storing to an imported binding,
+    /// which throws.
+    ImportedBindingStore,
+    /// A root `binding = value` statement storing to a `const`, which throws.
+    ConstBindingStore,
+    /// A root `binding = value` statement storing to a lexical binding still
+    /// in its TDZ at the statement's prefix, which throws.
+    UninitializedBindingStore,
+    /// A root `binding = value` statement storing to a binding some closure
+    /// reads: the closure's view of the binding is not a module-prefix value.
+    CapturedBindingStore,
+    /// A root `binding = value` statement storing to an exported binding,
+    /// which an importer can observe through its live binding.
+    ExportedBindingStore,
     /// An admitted root statement's kernel attempt did not seal it, so the
     /// flattened lane ran it instead.
     UnprovedStatementOperation,
@@ -201,7 +215,14 @@ impl StatementFacts {
         };
         // These statement kinds execute no body at module evaluation. In
         // particular their lazy reads and export heap opacity are irrelevant.
-        if !self.initializes_bindings_at_evaluation() {
+        // Neither does `var a, b;` without initializers: its bindings were
+        // instantiated with the module and keep their values. This view is
+        // report-only; the binding timeline keeps its own rule.
+        if !self.initializes_bindings_at_evaluation()
+            || (self.kind == StatementKind::VarDecl
+                && self.var_initializers.is_empty()
+                && self.declared.is_subset(&self.var_declared))
+        {
             effects.allocates.clear();
             effects.dataflow_opacity.clear();
             effects.opaque_heap = false;
