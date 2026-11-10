@@ -246,9 +246,16 @@ kubectl get workspace route53-domain-delegation  # domain registration/delegatio
 only works for live pods; the moment a pod is deleted, evicted, or its Job is reaped
 (short `ttlSecondsAfterFinished`, `backoffLimit`/`activeDeadlineSeconds` failures,
 rolled-out ReplicaSets, OOM-killed/CrashLoopBackOff pods that got replaced), its logs
-are only in Loki. Alloy ships every pod's stdout/stderr to Loki, retained far longer
+are only in Loki. Promtail ships every pod's stdout/stderr to Loki, retained far longer
 than the pods themselves — so for any postmortem of a failed Job, a crashed exporter, a
 previous Deployment revision, etc., query Loki instead of giving up on "pod not found".
+
+In-cluster VMs should forward logs into a destination the cluster already collects. For
+KubeVirt, guest journald can write to the serial console; KubeVirt exposes that output as
+the `guest-console-log` stream under the `virt-launcher` pod, and the pod-log Promtail
+DaemonSet ships it to Loki. The CPAP gateway uses this path (<../../cpap/README.md>).
+Keep credentials and application payloads out of guest logs, since serial output becomes
+queryable through Loki.
 
 Loki runs in SimpleScalable mode — there is **no `deploy/loki`**. Query the read path
 (`svc/loki-read:3100`) over the HTTP API. Port-forward + `curl` from your workstation:
