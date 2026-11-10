@@ -28,6 +28,17 @@ these labels, so it does not establish an uncached pass.
 An older run had `test_codex_title_rename` pass in 54 s, but that different
 revision does not establish the current cold-start behavior.
 
+A separate uncached two-target [devel invocation](https://app.buildbuddy.io/invocation/a5069555-355c-4f67-82c0-ab03c7248707)
+reported `test_codex_title_rename` timed out after 60.199 s and
+`test_initial_import` passed in 34.509 s. Its test log used Python 3.14.4;
+the exact-head run below used Python 3.14.10. BuildBuddy records this invocation
+on `devel` at commit `0cdd8f8b14cae7b8e859fba79fd6a65d9372fad7`, with
+`STABLE_BUILD_COMMIT=0cdd8f8b-dirty`. The indexed invocation export, events and
+build log do not expose a Git-sync/patch record, so they do not establish that
+its source tree exactly matched the `6472c00d` pre-RC full-run commit. Treat
+this as an independent devel observation for the rename timeout, not an exact
+base-tree comparison or evidence about the initial-import timeout.
+
 ## Controlled exact-head run
 
 Ran all four targets sequentially with `--jobs=1`, `--nocache_test_results`,
