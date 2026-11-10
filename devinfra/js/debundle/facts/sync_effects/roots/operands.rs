@@ -537,7 +537,7 @@ fn ordered_effect_source<'source>(
     let [(binding, _)] = assignments else {
         return None;
     };
-    let span = body.initializer_span()?;
+    let span = body.root_span()?;
     let source = index.initialization_source_identities.get(&owner)?;
     source
         .matches(owner, binding, span)
