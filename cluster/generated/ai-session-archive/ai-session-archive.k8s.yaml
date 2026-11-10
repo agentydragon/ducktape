@@ -4,6 +4,7 @@ metadata:
   annotations:
     cnpg.io/skipWalArchiving: enabled
     description: Disposable, Restic-derived view of workstation AI session history.
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: session-archive-db
   namespace: session-backup
 spec:
@@ -70,7 +71,7 @@ kind: Cluster
 metadata:
   annotations:
     cnpg.io/skipWalArchiving: enabled
-    description: Streaming replica for migration of the session archive to single-copy HDD.
+    description: Session archive database on single-copy OVH HDD storage.
   name: session-archive-db-hdd
   namespace: session-backup
 spec:
@@ -114,7 +115,7 @@ spec:
       isolationCheck:
         enabled: false
   replica:
-    enabled: true
+    enabled: false
     source: session-archive-db
   storage:
     resizeInUseVolumes: false
@@ -168,7 +169,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: uri
-                  name: session-archive-db-app
+                  name: session-archive-db-hdd-app
             - name: AI_SESSION_ARCHIVE_PUBLIC_BASE_URL
               value: https://ai-session-archive.allegedly.works
             - name: AI_SESSION_ARCHIVE_PORT
@@ -236,7 +237,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: uri
-                  name: session-archive-db-app
+                  name: session-archive-db-hdd-app
           image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
           imagePullPolicy: IfNotPresent
           name: migrate-database
@@ -341,7 +342,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-app
+                      name: session-archive-db-hdd-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/wyrm2
                 - name: RESTIC_CACHE_DIR
@@ -374,7 +375,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-app
+                      name: session-archive-db-hdd-app
               image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
@@ -451,7 +452,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-app
+                      name: session-archive-db-hdd-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/rugged
                 - name: RESTIC_CACHE_DIR
@@ -484,7 +485,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-app
+                      name: session-archive-db-hdd-app
               image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
@@ -561,7 +562,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-app
+                      name: session-archive-db-hdd-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/iguana
                 - name: RESTIC_CACHE_DIR
@@ -594,7 +595,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-app
+                      name: session-archive-db-hdd-app
               image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
@@ -661,7 +662,7 @@ spec:
             - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
-            k8s:cnpg.io/cluster: session-archive-db
+            k8s:cnpg.io/cluster: session-archive-db-hdd
       toPorts:
         - ports:
             - port: "5432"
@@ -708,7 +709,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:cnpg.io/cluster: session-archive-db
+            k8s:cnpg.io/cluster: session-archive-db-hdd
       toPorts:
         - ports:
             - port: "5432"

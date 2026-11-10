@@ -40,8 +40,8 @@ NAMESPACE = session_backup.NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/ai-session-archive-image-pins"
 HOSTNAME = "ai-session-archive.allegedly.works"
-DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
-REPLICA_DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespace=NAMESPACE)
+SOURCE_DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespace=NAMESPACE)
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset"
@@ -66,10 +66,11 @@ def _database(chart: Chart) -> None:
     cluster.cluster(
         chart,
         "archive-database",
-        ref=DATABASE,
+        ref=SOURCE_DATABASE,
         annotations={
             "description": "Disposable, Restic-derived view of workstation AI session history.",
             "cnpg.io/skipWalArchiving": "enabled",
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
         },
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="100Gi",
@@ -96,16 +97,16 @@ def _database(chart: Chart) -> None:
 
 
 def _database_replica(chart: Chart) -> None:
-    # CLEANUP(added 2026-11-10): Promote this replica after replay catches up and
-    # source writers are fenced; retain the source until cutover is verified.
+    # CLEANUP(added 2026-11-10): Retire the source after verifying the cutover;
+    # then replace pg_basebackup with initdb for the cloned application role.
     Cluster(
         chart,
         "archive-database-hdd",
         metadata=ApiObjectMetadata(
-            name=REPLICA_DATABASE.name,
+            name=DATABASE.name,
             namespace=NAMESPACE,
             annotations={
-                "description": "Streaming replica for migration of the session archive to single-copy HDD.",
+                "description": "Session archive database on single-copy OVH HDD storage.",
                 "cnpg.io/skipWalArchiving": "enabled",
             },
         ),
@@ -124,21 +125,27 @@ def _database_replica(chart: Chart) -> None:
             ),
             bootstrap=ClusterSpecBootstrap(
                 pg_basebackup=ClusterSpecBootstrapPgBasebackup(
-                    source=DATABASE.name, database="ai_session_archive", owner="ai_session_archive"
+                    source=SOURCE_DATABASE.name, database="ai_session_archive", owner="ai_session_archive"
                 )
             ),
-            replica=ClusterSpecReplica(enabled=True, source=DATABASE.name),
+            replica=ClusterSpecReplica(enabled=False, source=SOURCE_DATABASE.name),
             external_clusters=[
                 ClusterSpecExternalClusters(
-                    name=DATABASE.name,
+                    name=SOURCE_DATABASE.name,
                     connection_parameters={
-                        "host": f"{DATABASE.name}-rw.{NAMESPACE}.svc.cluster.local",
+                        "host": f"{SOURCE_DATABASE.name}-rw.{NAMESPACE}.svc.cluster.local",
                         "user": "streaming_replica",
                         "dbname": "postgres",
                     },
-                    ssl_key=ClusterSpecExternalClustersSslKey(name=f"{DATABASE.name}-replication", key="tls.key"),
-                    ssl_cert=ClusterSpecExternalClustersSslCert(name=f"{DATABASE.name}-replication", key="tls.crt"),
-                    ssl_root_cert=ClusterSpecExternalClustersSslRootCert(name=f"{DATABASE.name}-ca", key="ca.crt"),
+                    ssl_key=ClusterSpecExternalClustersSslKey(
+                        name=f"{SOURCE_DATABASE.name}-replication", key="tls.key"
+                    ),
+                    ssl_cert=ClusterSpecExternalClustersSslCert(
+                        name=f"{SOURCE_DATABASE.name}-replication", key="tls.crt"
+                    ),
+                    ssl_root_cert=ClusterSpecExternalClustersSslRootCert(
+                        name=f"{SOURCE_DATABASE.name}-ca", key="ca.crt"
+                    ),
                 )
             ],
         ),
