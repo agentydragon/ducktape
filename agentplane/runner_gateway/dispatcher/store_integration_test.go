@@ -105,6 +105,10 @@ func admitted(t *testing.T) context.Context {
 
 type oneSandbox struct{}
 
+func (oneSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
+}
+
 func (oneSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
 }
@@ -117,6 +121,10 @@ func (oneSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, b
 }
 
 type blockedSandbox struct{}
+
+func (blockedSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
+}
 
 func (blockedSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
@@ -143,7 +151,7 @@ func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 	return nil, r.err
 }
 
-func (r *rejectingRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (r *rejectingRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	return r.err
 }
 
@@ -1542,7 +1550,7 @@ func (r *acceptingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (r *acceptingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ *identitypb.ServiceAccountIdentity) error {
+func (r *acceptingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ SessionExecution) error {
 	r.calls <- "opening:" + sessionID
 	return nil
 }
@@ -1917,7 +1925,7 @@ func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ stri
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*retryRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (*retryRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	return errors.New("unexpected opening")
 }
 
@@ -1994,7 +2002,7 @@ func (r *orderedRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, 
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*orderedRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (*orderedRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	return errors.New("unexpected opening")
 }
 
@@ -2157,6 +2165,10 @@ func (s deletedDuringLookup) GetSandbox(context.Context, string) (SandboxSnapsho
 	// The inventory read preceded cleanup, but its caller resumes afterward.
 	s.cleanup()
 	return s.snapshot, true, nil
+}
+
+func (deletedDuringLookup) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
 }
 
 func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -2374,7 +2386,7 @@ type openingOutcomeRunner struct {
 	err error
 }
 
-func (r *openingOutcomeRunner) CreateSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ *identitypb.ServiceAccountIdentity) error {
+func (r *openingOutcomeRunner) CreateSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ SessionExecution) error {
 	r.calls <- "opening:" + id
 	return r.err
 }
@@ -2768,6 +2780,10 @@ type deletingSessionInventory struct {
 	oneSandbox
 	store     *Store
 	sessionID string
+}
+
+func (deletingSessionInventory) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
 }
 
 func (i deletingSessionInventory) GetExecutionAccount(ctx context.Context, _ SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {

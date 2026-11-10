@@ -31,10 +31,12 @@ type SandboxReader interface {
 	GetSandbox(context.Context, string) (SandboxSnapshot, bool, error)
 }
 
-// ExecutionAccountReader resolves the current controller-owned ServiceAccount for a Sandbox. The
-// UID is live delivery/write authority; retained reads use the UID recorded in session.
+// ExecutionAccountReader resolves the current controller-owned ServiceAccount for a Sandbox, and the
+// Identity its `spec.identity` names (nil, found when it names none). The UIDs are live
+// delivery/write authority; retained reads use the UIDs recorded in session.
 type ExecutionAccountReader interface {
 	GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error)
+	GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error)
 }
 
 type SandboxSnapshot struct {
@@ -287,6 +289,14 @@ func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot)
 	return reader.GetExecutionAccount(ctx, sandbox)
 }
 
+func (s *Service) executionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	reader, ok := s.Sandboxes.(ExecutionAccountReader)
+	if !ok {
+		return nil, false, errors.New("Sandbox execution account reader unavailable")
+	}
+	return reader.GetExecutionIdentity(ctx, sandbox)
+}
+
 // requireLiveExecution checks the recorded target before applying scoped backend trust or
 // proving that a normal caller still matches its current and retained execution account.
 func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller CallerIdentity) error {
@@ -514,8 +524,17 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		}
 		execution = account
 	}
+	// The Dispatcher is the authority for the Identity a Session executes as: the one its Sandbox
+	// names now, read live with its UID, recorded once beside the ServiceAccount.
+	identity, found, err := s.executionIdentity(ctx, current)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+	}
+	if !found {
+		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
+	}
 	row, err = s.Store.CreateSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
-		request.GetSpec(), request.SetupScript, nil, execution, caller)
+		request.GetSpec(), request.SetupScript, nil, SessionExecution{Principal: execution, Identity: identity}, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}

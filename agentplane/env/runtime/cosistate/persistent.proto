@@ -30,6 +30,7 @@ message SessionRecordSpec {
   optional string native_session_id = 9;
   .agentplane.proto.ServiceAccountIdentity execution_principal = 10;
   .agentplane.proto.EnvironmentHostedPlacement placement = 11;
+  .agentplane.proto.Identity execution_identity = 12;
 }
 
 message IngressAckSpec {
