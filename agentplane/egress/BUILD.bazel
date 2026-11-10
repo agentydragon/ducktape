@@ -6,6 +6,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//third_party/googleapis:protobuf_es.bzl", "http_annotated_ts_proto_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -284,16 +285,14 @@ ts_proto_library(
     ],
 )
 
-ts_proto_library(
+http_annotated_ts_proto_library(
     name = "egress_admin_pb",
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":egress_admin_proto",
-    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         ":egress_rules_pb",
         "//agentplane/proto:identity_pb",
-        "//third_party/googleapis:annotations_pb",
     ],
 )

@@ -1,7 +1,7 @@
 # gazelle:resolve proto agentplane/policy/api/v1alpha1/policy_types.proto //agentplane/policy/api/v1alpha1:policy_types_proto
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//third_party/googleapis:protobuf_es.bzl", "http_annotated_ts_proto_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -37,16 +37,14 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+http_annotated_ts_proto_library(
     name = "policy_service_pb",
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":policy_service_proto",
-    protoc_gen_options = {"rewrite_imports": "./google/api/annotations_pb.js:./third_party/googleapis"},
     deps = [
         "//agentplane/policy/api/v1alpha1:policy_types_pb",
         "//agentplane/proto:identity_pb",
         "//agentplane/proto:kubernetes_pb",
-        "//third_party/googleapis:annotations_pb",
     ],
 )
