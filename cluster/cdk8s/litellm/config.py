@@ -117,6 +117,8 @@ def main_proxy_config() -> dict:
                     "spend_logs_metadata.agentplane.service_account",
                     "spend_logs_metadata.agentplane.pod_name",
                     "spend_logs_metadata.agentplane.pod_uid",
+                    "spend_logs_metadata.agentplane.identity",
+                    "spend_logs_metadata.agentplane.identity_uid",
                     "spend_logs_metadata.agentplane.session_id",
                 ],
             }

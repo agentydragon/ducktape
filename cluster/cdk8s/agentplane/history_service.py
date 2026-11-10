@@ -96,6 +96,8 @@ class HistoryService(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
                 ),
+                # An Identity writer's SVID names its Identity, read live in the policy namespace.
+                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
@@ -122,6 +124,7 @@ class HistoryService(Construct):
         content = {
             "reader_accounts": sorted(callers, key=lambda reader: (reader.namespace, reader.name)),
             "token_audience": TOKEN_AUDIENCE,
+            "policy_namespace": env.namespace,
             "ingress": ingress_settings,
         }
         if delegation_actor is not None:
