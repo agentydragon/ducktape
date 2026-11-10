@@ -54,11 +54,28 @@ Codex display names are imported separately from each retained snapshot's `/.cod
 
 Session kind is projected separately from titles. Codex `session_meta.payload.source` classifies `cli` and `exec` as `main`, structured `subagent` sources as `subagent`, and the `other: guardian` source as `guardian`; other or missing sources are `unknown`. The SQLite snapshot reader projects `threads.source` with the latest title observations. Claude `isSidechain` records distinguish `subagent` from `main`, and inferred Claude child paths classify as `subagent`. Missing legacy values remain nullable in storage and appear as `unknown` in the API until projected.
 
-The current-title projection selects the newest observation per native ID and
-physical source path in PostgreSQL before loading candidates into Python. The
-historical observation ledger stays intact; projection memory does not grow with
-repeated captures of the same mapping. Path-specific and index-only observations
-remain separate candidates until identity/ambiguity checks resolve them.
+The current-title projection reads `codex_title_candidates`, which retains the
+newest non-null title and kind separately for each native ID and physical path.
+Database triggers maintain these candidates atomically with observation writes,
+including writes by older importers during a rolling deployment. A retry can
+replace a title, retract a field, or move a path; retractions query only the
+previous winning mapping's native-ID history. Path-specific and index-only
+candidates remain separate until identity and ambiguity checks resolve them.
+
+Migration `0005_codex_title_candidates` creates empty projection tables and installs
+the triggers without scanning the historical ledger. Before first using candidates,
+the importer first seeds candidates from the latest SQL snapshot, then backfills
+all stored SQL observations in primary-key pages of 2,000 rows,
+committing each page and its cursor together. This is a one-time read of all retained
+observations, including observations from pruned Restic snapshots. A failed run
+resumes from its committed cursor; completion becomes durable only after the last
+page is populated. Per-machine transaction locks coordinate backfill with old
+and new writers. Session projection starts only after this backfill completes.
+Routine imports read the compact candidates instead of reducing the full history.
+The migration and backfill preserve the historical observation ledger; rolling
+back the importer leaves the triggers active and older importer binaries usable.
+Keep the new migrator image when rolling back: an older Alembic history cannot
+resolve revision `0005_codex_title_candidates`.
 
 ## Read API and browser
 

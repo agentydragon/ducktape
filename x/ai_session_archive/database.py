@@ -14,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     LargeBinary,
@@ -151,6 +152,39 @@ class CodexTitleObservationRow(Base):
         ),
         Index("idx_codex_title_machine_native", "machine_id", "native_session_id"),
     )
+
+
+class CodexTitleCandidateRow(Base):
+    """Latest non-null observation for one native ID, physical path and field."""
+
+    __tablename__ = "codex_title_candidates"
+
+    # Paths can exceed PostgreSQL's btree tuple limit. Writers serialize per machine
+    # instead of imposing a unique index containing the unbounded source path.
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    machine_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    native_session_id: Mapped[str] = mapped_column(String, nullable=False)
+    source_path: Mapped[str] = mapped_column(String, nullable=False)
+    field: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # No FK: backfill must not acquire source-row locks while holding the machine
+    # lock. Older metadata writers lock the snapshot before their trigger runs.
+    snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    __table_args__ = (
+        CheckConstraint("field IN ('title', 'session_kind')", name="ck_codex_title_candidates_field"),
+        Index("idx_codex_title_candidates_machine_native", "machine_id", "native_session_id"),
+    )
+
+
+class CodexTitleBackfillRow(Base):
+    __tablename__ = "codex_title_backfill"
+
+    machine_id: Mapped[str] = mapped_column(ForeignKey("machines.id", ondelete="RESTRICT"), primary_key=True)
+    snapshot_id: Mapped[str | None] = mapped_column(String(64))
+    native_session_id: Mapped[str | None] = mapped_column(String)
+    latest_snapshot_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class FileVersionRow(Base):

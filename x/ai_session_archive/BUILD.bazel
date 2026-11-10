@@ -150,6 +150,7 @@ py_library(
     deps = [
         ":claude_titles",
         ":codex_metadata",
+        ":codex_title_projection",
         ":database",
         ":models",
         ":record_json",
@@ -235,7 +236,7 @@ py_library(
     testonly = True,
     srcs = ["testing.py"],
     deps = [
-        ":database",
+        ":database_migrate",
         ":restic",
         "//util/testing:postgres",
         "@pypi//pytest",
@@ -651,5 +652,35 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "codex_title_projection",
+    srcs = ["codex_title_projection.py"],
+    deps = [
+        ":database",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_codex_title_candidates",
+    srcs = ["test_codex_title_candidates.py"],
+    requires_docker = True,
+    deps = [
+        ":codex_title_projection",
+        ":database",
+        ":database_migrate",
+        ":ingest",
+        ":models",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
