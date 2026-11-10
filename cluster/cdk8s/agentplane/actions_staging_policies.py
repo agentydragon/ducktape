@@ -767,13 +767,12 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
     # Its legacy direct Action route is removed; its sidecar presents its standing SVID to the proxy.
     # haku-anki runs as this account too, for AnkiWeb sync: the one external host it needs (`sync.ankiweb.net`
     # and the `syncNN` shard hosts it redirects accounts to; `*.` never matches the apex, and these are
-    # subdomains). It reaches it through an egress sidecar rather than the namespace-wide haku-egress-proxy, so
-    # the Kyverno proxy injection and the `*.ankiweb.net` fence entry can be retired. No credential is
+    # subdomains), through its egress sidecar. No credential is
     # presented: AnkiWeb login sends the account's own username and password in a compressed body that a
     # placeholder substitution cannot reach, so the real credentials stay in the Pod. haku-sandbox is one trust
     # domain, so the two workloads share a grant set: the haku-ui Pod can reach AnkiWeb and the haku-anki Pod
-    # can read Home Assistant and Grocy and submit Action requests. This is the one grant claude-ai lacks;
-    # Haku already reaches *.ankiweb.net through haku-egress-proxy's fence. Split the account if either
+    # can read Home Assistant and Grocy and submit Action requests. This is the one grant claude-ai lacks.
+    # Split the account if either
     # workload ever holds something the other must not.
     add_egress_policy(
         scope,
@@ -819,7 +818,7 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
     )
 
     # haku-ci's builds, through its egress relay (haku_ci/egress_gateway.py): exactly the hosts haku-ci
-    # reached through haku-egress-proxy over 2026-11-08/09 (about 60 CI jobs), each with the methods it
+    # reached through its former mitmproxy (haku-egress-proxy) over 2026-11-08/09 (about 60 CI jobs), each with the methods it
     # used. Add a host when its `no-rule` decision for subject haku-ci/haku-ci-egress appears. Docker Hub
     # stays out: dind pulls it through oci-cache, in-cluster.
     add_egress_policy(

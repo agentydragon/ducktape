@@ -51,8 +51,7 @@ Authentik-fronted, while the read and write API routes are bearer-gated. The
 CiliumNetworkPolicy admits only kube-apiserver probes (5600), Authentik (5601), and the
 Gateway (5602/5603), with DNS-only egress. Both tokens are SOPS Secrets next to the manifests: the write token
 is dual-recipient (cluster-secrets + the desktops' user age keys), so one value serves
-the proxy and every desktop's `AW_DEST_TOKEN`; the read token is also reflected into
-`haku-egress-proxy` for the iron proxy (below). The write route currently allows GET
+the proxy and every desktop's `AW_DEST_TOKEN`. The write route currently allows GET
 because the importer reads the destination to dedup, so a leaked write token can read
 history too; it becomes write-only once the importer syncs incrementally
 ([revival-plan.md](revival-plan.md)). The server image tag is pinned in

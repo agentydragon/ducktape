@@ -1044,7 +1044,7 @@ agentplane_visual_test(
 agentplane_visual_test(
     name = "visual_history",
     src = "test_visual_history.py",
-    shard_count = 2,
+    shard_count = 4,
     title = "Agentplane: history",
 )
 
