@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -34,7 +35,7 @@ type Workload struct {
 func NewWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name string) Workload {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -122,4 +123,53 @@ func (w Workload) Delete(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.Revoke(t)
+}
+
+// IdentityWorkload is a Workload whose record names an Identity in the policy namespace. Its
+// Principal is still what a TokenReview of its Pod's token proves.
+type IdentityWorkload struct {
+	Workload
+	Identity *policyapi.Identity
+	// Subject is what a verifier given the policy namespace resolves its SVID to.
+	Subject auth.IdentityPrincipal
+}
+
+// NewIdentityWorkload is NewWorkload with the record naming a new Identity in policyNamespace,
+// which it creates if missing.
+func NewIdentityWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, policyNamespace string) IdentityWorkload {
+	t.Helper()
+	workload := NewWorkload(t, api, namespace, name)
+	ctx := t.Context()
+	if err := workload.Objects.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: policyNamespace}}); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatal(err)
+	}
+	identity := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
+		Spec:       policyapi.IdentitySpec{Description: "test agent " + name},
+	}
+	if err := workload.Objects.Create(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	// A record's subject changes only with a new binding, so the record is replaced.
+	record := workload.Record
+	if err := workload.Objects.Delete(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	workload.Record = &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{Namespace: record.Namespace, Name: record.Name, OwnerReferences: record.OwnerReferences},
+		Spec:       *record.Spec.DeepCopy(),
+	}
+	workload.Record.Spec.Subject = workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: identity.Name, UID: identity.UID}}
+	if err := workload.Objects.Create(ctx, workload.Record); err != nil {
+		t.Fatal(err)
+	}
+	workload.URI = workload.Issue(t, strings.ReplaceAll(uuid.NewString(), "-", ""))
+	return IdentityWorkload{
+		Workload: workload,
+		Identity: identity,
+		Subject: auth.IdentityPrincipal{
+			Identity: auth.Identity{Name: identity.Name, UID: string(identity.UID)},
+			PodName:  workload.Principal.PodName, PodUID: workload.Principal.PodUID,
+		},
+	}
 }

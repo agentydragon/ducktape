@@ -8,6 +8,7 @@ go_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/environment_runtime_transport",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/auth",

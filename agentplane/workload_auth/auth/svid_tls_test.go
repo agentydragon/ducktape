@@ -13,6 +13,9 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -183,5 +186,94 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 				t.Fatal("refused caller reached handler")
 			}
 		})
+	}
+}
+
+const testPolicyNamespace = "test-policies"
+
+type admissionHealth struct {
+	healthpb.UnimplementedHealthServer
+	admissions chan auth.Admission
+}
+
+func (h admissionHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	h.admissions <- admission
+	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+}
+
+// An AnySubject method admits an Identity caller as an IdentityAdmission and a ServiceAccount caller
+// as before; a method that has not opted in refuses the Identity caller.
+func TestAnySubjectAdmitsIdentityCallers(t *testing.T) {
+	accountWorkload, _ := svidWorkload(t)
+	identityWorkload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox", testPolicyNamespace)
+	namespaces := []string{accountWorkload.Sandbox.Namespace, identityWorkload.Sandbox.Namespace}
+	svids, err := auth.NewSVIDResolver(accountWorkload.Objects, namespaces, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, environment_runtime_transport.HistoryIngressURI)
+	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
+		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
+	}}
+	resolves, err := newResolver(t, api.TokenReviews()).WithListenerAuthentication(config, svids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCredentials, err := config.ServerCredentials(environment_runtime_transport.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{
+		healthpb.Health_Check_FullMethodName: auth.AnySubject(resolves),
+		healthpb.Health_List_FullMethodName:  auth.AnyAccount(resolves),
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
+	admissions := make(chan auth.Admission, 4)
+	healthpb.RegisterHealthServer(server, admissionHealth{admissions: admissions})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	client := func(t *testing.T, uri string) healthpb.HealthClient {
+		t.Helper()
+		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(environment_runtime_transport.HistoryIngressURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return healthpb.NewHealthClient(connection)
+	}
+
+	identityClient := client(t, identityWorkload.URI)
+	if _, err := identityClient.Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-admissions; got != (auth.IdentityAdmission{Caller: identityWorkload.Subject}) {
+		t.Fatalf("Identity caller admitted as %#v, want %#v", got, identityWorkload.Subject)
+	}
+	if _, err := identityClient.List(t.Context(), &healthpb.HealthListRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("AnyAccount method admitted an Identity caller: %v", err)
+	}
+
+	if _, err := client(t, accountWorkload.URI).Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	direct, ok := (<-admissions).(auth.DirectAdmission)
+	if !ok || direct.Pod == nil || *direct.Pod != accountWorkload.Principal {
+		t.Fatalf("ServiceAccount caller admitted as %#v, want %#v", direct, accountWorkload.Principal)
+	}
+	if len(admissions) != 0 {
+		t.Fatal("a refused call reached the handler")
 	}
 }

@@ -3148,13 +3148,12 @@ other noticing.
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
 **In progress (identity-consumers, 2026-11-10), consumers first, as `EGRESS_IDENTITY_RULES`: the
-resolver yields an Identity subject; `auth.SVIDResolver` still refuses one.** History's execution
+resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
+methods; no service uses `AnySubject` yet.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
-The seam is `workload_auth/auth`'s `Principal`: `SVIDResolver` currently returns the same
-ServiceAccount-shaped value a TokenReview does, from the credential's `WorkloadCredential` subject
-read uncached per request, so no handler can tell the two apart; the SVID path yields the identity
-reference and incarnation directly; `CreateSession` names an identity, Dispatcher is the authority
+The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves
+its workload-facing methods to `AnySubject` and authorizes and records by the union; `CreateSession` names an identity, Dispatcher is the authority
 for that association, and its delivery and wake path refuses a Session whose identity differs from
 its environment's current one, so a bypassed identity change strands Sessions rather than
 re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark the rest

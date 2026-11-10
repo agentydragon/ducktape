@@ -119,8 +119,11 @@ including one inherited through a tunnel:
    binds to it.
 
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
-Services see the record's subject and `spec.pod` as today's `Principal`: the Sandbox's
-ServiceAccount, with the Pod as the provenance Pod. A standing workload's `Principal`, like a bound
+Services see the record's subject and `spec.pod` as an `auth.Subject`: a ServiceAccount
+`Principal`, or an `IdentityPrincipal` naming the Identity and its UID, each with the Pod as the
+provenance Pod. Only a method whose rule is `AnySubject` admits an Identity caller, as an
+`IdentityAdmission`; every other rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only
+and refuse one. A standing workload's `Principal`, like a bound
 one whose owner has not named its Pod yet, is its subject with no Pod: an operation that needs Pod
 proof refuses it. The egress proxy refuses a bound record with no Pod outright.
 
