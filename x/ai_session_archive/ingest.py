@@ -122,11 +122,14 @@ class _SnapshotFileIdentity:
 
 def _assert_snapshot_identity(row: ResticSnapshotRow, snapshot: ResticSnapshot) -> None:
     if (
-        row.snapshot_id != snapshot.id
-        or row.captured_at != snapshot.captured_at
-        or row.parent_snapshot_id != snapshot.parent_id
-        or row.tree_id != snapshot.tree_id
-        or row.paths != list(snapshot.paths)
+        ResticSnapshot(
+            id=row.snapshot_id,
+            captured_at=row.captured_at,
+            parent_id=row.parent_snapshot_id,
+            tree_id=row.tree_id,
+            paths=tuple(row.paths),
+        )
+        != snapshot
     ):
         raise RuntimeError(f"Restic metadata changed for snapshot {snapshot.id}")
 
