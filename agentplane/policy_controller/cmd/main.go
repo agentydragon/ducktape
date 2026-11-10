@@ -158,7 +158,7 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	api, err := policyservice.New(c.PolicyNamespace, objects, readers, writers)
+	api, err := policyservice.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, readers, writers)
 	if err != nil {
 		return err
 	}

@@ -321,6 +321,7 @@ struct SavedStatementFacts<'a> {
     global_writes: Cow<'a, BTreeSet<String>>,
     global_reads: Cow<'a, BTreeSet<String>>,
     havoc: Cow<'a, BTreeSet<DataflowOpacityCause>>,
+    trusted_summary_discharged: Cow<'a, BTreeSet<DataflowOpacityCause>>,
     heap_contents: SavedHeapContentCells,
     heap_one_shot_allocation: Option<SavedEffectCell>,
     deferred_heap_allocations: BTreeSet<SavedEffectCell>,
@@ -374,6 +375,7 @@ impl<'a> SavedStatementFacts<'a> {
             global_writes: Cow::Borrowed(&fact.global_writes),
             global_reads: Cow::Borrowed(&fact.global_reads),
             havoc: Cow::Borrowed(&fact.havoc),
+            trusted_summary_discharged: Cow::Borrowed(&fact.trusted_summary_discharged),
             heap_contents: SavedHeapContentCells::snapshot(&fact.heap_contents, ordinals)?,
             heap_one_shot_allocation: fact
                 .heap_one_shot_allocation
@@ -433,6 +435,7 @@ impl<'a> SavedStatementFacts<'a> {
             global_writes: self.global_writes.into_owned(),
             global_reads: self.global_reads.into_owned(),
             havoc: self.havoc.into_owned(),
+            trusted_summary_discharged: self.trusted_summary_discharged.into_owned(),
             heap_contents: self.heap_contents.restore(ordinals)?,
             heap_one_shot_allocation: self
                 .heap_one_shot_allocation

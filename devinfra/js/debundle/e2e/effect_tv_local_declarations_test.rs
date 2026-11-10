@@ -453,22 +453,25 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
 }
 
 #[test]
-fn imported_primitive_return_does_not_inherit_local_operation_authority() {
+fn imported_primitive_return_relocates_without_local_operation_authority() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { literal } from './peer.js';\nconst result = literal();\nconsole.log(result);\n",
-            vec![],
-        ).with_extra_chunks(&[("static/peer", "export function literal() { return 3; }\n")]),
+            "import { literal, make } from './peer.js';\nconst first = make(1);\nconst result = literal();\nconsole.log(first.input, result);\n",
+            vec![logical_module("result", &[Member::new("result")])],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function literal() { return 3; }\nexport function make(input) { return { input }; }\n",
+        )])
+        .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_preserved_entry_output(&fixture, "3\n");
-    let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert!(
-            report["coverage"]["unknown_coverage"][domain]
-                .as_u64()
-                .unwrap()
-                >= 2,
-            "{report:#}"
-        );
-    }
+    assert_preserved_entry_output(&fixture, "1 3\n");
+    assert_effect_verdict_accepts(&fixture, "summarized primitive return");
+    // The summary covers the call's effects; it is not a receipt for the
+    // root's lexical binding effects.
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "{execution:#}"
+    );
 }

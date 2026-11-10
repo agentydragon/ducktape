@@ -75,8 +75,9 @@ GITHUB_API = {"api.github.com"}
 
 # Hosts serving the operator's own accounts. A prompt-injected agent holding these reads the
 # operator's mail, finances and study data, so the group is named to keep
-# `test_operator_data_reaches_only_haku_sandbox` honest as consumers are added.
-OPERATOR_DATA = {"api.coinbase.com", "haku-mailbox.allegedly.works", "*.ankiweb.net"}
+# `test_operator_data_reaches_only_haku_sandbox` honest as consumers are added. AnkiWeb is granted
+# by an Agentplane egress PolicySet instead (`ankiweb-sync`), outside these fences.
+OPERATOR_DATA = {"api.coinbase.com", "haku-mailbox.allegedly.works"}
 
 # The operator's Google account (mail, calendar, tasks). No fence here reaches it: agents reach
 # it only through services that hold the token for them (agentplane's egress proxy, google-mcp).

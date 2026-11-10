@@ -21,7 +21,7 @@ use analysis::analysis_inputs::{
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
     ResolvedImport, resolve_export_primitives, resolve_imported_callable_summaries,
-    resolve_imported_purities,
+    resolve_imported_purities, resolve_stable_imports,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
@@ -83,6 +83,9 @@ pub struct ReparsedEntry {
 pub struct ProgramSummary {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
+    /// Per-chunk imports of never-rebound provider cells
+    /// (`AnalysisInputs::stable_imports`).
+    pub stable_imports: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk imported values admitted to ordinary candidate execution.
     /// Each value has a matching `primitive_reads` proof for the same local
     /// binding and primitive kinds; raw exported primitive facts remain in
@@ -758,11 +761,17 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
-    let bindings = resolve_imported_purities(
-        &modules,
-        &scoped(chunk_export_purity, &modules, |p| &p.pure_exports),
-        &mut callable_summaries,
-    )?;
+    let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
+    let bindings = resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries)?;
+    // A proved imported primitive read names a provider binding declared once
+    // and never written (`StableExportValue`).
+    let mut stable_imports = resolve_stable_imports(&modules, &asserted_pure);
+    for (chunk, reads) in &primitive_reads {
+        stable_imports
+            .entry(chunk.clone())
+            .or_default()
+            .extend(reads.keys().cloned());
+    }
     for inputs in initializer_call_effect_inputs.values() {
         for input in inputs {
             if let Some((module, export, reason)) = known_original_provider_write(
@@ -825,6 +834,7 @@ pub fn collect_program_summary(
         values,
         primitive_reads,
         bindings,
+        stable_imports,
         members: members!(pure_members),
         fluent: exports!(fluent_exports),
         constructors: project_export_set(&modules, &asserted_pure_new, "pure_new_exports"),

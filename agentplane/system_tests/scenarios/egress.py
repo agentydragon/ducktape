@@ -27,9 +27,12 @@ import textwrap
 from datetime import UTC, datetime
 from typing import Any
 
+from google.protobuf import json_format
+from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.action_service import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
@@ -39,13 +42,14 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests.deployment import runtime_grant
+from agentplane.system_tests.deployment import runtime_grant, svid_box
 from agentplane.system_tests.driver import egress_decisions
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.scenarios.mcp import CLI, PolicyObjects, submission
 from agentplane.testing.scripted_model import Text
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
@@ -58,6 +62,15 @@ UNLISTED_HOST = "example.com"
 # additional Sandbox policy.
 BASIC_POLICY = "basic"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
+# The sandbox Actions' group key in the fixture deployment (agentplane/system_tests/deployment/fixture_chart.py),
+# and a command box's workload container (cluster/cdk8s/agentplane/command_sandbox.py, `CONTAINER`).
+_SANDBOX_GROUP = "sandbox"
+_BOX_CONTAINER = "sandbox"
+# The runner container, whose own `agentplane` CLI calls the Action Service as the Sandbox
+# (cluster/cdk8s/agentplane/environment_sandbox.py).
+_RUNNER_CONTAINER = "environment-runtime"
+# Where the Action Service mounts a box's SVID, in the sidecar alone (agentplane/action_service/sandbox/inventory.go).
+_BOX_SVID_DIR = "/run/agentplane/workload-svid"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
 # each replica observes bindings asynchronously; the scenario checks actual read-only egress.
@@ -483,55 +496,52 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
 # gazelle:include_dep @pypi//protobuf
 
 
-async def a_non_sandbox_command_box_keeps_its_bearer_egress(
-    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
+async def a_command_box_presents_its_own_svid(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: PolicyObjects
 ) -> None:
-    """A second Pod under the caller's account has no SVID and can use its own bound tokens."""
+    """A box the sandbox Actions create for a Sandbox presents its own WorkloadCredential's SVID,
+    subject the caller: rules, Kubernetes substitution and refusals as the caller, no credential in
+    the workload container, and nothing once its record is revoked."""
     configmap, namespace, expected = await _create_kubernetes_probe(cluster, view)
-    runner = json.loads(await cluster.kubectl("get", "pod", view.kubernetes_diagnostics.pod.name, "-o", "json"))
-    template = json.loads(await cluster.kubectl("get", "podtemplate", "sandbox", "-o", "json"))["template"]
-    name = "bearer-command-" + secrets.token_hex(6)
-    spec = template["spec"]
-    spec["serviceAccountName"] = view.execution_account.account.name
-    workload = spec["containers"][0]
-    # Reuse already imported fixture images, exercising the rendered command-box credential wiring.
-    workload["image"] = runner["spec"]["containers"][0]["image"]
-    workload["imagePullPolicy"] = "IfNotPresent"
-    environment = next(v for v in runner["spec"]["volumes"] if v["name"] == "environment")
-    environment_mount = next(m for m in runner["spec"]["containers"][0]["volumeMounts"] if m["name"] == "environment")
-    assert environment_mount["readOnly"] is True
-    spec["volumes"].append(environment)
-    workload["volumeMounts"].append(environment_mount)
-    cli = f"{environment_mount['mountPath']}/bin/agentplane"
-    runner_sidecar = next(c for c in runner["spec"]["initContainers"] if c["name"] == "egress-sidecar")
-    sidecar = next(c for c in spec["containers"] if c["name"] == "egress-sidecar")
-    sidecar["image"] = runner_sidecar["image"]
-    sidecar["imagePullPolicy"] = "IfNotPresent"
-    await cluster.kubectl(
-        "create",
-        "-f",
-        "-",
-        body={
-            "apiVersion": "v1",
-            "kind": "Pod",
-            "metadata": {"name": name, "labels": template["metadata"]["labels"]},
-            "spec": spec,
-        },
-    )
+    caller = view.execution_account.account.name
+    await policy_objects.bind(view, "box", [{"type": "exact_actions", "actions": {_SANDBOX_GROUP: ["create"]}}])
+    box = "svid-" + secrets.token_hex(4)
+    pod = f"{caller}-{box}"
+
+    async def in_box(*command: str) -> str:
+        return await cluster.kubectl("exec", pod, "-c", _BOX_CONTAINER, "--", *command)
+
     try:
-        await cluster.kubectl("wait", "--for=condition=Ready", "pod/" + name, "--timeout=120s")
-        rules = json.loads(
-            await cluster.kubectl("exec", name, "-c", workload["name"], "--", cli, "egress", "rules", "--json")
-        )
-        assert rules["subject"] == {"namespace": namespace, "name": view.execution_account.account.name}
-        actual = await cluster.kubectl(
+        printed = await cluster.kubectl(
             "exec",
-            name,
+            view.kubernetes_diagnostics.pod.name,
             "-c",
-            workload["name"],
+            _RUNNER_CONTAINER,
             "--",
+            CLI,
+            "--json",
+            *submission(
+                _SANDBOX_GROUP,
+                "create",
+                {"name": box, "template": svid_box.TEMPLATE},
+                title="Create an SVID box",
+                wait=True,
+            ),
+        )
+        receipt = json_format.Parse(
+            one(line for line in printed.splitlines() if line.startswith("{")), action_service_pb2.ActionRequest()
+        )
+        assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED, printed
+        await cluster.kubectl("wait", "--for=condition=Ready", "pod/" + pod, "--timeout=120s")
+        record = json.loads(await cluster.kubectl("get", "workloadcredentials", pod, "-o", "json"))
+        assert record["spec"]["subject"] == {"serviceAccount": caller}
+        assert record["spec"]["pod"]["name"] == pod
+
+        rules = json.loads(await in_box(CLI, "egress", "rules", "--json"))
+        assert rules["subject"] == {"namespace": namespace, "name": caller}
+        actual = await in_box(
             "kubectl",
-            "--server=https://kubernetes.default.svc.cluster.local",
+            f"--server=https://{KUBERNETES_HOST}",
             "--token=agentplane-credential-kubernetes-workload",
             "get",
             "configmap",
@@ -542,35 +552,18 @@ async def a_non_sandbox_command_box_keeps_its_bearer_egress(
             "jsonpath={.data.value}",
         )
         assert actual == expected
-        refused = await cluster.kubectl(
-            "exec",
-            name,
-            "-c",
-            workload["name"],
-            "--",
-            "curl",
-            "--silent",
-            "--output",
-            "/dev/null",
-            "--write-out",
-            "%{http_code}",
-            "--max-time",
-            "15",
-            "http://unlisted.test/",
+        curl = ("curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code}", "--max-time", "15")
+        assert await in_box(*curl, "http://unlisted.test/") == "403"
+        await in_box(
+            "/bin/bash", "-c", f"test ! -e {_BOX_SVID_DIR} && test ! -e /run/agentplane/environment-runtime-tls/tls.key"
         )
-        assert refused == "403"
-        await cluster.kubectl(
-            "exec",
-            name,
-            "-c",
-            workload["name"],
-            "--",
-            "/bin/bash",
-            "-c",
-            "test ! -e /var/run/agentplane-egress/token && test ! -e /run/agentplane/environment-runtime-tls/tls.key",
-        )
+
+        # Revoked, as dispose does first; orphaning keeps the Pod, whose SVID now names no record.
+        await cluster.kubectl("delete", "workloadcredentials", pod, "--cascade=orphan", "--wait=true")
+        await in_box("/bin/bash", "-c", f"! {CLI} egress rules --json >/dev/null 2>&1")
     finally:
-        await cluster.kubectl("delete", "pod", name, "--wait=true", "--timeout=60s", "--ignore-not-found")
+        await cluster.kubectl("delete", "pod", pod, "--wait=true", "--timeout=60s", "--ignore-not-found")
+        await cluster.kubectl("delete", "workloadcredentials", pod, "--ignore-not-found")
 
 
 # The sidecar's listener (agentplane/egress/sidecar_config.py `Settings.listen_address`).

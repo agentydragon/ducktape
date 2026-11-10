@@ -582,7 +582,8 @@ flowchart LR
     workload --> box_sidecar
     runner --> sidecar -->|mTLS Runtime SVID :8888| egress
     guest --> relay -->|mTLS Runtime SVID :8888| egress
-    nonSandbox[Action boxes and Haku sidecars] -->|TLS and Pod-bound bearer :8888| egress
+    nonSandbox[Action boxes] -->|TLS and Pod-bound bearer :8888| egress
+    standing[Haku UI and Anki sidecars] -->|mTLS standing SVID :8888| egress
     app -->|admin API on shared TLS gRPC listener :8081| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
@@ -607,8 +608,9 @@ Kubernetes retains its destination-scoped projected token until the later impers
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
 
-Action command/build boxes and Haku UI/Anki keep their existing ServiceAccount subjects and
-Pod-bound bearer hop over verified TLS. Their sidecars alone hold credentials. The later shared
+Action command/build boxes present their own `WorkloadCredential`'s SVID, subject their caller's
+ServiceAccount; Haku UI/Anki present their standing records' SVIDs, subject `haku-ui`. Their
+sidecars alone hold credentials. The later shared
 identity and SVID lifecycle is independent of Sandboxes; no Identity/account cutover is included
 here. Existing Sandbox processes need recreation to read the new mode/route configuration; image
 updates alone do not replace running Pods.

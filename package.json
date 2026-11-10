@@ -59,6 +59,7 @@
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.15.0",
     "@eslint/js": "^9",
+    "@excalidraw/excalidraw": "0.18.1",
     "@tailwindcss/cli": "^4.3.3",
     "@types/dompurify": "^3.0.0",
     "@types/node": "^24.0.0",

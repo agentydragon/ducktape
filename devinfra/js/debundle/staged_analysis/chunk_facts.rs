@@ -10,6 +10,7 @@ use artifact::{ArtifactIndexes, ChunkBundle, chunk_runtime_entry};
 use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};
 use js_ast::ParsedJsModule;
 use source_identity::ChunkId;
+use spec::AdmissionCheck;
 use std::collections::BTreeMap;
 
 /// One chunk's facts for `debundle analyze`: what `finish_logical_chunk`
@@ -40,7 +41,7 @@ pub fn analyze_logical_chunk(
         }),
     );
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let (facts, _) = compute_logical_chunk_facts(
+    let LogicalChunkFacts { facts, .. } = compute_logical_chunk_facts(
         ChunkFactsContext {
             artifact,
             artifact_indexes,
@@ -83,16 +84,23 @@ pub enum ChunkFacts<'a> {
     Loaded(ChunkFactAnalysis),
 }
 
+/// One chunk's checked facts and what the chunk report records beside them.
+pub struct LogicalChunkFacts {
+    pub facts: ChunkFactAnalysis,
+    /// Imported callable summaries the analysis consumed.
+    pub imported_callables: BTreeMap<String, CallableSummary>,
+    /// Configured admission overrides that suppressed no violation.
+    pub redundant_admission_overrides: Vec<AdmissionCheck>,
+}
+
 /// Analyze one chunk's facts from its source, its spec projection and the
-/// program summary, or check facts loaded for it. Also returns the
-/// imported callable summaries the analysis consumed, which the chunk report
-/// records.
+/// program summary, or check facts loaded for it.
 pub fn compute_logical_chunk_facts(
     context: ChunkFactsContext<'_>,
     facts: ChunkFacts<'_>,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
-) -> Result<(ChunkFactAnalysis, BTreeMap<String, CallableSummary>)> {
+) -> Result<LogicalChunkFacts> {
     let ChunkFactsContext {
         artifact,
         artifact_indexes,
@@ -179,6 +187,11 @@ pub fn compute_logical_chunk_facts(
         inputs.assumptions.bundle_globals = program_summary.bundle_globals.clone();
         inputs.imported_purities = program_summary
             .bindings
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.stable_imports = program_summary
+            .stable_imports
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
@@ -295,16 +308,16 @@ pub fn compute_logical_chunk_facts(
             .clone();
         inputs
     };
-    let facts = match facts {
+    let (facts, redundant_admission_overrides) = match facts {
         ChunkFacts::Loaded(facts) => {
-            check_chunk_facts(
+            let redundant = check_chunk_facts(
                 chunk_id,
                 &runtime_ast.module,
                 &facts,
                 chunk_analysis_inputs.admission_overrides,
                 &resolve_dynamic_import,
             )?;
-            facts
+            (facts, redundant)
         }
         ChunkFacts::Compute(structural_analysis) => {
             let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
@@ -339,5 +352,9 @@ pub fn compute_logical_chunk_facts(
             )?
         }
     };
-    Ok((facts, analysis_inputs.imported_callables))
+    Ok(LogicalChunkFacts {
+        facts,
+        imported_callables: analysis_inputs.imported_callables,
+        redundant_admission_overrides,
+    })
 }

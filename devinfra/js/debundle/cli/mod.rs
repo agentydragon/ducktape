@@ -21,6 +21,7 @@ mod selector_input;
 mod snapshot;
 mod source_unit_refine;
 mod spec_commands;
+mod spec_lint;
 mod static_imports;
 
 use analyze_command::AnalyzeArgs;

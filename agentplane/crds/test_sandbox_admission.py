@@ -239,6 +239,59 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             )
 
 
+async def test_identity_changes_only_while_nothing_runs() -> None:
+    async with kubernetes_apiserver() as server:
+        core = k8s_client.CoreV1Api(server.api)
+        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
+        api = k8s_client.CustomObjectsApi(server.api)
+        await _create(api, "sandboxtemplates", "template", _template_spec(pod=True, vm=False), True)
+        sandbox = await _create(api, "sandboxes", "bound", {"template": "template"}, True)
+        assert sandbox is not None
+
+        async def replace_spec(spec: dict[str, Any]) -> dict[str, Any]:
+            nonlocal sandbox
+            assert sandbox is not None
+            sandbox = cast(
+                dict[str, Any],
+                await api.replace_namespaced_custom_object(
+                    GROUP, VERSION, NAMESPACE, "sandboxes", "bound", {**sandbox, "spec": spec}
+                ),
+            )
+            return sandbox
+
+        async def report(status: dict[str, Any]) -> None:
+            nonlocal sandbox
+            assert sandbox is not None
+            sandbox = cast(
+                dict[str, Any],
+                await api.replace_namespaced_custom_object_status(
+                    GROUP, VERSION, NAMESPACE, "sandboxes", "bound", {**sandbox, "status": status}
+                ),
+            )
+
+        first: dict[str, Any] = {"template": "template", "identity": {"name": "first"}}
+        second: dict[str, Any] = {"template": "template", "identity": {"name": "second"}}
+        # Never reconciled: nothing has run.
+        await replace_spec(first)
+
+        await report({"operatingMode": "Running"})
+        unbound: dict[str, Any] = {"template": "template"}
+        for spec in [second, unbound]:
+            with pytest.raises(ApiException) as rejected:
+                await replace_spec(spec)
+            assert rejected.value.status == 422, f"{spec}: {rejected.value.body!r}"
+        assert (await replace_spec({**first, "running": True}))["spec"]["identity"] == first["identity"]
+
+        await report({"operatingMode": "Suspended", "suspendedBy": "Requested", "stopStage": "Quiescing"})
+        with pytest.raises(ApiException) as rejected:
+            await replace_spec(second)
+        assert rejected.value.status == 422, repr(rejected.value.body)
+
+        await report({"operatingMode": "Suspended", "suspendedBy": "Requested", "stopStage": "Stopped"})
+        assert (await replace_spec(second))["spec"]["identity"] == second["identity"]
+        assert "identity" not in (await replace_spec(unbound))["spec"]
+
+
 async def test_egress_credential_source_and_target_validation() -> None:
     async with kubernetes_apiserver() as server:
         core = k8s_client.CoreV1Api(server.api)

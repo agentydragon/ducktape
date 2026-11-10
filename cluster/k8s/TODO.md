@@ -359,16 +359,6 @@ The fence in `cluster/cdk8s/egress_fences.py` (`haku_cloud_api`, the only one le
 set the Haku proxy pods may reach on the public internet, and nothing else. Known wrong or
 unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/security.md`):
 
-- [ ] Finish retiring the `haku-sandbox` half of the Haku proxy. `haku-egress-proxy` (mitmproxy) now
-      really serves `haku-ci` (CI builds: the real traffic). In `haku-sandbox` only `haku-anki` would
-      need it (AnkiWeb sync), and it now runs behind an Agentplane egress sidecar as the shared
-      `haku-ui` account (`ankiweb-sync` in `actions_staging_policies.py`); the Kyverno injection
-      (`kyverno/proxy_injection.py`) leaves a container that sets its own proxy alone. That path is
-      wired but **unexercised**: see the next item. Once Anki is verified syncing through the sidecar:
-      delete the injection policy, drop `*.ankiweb.net` from the fence, and leave `haku-sandbox` on its
-      default-deny CCNP. Several other allowlist entries were justified by pods that are gone
-      (`alloy-otlp`, `haku-mailbox`, `api.coinbase.com`, PyPI/npm); per-host flow data (Hubble) is
-      needed to know which can go.
 - [ ] (Maybe later.) AnkiWeb sync has been off since the credentials moved to external-creds
       (2026-09-21, #7581). `ankiweb-credentials` exists only in `ducktape-flux` (its source), approved
       for `haku-sandbox` in `external_creds.py` but never mirrored there: `haku/workspaces.py` has no
@@ -384,13 +374,11 @@ unverified around it as of 2026-11-02 (operator-facing summary: `haku/docs/secur
       pod (Iron, the earlier candidate, was retired 2026-10-21). Blocked on an Agentplane
       equivalent of `--set stream_large_bodies=1m` (dind image layers were buffered whole into
       memory and OOM-killed the pod).
-- [ ] The proxy env block exists twice, in `proxy_injection.py` and `haku_ci/runner.py`
-      (`_PROXY_ENV`), with different `NO_PROXY` lists. Share one definition.
 - [ ] Enforce at two layers. The mitmproxy fence confines only via Cilium `toFQDNs` —
       the container has no allowlist.
-- [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
-      (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
-      `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
+- [ ] Route cluster-internal traffic through the proxies too. The haku-ci runner
+      (`_PROXY_ENV` in `cluster/cdk8s/haku_ci/runner.py`) sets `NO_PROXY` to
+      `*.allegedly.works`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
       under the operator's own domains or the cluster network is reached with no proxy
       in the path and no allowlist applied.
 - [ ] Allowlist DNS for the **sandboxes**, where the exfil channel actually is. Verified

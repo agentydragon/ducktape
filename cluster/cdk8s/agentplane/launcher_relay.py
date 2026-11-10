@@ -350,7 +350,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 # The subsequent daemon move appends without disturbing existing init order.
                                 "+(initContainers)": [],
                                 "volumes": [
-                                    one(v for v in pod_spec["volumes"] if v["name"] == token_volume),
+                                    *(v for v in pod_spec["volumes"] if v["name"] == token_volume),
                                     {
                                         "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
                                         "configMap": {"name": settings_config_map},

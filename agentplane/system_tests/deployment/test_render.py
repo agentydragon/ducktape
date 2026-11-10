@@ -376,7 +376,19 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         )
         transport = settings["proxy"]["transport"]
         assert transport["mode"] == "tls"
-        assert transport["auth"]["mode"] == "kubernetes_bearer"
+        # The Action Service mounts the box's SVID there (agentplane/action_service/sandbox/inventory.go).
+        assert transport["auth"] == {
+            "mode": "spiffe",
+            "cert_file": "/run/agentplane/workload-svid/tls.crt",
+            "key_file": "/run/agentplane/workload-svid/tls.key",
+        }
+        assert settings["platform_routes"]["routes"]["egress-rules"]["transport"]["mode"] == "tls_connect"
+        assert not any(
+            source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress"
+            for volume in command_pod["volumes"]
+            if "projected" in volume
+            for source in volume["projected"]["sources"]
+        )
         assert {"http_proxy", "https_proxy"} <= {entry["name"].lower() for entry in workload["env"]}
         assert all("secret" not in v for v in command_pod["volumes"])
     # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
