@@ -1556,6 +1556,7 @@ data:
       - agentplane-staging
       - public-coder-agent
       - haku-sandbox
+      - haku-ci
     admin_grpc_audience: agentplane-egress-admin
     admin_grpc_callers:
       - agentplane-staging/app
@@ -1969,6 +1970,40 @@ subjects:
     name: egress
     namespace: agentplane-staging
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: egress-workload-credentials
+  namespace: haku-ci
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: egress-workload-credentials
+  namespace: haku-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: egress-workload-credentials
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: egress
+    namespace: agentplane-staging
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -2344,6 +2379,7 @@ spec:
             - agentplane-staging
             - public-coder-agent
             - haku-sandbox
+            - haku-ci
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -9167,6 +9203,281 @@ spec:
   subject:
     serviceAccount: haku-ui
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: WorkloadCredential
+metadata:
+  annotations:
+    description: The SVID haku-jupyter's egress sidecar presents to the egress proxy.
+  name: haku-jupyter
+  namespace: haku-sandbox
+spec:
+  subject:
+    serviceAccount: haku-ui
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The subject haku-ci's builds reach the public internet as (PolicyBinding haku-ci-egress).
+  name: haku-ci-egress
+  namespace: haku-ci
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: WorkloadCredential
+metadata:
+  annotations:
+    description: The SVID haku-ci's egress relay presents to the egress proxy.
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  subject:
+    serviceAccount: haku-ci-egress
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-ci
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-ci-egress
+  namespace: haku-ci
+data:
+  settings.yaml: |
+    proxy:
+      address: egress.agentplane-staging.svc.cluster.local:8888
+      transport:
+        mode: tls
+        ca_file: /etc/agentplane-workload-ca/ca-certificates.crt
+        auth:
+          mode: spiffe
+          cert_file: /var/run/agentplane-svid/tls.crt
+          key_file: /var/run/agentplane-svid/tls.key
+    audience_token_files: {}
+    workload_routes: {}
+    platform_routes:
+      listen_address: 127.0.0.1:3130
+      routes: {}
+    listen_address: 0.0.0.0:3128
+    readiness_listen_address: 0.0.0.0:3129
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: haku-ci-egress
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-ci-egress
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-ci-egress
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+                      - home-lan
+                      - atlas
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
+              value: /etc/agentplane-egress-sidecar/settings.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          ports:
+            - containerPort: 3128
+              name: proxy
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-egress-sidecar
+              name: settings
+              readOnly: true
+            - mountPath: /var/run/agentplane-svid
+              name: svid
+              readOnly: true
+            - mountPath: /etc/agentplane-workload-ca
+              name: workload-ca
+              readOnly: true
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: haku-ci-egress
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-ci-egress
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 3
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+      volumes:
+        - configMap:
+            name: haku-ci-egress
+          name: settings
+        - name: svid
+          secret:
+            defaultMode: 288
+            secretName: svid-haku-ci-egress
+        - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: haku-ci-egress
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  ports:
+    - name: proxy
+      port: 3128
+      protocol: TCP
+      targetPort: 3128
+  selector:
+    app.kubernetes.io/name: haku-ci-egress
+  trafficDistribution: PreferClose
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-ci-egress
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-ci-egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-runner
+            k8s:io.kubernetes.pod.namespace: haku-ci
+      toPorts:
+        - ports:
+            - port: "3128"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: runner-to-haku-ci-egress
+  namespace: haku-ci
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-ci-egress
+            k8s:io.kubernetes.pod.namespace: haku-ci
+      toPorts:
+        - ports:
+            - port: "3128"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-runner
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-ci-egress
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-ci-egress
+            k8s:io.kubernetes.pod.namespace: haku-ci
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -9244,8 +9555,9 @@ data:
         mode: tls
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         auth:
-          mode: kubernetes_bearer
-          token_file: /var/run/agentplane-egress/token
+          mode: spiffe
+          cert_file: /run/agentplane/workload-svid/tls.crt
+          key_file: /run/agentplane/workload-svid/tls.key
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
     workload_routes: {}
@@ -9257,9 +9569,8 @@ data:
             - /agentplane.egress.EgressRules/
           upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
           transport:
-            mode: tls_bearer_connect
+            mode: tls_connect
             server_uri: spiffe://agentplane/egress-proxy
-            token_file: /var/run/agentplane-egress/token
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -9403,10 +9714,6 @@ template:
                 audience: https://localhost:7445
                 expirationSeconds: 600
                 path: kubernetes-token
-            - serviceAccountToken:
-                audience: agentplane-egress
-                expirationSeconds: 600
-                path: token
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings
@@ -9555,10 +9862,6 @@ template:
                 audience: https://localhost:7445
                 expirationSeconds: 600
                 path: kubernetes-token
-            - serviceAccountToken:
-                audience: agentplane-egress
-                expirationSeconds: 600
-                path: token
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings
@@ -9925,7 +10228,7 @@ spec:
             - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
               value: agentplane-staging
             - name: AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_NAMESPACES
-              value: agentplane-staging,haku-sandbox
+              value: agentplane-staging,haku-ci,haku-sandbox
             - name: AGENTPLANE_POLICY_CONTROLLER_READER_ACCOUNTS
               value: agentplane-staging/app
             - name: AGENTPLANE_POLICY_CONTROLLER_WRITER_ACCOUNTS
@@ -10424,6 +10727,67 @@ kind: RoleBinding
 metadata:
   name: policy-controller-workload-credentials
   namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: policy-controller-workload-credentials
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: policy-controller
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: policy-controller-workload-credentials
+  namespace: haku-ci
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials/status
+    verbs:
+      - update
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: policy-controller-workload-credentials
+  namespace: haku-ci
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -11594,6 +11958,26 @@ spec:
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: haku-notebook-fetch
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - codeload.github.com
+        - files.pythonhosted.org
+        - github.com
+        - objects.githubusercontent.com
+        - pypi.org
+        - raw.githubusercontent.com
+        - registry.npmjs.org
+      methods:
+        - GET
+        - HEAD
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
@@ -11605,9 +11989,54 @@ spec:
     - home-assistant-reads
     - grocy-sf-reads
     - ankiweb-sync
+    - haku-notebook-fetch
   subject:
     name: haku-ui
     namespace: haku-sandbox
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: haku-ci-build-fetch
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - bcr.bazel.build
+        - code.forgejo.org
+        - codeload.github.com
+        - files.pythonhosted.org
+        - github.com
+        - mirrors.kernel.org
+        - nodejs.org
+        - pypi.org
+        - registry.npmjs.org
+        - release-assets.githubusercontent.com
+        - releases.bazel.build
+      methods:
+        - GET
+        - HEAD
+      type: egress
+    - hosts:
+        - data.forgejo.org
+      methods:
+        - GET
+        - POST
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicyBinding
+metadata:
+  annotations:
+    description: What haku-ci's builds (haku-ci namespace) may reach.
+  name: haku-ci-egress
+  namespace: agentplane-staging
+spec:
+  policySets:
+    - haku-ci-build-fetch
+  subject:
+    name: haku-ci-egress
+    namespace: haku-ci
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding

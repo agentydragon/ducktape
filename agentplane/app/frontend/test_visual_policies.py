@@ -11,6 +11,7 @@ from agentplane.app.frontend.testing.app import BOUND_CONNECTION, IDLE_THREAD, A
 from agentplane.app.frontend.testing.visual_assertions import (
     _focus,
     _in_viewport,
+    _mount_code_blocks,
     _open_phone_navigation,
     _open_raw_switches,
     _open_select,
@@ -959,6 +960,8 @@ async def _open_history_receipts(page: Page) -> None:
     for control in await page.get_by_role("button", name="Receipt details", exact=True).all():
         if await control.get_attribute("aria-expanded") == "false":
             await control.click()
+    # Later scrolling moves content under the clicked spot; whether it then shows hover is timing.
+    await page.mouse.move(0, 0)
 
 
 @DESKTOP_AND_MOBILE
@@ -984,6 +987,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
     await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
+    await _mount_code_blocks(view.page)
     page = view.page
     receipt = page.get_by_text("list the test backup archive", exact=True)
     await _focus(page, receipt)
@@ -1025,6 +1029,7 @@ async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) 
     await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
+    await _mount_code_blocks(view.page)
     page = view.page
     image = page.locator('img[src^="data:image/"]').first
     await _focus(page, image)

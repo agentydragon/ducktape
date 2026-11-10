@@ -179,6 +179,7 @@ mod tests {
             returns: BTreeSet::from([ForeignReturn::Primitive]),
             retained_arguments: BTreeSet::new(),
             retained_provider_captures: BTreeSet::new(),
+            provider_cell_reads: BTreeSet::new(),
             native_constructions: BTreeSet::new(),
             replacement_package: None,
             dependencies: foreign_dependencies,

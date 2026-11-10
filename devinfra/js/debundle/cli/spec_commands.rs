@@ -128,6 +128,13 @@ enum SpecNsCommand {
     /// against one chunk, with the same resolve as `run`, but without the
     /// pipeline build — a fast preflight for sharding selector repairs.
     Validate(ValidateArgs),
+    /// List author annotations the engine may already infer, as warnings.
+    ///
+    /// Runs the `spec validate` pass for one exact source/spec pair. An
+    /// `inferable` finding leaves the dependency graph, gate verdict and
+    /// emitted order unchanged when withheld; `inconclusive` findings are
+    /// leads only. Never edits the spec; exits 0 whenever reports exist.
+    Lint(crate::spec_lint::SpecLintArgs),
     /// Recompute full acceptance after removing one authored chunk-export
     /// contract at a time, under all remaining assumptions.
     #[command(name = "audit-contracts")]
@@ -500,6 +507,7 @@ pub(super) fn run(args: SpecNs, source_context: Option<&VerifiedGraphSourceConte
             run_validate_cmd(v).context("running keep-going selector validation")
         }
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(a),
+        SpecNsCommand::Lint(args) => crate::spec_lint::run(args),
         SpecNsCommand::ProjectAnalysis(args) => args.run(),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,

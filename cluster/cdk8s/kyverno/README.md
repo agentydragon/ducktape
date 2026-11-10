@@ -13,13 +13,10 @@ manifests.
 | `test_<policy>.py` | One module and Bazel target per policy.             |
 | `testdata/`        | Input resources for the policy behavior cases.      |
 
-`test_proxy_injection` covers behavior shared by the proxy-injection policies.
-
 ## Coverage
 
 Tested: `default-vpa-requests-only`, `default-disable-service-links`,
-`inject-haku-egress-proxy`, `require-secret-store-conditions`,
-`restrict-agent-gateway-routes`.
+`require-secret-store-conditions`, `restrict-agent-gateway-routes`.
 
 `require-gitops` matches on `request.userInfo`, which plain `kyverno apply` does
 not supply. It needs `--userinfo` or a mock admission context.

@@ -14,9 +14,9 @@ contained to roughly Haku's existing sandbox blast radius:
 
 - **Not in `haku-sandbox`.** It lives in its own namespace where Haku has only the generated
   read-only logs/configmaps binding, so Haku can't tamper with the runner pod or its
-  registry/git push creds — but it is **egress-fenced**
-  like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
-  only).
+  registry/git push creds — but it is **egress-fenced**: DNS and in-cluster only, with public
+  hosts reached only through the `haku-ci-egress` relay, as Agentplane egress's
+  `haku-ci-build-fetch` PolicySet allows (`egress_gateway.py`).
 - **Rootless daemon in a privileged pod** (a `docker:*-dind-rootless` image, `privileged: true`). The
   dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
   dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
@@ -60,10 +60,11 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File               | Role                                                                                                                                                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runner.py`        | generator for `cluster/generated/haku-ci/`: namespace, egress fence (DNS + in-cluster + haku-egress-proxy only), KEDA `ScaledJob` (`register` init container, rootless `dind` native sidecar, one-job runner, Forgejo queue trigger), the forgejo-runner config ConfigMap, and the directory's Flux Kustomization |
-| `runner_config.py` | the fields of the forgejo-runner config file haku-ci sets                                                                                                                                                                                                                                                         |
+| File                | Role                                                                                                                                                                                                                                                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runner.py`         | generator for `cluster/generated/haku-ci/`: namespace, egress fence (DNS + in-cluster only; external traffic via the `haku-ci-egress` relay), KEDA `ScaledJob` (`register` init container, rootless `dind` native sidecar, one-job runner, Forgejo queue trigger), the forgejo-runner config ConfigMap, and the directory's Flux Kustomization |
+| `egress_gateway.py` | haku-ci's Agentplane egress relay (`haku-ci-egress`: ServiceAccount, standing WorkloadCredential, sidecar Deployment + Service, network policies); rendered by the agentplane-staging chart, whose image pins cover its sidecar image                                                                                                          |
+| `runner_config.py`  | the fields of the forgejo-runner config file haku-ci sets                                                                                                                                                                                                                                                                                      |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret in

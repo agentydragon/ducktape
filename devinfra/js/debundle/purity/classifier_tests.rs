@@ -144,6 +144,7 @@ fn graph_with_conditioned_set_proof(
         &BTreeMap::new(),
         &plain_arrays,
         &BTreeSet::new(),
+        &BTreeSet::new(),
         None,
     )
 }
@@ -1668,6 +1669,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &BTreeMap::new(),
         &BTreeMap::new(),
         &plain_arrays,
+        &BTreeSet::new(),
         &BTreeSet::new(),
         None,
     );

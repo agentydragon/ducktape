@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose CI latency, unnecessary change-triggered build/test invalidation, dependency graphs, OpenTelemetry phase traces and environment lifecycles; test improvements with reproducible evidence and explicit coverage tradeoffs.
+description: Diagnose CI latency, executor routing and queueing across GitHub and BuildBuddy, unnecessary build/test invalidation, dependency graphs and environment lifecycles; test improvements with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -52,6 +52,19 @@ changed before repeating an experiment or reviving a rejected recommendation.
 New incidents may change priorities; explicitly defer lower-priority prior work
 with a reason. If historical access is incomplete, state what was read and what is
 missing rather than claiming a complete baseline review.
+
+## Identify the execution services and queues
+
+Use the [executor and queue analysis guide](references/executor_queues.md) when
+investigating feedback time, placement or capacity. Establish which work actually
+runs on GitHub runners, BuildBuddy managed/shared capacity (including the account's
+free tier where applicable), and our self-hosted BuildBuddy pools. Distinguish the
+outer Remote Bazel runner from its inner RBE actions and any fixture admission.
+Compare waiting, preparation and execution by service and eligible pool; a fast
+test or an idle cluster does not establish a fast CI path. Show which queue blocks
+required feedback, why work cannot start, and which concrete routing, capacity,
+resource or workload change could remove that wait. Keep unknown routing and
+unobserved provider limits explicit rather than pooling them into an average.
 
 ## Compare execution architectures before narrowing the search
 
@@ -286,6 +299,9 @@ execution IDs and summarizes stages by mnemonic. Queue spans use
 time and does not isolate VM allocation. Spans require valid, ordered clocks.
 Partial rows are not aged to the observation time; span totals are action-seconds
 and do not measure worker occupancy or quota capacity.
+This analyzer groups by mnemonic, not executor pool. Join verified routing first
+or partition the inputs before using its distributions to compare pools; it does
+not identify hosted versus self-hosted execution by itself.
 
 Before attributing costs to a landed optimization, verify the effective tested
 source contains it: `git merge-base --is-ancestor "$FIX_SHA" "$TESTED_SHA"`
@@ -444,8 +460,14 @@ agent reception time from an inbox acceptance time.
 
 For each representative slow/typical case, construct an annotated timeline from
 PR head/push (if known) to required checks becoming terminal. Use the workflow
-DAG and job attempts. Break time into **observed** mutually exclusive intervals
-where possible; note unknown and overlapping intervals explicitly:
+DAG and job attempts.
+
+Apply the [pool inventory, queue evidence and reporting guidance](references/executor_queues.md)
+to these layers. Attribute a queue to its actual scheduler and eligible capacity,
+not merely to the service hosting the logs.
+
+Break time into **observed** mutually exclusive intervals where possible; note
+unknown and overlapping intervals explicitly:
 
 1. **GitHub orchestration and runners:** workflow pending/concurrency gates,
    queued job awaiting a runner, runner start/image setup, checkout/tool/Nix setup,

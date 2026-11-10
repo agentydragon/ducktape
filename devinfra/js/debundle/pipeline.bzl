@@ -375,7 +375,7 @@ _DEBUNDLE_PIPELINE_ATTRS = {
             "rejection is the run's only failure: the output is then a " +
             "reading-only tree marked by a `GATE_REJECTED` file at its " +
             "`write_js_tree` root, never a runnable bundle. Name such a target " +
-            "for that (`debundle_readable`)."
+            "for that (`debundle_product`'s `<name>_readable`)."
         ),
     ),
     "split_dependency_graphs": attr.bool(

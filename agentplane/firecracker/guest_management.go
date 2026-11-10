@@ -121,7 +121,7 @@ func serveGuestCredentials(ctx context.Context, socketPath, directory string) (f
 		if value == current {
 			return nil
 		}
-		response, err := workloadidentity.ParsePEM([]byte(value.TLSCert), []byte(value.TLSKey), []byte(value.CABundle))
+		response, err := workloadidentity.ParsePEM([]byte(value.TLSCert), []byte(value.TLSKey), []byte(value.WorkloadCA))
 		if err != nil {
 			return err
 		}

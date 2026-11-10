@@ -17,16 +17,9 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import (
-    PLATFORM_ROUTES_LISTEN_ADDRESS,
-    PlatformRoute,
-    PlatformRoutes,
-    TLSBearerConnectRouteTransport,
-)
-from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoute, PlatformRoutes
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import egress, sandbox_pod
+from cluster.cdk8s.agentplane import egress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -46,6 +39,9 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 # The workload CA alone, on the sidecar: it verifies the proxy's and the platform routes' server SVIDs.
 _SIDECAR_TRUST_VOLUME = "workload-trust"
 _SIDECAR_TRUST_DIR = Path("/run/agentplane/workload-trust")
+# The box's own SVID, which the Action Service mounts into the sidecar alone; keep in sync with
+# `svidMountPath` in agentplane/action_service/sandbox/inventory.go.
+_SVID_DIR = Path("/run/agentplane/workload-svid")
 _COMMAND_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
     limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
@@ -91,6 +87,7 @@ class CommandSandbox(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        rules = platform_routes.egress_rules(env.namespace)
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
             self,
             env,
@@ -98,18 +95,16 @@ class CommandSandbox(Construct):
             platform_routes=PlatformRoutes(
                 listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
                 routes={
-                    "egress-rules": PlatformRoute(
-                        service_prefixes=("/agentplane.egress.EgressRules/",),
-                        upstream=f"{egress.admin(env.namespace).fqdn}:{egress.admin(env.namespace).port.number}",
-                        transport=TLSBearerConnectRouteTransport(
-                            server_uri=EGRESS_PROXY_URI, token_file=Path(sandbox_pod.EGRESS_TOKEN_FILE)
-                        ),
+                    rules.name: PlatformRoute(
+                        service_prefixes=rules.service_prefixes,
+                        upstream=f"{rules.service.fqdn}:{rules.service.port.number}",
+                        transport=rules.transport,
                     )
                 },
             ),
             proxy_transport=sidecar_config.TLSProxyTransport(
                 ca_file=_SIDECAR_TRUST_DIR / cluster_ca.BUNDLE_KEY,
-                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(sandbox_pod.EGRESS_TOKEN_FILE)),
+                auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
             ),
         )
         _pod_template(
@@ -176,13 +171,6 @@ def _pod_template(
             # Directory mount lets the TLS root source observe trust-manager rotation.
             sidecar_mounts=[
                 k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
-            ],
-            # CLEANUP(added 2026-11-09): Replace this proxy-hop bearer with a workload SVID once
-            # command boxes have an issuer; the proxy's bearer mode goes with the last projection.
-            sidecar_token_projections=[
-                k8s.ServiceAccountTokenProjection(
-                    audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
-                )
             ],
             image_pull_secret_name=scope.image_pull_secret_name,
             # Keep command boxes in the environment's runner zone alongside LiteLLM.

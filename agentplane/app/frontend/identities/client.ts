@@ -3,12 +3,25 @@ import { displayableError, fetchText, HttpError } from "../client";
 
 const PRECONDITION_FAILURE = "type.googleapis.com/google.rpc.PreconditionFailure";
 
-/** How a delete ended: done, refused for the bindings that still name the identity, or failed. */
-export type DeleteOutcome =
-  { case: "deleted" } | { case: "referenced"; bindings: string[] } | { case: "failed"; error: string };
+/** The kinds of object whose reference to an identity blocks its delete. */
+const REFERENCE_KINDS = ["PolicyBinding", "WorkloadCredential"] as const;
 
-/** The PolicyBindings a gRPC-Gateway error body's `PreconditionFailure` names, if it carries one. */
-function referencingBindings(body: unknown): string[] | null {
+/** An object naming an identity: a PolicyBinding by name, a WorkloadCredential as `namespace/name`. */
+export interface Reference {
+  kind: (typeof REFERENCE_KINDS)[number];
+  name: string;
+}
+
+/** How a delete ended: done, refused for what still names the identity, or failed. */
+export type DeleteOutcome =
+  { case: "deleted" } | { case: "referenced"; references: Reference[] } | { case: "failed"; error: string };
+
+function isReferenceKind(type: unknown): type is Reference["kind"] {
+  return REFERENCE_KINDS.some((kind) => kind === type);
+}
+
+/** The references a gRPC-Gateway error body's `PreconditionFailure` names, if it carries one. */
+function references(body: unknown): Reference[] | null {
   if (typeof body !== "object" || body === null || !("details" in body) || !Array.isArray(body.details)) return null;
   const failure: unknown = body.details.find(
     (detail: unknown) =>
@@ -21,14 +34,14 @@ function referencingBindings(body: unknown): string[] | null {
     !Array.isArray(failure.violations)
   )
     return null;
-  return failure.violations.flatMap((violation: unknown) =>
+  return failure.violations.flatMap((violation: unknown): Reference[] =>
     typeof violation === "object" &&
     violation !== null &&
     "type" in violation &&
-    violation.type === "PolicyBinding" &&
+    isReferenceKind(violation.type) &&
     "subject" in violation &&
     typeof violation.subject === "string"
-      ? [violation.subject]
+      ? [{ kind: violation.type, name: violation.subject }]
       : []
   );
 }
@@ -44,8 +57,8 @@ export async function deleteIdentity(identity: Identity): Promise<DeleteOutcome>
     );
   } catch (error) {
     if (!(error instanceof HttpError)) return { case: "failed", error: displayableError(error) };
-    const bindings = referencingBindings(error.body);
-    if (bindings?.length) return { case: "referenced", bindings };
+    const named = references(error.body);
+    if (named?.length) return { case: "referenced", references: named };
     const body = error.body;
     const message = typeof body === "object" && body !== null && "message" in body ? body.message : null;
     return { case: "failed", error: typeof message === "string" ? message : error.message };

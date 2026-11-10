@@ -111,22 +111,29 @@ approved in principle. Starting points:
 
 ## Provider execution
 
-The provider adapter (`ProviderContext`) is in `adapters/provider.rs`; its
-only driver is the allocation-only query in `strict_provider.rs`. Provider
-execution becomes that one adapter over the kernel, replacing the query's
-private executor and the reference head's `provider_activation` lane.
+Landed with Wave 3 slice 3 PR 1: the provider adapter is the one place a
+provider body runs (`ProviderContext::seal_{callable,class}`), and summary
+substitution is the fast path with an effect receipt
+(<../docs/design.md> § The synchronous execution kernel).
 
-- Its `World` is the caller's fork when the provider body runs inside a
-  caller transfer, or a fresh `World { scope: provider }` when sealing a
-  summary.
-- `scope` alone decides address admission, effect-sink isolation and the
-  pooled-region refusal in `operation_support_receipt`.
-- Summary substitution (`interpreter/provider_graph.rs:35` at the reference
-  head) stays as the fast path tried before the adapter runs.
-- The flat lane `invoke_with_cells` is deleted for bodies with an ordered
-  plan once its four gates are covered (its `CLEANUP` in `interpreter.rs`).
+What remains is running a provider body inside a caller transfer, for bodies
+without a summary (a body that calls another export, writes a provider cell or
+invokes an argument):
 
-This lands with Wave 3 slice 3 (provider activation).
+- An importer holds summaries only. The adapter needs the provider's
+  `ExecutionIndex` in the importer, which is the reference head's provider
+  program registry (`execution_index/provider_program.rs`) and its saved
+  identities (<convergence_landing.md> Wave 3 slice 6).
+- With it, the adapter gains a second constructor over the caller's fork.
+  `World.scope` already decides closure addresses and literal writability; the
+  heap-cell sink and the settled/writable answers in `OwnDataContext` are the
+  adapter's hardcoded isolation today and become decisions on `scope`. The
+  pooled-region refusal in `operation_support_receipt` lands with regions.
+- Summary substitution stays the fast path tried before the adapter runs.
+
+The flat lane `invoke_with_cells` still takes bodies with an ordered plan
+behind four gates; its `CLEANUP` in `interpreter.rs` names the kernel rule each
+one waits for.
 
 ## Root phases over `World` owners
 

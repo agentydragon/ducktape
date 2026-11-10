@@ -16,6 +16,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -111,9 +112,12 @@ func fixtureWithWriters(t *testing.T, writers []auth.Account, objects ...client.
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
 	readers := []auth.Account{{Namespace: "tools", Name: "app"}}
-	service, err := New("policies", kube, readers, writers)
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, readers, writers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,6 +560,15 @@ func identityBinding(name, identity string, owner *policyapi.Identity) *policyap
 	return bound
 }
 
+func identityCredential(namespace, name string, identity *policyapi.Identity) *workloadapi.WorkloadCredential {
+	return &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Spec: workloadapi.WorkloadCredentialSpec{
+			Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: identity.Name, UID: identity.UID}},
+		},
+	}
+}
+
 func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 	api, _, _ := fixture(t, identityBinding("names-agent", "fake-agent", nil), identityBinding("names-other", "other-agent", nil), binding("account", "fake-agent", "base"))
 	byName := &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Identity{Identity: "fake-agent"}}
@@ -661,6 +674,73 @@ func TestDeleteIdentityRemovesAnUnreferencedIdentityExactly(t *testing.T) {
 	}
 }
 
+func TestDeleteIdentityIgnoresCredentialsActingAsAnotherIdentity(t *testing.T) {
+	identity := testIdentity("unreferenced-identity", nil)
+	previous := testIdentity("unreferenced-identity", nil)
+	previous.UID = "uid-previous-incarnation"
+	api, kube, _ := fixture(
+		t, identity,
+		identityCredential("fake-workloads", "other-agent", testIdentity("other-identity", nil)),
+		identityCredential("fake-workloads", "previous-agent", previous),
+		&workloadapi.WorkloadCredential{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: "account-agent"},
+			Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: "unreferenced-identity"}},
+		},
+	)
+	if _, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: "unreferenced-identity"}, &policyapi.Identity{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("deleted Identity remains: %v", err)
+	}
+}
+
+func refusalViolations(err error) []string {
+	var named []string
+	for _, detail := range status.Convert(err).Details() {
+		if failure, ok := detail.(*errdetails.PreconditionFailure); ok {
+			for _, violation := range failure.GetViolations() {
+				named = append(named, violation.GetType()+"/"+violation.GetSubject())
+			}
+		}
+	}
+	return named
+}
+
+func TestDeleteIdentityRefusesWhileAWorkloadCredentialActsAsIt(t *testing.T) {
+	credentialed := testIdentity("credentialed-identity", nil)
+	both := testIdentity("doubly-referenced-identity", nil)
+	api, kube, _ := fixture(
+		t, credentialed, both,
+		identityCredential("fake-workloads", "standing-agent", credentialed),
+		identityCredential("policies", "sandbox-agent", credentialed),
+		identityCredential("fake-workloads", "standing-agent-2", both),
+		identityBinding("standing-grant", "doubly-referenced-identity", nil),
+	)
+	for _, tc := range []struct {
+		identity *policyapi.Identity
+		want     []string
+	}{
+		{credentialed, []string{"WorkloadCredential/fake-workloads/standing-agent", "WorkloadCredential/policies/sandbox-agent"}},
+		{both, []string{"PolicyBinding/standing-grant", "WorkloadCredential/fake-workloads/standing-agent-2"}},
+	} {
+		_, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: tc.identity.Name, Uid: string(tc.identity.UID)})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("%s: %v, want FailedPrecondition", tc.identity.Name, err)
+		}
+		if got := refusalViolations(err); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s refusal names %v, want %v", tc.identity.Name, got, tc.want)
+		}
+	}
+	var identities policyapi.IdentityList
+	if err := kube.List(context.Background(), &identities, client.InNamespace("policies")); err != nil {
+		t.Fatal(err)
+	}
+	if len(identities.Items) != 2 {
+		t.Fatalf("refused deletes removed identities: %v", identities.Items)
+	}
+}
+
 func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	referenced := testIdentity("referenced-identity", nil)
 	// A binding owned by another incarnation of the same name is not this identity's own.
@@ -689,15 +769,7 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
 		}
 		if tc.name == "referenced" {
-			var named []string
-			for _, detail := range status.Convert(err).Details() {
-				if failure, ok := detail.(*errdetails.PreconditionFailure); ok {
-					for _, violation := range failure.GetViolations() {
-						named = append(named, violation.GetType()+"/"+violation.GetSubject())
-					}
-				}
-			}
-			if want := []string{"PolicyBinding/stale-owner", "PolicyBinding/standing-grant"}; !reflect.DeepEqual(named, want) {
+			if named, want := refusalViolations(err), []string{"PolicyBinding/stale-owner", "PolicyBinding/standing-grant"}; !reflect.DeepEqual(named, want) {
 				t.Errorf("referenced refusal names %v, want %v", named, want)
 			}
 		}

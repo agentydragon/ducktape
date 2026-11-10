@@ -12,24 +12,9 @@ React + vendored chunks + dynamic imports + service worker."
 
 ## Bundle build
 
-Use a Bazel-managed Excalidraw build. Two viable paths:
-
-- **Pull a prebuilt deploy** (snapshot a specific `excalidraw.com`
-  publish). Requires keeping the snapshot fresh enough that
-  upstream's auxiliary endpoints (if any) still work. Easier to
-  bootstrap.
-- **Build from source under Bazel** — Excalidraw's `excalidraw-app/`
-  builds with Vite; reproduce that build (npm + vite via
-  aspect_rules_js, or via a `genrule` shelling to npm) and feed the
-  output into the pipeline. More work upfront, but the bundle is
-  reproducible from a single git pin and we control the optimisation
-  level / minifier settings.
-
-Either way, the build configuration must produce a realistic
-production bundle: minify on, identifier renames,
-production-tree-shaken, real chunk-split boundaries. A development
-build (with un-mangled names and source maps inlined) won't exercise
-the debundler's RE-relevant code paths.
+Landed: <../excalidraw/README.md> (esbuild production build of an app entry
+around the npm-pinned package, residual-baseline `debundle_pipeline`, shape and
+cost). Remaining: everything below.
 
 ## Spec scope
 
@@ -66,7 +51,7 @@ matchers regressed).
 - runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
   similar);
 - builds the Excalidraw bundle through the shared `debundle_pipeline`
-  rule (<../pipeline.bzl>);
+  rule (<../pipeline.bzl>), tagged `postsubmit` like the baseline;
 - starts a test-owned server for the resulting harness and package
   mappings;
 - drives headless Chromium against that server, asserting:

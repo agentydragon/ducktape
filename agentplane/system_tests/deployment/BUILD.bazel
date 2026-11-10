@@ -225,6 +225,7 @@ py_library(
         ":rendered_fixture",
         ":runtime_grant",
         ":send_grant",
+        ":svid_box",
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service/sandbox:binding",
@@ -647,4 +648,9 @@ genrule(
         "@nodejs_linux_amd64//:bin/node",
     ],
     visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+py_library(
+    name = "svid_box",
+    srcs = ["svid_box.py"],
 )

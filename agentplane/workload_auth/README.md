@@ -39,9 +39,9 @@ service's SPIFFE URI using `environment_runtime_transport.ClientTLS`, then authe
 existing bearer or delegation credentials. They receive no SVID. The shared `grpc/healthprobe`
 binary checks the same listener through verified TLS without application credentials.
 
-Non-Sandbox workload callers, including Action command/build boxes and Haku UI/Anki, retain Pod-bound
-bearer credentials over verified TLS. The egress proxy's `forward` listener also accepts the
-`agentplane-egress` audience for its Kubernetes bearer mode. Sandbox Runtime templates use SVIDs and
+Action command/build boxes and Haku UI/Anki present their own `WorkloadCredential`'s SVID. The
+egress proxy's `forward` listener still accepts the `agentplane-egress` audience for its Kubernetes
+bearer mode, which no workload uses. Sandbox Runtime templates use SVIDs and
 continue projecting Kubernetes destination-audience tokens where credential rules require them;
 they do not project the proxy-hop or first-party-service audiences. The shared identity and SVID
 lifecycle that will replace the remaining compatibility paths remains deferred.

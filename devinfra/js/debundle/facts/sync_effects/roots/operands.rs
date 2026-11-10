@@ -3,7 +3,9 @@
 //! classifier proofs that read the prefix run here, before the body.
 
 use super::super::array_transfer::{self, ArrayMethodSelection};
-use super::super::execution_index::{Call, CallKind, object_own_data_read_property};
+use super::super::execution_index::{
+    Call, CallKind, ExecutionIndex, object_own_data_read_property,
+};
 use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
@@ -43,10 +45,17 @@ pub(super) struct RootOperands<'source> {
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
+    /// An initializer the body phase runs through the kernel and keeps as
+    /// `ordered_initializer` only if that execution seals the owner; taken by
+    /// the body phase. Never set beside `ordered_initializer`.
+    pub(super) attempted_initializer:
+        Option<(&'source LocalBody, EffectInitializerSource<'source>)>,
     /// The canonical source identity of the selected initializer body.
-    pub(super) effect_initializer_source:
-        Option<(&'source InitializationSourceIdentity, &'source Id, Span)>,
+    pub(super) effect_initializer_source: Option<EffectInitializerSource<'source>>,
 }
+
+pub(super) type EffectInitializerSource<'source> =
+    (&'source InitializationSourceIdentity, &'source Id, Span);
 
 pub(super) fn prepare<'source>(
     executor: &mut Executor<'source, '_>,
@@ -308,14 +317,28 @@ pub(super) fn prepare<'source>(
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
     let root_array_iteration = root_array_iteration(executor, calls);
+    // Every call of the root is a direct call of an imported binding that
+    // carries a published foreign call summary. The ordered lane substitutes
+    // each summary, so it runs no provider or application code.
+    let provider_root_calls = {
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+            .peekable();
+        calls.peek().is_some()
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && !call.has_spread
+                    && executor
+                        .foreign_call_summary(call.kind, &call.callee)
+                        .is_some()
+            })
+    };
     let root_construction = index
         .ordered_initializers
         .get(&owner)
         .is_some_and(|body| executor.ordered_root_construction(body, calls));
-    let ordered_initializer = ((initializer_source.is_none()
-        || checked_split_binding_copy
-        || selected_audited_initializer.is_some())
-        && matches!(fact.kind, StatementKind::VarDecl)
+    let root_shape = matches!(fact.kind, StatementKind::VarDecl)
         && fact.declared.len() == 1
         && matches!(assignments.as_slice(), [(binding, _)]
             if fact.declared.contains(binding)
@@ -328,17 +351,29 @@ pub(super) fn prepare<'source>(
         && index.top_property_writes[owner.0].is_empty()
         && index.top_member_value_writes[owner.0].is_empty()
         && index.top_callback_result_writes[owner.0].is_empty()
-        && index.top_exported_values[owner.0].is_empty())
-    .then(|| index.ordered_initializers.get(&owner))
-    .flatten()
-    .filter(|body| {
-        !body.requires_keyed_collection_new()
-            && body.captured_writes().is_empty()
-            && (executor.ordered_root_calls_are_local(calls)
+        && index.top_exported_values[owner.0].is_empty();
+    let admitted_body = |body: &&LocalBody| {
+        !body.requires_keyed_collection_new() && body.captured_writes().is_empty()
+    };
+    // CLEANUP(added 2026-11-09): fold these committed shapes into
+    //   `attempted_initializer` at L4e. They keep an unsealed kernel
+    //   execution (`OrderedRootInitializerUncovered`); folding them earlier
+    //   would rerun it on the flat lane and change what the legacy gate
+    //   reads. `body::seals_owner` decides every other root call.
+    let ordered_initializer = ((initializer_source.is_none()
+        || checked_split_binding_copy
+        || selected_audited_initializer.is_some())
+        && root_shape)
+        .then(|| index.ordered_initializers.get(&owner))
+        .flatten()
+        .filter(admitted_body)
+        .filter(|body| {
+            (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
                 || root_array_iteration
+                || provider_root_calls
                 || selected_audited_initializer.is_some())
-            && (calls
+                && (calls
                 .iter()
                 .filter(|call| call.kind == CallKind::Call)
                 .nth(1)
@@ -367,6 +402,7 @@ pub(super) fn prepare<'source>(
                 })
                 || native_root_calls
                 || root_array_iteration
+                || provider_root_calls
                 || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead
@@ -380,20 +416,27 @@ pub(super) fn prepare<'source>(
                         .is_some()
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
-    });
-    // Canonical source identity is independent of leaf/value admission.
-    // Retain the exact selected body span, not a lowered-value guess.
+        });
+    // Every other initializer whose root calls are all local: a call with
+    // arguments, an IIFE, a call inside a comma. The body phase runs it
+    // through the kernel and keeps that execution only if it seals the owner.
+    let attempted_initializer =
+        (ordered_initializer.is_none() && initializer_source.is_none() && root_shape)
+            .then(|| index.ordered_initializers.get(&owner))
+            .flatten()
+            .filter(admitted_body)
+            .filter(|_| {
+                calls.iter().any(|call| call.kind == CallKind::Call)
+                    && executor.ordered_root_calls_are_local(calls)
+            })
+            .and_then(|body| {
+                Some((
+                    body,
+                    ordered_effect_source(index, owner, assignments, body)?,
+                ))
+            });
     let effect_initializer_source = ordered_initializer
-        .and_then(|body| {
-            let [(binding, _)] = assignments.as_slice() else {
-                return None;
-            };
-            let span = body.initializer_span()?;
-            let source = index.initialization_source_identities.get(&owner)?;
-            source
-                .matches(owner, binding, span)
-                .then_some((source, binding, span))
-        })
+        .and_then(|body| ordered_effect_source(index, owner, assignments, body))
         .or_else(|| {
             let [(binding, expression)] = assignments.as_slice() else {
                 return None;
@@ -422,6 +465,7 @@ pub(super) fn prepare<'source>(
         certified_deferred_write,
         provisional_roots,
         ordered_initializer,
+        attempted_initializer,
         effect_initializer_source,
     }
 }
@@ -501,4 +545,22 @@ fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool
             .iter()
             .all(|slot| !slot.is_empty() && slot.iter().all(AbstractValue::is_primitive))
     })
+}
+
+/// Canonical source identity is independent of leaf/value admission. Retain
+/// the exact selected body span, not a lowered-value guess.
+fn ordered_effect_source<'source>(
+    index: &'source ExecutionIndex,
+    owner: SourceUnitOrdinal,
+    assignments: &'source [(Id, ValueExpr)],
+    body: &LocalBody,
+) -> Option<EffectInitializerSource<'source>> {
+    let [(binding, _)] = assignments else {
+        return None;
+    };
+    let span = body.initializer_span()?;
+    let source = index.initialization_source_identities.get(&owner)?;
+    source
+        .matches(owner, binding, span)
+        .then_some((source, binding, span))
 }

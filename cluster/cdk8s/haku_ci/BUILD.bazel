@@ -3,18 +3,46 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "egress_gateway",
+    srcs = ["egress_gateway.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "//agentplane/egress:sidecar_config",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s/agentplane:egress",
+        "//cluster/cdk8s/agentplane:environment",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/agentplane:workload_credential",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "runner",
     srcs = ["runner.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
+        ":egress_gateway",
         ":runner_config",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/providers/keda:scaledjob",
         "//cluster/cdk8s/providers/keda:triggerauthentication",
+        "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

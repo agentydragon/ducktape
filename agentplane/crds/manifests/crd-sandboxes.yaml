@@ -61,6 +61,22 @@ spec:
                   once, before its first Session.
                 maxLength: 65536
                 type: string
+              identity:
+                description: 'Identity is who the Sandbox''s workloads act as. It
+                  may be set, changed or cleared only while
+
+                  nothing runs, so an incarnation never changes identity; the next
+                  start acts as the new one.
+
+                  "Nothing runs" is the controller''s last status report: never reconciled,
+                  or stopStage Stopped.'
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               idleSuspendAfter:
                 description: 'IdleSuspendAfter is how long the Sandbox''s runner must
                   stay idle before the controller suspends the
@@ -450,6 +466,11 @@ spec:
         x-kubernetes-validations:
         - message: a Sandbox name is at most 63 characters
           rule: size(self.metadata.name) <= 63
+        - message: spec.identity changes only while nothing runs
+          rule: (has(self.spec.identity) == has(oldSelf.spec.identity) && (!has(self.spec.identity)
+            || self.spec.identity == oldSelf.spec.identity)) || !has(oldSelf.status)
+            || !has(oldSelf.status.operatingMode) || (has(oldSelf.status.stopStage)
+            && oldSelf.status.stopStage == 'Stopped')
     served: true
     storage: true
     subresources:

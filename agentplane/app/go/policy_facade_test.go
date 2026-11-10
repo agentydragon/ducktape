@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -110,8 +111,11 @@ type identityDeleteService struct {
 
 func (s *identityDeleteService) DeleteIdentity(_ context.Context, request *policypb.DeleteIdentityRequest) (*policypb.DeleteIdentityResponse, error) {
 	s.request = request
-	refusal, err := status.New(codes.FailedPrecondition, "Identity is named by PolicyBindings it does not own").WithDetails(&errdetails.PreconditionFailure{
-		Violations: []*errdetails.PreconditionFailure_Violation{{Type: "PolicyBinding", Subject: "standing-grant", Description: "names this Identity and is not owned by it"}},
+	refusal, err := status.New(codes.FailedPrecondition, "Identity is named by PolicyBindings it does not own: standing-grant; and by WorkloadCredentials: fake-workloads/standing-agent").WithDetails(&errdetails.PreconditionFailure{
+		Violations: []*errdetails.PreconditionFailure_Violation{
+			{Type: "PolicyBinding", Subject: "standing-grant", Description: "names this Identity and is not owned by it"},
+			{Type: "WorkloadCredential", Subject: "fake-workloads/standing-agent", Description: "acts as this Identity"},
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -119,7 +123,7 @@ func (s *identityDeleteService) DeleteIdentity(_ context.Context, request *polic
 	return nil, refusal.Err()
 }
 
-// The app's identity page reads the referencing bindings from this body (frontend/identities/client.ts).
+// The app's identity page reads what references the identity from this body (frontend/identities/client.ts).
 func TestGeneratedPolicyFacadeRelaysIdentityDeleteRefusal(t *testing.T) {
 	service := &identityDeleteService{}
 	upstream := policyUpstream(t, service)
@@ -131,22 +135,23 @@ func TestGeneratedPolicyFacadeRelaysIdentityDeleteRefusal(t *testing.T) {
 	if service.request.GetNamespace() != "fake-policies" || service.request.GetName() != "fake-agent" || service.request.GetUid() != "uid-1" {
 		t.Fatalf("request = %v", service.request)
 	}
+	type violation struct {
+		Type    string `json:"type"`
+		Subject string `json:"subject"`
+	}
 	var body struct {
 		Code    int `json:"code"`
 		Details []struct {
-			Type       string `json:"@type"`
-			Violations []struct {
-				Type    string `json:"type"`
-				Subject string `json:"subject"`
-			} `json:"violations"`
+			Type       string      `json:"@type"`
+			Violations []violation `json:"violations"`
 		} `json:"details"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("response = %d %s: %v", response.Code, response.Body.String(), err)
 	}
 	if response.Code != http.StatusBadRequest || body.Code != int(codes.FailedPrecondition) || len(body.Details) != 1 ||
-		body.Details[0].Type != "type.googleapis.com/google.rpc.PreconditionFailure" || len(body.Details[0].Violations) != 1 ||
-		body.Details[0].Violations[0].Type != "PolicyBinding" || body.Details[0].Violations[0].Subject != "standing-grant" {
+		body.Details[0].Type != "type.googleapis.com/google.rpc.PreconditionFailure" ||
+		!slices.Equal(body.Details[0].Violations, []violation{{"PolicyBinding", "standing-grant"}, {"WorkloadCredential", "fake-workloads/standing-agent"}}) {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
