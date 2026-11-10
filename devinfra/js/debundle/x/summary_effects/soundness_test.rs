@@ -876,8 +876,7 @@ fn program_resolves_rooted_specifiers_and_reads_any_bytes() {
     std::fs::remove_dir_all(directory).expect("removing the scratch directory");
 }
 
-/// Programs for the upgrades beyond the first four, in the layout of the
-/// premise fixtures; the second line of each is unused.
+/// Programs for the upgrades, in the layout of the premise fixtures; the second line of each is unused.
 const EXTENSION_FIXTURES: &str = include_str!("extension_fixtures.txt");
 
 #[test]
@@ -886,13 +885,13 @@ fn tier0_later_upgrades_match_node() {
         for block in EXTENSION_FIXTURES.split("### ").skip(2) {
             let (head, rest) = block.split_once('\n').expect("a head line");
             let (_, source) = rest.split_once('\n').expect("an unused line");
-            let conflict = |later: &[tier0::Upgrade]| {
+            let conflict = |upgrades: &[tier0::Upgrade]| {
                 let parsed = js_ast::parse_js_module("fixture", source).expect("it parses");
                 let unresolved =
                     swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
                 let options = tier0::Options {
                     exports_reachable: false,
-                    upgrades: ALL_UPGRADES.iter().chain(later).copied().collect(),
+                    upgrades: upgrades.iter().copied().collect(),
                     what_if_pure: Default::default(),
                     program: None,
                     premises: Default::default(),
@@ -902,12 +901,9 @@ fn tier0_later_upgrades_match_node() {
                 let units = analysis.units.len();
                 analysis.conflict(units - 3, units - 2)
             };
-            assert!(
-                conflict(&[]).is_some(),
-                "{head}: refused without the later upgrades"
-            );
+            assert!(conflict(&[]).is_some(), "{head}: refused without upgrades");
             assert_eq!(
-                conflict(&LATER_UPGRADES).is_none(),
+                conflict(&[ALL_UPGRADES.as_slice(), LATER_UPGRADES.as_slice()].concat()).is_none(),
                 head.starts_with("commutes"),
                 "{head}"
             );

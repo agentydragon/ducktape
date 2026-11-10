@@ -85,3 +85,51 @@ import { value, bump } from './dep.js';
 bump();
 const v = value;
 console.log(v);
+### commutes same: a class with symbol and literal computed keys
+-
+const tag = Symbol('t'); let state = 0;
+state = 1;
+class K { [tag]() { return 1; } [Symbol.iterator]() { return [][Symbol.iterator](); } ['plain']() { return 2; } }
+console.log(state, new K()[tag](), new K().plain());
+### commutes same: an object literal keyed by primitive bindings
+-
+const a = 'x'; const b = 2; let state = 0;
+state = 1;
+const o = { [a]: 1, [b]: 2 };
+console.log(state, o.x, o[2]);
+### commutes same: a key that is a primitive entry of a literal table
+-
+const names = { first: 'f' }; let state = 0;
+state = 1;
+const o = { [names.first]: 1 };
+console.log(state, o.f);
+### ordered differs: a key whose conversion runs code
+-
+let state = 0; const key = { toString() { state = 1; return 'k'; } };
+const o = { [key]: 1 };
+const seen = state;
+console.log(seen);
+### ordered differs: a table entry used as a key is changed between
+-
+const names = { first: 'f' }; function rename() { names.first = 'g'; }
+rename();
+const o = { [names.first]: 1 };
+console.log(Object.keys(o).join());
+### commutes same: spreading a plain literal
+-
+const base = { a: 1 }; let state = 0;
+state = 1;
+const o = { ...base, b: 2 };
+console.log(state, o.a, o.b);
+### ordered differs: the spread literal is changed between
+-
+const base = { a: 1 }; function grow() { base.c = 3; }
+grow();
+const o = { ...base };
+console.log(Object.keys(o).join());
+### ordered differs: an earlier statement gave the spread literal an accessor
+-
+const base = { a: 1 }; Object.defineProperty(base, 'g', { enumerable: true, get() { return later; } });
+const o = { ...base };
+var later = 1;
+console.log(o.g);

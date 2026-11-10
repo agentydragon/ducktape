@@ -178,6 +178,10 @@ With a top-level `await` anywhere, evaluation can be suspended, and the
 earlier rule stands: a dependency that dynamically imports the chunk, or a
 chunk that statically reaches it, or an unknown specifier, counts.
 
+A program chunk that does not parse is taken to do anything: it writes every
+global, awaits at its top level, and may load any chunk, so a chunk that
+imports it counts as on a cycle (`program_unparsed_chunks`).
+
 `--program-file-list` maps imported file names to chunks stored under an
 alias, and `--program-specifier-root <prefix>` makes absolute specifiers
 under that prefix name files of the chunk directory. An import that resolves
@@ -189,9 +193,15 @@ written: it evaluates the required chunk before it returns, so a chunk that
 requires one that statically imports it is on a cycle. A `require` of anything
 but a string literal, in the chunk or its dependencies, counts as a cycle.
 
-A computed store on the global object refuses every intrinsic use, unless its
-key is a number, a symbol, or starts with a literal prefix
-(``window[`cb_${id}`]``), which touches only globals whose names start so.
+A computed store on the global object refuses every intrinsic use, unless
+the census can say what the key is: a string or number, a symbol (which is
+no binding's name), a literal prefix (``window[`cb_${id}`]``, which touches
+only globals whose names start so), or a binding declared once and never
+assigned that holds one of those. A loop variable over an array literal of
+strings or of `[name, value]` pairs, or over the keys or entries of an object
+literal, stands for those names. `Object.assign(target, { a, b })` writes
+`a` and `b`. A store into a record read off the global object
+(`root.registry.items[k] = v`) is a write to that global, not to all.
 `global_object_unnamed_store_sites` lists the refusing stores as chunk index
 (in path order) and byte offset.
 
@@ -343,9 +353,13 @@ premises tier 0 refuses all 39.
 - **Allocator.** A function whose body only builds a fresh value from its
   parameters: literals, closures, parameters and never-reassigned top-level
   bindings as values, `p === void 0 ? … : …`, stores into objects the body
-  itself allocated, calls of other allocators, `new` of a class whose
-  constructors only store values into `this` (no accessors, no initializers
-  that run code, a base class of the same kind). It calls no parameter and
+  itself allocated, calls of other allocators, functions declared in the
+  body (declaring one runs nothing, and an `async` or generator body runs
+  only when called), `new` of an empty `Map`, `Set`, `WeakMap` or `WeakSet`
+  where the census leaves that intrinsic alone, and `new` of a class whose
+  constructors only store values into `this` and whose field initializers
+  are themselves in this grammar (no accessors, a base class of the same
+  kind). It calls no parameter and
   cannot throw. A call with pure-definition arguments is a pure definition
   that retains its arguments and eagerly reads the top-level bindings the
   body uses. Two extensions:
@@ -382,8 +396,8 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 18 two-chunk programs run under Node in both
-orders (7 admitted with Node agreeing, 11 refused with Node showing the
+`derive_fixtures.txt` holds 22 two-chunk programs run under Node in both
+orders (10 admitted with Node agreeing, 12 refused with Node showing the
 divergence). `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition
@@ -460,8 +474,25 @@ impure:
   stays ordered against every impure statement, since another chunk's code
   may change what the import holds.
 
-`extension_fixtures.txt` holds 14 programs run under Node in both orders (6
-admitted with Node agreeing, 8 refused with Node showing the divergence:
+Two rules ride on those upgrades and the first four:
+
+- A computed key, in a class or an object literal, converts without running
+  code when it is a literal, an expression over primitive-only bindings, a
+  well-known symbol (`Symbol.iterator`), a binding that only ever holds one
+  `Symbol(…)`, or an entry of a literal table written as a primitive (under
+  the rule for property reads of literals).
+- `{ ...table }` copies data properties when `table` only ever holds one
+  plain object literal that no impure statement can have reached.
+
+Conversions the corpus still has (19 statements in `main` and `editor`) are
+mostly not of that kind: tests of the host (`typeof document < "u"`,
+`"clipboard" in navigator`), arithmetic over an intrinsic constant
+(`Math.PI / 12`), template literals around a call of a global function, and
+spreads of arrays. None is a conversion of an object with a default
+`toString`.
+
+`extension_fixtures.txt` holds 22 programs run under Node in both orders (9
+admitted with Node agreeing, 13 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks). The 129 order-dependent statements

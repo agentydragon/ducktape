@@ -378,7 +378,10 @@ struct Classifier<'a> {
     /// Bindings that only ever hold one class.
     classes: &'a FxHashSet<Binding>,
     /// Bindings that only ever hold one plain object literal, with its keys.
-    literals: &'a FxHashMap<Binding, FxHashSet<String>>,
+    /// Each key says whether its value is written as a primitive literal.
+    literals: &'a FxHashMap<Binding, FxHashMap<String, bool>>,
+    /// Bindings that only ever hold one `Symbol(…)` or `Symbol.for(…)`.
+    symbols: &'a FxHashSet<Binding>,
     /// Literals the statement reads a property of.
     pristine: Vec<Binding>,
     upgrades: &'a FxHashSet<Upgrade>,
@@ -561,7 +564,7 @@ impl Classifier<'_> {
         }
     }
 
-    fn key(&self, key: &PropName) -> Result<(), ImpureCause> {
+    fn key(&mut self, key: &PropName) -> Result<(), ImpureCause> {
         match key {
             PropName::Ident(name) if &*name.sym == "__proto__" => Err(ImpureCause::Unmodeled),
             PropName::Str(value) if js_ast::str_value(value) == "__proto__" => {
@@ -569,7 +572,52 @@ impl Classifier<'_> {
             }
             PropName::Str(_) => Ok(()),
             PropName::Ident(_) | PropName::Num(_) | PropName::BigInt(_) => Ok(()),
-            PropName::Computed(_) => Err(ImpureCause::Conversion),
+            PropName::Computed(computed) => self.computed_key(&computed.expr),
+        }
+    }
+
+    /// A computed key that converts to a property key without running
+    /// code: a primitive, or a symbol.
+    fn computed_key(&mut self, expr: &Expr) -> Result<(), ImpureCause> {
+        let converts = match expr {
+            Expr::Paren(paren) => return self.computed_key(&paren.expr),
+            // A binding that only ever holds one `Symbol(…)`.
+            Expr::Ident(ident) => {
+                let symbol = self
+                    .bindings
+                    .get(&ident.to_id())
+                    .copied()
+                    .filter(|binding| self.symbols.contains(binding));
+                self.eager.extend(symbol);
+                (symbol.is_some() && self.untouched(vec![("Symbol", &[])], None))
+                    || self.primitive_arg(expr)
+            }
+            // `Symbol.iterator`, or a primitive entry of a literal table.
+            Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(key),
+                ..
+            }) => {
+                if matches!(self.global(obj).as_deref(), Some("Symbol")) {
+                    self.pure(expr).is_ok()
+                } else {
+                    let primitive_entry = self
+                        .literal_member_read(expr)
+                        .filter(|table| self.literals[table].get(&*key.sym).copied() == Some(true));
+                    if let Some(table) = primitive_entry {
+                        self.eager.push(table);
+                        self.deep.push(table);
+                        self.pristine.push(table);
+                    }
+                    primitive_entry.is_some()
+                }
+            }
+            other => literal_only(other) || self.primitive_arg(other),
+        };
+        if converts {
+            Ok(())
+        } else {
+            Err(ImpureCause::Conversion)
         }
     }
 
@@ -785,7 +833,7 @@ impl Classifier<'_> {
         let binding = *self.bindings.get(&table.to_id())?;
         self.literals
             .get(&binding)?
-            .contains(&*key.sym)
+            .contains_key(&*key.sym)
             .then_some(binding)
     }
 
@@ -1214,8 +1262,30 @@ impl Classifier<'_> {
             }
             Expr::Object(object) => {
                 for prop in &object.props {
-                    let PropOrSpread::Prop(prop) = prop else {
-                        return Err(ImpureCause::Conversion);
+                    let prop = match prop {
+                        PropOrSpread::Prop(prop) => prop,
+                        // Spreading a plain literal no impure statement has
+                        // reached copies data properties.
+                        PropOrSpread::Spread(spread) => {
+                            let table = match &*spread.expr {
+                                Expr::Ident(table)
+                                    if self.upgrades.contains(&Upgrade::LiteralMemberReads) =>
+                                {
+                                    self.bindings
+                                        .get(&table.to_id())
+                                        .copied()
+                                        .filter(|binding| self.literals.contains_key(binding))
+                                }
+                                _ => None,
+                            };
+                            let Some(table) = table else {
+                                return Err(ImpureCause::Conversion);
+                            };
+                            self.eager.push(table);
+                            self.deep.push(table);
+                            self.pristine.push(table);
+                            continue;
+                        }
                     };
                     match &**prop {
                         Prop::Shorthand(ident) => self.pure(&Expr::Ident(ident.clone()))?,
@@ -1591,7 +1661,8 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     // Bindings declared once and never assigned, by a class or by a plain
     // object literal.
     let mut classes: FxHashSet<Binding> = FxHashSet::default();
-    let mut literals: FxHashMap<Binding, FxHashSet<String>> = FxHashMap::default();
+    let mut literals: FxHashMap<Binding, FxHashMap<String, bool>> = FxHashMap::default();
+    let mut symbols: FxHashSet<Binding> = FxHashSet::default();
     for (source, declared) in sources.iter().zip(&declared_by_unit) {
         let [binding] = declared.as_slice() else {
             continue;
@@ -1631,17 +1702,39 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             Some(Expr::Class(_)) => {
                 classes.insert(*binding);
             }
+            // `Symbol('tag')`, `Symbol.for('tag')`.
+            Some(Expr::Call(CallExpr {
+                callee: Callee::Expr(callee),
+                ..
+            })) if options.upgrades.contains(&Upgrade::NativeAllocators) => {
+                let symbol = |expr: &Expr| {
+                    matches!(expr, Expr::Ident(ident)
+                        if ident.ctxt == unresolved && &*ident.sym == "Symbol")
+                };
+                let makes_symbol = symbol(callee)
+                    || matches!(&**callee, Expr::Member(MemberExpr {
+                        obj,
+                        prop: MemberProp::Ident(method),
+                        ..
+                    }) if &*method.sym == "for" && symbol(obj));
+                if makes_symbol {
+                    symbols.insert(*binding);
+                }
+            }
             Some(Expr::Object(object))
                 if crate::derive::plain_literal(init.expect("an object")) =>
             {
                 let keys = object.props.iter().filter_map(|prop| match prop {
                     PropOrSpread::Prop(prop) => match &**prop {
-                        Prop::Shorthand(key) => Some(key.sym.to_string()),
-                        Prop::KeyValue(pair) => match &pair.key {
-                            PropName::Ident(key) => Some(key.sym.to_string()),
-                            PropName::Str(key) => Some(js_ast::str_value(key)),
-                            _ => None,
-                        },
+                        Prop::Shorthand(key) => Some((key.sym.to_string(), false)),
+                        Prop::KeyValue(pair) => {
+                            let primitive = literal_only(&pair.value);
+                            match &pair.key {
+                                PropName::Ident(key) => Some((key.sym.to_string(), primitive)),
+                                PropName::Str(key) => Some((js_ast::str_value(key), primitive)),
+                                _ => None,
+                            }
+                        }
                         _ => None,
                     },
                     PropOrSpread::Spread(_) => None,
@@ -1809,6 +1902,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             primitives: &primitives,
             classes: &classes,
             literals: &literals,
+            symbols: &symbols,
             pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,
