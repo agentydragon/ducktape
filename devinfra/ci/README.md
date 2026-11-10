@@ -117,6 +117,14 @@ continuously moving devel can postpone convergence; expired evidence requires a
 rerun of the selected CI source. A concurrent devel advance rejects the push;
 sync never rebases an old decision and recomputes next cycle.
 
+Automatic convergence is conditional on retained, readable CI evidence; no
+hosted BuildBuddy retention duration is assumed. A service outage retries on
+the next sync. Permanent evidence loss requires an operator to rerun the
+selected **push CI run** (or let a newer ordinary devel push finish CI).
+Standalone `workflow_dispatch` does not replace that recovery path because the
+main CI release job requires a push event. Sync does not launch builds on an
+unclassified read failure.
+
 No-op syncs write neither pins nor provenance metadata, avoiding a commit/CI
 loop. A pin-only sync commit runs CI normally and settles without another pin
 commit when the artifact content is unchanged. Sync reads one normal build and
