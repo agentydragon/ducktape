@@ -7,7 +7,8 @@ Status: **design for review, 2026-11-10; no code.** The decision node is
 in a workload is implied for its bound Identity, and so are same-Identity messaging and the wake it
 causes; lifecycle control (resume, wake, suspend, delete or rebind an environment as a direct request,
 or create Sessions on it) needs an explicit grant. This is that grant: one `PolicySet` rule type,
-bound to a subject by the ordinary `PolicyBinding`. Creating environments is
+bound to a subject by the ordinary `PolicyBinding`. Rebinding stays with the configured managers
+for now ([below](#operations)). Creating environments is
 `AGENT_LAUNCH_POLICY_DESIGN`'s. Action boxes are not targets: a box is not a Sandbox and has no
 `spec.identity`, and creating or disposing one stays with the Action Service's `sandbox` group under
 `action_auto_approve`.
@@ -23,7 +24,7 @@ on `Rule`, in the style of the existing ones.
 // Operations lists what a session_inbox_access or environment rule allows on its targets.
 // +listType=set
 // +kubebuilder:validation:MinItems=1
-// +kubebuilder:validation:items:Enum=send_message;read;resume;wake;suspend;delete;rebind;create_session
+// +kubebuilder:validation:items:Enum=send_message;read;resume;wake;suspend;delete;bind_session
 Operations []string `json:"operations,omitempty" proto:"11"`
 
 // SandboxTargets ... The fields combine additively.
@@ -73,15 +74,14 @@ until `IDENTITY_CUTOVER` removes them, ServiceAccount callers keep today's
 
 ## Operations
 
-| Operation        | Allows                                                                                                                                | Where it lands                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `read`           | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord`                         | EnvironmentService (implemented RPCs)                                                            |
-| `resume`         | `ResumeEnvironment` of an idle-suspended target                                                                                       | EnvironmentService → lifecycle manager (implemented RPC)                                         |
-| `wake`           | the automatic wake for work the caller queued on a target not bound to its Identity                                                   | Dispatcher delivery → lifecycle manager `RequestWake` (implemented path)                         |
-| `suspend`        | `SuspendEnvironment`                                                                                                                  | EnvironmentService (implemented RPC)                                                             |
-| `delete`         | `DeleteEnvironment`                                                                                                                   | EnvironmentService (implemented RPC)                                                             |
-| `rebind`         | `SetEnvironmentIdentity` on a stopped target                                                                                          | EnvironmentService (implemented RPC, managers only today)                                        |
-| `create_session` | Dispatcher `CreateSession` whose placement names a target; `AttachEnvironment` of it; with `boundIdentity: I`, a Session running as I | Dispatcher (implemented RPC; Identity admission is the addition), `AttachEnvironment` per #15436 |
+| Operation      | Allows                                                                                                        | Where it lands                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `read`         | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord` | EnvironmentService (implemented RPCs)                                                            |
+| `resume`       | `ResumeEnvironment` of an idle-suspended target                                                               | EnvironmentService → lifecycle manager (implemented RPC)                                         |
+| `wake`         | the automatic wake for work the caller queued on a target not bound to its Identity                           | Dispatcher delivery → lifecycle manager `RequestWake` (implemented path)                         |
+| `suspend`      | `SuspendEnvironment`                                                                                          | EnvironmentService (implemented RPC)                                                             |
+| `delete`       | `DeleteEnvironment`                                                                                           | EnvironmentService (implemented RPC)                                                             |
+| `bind_session` | creating a Session–environment binding: `CreateSession` placed on the target, or `AttachEnvironment` of it    | Dispatcher (implemented RPC; Identity admission is the addition), `AttachEnvironment` per #15436 |
 
 Rules for the operations:
 
@@ -99,15 +99,22 @@ Rules for the operations:
   environment, and `wake` names a side effect of delivering Session work. These are different
   layers, so the two may fold into one operation, or `wake` may move to Session authority. The
   split stays for now.
-- **`rebind` needs the destination.** Rebinding a target from I to J makes whatever I left in its
-  workspace run as J, so the caller also needs the right to run as J: J is its own Identity, or it
-  holds `create_session` on `boundIdentity: J`. `SetEnvironmentIdentity`'s implemented refusal,
-  while a retained Session on that Sandbox UID names another Identity, applies first.
+- **Rebinding is deferred** (operator, 2026-11-10). `SetEnvironmentIdentity` stays with the
+  configured managers (the app for the operator); no agent use needs it yet. If an operation is added,
+  it must also require the destination: rebinding from I to J makes whatever I left in the workspace
+  run as J, so the caller needs the right to create Sessions as J.
 - **Settings stay with roles.** `SetEnvironmentWakeOnSend` and `SetEnvironmentIdleSuspend` change the
   target's own policy and stay with the configured managers; no operation grants them.
-- **`create_session` is a grant on Dispatcher only.** Dispatcher owns which Sessions exist: it
-  admits the logical Session, takes commands for it, and later materializes it by calling the
-  Environment Runtime's or the sampler's `CreateSession`. No grant of any type lets an agent call
+- **`bind_session` grants a relation, not a Session.** A Session–environment binding is its own
+  entity, owned by Dispatcher: a native Session has one, fixed at creation; a central Session has
+  #15436's attachments, each with its own ID, desired state and revision. `bind_session` lets the
+  caller create such a binding to a target. A Session bound to an environment runs as its Identity,
+  so binding to a target bound to J creates work as J; that is why the operation needs a grant.
+  Removing a binding narrows and needs only write authority on the Session. Creating a Session
+  with no binding is not an environment operation ([question 5](#questions-for-the-operator)).
+- **Dispatcher only.** Dispatcher owns which Sessions and bindings exist: it admits them, takes
+  commands, and later materializes a native Session by calling the Environment Runtime's or the
+  sampler's `CreateSession`. No grant of any type lets an agent call
   a runtime's `CreateSession` directly (operator, 2026-11-10): the Gateway admits only Dispatcher
   on that method (`runner_gateway/gateway/gateway.go`), and a Session an agent wants goes through
   Dispatcher. TODO (operator, 2026-11-10): rename the runtime-side
@@ -139,7 +146,7 @@ privileged callers, Notification as a configured wake broker, the Action Service
 `environment` binding names a component. `ORCHESTRATION_V1_BACKEND_GRANTS` moves each
 `orchestration_v1` operation onto this rule: the executor calls as the caller, and a launch's launcher
 grant becomes an owned `PolicySet` whose `environment` rule names the new Sandbox by UID with
-`resume` and `create_session`, replacing the `argument_schema` auto-approval.
+`resume` and `bind_session`, replacing the `argument_schema` auto-approval.
 
 A refusal is `NotFound` where the caller holds no `read` on the target (EnvironmentService does not
 confirm existence), else `PermissionDenied`; an automatic wake records
@@ -170,7 +177,7 @@ The Session in `research-a` calls `GetEnvironment(research-b)` then
 Additions: Identity admission on the two RPCs and the rule check.
 
 **An orchestrator drives two named workers.** Identity `orchestrator` holds
-`operations: [resume, wake, create_session]`, `targets: {sandboxes: [{name: worker-1}, {name: worker-2}]}`;
+`operations: [resume, wake, bind_session]`, `targets: {sandboxes: [{name: worker-1}, {name: worker-2}]}`;
 both workers are bound to Identity `worker`. It resumes `worker-1` and calls `CreateSession` placed
 there; the Session runs as `worker`, the Sandbox's Identity, with `orchestrator` recorded as creator.
 Its `SubmitInput` to that Session wakes a suspended `worker-2` under `wake`; a message through
@@ -186,32 +193,28 @@ Sandbox is refused; a same-Identity message still wakes it under `allowOwnServic
 list no longer shows it. A rule naming `research-b` directly would still match, which is why a
 named target is a grant on that Sandbox whoever it runs as.
 
-**#15436, zero environments.** The app creates nothing; `ci-daily`'s own Session, through the central
-sampler as delegating actor, calls `CreateSession(identity: ci-daily, placement: central_sampler)`.
-Dispatcher evaluates `create_session` on `boundIdentity: ci-daily` for effective caller
-`ci-daily` and admits it. Naming `ops-admin` without that grant on `boundIdentity: ops-admin` is
-`PermissionDenied` before any row is written.
+**#15436, zero environments.** `ci-daily`'s own Session, through the central sampler as delegating
+actor, calls `CreateSession(identity: ci-daily, placement: central_sampler)`. No binding is created,
+so no `environment` rule applies, and the call is `PermissionDenied` until question 5 decides who may
+create Sessions as an Identity. The app, as a privileged caller, can still create it.
 
 **#15436, attach.** `AttachEnvironment(S, target: ci-build)` passes when the caller holds
-`create_session` matching `ci-build` and the Sandbox is bound to S's Identity; `DetachEnvironment`
+`bind_session` matching `ci-build` and the Sandbox is bound to S's Identity; `DetachEnvironment`
 needs only Session write authority.
 
 ## Positions on #15436
 
-- **`create_session` on a target is the attach grant: agree.** Attaching and creating a native Session
-  there are the same act, putting a Session of the Sandbox's Identity to work in it; attachment adds
-  no authority and wakes nothing, and one operation keeps them from diverging.
-- **`create_session` on `boundIdentity: I` reads as "run as I": agree, for `boundIdentity` only.**
-  Whoever holds it can already create Sessions running as I whenever an environment is bound to I;
-  the zero-environment case adds no authority, only removes the need for one to exist. A rule naming
-  Sandboxes never implies run-as: it covers those Sandboxes only. The operation's documentation says
-  so, and `rebind` uses the same reading for its destination.
+- **One operation is the attach grant and the native placement grant: agree, named `bind_session`.**
+  Both create a Session–environment binding. Attaching adds no authority and wakes nothing, and one
+  operation keeps the two from diverging.
+- **`boundIdentity: I` read as "run as I": disagree.** A Session with no environment has no
+  binding, so creating one is not an operation on an environment. Reading it into this rule would
+  make an environment grant mean something with no environment in it. Question 5 asks where it
+  belongs instead.
 - **No Session target.** The rule's nouns are environments; a Session is addressed by UUID and by its
   Identity, and policy cannot name a Session before it exists. Whether an Identity may delete its own
-  Sessions is Session authority, decided with reads and inboxes under `SESSION_IDENTITY_AUTHZ`.
-  If it needs a grant, the shape is a `delete_session` operation on `boundIdentity: I`, under the same
-  run-as reading, with no new target kind. Until then `DeleteSession` stays privileged, as #15436
-  proposes.
+  Sessions is Session authority, decided with reads and inboxes under `SESSION_IDENTITY_AUTHZ`,
+  alongside who may create them. Until then `DeleteSession` stays privileged, as #15436 proposes.
 
 ## Alternatives rejected
 
@@ -228,7 +231,7 @@ needs only Session write authority.
 ## Questions for the operator
 
 1. **Session target.** Recommendation above: none; Identity-initiated Session deletion is decided
-   under `SESSION_IDENTITY_AUTHZ`, as `delete_session` on `boundIdentity` if it needs a grant.
+   under `SESSION_IDENTITY_AUTHZ`.
 2. **`read` here or implied.** Recommendation: reading environments bound to the caller's own
    Identity is implied, since acting in them already reveals more than the descriptor (the deferred
    branch's self-read); `read` stays in this rule for every other target, such as an orchestrator's
@@ -241,3 +244,7 @@ needs only Session write authority.
    written per Identity, which the Session-managed Identities of
    `SESSION_IDENTITY_PROVISIONING_DESIGN` would make routine. A "the binding's own subject" form of
    `boundIdentity` would let one set serve many; recommendation: wait until that design shows the need.
+5. **Creating a Session as an Identity, with no environment.** #15436 needs an Identity caller to
+   create a central Session as I. Recommendation: decide it under `SESSION_SUBAGENT_DELEGATION` as
+   Session authority keyed on the Identity, possibly implied for a caller creating Sessions as its
+   own Identity. Until then only privileged callers create a Session with no binding.
