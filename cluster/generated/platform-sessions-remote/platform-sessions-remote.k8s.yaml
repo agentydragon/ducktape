@@ -281,6 +281,21 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-openai-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: platform-sessions-openai-captures
   namespace: platform-sessions
 spec:
@@ -392,6 +407,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -403,6 +419,34 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
+        - command:
+            - python
+            - -I
+            - /migration/migrate_state.py
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
+          name: migrate-state
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /source
+              name: old-data
+              readOnly: true
+            - mountPath: /destination
+              name: data
+            - mountPath: /migration
+              name: migration-script
+              readOnly: true
         - command:
             - sh
             - -c
@@ -505,9 +549,16 @@ spec:
             secretName: platform-sessions-openai-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-openai
+            claimName: platform-sessions-openai-piraeus
         - emptyDir: {}
           name: tmp
+        - name: old-data
+          persistentVolumeClaim:
+            claimName: platform-sessions-openai
+            readOnly: true
+        - configMap:
+            name: platform-sessions-piraeus-migration
+          name: migration-script
         - name: captures
           persistentVolumeClaim:
             claimName: platform-sessions-openai-captures
@@ -694,6 +745,21 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-anthropic-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: platform-sessions-anthropic-captures
   namespace: platform-sessions
 spec:
@@ -805,6 +871,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -816,6 +883,34 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
+        - command:
+            - python
+            - -I
+            - /migration/migrate_state.py
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
+          name: migrate-state
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /source
+              name: old-data
+              readOnly: true
+            - mountPath: /destination
+              name: data
+            - mountPath: /migration
+              name: migration-script
+              readOnly: true
         - command:
             - sh
             - -c
@@ -918,9 +1013,16 @@ spec:
             secretName: platform-sessions-anthropic-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-anthropic
+            claimName: platform-sessions-anthropic-piraeus
         - emptyDir: {}
           name: tmp
+        - name: old-data
+          persistentVolumeClaim:
+            claimName: platform-sessions-anthropic
+            readOnly: true
+        - configMap:
+            name: platform-sessions-piraeus-migration
+          name: migration-script
         - name: captures
           persistentVolumeClaim:
             claimName: platform-sessions-anthropic-captures
@@ -1107,6 +1209,21 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-chatgpt-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: platform-sessions-chatgpt-captures
   namespace: platform-sessions
 spec:
@@ -1218,6 +1335,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -1229,6 +1347,34 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
+        - command:
+            - python
+            - -I
+            - /migration/migrate_state.py
+          image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt:unset
+          name: migrate-state
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /source
+              name: old-data
+              readOnly: true
+            - mountPath: /destination
+              name: data
+            - mountPath: /migration
+              name: migration-script
+              readOnly: true
         - command:
             - sh
             - -c
@@ -1331,9 +1477,16 @@ spec:
             secretName: platform-sessions-chatgpt-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-chatgpt
+            claimName: platform-sessions-chatgpt-piraeus
         - emptyDir: {}
           name: tmp
+        - name: old-data
+          persistentVolumeClaim:
+            claimName: platform-sessions-chatgpt
+            readOnly: true
+        - configMap:
+            name: platform-sessions-piraeus-migration
+          name: migration-script
         - name: captures
           persistentVolumeClaim:
             claimName: platform-sessions-chatgpt-captures
@@ -1982,6 +2135,21 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-quest-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: platform-sessions-quest-captures
   namespace: platform-sessions
 spec:
@@ -2095,6 +2263,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -2106,6 +2275,34 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
+        - command:
+            - python
+            - -I
+            - /migration/migrate_state.py
+          image: git.allegedly.works/ducktape-ci/platform-sessions-quest:unset
+          name: migrate-state
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /source
+              name: old-data
+              readOnly: true
+            - mountPath: /destination
+              name: data
+            - mountPath: /migration
+              name: migration-script
+              readOnly: true
         - command:
             - sh
             - -c
@@ -2208,9 +2405,16 @@ spec:
             secretName: platform-sessions-quest-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-quest
+            claimName: platform-sessions-quest-piraeus
         - emptyDir: {}
           name: tmp
+        - name: old-data
+          persistentVolumeClaim:
+            claimName: platform-sessions-quest
+            readOnly: true
+        - configMap:
+            name: platform-sessions-piraeus-migration
+          name: migration-script
         - name: captures
           persistentVolumeClaim:
             claimName: platform-sessions-quest-captures
@@ -2400,6 +2604,21 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-thrive-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: platform-sessions-thrive-captures
   namespace: platform-sessions
 spec:
@@ -2511,6 +2730,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -2522,6 +2742,34 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
+        - command:
+            - python
+            - -I
+            - /migration/migrate_state.py
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
+          name: migrate-state
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /source
+              name: old-data
+              readOnly: true
+            - mountPath: /destination
+              name: data
+            - mountPath: /migration
+              name: migration-script
+              readOnly: true
         - command:
             - sh
             - -c
@@ -2624,9 +2872,16 @@ spec:
             secretName: platform-sessions-thrive-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-thrive
+            claimName: platform-sessions-thrive-piraeus
         - emptyDir: {}
           name: tmp
+        - name: old-data
+          persistentVolumeClaim:
+            claimName: platform-sessions-thrive
+            readOnly: true
+        - configMap:
+            name: platform-sessions-piraeus-migration
+          name: migration-script
         - name: captures
           persistentVolumeClaim:
             claimName: platform-sessions-thrive-captures

@@ -51,8 +51,8 @@ GATEWAY = "platform-sessions-gateway"
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
-# Roll the canary first; migrate the other providers after checking its data and service.
-PIRAEUS_MIGRATIONS = frozenset({"blueshield"})
+# Keep the migration mounts until every provider's Piraeus state is verified.
+PIRAEUS_MIGRATIONS = frozenset(PROVIDERS)
 BEARER_FILES = ("owner", "aiquota", "quest", "thrive-scraper", "thrive-read", "chatgpt-read", "blueshield-read")
 _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
 _GATEWAY_DNS = f"{GATEWAY}.{NAMESPACE}.svc"
