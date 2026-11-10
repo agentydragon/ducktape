@@ -3078,14 +3078,22 @@ purposes, and `CENTRAL_SESSION_NOTIFICATIONS` needs an environment-free Session 
 inbox. Drafting may proceed; implementation waits for `SERVICES_IDENTITY_PRINCIPAL`, which gives
 services an Identity `Principal` and `CreateSession` an Identity. Today nothing acts as a central
 Session's identity without an environment; with one attached, tools act through that Sandbox's SVID
-([plan](identity_and_kubernetes_accounts.md#central-sessions-with-no-environment)). Questions for the
-operator: whether the sampler asserts the Session's Identity to the Action Service, Notification and
-History under the [delegated authorization contract](../docs/delegated_authorization.md), proving
-itself as the actor with its own ServiceAccount token (it holds no agent key; operator,
-2026-11-10); which identities it may assert (recommendation: only
-those Dispatcher bound to its Sessions); how such calls originate from the V8 isolates; what each
-receiving service records; and whether LLM ingress attributes provider calls to the Identity rather
-than to the sampler plus a trusted `session_id` claim.
+([plan](identity_and_kubernetes_accounts.md#central-sessions-with-no-environment)).
+
+**Settled (operator, 2026-11-10): one design with the other delegating actors.** The sampler is a
+delegating actor under the [delegated authorization contract](../docs/delegated_authorization.md),
+as the Action Service already is toward Dispatcher, EnvironmentService and History and as the MCP
+edge will be toward the Action Service ([plan](identity_and_kubernetes_accounts.md#mcp-edge)). It
+authenticates as itself with its own ServiceAccount token and holds no agent key. The Action
+Service, Notification and History trust it per method and by namespace scope, not by a static list
+of names, so runtime-created Session-managed identities need no configuration. Each call's effective
+caller is the `Identity` Dispatcher bound to that Session, as Actions' is its admitted request
+record. Optional hardening, not planned: a receiver checks the asserted `Identity` against
+Dispatcher's live Session binding.
+
+**Still open for the operator:** how such calls originate from the V8 isolates; what each receiving
+service records; and whether LLM ingress attributes provider calls to the Identity rather than to
+the sampler plus a trusted `session_id` claim.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 

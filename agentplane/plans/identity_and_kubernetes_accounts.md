@@ -139,14 +139,19 @@ is modelled.
 
 Decided by the operator on 2026-11-09. A Connection bound to an `Identity` has no account to mint a
 TokenRequest for, so the edge uses the [delegated authorization](../docs/delegated_authorization.md)
-contract: it authenticates as itself (by SVID under the target above), the Action Service's per-method delegation rule names the
+contract: it authenticates as itself (its own ServiceAccount token; backend services keep TokenReview, operator 2026-11-10), the Action Service's per-method delegation rule names the
 edge's account as an allowed actor, and the envelope names the Identity as the effective caller
 once `SERVICES_IDENTITY_PRINCIPAL` gives it an identity reference. The Action Service accepts any
 Identity in the policy namespace from the edge; the edge binds Connections only to Identities in its
 `connection_identities` allowlist, each binding operator-approved at consent or rebind, the same
 trust as the `WorkloadCredential` requesters and Dispatcher. A narrower check at the Action Service
-is additive if the edge's exposure warrants it; runtime-created identities needing Connections would
-move eligibility onto the `Identity`. `CENTRAL_SESSION_ACTING_DESIGN` should share this shape. Until
+is additive if the edge's exposure warrants it. A static name list cannot cover runtime-created or
+ephemeral identities (operator, 2026-11-10): eligibility belongs on the `Identity` or on the binding
+record, not on a list of names in the actor's config, so `connection_identities` is reworked at
+`IDENTITY_CUTOVER` rather than populated. One design for every delegating actor (operator,
+2026-11-10): Actions, the edge and the central sampler each authenticate as themselves, receivers
+trust them per method and by namespace scope, and the effective caller comes from the actor's own
+durable binding record. `CENTRAL_SESSION_ACTING_DESIGN` uses it. Until
 `SERVICES_IDENTITY_PRINCIPAL`, the edge's `mintable_accounts` stays required with OAuth. Today a
 grant still resolves to its Connection's bound ServiceAccount, and the edge forwards a minted token
 for it ([lifecycle](workload_identity_lifecycle.md#remaining-paths) rows 1 and 2).
