@@ -97,31 +97,10 @@ acceptance, and must count every acceptance lost.
      the first havoc.
    - Fallback if 1 and 2 fall short of target; expected ≥ 1's factor
      regardless of pool structure.
-5. **Model the CommonJS interop wrapper instead of treating it as opaque**
-   (no precision loss if derived).
-   - In the proxy, `f = ca(u1())`. Here `u1` is esbuild's `__commonJS` wrapper
-     around the JSX runtime's `module.exports`, and `ca` is `__toESM`,
-     imported from esbuild's shared runtime chunk.
-   - `__toESM` builds a namespace object with
-     `defineProperty(…, {get: () => b[d], enumerable: …})` for each own key of
-     the exports. So `f.jsx` is an accessor read through an imported helper,
-     and each icon makes opaque calls.
-   - **Asserted form.** A spec premise selects the wrapper call and asserts:
-     its property reads forward to the factory's `module.exports` own data
-     properties; the getters run no application code; and the exported
-     functions do not synchronously invoke callbacks they did not receive as
-     arguments. Audit it by reading the helper and factory source.
-   - **Derived form (preferred).** Recognize the exact esbuild runtime helper
-     bodies (`__commonJS`, `__toESM`, `__copyProps`) structurally, including
-     across chunks through the program summary. Then model `__toESM(x)` as a
-     namespace whose property reads forward to `x`'s own properties. `f.jsx`
-     resolves to the factory's function, and the interpreter analyzes it like
-     any local callable; the JSX runtime only reads props and allocates.
-   - Soundness rests on matching the helper bodies exactly. A mismatched body
-     stays opaque.
-   - React-style consumer corpora repeat this shape for every interop import,
-     so the derived rule can matter more than the proxy suggests. It removes
-     the opaque calls themselves, not just their cost.
+5. **Model the CommonJS interop wrapper: measured, no gain.** Hand-resolving
+   the wrapper, or even routing every JSX call to a stable top-level
+   function, leaves all 160 heavy owners invoking the pool
+   (<../perf/analysis_serial_phases.md> § Interop wrapper: not the cause).
 6. **Intra-chunk parallelism** (after 1 and 2).
    - Root execution is a source-order fold that threads one `World`; owners
      cannot run concurrently without speculation.
@@ -183,14 +162,13 @@ accumulating or narrowing.
 
 ### PR order
 
-| Step | PR                                                                                     | Gate                                           |
-| ---: | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
-|    1 | Diagnose why interop calls are opaque (option 5); general kernel rules or a recognizer | TV audit and controls                          |
-|    2 | Monotone delta for opaque-call pools (below), with option 2 folded in                  | identical bytes, or the output-changing review |
-|    3 | Budget (below)                                                                         | —                                              |
-|    4 | Re-measure; then option 4 if still short                                               | TV audit                                       |
-|    5 | Option 3, `unsettle` frontier, if still hot                                            | identical bytes                                |
-|    6 | Option 6, intra-chunk parallelism                                                      | identical bytes                                |
+| Step | PR                                                                    | Gate                                           |
+| ---: | --------------------------------------------------------------------- | ---------------------------------------------- |
+|    1 | Monotone delta for opaque-call pools (below), with option 2 folded in | identical bytes, or the output-changing review |
+|    2 | Budget (below)                                                        | —                                              |
+|    3 | Re-measure; then option 4 if still short                              | TV audit                                       |
+|    4 | Option 3, `unsettle` frontier, if still hot                           | identical bytes                                |
+|    5 | Option 6, intra-chunk parallelism                                     | identical bytes                                |
 
 ### Budget
 
