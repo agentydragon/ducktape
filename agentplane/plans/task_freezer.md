@@ -43,17 +43,19 @@ divergent ways. The shared shape: a workload acting as an Identity, a `WorkloadC
 egress, exec, a lifetime, and access grants. Today they diverge:
 
 - Identity reference: a Sandbox by name (`spec.identity`), a box by name and UID.
-- Access: a Sandbox only through explicit grants; a box by its requester, through the
-  `caller-identity` labels (provenance: the box's acting Identity always equals its requester).
+- Access: a Sandbox's acting is implied for its bound Identity and its lifecycle needs grants; a box
+  is reached through its `caller-identity` labels, and its acting Identity always equals its
+  requester.
 - Lifecycle: the Sandbox Controller versus Action Service records; only Sandboxes suspend and resume.
 - Credential ownership: Sandbox-controlled versus `NoController`.
 - Harnesses: only Sandboxes run them.
 
 Guideline: new identity and access decisions on either side move toward the shared shape where it
-is cheap, for example box access keyed on provenance (the Action request's recorded caller), not on
-acting-as. Both end with the same access model, the plan's
-[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting is implied for the
-bound Identity, lifecycle needs a grant. Linked from `ACTION_BOX_IDLE_REAPER` and
+is cheap. Boxes and Sandboxes converge on the plan's
+[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting in the workload is
+implied for its bound Identity, so box access keyed on the box's acting Identity is correct;
+lifecycle (create, dispose, rebind) needs an explicit grant. A box's acting Identity is its
+requester today, so this changes no behaviour. Linked from `ACTION_BOX_IDLE_REAPER` and
 `SANDBOX_IDENTITY_SPEC` in the [DAG](task_dag.md).
 
 ## Workload credentials
