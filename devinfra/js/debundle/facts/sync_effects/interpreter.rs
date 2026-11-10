@@ -692,7 +692,7 @@ fn path_edge_report(edge: StoredReferenceEdge<'_>) -> BoundedInvocationFallbackP
 const MAX_SYNCHRONOUS_INVOCATION_DEPTH: usize = 64;
 // Count actual expansions, including those whose changing prefix state defeats
 // memoization. A cache-size limit alone does not bound a branching call tree.
-const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
+pub(super) const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
 // Giving every callback the entire pool as an argument creates a quadratic
 // value cross product, even without recursion. Summarize large pools before
 // manufacturing capture snapshots that retain that cross product.
@@ -1550,7 +1550,13 @@ impl NativeOperationContext for Executor<'_, '_> {
 }
 
 impl ArrayContext for Executor<'_, '_> {
-    fn writable_array_length(&self, object: u32) -> Option<u32> {
+    fn literal_array_length(&self, object: u32, absent: &[&str]) -> Option<u32> {
+        let properties = self
+            .state
+            .world
+            .surface
+            .prefix_object_properties
+            .get(&object)?;
         if !self
             .state
             .world
@@ -1563,13 +1569,9 @@ impl ArrayContext for Executor<'_, '_> {
                 .applied_accessors
                 .contains_key(&object)
             || !self.state.world.arrays.dense.contains_key(&object)
-            || self
-                .state
-                .world
-                .surface
-                .prefix_object_properties
-                .get(&object)?
-                .contains_key(&Some("push".into()))
+            || absent
+                .iter()
+                .any(|property| properties.contains_key(&Some((*property).into())))
         {
             return None;
         }
@@ -1579,8 +1581,12 @@ impl ArrayContext for Executor<'_, '_> {
         }
     }
 
-    fn array_prototypes_intact(&mut self) -> bool {
-        self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+    fn array_slots_intact(&mut self, slots: &[IntrinsicSlot]) -> bool {
+        Executor::array_slots_intact(self, slots)
+    }
+
+    fn dense_array_slots(&self, object: u32) -> Option<Vec<Values>> {
+        self.settled_dense_array_slots(object)
     }
 
     fn array_dependencies(&self) -> ProofDependencies {
@@ -3462,6 +3468,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state.world_mut().literal_heap()
     }
 
+    // CLEANUP(added 2026-11-10): delete with the legacy gate (L4e). The
+    //   kernel row `LocalExecutionContext::iterate_array`
+    //   (`native/array_iteration.rs`) replaces it for kernel-run bodies; this
+    //   path stays while the legacy gate reads its `Outcome` for flattened
+    //   owners, the flat `invoke_with_cells` lane and refused remainders.
     pub(super) fn array_iteration_plan(
         &mut self,
         span: CallSite,
@@ -3614,7 +3625,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Whether a callback result can be stored in a fresh result array, or
     /// spread into one, without running user code when the result is later
     /// read, iterated or spread.
-    fn retainable_iteration_value(&self, value: &AbstractValue) -> bool {
+    pub(super) fn retainable_iteration_value(&self, value: &AbstractValue) -> bool {
         match value {
             AbstractValue::Value(Value::Prim(_))
             | AbstractValue::Value(Value::Alloc(Kind::Function, _))
@@ -3655,6 +3666,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    // CLEANUP(added 2026-11-10): delete with the legacy gate (L4e). The
+    //   kernel row `LocalExecutionContext::iterate_array`
+    //   (`native/array_iteration.rs`) replaces it for kernel-run bodies; this
+    //   path stays while the legacy gate reads its `Outcome` for flattened
+    //   owners, the flat `invoke_with_cells` lane and refused remainders.
     pub(super) fn execute_array_iteration_transfer(
         &mut self,
         span: CallSite,

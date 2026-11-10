@@ -697,6 +697,7 @@ rust_library(
         "facts/sync_effects/local_operations.rs",
         "facts/sync_effects/namespace_wrapper.rs",
         "facts/sync_effects/native.rs",
+        "facts/sync_effects/native/array_iteration.rs",
         "facts/sync_effects/native/operation.rs",
         "facts/sync_effects/noninvoking_initialization.rs",
         "facts/sync_effects/own_data_transfer.rs",

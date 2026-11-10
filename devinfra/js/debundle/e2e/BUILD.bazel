@@ -1447,3 +1447,11 @@ debundle_e2e_test(
     name = "runtime_resource_closure_test",
     deps = ["@crates//:serde_json"],
 )
+
+debundle_e2e_test(
+    name = "effect_tv_array_iteration_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
