@@ -13,6 +13,7 @@ import {
   formatAge as sharedFormatAge,
   formatExtraSpend as sharedFormatExtraSpend,
   refreshWindowTiming,
+  showResetCredits,
   staleObservationAt,
   formatClock,
   formatDuration as sharedFormatDuration,
@@ -322,6 +323,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetEmptyLabelText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
+          '<method name="SetPresentationTime"><arg type="d" direction="in" name="now"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
           '<method name="FetchView"/>' +
@@ -389,6 +391,11 @@ const QuotaIndicator = GObject.registerClass(
             this._renderPopup();
           },
           GetStreamStatus: () => this._statusRow._summaryLabel.get_text(),
+          SetPresentationTime: (now) => {
+            fixtureNowMs = now;
+            this._renderPanel();
+            this._renderPopup();
+          },
           SetViewForTest: (view) => this._acceptView(view),
           ConnectDaemon: () => this._connectDaemon(),
           FetchView: () => this._fetchView(),
@@ -1037,17 +1044,18 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderResetRow(item, state) {
-      const exhausted = state.windows.some((window) => window.exhausted);
       const count = state.availableResetCredits;
-      const summary =
-        count > 0 || (count === 0 && exhausted)
-          ? formatBankedResets(
-              count,
-              state.availableResetCreditExpiries,
-              state.resetCreditExpiryLookupFailed,
-              new Date(nowMs())
-            )
-          : null;
+      const summary = showResetCredits(
+        count,
+        state.windows.map((window) => withLiveReset(window))
+      )
+        ? formatBankedResets(
+            count,
+            state.availableResetCreditExpiries,
+            state.resetCreditExpiryLookupFailed,
+            new Date(nowMs())
+          )
+        : null;
       item.visible = summary != null;
       item._summaryLabel.set_text(summary == null ? "" : `Banked resets: ${summary}`);
     }
@@ -1104,8 +1112,7 @@ const QuotaIndicator = GObject.registerClass(
         new Date(nowMs()),
         true
       );
-      if (resetDetails && (state.availableResetCredits > 0 || state.windows.some((window) => window.exhausted)))
-        details.push(`Banked resets: ${resetDetails}`);
+      if (resetDetails !== null) details.push(`Banked resets: ${resetDetails}`);
       const schedule = formatPeakSchedule(state.burn);
       if (schedule && (state.windows.length || state.balances.length || state.grants.length)) details.push(schedule);
       this._renderDetails(item, details);

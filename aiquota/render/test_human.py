@@ -151,23 +151,28 @@ def test_expired_reset_waits_for_new_usage_and_suppresses_forecast(quota_fixture
     assert "leaves" not in rendered
 
 
-def test_zero_banked_resets_are_hidden_until_details_or_quota_exhaustion() -> None:
-    ordinary = _quota(
-        FetchSuccess(
-            windows=[QuotaWindow(used_percent=12, reset_seconds=3600, window_seconds=5 * 3600)],
-            available_reset_credits=0,
-        )
-    )
-    exhausted = _quota(
-        FetchSuccess(
-            windows=[QuotaWindow(used_percent=100, reset_seconds=3600, window_seconds=5 * 3600)],
-            available_reset_credits=0,
-        )
-    )
+@pytest.mark.parametrize(
+    ("scenario", "default_visible", "details_visible"),
+    [("ordinary", False, True), ("exhausted", True, True), ("pending", False, True), ("unknown", False, False)],
+)
+def test_banked_reset_visibility(
+    quota_fixture: Callable[[str], AllQuotas], scenario: str, default_visible: bool, details_visible: bool
+) -> None:
+    quotas = quota_fixture(f"banked_resets_{scenario}")
+    assert ("Banked resets: 0" in human.render(quotas, now=_NOW, tz=UTC)) == default_visible
+    assert ("Banked resets: 0" in human.render(quotas, now=_NOW, tz=UTC, details=True)) == details_visible
 
-    assert "Banked resets" not in human.render(ordinary, now=_NOW, tz=UTC)
-    assert "Banked resets: 0" in human.render(ordinary, now=_NOW, tz=UTC, details=True)
-    assert "Banked resets: 0" in human.render(exhausted, now=_NOW, tz=UTC)
+
+def test_zero_resets_stop_showing_by_default_when_any_window_passes_its_reset(
+    quota_fixture: Callable[[str], AllQuotas],
+) -> None:
+    quotas = quota_fixture("banked_resets_exhausted")
+    assert "Banked resets: 0" in human.render(quotas, now=_NOW, tz=UTC)
+    later = _NOW + timedelta(minutes=1)
+    assert "Banked resets" not in human.render(quotas, now=later, tz=UTC)
+    stale = human.render(quotas, now=_NOW + timedelta(minutes=11), tz=UTC, details=True)
+    assert "Banked resets: 0" in stale
+    assert "Stale data" in stale
 
 
 def test_near_exhausted_usage_does_not_round_up_to_full_quota() -> None:

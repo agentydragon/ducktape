@@ -10,6 +10,38 @@
       Available balance: $50.00
   '''
 # ---
+# name: test_renders_shared_fixture[banked_resets_exhausted]
+  '''
+  Codex
+    Included quota exhausted
+    Banked resets: 0
+    5h:  12% used  ↻ 1m
+    7d: 100% used  ↻ 1h  exhausted
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_ordinary]
+  '''
+  Codex
+    5h:  12% used  ↻ 1m
+    7d:  20% used  ↻ 1h
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_pending]
+  '''
+  Codex
+    Reset time passed · awaiting updated usage
+    5h:  12% used  ↻ awaiting update
+    7d: 100% used  ↻ 1h               exhausted
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_unknown]
+  '''
+  Codex
+    Included quota exhausted
+    5h:  12% used  ↻ 1m
+    7d: 100% used  ↻ 1h  exhausted
+  '''
+# ---
 # name: test_renders_shared_fixture[binding_summary]
   '''
   Claude
