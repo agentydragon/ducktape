@@ -89,6 +89,10 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
         for expression in term["labelSelector"]["matchExpressions"]
         for value in expression["values"]
     } == labels.items()
+    # A member is ready only once its executor has registered; the readiness endpoint is the executor's own.
+    probe = guest["readinessProbe"]["httpGet"]
+    assert probe["path"] == "/readyz"
+    assert {"name": "server-type", "value": "buildbuddy-executor"} in probe["httpHeaders"]
     (work,) = template["spec"]["dataVolumeTemplates"]
     storage = work["spec"]["storage"]
     assert storage["storageClassName"] == "piraeus-ssd-local"
