@@ -52,6 +52,7 @@ use super::world::descriptor_heap::{
     self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
 };
 use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
+use super::world::prefix_values::{PrefixValues, TopBindings};
 use super::world::{World, WorldScope};
 use crate::analysis_inputs::{
     AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, NativeIntrinsic, ProofDependencies,
@@ -1140,7 +1141,7 @@ struct ExportCallbackMemo {
 /// Sync: every world field read by `visit_export_surface_callback_roots`,
 /// `walk_callback_values` and `visit_stored_references_with_edges`.
 struct ExportSurfaceReads {
-    prefix_values: Context,
+    prefix_values: PrefixValues,
     exported_runtime_values: Values,
     global_escaped_callbacks: Values,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
@@ -8780,8 +8781,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .world_mut()
                 .module
                 .prefix_values
-                .entry(id.clone())
-                .or_default()
+                .entry_or_default(id)
                 .insert(AbstractValue::Value(Value::Top));
             if changed {
                 self.state.world_mut().revision.bump_prefix();
@@ -10486,8 +10486,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .world_mut()
                     .module
                     .prefix_values
-                    .entry(id.clone())
-                    .or_default();
+                    .entry_or_default(id);
                 let before = possible.len();
                 possible.extend(values.iter().cloned());
                 if possible.len() != before {
@@ -12431,11 +12430,16 @@ pub(crate) fn annotate_synchronous_calls(
     } else {
         BTreeSet::new()
     };
-    let mut initial_values = Context::new();
+    let mut initial_values = PrefixValues::new(Arc::new(TopBindings::new(
+        top_bindings
+            .iter()
+            .chain(index.hoisted_bindings.keys())
+            .cloned(),
+    )));
     let mut initialized_bindings = BTreeSet::new();
     for (binding, key) in &index.hoisted_bindings {
         initial_values.insert(
-            binding.clone(),
+            binding,
             Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))]),
         );
         initialized_bindings.insert(binding.clone());
@@ -12747,7 +12751,7 @@ impl Executor<'_, '_> {
                                 .world
                                 .module
                                 .prefix_values
-                                .get(*binding)
+                                .get(binding)
                                 .is_some_and(|values| {
                                     values.iter().any(|value| {
                                         matches!(

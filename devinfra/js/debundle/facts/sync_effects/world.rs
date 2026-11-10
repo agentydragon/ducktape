@@ -8,6 +8,7 @@ pub(super) mod cells;
 pub(super) mod descriptor_heap;
 pub(super) mod join;
 pub(super) mod object_surface;
+pub(super) mod prefix_values;
 
 use super::allocation_transfer::LiteralHeap;
 use super::kernel::frame::CallableSelection;
@@ -18,6 +19,7 @@ use cells::{CellTrace, LexicalCells};
 use descriptor_heap::{DescriptorHeap, OwnDescriptorMapState};
 use imbl::OrdMap;
 use object_surface::ObjectSurfaceStore;
+use prefix_values::PrefixValues;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
@@ -63,7 +65,7 @@ pub(super) struct World {
 /// Module-level binding values of the settled prefix.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct ModuleBindings {
-    pub(super) prefix_values: Context,
+    pub(super) prefix_values: PrefixValues,
     /// Published only from an actual ordered initializer result. A flat
     /// projection's singleton value is not evidence of callable selection.
     pub(super) prefix_callable_selections: OrdMap<Id, CallableSelection>,

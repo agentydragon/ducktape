@@ -150,8 +150,7 @@ fn execute_flat(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'_>) ->
             .world_mut()
             .module
             .prefix_values
-            .entry(id.clone())
-            .or_default();
+            .entry_or_default(id);
         let before = possible.len();
         possible.extend(values);
         if possible.len() != before {
