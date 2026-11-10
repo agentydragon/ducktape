@@ -1069,10 +1069,14 @@ impl LocalContinuation {
                 value,
                 span,
             } => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
+                // A store to a binding outside this body composes its own
+                // fragment in `store_binding`.
+                if body.bindings.contains_key(&binding) {
+                    self.frame
+                        .ledger
+                        .effects
+                        .compose(&EffectCoverageFragment::default());
+                }
                 self.steps.push(Step::Assign(binding, span));
                 self.steps.push(Step::Expression(value.as_ref().clone()));
             }
@@ -1679,15 +1683,30 @@ fn store_binding(
 ) -> Result<SelectedValue, RemainderDisposition> {
     let values = selected.values;
     if values.is_empty() {
+        // No store happens, but the ledger stays open for a binding outside
+        // the body exactly as if the store had been attempted: a join over
+        // this leaf must not see a closed fragment for it.
+        if !body.bindings.contains_key(binding) {
+            frame
+                .ledger
+                .effects
+                .compose(&EffectCoverageFragment::default());
+        }
         frame.stop_normal_path();
         return Ok(SelectedValue::raw(values));
     }
     let Some(kind) = body.bindings.get(binding) else {
+        frame.binding_selections.remove(binding);
+        if !context.world().active_cells.contains_key(binding)
+            && let Some(effects) = context.store_module_binding(binding, &values)
+        {
+            frame.ledger.effects.compose(&effects);
+            return Ok(completing_selected(SelectedValue::raw(values), frame));
+        }
         frame
             .ledger
             .effects
             .compose(&EffectCoverageFragment::default());
-        frame.binding_selections.remove(binding);
         let result = cells::store_captured(context, frame, binding, &values, span)?;
         frame.ledger.allocation.compose(&result.judgment);
         return Ok(completing_selected(

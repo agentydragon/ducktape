@@ -31,24 +31,20 @@ Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 
 Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
 (`workload_auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
-longer verifies this audience. Revisit the name for the remaining backend consumers; any rename
-must coordinate those verifiers and their projected tokens.
+longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
+name stays relevant; any rename must coordinate those verifiers and their projected tokens.
 
-## Central sampler
+## Workload credentials
 
-Deferred by the operator on 2026-11-09. Revisit when a central Session needs Actions, notifications
-or history access under its own bindings.
+Deferred by the operator on 2026-11-09 with the proxy bearer hop removal (#15247)
+([workload authentication](../docs/workload_authentication.md#standing-workloads)).
 
-### `CENTRAL_SESSION_ACTING_DESIGN` — a central Session acting as its identity
+### `STANDING_WORKLOAD_INCARNATIONS` — standing workloads' weaker credential
 
-A central-sampler Session has an `Identity` but nothing acts as it: the sampler calls LLM ingress
-and the Action Service with its own credentials, and the agent's bindings take effect only once an
-environment is attached ([identity plan](identity_and_kubernetes_accounts.md#central-sessions-with-no-environment)).
-Design how the sampler would call the Action Service, Notification and History as the agent under
-the [delegated authorization contract](../docs/delegated_authorization.md) with an identity reference
-as effective caller: which identities it may assert (recommendation: only those Dispatcher bound to
-its Sessions), how such calls originate from the V8 isolates, and what each receiving service
-records. Nothing in the identity cutover depends on it.
+Revisit when a standing workload needs Pod provenance or its shared credential's reach becomes a
+concern. A standing record is one non-rotating credential with no Pod provenance, weaker than the
+per-incarnation credentials of Sandboxes and boxes: bring standing workloads up to per-incarnation
+credentials, or accept the weaker guarantee everywhere.
 
 ## Haku
 

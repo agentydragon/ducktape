@@ -40,7 +40,9 @@ interface ThreadListingState {
 const ThreadsLiveContext = createContext<Live<ThreadsSnapshot> | null>(null);
 const ThreadListingContext = createContext<ThreadListingState | null>(null);
 
-function combinedConnection(history: StreamConnection, metadata: StreamConnection): StreamConnection {
+/** The Threads stream as one connection over its two watches. A failure that drops both (a network
+ * change, a gateway roll) reaches each with the same reason, which the result names once. */
+export function combinedConnection(history: StreamConnection, metadata: StreamConnection): StreamConnection {
   const sources = [history, metadata];
   const disconnected = sources.filter((source) => source.phase !== "live");
   if (disconnected.length === 0) {
@@ -56,7 +58,7 @@ function combinedConnection(history: StreamConnection, metadata: StreamConnectio
     phase: "reconnecting",
     since,
     attempt: Math.max(...reconnecting.map((source) => (source.phase === "reconnecting" ? source.attempt : 0))),
-    lastError: errors.length === 0 ? null : errors.join("; "),
+    lastError: errors.length === 0 ? null : [...new Set(errors)].join("; "),
   };
 }
 

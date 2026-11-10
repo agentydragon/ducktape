@@ -57,6 +57,12 @@ _METRICS_SERVICE = f"{NAME}-metrics"
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
+# Eight GiB suffices for the one test CI gates on this pool. During test_firecracker (commit
+# 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy invocation f6ad2fda-409c-446f-8ade-8ac18f5da377, 2026-11-10)
+# guest memory in use, MemTotal less MemAvailable, peaked at 2.8 GiB on both workers, sampled over the VM console
+# and not retained; an idle worker uses 0.75 GiB. test_firecracker reserves 6 GiB (its EstimatedMemory),
+# and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
+_MEMORY = Size.gibibytes(8)
 # KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
 _IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
 _HTTPS_HOSTS = ("remote.buildbuddy.io", "buildbuddy.bbcr.io", "archive.ubuntu.com", "security.ubuntu.com")
@@ -122,7 +128,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                     Cpu.units(4).amount
                 ),
                 "memory": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests.from_string(
-                    Size.gibibytes(16).as_string()
+                    _MEMORY.as_string()
                 ),
             },
             limits={
@@ -130,7 +136,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                     Cpu.units(4).amount
                 ),
                 "memory": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesLimits.from_string(
-                    Size.gibibytes(16).as_string()
+                    _MEMORY.as_string()
                 ),
             },
         ),

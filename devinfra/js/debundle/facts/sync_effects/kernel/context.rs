@@ -31,6 +31,17 @@ pub(in crate::facts::sync_effects) trait BindingContext {
     fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
         false
     }
+    /// Store to a module-level binding that this body does not declare and
+    /// no active cell holds. The adapter checks the binding before recording
+    /// anything and returns the store's effects; `None` refuses the store, and
+    /// the kernel reports it as `Unproved::CaptureStore`.
+    fn store_module_binding(
+        &mut self,
+        _binding: &Id,
+        _values: &Values,
+    ) -> Option<EffectCoverageFragment> {
+        None
+    }
     /// Which of this body's bindings the kernel gives `World` cells.
     fn cell_policy(&self) -> CellPolicy<'_>;
     /// How a closure created here retains free bindings without a cell.

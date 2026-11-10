@@ -18,6 +18,11 @@ the ESM loader induces on the emitted modules.
   program. Analysis precision buys finer modules, never correctness.
 - **Scope.** The debundler validates a reordering. It does not prove program
   equivalence in general.
+- **Precision.** The analysis is as precise as the real specs need to split
+  into reasonable modules, and no more. A rule earns its place by keeping a
+  module boundary that a real spec draws; precision no spec uses is not built.
+- **Cost.** A full analysis of the largest consumer corpus finishes in under
+  4 minutes, ideally 2 (<analysis_performance.md>).
 
 ## Stages
 
@@ -32,9 +37,10 @@ Analysis runs in source order and never reads the assignment. It is cached by
 source, analysis projection and engine (`staged_analysis/analysis_projection.rs`,
 <../docs/bazel_integration.md>).
 
-- **One abstract interpreter.** One domain and one builtin table
+- **One effect producer.** One domain and one builtin table
   (`facts/abstract_domain/`, `facts/sync_effects/`) produce a per-statement
-  effect set:
+  effect set. How it is computed is an open decision
+  ([§ Open decision](#open-decision-the-stage-2-producer)):
   - reads and writes of cells: bindings including their initialization, heap
     cells, global and intrinsic slots, host queues;
   - invocations;
@@ -108,6 +114,64 @@ with structural placement obligations.
 - **CI performance budgets** on the canonical inputs
   (<analysis_performance.md>).
 
+## Open decision: the stage 2 producer
+
+Stages 3–5 consume per-statement effect sets and do not care how they were
+computed. Two producers are on the table. The choice is made on measurements
+against the real specs, not on the design.
+
+**Execution-based (today).** `facts/sync_effects/` runs the top-level
+statements in source order through one abstract world, re-executes a callee's
+body at each invocation, and on an opaque call runs every escaped callback to
+a fixpoint. What the work so far showed:
+
+- **Cost follows execution, not code size.** A statement costs about the square
+  of the escaped-callback pool once any operation in it is refused, and after a
+  chunk's first opaque call refusals are everywhere
+  (<analysis_performance.md> § Superlinear callback pools). Constant-factor
+  work bought 10–30%; the target needs 10–25×.
+- **Coverage is all-or-nothing per statement.** A statement the kernel cannot
+  finish is `incomplete`, which the flip must treat as havoc. Wave 3 landed
+  rows 1, 2, 3, 9, 10 and part of 5 while the count of legacy-accepted,
+  effect-incomplete evaluations stayed near 360
+  (<convergence_landing.md> § Replan).
+- **"Unknown" is not structurally tied to "escaped".** A call through an
+  unknown value reaches only escaped functions, so every site that widens a
+  value to unknown must also escape what it dropped. An audit found sites that
+  do not, with accepted splits that diverge under Node
+  ([§ Known open problems](#known-open-problems)).
+
+**Summary-based (candidate).** One inclusion-based points-to and call-graph
+fixpoint over the chunk, flow- and path-insensitive inside function bodies;
+one effect summary per function, computed once and instantiated at call sites;
+one escaped set that every unmodelled flow feeds and every unknown call may
+invoke. A statement's effect set is its own code plus the summaries of what it
+may call at initialization.
+
+- **Expected gain.** Cost near-linear in code size. Every statement gets a
+  complete effect set, so there is no `incomplete` class and no
+  attempt-and-rewind. "Unknown means escaped" holds by construction.
+- **Known cost.** Less precision: no strong updates inside functions, no
+  decided branches, context-insensitive unless refined. Each lost proof costs
+  module granularity in a spec.
+- **Unknown.** Whether the loss matters for the real specs. A report-only
+  prototype under `x/` measures it: for each real spec's emitted order, how
+  many authored modules would have to be merged; the same for a decompose-style
+  stress assignment on the public corpus; and a cross-check that it reports
+  every conflict today's analysis models and refuses the audit's unsound
+  shapes.
+
+**Decision rule.** Adopt the summary-based producer if, with bounded
+refinements (call-site sensitivity for small helpers, existing premises as
+axioms on summaries), the real specs keep their modules and the cost target is
+met. Otherwise keep the execution-based producer, with the monotone-delta
+pool fix and coverage rows ranked by the module boundaries they unblock.
+
+**Unchanged either way.** Parse, spec resolution, the loader model, order
+search, swapped-pair validation, structural placement obligations, emit, the
+premise surface, and the Node-differential e2e suite, which is the acceptance
+suite for whichever producer runs.
+
 ## Out of scope
 
 - Proving equivalence of arbitrary code.
@@ -176,6 +240,14 @@ replay of the canonical inputs in gaffer-private.
 - **Fallback reach.** Swapped statements with incomplete execution conflict
   under global reach. Bounded reach remains report-only until the complete
   effect-domain proof is retained.
+- **Unknown without escape.** Value sources lowered to "unknown" (a closure's
+  write to an outer local, array-destructuring declarations, `for`-`of` heads,
+  generator results, `arguments`, `catch` parameters, iteration-row results)
+  did not escape the callables they can hold, so a later call through the
+  unknown value missed their effects. Fixes apply one rule at every such
+  site: a value is dropped from a tracked set only after it has been escaped.
+  The probes are the regression suite; see
+  <convergence_landing.md> § Replan for the landing order.
 - **Callback-effect provenance.** The unknown global-property dispatch defect
   is fixed; the separate dense-array callback-promotion route is still an
   unproven candidate. Canonical attribution needs per-call target/contributor

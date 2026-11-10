@@ -1,6 +1,6 @@
 # Identities, workload authentication and Kubernetes accounts
 
-Status: **expand phase landed; cutover open, 2026-11-09.** Directions selected by the operator on
+Status: **expand phase landed; cutover open, 2026-11-10.** Directions selected by the operator on
 2026-11-05 ([`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)):
 SVIDs, not ServiceAccount tokens, authenticate agent workloads; Agentplane owns agent identity and
 no agent gets a ServiceAccount by default; a Kubernetes account is a resource several identities
@@ -15,6 +15,41 @@ The landed contracts are in the kind doc comments (`agentplane/policy/api/v1alph
 `WorkloadCredential`s) and [agent RBAC](../../cluster/docs/agent_rbac.md#kubernetes-accounts) (the
 accounts the catalog renders behind `Environment.identity_catalog`). What follows is what the
 cutover still changes.
+
+## Target: one identity, three credential forms
+
+Operator direction, 2026-11-10, pending final confirmation. This is the contract the cutover works
+toward; none of it has landed. The Agentplane `Identity` is the one identity source. Each credential
+form below is an explicit, named mapping to one `Identity`:
+
+1. **X.509 SVID over mTLS**, for in-cluster workloads: a `WorkloadCredential` names the Identity.
+2. **OAuth2 access tokens issued by the MCP edge's own authorization server**
+   (`mcp_edge/authserver`, dynamic client registration), for external MCP clients such as claude.ai:
+   a grant's Connection is bound to the Identity.
+3. **Kubernetes' own authentication**, only where a component talks to the Kubernetes API: as
+   itself, through Flux, or as an account by the proxy's impersonation.
+
+**Why (operator, 2026-11-10):** to keep Agentplane identity from being hard-baked to the Kubernetes
+API server. An identity that only a ServiceAccount and TokenReview can carry ties every caller to a
+cluster-hosted Pod; one the Agentplane issuer owns can also act for a central Session with no
+Sandbox, or later an enrolled external machine. The central-Session decoupling did not strictly
+require the cutover, but building it on ServiceAccounts would add a contract the cutover has to undo.
+
+A Kubernetes ServiceAccount TokenReview is not a second identity source for agents.
+
+**Backend services (operator, 2026-11-10).** Agentplane's own services keep authenticating to each
+other as themselves with ServiceAccount tokens and TokenReview for privileged service-to-service
+calls; that is service identity, not agent identity, and keeps the API server dependency to the
+platform's internal hops only. No service holds a private key or certificate that resolves to an
+agent `Identity`: a service acting for an agent does so only under the
+[delegated authorization contract](../docs/delegated_authorization.md), authenticating as itself and
+naming the `Identity` as effective caller. Service-class SVIDs (a SPIFFE path resolvers never map to
+an agent `Identity`) stay open for later; nothing now needs them.
+
+Other bearer forms are not planned and no task depends on them; if we wanted, we could later accept
+bearer tokens resolving to the same `Identity`. The paths that do not meet this yet, with the
+bucket each falls in, are the
+[workload identity lifecycle's inventory](workload_identity_lifecycle.md#remaining-paths).
 
 ## What this separates
 
@@ -74,12 +109,22 @@ state volumes carry over, and the app says the next agent sees what the previous
 
 ## Central Sessions with no environment
 
-A central-sampler Session names its `Identity` at `CreateSession`; Dispatcher either creates a
-Session-managed identity or checks the caller may use an existing one. Nothing acts as that identity
-yet (operator, 2026-11-09; [`CENTRAL_SESSION_ACTING_DESIGN`](task_freezer.md#central_session_acting_design--a-central-session-acting-as-its-identity)):
-the sampler's own account never becomes the agent's, and no service accepts a delegated identity
-from it. The sampler's egress stays its own, and a grant to a Kubernetes account is inert until an
-environment is attached, whose Sandbox names the identity and is admitted under the same bindings.
+Decoupling a central Session from any Sandbox, so it exists with none and attaches and detaches
+environments, is a purpose of this migration (operator, 2026-11-10). With
+`SERVICES_IDENTITY_PRINCIPAL`, a central-sampler Session names its `Identity` at `CreateSession`;
+Dispatcher either creates a Session-managed identity or checks the caller may use an existing one.
+Today a Session records a ServiceAccount `execution_identity` instead
+(`runner_gateway/dispatcher/session_dispatcher.proto`).
+
+Nothing acts as that identity without an environment
+([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)):
+the sampler calls LLM ingress, History and the Runner Gateway as its own account, which never
+becomes the agent's, and no service accepts a delegated identity from it. Tool calls run in an
+attached environment and reach Agentplane services with that environment's SVID, so attaching makes
+the Sandbox's identity act for the Session and detaching leaves nothing acting. That is sound only
+once a Sandbox's SVID resolves to `Sandbox.spec.identity` (`SANDBOX_IDENTITY_SPEC`) and attachment
+admits only the Session's identity. The sampler's egress stays its own, and a grant to a Kubernetes
+account is inert until an environment is attached.
 
 ## Kubernetes execution
 
@@ -94,7 +139,7 @@ is modelled.
 
 Decided by the operator on 2026-11-09. A Connection bound to an `Identity` has no account to mint a
 TokenRequest for, so the edge uses the [delegated authorization](../docs/delegated_authorization.md)
-contract: it authenticates as itself, the Action Service's per-method delegation rule names the
+contract: it authenticates as itself (by SVID under the target above), the Action Service's per-method delegation rule names the
 edge's account as an allowed actor, and the envelope names the Identity as the effective caller
 once `SERVICES_IDENTITY_PRINCIPAL` gives it an identity reference. The Action Service accepts any
 Identity in the policy namespace from the edge; the edge binds Connections only to Identities in its
@@ -102,7 +147,9 @@ Identity in the policy namespace from the edge; the edge binds Connections only 
 trust as the `WorkloadCredential` requesters and Dispatcher. A narrower check at the Action Service
 is additive if the edge's exposure warrants it; runtime-created identities needing Connections would
 move eligibility onto the `Identity`. `CENTRAL_SESSION_ACTING_DESIGN` should share this shape. Until
-`SERVICES_IDENTITY_PRINCIPAL`, the edge's `mintable_accounts` stays required with OAuth.
+`SERVICES_IDENTITY_PRINCIPAL`, the edge's `mintable_accounts` stays required with OAuth. Today a
+grant still resolves to its Connection's bound ServiceAccount, and the edge forwards a minted token
+for it ([lifecycle](workload_identity_lifecycle.md#remaining-paths) rows 1 and 2).
 
 ## Operator UI
 

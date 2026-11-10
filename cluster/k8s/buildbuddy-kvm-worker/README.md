@@ -4,7 +4,7 @@ A KubeVirt `VirtualMachinePool` of two VMs, each containing a BuildBuddy executo
 `kvm-vm` pool; BuildBuddy schedules across them, one action per VM. Required pod anti-affinity keeps
 the members on different nodes without naming a node, so one node failure or its disk contention
 reaches only one worker. Each VM boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
-vCPUs, 16 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cache.
+vCPUs, 8 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cache.
 The disk is a blank image on a filesystem volume from `piraeus-ssd-local`, created per VM by a CDI
 `DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
 raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
@@ -44,8 +44,8 @@ First boot configures the dedicated guest for nested KVM and reboots once before
 executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
 `svm` or `vmx`; its guest loads the corresponding KVM driver. The worker may run on any node,
 including control-plane nodes, that advertises either CPU feature and has capacity for
-the 4-CPU, 16-GiB reservation. It is limited to the `hil` region, where the SSD pools are, and has no hostname or explicit OS selector. The executor advertises four CPUs and 14 GiB, leaving
-2 GiB for the guest OS and Docker. KVM test actions request four compute units. The
+the 4-CPU, 8-GiB reservation. It is limited to the `hil` region, where the SSD pools are, and has no hostname or explicit OS selector. The executor advertises four CPUs and 7 GiB, leaving
+1 GiB for the guest OS and Docker. KVM test actions request four CPUs, 6 GB of memory and 20 GB of free disk. The
 `kvm-vm` pool name is independent of the node placement.
 The labels describe hypervisor CPU features, and the guest bootstrap fails if no KVM device
 is available; verify nested execution after moving the VM.
@@ -53,7 +53,7 @@ Verify guest boot, the outer network fence and these manual checks:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
-bbr test //agentplane/system_tests/suites:test_vm_kvm --nocache_test_results
+bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 ```
 
 The outer policy admits only node-local Alloy to the executor's metrics port, and egress to DNS, BuildBuddy and its registry, Ubuntu package

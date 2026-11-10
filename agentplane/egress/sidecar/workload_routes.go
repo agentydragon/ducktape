@@ -35,14 +35,9 @@ func (s *sidecar) prepareWorkloadRoutes() error {
 	if len(s.config.WorkloadRoutes) == 0 {
 		return nil
 	}
-	// newSidecar validates that workload routes use the TLS/SPIFFE proxy hop.
-	proxyTransport, ok := s.proxyHop.transport.(tlsProxyTransport)
-	if !ok || proxyTransport.svid == nil {
-		return errors.New("validated workload routes require a TLS proxy hop with SPIFFE credentials")
-	}
 	s.workloadRoutes = make(map[string]*workloadRoute, len(s.config.WorkloadRoutes))
 	for authority, config := range s.config.WorkloadRoutes {
-		security, err := proxyTransport.svid.ClientTLSConfig(config.ServerURI)
+		security, err := s.proxyHop.transport.svid.ClientTLSConfig(config.ServerURI)
 		if err != nil {
 			return fmt.Errorf("workload route %q: %w", authority, err)
 		}

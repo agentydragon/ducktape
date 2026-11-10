@@ -28,19 +28,20 @@ changes are compatible. `test_dispatcher` owns a separate stack because it scale
 and deletes a controller Pod. The external MCP delegation acceptance owns another stack because it
 scales the app to zero after OAuth consent.
 
-| Target                                                                                             | Coverage                                              |
-| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `//agentplane/system_tests/suites:test_pod`                                                        | Pod Sandbox scenarios                                 |
-| `//agentplane/system_tests/suites:test_session_deletion`                                           | Session deletion and replacement                      |
-| `//agentplane/system_tests/suites:test_dispatcher`                                                 | Dispatcher queue, wake and replicas                   |
-| `//agentplane/system_tests/suites/mcp:test_actions`                                                | MCP Actions and operator decisions                    |
-| `//agentplane/system_tests/suites/mcp:test_services`                                               | MCP services and central sampler                      |
-| `//agentplane/system_tests/suites/mcp:test_delegation`                                             | External MCP delegation                               |
-| `//agentplane/system_tests/suites/mcp:test_parent_delegation`                                      | Parent-to-child Session CLI flow                      |
-| `//agentplane/system_tests/suites:test_vm`                                                         | VM Sandbox scenarios on the software-emulated stack   |
-| `//agentplane/system_tests/suites:test_real_model`                                                 | Real-model egress and Session instructions            |
-| `//agentplane/system_tests/suites:test_vm_manual`                                                  | Manual VM storage, ownership and suspend/resume cases |
-| `//agentplane/system_tests/suites:test_vm_kvm`, `//agentplane/system_tests/suites:test_vm_profile` | Manual KVM and profiling variants                     |
+| Target                                                                 | Coverage                                              |
+| ---------------------------------------------------------------------- | ----------------------------------------------------- |
+| `//agentplane/system_tests/suites:test_pod`                            | Pod Sandbox scenarios                                 |
+| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
+| `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
+| `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
+| `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
+| `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
+| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
+| `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
+| `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
+| `//agentplane/system_tests/suites:test_vm_profile`                     | Manual profiling variant                              |
+| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Experimental KVM variant, manual                      |
 
 `test_vm_manual`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and

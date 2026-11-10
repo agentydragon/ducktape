@@ -490,6 +490,22 @@ impl EffectCoverageFragment {
         fragment
     }
 
+    /// SetMutableBinding of an initialized, mutable, unexported module
+    /// binding no closure reads: no global, heap or host effect. The rebind
+    /// is the owner's syntactic binding write; lexical coverage stays
+    /// unknown, so this never seals a lexical binding-effect receipt.
+    pub(super) fn module_binding_store() -> Self {
+        Self {
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: DomainCoverage::Covered(Box::default()),
+                general_heap: DomainCoverage::Covered(Box::default()),
+                host_effects: DomainCoverage::Covered(Box::default()),
+            })),
+            lexical: None,
+            completion: Completion::Normal(()),
+        }
+    }
+
     /// Proof prerequisites for a successfully consumed own-data selection.
     /// Unknown lexical coverage never becomes positive through dependencies.
     pub(super) fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {
