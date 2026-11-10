@@ -95,6 +95,15 @@ func (s *Service) Drain() { s.drain() }
 
 // serve runs read under the request timeout.
 func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if identity, ok := admission.(auth.IdentityAdmission); ok {
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID,
+		})), nil
+	}
 	caller, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return nil, err
@@ -102,10 +111,6 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 	account := caller.GetAccount()
 	if account == nil || account.GetNamespace() == "" || account.GetName() == "" || caller.GetUid() == "" {
 		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
-	}
-	admission, err := auth.Admitted(ctx)
-	if err != nil {
-		return nil, err
 	}
 	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
 		if s.readerAccounts.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}) {

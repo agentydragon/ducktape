@@ -71,7 +71,8 @@ func Accounts(resolver *Resolver, accounts []Account) Rule {
 }
 
 // SVIDOrAccounts admits a verified Sandbox SVID, or a bearer for one of the
-// listed accounts. The resolver must be bound to the listener's allowed modes.
+// listed accounts. The resolver must be bound to the listener's allowed modes. An SVID naming an
+// Identity is admitted as AnySubject admits it, so the handler must read Admitted.
 func SVIDOrAccounts(resolver *Resolver, accounts []Account) Rule {
 	rule := Accounts(resolver, accounts)
 	rule.kind = ruleSVIDOrAccounts
@@ -291,7 +292,14 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	var principal Principal
 	var err error
 	if rule.kind == ruleSVIDOrAccounts && rule.resolver.usesSVID(resolveContext) {
-		principal, err = rule.resolver.Resolve(resolveContext)
+		var subject Subject
+		if subject, err = rule.resolver.ResolveSubject(resolveContext); err != nil {
+			return nil, err
+		}
+		if identity, ok := subject.(IdentityPrincipal); ok {
+			return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
+		}
+		principal = subject.(Principal)
 	} else if rule.kind == ruleAccounts || rule.kind == ruleSVIDOrAccounts {
 		principal, err = rule.resolver.RequireAccount(resolveContext, rule.accounts)
 	} else if rule.kind == ruleReviewedServiceAccount || rule.kind == ruleReviewedServiceAccountOrIdentity {

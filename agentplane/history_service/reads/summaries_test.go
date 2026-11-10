@@ -233,7 +233,7 @@ func TestSessionsExposeAndFilterBySandboxUID(t *testing.T) {
 	first, second := uuid.New(), uuid.New()
 	for index, sandboxUID := range []string{"sandbox-uid-first", "sandbox-uid-replacement"} {
 		sessionID := []uuid.UUID{first, second}[index]
-		writer := storage.Writer{
+		writer := storage.ServiceAccountWriter{
 			Namespace: "test-sandbox-namespace", Name: "same-name", UID: "writer-account-" + sandboxUID,
 		}
 		if _, err := f.history.BindWriter(t.Context(), sessionID, writer, sandboxUID, nil); err != nil {

@@ -76,11 +76,11 @@ func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 }
 
 func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
-	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
+	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\npolicy_namespace: test-policies\n", settingPrefix+"FOLD_CONCURRENCY=7")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 {
+	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 || c.PolicyNamespace != "test-policies" {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 	c, err = loadTestConfig(t, strings.Replace(requiredFile, "  writer_namespaces", "  settle_deltas: false\n  writer_namespaces", 1))
