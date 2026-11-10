@@ -272,7 +272,7 @@ async def _wait_for_executor_dispatch_after(
         stream.cancel()
 
 
-async def _wait_for_failed_gateway_resume(deployed: CentralStack, session_id: str, after_cursor: int) -> str:
+async def _wait_for_failed_gateway_resume(deployed: CentralStack, session_id: str, after_cursor: int) -> int:
     """A failed resume in retained History proves its preceding event prefix is complete."""
     resume_intents: set[str] = set()
     read_cell_result = None
@@ -308,7 +308,30 @@ async def _wait_for_failed_gateway_resume(deployed: CentralStack, session_id: st
                         "the model-facing process read returned before the verified failed Gateway resume: "
                         + json.dumps(read_cell_result)
                     )
-                    return boundary.correlation_id
+                    return entry.cursor
+            await asyncio.sleep(0.1)
+
+
+async def _wait_for_active_history_through(deployed: CentralStack, session_id: str, cursor: int) -> int:
+    """Require user-facing History to project the failed resume before Gateway returns."""
+    async with asyncio.timeout(10):
+        while True:
+            try:
+                summary = await deployed.history.get_session_summary(session_id)
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+            else:
+                if summary.folded_through >= cursor:
+                    assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
+                    entities = await deployed.history.read_thread_entities(
+                        history_service_pb2.ReadThreadEntitiesRequest(
+                            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+                        )
+                    )
+                    (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
+                    assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
+                    return summary.folded_through
             await asyncio.sleep(0.1)
 
 
@@ -340,7 +363,21 @@ async def _roll_gateway_for_central_session(
             for endpoint in item.get("endpoints") or []
         ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
         if failed_resume_after is not None:
-            await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
+            session_id = failed_resume_after[0]
+            failed_resume_cursor = await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
+            folded_through = await _wait_for_active_history_through(deployed, session_id, failed_resume_cursor)
+            (undeclared_outputs_dir() / "central-sampler-gateway-outage.json").write_text(
+                json.dumps(
+                    {
+                        "session_id": session_id,
+                        "failed_resume_cursor": failed_resume_cursor,
+                        "history_folded_through_while_gateway_down": folded_through,
+                        "gateway_ready_endpoints": 0,
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
         if hold_down_seconds:
             await asyncio.sleep(hold_down_seconds)
     finally:
