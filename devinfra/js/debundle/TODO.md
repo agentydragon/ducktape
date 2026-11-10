@@ -222,18 +222,18 @@ to one exact source/spec pair and held to the interactive budget in
 ### Encountered tooling friction
 
 - **F5 — Decide the remaining premise kinds from provenance.**
-  <docs/premise_provenance.md> lists where each premise is consumed and
+  <docs/premise*provenance.md> lists where each premise is consumed and
   whether every read records its use; `reentry_free_operations` is complete and
   linted. Complete recording outside the interpreter's hot paths, one kind per
   change, then lint it the same way (never consumed → `inferable`, consumed →
   probe): `census_slots_intact`'s dropped dependencies and the `node_global`
-  alias, a per-statement record for `trusted_dataflow_summaries`, the
+  alias, the
   `heap_contents` / `at_init_fallback` native-input exits, the loader keys, and
   a per-statement declared-purity use list written at each classifier arm
   (never a `ProofDependencies` field). The hot-path kinds
   (`reentry_free_builtin_modules` / `_bun_modules` static closure,
   `initializer_call_effect_inputs`, `deferred_global_publications`,
-  `initializer_purity`, `no_reentry_*`) stay probe-only until the
+  `initializer_purity`, `no_reentry*\*`) stay probe-only until the
   `callback_values` performance work lands.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
