@@ -3,7 +3,8 @@
 # spans carry the input and the attribution keys, and whether the content reached pod logs.
 set -euo pipefail
 NS=scratch-langfuse-tracing
-RUN=${1:?usage: probe.sh <label>}-$(date +%s)
+RUN=${1:?usage: [STREAM=true] probe.sh <label>}-$(date +%s)
+STREAM=${STREAM:-false}
 
 secret() { kubectl -n "$NS" get secret scratch-secrets -o jsonpath="{.data.$1}" | base64 -d; }
 KEY=$(secret litellm-master-key)
@@ -21,9 +22,9 @@ post() {
     -H "baggage: litellm.metadata.spend_logs_metadata.agentplane.namespace=probe-ns,litellm.metadata.spend_logs_metadata.agentplane.session_id=$RUN" \
     -d "$2"
 }
-post /v1/responses "{\"model\":\"luna-responses\",\"input\":\"Repeat exactly: $RUN-responses\",\"litellm_metadata\":$(meta "$RUN-responses")}"
-post /v1/messages "{\"model\":\"luna-messages\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Repeat exactly: $RUN-messages\"}],\"litellm_metadata\":$(meta "$RUN-messages")}"
-post /v1/chat/completions "{\"model\":\"ministral-chat\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Repeat exactly: $RUN-chat\"}],\"metadata\":$(meta "$RUN-chat")}"
+post /v1/responses "{\"stream\":$STREAM,\"model\":\"luna-responses\",\"input\":\"Repeat exactly: $RUN-responses\",\"litellm_metadata\":$(meta "$RUN-responses")}"
+post /v1/messages "{\"stream\":$STREAM,\"model\":\"luna-messages\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Repeat exactly: $RUN-messages\"}],\"litellm_metadata\":$(meta "$RUN-messages")}"
+post /v1/chat/completions "{\"stream\":$STREAM,\"model\":\"ministral-chat\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Repeat exactly: $RUN-chat\"}],\"metadata\":$(meta "$RUN-chat")}"
 
 CH_PASSWORD=$(secret clickhouse-password)
 ch() { kubectl -n "$NS" exec deploy/clickhouse -- clickhouse-client -u langfuse --password "$CH_PASSWORD" -q "$1"; }

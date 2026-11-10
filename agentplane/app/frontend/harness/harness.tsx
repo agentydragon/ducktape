@@ -49,6 +49,7 @@ import {
 } from "../../../policy/v1/policy_service_pb";
 import {
   Decision_Outcome,
+  Decision_Reason,
   WatchCredentialsResponseSchema,
   WatchDecisionsResponseSchema,
   type Decision,
@@ -663,7 +664,7 @@ const GITHUB_ADMITTED = {
 const PYPI_REFUSED = {
   host: "pypi.org",
   outcome: Decision_Outcome.DENY,
-  reason: "no-rule",
+  reason: Decision_Reason.NO_RULE,
 } satisfies Omit<DecisionFixture, "at">;
 
 // Oldest first, as the proxy sends the whole retained log.
@@ -680,7 +681,7 @@ const DECISIONS: Decision[] = [
     host: "example.invalid",
     method: "CONNECT",
     outcome: Decision_Outcome.DENY,
-    reason: "no-binding",
+    reason: Decision_Reason.NO_BINDING,
   }),
 ];
 

@@ -256,7 +256,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace})
+	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, nil)
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}

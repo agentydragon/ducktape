@@ -28,7 +28,13 @@ func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resol
 	if err != nil {
 		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current WorkloadCredential"}
 	}
-	principal := auth.Principal{Account: auth.Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name}}
+	// CLEANUP(added 2026-11-10): an Identity subject keys the decision in EGRESS_IDENTITY_RULES
+	// (agentplane/plans/task_dag.md); until then the proxy has no rules for one.
+	account, ok := resolved.Subject.(resolver.ServiceAccount)
+	if !ok {
+		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "the proxy does not yet decide for an Identity subject"}
+	}
+	principal := auth.Principal{Account: auth.Account{Namespace: account.Namespace, Name: account.Name}}
 	if resolved.Binding == nil {
 		return principal, nil
 	}

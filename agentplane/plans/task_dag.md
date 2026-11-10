@@ -3008,7 +3008,8 @@ Stage edges are technical prerequisites; the fan-in to system tests is a sequenc
 permission to start them early.
 
 What stays provisional, each tracked by the node that removes it: every `WorkloadCredential` names a
-ServiceAccount subject and the resolver refuses an Identity one, so an SVID yields the same
+ServiceAccount subject; the resolver resolves an Identity one, live with its UID, but no verifier is
+given the policy namespace yet and `Principal` has no Identity form, so an SVID yields the same
 ServiceAccount `Principal` a TokenReview does (`SERVICES_IDENTITY_PRINCIPAL`,
 `EGRESS_IDENTITY_RULES`); a Sandbox sidecar forwards its Kubernetes-audience token beside the SVID
 for `kubectl` substitution (`SANDBOX_IDENTITY_SPEC`); the proxy's `forward` listener and the sidecar keep an
@@ -3019,8 +3020,8 @@ flowchart LR
     WORKLOAD_AUTH_CUTOVER[In progress: bearer removal]
     APP_IDENTITIES_UI[In progress: identities in the app]
     WORKLOAD_CA_CLIENT_TRUST[Done: Firecracker runners' control listener trusts the workload CA alone]
-    EGRESS_IDENTITY_RULES[Ready: identity rules at the proxy]
-    SERVICES_IDENTITY_PRINCIPAL[Ready: services act and record by identity]
+    EGRESS_IDENTITY_RULES[In progress: identity rules at the proxy]
+    SERVICES_IDENTITY_PRINCIPAL[In progress: services act and record by identity]
     SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox acts as its identity]
     EGRESS_IDENTITY_RULES -->|consumers first| SANDBOX_IDENTITY_SPEC
     SERVICES_IDENTITY_PRINCIPAL -->|consumers first| SANDBOX_IDENTITY_SPEC
@@ -3057,11 +3058,11 @@ states rollback and verifies callers after image/config convergence.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**Ready: consumers first (operator, 2026-11-09).** The proxy accepts Identity subjects before any
-Sandbox presents one: the `WorkloadCredential` resolver reads Identity subjects
-(`agentplane/workload_identity/resolver/resolver.go` refuses one today) together with
-`SERVICES_IDENTITY_PRINCIPAL`, proven on records naming an Identity, and `SANDBOX_IDENTITY_SPEC`
-switches Sandboxes only after this and the services are applied on staging. The proxy's decision keys on the
+**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the
+`WorkloadCredential` resolver resolves an Identity subject live with its UID (`resolver.Subject`);
+the proxy still refuses one.** The proxy accepts Identity subjects before any Sandbox presents one,
+together with `SERVICES_IDENTITY_PRINCIPAL`, proven on records naming an Identity, and
+`SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on staging. The proxy's decision keys on the
 identity the resolver yields, and decision history records it. The Kubernetes-audience projected
 token is the only `projectedWorkloadToken` source; Sandboxes stop projecting it in
 `SANDBOX_IDENTITY_SPEC` and command boxes at `IDENTITY_CUTOVER`, and the source, the sidecar's
@@ -3075,7 +3076,8 @@ other noticing.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
-**Ready: consumers first, as `EGRESS_IDENTITY_RULES`.** History's execution
+**In progress (identity-consumers, 2026-11-10), consumers first, as `EGRESS_IDENTITY_RULES`: the
+resolver yields an Identity subject; `auth.SVIDResolver` still refuses one.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
 The seam is `workload_auth/auth`'s `Principal`: `SVIDResolver` currently returns the same
@@ -3094,7 +3096,9 @@ principals, a retained Session with a deleted Sandbox reads as historical.
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
 **Blocked on `EGRESS_IDENTITY_RULES` and `SERVICES_IDENTITY_PRINCIPAL` being applied on staging
-(operator, 2026-11-09: consumers first) and on the open question of who creates a launched Sandbox's `Identity`
+(operator, 2026-11-09: consumers first), including the manifest change that gives every SVID
+verifier its policy namespace and `get` on Identities there, without which a verifier refuses an
+Identity subject, and on the open question of who creates a launched Sandbox's `Identity`
 ([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).**
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
 only before the controller's first report or at `status.stopStage: Stopped`. The switch is one

@@ -1005,7 +1005,8 @@ func TestStoreLargeEvidenceIsFragmentedAndReconstructed(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := map[string]any{"type": "diagnostic", "body": strings.Repeat("界", BoundaryBytes/3+1)}
-	if err := store.ProtocolEvent(t.Context(), owner, "operation-large", "executor", "received", payload); err != nil {
+	if err := store.ProtocolEvent(t.Context(), owner, "operation-large", eventpb.ExecutionProgress_KIND_EXECUTOR,
+		eventpb.ExecutionProgress_PHASE_NOTIFICATION, payload); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := store.Events(t.Context(), session.ID, before.Cursor, 8)

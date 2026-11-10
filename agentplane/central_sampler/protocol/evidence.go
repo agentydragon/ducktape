@@ -19,20 +19,9 @@ type EvidenceSink interface {
 	Record(context.Context, ProviderEvidence, ...*eventpb.Event) error
 }
 
-// ProviderEvidenceKind is the boundary a provider adapter's evidence is recorded under.
-type ProviderEvidenceKind string
-
-const (
-	EvidenceProviderWire ProviderEvidenceKind = "provider_wire"
-	EvidenceProviderHTTP ProviderEvidenceKind = "provider_http"
-	// EvidenceResponsesEvent is one Responses SSE event; EvidenceAnthropicEvent one Messages SSE event.
-	EvidenceResponsesEvent ProviderEvidenceKind = "provider"
-	EvidenceAnthropicEvent ProviderEvidenceKind = "provider_anthropic"
-)
-
 // ProviderEvidence is a JSON evidence payload; its type determines its boundary.
 type ProviderEvidence interface {
-	Kind() ProviderEvidenceKind
+	Kind() eventpb.ExecutionProgress_Kind
 }
 
 // WireBytes are raw transport bytes, base64 in JSON so split UTF-8 sequences survive.
@@ -40,7 +29,9 @@ type WireBytes struct {
 	Bytes []byte `json:"bytes"`
 }
 
-func (WireBytes) Kind() ProviderEvidenceKind { return EvidenceProviderWire }
+func (WireBytes) Kind() eventpb.ExecutionProgress_Kind {
+	return eventpb.ExecutionProgress_KIND_PROVIDER_WIRE
+}
 
 // HTTPResponseHead is the status and identity of a provider HTTP response.
 type HTTPResponseHead struct {
@@ -49,7 +40,9 @@ type HTTPResponseHead struct {
 	ProviderRequestID string `json:"provider_request_id"`
 }
 
-func (HTTPResponseHead) Kind() ProviderEvidenceKind { return EvidenceProviderHTTP }
+func (HTTPResponseHead) Kind() eventpb.ExecutionProgress_Kind {
+	return eventpb.ExecutionProgress_KIND_PROVIDER_HTTP
+}
 
 // CaptureReader retains transport bytes before parsing, including incomplete SSE records.
 // JSON represents []byte as base64, preserving split UTF-8 sequences without replacement.

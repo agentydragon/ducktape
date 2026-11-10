@@ -62,6 +62,10 @@ editor chunk's side-effect chain), welcome-screen components (each
 `partial_swap`s (residual editor code shares their implementation; roughjs also
 exports three subpaths), and open-color (a JSON default).
 
+`:canonical_summary` reduces the accepted tree to per-chunk gate and
+translation-validation verdicts and emitted-file hashes, so an engine change can
+be diffed against its base.
+
 ## Shape and cost
 
 Measured at `@excalidraw/excalidraw` 0.18.1 (2026-11-10):

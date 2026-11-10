@@ -229,13 +229,86 @@ message BoundaryRecord {
   uint32 fragment_count = 9;
 }
 
-// Nested code-mode execution progress; parent_id links the operation to a cell or call.
+// Nested code-mode execution progress; parent_id links the operation to a cell or call. Its
+// BoundaryRecord twin names the same kind and phase as their lowercased value names.
 message ExecutionProgress {
+  // What the operation is: a recorded intent kind, or a sampler lifecycle subject.
+  enum Kind {
+    // Also what an entry stored before Kind existed decodes to.
+    KIND_UNSPECIFIED = 0;
+    KIND_SESSION = 1;
+    KIND_WORKSPACE = 2;
+    KIND_COMMAND = 3;
+    KIND_NOTIFICATION = 4;
+    KIND_CODE_HOST_LOSS = 5;
+    KIND_RECOVERY = 6;
+    KIND_CELL = 7;
+    KIND_SAMPLING = 8;
+    KIND_COMPACTION = 9;
+    KIND_INTERRUPT = 10;
+    KIND_TOOL = 11;
+    KIND_EXECUTOR = 12;
+    KIND_INTERRUPT_PROCESS = 13;
+    KIND_JAVASCRIPT = 14;
+    KIND_PROCESS = 15;
+    // Provider adapter evidence: raw transport bytes, the HTTP response head, and one Responses or
+    // Anthropic Messages stream event.
+    KIND_PROVIDER_WIRE = 16;
+    KIND_PROVIDER_HTTP = 17;
+    KIND_PROVIDER = 18;
+    KIND_PROVIDER_ANTHROPIC = 19;
+  }
+  // The step the operation reached. Which phases a kind uses is the sampler's contract.
+  enum Phase {
+    // Also what an entry stored before Phase existed decodes to.
+    PHASE_UNSPECIFIED = 0;
+    PHASE_OPENED = 1;
+    PHASE_FAILED = 2;
+    PHASE_BLOCKED = 3;
+    PHASE_PREPARED = 4;
+    PHASE_COMPLETED = 5;
+    PHASE_DISCARDED = 6;
+    PHASE_RECORDED = 7;
+    PHASE_COMMITTED = 8;
+    PHASE_DISPATCH = 9;
+    PHASE_RESULT = 10;
+    PHASE_REJECTED = 11;
+    PHASE_ABANDONED = 12;
+    PHASE_INCARNATION_CHANGED = 13;
+    // Code-mode protocol frames.
+    PHASE_SEND = 14;
+    PHASE_RECEIVE = 15;
+    // Executor native frames.
+    PHASE_REQUEST = 16;
+    PHASE_RESPONSE = 17;
+    PHASE_NOTIFICATION = 18;
+    // Process lifecycle.
+    PHASE_STARTING = 19;
+    PHASE_RUNNING = 20;
+    PHASE_EXITED = 21;
+    PHASE_EXITED_UNREAD = 22;
+    // The remote outcome could not be determined.
+    PHASE_UNKNOWN = 23;
+    // Cell lifecycle.
+    PHASE_LIVE = 24;
+    PHASE_TERMINATED = 25;
+    // Provider adapter evidence.
+    PHASE_RECEIVED = 26;
+  }
+  // Why a session stopped (phase failed or blocked).
+  message SessionStopped {
+    string reason = 1;
+  }
+
+  reserved 3, 4, 5;
+  reserved "payload_json";
   string operation_id = 1;
   string parent_id = 2;
-  string kind = 3;
-  string phase = 4;
-  string payload_json = 5;
+  Kind kind = 6;
+  Phase phase = 7;
+  oneof detail {
+    SessionStopped session_stopped = 8;
+  }
 }
 
 message Event {

@@ -1,6 +1,7 @@
 import { UnstyledButton } from "@mantine/core";
 import { type JSX, type ReactNode, useLayoutEffect, useState } from "react";
 
+import { remeasureCodeBlocks } from "./code_block";
 import { Disclosure, DisclosureBody } from "./disclosure";
 
 /** Shared height limit for expandable text and output. */
@@ -61,6 +62,9 @@ export function ClampedBlock({
     return () => observer.disconnect();
   }, [content, maxHeightRem]);
   const clipped = overflows && !expanded;
+  useLayoutEffect(() => {
+    if (content) remeasureCodeBlocks(content);
+  }, [content, clipped]);
   // Expansion is user state. CodeMirror briefly measures shorter while mounting inside the
   // sticky shell; retain its collapse control through that transient measurement.
   const body = (

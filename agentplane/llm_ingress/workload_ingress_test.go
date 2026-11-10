@@ -125,7 +125,7 @@ func newWorkloadIngressTestServer(
 	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 
-	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace})
+	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
