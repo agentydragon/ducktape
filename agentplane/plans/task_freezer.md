@@ -34,6 +34,28 @@ Backend tokens for LLM ingress and Action Service retain the `agentplane-egress`
 longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
 name stays relevant; any rename must coordinate those verifiers and their projected tokens.
 
+## Sandboxes and Action boxes
+
+### `SANDBOX_BOX_CONVERGENCE` — Sandboxes and Action boxes as one object type
+
+**Direction, not scheduled (operator, 2026-11-10).** Both offer "execute something here", in
+divergent ways. The shared shape: a workload acting as an Identity, a `WorkloadCredential`, SVID
+egress, exec, a lifetime, and access grants. Today they diverge:
+
+- Identity reference: a Sandbox by name (`spec.identity`), a box by name and UID.
+- Access: a Sandbox only through explicit grants; a box by its requester, through the
+  `caller-identity` labels (provenance: the box's acting Identity always equals its requester).
+- Lifecycle: the Sandbox Controller versus Action Service records; only Sandboxes suspend and resume.
+- Credential ownership: Sandbox-controlled versus `NoController`.
+- Harnesses: only Sandboxes run them.
+
+Guideline: new identity and access decisions on either side move toward the shared shape where it
+is cheap, for example box access keyed on provenance (the Action request's recorded caller), not on
+acting-as. Both end with the same access model, the plan's
+[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting is implied for the
+bound Identity, lifecycle needs a grant. Linked from `ACTION_BOX_IDLE_REAPER` and
+`SANDBOX_IDENTITY_SPEC` in the [DAG](task_dag.md).
+
 ## Workload credentials
 
 Deferred by the operator on 2026-11-09 with the proxy bearer hop removal (#15247)
