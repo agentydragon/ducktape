@@ -183,7 +183,6 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
     git_refs_watcher = deps.git_refs_watcher
     git_manager = deps.git_manager
     index = deps.index
-    discovery = deps.discovery
     config = deps.config
     worktree_ids = params.worktree_ids
 
@@ -247,12 +246,12 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
     readiness = ReadinessSummary(
         total_worktrees=total_wt,
         with_gitstatusd=with_git,
-        discovery_scanning=discovery.is_scanning(),
+        discovery_scanning=deps.discovery_scanning(),
         github=github_state,
     )
 
     components = ComponentsStatus(
-        discovery=ComponentStatus(state=(ComponentState.SCANNING if discovery.is_scanning() else ComponentState.OK)),
+        discovery=ComponentStatus(state=(ComponentState.SCANNING if deps.discovery_scanning() else ComponentState.OK)),
         github=ComponentStatus(state=github_state),
         gitstatusd=ComponentStatus(
             state=(
