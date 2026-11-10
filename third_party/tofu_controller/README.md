@@ -16,29 +16,29 @@ upstream Helm chart with the image, CRD and RBAC swapped in by that module.
 
 ## Source
 
-`go.mod` replaces upstream and its nested `api` module with the `external-artifact-source`
-branch of [agentydragon/tofu-controller](https://github.com/agentydragon/tofu-controller):
-upstream `main` plus the `ExternalArtifact` change merged upstream (the source kind,
-its index, watch and RBAC, regenerated CRD and docs, and an envtest case).
-`MODULE.bazel` fetches that commit's Go proxy zips with `archive_override`.
+`go.mod` pins `github.com/flux-iac/tofu-controller` and its nested `api` module to upstream
+commit [`e2db61b`](https://github.com/flux-iac/tofu-controller/commit/e2db61bdd264284908d9f7506cb358542a7e3578),
+which merged [PR #1901](https://github.com/flux-iac/tofu-controller/pull/1901).
+`MODULE.bazel` fetches both official Go proxy zips for that commit with `archive_override`.
 
-`patches/bazel.patch` exports the CRD YAML: build glue, not part of the branch.
+`patches/bazel.patch` exports the CRD YAML: build glue, not part of upstream source.
 
-The controller's tests, including the `ExternalArtifact` envtest case, live on the branch
-and run in its own CI: they need a `kube-apiserver` and a `tofu` binary, so Ducktape only
+The controller's tests, including the `ExternalArtifact` envtest case, live with the upstream
+source and run in its own CI: they need a `kube-apiserver` and a `tofu` binary, so Ducktape only
 builds the manager.
 
 **Gotcha:** the `MODULE.bazel` overrides are build fixes, not features: `//conditions` labels
 in `fluxcd/pkg/runtime` resolve to the main repository, and proto generation in `runner/`
 would link a second grpc. Both explain themselves in place.
 
-[flux-iac/tofu-controller#1901](https://github.com/flux-iac/tofu-controller/pull/1901) merged upstream,
-but no upstream release includes it yet. Once a release includes it, validate the image and CRD,
-then remove the module and switch `cluster/cdk8s/tofu_controller_release.py` back to the chart's image and CRD.
+**TODO:** Once an upstream release includes [PR #1901](https://github.com/flux-iac/tofu-controller/pull/1901),
+move these module pins to that release, validate its image and CRD, then remove this module and
+switch `cluster/cdk8s/tofu_controller_release.py` back to the chart's image and CRD.
 
 ## Updating the controller
 
-Push to the fork branch, point both `replace` directives at the new commit and refresh
-`go.mod`/`go.sum` with `go mod tidy` over the manager's imports, then set both `archive_override`s to the new
-pseudo-versions and their zips' checksums. Keep `cluster/cdk8s/tofu_controller_release.py`'s
-chart version on the release the branch is based on.
+Choose an upstream `flux-iac/tofu-controller` commit containing the required behavior. Set both
+module requirements in `go.mod` to that commit's pseudo-versions and refresh `go.sum`, then update
+both `archive_override`s to the official proxy zips, strip prefixes and SHA-256 values for the same
+commit. The chart version is pinned separately in `cluster/cdk8s/tofu_controller_release.py` and
+needs its own compatibility review when the controller source changes.

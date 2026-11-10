@@ -23,24 +23,23 @@ go_sdk.download(version = "1.26.4")
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", isolate = True)
 go_deps.from_file(go_mod = "//:go.mod")
 
-# go.mod replaces upstream and its nested api/ module with the external-artifact-source branch
-# of agentydragon/tofu-controller; these overrides fetch that commit's Go proxy zips. An archive
-# rather than a module fetch: the fork's go.mod asks for a newer Go than the repository's SDK,
-# which `go mod download` refuses and the build itself does not need. bazel.patch exports the
-# CRD YAML, build glue that is not part of the branch.
+# These archive overrides fetch the upstream source and API modules at the same ExternalArtifact
+# merge commit. An archive avoids asking the repository's Go 1.26.4 SDK to resolve modules whose
+# go.mod requires Go 1.27.3; the manager build does not need that directive. bazel.patch exports
+# the CRD YAML, build glue that is not part of upstream.
 go_deps.archive_override(
     patch_strip = 1,
     patches = ["//patches:bazel.patch"],
     path = "github.com/flux-iac/tofu-controller",
-    sha256 = "e9a3168aadf9132c2ead6cf27a3f473c1910548048399595c61e9048cbbafc4a",
-    strip_prefix = "github.com/agentydragon/tofu-controller@v0.16.5-0.20261010044935-9b2a06528297",
-    urls = ["https://proxy.golang.org/github.com/agentydragon/tofu-controller/@v/v0.16.5-0.20261010044935-9b2a06528297.zip"],
+    sha256 = "837a877d0f4f35e0e00eb118a20e75fb8a2533551454c643051aa95973f34338",
+    strip_prefix = "github.com/flux-iac/tofu-controller@v0.16.7-0.20261028091259-e2db61bdd264",
+    urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/@v/v0.16.7-0.20261028091259-e2db61bdd264.zip"],
 )
 go_deps.archive_override(
     path = "github.com/flux-iac/tofu-controller/api",
-    sha256 = "0153154ac1362f63c9f50b012461008e069c3870c34b5db4e12998f84adf8cc3",
-    strip_prefix = "github.com/agentydragon/tofu-controller/api@v0.0.0-20261010044935-9b2a06528297",
-    urls = ["https://proxy.golang.org/github.com/agentydragon/tofu-controller/api/@v/v0.0.0-20261010044935-9b2a06528297.zip"],
+    sha256 = "ea877bfcd87c69160af5bb9b790179199be3d494dd5b3320475c99e03a0b027d",
+    strip_prefix = "github.com/flux-iac/tofu-controller/api@v0.0.0-20261028091259-e2db61bdd264",
+    urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/api/@v/v0.0.0-20261028091259-e2db61bdd264.zip"],
 )
 
 # Use upstream's checked-in runner.pb.go: a generated go_proto_library would link rules_go's own
