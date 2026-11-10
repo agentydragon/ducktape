@@ -43,7 +43,30 @@ Claude JSONL under `projects/` is indexed, including nested `subagents/`; Codex 
 
 Each physical JSONL line has its own ordinal and byte offset. Repeated identical lines at different positions remain separate events. The raw line bytes are content-addressed once and reused by version/ordinal references; malformed UTF-8 and invalid JSON retain their raw bytes and a record-level parse issue, while subsequent lines continue importing. Events expose a replacement-decoded `raw` display string and lossless base64 bytes. A file version is `complete` when extraction succeeded and every record is valid UTF-8/JSON. `capture_status` remains `unknown`: Restic snapshot existence does not prove the workstation's backup read every source file.
 
-Growing transcript versions share their unchanged record prefix and store only their divergent suffix, with a full checkpoint at least every 64 distinct versions. Import parses in batches capped at 500 records and approximately 4 MiB of source bytes; one very large physical line can exceed that bound. The exact file hash/size is computed from a temporary spool, so the full transcript is not copied into Postgres per snapshot. Restic remains the source of exact file bytes; Postgres retains deduplicated raw record bytes for all imported JSONL lines and snapshot/path provenance.
+Growing transcript versions share their unchanged record prefix and store only their divergent suffix, with a full checkpoint at least every 64 distinct versions. Import parses in batches capped at 500 records and approximately 4 MiB of source bytes; one very large physical line can exceed that bound. Each parsed batch commits deduplicated payloads and usage observations together with
+its divergent suffix mappings and durable progress in `file_version_imports` /
+`file_version_import_records`. Parsing and metadata extraction run between database
+transactions. A crash leaves resumable staging; retries reparse the spool, validate
+already committed mappings and bytes, and insert only the remaining records.
+Concurrent importers serialize each staging batch and final publication, and payload
+insertion handles concurrent content deduplication while checking raw-byte equality.
+
+A staged version has no `file_versions` row. Publication inserts that row, copies
+its divergent record mappings, updates the snapshot-file ledger and session metadata,
+and deletes staging in one transaction. Existing read APIs therefore keep serving the
+previous captured version until the entire new version commits, including when an
+older API process is still running. The publication transaction scales with the suffix
+mapping count and staging cleanup; its duration is not bounded by the parsing batch
+limit. Parent lineage is revalidated at publication; a changed parent produces a
+checkpoint reconstructed from the retained immutable parent prefix and staged suffix. Shared raw payload and usage tables include
+staged evidence before publication, so direct counts of those content pools are not
+published-event counts. Analytics must join through `file_versions` and
+`file_version_records`. Staging cleanup never deletes shared payloads. Failed stages
+remain available for retry; successful or already-published stages are removed on
+publication or the next import run. An abandoned stage whose source is no longer
+retained is not automatically expired.
+
+The exact file hash/size is computed from a temporary spool, so the full transcript is not copied into Postgres per snapshot. Restic remains the source of exact file bytes; Postgres retains deduplicated raw record bytes for all imported JSONL lines and snapshot/path provenance.
 
 The first parser is fixed at `jsonl-v1`. A parser-version change needs an explicit migration/reparse workflow; changing the constant alone does not reinterpret already imported file versions. Binary/config/cache files remain available from Restic but are not copied into this initial SQL index. Search, normalized operation tables, archive-pruning policy, live backup completeness, and an archive restore rehearsal remain outside this slice.
 
