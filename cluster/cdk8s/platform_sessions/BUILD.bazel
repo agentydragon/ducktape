@@ -21,6 +21,7 @@ py_library(
     srcs = [
         "app.py",
         "config.py",
+        "migrate_state.py",
         "remote.py",
     ],
     visibility = [
@@ -49,6 +50,18 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_test(
+    name = "test_migrate_state",
+    srcs = ["test_migrate_state.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
