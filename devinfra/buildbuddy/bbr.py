@@ -269,6 +269,9 @@ Runner defaults come from bb's native .bbrc files; pass remote flags before
 the Bazel verb to override them. Bazel defaults come from the
 runner's .bazelrc. $BBR_BAZELRC supplies session metadata before user arguments.
 Transient CLI/observer errors fail the run rather than replaying the remote command.
+bbr leaves Bazel's BEP upload policy unchanged (default: minimal). When fetching
+locally generated regular files, add --remote_build_event_upload=all after the
+Bazel verb. Runfiles and declared directories need separate handling.
 
 Flags:
   --dry-run                  Print the forwarded command without expanding .bbrc
