@@ -10325,6 +10325,54 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Calling generator `key` creates an opaque generator object. Its body
+    /// runs when some later code resumes the object (`next()`, `for`-`of`,
+    /// spread, destructuring): the body is a published callback, so each
+    /// resumption, an unknown call, promotes the body's effects to the
+    /// resuming owner. What the body can reach (the arguments and captures,
+    /// which the frame's environment holds) is published with it.
+    #[inline(never)]
+    fn create_generator(
+        &mut self,
+        key: u32,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let reached: Values = args.iter().chain(env.values()).flatten().cloned().collect();
+        self.publish_values(
+            &reached,
+            ClassMembersPublicationWriter::GeneratorCreation,
+            None,
+        );
+        let body = self.deferred_callbacks(Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Function,
+            key,
+        ))]));
+        self.insert_escaped_callback_values(
+            &Values::from([body]),
+            ClassMembersPublicationWriter::GeneratorCreation,
+            None,
+            None,
+        );
+        outcome.returns.insert(AbstractValue::Value(Value::Top));
+    }
+
+    /// The iterator protocol a callable's body runs on its
+    /// `iterated_sources`.
+    #[inline(never)]
+    fn iterate_callable_sources(
+        &mut self,
+        callable: &Callable,
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        for iterated in &callable.iterated_sources {
+            let values = self.evaluate(iterated, env, env);
+            self.run_iterator_protocol(&values, callable.owner, outcome);
+        }
+    }
+
     /// Iterating `values` calls their `[Symbol.iterator]` and the iterator's
     /// `next`. Unless every value is a proven native iterable, those are
     /// unknown callees: the iterated value is published and the operation
@@ -10860,30 +10908,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 callable.owner,
                 DUMMY_SP,
             );
-            // The body runs when some later code resumes the generator
-            // object (`next()`, `for`-`of`, spread, destructuring). The
-            // object is opaque, and the body is a published callback, so each
-            // resumption, an unknown call, promotes the body's effects to the
-            // resuming owner. What the body can reach (the arguments and
-            // captures, which the frame's environment holds) is published
-            // with it.
-            let reached: Values = args.iter().chain(env.values()).flatten().cloned().collect();
-            self.publish_values(
-                &reached,
-                ClassMembersPublicationWriter::GeneratorCreation,
-                None,
-            );
-            let body = self.deferred_callbacks(Values::from([AbstractValue::Value(Value::Alloc(
-                Kind::Function,
-                key,
-            ))]));
-            self.insert_escaped_callback_values(
-                &Values::from([body]),
-                ClassMembersPublicationWriter::GeneratorCreation,
-                None,
-                None,
-            );
-            outcome.returns.insert(AbstractValue::Value(Value::Top));
+            self.create_generator(key, &args, &env, &mut outcome);
             self.state.active.remove(&active_invocation);
             self.state.invocation_depth -= 1;
             self.remember_invocation(signature, &outcome);
@@ -10910,10 +10935,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
-        for iterated in &callable.iterated_sources {
-            let values = self.evaluate(iterated, &env, &env);
-            self.run_iterator_protocol(&values, callable.owner, &mut outcome);
-        }
+        self.iterate_callable_sources(callable, &env, &mut outcome);
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
