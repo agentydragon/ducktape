@@ -68,5 +68,6 @@ def run(source: str = SOURCE, identity: int = 200, attempt: int = 1, **overrides
         "path": ".github/workflows/ci.yml",
         "head_repository": SimpleNamespace(full_name="agentydragon/ducktape"),
         "status": "completed",
+        "conclusion": "success",
     }
     return SimpleNamespace(**(values | overrides))

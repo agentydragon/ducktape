@@ -66,12 +66,22 @@ bazel-ci already rebuilds them from source so the gate would be redundant.
 
 ### Automatic pin selection
 
-`sync-pins.yml` runs every 30 minutes. It selects published content from a
-completed push CI run for the exact checked-out, current `devel` SHA, using the
-newest run/attempt for that SHA. Release creation dates never order promotions:
-an A → B → A revert selects the existing A release again. Old or feature-branch
-CI runs cannot select pins, including after a newer source requested A without
-changing any pins.
+`sync-pins.yml` runs every 30 minutes. It promotes the latest CI-eligible
+first-parent source on current `devel`, using that source's newest push CI run
+and attempt. It walks past a missing or skipped run only when the commit
+explicitly carries `[skip ci]`, as Flux deployment pins and runner/freecad
+image pins do. Those commits remain **unbuilt**, even if they change code; this
+does not prove an ancestor's artifacts match arbitrary later skipped changes.
+A missing ordinary run (including delayed GitHub event creation), pending run,
+or 32-commit traversal limit retains pins instead of selecting older evidence.
+Failed or cancelled newer runs also never fall through to an older source.
+The RBE image pin continues to require its normal CI sweep.
+
+The selected immutable SHA supplies the artifact registry, skills registry and
+RBE image pin through GitHub's read API; discovery does not change the checkout.
+Release creation dates never order promotions: an A → B → A revert selects the
+existing A release again. Old or feature-branch CI runs cannot select pins,
+including after a newer CI source requested A without changing any pins.
 
 | Artifact category                                       | Evidence for the desired release tag                                                                                                                    |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,14 +109,15 @@ not block successful package jobs. API failures before the final write leave the
 pin file untouched. Once devel is stable, CI completes, and its releases and
 evidence are available, a later scheduled sync converges automatically. A
 continuously moving devel can postpone convergence; expired evidence requires a
-rerun of the current devel CI. A concurrent devel advance rejects the push;
+rerun of the selected CI source. A concurrent devel advance rejects the push;
 sync never rebases an old decision and recomputes next cycle.
 
 No-op syncs write neither pins nor provenance metadata, avoiding a commit/CI
 loop. A pin-only sync commit runs CI normally and settles without another pin
 commit when the artifact content is unchanged. Sync reads one normal build and
-only necessary package builds (four concurrent reads, 45 seconds per read), plus
-one exact-tag lookup per release group. Unchanged pins need no asset downloads.
+only necessary package builds (four concurrent reads, 45 seconds per read).
+Source discovery makes at most two API calls per examined commit, plus three
+registry/image reads and one exact-tag lookup per release group. Unchanged pins need no asset downloads.
 The workflow retains its 10-minute budget; a timeout leaves the remote pins
 unchanged and the next cycle retries.
 
@@ -117,8 +128,9 @@ uv run devinfra/ci/sync_pins.py --source-commit "$(git rev-parse HEAD)" --dry-ru
 ```
 
 This needs `GH_TOKEN`, `BUILDBUDDY_API_KEY`, and the devshell's pinned `bbapi`.
-Dry runs may inspect a historical devel source; use that source's artifact
-registry, image pin and existing pins when interpreting the plan.
+Dry runs may inspect a historical devel snapshot. The selected CI source
+supplies its own registries and image pin; the plan compares against the
+checked-out pin file.
 
 ### Notes on specific entries
 

@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27"]
 # ///
-"""Sync pins to already-published content identified by exact-source devel CI.
+"""Sync pins to published content identified by the last CI-eligible devel source.
 
 Expects GH_TOKEN, BUILDBUDDY_API_KEY, and the pinned bbapi on PATH. Missing
 evidence retains pins; release creation time never determines desired content.
@@ -25,23 +25,14 @@ import httpx
 from github import Auth, Github
 from github.GithubException import GithubException
 
-from devinfra.ci.artifacts import (
-    ARTIFACTS,
-    Pin,
-    Sources,
-    artifact_targets_path,
-    skills_registry_path,
-    sources_path,
-    url_sha256,
-)
-from devinfra.ci.pin_publication import current_run, desired_tags, read_build
-from devinfra.ci.plan_releases import load_releases
-from devinfra.ci.publication_test_verdicts import effective_rbe_image
+from devinfra.ci.artifacts import Pin, Sources, sources_path, url_sha256
+from devinfra.ci.pin_publication import desired_tags, publication_source, read_build, source_configuration
 
 # gazelle:include_dep @pypi//httpx
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
+_SOURCE_ERRORS = (GithubException, ValueError, KeyError, TypeError)
 
 
 def missing_wheel_imports(util_wheel: bytes, consumers: dict[str, bytes]) -> list[str]:
@@ -89,18 +80,24 @@ def main(argv: list[str] | None = None) -> None:
             return
         devel_sha = args.source_commit
         print("Historical dry run; no pin changes will be written")
-    run = current_run(repo.get_workflow("ci.yml").get_runs(branch="devel", event="push", head_sha=devel_sha), devel_sha)
-    rbe_image = effective_rbe_image("")
-    if run is None or rbe_image is None:
-        print("Current devel CI is pending or unavailable; retaining pins")
+    try:
+        selected = publication_source(repo, devel_sha)
+        config = source_configuration(repo, selected[0]) if selected else None
+    except _SOURCE_ERRORS:
+        print("CI source or configuration unavailable; retaining pins")
         return
-    releases = load_releases(artifact_targets_path(), skills_registry_path())
+    if selected is None or config is None or config.rbe_image is None:
+        print("CI-eligible devel source is pending, unavailable or outside the scan limit; retaining pins")
+        return
+    source_commit, run = selected
+    print(f"Selecting published content from CI-eligible devel source {source_commit}")
+    releases = config.releases
     tags = desired_tags(
         releases,
-        source_commit=devel_sha,
+        source_commit=source_commit,
         run_id=str(run.id),
         attempt=str(run.run_attempt),
-        rbe_image=rbe_image,
+        rbe_image=config.rbe_image,
         successful_jobs={
             job.name
             for job in run.jobs(_filter="latest")
@@ -114,7 +111,7 @@ def main(argv: list[str] | None = None) -> None:
         if not (tag := tags.get(release.pkg)):
             print(f"{release.pkg}: no verified build identity; retaining pins")
             continue
-        owned = [artifact for artifact in ARTIFACTS if artifact.release_tag_prefix == release.pkg]
+        owned = [artifact for artifact in config.artifacts if artifact.release_tag_prefix == release.pkg]
         if not owned:
             continue
         try:

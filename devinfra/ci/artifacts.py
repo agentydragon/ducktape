@@ -76,26 +76,19 @@ class Artifact(BaseModel, frozen=True):
         return self.tag_pkg or self.pkg
 
 
-def _skill_artifacts() -> list[Artifact]:
-    """One pin-managed Artifact per Nix-enabled skill in the registry.
-
-    Each skill releases independently as `skill-<name>-<hash>` carrying a single
-    `<name>.skill` asset. Nix-enabled skills also get a `skill-<name>` pin in
-    artifact-pins.json.
-    """
-    registry = json.loads(skills_registry_path().read_text())
-    return [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"] if s.get("nix", True)]
-
-
-def _release_artifacts() -> list[Artifact]:
-    targets = ArtifactTargets.model_validate_json(artifact_targets_path().read_text())
-    return [
+def artifacts_from_json(artifact_targets_json: str, skills_registry_json: str) -> list[Artifact]:
+    """Managed pins from one source revision's two registry documents."""
+    targets = ArtifactTargets.model_validate_json(artifact_targets_json)
+    registry = json.loads(skills_registry_json)
+    releases = [
         Artifact(pkg=pkg, filename=target.filename, tag_pkg=target.release if target.release != pkg else None)
         for pkg, target in targets.pins.items()
     ]
+    skills = [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"] if s.get("nix", True)]
+    return [*releases, *skills]
 
 
-ARTIFACTS = [*_release_artifacts(), *_skill_artifacts()]
+ARTIFACTS = artifacts_from_json(artifact_targets_path().read_text(), skills_registry_path().read_text())
 
 
 def _sha256_of_chunks(chunks: Iterable[bytes]) -> str:

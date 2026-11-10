@@ -14,6 +14,7 @@ from github.GithubException import UnknownObjectException
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci import sync_pins
 from devinfra.ci.artifacts import Artifact, Pin, Sources
+from devinfra.ci.pin_publication import Configuration
 from devinfra.ci.pin_publication_test_support import SOURCE, normal, output, release as release_row, run
 from devinfra.ci.plan_releases import content_hash, content_tag
 from devinfra.ci.sync_pins import missing_wheel_imports
@@ -127,23 +128,20 @@ def _configure(monkeypatch, tmp_path, filenames, selected):
         get_branch=lambda _: SimpleNamespace(commit=SimpleNamespace(sha=SOURCE)),
         get_workflow=lambda _: SimpleNamespace(get_runs=lambda **_: [current]),
         get_release=lambda tag: next(r for r in selected.values() if r.tag_name == tag),
-        compare=lambda _base, _head: SimpleNamespace(status="ahead"),
+        get_commit=lambda _: SimpleNamespace(commit=SimpleNamespace(message="ordinary commit"), parents=[]),
     )
     for name, published in selected.items():
         published.raw_data = {
             "assets": [{"name": filenames[name], "digest": "sha256:" + hashlib.sha256(b"stamped asset").hexdigest()}]
         }
     monkeypatch.setattr(sync_pins, "Github", lambda **_: SimpleNamespace(get_repo=lambda _: repo))
-    monkeypatch.setattr(
-        sync_pins, "ARTIFACTS", [Artifact(pkg=name, filename=filename) for name, filename in filenames.items()]
+    repo.configuration = Configuration(
+        [release_row(name, filenames=filename) for name, filename in filenames.items()],
+        [Artifact(pkg=name, filename=filename) for name, filename in filenames.items()],
+        "registry/image@sha256:" + "a" * 64,
     )
-    monkeypatch.setattr(
-        sync_pins,
-        "load_releases",
-        lambda *_: [release_row(name, filenames=filename) for name, filename in filenames.items()],
-    )
+    monkeypatch.setattr(sync_pins, "source_configuration", lambda _repo, _source: repo.configuration)
     monkeypatch.setattr(sync_pins, "url_sha256", lambda _: HASH)
-    monkeypatch.setattr(sync_pins, "effective_rbe_image", lambda _: "registry/image@sha256:" + "a" * 64)
     monkeypatch.setattr(sync_pins, "read_build", {BUILD: normal()}.get)
     monkeypatch.setattr(sync_pins, "sources_path", lambda: tmp_path / "pins.json")
     monkeypatch.setenv("GH_TOKEN", "test-token")
@@ -222,13 +220,12 @@ def test_multi_asset_publication_updates_atomically_and_checks_stamped_bytes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, complete: bool
 ) -> None:
     published = SimpleNamespace(tag_name="unused", draft=False, prerelease=False)
-    _configure(monkeypatch, tmp_path, {"pair": "wheel.whl"}, {"pair": published})
+    repo, _ = _configure(monkeypatch, tmp_path, {"pair": "wheel.whl"}, {"pair": published})
     row = release_row("pair", "//pkg:wheel //pkg:zip", "wheel.whl extension.zip")
-    monkeypatch.setattr(sync_pins, "load_releases", lambda *_: [row])
-    monkeypatch.setattr(
-        sync_pins,
-        "ARTIFACTS",
-        [
+    repo.configuration = dataclasses.replace(
+        repo.configuration,
+        releases=[row],
+        artifacts=[
             Artifact(pkg="wheel", filename="wheel.whl", tag_pkg="pair"),
             Artifact(pkg="extension", filename="extension.zip", tag_pkg="pair"),
         ],

@@ -95,7 +95,12 @@ class Release:
 
 def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release]:
     """Every release row, from the two SSOT files release.yml has always read."""
-    doc = json.loads(artifact_targets.read_text())
+    return releases_from_json(artifact_targets.read_text(), skills_registry.read_text())
+
+
+def releases_from_json(artifact_targets_json: str, skills_registry_json: str) -> list[Release]:
+    """Parse a release registry snapshot without requiring a checkout."""
+    doc = json.loads(artifact_targets_json)
     pins = doc["pins"]
     rows = [
         Release(
@@ -112,7 +117,7 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
     ]
     # One release per deployable skill; skills/skills_registry.json is the SSOT.
     # Their `<name>_frontmatter_test` already runs in bazel-ci, so tests stays empty.
-    skills = json.loads(skills_registry.read_text())["skills"]
+    skills = json.loads(skills_registry_json)["skills"]
     rows.extend(
         Release(
             pkg=skill["pkg"],

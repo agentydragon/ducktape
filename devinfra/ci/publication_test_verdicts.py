@@ -26,7 +26,15 @@ def effective_rbe_image(override: str, pins_path: Path = Path("devinfra/image_pi
     if override:
         return override
     try:
-        pins = json.loads(pins_path.read_text())
+        return rbe_image_from_json(pins_path.read_text())
+    except OSError:
+        return None
+
+
+def rbe_image_from_json(image_pins_json: str) -> str | None:
+    """Resolve the RBE image from one source revision's pin snapshot."""
+    try:
+        pins = json.loads(image_pins_json)
         image = pins["rbe_container"]["image"]
         digest = pins["rbe_container"]["digest"]
     except _RBE_PIN_ERRORS:

@@ -7,6 +7,7 @@ select A again. No evidence from an older source or workflow attempt is reused.
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import re
 import shlex
 from collections import Counter
@@ -15,7 +16,9 @@ from typing import Any
 
 from devinfra.buildbuddy.ci import bes
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.ci.plan_releases import Release, content_hash, content_tag
+from devinfra.ci.artifacts import Artifact, artifacts_from_json
+from devinfra.ci.plan_releases import Release, content_hash, content_tag, releases_from_json
+from devinfra.ci.publication_test_verdicts import rbe_image_from_json
 
 REPOSITORY = "agentydragon/ducktape"
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -38,8 +41,52 @@ def current_run(runs: Iterable[Any], source_commit: str) -> Any | None:
     ]
     if not matching:
         return None
-    run = max(matching, key=lambda run: (run.id, run.run_attempt))
-    return run if run.status == "completed" else None
+    return max(matching, key=lambda run: (run.id, run.run_attempt))
+
+
+def publication_source(repo: Any, checkout_sha: str) -> tuple[str, Any] | None:
+    """Find the last CI-eligible first-parent source through intentional skips.
+
+    A missing run for an ordinary commit may be delayed or deleted metadata;
+    never interpret that as permission to promote an older source. A skipped
+    commit remains unbuilt, even if it changes code. No-op CI sources still
+    take precedence over late older runs without writing a tracked watermark.
+    """
+    workflow = repo.get_workflow("ci.yml")
+    source = checkout_sha
+    for _ in range(32):
+        run = current_run(workflow.get_runs(branch="devel", event="push", head_sha=source), source)
+        if run is not None and not (run.status == "completed" and run.conclusion == "skipped"):
+            return (source, run) if run.status == "completed" else None
+        commit = repo.get_commit(source)
+        if "[skip ci]" not in commit.commit.message.lower() or not commit.parents:
+            return None
+        source = commit.parents[0].sha
+    return None
+
+
+@dataclasses.dataclass(frozen=True)
+class Configuration:
+    releases: list[Release]
+    artifacts: list[Artifact]
+    rbe_image: str | None
+
+
+def source_configuration(repo: Any, source_commit: str) -> Configuration:
+    """Load all promotion inputs at the selected immutable SHA, without checkout."""
+    paths = ("devinfra/ci/artifact_targets.json", "skills/skills_registry.json", "devinfra/image_pins.json")
+
+    def read(path: str) -> str:
+        content = repo.get_contents(path, ref=source_commit).decoded_content
+        if not isinstance(content, bytes):
+            raise TypeError("source document did not contain bytes")
+        return content.decode()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        targets, skills, image_pins = pool.map(read, paths)
+    return Configuration(
+        releases_from_json(targets, skills), artifacts_from_json(targets, skills), rbe_image_from_json(image_pins)
+    )
 
 
 def _options(args: tuple[str, ...] | None, command: str) -> Counter[str] | None:

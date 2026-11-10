@@ -1,11 +1,19 @@
 import dataclasses
+import json
+from types import SimpleNamespace
 
 import pytest
 import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Invocation, Output
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.ci.pin_publication import current_run, desired_tags, verified_build
+from devinfra.ci.pin_publication import (
+    current_run,
+    desired_tags,
+    publication_source,
+    source_configuration,
+    verified_build,
+)
 from devinfra.ci.pin_publication_test_support import RBE, SOURCE, normal, output, own_build, release, run
 from devinfra.ci.plan_releases import Release, content_tag
 
@@ -20,7 +28,97 @@ def test_noop_new_source_cannot_be_overtaken_by_late_older_source_or_feature_run
 
 @pytest.mark.parametrize("status", ["queued", "in_progress"])
 def test_pending_new_attempt_does_not_reuse_old_attempt(status: str) -> None:
-    assert current_run([run(), run(attempt=2, status=status)], SOURCE) is None
+    newer = run(attempt=2, status=status)
+    repo = SourceRepo({SOURCE: [run(), newer]}, {SOURCE: ("ordinary source", "older")})
+    assert current_run([run(), newer], SOURCE) is newer
+    assert publication_source(repo, SOURCE) is None
+    assert repo.queried == [SOURCE]
+
+
+class SourceRepo:
+    def __init__(self, runs: dict, commits: dict) -> None:
+        self.runs = runs
+        self.commits = commits
+        self.queried: list[str] = []
+
+    def get_workflow(self, _path):
+        def get_runs(**kwargs):
+            source = kwargs["head_sha"]
+            self.queried.append(source)
+            return self.runs.get(source, [])
+
+        return SimpleNamespace(get_runs=get_runs)
+
+    def get_commit(self, source):
+        message, parent = self.commits[source]
+        return SimpleNamespace(commit=SimpleNamespace(message=message), parents=[SimpleNamespace(sha=parent)])
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "chore: update images [skip ci]",
+        "chore: pin BuildBuddy runner image [skip ci]",
+        "chore: pin freecad_test image digest [skip ci]",
+        "deliberately unbuilt code change [skip ci]",
+    ],
+)
+@pytest.mark.parametrize("skipped_run", [False, True])
+def test_intentional_skip_uses_last_ci_eligible_source_without_claiming_head_was_built(
+    message: str, skipped_run: bool
+) -> None:
+    eligible = run()
+    repo = SourceRepo(
+        {SOURCE: [eligible], "unbuilt": [run("unbuilt", conclusion="skipped")] if skipped_run else []},
+        {"unbuilt": (message, SOURCE)},
+    )
+    assert publication_source(repo, "unbuilt") == (SOURCE, eligible)
+    assert repo.queried == ["unbuilt", SOURCE]
+
+
+@pytest.mark.parametrize("message", ["new code awaiting GitHub event", "chore: pin rbe_container image digest"])
+def test_unknown_no_run_transition_retains_pins_instead_of_using_older_ci(message: str) -> None:
+    repo = SourceRepo({SOURCE: [run()]}, {"unbuilt": (message, SOURCE)})
+    assert publication_source(repo, "unbuilt") is None
+    assert repo.queried == ["unbuilt"]
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "skipped"])
+def test_newer_failed_cancelled_or_unmarked_skipped_run_never_falls_back(conclusion: str) -> None:
+    newer = run(conclusion=conclusion)
+    repo = SourceRepo({SOURCE: [newer], "older": [run("older")]}, {SOURCE: ("ordinary source", "older")})
+    expected = None if conclusion == "skipped" else (SOURCE, newer)
+    assert publication_source(repo, SOURCE) == expected
+    assert repo.queried == [SOURCE]
+
+
+def test_source_traversal_exhaustion_fails_closed() -> None:
+    repo = SourceRepo({"32": [run("32")]}, {str(i): ("[skip ci]", str(i + 1)) for i in range(32)})
+    assert publication_source(repo, "0") is None
+    assert repo.queried == [str(i) for i in range(32)]
+
+
+def test_selected_source_supplies_registry_and_image_snapshot_consistently() -> None:
+    documents = {
+        "devinfra/ci/artifact_targets.json": {
+            "pins": {"old-name": {"target": "//old:target", "filename": "old.whl", "release": "old-release"}},
+            "releases": {"old-release": {}},
+        },
+        "skills/skills_registry.json": {"skills": []},
+        "devinfra/image_pins.json": {"rbe_container": {"image": "old/image", "digest": "sha256:old"}},
+    }
+    requests: list[tuple[str, str]] = []
+
+    def get_contents(path, *, ref):
+        requests.append((path, ref))
+        assert ref == SOURCE
+        return SimpleNamespace(decoded_content=json.dumps(documents[path]).encode())
+
+    config = source_configuration(SimpleNamespace(get_contents=get_contents), SOURCE)
+    assert config.releases[0].targets == "//old:target"
+    assert config.artifacts[0].pkg == "old-name"
+    assert config.rbe_image == "old/image@sha256:old"
+    assert set(requests) == {(path, SOURCE) for path in documents}
 
 
 @pytest.mark.parametrize(

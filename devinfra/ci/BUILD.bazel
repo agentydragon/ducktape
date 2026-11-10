@@ -24,8 +24,6 @@ py_library(
     deps = [
         ":artifacts",
         ":pin_publication",
-        ":plan_releases",
-        ":publication_test_verdicts",
         "@pypi//httpx",  # keep: sync-pins downloads wheel candidates
         "@pypi//pygithub",
     ],
@@ -36,7 +34,9 @@ py_test(
     srcs = ["test_sync_pins.py"],
     deps = [
         ":artifacts",  # keep: the test constructs pin metadata
+        ":pin_publication",
         ":pin_publication_test_support",
+        ":plan_releases",
         ":sync_pins",
         "//:conftest",
         "//devinfra/buildbuddy/ci:invocation_ids",
@@ -52,7 +52,9 @@ py_library(
     srcs = ["pin_publication.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":artifacts",
         ":plan_releases",
+        ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/buildbuddy/ci:invocation_ids",
     ],
