@@ -342,6 +342,17 @@ records what was actually exercised.
 
 Requires a fresh operator product/architecture decision. These alternatives are not prerequisites for service-owned input metadata or ordinary session history.
 
+### `POD_EXECUTOR_COMPANION_REVIEW` — consider removing the executor companion
+
+Operator requested, 2026-11-10; revisit when prioritizing Pod executor lifecycle simplification.
+Compare the current PID 1 companion with alternatives such as running Codex exec-server as PID 1
+and using Kubernetes container replacement. Determine how each detects owner loss, triggers and
+proves cleanup despite a fast Runtime restart or stale status, gates executor access, reaps orphaned
+children, and supplies the claim's environment. Compare privileges, control ownership and operational
+cost. Preserve separate executor resource limits and the [execution ownership contract](../env/runtime/execution/SPEC.md#ownership-and-admission),
+including fencing escaped descendants before a successor and not replaying uncertain effects. This
+is a design investigation; it does not select removal or block current work.
+
 ### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
 
 Deferred by the operator on 2026-10-31; revisit when selective sampling recovery is prioritized.
