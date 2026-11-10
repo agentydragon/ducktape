@@ -3,11 +3,14 @@
 2026-11-10. Read-only review of the eight open PRs against `origin/devel` at `7f4830b01f`. Every PR is 3,000–6,000 commits
 behind `devel`. Delete this note once the operator has disposed of the eight PRs.
 
+Status at 12:00 UTC: #11581, #12269 and #12284 were closed unmerged. #12342, #11570, #12273, #12303 and #12304
+remain open.
+
 ## Recommendation
 
-Close all eight. `devel` has already adopted each design choice they propose or has replaced it. #12273 is the
-exception: its goal, runtime validation of first-party HTTP responses in AIQuota and Spend, never landed. Whether that
-goal is wanted is the one open question (see the end of this note).
+Close the five still open. `devel` has already adopted each design choice they propose or has replaced it. #12273 is
+the exception: its goal, runtime validation of first-party HTTP responses in AIQuota and Spend, never landed. Whether
+that goal is wanted is the one open question (see the end of this note).
 
 ## #12342: Document current schema pipelines with cross-language spikes
 
@@ -54,51 +57,43 @@ BUILD files, and `rules_proto_grpc` is no longer in `MODULE.bazel`. The only par
 `//google/api` package, which `notifications_pb` and History's TS bindings still use.
 **Close.** If wanted, open a small follow-up that moves `//google/api` to `stage_protobuf_es`.
 
-**#11581, Thread entity schema from History.** Confirmed overtaken, and contradicted. `46e4e6a0fe` (#14149) made the
-protobuf `ThreadEntity` canonical across fold, storage, reads, Electric and frontend
-(`agentplane/app/frontend/threads/thread_entity.ts` imports `history_service_pb`). The PR's Pydantic source,
-`history_service/fold/views.py`, no longer exists. Its open review point, the missing cross-language conformance
-check, is covered by #14149's ProtoJSON golden tests. **Close.**
+**#11581, Thread entity schema from History.** Closed. Overtaken and contradicted by `46e4e6a0fe` (#14149), which made
+the protobuf `ThreadEntity` canonical.
 
-**#12269, notification operator Protobuf JSON types.** The triage did not claim this one either; I find it overtaken.
-`devel` has `//agentplane/notification_service:notifications_pb`, and the frontend decodes it with `fromJson`
-(`211ed4128f` #13461, `358d3919ba` #14096, `a96bfb2171` #14856). No `devel` consumer uses the PR's
-`json_types=true` output. The Google-annotation import path it worked around is handled by `//google/api` and
-#13780. Its runtime test mostly re-tests Protobuf-ES library behavior. **Close.**
+**#12269, notification operator Protobuf JSON types.** Closed. Overtaken: the frontend decodes `notifications_pb` with
+`fromJson` (`211ed4128f`, `358d3919ba`, `a96bfb2171`), and nothing uses its `json_types` output.
 
 **#12273, Zod validators for live API responses.** The claim is only partly right. `b710f89c60` deleted
 `devinfra/js/openapi.bzl`, the macro this PR edits. That overtakes the mechanism, not the goal. Today
 `openapi_zod_ts_library` serves only Augur and Study Casino, and neither `aiquota/frontend` nor
 `finance/plaid/spend/ui` validates responses. The Agentplane third is overtaken: sandbox live views now decode
 protobuf watches (`agentplane/app/frontend/sandboxes/live.tsx`). The `devel` map limits runtime Zod to "untrusted or
-versioned peers", which argues against this PR. **Close**, unless the operator wants that validation (question below). Then rewrite
-it as one PR per app on `openapi_zod_ts_library`, starting from its leaves #12275 (AIQuota) and #12286 (Spend).
+versioned peers", which argues against this PR. **Close**, unless the operator wants that validation (question
+below). Then rewrite it as one PR per app on `openapi_zod_ts_library`, starting from its leaves #12275 (AIQuota) and #12286 (Spend).
 GitHub shows those leaves as merged, but they merged into this PR's branch `codex/openapi-zod-config`; none of their
 merge commits are on `devel`.
 
-**#12284, notification stream decoders.** Confirmed overtaken. The Sandbox-wide notification snapshot it decodes was
-replaced by Session inbox watches (`358d3919ba` #14096) and decoded with generated messages (`211ed4128f` #13461).
-The result/error envelope is validated with Zod in `watch_stream.ts` (`a96bfb2171` #14856). Unknown enum values
-render as "unknown" in `notification_status.tsx`. Its base, #12269, is also being closed, and the branch has merge
-conflicts. **Close.**
+**#12284, notification stream decoders.** Closed. Overtaken: `358d3919ba` replaced the snapshot it decodes,
+`211ed4128f` added generated decoding, and `a96bfb2171` added envelope validation.
 
-**#12303, decode snapshots before marking streams live.** Mostly overtaken, for the same commits as #12284; the stream
-it hardens is gone. One behavior did not land: `followResponse` in `agentplane/app/frontend/stream_reader.ts`
-reports `live` before `onFrame` runs. A malformed first frame therefore shows `live` briefly and then reconnects.
-**Close.** If wanted, fix the ordering as a separate small PR; no schema decision is involved.
+**#12303, decode snapshots before marking streams live.** Mostly overtaken by the same commits as #12284; the stream it
+hardens is gone. It still targets the closed #12284's branch, so it cannot land as stacked. One behavior did not land:
+`followResponse` in `agentplane/app/frontend/stream_reader.ts` reports `live` before `onFrame` runs, so a malformed
+first frame shows `live` briefly and then reconnects. **Close.** If wanted, fix the ordering as a separate small PR;
+no schema decision is involved.
 
 **#12304, dispatcher watch decoder.** Mostly overtaken. `c6b7c38d17` (#12867) decodes watch frames through the
-generated Dispatcher ProtoJSON schema (`dispatchFromJson`), and `a96bfb2171` validates the envelope. One behavior
-differs: `threads/dispatch_watch.ts` logs an unapplicable frame and continues. The PR treated such a frame as a read
-error and kept future numeric delivery states nonterminal. **Close.** Revisit the unknown-state handling only if a new
-Dispatcher state ships.
+generated Dispatcher ProtoJSON schema (`dispatchFromJson`), and `a96bfb2171` validates the envelope. It is also stacked
+on the closed #12284. One behavior differs: `threads/dispatch_watch.ts` logs an unapplicable frame and continues,
+where the PR treated it as a read error and kept future numeric delivery states nonterminal. **Close.** Revisit the
+unknown-state handling only if a new Dispatcher state ships.
 
 ## Operator question
 
 Should first-party HTTP frontends (AIQuota, Spend) validate API responses at runtime with generated Zod, or does the
 `devel` rule "runtime Zod only for untrusted or versioned peers" stand?
 
-- If the rule stands, close all eight PRs.
-- If runtime validation is wanted, close seven and rewrite #12273 as one PR per app.
+- If the rule stands, close the five still open.
+- If runtime validation is wanted, close four and rewrite #12273 as one PR per app.
 
 The optional follow-ups (guard test, `//google/api` staging, live-after-frame ordering) do not depend on the answer.
