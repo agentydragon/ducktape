@@ -1683,6 +1683,15 @@ fn store_binding(
 ) -> Result<SelectedValue, RemainderDisposition> {
     let values = selected.values;
     if values.is_empty() {
+        // No store happens, but the ledger stays open for a binding outside
+        // the body exactly as if the store had been attempted: a join over
+        // this leaf must not see a closed fragment for it.
+        if !body.bindings.contains_key(binding) {
+            frame
+                .ledger
+                .effects
+                .compose(&EffectCoverageFragment::default());
+        }
         frame.stop_normal_path();
         return Ok(SelectedValue::raw(values));
     }

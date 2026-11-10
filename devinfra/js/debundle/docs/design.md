@@ -3999,7 +3999,9 @@ effects; `None` refuses it as `Unproved::CaptureStore`, which is the provider
 adapter's only answer. The application adapter accepts only a root expression
 statement (`roots/operands.rs` admits `binding = value`). The binding must be
 an unimported, non-`const` binding that is initialized at the prefix (or a
-`var`), that no closure reads or rebinds, and that is not exported. Its
+`var`), that no closure body reads or writes anywhere (including after an
+`await`, which `CallableFacts::{reads,rebinds}` stop recording), and that is
+not exported. Its
 fragment covers the global, heap and host domains and leaves lexical coverage
 unknown, so it seals the statement but never a lexical binding-effect receipt.
 The rebind is the owner's syntactic write of the binding's cell, the cell its
