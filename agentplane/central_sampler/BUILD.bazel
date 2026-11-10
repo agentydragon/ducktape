@@ -495,6 +495,7 @@ go_test(
         "codemode_description_test.go",
         "codemode_output_test.go",
         "codemode_protocol_test.go",
+        "evidence_test.go",
         "host_test.go",
         "image_preparation_test.go",
         "settings_fixture_test.go",
@@ -506,5 +507,6 @@ go_test(
         "//agentplane/central_sampler/anthropic",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",
+        "//agentplane/proto:event_go_proto",
     ],
 )
