@@ -88,6 +88,11 @@ struct Facts {
     literal_params: Vec<usize>,
     /// Intrinsic collections it constructs empty.
     intrinsics: Vec<&'static str>,
+    /// For a class and its bases: the names with an accessor, and the names
+    /// a constructor stores under. A store under a name with a setter would
+    /// run the setter.
+    accessors: Vec<String>,
+    stored: Vec<String>,
 }
 
 /// Collections an allocator may construct empty.
@@ -891,6 +896,8 @@ impl<'a> Resolver<'a> {
                 let inherited = self.facts.get(&key).cloned().unwrap_or_default();
                 self.current.reads.extend(inherited.reads);
                 self.current.intrinsics.extend(inherited.intrinsics);
+                self.current.accessors.extend(inherited.accessors);
+                self.current.stored.extend(inherited.stored);
                 true
             }
             Some(_) => return false,
@@ -938,12 +945,13 @@ impl<'a> Resolver<'a> {
                                 left:
                                     AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
                                         obj,
-                                        prop: MemberProp::Ident(_),
+                                        prop: MemberProp::Ident(name),
                                         ..
                                     })),
                                 right,
                                 ..
                             }) => {
+                                self.current.stored.push(name.sym.to_string());
                                 matches!(&**obj, Expr::This(_))
                                     && self.value(right, &mut scope).is_some()
                             }
@@ -953,11 +961,20 @@ impl<'a> Resolver<'a> {
                         || matches!(body.stmts.first(), Some(Stmt::Expr(first))
                             if matches!(&*first.expr, Expr::Call(CallExpr { callee: Callee::Super(_), .. }))))
                 }
+                // Defining a method or an accessor runs nothing.
                 ClassMember::Method(method) => {
-                    method.kind == MethodKind::Method
-                        && !matches!(method.key, PropName::Computed(_))
+                    let name = match &method.key {
+                        PropName::Ident(name) => Some(name.sym.to_string()),
+                        PropName::Str(name) => Some(js_ast::str_value(name)),
+                        _ => None,
+                    };
+                    if let (Some(name), true) = (&name, method.kind != MethodKind::Method) {
+                        self.current.accessors.push(name.clone());
+                    }
+                    name.is_some()
                 }
-                ClassMember::PrivateMethod(method) => method.kind == MethodKind::Method,
+                // A constructor store never reaches a private name.
+                ClassMember::PrivateMethod(_) => true,
                 // A field initializer runs at construction, without the
                 // constructor's parameters.
                 ClassMember::ClassProp(ClassProp {
@@ -979,7 +996,8 @@ impl<'a> Resolver<'a> {
                 return false;
             }
         }
-        true
+        let (accessors, stored) = (&self.current.accessors, &self.current.stored);
+        !stored.iter().any(|name| accessors.contains(name))
     }
 
     /// The private state `id` names in an allocator body, if the chunk only
@@ -1397,11 +1415,39 @@ fn callable_arrow(def: Def<'_>) -> Option<Callable<'_>> {
     }
 }
 
+/// A default value that is the same data on every call.
+fn constant_default(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => constant_default(&paren.expr),
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_)) => true,
+        Expr::Unary(unary) => {
+            matches!(
+                unary.op,
+                UnaryOp::Void | UnaryOp::Minus | UnaryOp::Plus | UnaryOp::Bang
+            ) && matches!(&*unary.arg, Expr::Lit(Lit::Num(_)))
+        }
+        Expr::Array(array) => array.elems.iter().all(|element| {
+            matches!(element, Some(ExprOrSpread { spread: None, expr }) if constant_default(expr))
+        }),
+        Expr::Object(object) => object.props.iter().all(|prop| match prop {
+            PropOrSpread::Prop(prop) => matches!(&**prop, Prop::KeyValue(pair)
+                if !matches!(pair.key, PropName::Computed(_)) && constant_default(&pair.value)),
+            PropOrSpread::Spread(_) => false,
+        }),
+        _ => false,
+    }
+}
+
+/// Parameters that are identifiers, each with at most a constant default.
 fn plain_params(params: Vec<&Pat>) -> Option<Vec<Id>> {
     params
         .into_iter()
         .map(|param| match param {
             Pat::Ident(name) => Some(name.id.to_id()),
+            Pat::Assign(AssignPat { left, right, .. }) => match &**left {
+                Pat::Ident(name) if constant_default(right) => Some(name.id.to_id()),
+                _ => None,
+            },
             _ => None,
         })
         .collect()

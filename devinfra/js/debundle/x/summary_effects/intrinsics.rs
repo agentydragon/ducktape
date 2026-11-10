@@ -170,25 +170,74 @@ fn is_symbol(expr: &Expr, unresolved: SyntaxContext) -> bool {
         if symbol.ctxt == unresolved && &*symbol.sym == "Symbol")
 }
 
-/// The key an expression written in place evaluates to.
-fn key_value(expr: &Expr, unresolved: SyntaxContext) -> Option<KeyValue> {
-    fn prefix(expr: &Expr) -> Option<String> {
-        match strip(expr) {
-            Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
-            Expr::Tpl(template) => template
+/// The string `expr` evaluates to, when every part is a literal or a
+/// binding that only ever holds one string.
+fn whole_string(expr: &Expr, unresolved: SyntaxContext, keys: &KeyBindings) -> Option<String> {
+    match strip(expr) {
+        Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
+        Expr::Tpl(template) if template.exprs.is_empty() => Some(
+            template
                 .quasis
                 .first()?
                 .cooked
-                .as_ref()
-                .map(|cooked| cooked.to_string_lossy().to_string()),
-            Expr::Bin(binary) if binary.op == BinaryOp::Add => prefix(&binary.left),
+                .as_ref()?
+                .to_string_lossy()
+                .to_string(),
+        ),
+        Expr::Ident(binding) if binding.ctxt != unresolved => match keys.get(&binding.to_id())? {
+            KeyValue::Named(name) if !name.starts_with("@@") => Some(name.clone()),
             _ => None,
+        },
+        Expr::Bin(binary) if binary.op == BinaryOp::Add => Some(
+            whole_string(&binary.left, unresolved, keys)?
+                + &whole_string(&binary.right, unresolved, keys)?,
+        ),
+        _ => None,
+    }
+}
+
+/// What the string `expr` evaluates to certainly starts with.
+fn string_prefix(expr: &Expr, unresolved: SyntaxContext, keys: &KeyBindings) -> Option<String> {
+    if let Some(whole) = whole_string(expr, unresolved, keys) {
+        return Some(whole);
+    }
+    match strip(expr) {
+        Expr::Ident(binding) if binding.ctxt != unresolved => match keys.get(&binding.to_id())? {
+            KeyValue::Prefix(prefix) => Some(prefix.clone()),
+            _ => None,
+        },
+        // `` `${P}_${id}` `` starts with what `P` holds.
+        Expr::Tpl(template) => {
+            let head = template
+                .quasis
+                .first()?
+                .cooked
+                .as_ref()?
+                .to_string_lossy()
+                .to_string();
+            if head.is_empty() {
+                string_prefix(template.exprs.first()?, unresolved, keys)
+            } else {
+                Some(head)
+            }
         }
+        // String concatenation: the left operand comes first. A left
+        // operand that is not known to be a string gives no prefix.
+        Expr::Bin(binary) if binary.op == BinaryOp::Add => {
+            string_prefix(&binary.left, unresolved, keys)
+        }
+        _ => None,
+    }
+}
+
+/// The key an expression evaluates to, where the census can tell.
+fn key_value(expr: &Expr, unresolved: SyntaxContext, keys: &KeyBindings) -> Option<KeyValue> {
+    if let Some(whole) = whole_string(expr, unresolved, keys) {
+        return Some(KeyValue::Named(whole));
     }
     Some(match strip(expr) {
-        Expr::Lit(Lit::Str(value)) => KeyValue::Named(js_ast::str_value(value)),
+        Expr::Ident(binding) if binding.ctxt != unresolved => keys.get(&binding.to_id())?.clone(),
         Expr::Lit(Lit::Num(number)) => KeyValue::Named(number.value.to_string()),
-        Expr::Tpl(template) if template.exprs.is_empty() => KeyValue::Named(prefix(expr)?),
         Expr::Member(MemberExpr {
             obj,
             prop: MemberProp::Ident(name),
@@ -206,17 +255,15 @@ fn key_value(expr: &Expr, unresolved: SyntaxContext) -> Option<KeyValue> {
         {
             KeyValue::Named("@@other".to_string())
         }
-        other => KeyValue::Prefix(prefix(other).filter(|prefix| !prefix.is_empty())?),
+        other => KeyValue::Prefix(
+            string_prefix(other, unresolved, keys).filter(|prefix| !prefix.is_empty())?,
+        ),
     })
 }
 
-/// The key a computed property expression evaluates to: written in place,
-/// or a binding that only ever holds one.
+/// The key a computed property expression evaluates to.
 fn computed_key(expr: &Expr, unresolved: SyntaxContext, keys: &KeyBindings) -> Option<KeyValue> {
-    match strip(expr) {
-        Expr::Ident(binding) if binding.ctxt != unresolved => keys.get(&binding.to_id()).cloned(),
-        other => key_value(other, unresolved),
-    }
+    key_value(expr, unresolved, keys)
 }
 
 /// A key the census can name.
@@ -354,6 +401,9 @@ struct Functions {
     declared: FxHashMap<Id, usize>,
     assigned: FxHashSet<Id>,
     keys: KeyBindings,
+    /// The key bindings of an earlier pass, for initializers built from
+    /// them.
+    known: KeyBindings,
 }
 
 impl Functions {
@@ -437,10 +487,12 @@ impl Visit for Functions {
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         if let Pat::Ident(name) = &declarator.name {
             *self.declared.entry(name.id.to_id()).or_default() += 1;
+            // A number is no string to build a key from.
             if let Some(key) = declarator
                 .init
                 .as_deref()
-                .and_then(|init| key_value(init, self.unresolved))
+                .filter(|init| !matches!(strip(init), Expr::Lit(Lit::Num(_))))
+                .and_then(|init| key_value(init, self.unresolved, &self.known))
             {
                 self.keys.insert(name.id.to_id(), key);
             }
@@ -534,6 +586,15 @@ impl Flow {
                     if let Some(known) = self.taints.get(&ident.to_id()) {
                         join(&mut taint, known.clone());
                     }
+                }
+                // `x.k ??= {}` is the record `x.k` holds afterwards, which
+                // may be the one it held.
+                Expr::Assign(AssignExpr {
+                    op: AssignOp::NullishAssign | AssignOp::OrAssign | AssignOp::AndAssign,
+                    left: AssignTarget::Simple(SimpleAssignTarget::Member(member)),
+                    ..
+                }) => {
+                    join(&mut taint, self.taint(&Expr::Member(member.clone())));
                 }
                 Expr::Member(member) => {
                     let name = key(&member.prop, self.unresolved, &self.keys);
@@ -737,22 +798,38 @@ impl Visitor<'_> {
         if !taint.is_empty() {
             return;
         }
-        // A store deeper inside an intrinsic the census follows.
-        let mut base = &member.obj;
+        // A store deeper inside an intrinsic the census follows: `via` is
+        // the property read off it on the way.
+        let (mut base, mut via) = (&member.obj, &member.prop);
         let rooted = loop {
             let taint = self.flow.taint(base);
             if !taint.is_empty() {
                 break taint;
             }
             match strip(base) {
-                Expr::Member(inner) => base = &inner.obj,
+                Expr::Member(inner) => (base, via) = (&inner.obj, &inner.prop),
                 _ => break Taint::new(),
             }
         };
+        let through = match via {
+            MemberProp::Computed(computed) => {
+                computed_key(&computed.expr, self.flow.unresolved, &self.flow.keys)
+            }
+            _ => None,
+        };
         for intrinsic in &rooted {
-            match intrinsic {
-                Intrinsic::GlobalObject => self.unnamed_global_store(target),
-                Intrinsic::Object(global) | Intrinsic::Prototype(global) => {
+            match (intrinsic, &through) {
+                // A record under a prefixed name: the globals named so.
+                (Intrinsic::GlobalObject, Some(KeyValue::Prefix(prefix))) => {
+                    self.census.prefixes.push(prefix.clone());
+                }
+                (Intrinsic::GlobalObject, Some(KeyValue::Names(names))) => {
+                    for name in names {
+                        self.writes(name.clone()).any = true;
+                    }
+                }
+                (Intrinsic::GlobalObject, _) => self.unnamed_global_store(target),
+                (Intrinsic::Object(global) | Intrinsic::Prototype(global), _) => {
                     self.writes(global.clone()).any = true;
                 }
             }
@@ -961,22 +1038,31 @@ pub fn census(
     unresolved: SyntaxContext,
     object_aliases: &FxHashMap<Id, String>,
 ) -> Census {
-    let mut functions = Functions {
-        unresolved,
-        params: FxHashMap::default(),
-        declared: FxHashMap::default(),
-        assigned: FxHashSet::default(),
-        keys: KeyBindings::default(),
+    // A key binding may be built from another: read them until none is new.
+    let mut known = KeyBindings::default();
+    let (mut params, declared, assigned, keys) = loop {
+        let mut functions = Functions {
+            unresolved,
+            params: FxHashMap::default(),
+            declared: FxHashMap::default(),
+            assigned: FxHashSet::default(),
+            keys: KeyBindings::default(),
+            known: known.clone(),
+        };
+        module.visit_with(&mut functions);
+        let Functions {
+            params,
+            declared,
+            assigned,
+            mut keys,
+            ..
+        } = functions;
+        keys.retain(|id, _| declared.get(id).copied().unwrap_or(1) == 1 && !assigned.contains(id));
+        if keys == known {
+            break (params, declared, assigned, keys);
+        }
+        known = keys;
     };
-    module.visit_with(&mut functions);
-    let Functions {
-        mut params,
-        declared,
-        assigned,
-        mut keys,
-        ..
-    } = functions;
-    keys.retain(|id, _| declared.get(id).copied().unwrap_or(1) == 1 && !assigned.contains(id));
     // A binding that may hold another function receives arguments the
     // census cannot place.
     params.retain(|id, _| declared[id] == 1 && !assigned.contains(id));

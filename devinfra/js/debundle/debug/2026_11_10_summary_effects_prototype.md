@@ -182,6 +182,9 @@ A program chunk that does not parse is taken to do anything: it writes every
 global, awaits at its top level, and may load any chunk, so a chunk that
 imports it counts as on a cycle (`program_unparsed_chunks`).
 
+With `--program-file-list` only the files it names are read; other `.js`
+files in the directory are not part of the program.
+
 `--program-file-list` maps imported file names to chunks stored under an
 alias, and `--program-specifier-root <prefix>` makes absolute specifiers
 under that prefix name files of the chunk directory. An import that resolves
@@ -200,8 +203,11 @@ only globals whose names start so), or a binding declared once and never
 assigned that holds one of those. A loop variable over an array literal of
 strings or of `[name, value]` pairs, or over the keys or entries of an object
 literal, stands for those names. `Object.assign(target, { a, b })` writes
-`a` and `b`. A store into a record read off the global object
-(`root.registry.items[k] = v`) is a write to that global, not to all.
+`a` and `b`. A key built from such bindings counts too: `P + this.id` and
+`` `${P}${id}` `` start with what `P` holds, and `A + "_registry"` is one
+name when `A` holds a string. A store into a record read off the global
+object (`root.registry.items[k] = v`, or through `root[K] ??= {}`) is a write
+to that global, not to all.
 `global_object_unnamed_store_sites` lists the refusing stores as chunk index
 (in path order) and byte offset.
 
@@ -358,8 +364,10 @@ premises tier 0 refuses all 39.
   only when called), `new` of an empty `Map`, `Set`, `WeakMap` or `WeakSet`
   where the census leaves that intrinsic alone, and `new` of a class whose
   constructors only store values into `this` and whose field initializers
-  are themselves in this grammar (no accessors, a base class of the same
-  kind). It calls no parameter and
+  are themselves in this grammar, with a base class of the same kind.
+  Accessors may be defined, as long as no constructor of the class or its
+  bases stores under a name that has one. Parameters may have defaults that
+  are constant data. It calls no parameter and
   cannot throw. A call with pure-definition arguments is a pure definition
   that retains its arguments and eagerly reads the top-level bindings the
   body uses. Two extensions:

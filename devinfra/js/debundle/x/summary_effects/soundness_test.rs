@@ -223,6 +223,11 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "window[`Ma${suffix}`] = class {}; const a = new Map();",
             "window[prefix + 'Map'] = class {}; const a = new Map();",
             "const key = 'Map'; globalThis[key] = class {}; const a = new Map();",
+            "const P = 'Ma'; window[P + suffix] = class {}; const a = new Map();",
+            "const n = 1; window[n + suffix] = 1; const a = new Map();",
+            "window[suffix + '_cb'] = 1; const a = new Map();",
+            "const K = 'Map'; const root = globalThis; const record = root[K] ??= {}; record[name] = 1; const a = new Map();",
+            "const root = globalThis; root[`Ma${suffix}`].prototype.set = 1; const a = new Map();",
             "let key = 'registry'; key = 'Map'; globalThis[key] = class {}; const a = new Map();",
             "let key = 'registry'; function pick() { key = 'Map'; } globalThis[key] = class {}; const a = new Map();",
             "Object.assign(globalThis, { Map: class {} }); const a = new Map();",
@@ -261,6 +266,15 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "for (const name of ['first', 'second']) Object.defineProperty(globalThis, name, { value: 1 }); const a = new Map();",
             "[['first', 1], ['second', 2]].forEach(([name, value]) => { globalThis[name] = value; }); const a = new Map();",
             "for (const name in { first: 1, second: 2 }) globalThis[name] = 1; const a = new Map();",
+            // A key that starts with what a binding holds.
+            "const P = 'cb_'; class C { constructor(id) { this.id = id; window[P + this.id] = () => {}; } } const a = new Map();",
+            "const P = 'cb_'; window[`${P}${id}`] = 1; const a = new Map();",
+            "const A = '__app', K = A + '_registry'; const root = globalThis; root[K] = {}; const a = new Map();",
+            // A record read off the global object and initialized in place.
+            "const K = '__registry'; (function (root) { const local = root; const record = local[K] ??= {}; record[name] = 1; })(globalThis); const a = new Map();",
+            "const K = '__registry'; (function (root) { const local = root; (local[K] ||= {})[name] = 1; })(globalThis); const a = new Map();",
+            "const K = '__registry'; const root = globalThis; root[K] ??= {}; root[K][name] = 1; const a = new Map();",
+            "const root = globalThis; root[`__registry_${id}`][name] = 1; const a = new Map();",
             // A store into a record read off the global object.
             "const root = globalThis; root.registry.items[k] = 1; const a = new Map();",
             "function listen(target) { target.onload = null; } listen(window); const a = new Map();",
@@ -558,6 +572,10 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "function guard(check) { return run; function run(input) { return check(input); } } const x = guard(() => true);",
             "function each(items) { function* walk() { yield* items; } return { walk }; } const x = each([1]);",
             "function debounce(fn, ms) { let timer; function wrapped(...args) { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); } wrapped.cancel = () => clearTimeout(timer); return wrapped; } const x = debounce(() => {}, 10);",
+            "function debounce(fn, wait = 100, options = { leading: false }) { const queue = []; let timer; function run(...args) { queue.push(args); timer = setTimeout(fn, wait); } return run; } const x = debounce(() => {});",
+            "function f(a = {}) { return { a }; } const x = f();",
+            // Accessors are defined, not run.
+            "class Logger { seen = new Set(); constructor(name) { this.name = name; } get size() { return this.seen.size; } set level(value) { this.seen.add(value); } } const x = new Logger('a');",
             // Fields that only allocate.
             "class Store { items = []; index = new Map(); on = () => this.items; #seen = new Set(); constructor(name) { this.name = name; } } const x = new Store('a');",
             "function tag(name) { return { name }; } class Logger { constructor(name) { this.tag = tag(name); } } const x = new Logger('a');",
@@ -584,7 +602,6 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "function f(a) { return { [a]: 1 }; } const x = f('k');",
             "function f(a) { return a + 1; } const x = f(1);",
             "function f(a) { return `${a}`; } const x = f(1);",
-            "function f(a = {}) { return { a }; } const x = f();",
             "function f({ a }) { return { a }; } const x = f({});",
             // Touches state outside itself.
             "let n = 0; function f() { return { n }; } n = 1; const x = f();",
@@ -606,6 +623,11 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "class Store { id = counter++; } let counter = 0; const x = new Store();",
             "globalThis.Map = class {}; class Store { index = new Map(); } const x = new Store();",
             "class Store { index = new Map([[key, 1]]); } const key = {}; const x = new Store();",
+            // A default that runs code, or a store that reaches a setter.
+            "function debounce(fn, wait = compute()) { function run() {} return run; } const x = debounce(() => {});",
+            "class Logger { constructor(level) { this.level = level; } set level(value) { record(value); } } const x = new Logger(1);",
+            "class Base { constructor(level) { this.level = level; } } class Logger extends Base { set level(value) { record(value); } } const x = new Logger(1);",
+            "class Base { set level(value) { record(value); } } class Logger extends Base { constructor(level) { super(); this.level = level; } } const x = new Logger(1);",
             // A constructor that does more than store.
             "class A { constructor(v) { this.v = v; log(v); } } const x = new A(1);",
             "class A { set v(x) {} constructor(v) { this.v = v; } } const x = new A(1);",

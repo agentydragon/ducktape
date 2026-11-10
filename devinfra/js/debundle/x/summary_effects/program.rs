@@ -197,11 +197,22 @@ pub fn load(
     if let Some(list) = file_list {
         let text =
             std::fs::read_to_string(list).with_context(|| format!("reading {}", list.display()))?;
-        for line in text.lines() {
-            if let Some((alias, original)) = line.split_once('\t') {
-                aliases.insert(canonical_root.join(original), canonical_root.join(alias));
+        // The list names the program's chunks; other files in the
+        // directory are not part of it.
+        paths.clear();
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let stored = match line.split_once('\t') {
+                Some((alias, original)) => {
+                    aliases.insert(canonical_root.join(original), canonical_root.join(alias));
+                    alias
+                }
+                None => line,
+            };
+            if stored.ends_with(".js") {
+                paths.push(root.join(stored));
             }
         }
+        paths.sort();
     }
     let resolution = Resolution {
         aliases,
