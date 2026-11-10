@@ -269,8 +269,8 @@
       "sha256": "WF0ekhPgJlpFqsUHZMbvhwjiWOFcIM8h6rUB4lIJ0/U="
     },
     "agentplane-cli": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-18ee1b83d029/agentplane-cli",
-      "sha256": "GO4bg9Apo88HOaDeAIRrQEB/ImGWy1/UztzOo6e/7pc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-2cd51f946965/agentplane-cli",
+      "sha256": "LNUflGllCic2GJfKDhA9ug3F2mOfGz9S2SnwKmUTOuw="
     },
     "ducktape-network-monitor": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-network-monitor-ec79f5c96290/ducktape_network_monitor-0.1.0-py3-none-any.whl",
