@@ -244,12 +244,12 @@ async def test_meter_accessibility(visual: VisualHarness) -> None:
                 meter_quota_view(usage).model_dump(mode="json"),
             )
             card = view.page.get_by_label("Codex quota", exact=True)
-            meter = card.get_by_role("meter").first
+            meter = card.get_by_role("meter", name="5h quota usage", exact=True)
             await expect(meter).to_have_attribute("aria-valuenow", str(value))
             await expect(meter).to_have_attribute("aria-valuemin", "0")
             await expect(meter).to_have_attribute("aria-valuemax", "100")
             await expect(meter).to_have_attribute("aria-valuetext", f"{displayed}% used, 50% of the window elapsed")
-            await expect(meter).to_have_accessible_name(f"5h: {displayed}% used, 50% of the window elapsed")
+            await expect(meter).to_have_accessible_name("5h quota usage")
             await expect(card.locator(".aiquota-window-used").first).to_have_text(f"{displayed}%")
         await view.capture("meter-over-quota", target=view.page.locator("#app"))
 

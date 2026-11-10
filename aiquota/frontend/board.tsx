@@ -324,7 +324,7 @@ function WindowRow({
         displayedPercent={window.used}
         elapsed={window.elapsed}
         tint={tint}
-        label={`${window.label}: ${window.used}% used, ${roundHalfToEven(window.elapsed * 100)}% of the window elapsed`}
+        label={`${window.label} quota usage`}
       />
       <div className="aiquota-window-meta">
         <span>{resetPending ? "Awaiting updated usage" : `Resets in ${window.reset}`}</span>

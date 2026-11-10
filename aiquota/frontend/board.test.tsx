@@ -176,7 +176,7 @@ describe("QuotaBoard", () => {
     expect(meter?.getAttribute("aria-valuemin")).toBe("0");
     expect(meter?.getAttribute("aria-valuemax")).toBe("100");
     expect(meter?.getAttribute("aria-valuetext")).toBe(`${displayed}% used, 50% of the window elapsed`);
-    expect(meter?.getAttribute("aria-label")).toBe(`5h: ${displayed}% used, 50% of the window elapsed`);
+    expect(meter?.getAttribute("aria-label")).toBe("5h quota usage");
     expect(container.querySelector(".aiquota-window-used")?.textContent).toBe(`${displayed}%`);
     expect(container.querySelector<HTMLElement>(".aiquota-meter-fill")?.style.width).toBe(
       `${Math.max(0, Math.min(100, raw))}%`

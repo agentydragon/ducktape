@@ -237,8 +237,8 @@ def test_meter_accessibility(session: GnomeSession, usage: float, displayed: int
         meters = json.loads(string_reply(session.call("GetMeterAccessibility", "codex")))
         assert meters[0] == {
             "role": "level bar",
-            "name": f"5h: {displayed}% used, 50% of the window elapsed",
-            "description": "Fill is quota used; tick is time elapsed.",
+            "name": "5h quota usage",
+            "description": f"{displayed}% used, 50% of the window elapsed. Fill is quota used; tick is time elapsed.",
             "value": value,
             "minimum": 0,
             "maximum": 100,

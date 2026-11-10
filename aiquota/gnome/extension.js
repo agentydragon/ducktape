@@ -1183,9 +1183,11 @@ const QuotaIndicator = GObject.registerClass(
       if (staleAgeSeconds == null && liveState.forecast) parts.push(liveState.forecast);
       item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);
       const bar = item._quotaBar;
-      bar.track.accessible_name = `${state.label}: ${state.used}% used, ${roundHalfToEven(state.elapsed * 100)}% of the window elapsed`;
+      bar.track.accessible_name = `${state.label} quota usage`;
       const accessible = bar.track.get_accessible();
-      accessible.set_description("Fill is quota used; tick is time elapsed.");
+      accessible.set_description(
+        `${state.used}% used, ${roundHalfToEven(state.elapsed * 100)}% of the window elapsed. Fill is quota used; tick is time elapsed.`
+      );
       const accessibleUsage = Math.max(0, Math.min(100, state.used));
       if (bar.accessibleUsage !== accessibleUsage) {
         bar.accessibleUsage = accessibleUsage;
