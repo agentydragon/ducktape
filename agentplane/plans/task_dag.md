@@ -3105,7 +3105,27 @@ the ingress gains `Identity`-sourced attribution fields and keeps stripping call
 so attribution stays server-stamped. A Sandbox's own provider calls are attributed by its SVID's
 `Identity` once it resolves to one.
 
-**Still open for the operator:** what each receiving service records.
+**Code-mode tools are Agentplane Actions (operator, 2026-11-10; target).** The JavaScript `tools`
+namespace a central Session's cells see corresponds about one to one to Agentplane Actions, generated
+from the same catalog the MCP edge lists (`list_actions`), with the same input schemas. The sampler's
+delegate handler submits a nested tool call as `request_action` on the Action Service, as the
+delegating actor for the Session's `Identity`; policy, auto-approval, operator decisions and receipts
+are those of any other caller with that `Identity`. Two front ends, one surface: the MCP edge for
+external MCP clients, code-mode tools for central Sessions. Consequences:
+
+- **What receivers record** is what the Action Service already records for a delegated request
+  (effective caller and actor), plus the Session ID as provenance.
+- **Executor tools** (`exec_command`, `apply_patch`, file reads) stay environment-bound through the
+  Gateway executor, not Actions: they are what needs an attached environment, so Actions work with
+  zero environments and executor tools need one.
+- **Waiting on an operator decision** leaves the cell's promise pending; the handler submits and
+  awaits terminal state asynchronously rather than blocking the cell.
+- **Results and errors** reach JavaScript in the shape the MCP edge returns them, including the typed
+  `ExecutionError` ProtoJSON, so one Action behaves the same through either front end.
+
+The sampler currently reuses Codex's pinned code-mode host. Writing an Agentplane-owned V8 wrapper
+instead is an option if it becomes worthwhile (for example, to own the delegate protocol, typed
+errors, or the tool namespace); nothing above depends on which host runs the cells.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
