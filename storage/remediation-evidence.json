@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "snapshot_utc": "2026-11-10T19:20:23Z",
+  "source_devel_commit": "ff90cac07e",
+  "scope": "Non-atomic read-only live LINSTOR, Kubernetes, SeaweedFS filer, and ClickHouse observations; no retention, replication, or volume changes.",
+  "units": "Decimal GB for physical and logical bytes; GiB for requested PVC sizes. Reported pool limits are sums of diskful LINSTOR volume definitions on each node, not reservations or actual used bytes.",
+  "pool_observed_at_utc": "2026-11-10T19:13:45Z",
+  "pools": [
+    {
+      "node": "102453",
+      "capacity_gb": 3992.2,
+      "free_gb": 2597.7,
+      "declared_gb": 3731.3
+    },
+    {
+      "node": "103656",
+      "capacity_gb": 1987.5,
+      "free_gb": 1035.7,
+      "declared_gb": 2600.6
+    },
+    {
+      "node": "103711",
+      "capacity_gb": 1991.8,
+      "free_gb": 959.5,
+      "declared_gb": 2267.7
+    }
+  ],
+  "reserve_fraction": 0.1,
+  "langfuse_ages": [
+    {
+      "age": "Under 30 days",
+      "otel_gb": 102.937,
+      "legacy_gb": 1.426
+    },
+    {
+      "age": "30–90 days",
+      "otel_gb": 298.07,
+      "legacy_gb": 47.034
+    },
+    {
+      "age": "Over 90 days",
+      "otel_gb": 55.958,
+      "legacy_gb": 19.73
+    }
+  ],
+  "compression_sample": {
+    "objects": 33,
+    "uncompressed_mb": 20.667501,
+    "zstd_level_3_mb": 3.845423,
+    "gzip_level_6_mb": 5.961912,
+    "sampling": "0.5% PostgreSQL page sample, then up to three objects per prefix/month; individual objects compressed in memory. Not byte-representative."
+  },
+  "clickhouse_columns": [
+    {
+      "column": "Full: input",
+      "compressed_gb_per_replica": 50.12
+    },
+    {
+      "column": "Full: metadata",
+      "compressed_gb_per_replica": 22.81
+    },
+    {
+      "column": "Core: parameters",
+      "compressed_gb_per_replica": 18.47
+    },
+    {
+      "column": "Full: parameters",
+      "compressed_gb_per_replica": 16.58
+    }
+  ],
+  "clickhouse_evidence": {
+    "sample_window": "150 litellm_request GENERATION rows from 2026-08-15, selected with LIMIT rather than random sampling",
+    "sample_top_parameter": "127 of 150 rows had tools; tool values represented 75.81 MiB of the sampled model-parameter JSON.",
+    "sample_top_metadata": "The attributes object occupied 78.66 MiB, including 78.25 MiB for llm.invocation_parameters (150-row bounded sample).",
+    "sample_tool_equal": "All 127 rows with tools had the same serialized tool definitions after decoding model_parameters.tools and metadata.attributes.llm.invocation_parameters.tools.",
+    "sample_core_equal": "All 100 sampled rows present in both events_full and events_core had identical model_parameters SHA-256; 94 had matching tool definitions.",
+    "view_definition": "events_core_mv truncates input, output and each metadata value to 200 characters but copies model_parameters untruncated.",
+    "recent": "All 52 chat rows from 2026-11-10 had model_parameters under 1,000 bytes; combined model_parameters length was 134 bytes at the time of the query.",
+    "limits": "Samples establish a duplication mechanism, not corpus-wide equality or safely reclaimable compressed bytes. Model parameters may be used by the Langfuse UI, API, filters and migrations; verify consumers and lossless historical coverage before altering stored values.",
+    "codec": "system.parts reports LZ4 as the default codec on all active events_full and events_core parts. Input/output on events_full explicitly use ZSTD(3); model_parameters and metadata_values have no explicit column codec. Changing a codec does not instantly recompress existing parts."
+  },
+  "options": [
+    {
+      "id": "langfuse_archive",
+      "rank": 1,
+      "title": "Archive and expire old Langfuse ingestion objects",
+      "category": "Data preservation",
+      "gain": "Up to 842 GB physical",
+      "gain_type": "Physical upper bound",
+      "effort": "Medium–high",
+      "confidence": "Measured age inventory; reclaim and archive overhead unmeasured",
+      "risk": "Raw-only historical information; verify archive and replay before expiry.",
+      "detail": "The 30-day cutoff covers 420.792 GB logical. Two Seaweed copies give an approximate 841.6 GB upper bound before archive costs, vacuum and discard. Objects older than 90 days total 75.688 GB logical. Keep media and exports outside any raw-event lifecycle.",
+      "link": "https://github.com/agentydragon/ducktape/issues/15022"
+    },
+    {
+      "id": "resize_ch",
+      "rank": 2,
+      "title": "Rebuild ClickHouse claims at 300 GiB",
+      "category": "Volume sizing",
+      "gain": "215 GB limit on each of two nodes",
+      "gain_type": "Declared limit",
+      "effort": "Medium",
+      "confidence": "Measured 500-GiB claims; 116 GB used per filesystem",
+      "risk": "Rebuild one replica at a time with the other healthy and Keeper quorum intact.",
+      "detail": "This lowers the claim limits, not existing bytes. It is an alternative to removing a ClickHouse replica. Allow for growth and verify the rebuild path.",
+      "node_delta_gb": {
+        "102453": -214.7483648,
+        "103656": -214.7483648
+      },
+      "exclusive_with": "single_ch"
+    },
+    {
+      "id": "resize_seaweed",
+      "rank": 3,
+      "title": "Recreate the smaller Seaweed claims within their budgets",
+      "category": "Volume sizing",
+      "gain": "~999 GB lower combined limits",
+      "gain_type": "Declared limit",
+      "effort": "High",
+      "confidence": "Calculated from live allocation and definition sizes",
+      "risk": "Evacuate and rebuild one node at a time; verify replication and headroom throughout.",
+      "detail": "Illustrative targets: 1,180 GiB on 103656 and 1,290 GiB on 103711, down from 1,700 GiB each. With the 300-GiB ClickHouse resize and GitLab spike retirement, these targets fit a 10% pool reserve. GitLab is active and migration-related; if retained, choose smaller Seaweed targets or another offset.",
+      "node_delta_gb": {
+        "103656": -558.3457485,
+        "103711": -440.2341478
+      }
+    },
+    {
+      "id": "dedup_tools",
+      "rank": 4,
+      "title": "Benchmark compression and historical tool-definition deduplication",
+      "category": "Compression and duplication",
+      "gain": "Savings not yet measured",
+      "gain_type": "Unmeasured",
+      "effort": "High",
+      "confidence": "Sampled exact duplication; corpus and consumer coverage unproven",
+      "risk": "Preserve tool definitions, lookup/filter behavior, backups and schema migration compatibility.",
+      "detail": "The full and core model-parameter columns total 35.05 GB compressed per replica; full metadata adds 22.81 GB per replica. These are footprints, not additive reclaim estimates. A sampled subset stores identical tool definitions in both metadata and parameters; the core materialized view also duplicates parameters. Benchmark and prove coverage before rewriting anything. Existing parts use LZ4 by default for parameters and metadata; benchmark ZSTD before considering a controlled rewrite, and verify that Langfuse migrations preserve any codec change.",
+      "link": "https://github.com/agentydragon/ducktape/issues/15330"
+    },
+    {
+      "id": "single_zot",
+      "rank": 5,
+      "title": "Use one copy for the Zot pull-through cache",
+      "category": "Replication",
+      "gain": "107 GB limit; ~6 GB allocated",
+      "gain_type": "Limit and physical",
+      "effort": "Medium",
+      "confidence": "Measured current diskful allocation",
+      "risk": "A node failure interrupts cache service and dependent image pulls until recovery.",
+      "detail": "Keep the copy on 102453 and replace the replicated claim with a single-copy claim; the current 103711 replica accounts for this estimated reduction. Confirm upstream refill and egress behavior.",
+      "node_delta_gb": {
+        "103711": -107.3741824
+      }
+    },
+    {
+      "id": "single_attic",
+      "rank": 6,
+      "title": "Use one copy for the Attic cache",
+      "category": "Replication",
+      "gain": "107 GB limit; ~47 GB allocated",
+      "gain_type": "Limit and physical",
+      "effort": "Medium",
+      "confidence": "Measured current diskful allocation",
+      "risk": "A failed node can lose cached artifacts; first prove upstream availability or rebuilds.",
+      "detail": "Keep the 102453 copy and remove the 103656 copy after a verified migration. Do not assume every cached artifact is reproducible.",
+      "node_delta_gb": {
+        "103656": -107.3741824
+      }
+    },
+    {
+      "id": "single_ch",
+      "rank": 7,
+      "title": "Run a single ClickHouse replica",
+      "category": "Replication",
+      "gain": "537 GB limit; ~126 GB allocated",
+      "gain_type": "Limit and physical",
+      "effort": "Medium",
+      "confidence": "Measured one 500-GiB replica on 103656",
+      "risk": "No replica failover and a node failure can lose trace history; independently test recovery first.",
+      "detail": "Alternative to right-sizing both replicas, not an additional saving. Keep the replica on 102453; confirm Keeper and application behavior.",
+      "node_delta_gb": {
+        "103656": -536.870912
+      },
+      "exclusive_with": "resize_ch"
+    },
+    {
+      "id": "mimir",
+      "rank": 8,
+      "title": "Shorten Mimir metrics retention",
+      "category": "Retention",
+      "gain": "Eligible bytes not measured",
+      "gain_type": "Unmeasured",
+      "effort": "Low",
+      "confidence": "365-day configuration verified; bucket gauges disagree",
+      "risk": "Historical metrics beyond the selected period disappear.",
+      "detail": "For example, 365 to 180 days. The logical bucket reports 211–271 GB depending on source, and age distribution is unknown; do not assume half is immediately reclaimable.",
+      "link": "https://grafana.com/docs/mimir/latest/configure/configure-metrics-storage-retention/"
+    },
+    {
+      "id": "loki",
+      "rank": 9,
+      "title": "Shorten Loki log retention",
+      "category": "Retention",
+      "gain": "Eligible bytes not measured",
+      "gain_type": "Unmeasured",
+      "effort": "Low",
+      "confidence": "90-day configuration verified; bucket gauges disagree",
+      "risk": "Historical logs beyond the selected period disappear.",
+      "detail": "For example, 90 to 30 days. The logical bucket reports 96–121 GB depending on source; count the actual age distribution before estimating savings."
+    },
+    {
+      "id": "gitlab",
+      "rank": 10,
+      "title": "Retire the GitLab spike only if its migration role ends",
+      "category": "Retirement",
+      "gain": "~59 GB / 59 GB / 54 GB of limits",
+      "gain_type": "Declared limit",
+      "effort": "Low–medium",
+      "confidence": "PVC sizes and active workload verified",
+      "risk": "The spike is running and participates in the Forgejo-to-GitLab plan. Preserve the planned migration and any unique data.",
+      "detail": "Three Gitaly 50-GiB claims plus two Valkey 5-GiB claims. This is conditional, not a recommendation to remove an active migration dependency.",
+      "node_delta_gb": {
+        "102453": -59.0558003,
+        "103656": -59.0558003,
+        "103711": -53.6870912
+      },
+      "link": "https://github.com/agentydragon/ducktape/pull/14223"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Langfuse S3 evidence and retention issue",
+      "url": "https://github.com/agentydragon/ducktape/issues/15022"
+    },
+    {
+      "label": "ClickHouse trace retention issue",
+      "url": "https://github.com/agentydragon/ducktape/issues/15330"
+    },
+    {
+      "label": "Langfuse 4.67 OTLP processor",
+      "url": "https://github.com/langfuse/langfuse/blob/v4.67.0/packages/shared/src/server/otel/OtelIngestionProcessor.ts"
+    },
+    {
+      "label": "Forgejo-to-GitLab migration plan",
+      "url": "https://github.com/agentydragon/ducktape/pull/14223"
+    }
+  ]
+}
