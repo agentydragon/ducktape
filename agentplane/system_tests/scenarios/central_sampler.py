@@ -568,7 +568,7 @@ async def _kill_gateway_process(cluster: Cluster, pod: dict[str, object], crictl
     pid = inspected["info"]["pid"]
     assert isinstance(pid, int), pid
     assert pid > 1, pid
-    ctr_command = (crictl_command[0], "ctr", "--address", "unix:///run/k3s/containerd/containerd.sock", "-n", "k8s.io")
+    ctr_command = (crictl_command[0], "ctr", "--address", "/run/k3s/containerd/containerd.sock", "-n", "k8s.io")
     tasks = await asyncio.create_subprocess_exec(
         *ctr_command, "tasks", "ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
