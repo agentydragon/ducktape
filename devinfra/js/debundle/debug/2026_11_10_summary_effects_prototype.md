@@ -307,13 +307,23 @@ premises tier 0 refuses all 37.
 - **Allocator.** A function whose body only builds a fresh value from its
   parameters: literals, closures, parameters and never-reassigned top-level
   bindings as values, `p === void 0 ? … : …`, stores into objects the body
-  itself allocated, calls of other allocators. It reads no property of a
-  parameter, calls no parameter, and cannot throw. A call with
-  pure-definition arguments is a pure definition that retains its arguments
-  and eagerly reads the top-level bindings the body uses.
+  itself allocated, calls of other allocators, `new` of a class whose
+  constructors only store values into `this` (no accessors, no initializers
+  that run code, a base class of the same kind). It calls no parameter and
+  cannot throw. A call with pure-definition arguments is a pure definition
+  that retains its arguments and eagerly reads the top-level bindings the
+  body uses. Two extensions:
+  - It may read `param.name`; the call must then pass a plain object literal
+    (no accessor, spread or computed key) at that position.
+  - It may step a counter, append to a list (`push`, `unshift`,
+    `list = list.concat(…)`) or add to a `Map`/`Set` that is a top-level,
+    unexported variable of its chunk which the chunk assigns in no other
+    way. A call is then _contained_ in that chunk.
 - **Bundler helpers, by shape.** The lazy CommonJS wrapper and the interop
   namespace helper are recognized by comparing their bodies, up to renaming
-  and aliases of `Object.*`, with canonical sources. A helper written
+  and aliases of `Object.*`, with canonical sources; so is the
+  function-naming helper, which is pure when its first argument is a
+  function or class written in place. A helper written
   differently is not recognized; the premise kinds `lazy_module`,
   `interop_namespace` and `allocator` state the same contracts by hand.
 - **Members of a lazy module.** `ns.member` and `ns.default.member`, where
@@ -330,38 +340,50 @@ later definition that calls the same thunk is a pure definition that stays
 after the first one and, because it reads the provider's exports object,
 ordered against every impure statement.
 
-Not derived, by decision: functions that read properties of a parameter (the
-JSX factory, which would need a rule for fresh literal arguments), and
-anything with a loop, a branch or a call outside the allocator set. Not
-checked: that a lazy module's exports are assigned only by the top-level
-statements of its body.
+Not derived, by decision: anything with a loop, a branch or a call outside
+the allocator set (the JSX factory copies its argument in a loop). Not
+resolved: classes and helpers declared inside a lazy module's body, `export
+*`. Not checked: that a lazy module's exports are assigned only by the
+top-level statements of its body.
 
-`derive_fixtures.txt` holds 14 two-chunk programs run under Node in both
-orders (5 admitted with Node agreeing, 9 refused with Node showing the
-divergence), and `tier0_allocators_stop_at_their_near_misses` holds 8 bodies
-that are allocators and 21 that are not.
+`derive_fixtures.txt` holds 18 two-chunk programs run under Node in both
+orders (7 admitted with Node agreeing, 11 refused with Node showing the
+divergence). `tier0_allocators_stop_at_their_near_misses` lists bodies that
+are allocators and near-misses that are not, and
+`tier0_derivation_classifies_callee_families` has one synthetic definition
+per callee family of the large private consumer corpus with the class
+derivation gives a call of it: context creator, message-catalog definer,
+route or lazy-panel definer, schema-object builder, function-naming helper,
+CommonJS-style wrapper, `memo`- and `forwardRef`-style wrappers and an
+element factory over a literal are pure; a registering store creator, a
+lazy-thunk wrapper that registers a reset hook and a numbering factory are
+contained; a store creator that calls its setup, the naming helper on an
+existing function, an element factory that copies its argument and a
+registering factory whose list is reassigned elsewhere stay impure.
 
 Excalidraw, all upgrades, program-wide census. The hand-written premise files
-are 2 callees for `main` (the action-registering factory and a local atom
-factory, both `callback_factory`) and 3 for `editor` (the icon wrapper and the
+are 2 callees for `main` (the action-registering factory, which derivation
+now also finds, and a local atom factory, both `callback_factory`) and 3 for `editor` (the icon wrapper and the
 two JSX factories, `pure_call`); they are premises written by reading the
 callees, not derived.
 
 | Stress assignment       | `main` unproven | `main` modules, authored (largest) | `editor` unproven | `editor` modules, authored (largest) |
 | ----------------------- | --------------: | ---------------------------------: | ----------------: | -----------------------------------: |
 | upgrades only           |             515 |                          166 (166) |               902 |                              42 (38) |
-| + derivation            |             443 |                          131 (131) |               824 |                              40 (36) |
-| + hand-written premises |             258 |                            51 (51) |               724 |                              40 (36) |
+| + derivation            |             271 |                            52 (52) |               822 |                              40 (36) |
+| + hand-written premises |             258 |                            51 (51) |               722 |                              40 (36) |
 
 | Statements impure for a call of | `main`: upgrades → derived → with premises | `editor`       |
 | ------------------------------- | ------------------------------------------ | -------------- |
-| an imported function            | 434 → 93 → 4                               | 26 → 4 → 4     |
+| an imported function            | 434 → 4 → 4                                | 26 → 4 → 4     |
 | a member                        | 82 → 14 → 14                               | 32 → 15 → 13   |
-| a local function                | 31 → 34 → 19                               | 172 → 179 → 52 |
+| a local function                | 31 → 34 → 19                               | 172 → 178 → 51 |
 
 - Derivation alone resolves all 325 `interop(lazy())` statements of `main`
-  (8 first uses, 317 later ones), its 12 wrapper calls, and 68 member calls
-  (`forwardRef`, `memo`, `createContext`, …); in `editor`, 14 wrapper calls
+  (8 first uses, 317 later ones), its 12 wrapper calls, 68 member calls
+  (`forwardRef`, `memo`, `createContext`, …), and its 90 calls of the
+  action-registering factory, which appends to a private list and is
+  contained; in `editor`, 14 wrapper calls
   and 17 `memo` calls. The 8 first uses of `editor`'s lazy modules are of
   local bodies and stay impure, now counted as local calls.
 - None of `editor`'s 160 icon statements (a local wrapper around a JSX call)

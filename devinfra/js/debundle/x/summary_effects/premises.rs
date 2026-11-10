@@ -41,6 +41,11 @@ pub enum PremiseKind {
     /// `f(args)` returns a fresh result that retains its arguments, as a
     /// callback factory does, and has no state of its own.
     Allocator,
+    /// `new F(args)` only stores its arguments into the new object.
+    AllocatorNew,
+    /// `f(function, "name")` names a function written in place and returns
+    /// it.
+    FunctionNamer,
     /// The binding holds a lazy module's thunk: `f()` runs the module body
     /// the first time and returns the module's exports every time.
     LazyModule,

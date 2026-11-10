@@ -12,6 +12,10 @@ export function context(value) { return value = { current: value }, value.self =
 export function reads(o) { return { v: o.v }; }
 export function calls(f) { return { v: f() }; }
 export function extend() { require_lib().extra = 1; }
+const hooks = [];
+export function once(compute) { let done = false, value; hooks.push(() => { done = false; }); return () => done ? value : (done = true, value = compute()); }
+export function hookCount() { return hooks.length; }
+export function element(type, props) { return { type, key: props.key, props }; }
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -97,3 +101,27 @@ function tagged(a) { return { k, a }; } function outer(a) { return [tagged(a)]; 
 const x = outer(1);
 const k = 2;
 console.log(x[0].k);
+### commutes same: a derived contained call across a definition its callback reads
+-
+import { once } from './dep.js';
+const settings = once(() => later);
+var later = 1;
+console.log(settings());
+### ordered differs: an impure statement observes a derived contained call
+-
+import { once, hookCount } from './dep.js'; let seen;
+const settings = once(() => 1);
+seen = hookCount();
+console.log(seen);
+### commutes same: a property read of a literal argument across an impure statement
+-
+import { element } from './dep.js'; let state = 0;
+state = 1;
+const node = element('div', { key: 'a' });
+console.log(state + node.key);
+### ordered differs: a property read of an existing object
+-
+import { element } from './dep.js'; const props = { key: 'a' }; function rename() { props.key = 'b'; }
+rename();
+const node = element('div', props);
+console.log(node.key);

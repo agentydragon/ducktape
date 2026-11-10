@@ -517,12 +517,22 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "const k = Symbol.for('t'); function tagged(a) { return { k, a }; } const x = tagged(1);",
             "function opt(a, b) { return { a, b: b === void 0 ? null : b }; } const x = opt(1);",
             "const later = (f) => () => f; const x = later(1);",
+            // A property read of an argument written as a plain literal.
+            "function f(o) { return { v: o.v }; } const x = f({ v: 1 });",
+            "function f(t, o) { return { t, k: o.key, o }; } const k = 1; const x = f('a', { key: k });",
+            "class Box { constructor(v) { this.v = v; } get() { return this.v; } } const x = new Box(1);",
+            "class A { constructor(v) { this.v = v; } } class B extends A { constructor(v) { super(v); this.k = 1; } } const x = new B(1);",
         ] {
             assert!(last_is_derived_pure(allocator), "{allocator}");
         }
         for other in [
             // Reads, calls or writes what it is given.
-            "function f(o) { return { v: o.v }; } const x = f({});",
+            "function f(o) { return { v: o.v }; } const o = {}; const x = f(o);",
+            "function f(o) { return { v: o.v }; } const x = f({ get v() { return 1; } });",
+            "function f(o) { return { v: o.v }; } const a = {}; const x = f({ ...a });",
+            "function f(o) { return { v: o.v }; } const x = f();",
+            "function f(o) { return { v: o.v.w }; } const x = f({ v: {} });",
+            "function f(o) { o = { v: 1 }; return { v: o.v }; } const x = f({});",
             "function f(g) { return { v: g() }; } const x = f(() => 1);",
             "function f(o) { o.v = 1; return o; } const x = f({});",
             "function f(a) { return { ...a }; } const x = f({});",
@@ -543,11 +553,181 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "function* f(a) { return { a }; } const x = f(1);",
             "function f(a) { if (a) return {}; return []; } const x = f(1);",
             "function f(a) { return { get a() { return a; } }; } const x = f(1);",
+            // A constructor that does more than store.
+            "class A { constructor(v) { this.v = v; log(v); } } const x = new A(1);",
+            "class A { set v(x) {} constructor(v) { this.v = v; } } const x = new A(1);",
+            "class A { v = make(); } const x = new A();",
+            "class B {} class A extends B { constructor() { super(); } } B = class {}; const x = new A();",
+            "class A extends Unknown { constructor() { super(); } } const x = new A();",
             // The binding may hold another function.
             "function f(a) { return { a }; } f = (a) => a.x; const x = f(1);",
             "var f = (a) => ({ a }); var f = (a) => a.x; const x = f(1);",
         ] {
             assert!(!last_is_derived_pure(other), "{other}");
+        }
+    });
+}
+
+/// The class derivation alone gives the last statement of `source`.
+fn derived_kind(source: &str) -> tier0::Kind {
+    let parsed = js_ast::parse_js_module("family", source).expect("the source parses");
+    let unresolved = swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+    let options = tier0::Options {
+        exports_reachable: false,
+        upgrades: ALL_UPGRADES.into_iter().collect(),
+        what_if_pure: Default::default(),
+        program: None,
+        premises: Default::default(),
+        derive: true,
+    };
+    let analysis = tier0::analyze(&parsed.module, unresolved, &options);
+    analysis.units.last().expect("a statement").kind
+}
+
+/// Callee families of a large private consumer corpus, as synthetic
+/// definitions, with the class derivation gives a call of each.
+#[test]
+fn tier0_derivation_classifies_callee_families() {
+    use tier0::Kind::{Contained, Pure};
+    let impure = |kind| matches!(kind, tier0::Kind::Impure(_));
+    js_ast::with_swc_globals(|| {
+        for (family, expected, source) in [
+            (
+                "context creator",
+                Pure,
+                "const tag = Symbol.for('context');\n\
+                 function createContext(value) {\n\
+                   return value = { $$typeof: tag, current: value, Provider: null },\n\
+                     value.Provider = value, value;\n\
+                 }\n\
+                 const Context = createContext(null);",
+            ),
+            (
+                "message-catalog definer",
+                Pure,
+                "const defineMessages = (messages) => messages;\n\
+                 const messages = defineMessages({ title: { id: 'title', text: 'Title' } });",
+            ),
+            (
+                "store creator that registers",
+                Contained,
+                "const stores = new Map();\n\
+                 function defineStore(id, setup) {\n\
+                   const store = { id, setup };\n\
+                   stores.set(id, store);\n\
+                   return store;\n\
+                 }\n\
+                 const useStore = defineStore('main', () => ({ count: 0 }));",
+            ),
+            (
+                "route or lazy-panel definer",
+                Pure,
+                "const tag = Symbol.for('lazy');\n\
+                 function init(payload) { return payload._result(); }\n\
+                 function lazy(load) {\n\
+                   return { $$typeof: tag, _payload: { _status: -1, _result: load }, _init: init };\n\
+                 }\n\
+                 const Panel = lazy(() => import('./panel.js'));",
+            ),
+            (
+                "schema-object builder",
+                Pure,
+                "class Type { constructor(def) { this._def = def; } parse(value) { return value; } }\n\
+                 class ObjectType extends Type {\n\
+                   constructor(def) { super(def); this.kind = 'object'; }\n\
+                 }\n\
+                 const object = (shape) => new ObjectType({ shape: () => shape });\n\
+                 const text = () => new Type({ kind: 'text' });\n\
+                 const schema = object({ name: text(), inner: object({}) });",
+            ),
+            (
+                "bundler function-naming helper",
+                Pure,
+                "var defProp = Object.defineProperty;\n\
+                 var name = (target, value) => defProp(target, 'name', { value, configurable: true });\n\
+                 const handler = name(function () {}, 'handler');",
+            ),
+            (
+                "CommonJS-style module wrapper applied to a function",
+                Pure,
+                "var commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);\n\
+                 var requireThing = commonJS((exports) => { exports.value = 1; });",
+            ),
+            (
+                "memo-style component wrapper",
+                Pure,
+                "const tag = Symbol.for('memo');\n\
+                 function memo(type, compare) {\n\
+                   return { $$typeof: tag, type, compare: compare === void 0 ? null : compare };\n\
+                 }\n\
+                 const Component = memo((props) => props.children);",
+            ),
+            (
+                "forwardRef-style component wrapper",
+                Pure,
+                "const tag = Symbol.for('forward_ref');\n\
+                 const forwardRef = (render) => ({ $$typeof: tag, render });\n\
+                 const Component = forwardRef((props, ref) => null);",
+            ),
+            (
+                "lazy-thunk wrapper that registers a reset hook",
+                Contained,
+                "const resets = [];\n\
+                 function once(compute) {\n\
+                   let done = false, value;\n\
+                   resets.push(() => { done = false; });\n\
+                   return () => done ? value : (done = true, value = compute());\n\
+                 }\n\
+                 const settings = once(() => ({ theme: 'dark' }));",
+            ),
+            (
+                "factory that numbers its results",
+                Contained,
+                "let next = 0;\n\
+                 function atom(init) { return { key: `atom${++next}`, init }; }\n\
+                 const count = atom(0);",
+            ),
+            (
+                "element factory over a literal",
+                Pure,
+                "function element(type, props) { return { type, key: props.key, props }; }\n\
+                 const node = element('div', { key: 'a', title: 'A' });",
+            ),
+        ] {
+            assert_eq!(derived_kind(source), expected, "{family}");
+        }
+        // Families derivation leaves impure: a premise is the only way.
+        for (family, source) in [
+            (
+                "store creator that calls its setup",
+                "function create(setup) { const state = setup(); return { get: () => state }; }\n\
+                 const store = create(() => ({ count: 0 }));",
+            ),
+            (
+                "function-naming helper on an existing function",
+                "var defProp = Object.defineProperty;\n\
+                 var name = (target, value) => defProp(target, 'name', { value, configurable: true });\n\
+                 function existing() {}\n\
+                 const handler = name(existing, 'handler');",
+            ),
+            (
+                "element factory that copies its argument",
+                "function element(type, config) {\n\
+                   var props = {};\n\
+                   for (var key in config) key !== 'key' && (props[key] = config[key]);\n\
+                   return { type, props };\n\
+                 }\n\
+                 const node = element('div', { title: 'A' });",
+            ),
+            (
+                "registering factory whose list is reassigned elsewhere",
+                "let items = [];\n\
+                 function register(item) { items.push(item); return item; }\n\
+                 function replace(next) { items = next; }\n\
+                 const first = register({ id: 1 });",
+            ),
+        ] {
+            assert!(impure(derived_kind(source)), "{family}");
         }
     });
 }

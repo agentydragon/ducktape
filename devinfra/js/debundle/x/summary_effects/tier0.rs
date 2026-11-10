@@ -390,6 +390,10 @@ struct Classifier<'a> {
 #[derive(Default, Clone, serde::Serialize)]
 pub struct DerivedCounts {
     pub allocators: usize,
+    /// Allocators that also touch state private to their chunk.
+    pub contained: usize,
+    pub allocator_classes: usize,
+    pub function_namers: usize,
     pub namespace_members: usize,
     pub lazy_wrappers: usize,
     pub interop_helpers: usize,
@@ -406,6 +410,9 @@ pub struct ResolvedPremises {
     providers: FxHashMap<Binding, u32>,
     /// Per derived allocator: the bindings a call of it reads.
     allocator_reads: FxHashMap<Binding, Vec<Binding>>,
+    /// Per derived allocator: argument positions that must be fresh object
+    /// literals.
+    literal_params: FxHashMap<Binding, Vec<usize>>,
     pub given: usize,
     pub matched: usize,
 }
@@ -775,6 +782,13 @@ impl Classifier<'_> {
             PremiseKind::PureCall | PremiseKind::CallbackFactory | PremiseKind::Allocator => {
                 !constructs
             }
+            PremiseKind::AllocatorNew => constructs,
+            PremiseKind::FunctionNamer => {
+                !constructs
+                    && matches!(args, [function, name]
+                        if matches!(&*function.expr, Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_))
+                            && matches!(&*name.expr, Expr::Lit(Lit::Str(_))))
+            }
             PremiseKind::LazyModule => !constructs && args.is_empty(),
             PremiseKind::InteropNamespace => {
                 !constructs && args.first().is_some_and(|arg| lazy_call(&arg.expr))
@@ -784,6 +798,15 @@ impl Classifier<'_> {
             | PremiseKind::ContainedDecorator => false,
         };
         if !applies || args.iter().any(|arg| arg.spread.is_some()) {
+            return false;
+        }
+        // A derived allocator reads properties of these arguments.
+        let literals = self.premises.literal_params.get(&callee_binding);
+        if literals.into_iter().flatten().any(|position| {
+            !args
+                .get(*position)
+                .is_some_and(|arg| crate::derive::plain_literal(&arg.expr))
+        }) {
             return false;
         }
         if let Some(reads) = self.premises.allocator_reads.get(&callee_binding) {
@@ -803,7 +826,13 @@ impl Classifier<'_> {
         }
         if kind == PremiseKind::CallbackFactory {
             self.providers.push(self.premises.provider(callee_binding));
-        } else if !matches!(kind, PremiseKind::Allocator | PremiseKind::LazyModule) {
+        } else if !matches!(
+            kind,
+            PremiseKind::Allocator
+                | PremiseKind::AllocatorNew
+                | PremiseKind::FunctionNamer
+                | PremiseKind::LazyModule
+        ) {
             // The callee may call its function arguments at once, and read
             // the objects its arguments reference. The callees of nested
             // premised calls are not arguments.
@@ -1472,12 +1501,39 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 premises.callees.entry(binding).or_insert((kind, 0));
             }
         };
-        for (id, reads) in &found.allocators {
-            callee(id, PremiseKind::Allocator, &mut derived.allocators);
-            if let Some(allocator) = bindings.get(id) {
-                let reads = reads.iter().filter_map(|id| bindings.get(id).copied());
-                premises.allocator_reads.insert(*allocator, reads.collect());
+        for allocator in &found.allocators {
+            // One that touches private state is a callback factory of its
+            // provider.
+            let (kind, count) = if allocator.private {
+                (PremiseKind::CallbackFactory, &mut derived.contained)
+            } else {
+                (PremiseKind::Allocator, &mut derived.allocators)
+            };
+            callee(&allocator.binding, kind, count);
+            if let Some(binding) = bindings.get(&allocator.binding) {
+                let reads = allocator
+                    .reads
+                    .iter()
+                    .filter_map(|id| bindings.get(id).copied());
+                premises.allocator_reads.insert(*binding, reads.collect());
+                premises
+                    .literal_params
+                    .insert(*binding, allocator.literal_params.clone());
             }
+        }
+        for (id, reads) in &found.classes {
+            callee(
+                id,
+                PremiseKind::AllocatorNew,
+                &mut derived.allocator_classes,
+            );
+            if let Some(class) = bindings.get(id) {
+                let reads = reads.iter().filter_map(|id| bindings.get(id).copied());
+                premises.allocator_reads.insert(*class, reads.collect());
+            }
+        }
+        for id in &found.namers {
+            callee(id, PremiseKind::FunctionNamer, &mut derived.function_namers);
         }
         for id in &found.wrappers {
             callee(id, PremiseKind::Allocator, &mut derived.lazy_wrappers);

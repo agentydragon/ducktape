@@ -44,6 +44,9 @@ const TO_ESM: &str = "(mod, isNodeMode, target) => (
       : target,
     mod))";
 
+/// `name(fn, "f")` gives a function its name and returns it.
+const NAMER: &str = "(target, value) => Object.defineProperty(target, 'name', { value: value, configurable: true })";
+
 /// A lazy module: the chunk and binding holding its thunk.
 pub type LazyKey = (usize, Id);
 
@@ -53,15 +56,92 @@ enum Role {
     CommonJs,
     CopyProps,
     ToEsm,
+    Namer,
+    /// A function; `facts` says whether it also touches private state.
     Allocator,
+    /// A class whose construction only stores into the new object.
+    AllocatorClass,
     Lazy(LazyKey),
-    Namespace { lazy: LazyKey, interop: bool },
+    Namespace {
+        lazy: LazyKey,
+        interop: bool,
+    },
 }
 
 #[derive(Clone, Copy)]
 enum Def<'a> {
     Function(&'a Function),
+    Class(&'a Class),
     Value(&'a Expr),
+}
+
+/// What classifying an allocator body found.
+#[derive(Default, Clone)]
+struct Facts {
+    /// Top-level bindings of its chunk a call reads, its callees included.
+    reads: Vec<Id>,
+    /// It reads or writes state private to its chunk: a counter, a list,
+    /// a collection.
+    private: bool,
+    /// Parameter positions whose properties it reads: a call must pass a
+    /// fresh object literal there.
+    literal_params: Vec<usize>,
+}
+
+/// State a chunk keeps for its own functions, by how it was declared.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Private {
+    Counter,
+    Array,
+    Collection,
+}
+
+/// How the chunk assigns its top-level bindings.
+#[derive(Default)]
+struct Stores {
+    /// Assigned with `=` at all.
+    plain: FxHashSet<Id>,
+    /// Assigned something other than an array literal or `x.concat(…)` of
+    /// itself, or by a compound operator, a pattern or a loop head.
+    other: FxHashSet<Id>,
+}
+
+impl Visit for Stores {
+    fn visit_assign_expr(&mut self, assign: &AssignExpr) {
+        match &assign.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(target)) => {
+                let id = target.id.to_id();
+                let own_concat = matches!(&*assign.right, Expr::Call(CallExpr {
+                    callee: Callee::Expr(callee),
+                    ..
+                }) if matches!(&**callee, Expr::Member(MemberExpr {
+                    obj,
+                    prop: MemberProp::Ident(method),
+                    ..
+                }) if &*method.sym == "concat"
+                    && matches!(&**obj, Expr::Ident(base) if base.to_id() == id)));
+                let benign = assign.op == AssignOp::Assign
+                    && (own_concat || matches!(&*assign.right, Expr::Array(_)));
+                self.plain.insert(id.clone());
+                if !benign {
+                    self.other.insert(id);
+                }
+            }
+            AssignTarget::Pat(pattern) => self.other.extend(assigned_ids(pattern)),
+            _ => {}
+        }
+        assign.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, looped: &ForInStmt) {
+        self.other.extend(assigned_ids(&looped.left));
+        looped.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, looped: &ForOfStmt) {
+        self.other.extend(assigned_ids(&looped.left));
+        looped.visit_children_with(self);
+    }
 }
 
 enum Export {
@@ -92,6 +172,9 @@ struct Chunk<'a> {
     imports: FxHashMap<Id, (String, String)>,
     exports: FxHashMap<String, Export>,
     assigned: FxHashSet<Id>,
+    /// Top-level variables that can hold private state.
+    private: FxHashMap<Id, Private>,
+    stores: Stores,
 }
 
 fn export_name(name: &ModuleExportName) -> String {
@@ -108,6 +191,11 @@ impl<'a> Chunk<'a> {
         let mut defs: FxHashMap<Id, Def<'a>> = FxHashMap::default();
         let mut imports = FxHashMap::default();
         let mut exports = FxHashMap::default();
+        let mut private = FxHashMap::default();
+        let unresolved_global = |expr: &Expr, names: &[&str]| {
+            matches!(expr, Expr::Ident(ident)
+                if ident.ctxt == unresolved && names.contains(&&*ident.sym))
+        };
         let mut declare = |decl: &'a Decl, exported: bool, exports: &mut FxHashMap<_, _>| {
             let mut bind = |ident: &Ident, def: Option<Def<'a>>| {
                 *declared.entry(ident.to_id()).or_default() += 1;
@@ -122,9 +210,26 @@ impl<'a> Chunk<'a> {
                 Decl::Fn(function) => {
                     bind(&function.ident, Some(Def::Function(&function.function)))
                 }
+                Decl::Class(class) => bind(&class.ident, Some(Def::Class(&class.class))),
                 Decl::Var(var) => {
                     for declarator in &var.decls {
                         if let Pat::Ident(name) = &declarator.name {
+                            let kind = match declarator.init.as_deref() {
+                                None | Some(Expr::Lit(Lit::Num(_))) => Some(Private::Counter),
+                                Some(Expr::Array(_)) => Some(Private::Array),
+                                Some(Expr::New(new))
+                                    if unresolved_global(
+                                        &new.callee,
+                                        &["Map", "Set", "WeakMap", "WeakSet"],
+                                    ) =>
+                                {
+                                    Some(Private::Collection)
+                                }
+                                _ => None,
+                            };
+                            if let (Some(kind), false) = (kind, exported) {
+                                private.insert(name.id.to_id(), kind);
+                            }
                             bind(&name.id, declarator.init.as_deref().map(Def::Value));
                         }
                     }
@@ -179,6 +284,9 @@ impl<'a> Chunk<'a> {
             }
         }
         defs.retain(|id, _| declared[id] == 1 && !assigned.contains(id));
+        private.retain(|id, _| declared[id] == 1);
+        let mut stores = Stores::default();
+        module.visit_with(&mut stores);
         Self {
             module,
             unresolved,
@@ -186,6 +294,8 @@ impl<'a> Chunk<'a> {
             imports,
             exports,
             assigned,
+            private,
+            stores,
         }
     }
 }
@@ -295,15 +405,22 @@ fn shape(
                 let PropOrSpread::Prop(prop) = prop else {
                     return None;
                 };
-                let Prop::KeyValue(pair) = &**prop else {
-                    return None;
-                };
-                let key = match &pair.key {
-                    PropName::Ident(name) => name.sym.to_string(),
-                    PropName::Str(value) => js_ast::str_value(value),
+                let (key, value) = match &**prop {
+                    Prop::Shorthand(ident) => (
+                        ident.sym.to_string(),
+                        shape(&Expr::Ident(ident.clone()), names, outer)?,
+                    ),
+                    Prop::KeyValue(pair) => (
+                        match &pair.key {
+                            PropName::Ident(name) => name.sym.to_string(),
+                            PropName::Str(value) => js_ast::str_value(value),
+                            _ => return None,
+                        },
+                        shape(&pair.value, names, outer)?,
+                    ),
                     _ => return None,
                 };
-                out += &format!("{key}:{},", shape(&pair.value, names, outer)?);
+                out += &format!("{key}:{value},");
             }
             out + "}"
         }
@@ -418,11 +535,11 @@ struct Resolver<'a> {
     chunks: Vec<Chunk<'a>>,
     program: Option<&'a ProgramFacts>,
     roles: FxHashMap<(usize, Id), Role>,
-    /// Per allocator binding: the top-level bindings of its chunk a call
-    /// reads, its own callees included.
-    reads: FxHashMap<(usize, Id), Vec<Id>>,
-    /// Those of the allocator body being classified.
-    reading: Vec<Id>,
+    /// Per allocator binding or class.
+    facts: FxHashMap<(usize, Id), Facts>,
+    /// Those of the body being classified.
+    current: Facts,
+    namer: String,
     common_js: String,
     copy_props: String,
     to_esm: String,
@@ -432,10 +549,48 @@ struct Resolver<'a> {
 struct Scope<'s> {
     chunk: usize,
     params: FxHashSet<Id>,
+    /// The position of each parameter.
+    positions: FxHashMap<Id, usize>,
+    /// Parameters the body assigns.
+    reassigned: FxHashSet<Id>,
     /// Parameters and locals holding an object the body allocated.
     fresh: FxHashSet<Id>,
     /// Bindings of an enclosing lazy module body, declared once.
     enclosing: &'s FxHashSet<Id>,
+}
+
+impl<'s> Scope<'s> {
+    fn new(chunk: usize, params: Vec<Id>, enclosing: &'s FxHashSet<Id>) -> Self {
+        Self {
+            chunk,
+            positions: params
+                .iter()
+                .enumerate()
+                .map(|(position, id)| (id.clone(), position))
+                .collect(),
+            params: params.into_iter().collect(),
+            reassigned: FxHashSet::default(),
+            fresh: FxHashSet::default(),
+            enclosing,
+        }
+    }
+}
+
+/// `{ a: 1, b }`: a literal whose properties can be read without running
+/// code.
+pub fn plain_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => plain_literal(&paren.expr),
+        Expr::Object(object) => object.props.iter().all(|prop| match prop {
+            PropOrSpread::Prop(prop) => match &**prop {
+                Prop::Shorthand(_) => true,
+                Prop::KeyValue(pair) => !matches!(pair.key, PropName::Computed(_)),
+                _ => false,
+            },
+            PropOrSpread::Spread(_) => false,
+        }),
+        _ => false,
+    }
 }
 
 impl<'a> Resolver<'a> {
@@ -487,6 +642,7 @@ impl<'a> Resolver<'a> {
         let function = match def {
             Def::Function(function) => Some(Callable::Function(function)),
             Def::Value(value) => callable(value),
+            Def::Class(_) => None,
         };
         if let Some(function) = function {
             if let (Def::Value(value), Some(Callable::Arrow(_))) = (def, callable_arrow(def)) {
@@ -503,15 +659,34 @@ impl<'a> Resolver<'a> {
                     if found == self.to_esm {
                         return Role::ToEsm;
                     }
+                    if found == self.namer {
+                        return Role::Namer;
+                    }
                 }
             }
             let none = FxHashSet::default();
-            let outer = std::mem::take(&mut self.reading);
+            let outer = std::mem::take(&mut self.current);
             let allocates = self.allocator(chunk, function, &none);
-            let reads = std::mem::replace(&mut self.reading, outer);
+            let facts = std::mem::replace(&mut self.current, outer);
             return if allocates {
-                self.reads.insert((chunk, id.clone()), reads);
+                self.facts.insert((chunk, id.clone()), facts);
                 Role::Allocator
+            } else {
+                Role::Unknown
+            };
+        }
+        let class = match def {
+            Def::Class(class) => Some(class),
+            Def::Value(Expr::Class(class)) => Some(&*class.class),
+            _ => None,
+        };
+        if let Some(class) = class {
+            let outer = std::mem::take(&mut self.current);
+            let allocates = self.allocator_class(chunk, class);
+            let facts = std::mem::replace(&mut self.current, outer);
+            return if allocates && !facts.private && facts.literal_params.is_empty() {
+                self.facts.insert((chunk, id.clone()), facts);
+                Role::AllocatorClass
             } else {
                 Role::Unknown
             };
@@ -629,12 +804,7 @@ impl<'a> Resolver<'a> {
                         let Some(params) = plain_params(params) else {
                             return false;
                         };
-                        let mut scope = Scope {
-                            chunk,
-                            params,
-                            fresh: FxHashSet::default(),
-                            enclosing,
-                        };
+                        let mut scope = Scope::new(chunk, params, enclosing);
                         return self.value(body, &mut scope).is_some();
                     }
                     ArrowFunctionBody::FunctionBody(block) => {
@@ -646,43 +816,159 @@ impl<'a> Resolver<'a> {
         let (Some(params), Some(body)) = (plain_params(params), body) else {
             return false;
         };
-        let mut scope = Scope {
-            chunk,
-            params,
-            fresh: FxHashSet::default(),
-            enclosing,
-        };
+        let mut scope = Scope::new(chunk, params, enclosing);
         let Some((last, rest)) = body.split_last() else {
             return false;
         };
-        for statement in rest {
-            let ok = match statement {
-                Stmt::Expr(statement) => self.value(&statement.expr, &mut scope).is_some(),
-                Stmt::Decl(Decl::Var(var)) => var.decls.iter().all(|declarator| {
-                    let Pat::Ident(name) = &declarator.name else {
+        rest.iter()
+            .all(|statement| self.statement(statement, &mut scope))
+            && matches!(last, Stmt::Return(returned)
+                if returned.arg.as_deref().is_some_and(|value| self.value(value, &mut scope).is_some()))
+    }
+
+    /// A statement of an allocator body before its `return`.
+    fn statement(&mut self, statement: &Stmt, scope: &mut Scope<'_>) -> bool {
+        match statement {
+            Stmt::Expr(statement) => self.value(&statement.expr, scope).is_some(),
+            Stmt::Decl(Decl::Var(var)) => var.decls.iter().all(|declarator| {
+                let Pat::Ident(name) = &declarator.name else {
+                    return false;
+                };
+                let fresh = match &declarator.init {
+                    Some(init) => match self.value(init, scope) {
+                        Some(fresh) => fresh,
+                        None => return false,
+                    },
+                    None => false,
+                };
+                scope.params.insert(name.id.to_id());
+                if fresh {
+                    scope.fresh.insert(name.id.to_id());
+                }
+                true
+            }),
+            _ => false,
+        }
+    }
+
+    /// Whether constructing the class only stores values into the new
+    /// object: no accessor a store could run, no initializer that runs
+    /// code, a base class of the same kind.
+    fn allocator_class(&mut self, chunk: usize, class: &'a Class) -> bool {
+        if !class.decorators.is_empty() {
+            return false;
+        }
+        let derived = match class.super_class.as_deref() {
+            None => false,
+            Some(Expr::Ident(base)) => {
+                if self.role(chunk, &base.to_id()) != Role::AllocatorClass {
+                    return false;
+                }
+                let key = (chunk, base.to_id());
+                self.current.reads.push(base.to_id());
+                let inherited = self.facts.get(&key).map(|facts| facts.reads.clone());
+                self.current.reads.extend(inherited.unwrap_or_default());
+                true
+            }
+            Some(_) => return false,
+        };
+        let none = FxHashSet::default();
+        for member in &class.body {
+            let ok = match member {
+                ClassMember::Constructor(constructor) => {
+                    let params: Option<Vec<Id>> = constructor
+                        .params
+                        .iter()
+                        .map(|param| match param {
+                            ParamOrTsParamProp::Param(Param {
+                                pat: Pat::Ident(name),
+                                ..
+                            }) => Some(name.id.to_id()),
+                            _ => None,
+                        })
+                        .collect();
+                    let (Some(params), Some(body)) = (params, &constructor.body) else {
                         return false;
                     };
-                    let fresh = match &declarator.init {
-                        Some(init) => match self.value(init, &mut scope) {
-                            Some(fresh) => fresh,
-                            None => return false,
-                        },
-                        None => false,
-                    };
-                    scope.params.insert(name.id.to_id());
-                    if fresh {
-                        scope.fresh.insert(name.id.to_id());
-                    }
-                    true
-                }),
+                    let mut scope = Scope::new(chunk, params, &none);
+                    body.stmts.iter().enumerate().all(|(index, statement)| {
+                        let Stmt::Expr(statement) = statement else {
+                            return false;
+                        };
+                        match &*statement.expr {
+                            // `super(values)` first, in a derived class.
+                            Expr::Call(CallExpr {
+                                callee: Callee::Super(_),
+                                args,
+                                ..
+                            }) => {
+                                derived
+                                    && index == 0
+                                    && args.iter().all(|arg| {
+                                        arg.spread.is_none()
+                                            && self.value(&arg.expr, &mut scope).is_some()
+                                    })
+                            }
+                            // `this.name = value`.
+                            Expr::Assign(AssignExpr {
+                                op: AssignOp::Assign,
+                                left:
+                                    AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
+                                        obj,
+                                        prop: MemberProp::Ident(_),
+                                        ..
+                                    })),
+                                right,
+                                ..
+                            }) => {
+                                matches!(&**obj, Expr::This(_))
+                                    && self.value(right, &mut scope).is_some()
+                            }
+                            _ => false,
+                        }
+                    }) && (!derived
+                        || matches!(body.stmts.first(), Some(Stmt::Expr(first))
+                            if matches!(&*first.expr, Expr::Call(CallExpr { callee: Callee::Super(_), .. }))))
+                }
+                ClassMember::Method(method) => {
+                    method.kind == MethodKind::Method
+                        && !matches!(method.key, PropName::Computed(_))
+                }
+                ClassMember::PrivateMethod(method) => method.kind == MethodKind::Method,
+                ClassMember::ClassProp(prop) => {
+                    prop.is_static
+                        || prop.value.as_deref().is_none_or(|value| {
+                            matches!(
+                                value,
+                                Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_))
+                            )
+                        })
+                }
+                ClassMember::StaticBlock(_) | ClassMember::Empty(_) => true,
                 _ => false,
             };
             if !ok {
                 return false;
             }
         }
-        matches!(last, Stmt::Return(returned)
-            if returned.arg.as_deref().is_some_and(|value| self.value(value, &mut scope).is_some()))
+        true
+    }
+
+    /// The private state `id` names in an allocator body, if the chunk only
+    /// ever updates it in place.
+    fn private(&self, id: &Id, scope: &Scope<'_>) -> Option<Private> {
+        if scope.params.contains(id) || scope.enclosing.contains(id) {
+            return None;
+        }
+        let chunk = &self.chunks[scope.chunk];
+        let kind = *chunk.private.get(id)?;
+        let untouched = match kind {
+            Private::Array => !chunk.stores.other.contains(id),
+            Private::Counter | Private::Collection => {
+                !chunk.stores.plain.contains(id) && !chunk.stores.other.contains(id)
+            }
+        };
+        untouched.then_some(kind)
     }
 
     /// Whether evaluating `expr` only allocates; `Some(true)` when its value
@@ -691,7 +977,13 @@ impl<'a> Resolver<'a> {
         Some(match expr {
             Expr::Paren(paren) => return self.value(&paren.expr, scope),
             Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_)) => false,
-            Expr::Unary(unary) if unary.op == UnaryOp::Void => {
+            // `void 0`, `-1`, `!0`.
+            Expr::Unary(unary)
+                if matches!(
+                    unary.op,
+                    UnaryOp::Void | UnaryOp::Minus | UnaryOp::Plus | UnaryOp::Bang
+                ) =>
+            {
                 matches!(&*unary.arg, Expr::Lit(Lit::Num(_))).then_some(false)?
             }
             Expr::Ident(ident) => {
@@ -709,11 +1001,69 @@ impl<'a> Resolver<'a> {
                         .defs
                         .contains_key(&id)
                         .then_some(false)?;
-                    self.reading.push(id);
+                    self.current.reads.push(id);
                     false
                 }
             }
             Expr::Arrow(_) | Expr::Fn(_) => true,
+            // `++counter` on a counter the chunk only ever steps.
+            Expr::Update(update) => {
+                let Expr::Ident(counter) = &*update.arg else {
+                    return None;
+                };
+                (self.private(&counter.to_id(), scope)? == Private::Counter).then_some(())?;
+                self.current.private = true;
+                false
+            }
+            Expr::Tpl(template) => {
+                for part in &template.exprs {
+                    if !matches!(&**part, Expr::Update(_) | Expr::Lit(_)) {
+                        return None;
+                    }
+                    self.value(part, scope)?;
+                }
+                false
+            }
+            // `param.name`, for a parameter that is a fresh literal.
+            Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(_),
+                ..
+            }) => {
+                let Expr::Ident(param) = &**obj else {
+                    return None;
+                };
+                let id = param.to_id();
+                let position = *scope.positions.get(&id)?;
+                if scope.reassigned.contains(&id) {
+                    return None;
+                }
+                if !self.current.literal_params.contains(&position) {
+                    self.current.literal_params.push(position);
+                }
+                false
+            }
+            Expr::New(new) => {
+                let Expr::Ident(class) = &*new.callee else {
+                    return None;
+                };
+                if scope.params.contains(&class.to_id())
+                    || self.role(scope.chunk, &class.to_id()) != Role::AllocatorClass
+                {
+                    return None;
+                }
+                let key = (scope.chunk, class.to_id());
+                self.current.reads.push(class.to_id());
+                let reads = self.facts.get(&key).map(|facts| facts.reads.clone());
+                self.current.reads.extend(reads.unwrap_or_default());
+                for arg in new.args.iter().flatten() {
+                    if arg.spread.is_some() {
+                        return None;
+                    }
+                    self.value(&arg.expr, scope)?;
+                }
+                true
+            }
             Expr::Array(array) => {
                 for element in &array.elems {
                     let ExprOrSpread { spread: None, expr } = element.as_ref()? else {
@@ -768,7 +1118,17 @@ impl<'a> Resolver<'a> {
                 AssignTarget::Simple(SimpleAssignTarget::Ident(target)) => {
                     let id = target.id.to_id();
                     if !scope.params.contains(&id) {
-                        return None;
+                        // `list = list.concat(value)` on a private list.
+                        (self.private(&id, scope)? == Private::Array).then_some(())?;
+                        self.value(&assign.right, scope)?;
+                        self.current.private = true;
+                        return Some(false);
+                    }
+                    if let Some(position) = scope.positions.get(&id) {
+                        if self.current.literal_params.contains(position) {
+                            return None;
+                        }
+                        scope.reassigned.insert(id.clone());
                     }
                     let fresh = self.value(&assign.right, scope)?;
                     if fresh {
@@ -798,6 +1158,32 @@ impl<'a> Resolver<'a> {
                 let Callee::Expr(callee) = &call.callee else {
                     return None;
                 };
+                if call.args.iter().any(|arg| arg.spread.is_some()) {
+                    return None;
+                }
+                // `list.push(value)`, `registry.set(key, value)` on private
+                // state.
+                if let Expr::Member(MemberExpr {
+                    obj,
+                    prop: MemberProp::Ident(method),
+                    ..
+                }) = &**callee
+                {
+                    let Expr::Ident(state) = &**obj else {
+                        return None;
+                    };
+                    let fresh = match (self.private(&state.to_id(), scope)?, &*method.sym) {
+                        (Private::Array, "concat") => true,
+                        (Private::Array, "push" | "unshift") => false,
+                        (Private::Collection, "set" | "add") => false,
+                        _ => return None,
+                    };
+                    for arg in &call.args {
+                        self.value(&arg.expr, scope)?;
+                    }
+                    self.current.private = true;
+                    return Some(fresh);
+                }
                 let callee = callee_ident(callee)?;
                 if scope.params.contains(&callee.to_id())
                     || self.role(scope.chunk, &callee.to_id()) != Role::Allocator
@@ -805,14 +1191,22 @@ impl<'a> Resolver<'a> {
                     return None;
                 }
                 let key = (scope.chunk, callee.to_id());
-                self.reading.push(callee.to_id());
-                self.reading
-                    .extend(self.reads.get(&key).into_iter().flatten().cloned());
-                for arg in &call.args {
-                    if arg.spread.is_some() {
+                let facts = self.facts.get(&key).cloned().unwrap_or_default();
+                self.current.reads.push(callee.to_id());
+                self.current.reads.extend(facts.reads);
+                self.current.private |= facts.private;
+                for (position, arg) in call.args.iter().enumerate() {
+                    if facts.literal_params.contains(&position) && !plain_literal(&arg.expr) {
                         return None;
                     }
                     self.value(&arg.expr, scope)?;
+                }
+                if facts
+                    .literal_params
+                    .iter()
+                    .any(|position| *position >= call.args.len())
+                {
+                    return None;
                 }
                 true
             }
@@ -934,11 +1328,11 @@ impl<'a> Resolver<'a> {
             other => callable(other),
         };
         // What a member reads belongs to its module, which has run.
-        let outer = std::mem::take(&mut self.reading);
+        let outer = std::mem::take(&mut self.current);
         let allocates =
             function.is_some_and(|function| self.allocator(*chunk, function, &constants));
-        self.reading = outer;
-        allocates
+        let facts = std::mem::replace(&mut self.current, outer);
+        allocates && !facts.private && facts.literal_params.is_empty()
     }
 
     /// Whether a lazy module's body names `__esModule`: its interop
@@ -956,11 +1350,11 @@ impl<'a> Resolver<'a> {
 fn callable_arrow(def: Def<'_>) -> Option<Callable<'_>> {
     match def {
         Def::Value(value) => callable(value),
-        Def::Function(_) => None,
+        Def::Function(_) | Def::Class(_) => None,
     }
 }
 
-fn plain_params(params: Vec<&Pat>) -> Option<FxHashSet<Id>> {
+fn plain_params(params: Vec<&Pat>) -> Option<Vec<Id>> {
     params
         .into_iter()
         .map(|param| match param {
@@ -1000,12 +1394,26 @@ impl Visit for MemberUses {
     }
 }
 
+pub struct Allocator {
+    pub binding: Id,
+    /// The bindings of this chunk a call reads.
+    pub reads: Vec<Id>,
+    /// It also touches state private to its chunk: a call is contained.
+    pub private: bool,
+    /// Argument positions that must be fresh object literals.
+    pub literal_params: Vec<usize>,
+}
+
 /// What derivation found for the bindings of one chunk.
 #[derive(Default)]
 pub struct Derived {
-    /// Bindings that are allocators, with the bindings of this chunk a
-    /// call reads.
-    pub allocators: Vec<(Id, Vec<Id>)>,
+    /// Bindings that are allocators.
+    pub allocators: Vec<Allocator>,
+    /// Classes whose construction only stores into the new object, with
+    /// the bindings of this chunk a construction reads.
+    pub classes: Vec<(Id, Vec<Id>)>,
+    /// Bindings holding the function-naming helper.
+    pub namers: Vec<Id>,
     /// `binding.path` that is an allocator.
     pub members: Vec<(Id, String)>,
     /// Bindings holding a lazy module's thunk, and whether its body is in
@@ -1031,8 +1439,9 @@ pub fn derive(
         chunks,
         program,
         roles: FxHashMap::default(),
-        reads: FxHashMap::default(),
-        reading: Vec::new(),
+        facts: FxHashMap::default(),
+        current: Facts::default(),
+        namer: canonical(NAMER),
         common_js: canonical(COMMON_JS),
         copy_props: canonical(COPY_PROPS),
         to_esm: canonical(TO_ESM),
@@ -1049,11 +1458,36 @@ pub fn derive(
     let mut derived = Derived::default();
     for id in bindings {
         match resolver.role(0, &id) {
-            Role::Allocator => {
-                // An imported allocator's reads are its provider's.
-                let reads = resolver.reads.get(&(0, id.clone())).cloned();
-                derived.allocators.push((id, reads.unwrap_or_default()));
+            Role::Allocator | Role::AllocatorClass => {
+                let class = resolver.role(0, &id) == Role::AllocatorClass;
+                // The facts are those of the defining chunk; what an
+                // imported allocator reads is its provider's.
+                let mut home = (0, id.clone());
+                while let Some((specifier, export)) =
+                    resolver.chunks[home.0].imports.get(&home.1).cloned()
+                {
+                    let Some(provider) = resolver.provider(home.0, &specifier) else {
+                        break;
+                    };
+                    match resolver.chunks[provider].exports.get(&export) {
+                        Some(Export::Local(local)) => home = (provider, local.clone()),
+                        _ => break,
+                    }
+                }
+                let facts = resolver.facts.get(&home).cloned().unwrap_or_default();
+                let reads = if home.0 == 0 { facts.reads } else { Vec::new() };
+                if class {
+                    derived.classes.push((id, reads));
+                } else {
+                    derived.allocators.push(Allocator {
+                        binding: id,
+                        reads,
+                        private: facts.private,
+                        literal_params: facts.literal_params,
+                    });
+                }
             }
+            Role::Namer => derived.namers.push(id),
             Role::CommonJs => derived.wrappers.push(id),
             Role::ToEsm => derived.interop.push(id),
             Role::Lazy(lazy) => {
