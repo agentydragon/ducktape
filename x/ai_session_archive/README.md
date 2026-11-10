@@ -70,7 +70,9 @@ page is populated. Per-machine transaction locks coordinate backfill with old
 and new writers. Session projection starts only after this backfill completes.
 Routine imports read the compact candidates instead of reducing the full history.
 The migration and backfill preserve the historical observation ledger; rolling
-back the application leaves the triggers active and older importers usable.
+back the importer leaves the triggers active and older importer binaries usable.
+Keep the new migrator image when rolling back: an older Alembic history cannot
+resolve revision `0005_codex_title_candidates`.
 
 ## Read API and browser
 
