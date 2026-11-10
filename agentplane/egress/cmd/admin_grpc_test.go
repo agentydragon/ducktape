@@ -258,7 +258,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		len(response.GetPolicies()) != 0 {
 		t.Fatalf("SVID Rules response: %v, %v", response, err)
 	}
-	// An Identity caller is answered with its identity:{name} bindings' rules.
+	// An Identity caller is answered with the rules of the bindings naming that Identity.
 	agentURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
