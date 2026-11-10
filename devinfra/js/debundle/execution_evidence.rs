@@ -101,6 +101,25 @@ pub enum OrderedCallAdmissionRefusal {
     MultipleTargets,
     NonLocalTarget,
     UnsupportedReceiver,
+    /// An `Array.prototype` iteration method without a kernel row: the
+    /// early-exit rows (`some`, `every`, `find`, `findIndex`), `flatMap`,
+    /// and `reduce` without an initial value.
+    ArrayIterationRowUnsupported,
+    /// After the arguments or a callback, a slot the row reads
+    /// (`Array.prototype` method, element reads, `ArraySpeciesCreate`) is no
+    /// longer proved intact.
+    ArrayIterationIntrinsicsChanged,
+    /// The receiver's exact length, own-property shape or dense contents are
+    /// not proved, or changed while the row ran.
+    ArrayIterationReceiverUnproved,
+    /// The callback is not one local, synchronous, non-generator callable
+    /// with simple parameters.
+    ArrayIterationCallbackUnsupported,
+    /// The callback retains live lexical captures.
+    ArrayIterationCapturingCallback,
+    /// A callback invocation did not complete with an exact normal result
+    /// the row can retain.
+    ArrayIterationCallbackIncomplete,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

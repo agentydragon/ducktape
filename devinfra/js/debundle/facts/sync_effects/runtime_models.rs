@@ -6,6 +6,9 @@ use crate::facts::local_effect_targets::MetadataDecorateCall;
 use source_identity::SourceUnitOrdinal;
 
 pub(super) enum ModelOperation {
+    // CLEANUP(added 2026-11-10): delete with the legacy gate (L4e), with
+    //   `Executor::execute_array_iteration_transfer`. Replaced by the kernel
+    //   row `LocalExecutionContext::iterate_array` (`native/array_iteration.rs`).
     ExecuteArrayIteration {
         span: CallSite,
         environment: Context,

@@ -192,7 +192,7 @@ def _gateway(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name="s3",
-                            image="chrislusf/seaweedfs:4.52",
+                            image="chrislusf/seaweedfs:4.53",
                             image_pull_policy="IfNotPresent",
                             command=[
                                 "/bin/sh",

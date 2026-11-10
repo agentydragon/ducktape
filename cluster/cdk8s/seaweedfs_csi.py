@@ -23,7 +23,7 @@ NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs-csi"
-_VERSION = "v1.4.30"
+_VERSION = "v1.4.38"
 _OVH_AFFINITY = {
     "nodeAffinity": {
         "requiredDuringSchedulingIgnoredDuringExecution": {
@@ -52,6 +52,10 @@ _CONTROL_PLANE_TOLERATIONS = [node_scheduling.CONTROL_PLANE_TOLERATION]
 
 def _values() -> dict[str, object]:
     return {
+        # The v0.2.45 chart defaults this to File, which makes kubelet apply fsGroup
+        # ownership changes to RWX FUSE volumes. Preserve the old API default for this
+        # upgrade so existing volumes do not gain recursive ownership changes.
+        "fsGroupPolicy": "ReadWriteOnceWithFSType",
         "seaweedfsFiler": "seaweedfs-filer.seaweedfs.svc.cluster.local:8888",
         # Chart-created StorageClass disabled (storageClassName left empty): the chart's
         # storageclass.yaml template has no allowedTopologies support (only
@@ -209,7 +213,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
         interval="24h",
         url="https://github.com/seaweedfs/seaweedfs-csi-driver",
-        ref=GitRepositorySpecRef(tag="v1.4.31"),
+        ref=GitRepositorySpecRef(tag="v1.4.38"),
         ignore=textwrap.dedent(
             """\
             /*

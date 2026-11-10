@@ -75,6 +75,7 @@ py_binary(
 run_binary(
     name = "inputs",
     srcs = [
+        "app/index.html",
         "spec/chunk_aliases.yaml",
         "spec/config_template.yaml",
         ":bundle",
@@ -96,6 +97,8 @@ run_binary(
         "$(execpath spec/config_template.yaml)",
         "--aliases",
         "$(execpath spec/chunk_aliases.yaml)",
+        "--index-html",
+        "$(execpath app/index.html)",
         "--js-list",
         "$(execpath js-files.txt)",
         "--js-list-path",
@@ -202,4 +205,37 @@ py_binary(
 py_library(
     name = "summarize_tree",
     srcs = ["summarize_tree.py"],
+)
+
+# Browser smoke over the accepted tree (plans/excalidraw_live_smoke.md).
+py_test(
+    name = "test_smoke",
+    srcs = ["test_smoke.py"],
+    data = [
+        ":debundle",
+        "//:node_modules/@excalidraw/excalidraw/dir",
+        "//:node_modules/clsx/dir",
+        "//:node_modules/roughjs/dir",
+    ],
+    env = {
+        "DEBUNDLE_OUT": "$(rlocationpath :debundle)",
+        "EXCALIDRAW_PACKAGE": "$(rlocationpath //:node_modules/@excalidraw/excalidraw/dir)",
+        "PACKAGE_ROOTS": json.encode({
+            "clsx": "$(rlocationpath //:node_modules/clsx/dir)",
+            "roughjs": "$(rlocationpath //:node_modules/roughjs/dir)",
+        }),
+    },
+    tags = ["visual"],
+    deps = [
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing/frontend_visual:context",
+        "//util/testing/frontend_visual:fixtures",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@rules_python//python/runfiles",
+    ],
 )

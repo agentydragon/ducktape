@@ -2,7 +2,7 @@
 //! application `Executor`, for ordered root initializers and callable bodies.
 
 use super::super::alternatives::execution_state::ExecutionPath;
-use super::super::array_transfer::{self, ArrayPushSelection};
+use super::super::array_transfer::{self, ArrayMethodSelection};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, MemberValueWrite, native_own_data_read_slots,
@@ -92,7 +92,7 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
-    fn calls(&self) -> &'source [Call] {
+    pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Call] {
         match self.scope {
             LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
             LocalExecutionScope::RootInitializer => {
@@ -528,11 +528,17 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         } = request;
         let span = *span;
         if let EvaluatedCallee::Member {
-            array_push: Some(selection),
+            array_method: Some(selection),
             receiver,
             ..
         } = callee
         {
+            let selection = match selection.as_ref() {
+                ArrayMethodSelection::Push(selection) => selection,
+                ArrayMethodSelection::Iteration(selection) => {
+                    return self.iterate_array(frame, selection, arguments, span);
+                }
+            };
             let args: Vec<_> = arguments
                 .iter()
                 .map(|argument| argument.values.clone())
@@ -928,13 +934,14 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         &mut self,
         receivers: &Values,
         property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
-        let (selection, effects) = array_transfer::select_push(self.executor, receivers, property)?;
+    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
+        let (selection, effects) =
+            array_transfer::select_method(self.executor, receivers, property)?;
         for cell in [
-            crate::facts::EffectCell::ObjectShape(selection.object),
+            crate::facts::EffectCell::ObjectShape(selection.object()),
             crate::facts::EffectCell::OwnProperty {
-                origin: selection.object,
-                property: "push".into(),
+                origin: selection.object(),
+                property: selection.property().into(),
             },
         ] {
             self.outcome
