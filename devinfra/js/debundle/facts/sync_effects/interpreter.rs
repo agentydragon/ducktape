@@ -5991,7 +5991,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut pending: Vec<T>,
         trace_targets: Option<&BTreeSet<u32>>,
     ) -> (Values, BTreeMap<u32, BoundedInvocationFallbackInputPath>) {
-        let mut callbacks = Values::new();
+        // Also the walk's visited set: probed once per reached value. A
+        // transient hash set keeps those probes off the persistent `Values`
+        // tree, which is built once, in order, from the result.
+        let mut callbacks = FxHashSet::default();
         let mut paths = BTreeMap::new();
         let mut visited_objects = BTreeSet::new();
         let mut visited_descriptor_maps = BTreeSet::new();
@@ -6080,7 +6083,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
-        (callbacks, paths)
+        (callbacks.into_iter().collect(), paths)
     }
 
     /// A direct call or construction of an imported callable carrying a
