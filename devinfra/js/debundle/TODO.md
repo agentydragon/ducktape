@@ -225,18 +225,20 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
-- **F5 — Extend `spec lint --probe-analysis` to the remaining premise
-  kinds.** The probe (SPEC.md § Spec lint) withholds one annotation from an
-  in-memory spec copy and reruns the whole program on the prepared input;
-  `purity: pure` hints use it. Add, one kind per change: `host_behavior` keys,
-  `native_operation_inputs`, `native_call_identity_inputs`,
-  `initializer_call_effect_inputs`, `trusted_dataflow_summaries`,
-  `deferred_global_publications`, `program_premises`, `chunk_export_purity`.
-  Each needs its withholding edit and any report that names the annotation by
-  construction excluded from the comparison; anything else that differs means
-  the annotation is used. Cost is one full run per probe: rerun only affected
-  chunks, and run independent probes in parallel, once a measurement on a real
-  spec shows it matters.
+- **F5 — Decide the remaining premise kinds from provenance.**
+  <docs/premise_provenance.md> lists where each premise is consumed and
+  whether every read records its use; `reentry_free_operations` is complete and
+  linted. Complete recording outside the interpreter's hot paths, one kind per
+  change, then lint it the same way (never consumed → `inferable`, consumed →
+  probe): `census_slots_intact`'s dropped dependencies and the `node_global`
+  alias, a per-statement record for `trusted_dataflow_summaries`, the
+  `heap_contents` / `at_init_fallback` native-input exits, the loader keys, and
+  a per-statement declared-purity use list written at each classifier arm
+  (never a `ProofDependencies` field). The hot-path kinds
+  (`reentry_free_builtin_modules` / `_bun_modules` static closure,
+  `initializer_call_effect_inputs`, `deferred_global_publications`,
+  `initializer_purity`, `no_reentry_*`) stay probe-only until the
+  `callback_values` performance work lands.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was
