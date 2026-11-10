@@ -13,7 +13,7 @@ from more_itertools import one
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s.agentplane import staging
-from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY
+from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY
 from cluster.cdk8s.haku import rbac as haku_rbac, ui_egress
 
 
@@ -51,7 +51,7 @@ def test_haku_ui_grants_are_a_subset_of_claude_ais(resources: list[dict[str, Any
 
     assert haku_ui["spec"]["subject"] == {"namespace": ui_egress.NAMESPACE, "name": ui_egress.SERVICE_ACCOUNT}
     # AnkiWeb is the one deliberate grant claude-ai lacks; haku-anki shares this account.
-    own = set(haku_ui["spec"]["policySets"]) - {ANKIWEB_SYNC_POLICY}
+    own = set(haku_ui["spec"]["policySets"]) - {ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY}
     assert own <= set(claude_ai["spec"]["policySets"])
 
 
@@ -66,16 +66,13 @@ def _egress_hosts(resources: list[dict[str, Any]], policy_sets: list[str]) -> se
     }
 
 
-def test_haku_jupyter_reaches_only_hosts_claude_ai_reaches(resources: list[dict[str, Any]]) -> None:
-    """`haku-sandbox-admin` lets Haku run Pods as haku-jupyter too, so its hosts must add nothing to claude-ai's."""
-    haku_jupyter = _binding(resources, ui_egress.JUPYTER_SERVICE_ACCOUNT)
+def test_haku_jupyters_hosts_are_haku_uis_and_within_claude_ais(resources: list[dict[str, Any]]) -> None:
+    """haku-jupyter egresses as haku-ui, so its notebook hosts are that account's, and add no host to claude-ai's."""
+    haku_ui = _binding(resources, ui_egress.SERVICE_ACCOUNT)
     claude_ai = _binding(resources, "claude-ai")
 
-    assert haku_jupyter["spec"]["subject"] == {
-        "namespace": ui_egress.NAMESPACE,
-        "name": ui_egress.JUPYTER_SERVICE_ACCOUNT,
-    }
-    hosts = _egress_hosts(resources, haku_jupyter["spec"]["policySets"])
+    assert HAKU_NOTEBOOK_FETCH_POLICY in haku_ui["spec"]["policySets"]
+    hosts = _egress_hosts(resources, [HAKU_NOTEBOOK_FETCH_POLICY])
     assert hosts
     assert hosts <= _egress_hosts(resources, claude_ai["spec"]["policySets"])
 
@@ -140,15 +137,14 @@ def _container_env(resources: list[dict[str, Any]], deployment: str) -> dict[str
     return {variable["name"]: variable["value"] for variable in container["env"] if "value" in variable}
 
 
-def test_each_haku_workload_has_a_standing_record_as_its_account(resources: list[dict[str, Any]]) -> None:
+def test_each_haku_workload_has_a_standing_record_as_haku_ui(resources: list[dict[str, Any]]) -> None:
     """No owner and no binding make a record standing: its ID never rotates and its Secret is `svid-<name>`."""
     records = _standing_records(resources)
 
     assert {record["metadata"]["name"] for record in records} == set(ui_egress.STANDING_WORKLOADS)
     for record in records:
         assert "ownerReferences" not in record["metadata"]
-        account = ui_egress.STANDING_WORKLOADS[record["metadata"]["name"]]
-        assert record["spec"] == {"subject": {"serviceAccount": account}}
+        assert record["spec"] == {"subject": {"serviceAccount": ui_egress.SERVICE_ACCOUNT}}
 
 
 def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict[str, Any]]) -> None:

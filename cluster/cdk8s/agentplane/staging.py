@@ -77,7 +77,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     CLAUDE_AI,
     HAKU_AGENT,
     HAKU_CI,
-    HAKU_JUPYTER,
     HAKU_UI,
     add_staging_action_policies,
     caller_role_sets,
@@ -954,9 +953,8 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
     for caller, description in (
         (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
         (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
-        (HAKU_UI, "Haku's operator UI and haku-anki, in haku-sandbox."),
+        (HAKU_UI, "Haku's operator UI, haku-anki and haku-jupyter, in haku-sandbox."),
         (HAKU_CI, "haku-ci's builds, through its egress relay."),
-        (HAKU_JUPYTER, "Haku's notebook server, in haku-sandbox."),
         (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
     ):
         Identity(

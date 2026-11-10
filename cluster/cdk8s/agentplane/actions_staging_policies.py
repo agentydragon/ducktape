@@ -75,8 +75,8 @@ MIMIR_READS_POLICY = "mimir-reads"
 # AnkiWeb sync for haku-anki, which runs as the haku-ui account (see the binding below).
 ANKIWEB_SYNC_POLICY = "ankiweb-sync"
 HAKU_CI_BUILD_FETCH_POLICY = "haku-ci-build-fetch"
-# haku-jupyter's public egress (see its binding below).
-HAKU_JUPYTER_NOTEBOOK_FETCH_POLICY = "haku-jupyter-notebook-fetch"
+# Package and code hosts for haku-jupyter, which runs as the haku-ui account (see the binding below).
+HAKU_NOTEBOOK_FETCH_POLICY = "haku-notebook-fetch"
 
 # Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
 # key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
@@ -92,10 +92,6 @@ HAKU_UI = StandingCaller(
 )
 HAKU_CI = StandingCaller(
     ServiceAccountRef(namespace=runner.NAMESPACE, name=egress_gateway.NAME), identity=egress_gateway.NAME
-)
-HAKU_JUPYTER = StandingCaller(
-    ServiceAccountRef(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.JUPYTER_SERVICE_ACCOUNT),
-    identity=haku_ui_egress.JUPYTER_SERVICE_ACCOUNT,
 )
 
 
@@ -785,6 +781,31 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
         metadata=ApiObjectMetadata(name=ANKIWEB_SYNC_POLICY, namespace=_NAMESPACE),
         rules=[Rule.egress(hosts=["*.ankiweb.net"])],
     )
+    # haku-jupyter, Haku's notebook server, runs as this account too. It showed no public traffic through
+    # haku-egress-proxy (2026-11-08/09), so these hosts are a starting point the operator widens: the package
+    # indexes and code hosts a notebook plausibly installs or reads from, GET/HEAD only, nothing presented.
+    # The haku-ui and haku-anki Pods gain them too; all are within claude-ai's `github-downloads` and `packages`.
+    add_egress_policy(
+        scope,
+        f"egresspolicy-{HAKU_NOTEBOOK_FETCH_POLICY}",
+        metadata=ApiObjectMetadata(name=HAKU_NOTEBOOK_FETCH_POLICY, namespace=_NAMESPACE),
+        rules=[
+            Rule.egress(
+                hosts=[
+                    # keep-sorted start
+                    "codeload.github.com",
+                    "files.pythonhosted.org",
+                    "github.com",
+                    "objects.githubusercontent.com",
+                    "pypi.org",
+                    "raw.githubusercontent.com",
+                    "registry.npmjs.org",
+                    # keep-sorted end
+                ],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+            )
+        ],
+    )
     _binding(
         scope,
         "policybinding-haku-ui",
@@ -794,7 +815,7 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
             annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
         ),
         subject=HAKU_UI.subject(identity_catalog=identity_catalog),
-        policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY],
+        policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY],
     )
 
     # haku-ci's builds, through its egress relay (haku_ci/egress_gateway.py): exactly the hosts haku-ci
@@ -843,45 +864,6 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
         ),
         subject=HAKU_CI.subject(identity_catalog=identity_catalog),
         policy_sets=[HAKU_CI_BUILD_FETCH_POLICY],
-    )
-
-    # haku-jupyter, Haku's notebook server, reaches the public internet through its egress sidecar as its own
-    # account, so its rules and decision history stay apart from haku-ui's. It showed no public traffic
-    # through haku-egress-proxy (2026-11-08/09), so these hosts are a starting point the operator widens:
-    # the package indexes and code hosts a notebook plausibly installs or reads from, GET/HEAD only, nothing
-    # presented. Haku can run any haku-sandbox Pod as this account, so this is also Haku's reach there; it is
-    # within what claude-ai already gets from `github-downloads` and `packages`.
-    add_egress_policy(
-        scope,
-        f"egresspolicy-{HAKU_JUPYTER_NOTEBOOK_FETCH_POLICY}",
-        metadata=ApiObjectMetadata(name=HAKU_JUPYTER_NOTEBOOK_FETCH_POLICY, namespace=_NAMESPACE),
-        rules=[
-            Rule.egress(
-                hosts=[
-                    # keep-sorted start
-                    "codeload.github.com",
-                    "files.pythonhosted.org",
-                    "github.com",
-                    "objects.githubusercontent.com",
-                    "pypi.org",
-                    "raw.githubusercontent.com",
-                    "registry.npmjs.org",
-                    # keep-sorted end
-                ],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            )
-        ],
-    )
-    _binding(
-        scope,
-        "policybinding-haku-jupyter",
-        metadata=ApiObjectMetadata(
-            name=haku_ui_egress.JUPYTER_SERVICE_ACCOUNT,
-            namespace=_NAMESPACE,
-            annotations={"description": "What haku-jupyter (haku-sandbox) may reach."},
-        ),
-        subject=HAKU_JUPYTER.subject(identity_catalog=identity_catalog),
-        policy_sets=[HAKU_JUPYTER_NOTEBOOK_FETCH_POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
