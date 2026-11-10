@@ -11,7 +11,7 @@ from pydantic import BaseModel, ValidationError
 from x.wt.server.git_manager import GitManager
 from x.wt.server.git_refs_watcher import GitRefsWatcher
 from x.wt.server.github_watcher import GitHubWatcher
-from x.wt.server.services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
+from x.wt.server.services import GitstatusdService, WorktreeCoordinator, WorktreeIndexService
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
@@ -46,7 +46,7 @@ class ServiceDependencies:
     gitstatusd: GitstatusdService
     github_watcher: GitHubWatcher | None
     git_refs_watcher: GitRefsWatcher
-    discovery: DiscoveryService
+    discovery_scanning: Callable[[], bool]
     coordinator: WorktreeCoordinator
     worktree_service: WorktreeService
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pygit2
@@ -11,7 +12,7 @@ from more_itertools import one
 
 from x.wt.server.handlers.status_handler import get_status
 from x.wt.server.rpc import ServiceDependencies
-from x.wt.shared.protocol import StatusParams, StatusResultError, StatusResultOk
+from x.wt.shared.protocol import ComponentState, StatusParams, StatusResultError, StatusResultOk
 
 
 @pytest.fixture
@@ -32,9 +33,6 @@ def status_deps(repo_factory, config_factory) -> ServiceDependencies:
     index = Mock()
     index.list_paths.return_value = [config.main_repo]
 
-    discovery = Mock()
-    discovery.is_scanning.return_value = False
-
     return ServiceDependencies(
         config=config,
         git_manager=git_manager,
@@ -42,7 +40,7 @@ def status_deps(repo_factory, config_factory) -> ServiceDependencies:
         gitstatusd=gitstatusd,
         github_watcher=None,
         git_refs_watcher=git_refs_watcher,
-        discovery=discovery,
+        discovery_scanning=Mock(return_value=False),
         coordinator=Mock(),
         worktree_service=Mock(),
     )
@@ -74,6 +72,18 @@ async def test_get_status_returns_ok_on_success(status_deps: ServiceDependencies
 
     assert isinstance(item.result, StatusResultOk)
     assert item.result.status.branch_name == "feature-branch"
+
+
+@pytest.mark.parametrize("scanning", [False, True])
+async def test_get_status_reports_current_discovery_state(status_deps: ServiceDependencies, scanning: bool) -> None:
+    deps = replace(status_deps, discovery_scanning=lambda: scanning)
+
+    response = await get_status(deps, StatusParams())
+
+    assert response.readiness_summary is not None
+    assert response.readiness_summary.discovery_scanning is scanning
+    assert response.components is not None
+    assert response.components.discovery.state == (ComponentState.SCANNING if scanning else ComponentState.OK)
 
 
 if __name__ == "__main__":

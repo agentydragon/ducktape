@@ -34,7 +34,7 @@ from x.wt.server.handlers import (
     worktree_handler,  # noqa: F401
 )
 from x.wt.server.rpc import ServiceDependencies, rpc
-from x.wt.server.services import DiscoveryService, GitstatusdService, WorktreeIndexService, scan_worktrees
+from x.wt.server.services import GitstatusdService, WorktreeIndexService, scan_worktrees
 from x.wt.server.stores import DaemonStore
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.watcher import start_watcher
@@ -166,11 +166,6 @@ class WtDaemon:
             list_watchers=lambda: list(self.git_watchers.values()),
             clear_watchers=self.git_watchers.clear,
         )
-        self.discovery_service = DiscoveryService(
-            lambda: self.discovery_scanning,
-            periodic=self._periodic_discovery_wrapper,
-            cancel_periodic=self._cancel_periodic_discovery,
-        )
         # WtDaemon implements WorktreeCoordinator protocol directly
 
         # Server state
@@ -300,15 +295,6 @@ class WtDaemon:
                 logger.exception("Error in periodic discovery")
                 await asyncio.sleep(30)
 
-    async def _periodic_discovery_wrapper(self) -> None:
-        if self.discovery_task and not self.discovery_task.done():
-            return
-        self.discovery_task = asyncio.create_task(self._periodic_discovery())
-
-    def _cancel_periodic_discovery(self) -> None:
-        if self.discovery_task:
-            self.discovery_task.cancel()
-
     async def handle_client_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a client request using JSON-RPC 2.0 protocol."""
 
@@ -335,7 +321,7 @@ class WtDaemon:
                 gitstatusd=self.gitstatusd_service,
                 github_watcher=self.github_watcher,
                 git_refs_watcher=self.git_refs_watcher,
-                discovery=self.discovery_service,
+                discovery_scanning=lambda: self.discovery_scanning,
                 coordinator=self,
                 worktree_service=self.worktree_service,
             )
@@ -473,7 +459,8 @@ class WtDaemon:
         await self.git_refs_watcher.start()
 
         # Start long-running service loops
-        await self.discovery_service.start()
+        if not self.discovery_task or self.discovery_task.done():
+            self.discovery_task = asyncio.create_task(self._periodic_discovery())
         await self.gitstatusd_service.start()
 
         # Start filesystem watcher for worktrees directory
@@ -497,7 +484,8 @@ class WtDaemon:
         if self.github_watcher:
             await self.github_watcher.stop()
         await self.git_refs_watcher.stop()
-        await self.discovery_service.stop()
+        if self.discovery_task:
+            self.discovery_task.cancel()
 
         # Stop all gitstatusd processes
         for process in list(self.gitstatusd_clients.values()):
