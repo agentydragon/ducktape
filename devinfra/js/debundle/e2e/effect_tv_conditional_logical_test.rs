@@ -493,12 +493,14 @@ fn unknown_source_extra(helpers: &str) -> Vec<&'static str> {
 #[test]
 fn a_value_reaching_a_binding_only_as_unknown_without_effects_keeps_the_split() {
     for (helpers, body) in UNKNOWN_SOURCE_SHAPES {
-        let fixture = with_reader_split(
-            &unknown_source_definitions(helpers, body, "if (first()) {} ", "first"),
-            &unknown_source_extra(helpers),
-            run_fixture,
-        );
-        assert_preserved_entry_output(&fixture, "0 0\n");
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &unknown_source_definitions(helpers, body, guard, "first"),
+                &unknown_source_extra(helpers),
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
     }
 }
 
@@ -572,5 +574,41 @@ fn a_read_of_an_unsettled_iteration_result_without_effects_keeps_the_split() {
             "function flag() {{ if (first()) {{}} {} }}\n{CALL_FLAG}",
             body.replace("{value}", "first")
         ));
+    }
+}
+
+/// Opposing control: an arrow's `arguments` is its enclosing function's, so
+/// a function whose nested arrow reads it publishes its call's arguments;
+/// and a generator's `return` value reaches `next()` and `yield*` as a
+/// yielded one does.
+#[test]
+fn arguments_read_by_an_arrow_and_a_generator_return_are_published() {
+    for (definitions, extra) in [
+        (
+            "function pick() { const g = () => arguments[0]; return g(); }\nfunction flag() { return pick(second); }",
+            &["pick"][..],
+        ),
+        (
+            "function pick() { return () => arguments[0]; }\nfunction flag() { return pick(second)(); }",
+            &["pick"][..],
+        ),
+        (
+            "function pick() { return (() => () => arguments[0])()(); }\nfunction flag() { return pick(second); }",
+            &["pick"][..],
+        ),
+        (
+            "function pick() { return ((h = arguments[0]) => h)(); }\nfunction flag() { return pick(second); }",
+            &["pick"][..],
+        ),
+        (
+            "function* gen() { return second; }\nfunction flag() { return gen().next().value; }",
+            &["gen"][..],
+        ),
+        (
+            "function* inner() { return second; }\nfunction* gen() { const h = yield* inner(); yield h; }\nfunction flag() { return gen().next().value; }",
+            &["inner", "gen"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(&format!("{definitions}\n{CALL_FLAG}"), extra);
     }
 }
