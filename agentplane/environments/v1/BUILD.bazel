@@ -1,7 +1,7 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//third_party/googleapis:protobuf_es.bzl", "http_annotated_ts_proto_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -20,7 +20,7 @@ proto_library(
     ],
 )
 
-ts_proto_library(
+http_annotated_ts_proto_library(
     name = "environment_service_pb",
     copy_files = False,
     node_modules = "//:node_modules",
@@ -29,7 +29,6 @@ ts_proto_library(
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:identity_pb",
         "//agentplane/proto:kubernetes_pb",
-        "//google/api:annotations_pb",
     ],
 )
 

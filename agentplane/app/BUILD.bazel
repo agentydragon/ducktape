@@ -1,4 +1,3 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -7,6 +6,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//third_party/googleapis:protobuf_es.bzl", "http_annotated_ts_proto_library")
 load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = [
@@ -54,7 +54,7 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+http_annotated_ts_proto_library(
     name = "app_service_pb",
     copy_files = False,
     node_modules = "//:node_modules",
@@ -62,7 +62,6 @@ ts_proto_library(
     deps = [
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//google/api:annotations_pb",
     ],
 )
 

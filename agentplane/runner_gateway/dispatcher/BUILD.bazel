@@ -1,10 +1,10 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//third_party/googleapis:protobuf_es.bzl", "http_annotated_ts_proto_library")
 
 go_library(
     name = "dispatcher",
@@ -194,7 +194,7 @@ proto_library(
     ],
 )
 
-ts_proto_library(
+http_annotated_ts_proto_library(
     name = "session_dispatcher_pb",
     copy_files = False,
     node_modules = "//:node_modules",
@@ -206,7 +206,6 @@ ts_proto_library(
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:identity_pb",
         "//agentplane/proto:session_pb",
-        "//google/api:annotations_pb",
     ],
 )
 
