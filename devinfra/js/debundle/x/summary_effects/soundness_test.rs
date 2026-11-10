@@ -1144,6 +1144,25 @@ fn exported_literals_settle_only_when_every_chunk_reads_them_by_name() {
     assert_eq!(wrapper("export const own = () => load('./a.js');"), 0);
     assert_eq!(wrapper("export { load };"), 0);
     assert_eq!(wrapper("export const spread = (xs) => load(...xs);"), 0);
+    // A direct `eval` of a string literal that is one identifier reads the
+    // binding of that name and nothing else.
+    let evaluating = |body: &str| {
+        settled(
+            format!("import {{ table }} from './a.js';\nexport function f(x) {{ {body} }}\n")
+                .as_bytes(),
+        )
+    };
+    assert_eq!(evaluating("return [eval('require')(x), table.key];"), 1);
+    assert_eq!(evaluating("return eval(`require`)(x);"), 1);
+    assert_eq!(evaluating("return eval(x);"), 0);
+    assert_eq!(evaluating("return eval('table');"), 0);
+    assert_eq!(evaluating("return eval('table.key = 1');"), 0);
+    assert_eq!(evaluating("return eval('require', x);"), 0);
+    assert_eq!(evaluating("return eval(...x);"), 0);
+    assert_eq!(
+        dynamic("return import('./a.js').then((m) => eval('m'));"),
+        0
+    );
 }
 
 /// Programs for the upgrades, in the layout of the premise fixtures; the second line of each is unused.

@@ -409,3 +409,9 @@ let other = { Large: 1 }; function swap() { other = { Large: 2 }; }
 swap();
 var Size = ((e) => (e.Large = "l", other))(Size || {});
 console.log(Size.Large);
+### ordered differs: the literal is handed out by an eval of its name
+-
+const table = { key: 'a' }; function leak() { return eval("table"); }
+leak().key = 'b';
+const label = table.key;
+console.log(label);

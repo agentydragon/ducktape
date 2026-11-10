@@ -236,6 +236,11 @@ specifier onto a chunk; the report counts them
 parameter of a top-level function that is declared once, never assigned, not
 exported and only ever called directly with a string literal in that
 position; any other `import()` of a non-literal is an unknown load.
+A direct `eval` whose one argument is a string literal (or a template without
+substitutions) that is exactly an identifier reads the binding of that name
+and does nothing else: every binding of the chunk with that name counts as
+used as a value, and the call is no longer an `eval` that could name
+anything. Any other direct `eval` still refuses every program-wide literal.
 
 The program facts describe the chunks that were read. A static import
 specifier that names no chunk read is a chunk that runs before its importer
@@ -694,8 +699,8 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 68 programs run under Node in both orders (21
-admitted with Node agreeing, 47 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 69 programs run under Node in both orders (21
+admitted with Node agreeing, 48 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks, a guarded polyfill

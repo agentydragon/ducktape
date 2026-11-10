@@ -2883,7 +2883,11 @@ pub fn analyze_indexed(
         };
         bindings
             .iter()
-            .filter(|(id, binding)| unexported_literal(binding) && !mentions.handled.contains(*id))
+            .filter(|(id, binding)| {
+                unexported_literal(binding)
+                    && !mentions.handled.contains(*id)
+                    && !mentions.evaluated.contains(&*id.0)
+            })
             .map(|(_, binding)| *binding)
             .collect()
     };

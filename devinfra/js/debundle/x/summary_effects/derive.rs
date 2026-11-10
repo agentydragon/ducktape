@@ -249,6 +249,9 @@ struct Handled {
     loads_unknown: bool,
     /// A direct `eval`, which can name any binding.
     evals: bool,
+    /// Names a direct `eval` of a string literal reads: any binding of
+    /// that name may be the one, and is then used as a value.
+    evaluated: FxHashSet<String>,
     /// `binding.name` pairs used other than as the object of a named read:
     /// the object the member holds may be held or changed elsewhere.
     inner: FxHashSet<(Id, String)>,
@@ -269,6 +272,34 @@ struct Handled {
     destructured: Vec<(Id, String, String)>,
     /// The `import()` calls those account for, by position.
     consumed: FxHashSet<u32>,
+}
+
+/// The identifier `eval("name")` reads: one argument, a string literal or a
+/// template without substitutions, that is exactly an identifier.
+fn evaluated_identifier(call: &CallExpr) -> Option<String> {
+    let [ExprOrSpread { spread: None, expr }] = call.args.as_slice() else {
+        return None;
+    };
+    let text = match &**expr {
+        Expr::Lit(Lit::Str(value)) => js_ast::str_value(value),
+        Expr::Tpl(template) if template.exprs.is_empty() => template
+            .quasis
+            .first()?
+            .cooked
+            .as_ref()?
+            .as_str()?
+            .to_string(),
+        _ => return None,
+    };
+    let mut characters = text.chars();
+    let starts = characters
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_' || first == '$');
+    let continues =
+        characters.all(|next| next.is_ascii_alphanumeric() || next == '_' || next == '$');
+    // Words that are expressions of their own, not names of bindings.
+    const NOT_NAMES: [&str; 6] = ["this", "super", "null", "true", "false", "arguments"];
+    (starts && continues && !NOT_NAMES.contains(&text.as_str())).then_some(text)
 }
 
 /// The specifier and position of `import("literal")`.
@@ -569,6 +600,9 @@ pub fn import_wrappers(module: &Module) -> ImportWrappers {
 
 /// How a chunk mentions its bindings.
 pub struct Mentions {
+    /// Names read by a direct `eval` of a string literal: a binding of
+    /// such a name counts as handled.
+    pub evaluated: FxHashSet<String>,
     /// Bindings mentioned other than to read a named member: stored to,
     /// deleted from, called as a receiver, or used as a value.
     pub handled: FxHashSet<Id>,
@@ -591,6 +625,7 @@ pub fn mentions(module: &Module, relaxed: Option<SyntaxContext>) -> Option<Menti
     };
     module.visit_with(&mut handled);
     (!handled.evals).then_some(Mentions {
+        evaluated: handled.evaluated,
         handled: handled.bindings,
         inner: handled.inner,
         object_statics: handled.object_statics,
@@ -853,7 +888,16 @@ impl Visit for Handled {
                     return;
                 }
                 self.used(callee);
-                self.evals |= matches!(&**callee, Expr::Ident(name) if &*name.sym == "eval");
+                if matches!(&**callee, Expr::Ident(name) if &*name.sym == "eval") {
+                    // `eval("name")` reads the binding of that name in
+                    // scope and can do nothing else.
+                    match evaluated_identifier(call) {
+                        Some(name) => {
+                            self.evaluated.insert(name);
+                        }
+                        None => self.evals = true,
+                    }
+                }
                 let requires = matches!(&**callee, Expr::Member(MemberExpr {
                     obj,
                     prop: MemberProp::Ident(method),
@@ -1000,6 +1044,17 @@ impl<'a> Chunk<'a> {
             ..Handled::default()
         };
         module.visit_with(&mut handled);
+        // A binding an `eval("name")` may read is used as a value.
+        let named = |id: &&Id| handled.evaluated.contains(&*id.0);
+        let evaluated: Vec<Id> = declared
+            .keys()
+            .chain(imports.keys())
+            .chain(handled.namespaces.iter().map(|(id, _)| id))
+            .chain(handled.destructured.iter().map(|(id, _, _)| id))
+            .filter(named)
+            .cloned()
+            .collect();
+        handled.bindings.extend(evaluated);
         let export_all = module
             .body
             .iter()
