@@ -132,7 +132,9 @@ different snapshot. Stale forecasts are suppressed. Current paid/extra signals, 
 compact `⚡` markers, also stop when the reading is stale or any displayed window is awaiting
 updated usage. Positive reported extra spend this month remains visible from the selected
 snapshot when extra usage is disabled or refresh fails, with the same stale/error indicators
-as that snapshot. It records monthly history rather than current spending activity. After a
+as that snapshot. It records monthly history rather than current spending activity. A new
+spend-only observation replaces the previous snapshot; omitted quota windows remain unknown
+rather than inheriting an older reading with the new timestamp. After a
 reset deadline passes, usage remains the last reported value and the surface says it is
 awaiting updated usage.
 
