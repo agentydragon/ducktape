@@ -10,6 +10,7 @@ import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { Harness, SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
+import { EnvironmentIdentity } from "./environment_identity";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaults> | null };
 
@@ -19,6 +20,8 @@ type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDe
  */
 export function NewThreadForm({
   target,
+  identityName,
+  showIdentity,
   presetName,
   unavailableReason,
   creating,
@@ -27,6 +30,8 @@ export function NewThreadForm({
   onError,
 }: {
   target: EnvironmentTarget | null;
+  identityName: string | null | undefined;
+  showIdentity: boolean;
   presetName: string | null;
   unavailableReason: string | null;
   creating: boolean;
@@ -134,6 +139,7 @@ export function NewThreadForm({
   return (
     <Paper withBorder p="md" radius="md" role="group" aria-label="New thread">
       <Stack>
+        {showIdentity && <EnvironmentIdentity identityName={identityName} />}
         <Group align="flex-end">
           <Select
             label="Harness"

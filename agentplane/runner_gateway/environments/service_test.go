@@ -353,7 +353,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	}
 	descriptor := &environmentpb.EnvironmentDescriptor{
 		Target:       &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
-		IdentityName: "old-agent",
+		IdentityName: proto.String("old-agent"),
 	}
 	resource := &sandboxapi.Sandbox{}
 	key := client.ObjectKey{Namespace: discoveryNamespace, Name: sandboxName}
@@ -364,8 +364,8 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, nil, true); err != nil || !visible || descriptor.IdentityName != "new-agent" {
-		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.IdentityName, visible, err)
+	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, nil, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
+		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.GetIdentityName(), visible, err)
 	}
 	if err := objects.Get(t.Context(), key, resource); err != nil {
 		t.Fatal(err)
@@ -374,8 +374,8 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, nil, true); err != nil || !visible || descriptor.IdentityName != "" {
-		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want empty", descriptor.IdentityName, visible, err)
+	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, nil, true); err != nil || !visible || descriptor.IdentityName != nil {
+		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want absent", descriptor.GetIdentityName(), visible, err)
 	}
 }
 
@@ -1082,6 +1082,30 @@ func TestGetRechecksExecutionAccountAfterPodProjection(t *testing.T) {
 	}
 }
 
+func TestGetUsesRevalidatedIdentityAfterPodProjection(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "before-pod-read"}
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-current"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
+	}}
+	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
+	reader := &changeIdentityAfterPodRead{
+		WithWatch: base,
+		identity:  &sandboxapi.IdentityRef{Name: "after-pod-read"},
+	}
+	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
+	descriptor, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reader.changed || descriptor.GetIdentityName() != "after-pod-read" {
+		t.Fatalf("GetEnvironment identity_name = %q, changed=%t; want after-pod-read from revalidation", descriptor.GetIdentityName(), reader.changed)
+	}
+}
+
 type replaceSandboxOnAuthorizationRead struct {
 	client.WithWatch
 	replacement *sandboxapi.Sandbox
@@ -1119,6 +1143,33 @@ func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.N
 type removeOwnerAfterPodRead struct {
 	client.WithWatch
 	removed bool
+}
+
+type changeIdentityAfterPodRead struct {
+	client.WithWatch
+	identity *sandboxapi.IdentityRef
+	changed  bool
+}
+
+func (r *changeIdentityAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if _, ok := object.(*corev1.Pod); ok {
+		if err := r.WithWatch.Get(ctx, key, object, options...); err != nil {
+			return err
+		}
+		if !r.changed {
+			r.changed = true
+			var sandbox sandboxapi.Sandbox
+			if err := r.WithWatch.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &sandbox); err != nil {
+				return err
+			}
+			sandbox.Spec.Identity = r.identity
+			if err := r.WithWatch.Update(ctx, &sandbox); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return r.WithWatch.Get(ctx, key, object, options...)
 }
 
 func (r *removeOwnerAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {

@@ -406,7 +406,7 @@ export function SandboxPage({
                 onClick={() =>
                   setConfirmingDelete({
                     target: clone(EnvironmentTargetSchema, sandbox.target!),
-                    identityName: sandbox.identityName,
+                    identityName: sandbox.identityName ?? "",
                   })
                 }
               >
@@ -553,6 +553,8 @@ export function SandboxPage({
             <div hidden={!launching}>
               <NewThreadForm
                 target={sandbox?.target ?? null}
+                identityName={sandbox ? (sandbox.identityName ?? null) : undefined}
+                showIdentity={launching}
                 presetName={sandbox?.configuration?.preset ?? null}
                 unavailableReason={threadUnavailableReason}
                 creating={creatingThread}

@@ -257,8 +257,8 @@ message EnvironmentDescriptor {
   EnvironmentObservedState observed_state = 29;
   EnvironmentActions actions = 30;
   KubernetesDiagnostics kubernetes_diagnostics = 31;
-  // The name in Sandbox.spec.identity. Empty means the Sandbox is unbound.
-  string identity_name = 32;
+  // The optional Identity named by this Sandbox's spec.identity.
+  optional string identity_name = 32;
 }
 
 message ResumeEnvironmentRequest {

@@ -46,6 +46,8 @@ class Flag(StrEnum):
     CONNECTION_RENAMED = "connectionRenamed"
     MCP_LINKAGE_CHANGED = "mcpLinkageChanged"
     MCP_HEALTH_CHANGED = "mcpHealthChanged"
+    IDENTITY_WATCH_UNAVAILABLE = "identityWatchUnavailable"
+    IDENTITY_BINDINGS_UNAVAILABLE = "identityBindingsUnavailable"
 
 
 class Scene(StrEnum):
@@ -97,6 +99,9 @@ class AgentplaneFixture:
             "([sandbox, identity]) => window.agentplaneVisual.bindSandboxIdentity(sandbox, identity)",
             [sandbox, identity],
         )
+
+    async def environment_identity(self, name: str | None) -> None:
+        await self.page.evaluate("name => window.agentplaneVisual.environmentIdentity(name)", name)
 
     async def name_thread(self, thread_id: str, name: str) -> None:
         await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])

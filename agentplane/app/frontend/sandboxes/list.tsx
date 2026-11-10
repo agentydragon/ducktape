@@ -355,7 +355,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                           onClick={() =>
                             setConfirmingDelete({
                               target: clone(EnvironmentTargetSchema, row.target!),
-                              identityName: row.identityName,
+                              identityName: row.identityName ?? "",
                             })
                           }
                         >

@@ -127,9 +127,16 @@ Restarting or breaking one service affects only the work that actually needs it 
   When the notification service has crashed, agents saw its errors, noted that it was having
   trouble, and carried on with their work.
 - Backend paths are accepted with the integration app unavailable.
+- A roll is not an incident (operator, 2026-11-10). A protocol, lease or stream design that takes
+  casualties when a server restarts mid-operation, such as lost process handles, an abandoned
+  effect or a Session that needs an operator to recover it, is a defect, not a cost of deploying.
+  Degrade gracefully: a dropped stream resumes inside the peer's retention window, an owner hands
+  off at a settled boundary or finishes the effect it started, and the successor continues the
+  committed work.
 
 **Question for a proposal:** while this component is down or rolling, what else stops? Anything
-that does not need it should not.
+that does not need it should not. What does a restart in the middle of its longest operation cost
+the agent, and why is that cost not zero?
 
 ## Strong outer sandbox, free agent inside it
 
