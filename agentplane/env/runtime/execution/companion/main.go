@@ -236,8 +236,9 @@ func serveControl(
 			if request.Operation == "claim" {
 				// Closing the lease requests a process-domain fence. PID 1 keeps
 				// serving only after the workload is proven absent.
-				var one [1]byte
-				_, _ = c.Read(one[:])
+				if err := awaitClaimLeaseEnd(decoder.Buffered(), c); err != nil && !errors.Is(err, io.EOF) {
+					fmt.Fprintln(os.Stderr, "invalid Codex executor lease data:", err)
+				}
 				state.requestFence(responseStatus.Generation)
 				return
 			}
@@ -251,6 +252,28 @@ func serveControl(
 				state.requestFence(next.Generation)
 			}
 		}(connection)
+	}
+}
+
+var errUnexpectedClaimLeaseData = errors.New("claim lease received non-whitespace data after its request")
+
+// awaitClaimLeaseEnd ignores the JSON encoder's trailing whitespace in the
+// decoder buffer or socket, then returns at EOF or the first invalid extra byte.
+func awaitClaimLeaseEnd(buffered io.Reader, connection net.Conn) error {
+	reader := io.MultiReader(buffered, connection)
+	var data [256]byte
+	for {
+		n, err := reader.Read(data[:])
+		for _, value := range data[:n] {
+			switch value {
+			case ' ', '\t', '\r', '\n':
+			default:
+				return errUnexpectedClaimLeaseData
+			}
+		}
+		if err != nil {
+			return err
+		}
 	}
 }
 
