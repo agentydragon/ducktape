@@ -82,7 +82,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 		}
 	})
 	workload := workloadauthtesting.NewWorkload(t, api, workloadTestNamespace, "sandbox-a")
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 		}
 	})
 	workload := workloadauthtesting.NewWorkload(t, api, workloadTestNamespace, "sandbox-a")
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

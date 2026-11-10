@@ -2351,7 +2351,7 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
 - `inferable` (`never_consumed`): a `host_behavior.reentry_free_operations`
   entry no chunk's analysis consumed. Its only reader records every use it
   grants, so an absent record means no fact used it
-  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk.
+  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk. The loader keys (`loader_result_for_evaluating_module`, `synchronous_load_runs_app_callbacks`, `synchronous_load_drains_microtasks`, each `reentry_free_embedded_loaders` entry and `program_premises.non_literal_loader_calls`) are `inferable` when no target's export-reentry loader closure consumed them; a closure that sets a `reentry_through` policy marks every loader key consumed, and `non_literal_loader_calls` beside an `napi` loader is always consumed.
 - `inconclusive`: a probe suggests the annotation is unnecessary but does not
   establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
   the fact it supported may have another derivation. While any chunk is
@@ -2380,7 +2380,8 @@ hints each reported inferable are not proven jointly removable.
 Findings are warnings: lint exits 0 whenever the pass produced reports, never
 edits the spec, and removal stays a reviewed edit followed by validation. A
 chunk the pass stopped before is listed in `unlinted_chunks`; its annotations
-are unchecked, not clean. Annotations a run consumes, and the other premise
+are unchecked, not clean. When the pass itself failed after linting (a gate
+rejection, a selector error), its error is reported as `pass_error`. Annotations a run consumes, and the other premise
 kinds, produce no finding; no finding is not a verdict that an annotation is
 needed.
 

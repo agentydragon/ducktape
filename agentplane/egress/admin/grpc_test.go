@@ -217,7 +217,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 		},
 		{
 			EventId: refused.EventID.String(), At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
-			Outcome: egressadminpb.Decision_OUTCOME_DENY, Reason: proto.String("no-rule"),
+			Outcome: egressadminpb.Decision_OUTCOME_DENY, Reason: egressadminpb.Decision_REASON_NO_RULE.Enum(),
 		},
 	}
 	if len(response.GetDecisions()) != len(want) {
@@ -470,5 +470,17 @@ func TestWatchFailsWhenHistoryFeedEnds(t *testing.T) {
 	_, err = stream.Recv()
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("feed ended with %v, want unavailable", err)
+	}
+}
+
+func TestReasonOfNamesStoredReasonsAndAnUnnamedOneAsUnknown(t *testing.T) {
+	for reason, want := range map[decision.Reason]egressadminpb.Decision_Reason{
+		decision.NoRule:                 egressadminpb.Decision_REASON_NO_RULE,
+		decision.ImpersonationForbidden: egressadminpb.Decision_REASON_IMPERSONATION_FORBIDDEN,
+		"test-unnamed-reason":           egressadminpb.Decision_REASON_UNKNOWN,
+	} {
+		if got := reasonOf(reason); got != want {
+			t.Errorf("reasonOf(%q) = %v, want %v", reason, got, want)
+		}
 	}
 }
