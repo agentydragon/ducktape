@@ -44,12 +44,24 @@ const (
 	HTTPRequest Phase = "http_request"
 )
 
-// Subject is a namespaced ServiceAccount: the one a request authenticated as, or the one the proxy
+// Subject is who a request authenticated as: a ServiceAccount or an Identity.
+type Subject interface{ isSubject() }
+
+// ServiceAccount is a namespaced ServiceAccount: one a request authenticated as, or one the proxy
 // impersonated for it.
-type Subject struct {
+type ServiceAccount struct {
 	Namespace string
 	Name      string
 }
+
+// Identity is an Identity in the proxy's policy namespace, by name. Like a ServiceAccount, a name
+// spans every incarnation that has held it.
+type Identity struct {
+	Name string
+}
+
+func (ServiceAccount) isSubject() {}
+func (Identity) isSubject()       {}
 
 // Record is one admission as the proxy logs and persists it, and as the admin API serves it. It is
 // admission metadata captured before forwarding, never evidence that the upstream completed. Paths
@@ -60,7 +72,7 @@ type Record struct {
 	// ProducerID tells replicas apart; no Agentplane reader uses it.
 	ProducerID uuid.UUID
 	// Subject is nil on a refusal that never authenticated.
-	Subject *Subject
+	Subject Subject
 	// SourcePodUID and ConnectionID tell Pods and connections apart for operators querying the table.
 	SourcePodUID *string
 	ConnectionID string
@@ -79,7 +91,7 @@ type Record struct {
 	Substituted bool
 	// Impersonated is the ServiceAccount the proxy acted as on the API server, beside its own
 	// identity, which the API server records as the original user.
-	Impersonated *Subject
+	Impersonated *ServiceAccount
 	// Address is the address the host was pinned to, when admitted.
 	Address *string
 }
@@ -94,8 +106,12 @@ func (r Record) LogValue() slog.Value {
 	if r.Reason != nil {
 		attrs = append(attrs, slog.String("reason", string(*r.Reason)))
 	}
-	if r.Subject != nil {
-		attrs = append(attrs, slog.String("subject", r.Subject.Namespace+"/"+r.Subject.Name))
+	switch subject := r.Subject.(type) {
+	case ServiceAccount:
+		attrs = append(attrs, slog.String("subject_kind", "ServiceAccount"),
+			slog.String("subject_namespace", subject.Namespace), slog.String("subject_name", subject.Name))
+	case Identity:
+		attrs = append(attrs, slog.String("subject_kind", "Identity"), slog.String("subject_name", subject.Name))
 	}
 	if r.Impersonated != nil {
 		attrs = append(attrs, slog.String("impersonated", r.Impersonated.Namespace+"/"+r.Impersonated.Name))

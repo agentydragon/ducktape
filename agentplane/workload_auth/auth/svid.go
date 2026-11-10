@@ -42,47 +42,63 @@ func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identit
 	return &SVIDResolver{records: records}, nil
 }
 
-// Resolve authenticates a gRPC TLS peer. The listener must use the transport
-// package's workload server credentials, which verify its chain and client EKU.
+// Resolve authenticates a gRPC TLS peer whose record names a ServiceAccount, and refuses an
+// Identity subject: only ResolveSubject's callers serve one.
 func (r *SVIDResolver) Resolve(ctx context.Context) (Principal, error) {
+	subject, err := r.ResolveSubject(ctx)
+	if err != nil {
+		return Principal{}, err
+	}
+	principal, ok := subject.(Principal)
+	if !ok {
+		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload SVID")
+	}
+	return principal, nil
+}
+
+// ResolveSubject authenticates a gRPC TLS peer. The listener must use the transport
+// package's workload server credentials, which verify its chain and client EKU.
+func (r *SVIDResolver) ResolveSubject(ctx context.Context) (Subject, error) {
 	remote, ok := peer.FromContext(ctx)
 	if !ok {
-		return Principal{}, status.Error(codes.Unauthenticated, "workload TLS peer is missing")
+		return nil, status.Error(codes.Unauthenticated, "workload TLS peer is missing")
 	}
 	info, ok := remote.AuthInfo.(credentials.TLSInfo)
 	if !ok || len(info.State.PeerCertificates) == 0 {
-		return Principal{}, status.Error(codes.Unauthenticated, "workload client certificate is missing")
+		return nil, status.Error(codes.Unauthenticated, "workload client certificate is missing")
 	}
-	principal, err := r.ResolveVerifiedLeaf(ctx, info.State.PeerCertificates[0])
-	return principal, svidStatus(ctx, err)
+	subject, err := r.ResolveVerifiedLeaf(ctx, info.State.PeerCertificates[0])
+	return subject, svidStatus(ctx, err)
 }
 
 // ResolveVerifiedLeaf takes a leaf whose signature and trust chain the TLS listener has verified.
 // It rechecks validity and the live WorkloadCredential on each call. Headers, metadata and request
 // bodies never select the subject. The accepted incarnation's Pod, when its owner has named one, is
-// the Principal's Pod.
-func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certificate) (Principal, error) {
+// the subject's Pod.
+func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certificate) (Subject, error) {
 	resolved, err := r.records.Resolve(ctx, leaf)
 	if errors.Is(err, resolver.ErrUnavailable) {
-		return Principal{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	if err != nil {
-		return Principal{}, ErrInvalidBearer
+		return nil, ErrInvalidBearer
 	}
-	// CLEANUP(added 2026-11-10): an Identity subject yields an Identity Principal in
-	// SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md); until then no service authorizes one.
-	account, ok := resolved.Subject.(resolver.ServiceAccount)
-	if !ok {
-		return Principal{}, ErrInvalidBearer
-	}
-	principal := Principal{
-		Account:           Account{Namespace: account.Namespace, Name: account.Name},
-		ServiceAccountUID: string(account.UID),
-	}
+	var podName, podUID string
 	if resolved.Pod != nil {
-		principal.PodName, principal.PodUID = resolved.Pod.Name, string(resolved.Pod.UID)
+		podName, podUID = resolved.Pod.Name, string(resolved.Pod.UID)
 	}
-	return principal, nil
+	switch subject := resolved.Subject.(type) {
+	case resolver.ServiceAccount:
+		return Principal{
+			Account:           Account{Namespace: subject.Namespace, Name: subject.Name},
+			ServiceAccountUID: string(subject.UID),
+			PodName:           podName, PodUID: podUID,
+		}, nil
+	case resolver.Identity:
+		return IdentityPrincipal{Identity: Identity{Name: subject.Name, UID: string(subject.UID)}, PodName: podName, PodUID: podUID}, nil
+	default:
+		panic(fmt.Sprintf("unknown subject %T", resolved.Subject))
+	}
 }
 
 func svidStatus(ctx context.Context, err error) error {
@@ -151,9 +167,23 @@ func (r *Resolver) requireBearerSelection(ctx context.Context) error {
 	return nil
 }
 
+// resolveSVID is the ServiceAccount-only path: a method that has not opted into AnySubject refuses
+// an Identity subject.
 func (r *Resolver) resolveSVID(ctx context.Context) (Principal, bool, error) {
+	subject, secured, err := r.resolveSVIDSubject(ctx)
+	if !secured || err != nil {
+		return Principal{}, secured, err
+	}
+	principal, ok := subject.(Principal)
+	if !ok {
+		return Principal{}, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	}
+	return principal, true, nil
+}
+
+func (r *Resolver) resolveSVIDSubject(ctx context.Context) (Subject, bool, error) {
 	if r.listenerAuth == nil {
-		return Principal{}, false, nil
+		return nil, false, nil
 	}
 	remote, ok := peer.FromContext(ctx)
 	var info credentials.TLSInfo
@@ -161,26 +191,44 @@ func (r *Resolver) resolveSVID(ctx context.Context) (Principal, bool, error) {
 		info, ok = remote.AuthInfo.(credentials.TLSInfo)
 	}
 	if hasDelegationCredential(ctx) {
-		return Principal{}, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		return nil, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
 	hasCertificate := ok && len(info.State.PeerCertificates) > 0
 	mode, err := r.listenerAuth.Select(hasCertificate, hasDirectBearerCredential(ctx))
 	if err != nil {
-		return Principal{}, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		return nil, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
 	if mode != listener.SPIFFE {
-		return Principal{}, false, nil
+		return nil, false, nil
 	}
 	if r.svid == nil {
-		return Principal{}, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		return nil, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
-	principal, err := r.svid.Resolve(ctx)
-	return principal, true, err
+	subject, err := r.svid.ResolveSubject(ctx)
+	return subject, true, err
+}
+
+// ResolveSubject is Resolve for a destination that also serves Identity callers: an SVID yields
+// its record's subject, a bearer the ServiceAccount Principal TokenReview proves.
+func (r *Resolver) ResolveSubject(ctx context.Context) (Subject, error) {
+	if subject, secured, err := r.resolveSVIDSubject(ctx); secured {
+		return subject, err
+	}
+	return r.Resolve(ctx)
 }
 
 // ResolveRequest uses the HTTP listener's verified TLS peer and the same
 // authentication selection as native RPCs. Identity is never read from headers.
 func (r *Resolver) ResolveRequest(request *http.Request) (Principal, error) {
+	return r.Resolve(requestContext(request))
+}
+
+// ResolveSubjectRequest is ResolveSubject for an HTTP request.
+func (r *Resolver) ResolveSubjectRequest(request *http.Request) (Subject, error) {
+	return r.ResolveSubject(requestContext(request))
+}
+
+func requestContext(request *http.Request) context.Context {
 	ctx := metadata.NewIncomingContext(request.Context(), metadata.MD{
 		"authorization":       request.Header.Values("Authorization"),
 		DelegationMetadataKey: request.Header.Values(DelegationMetadataKey),
@@ -188,7 +236,7 @@ func (r *Resolver) ResolveRequest(request *http.Request) (Principal, error) {
 	if request.TLS != nil {
 		ctx = peer.NewContext(ctx, &peer.Peer{AuthInfo: credentials.TLSInfo{State: *request.TLS}})
 	}
-	return r.Resolve(ctx)
+	return ctx
 }
 
 func hasDirectBearerCredential(ctx context.Context) bool {

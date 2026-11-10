@@ -137,6 +137,10 @@ message Attached {
   // Preserves an archived pre-placement harness when exact historical placement cannot be
   // reconstructed. New Sessions leave this unset and use spec.placement.
   Harness historical_harness = 10;
+  // The Identity this Session executes as, recorded by the Dispatcher from its Sandbox's
+  // `spec.identity` at creation. Absent when the Sandbox named none, and from a runner that
+  // predates the field; execution_principal is set either way.
+  Identity execution_identity = 11;
 }
 
 // Every session in the runner's state directory. Session ids are client-chosen, so this is how a

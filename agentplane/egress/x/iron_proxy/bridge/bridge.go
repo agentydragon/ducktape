@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
@@ -134,10 +134,7 @@ func (b *Bridge) TransformRequest(ctx context.Context, request *transformv1.Tran
 		return reject(http.StatusServiceUnavailable, decision.Unavailable), nil
 	}
 
-	caller := policyapi.ServiceAccountRef{
-		Namespace: state.principal.Account.Namespace,
-		Name:      state.principal.Account.Name,
-	}
+	caller := reader.ServiceAccount{Namespace: state.principal.Account.Namespace, Name: state.principal.Account.Name}
 	workload := &policy.WorkloadContext{
 		Caller: caller,
 		PodUID: state.principal.PodUID,

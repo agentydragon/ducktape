@@ -57,6 +57,9 @@ func (a *Account) UnmarshalText(text []byte) error {
 }
 
 // Principal is the account and Pod binding established by verified workload credentials.
+// It is the ServiceAccount variant of Subject.
+// TODO: rename to AccountPrincipal once every service admits workloads through AnySubject
+// (IDENTITY_CUTOVER, agentplane/plans/task_dag.md).
 // ServiceAccountUID is populated only when the resolver also verifies the canonical account UID.
 type Principal struct {
 	Account           Account
@@ -68,6 +71,28 @@ type Principal struct {
 // IsPodBound reports whether the resolver proved the singular Pod binding required by
 // destinations that preserve an explicit Pod-bound backend caller path.
 func (p Principal) IsPodBound() bool { return p.PodName != "" && p.PodUID != "" }
+
+// Identity is an Identity in the policy namespace, as the incarnation the caller's workload
+// credential names.
+type Identity struct {
+	Name string
+	UID  string
+}
+
+// IdentityPrincipal is a workload whose credential names an Identity, with the Pod its accepted
+// incarnation runs in once its owner has named it: provenance, never the subject.
+type IdentityPrincipal struct {
+	Identity Identity
+	PodName  string
+	PodUID   string
+}
+
+// Subject is a verified workload: a ServiceAccount Principal, or an IdentityPrincipal, which only
+// a workload SVID yields.
+type Subject interface{ isSubject() }
+
+func (Principal) isSubject()         {}
+func (IdentityPrincipal) isSubject() {}
 
 // ServiceAccountPrincipal is the canonical exact ServiceAccount identity without Pod proof.
 type ServiceAccountPrincipal = identitypb.ServiceAccountIdentity
@@ -122,6 +147,12 @@ type Resolver struct {
 // verified source while using the same method policy.
 type PrincipalResolver interface {
 	Resolve(context.Context) (Principal, error)
+}
+
+// SubjectResolver resolves the subject admitted by an AnySubject rule, a ServiceAccount or an
+// Identity. Resolver implements it; a service-owned resolver may provide another verified source.
+type SubjectResolver interface {
+	ResolveSubject(context.Context) (Subject, error)
 }
 
 // Option tunes a Resolver.
@@ -211,13 +242,47 @@ func (r *Resolver) ResolveReviewedCaller(ctx context.Context) (ReviewedCaller, e
 		if err != nil {
 			return ReviewedCaller{}, err
 		}
-		caller := ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)}
-		// A standing workload's credential proves no Pod.
-		if principal.IsPodBound() {
-			caller.Pod = &principal
-		}
-		return caller, nil
+		return reviewedSVIDCaller(principal), nil
 	}
+	return r.resolveReviewedBearer(ctx)
+}
+
+// ReviewedSubject is a reviewed ServiceAccount caller, or an IdentityPrincipal, which only a
+// workload SVID yields.
+type ReviewedSubject interface{ isReviewedSubject() }
+
+func (ReviewedCaller) isReviewedSubject()    {}
+func (IdentityPrincipal) isReviewedSubject() {}
+
+// resolveReviewedSubject is ResolveReviewedCaller for a method that also admits Identity callers.
+func (r *Resolver) resolveReviewedSubject(ctx context.Context) (ReviewedSubject, error) {
+	subject, secured, err := r.resolveSVIDSubject(ctx)
+	if !secured {
+		return r.resolveReviewedBearer(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch subject := subject.(type) {
+	case Principal:
+		return reviewedSVIDCaller(subject), nil
+	case IdentityPrincipal:
+		return subject, nil
+	default:
+		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	}
+}
+
+func reviewedSVIDCaller(principal Principal) ReviewedCaller {
+	caller := ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)}
+	// A standing workload's credential proves no Pod.
+	if principal.IsPodBound() {
+		caller.Pod = &principal
+	}
+	return caller
+}
+
+func (r *Resolver) resolveReviewedBearer(ctx context.Context) (ReviewedCaller, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ReviewedCaller{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())

@@ -32,7 +32,7 @@ func TestAnAllowedRequestRunsOnceAndItsOutcomeIsRecorded(t *testing.T) {
 	e.mu.Lock()
 	payload := e.runs[1]
 	e.mu.Unlock()
-	if payload.Action != actionIdentity || payload.Caller != caller.Account {
+	if recorded, _ := payload.Caller.(store.ServiceAccountCaller); payload.Action != actionIdentity || recorded.Account != caller.Account {
 		t.Errorf("the executor ran %+v", payload)
 	}
 	sameJSON(t, payload.Arguments, json.RawMessage(`{"key": "second"}`))

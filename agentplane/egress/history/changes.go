@@ -57,9 +57,12 @@ type Changes struct {
 	listener *listenerState
 }
 
+// subjectKey is a decision.Subject, or the unauthenticated, as a comparable key: a ServiceAccount
+// sets namespace and name, an Identity identity, the unauthenticated only unauthenticated.
 type subjectKey struct {
 	namespace       string
 	name            string
+	identity        string
 	unauthenticated bool
 }
 
@@ -90,9 +93,14 @@ type listenerConnection interface {
 	Err() error
 }
 
+// notifiedSubject is one subject's events in a notification every replica decodes. A replica
+// predating Identity fails its decision watches on a notification naming one; none is written
+// before a workload runs as an Identity (SANDBOX_IDENTITY_SPEC, agentplane/plans/task_dag.md), which
+// a later release brings.
 type notifiedSubject struct {
 	Namespace       string   `json:"namespace,omitempty"`
 	Name            string   `json:"name,omitempty"`
+	Identity        string   `json:"identity,omitempty"`
 	Unauthenticated bool     `json:"unauthenticated,omitempty"`
 	EventIDs        []string `json:"event_ids"`
 }
@@ -125,7 +133,7 @@ func NewChanges(databaseURL string, heartbeat time.Duration) (*Changes, error) {
 
 // Follow subscribes before its initial callback, then invokes changed only for this subject's
 // committed event IDs and quiet heartbeats.
-func (c *Changes) Follow(ctx context.Context, subject *decision.Subject, changed func(Change) error) error {
+func (c *Changes) Follow(ctx context.Context, subject decision.Subject, changed func(Change) error) error {
 	subscription, err := c.subscribe(ctx, subject)
 	if err != nil {
 		return err
@@ -159,7 +167,7 @@ func (c *Changes) Follow(ctx context.Context, subject *decision.Subject, changed
 	}
 }
 
-func (c *Changes) subscribe(ctx context.Context, subject *decision.Subject) (*changeSubscription, error) {
+func (c *Changes) subscribe(ctx context.Context, subject decision.Subject) (*changeSubscription, error) {
 	key := keyOf(subject)
 	for {
 		c.mu.Lock()
@@ -351,15 +359,23 @@ func (c *Changes) clearListener(state *listenerState) {
 	}
 }
 
-func keyOf(subject *decision.Subject) subjectKey {
-	if subject == nil {
+func keyOf(subject decision.Subject) subjectKey {
+	switch subject := subject.(type) {
+	case nil:
 		return subjectKey{unauthenticated: true}
+	case decision.ServiceAccount:
+		return subjectKey{namespace: subject.Namespace, name: subject.Name}
+	case decision.Identity:
+		return subjectKey{identity: subject.Name}
+	default:
+		panic(fmt.Sprintf("unknown decision subject %T", subject))
 	}
-	return subjectKey{namespace: subject.Namespace, name: subject.Name}
 }
 
 func keyFromNotification(change notifiedSubject) subjectKey {
-	return subjectKey{namespace: change.Namespace, name: change.Name, unauthenticated: change.Unauthenticated}
+	return subjectKey{
+		namespace: change.Namespace, name: change.Name, identity: change.Identity, unauthenticated: change.Unauthenticated,
+	}
 }
 
 func decodeNotification(raw string) (changeNotification, error) {
@@ -383,11 +399,16 @@ func decodeNotification(raw string) (changeNotification, error) {
 		return changeNotification{}, errors.New("decision change notification has no subjects")
 	}
 	for _, change := range payload.Subjects {
-		if change.Unauthenticated {
-			if change.Namespace != "" || change.Name != "" {
+		switch {
+		case change.Unauthenticated:
+			if change.Namespace != "" || change.Name != "" || change.Identity != "" {
 				return changeNotification{}, errors.New("invalid unauthenticated decision change subject")
 			}
-		} else if change.Namespace == "" || change.Name == "" {
+		case change.Identity != "":
+			if change.Namespace != "" || change.Name != "" {
+				return changeNotification{}, errors.New("decision change subject names two kinds")
+			}
+		case change.Namespace == "" || change.Name == "":
 			return changeNotification{}, errors.New("incomplete decision change subject")
 		}
 		if len(change.EventIDs) == 0 {
@@ -439,7 +460,10 @@ func notificationPayloads(records []decision.Record) []string {
 		if keys[i].namespace != keys[j].namespace {
 			return keys[i].namespace < keys[j].namespace
 		}
-		return keys[i].name < keys[j].name
+		if keys[i].name != keys[j].name {
+			return keys[i].name < keys[j].name
+		}
+		return keys[i].identity < keys[j].identity
 	})
 
 	groups := make([]notifiedSubject, 0, len(records))
@@ -448,7 +472,7 @@ func notificationPayloads(records []decision.Record) []string {
 		for len(eventIDs) > 0 {
 			count := min(len(eventIDs), 150)
 			group := notifiedSubject{
-				Namespace: key.namespace, Name: key.name, Unauthenticated: key.unauthenticated,
+				Namespace: key.namespace, Name: key.name, Identity: key.identity, Unauthenticated: key.unauthenticated,
 				EventIDs: eventIDs[:count],
 			}
 			candidate := changeNotification{BatchID: batchID, Subjects: []notifiedSubject{group}}

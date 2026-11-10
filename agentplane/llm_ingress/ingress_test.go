@@ -520,8 +520,8 @@ func mustRequest(t *testing.T, method, url string, headers http.Header) *http.Re
 }
 
 // forwardedHeaders applies what Rewrite applies to the outgoing request headers.
-func forwardedHeaders(headers http.Header, principal auth.Principal, attribution attributionConfig) (http.Header, error) {
-	verified, err := verifiedRequestHeaders(principal, testBackendKey, attribution, "")
+func forwardedHeaders(headers http.Header, subject auth.Subject, attribution attributionConfig) (http.Header, error) {
+	verified, err := verifiedRequestHeaders(subject, testBackendKey, attribution, "")
 	if err != nil {
 		return nil, err
 	}
@@ -614,6 +614,48 @@ func TestCredentialAndIdentityHeadersAreReplacedByVerifiedOnes(t *testing.T) {
 	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil ||
 		metadata["agentplane.pod_uid"] != "pod-a-uid" {
 		t.Fatalf("trusted metadata was not stamped: %v, err=%v", metadata, err)
+	}
+}
+
+func TestIdentityCallerIsAttributedByIdentityWithoutAccountClaims(t *testing.T) {
+	subject := auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"},
+		PodName:  "sandbox-a", PodUID: "pod-a-uid",
+	}
+	attribution := defaultAttribution()
+	attribution.Baggage = []attributionField{
+		{Key: "agentplane.namespace", Source: verifiedNamespace},
+		{Key: "agentplane.identity", Source: verifiedIdentity},
+		{Key: "agentplane.pod_uid", Source: verifiedPodUID},
+	}
+	forwarded, err := forwardedHeaders(http.Header{}, subject, attribution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]string
+	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"agentplane.identity":     "agent-a",
+		"agentplane.identity_uid": "identity-a-uid",
+		"agentplane.pod_name":     "sandbox-a",
+		"agentplane.pod_uid":      "pod-a-uid",
+	}
+	if !maps.Equal(metadata, want) {
+		t.Fatalf("Identity caller metadata = %v, want %v without namespace or service_account", metadata, want)
+	}
+	// Baggage members serialize in no fixed order.
+	parsed, err := baggage.Parse(forwarded.Get("Baggage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := map[string]string{}
+	for _, member := range parsed.Members() {
+		members[member.Key()] = member.Value()
+	}
+	if !maps.Equal(members, map[string]string{"agentplane.identity": "agent-a", "agentplane.pod_uid": "pod-a-uid"}) {
+		t.Fatalf("Identity caller baggage = %v, want its identity and Pod alone", members)
 	}
 }
 
@@ -1195,5 +1237,22 @@ func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
 	if response.StatusCode == http.StatusSwitchingProtocols || len(got) != 1 ||
 		got[0].headers.Get("Upgrade") != "" || got[0].headers.Get("Connection") != "" {
 		t.Fatalf("status=%d backend requests=%+v", response.StatusCode, got)
+	}
+}
+
+func TestIdentityCallerIsLoggedByKindAndNameNotAsAnEmptyAccount(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	attrs := requestLogAttrs("request-id", request, auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"}, PodName: "sandbox-a", PodUID: "pod-a-uid",
+	})
+	logged := map[any]any{}
+	for i := 0; i+1 < len(attrs); i += 2 {
+		logged[attrs[i]] = attrs[i+1]
+	}
+	if logged["subject_kind"] != "identity" || logged["subject_name"] != "agent-a" || logged["pod"] != "sandbox-a" {
+		t.Fatalf("Identity caller log attributes = %v, want its kind, name and Pod", logged)
+	}
+	if _, ok := logged["namespace"]; ok {
+		t.Fatalf("Identity caller logged an account namespace: %v", logged)
 	}
 }

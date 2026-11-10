@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
@@ -68,6 +68,66 @@ func TestABoxRunsAsItsCallerAndGoesWithItsSandboxOrAccount(t *testing.T) {
 				t.Errorf("the box's labels %v dropped the template's", pod.Labels)
 			}
 		})
+	}
+}
+
+// An Identity's box runs on the namespace's default ServiceAccount, and its record names and is owned by the Identity
+// incarnation, so the box goes with the Identity. Its SVID resolves to the Identity, with the box as its Pod, as the
+// egress proxy and the services resolve a Sandbox's: the box acts as the Identity, by the Identity's bindings. Neither
+// a later incarnation of the name nor a same-named account reaches it.
+func TestAnIdentitysBoxRunsOnTheDefaultAccountAndGoesWithTheIdentity(t *testing.T) {
+	f := newFixture(t, nil)
+	live := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: f.binding.Namespace, Name: "test-agent"},
+		Spec:       policyapi.IdentitySpec{Description: "test agent"},
+	}
+	if err := objects.Create(t.Context(), live); err != nil {
+		t.Fatal(err)
+	}
+	agent := Identity{Name: live.Name, UID: string(live.UID)}
+	if _, err := f.create(t, f.inventory(), agent, "box", testTemplate); err != nil {
+		t.Fatal(err)
+	}
+	f.issuance.Settle(t)
+	pod := f.pod(t, agent, "box")
+	record := f.record(t, agent, "box")
+	if pod.Spec.ServiceAccountName != "default" {
+		t.Errorf("the box runs as %q, want the default ServiceAccount", pod.Spec.ServiceAccountName)
+	}
+	if owner := metav1.GetControllerOf(pod); owner == nil || owner.Kind != workloadapi.Kind || owner.UID != record.UID {
+		t.Errorf("the box is owned by %v, want its WorkloadCredential %s", pod.OwnerReferences, record.UID)
+	}
+	want := []metav1.OwnerReference{{
+		APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Identity", Name: agent.Name, UID: types.UID(agent.UID), Controller: new(true),
+	}}
+	if !reflect.DeepEqual(record.OwnerReferences, want) {
+		t.Errorf("the box's record is owned by %+v, want %+v", record.OwnerReferences, want)
+	}
+	if subject := record.Spec.Subject; subject.ServiceAccount != "" || subject.Identity == nil ||
+		*subject.Identity != (workloadapi.IdentitySubject{Name: agent.Name, UID: types.UID(agent.UID)}) {
+		t.Errorf("the box's record names %+v, want the Identity", subject)
+	}
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: f.binding.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := resolves.Resolve(t.Context(), f.leaf(t, f.record(t, agent, "box")))
+	if err != nil || peer.Subject != (resolver.Identity{Name: agent.Name, UID: live.UID}) || peer.Pod == nil || peer.Pod.UID != pod.UID {
+		t.Errorf("the box's SVID resolves to %+v, %v; want the Identity and Pod %s", peer, err, pod.UID)
+	}
+
+	if boxes, err := f.inventory().List(t.Context(), agent); err != nil || len(boxes) != 1 {
+		t.Errorf("the Identity lists %v, %v", boxes, err)
+	}
+	sameNamed := account(t, f.binding.Namespace, agent.Name)
+	for name, other := range map[string]Caller{"a later incarnation": Identity{Name: agent.Name, UID: uuid.NewString()}, "a same-named account": sameNamed} {
+		var foreign *ForeignError
+		if _, err := f.inventory().Get(t.Context(), other, "box"); !errors.As(err, &foreign) {
+			t.Errorf("%s: Get() = %v, want a ForeignError", name, err)
+		}
+		if boxes, err := f.inventory().List(t.Context(), other); err != nil || len(boxes) != 0 {
+			t.Errorf("%s lists %v, %v", name, boxes, err)
+		}
 	}
 }
 
@@ -180,7 +240,7 @@ func TestABoxIsNotBoundToACredentialItWasNotStartedWith(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Unbinding the record, as a create of the name that found no box would, rotates its credential.
-	if _, err := credentials.Ensure(t.Context(), credentialOwner(f.caller, account, "box")); err != nil {
+	if _, err := credentials.Ensure(t.Context(), credentialOwner(f.binding.Namespace, f.caller, account, "box")); err != nil {
 		t.Fatal(err)
 	}
 	f.issuance.Settle(t)
@@ -299,10 +359,10 @@ func TestARefusedCreateSaysWhatTheAPIServerSaid(t *testing.T) {
 func TestAnotherCallersBoxOfThatNameIsNotReached(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		labels func(other store.ServiceAccount) map[string]string
+		labels func(other Account) map[string]string
 	}{
-		{"another caller's box", func(other store.ServiceAccount) map[string]string { return boxLabels(other, "box", testTemplate) }},
-		{"a Pod no Action made", func(store.ServiceAccount) map[string]string { return map[string]string{nameLabel: "box"} }},
+		{"another caller's box", func(other Account) map[string]string { return boxLabels(other, "box", testTemplate) }},
+		{"a Pod no Action made", func(Account) map[string]string { return map[string]string{nameLabel: "box"} }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t, nil)
@@ -329,7 +389,7 @@ func TestAListHoldsOnlyTheCallersBoxes(t *testing.T) {
 	f := newFixture(t, nil)
 	other := account(t, f.binding.Namespace, "test-other")
 	for _, caller := range []struct {
-		account store.ServiceAccount
+		account Account
 		box     string
 	}{{f.caller, "mine"}, {other, "theirs"}} {
 		if _, err := f.create(t, f.inventory(), caller.account, caller.box, testTemplate); err != nil {

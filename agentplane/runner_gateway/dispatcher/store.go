@@ -84,6 +84,14 @@ func sameServiceAccountIdentity(left, right *ServiceAccountIdentity) bool {
 	return sameServiceAccount(left.GetAccount(), right.GetAccount()) && left.GetUid() == right.GetUid()
 }
 
+// sameIdentity compares Identity incarnations, nil meaning none.
+func sameIdentity(left, right *identitypb.Identity) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return left.GetName() == right.GetName() && left.GetUid() == right.GetUid()
+}
+
 func sameServiceAccount(left, right *identitypb.ServiceAccount) bool {
 	if left == nil || right == nil {
 		return left == right
@@ -108,12 +116,132 @@ type AdmissionAttribution struct {
 	Action          *ActionCorrelation
 }
 
-// CallerIdentity distinguishes the caller's actual ServiceAccount from the explicit, Pod-bound
+func (*AdmissionAttribution) isAttribution() {}
+
+// IdentityAttribution records a caller whose workload SVID named an Identity, and the Pod its
+// accepted incarnation runs in, nil for a standing workload.
+type IdentityAttribution struct {
+	Identity *identitypb.Identity
+	Pod      *PodIdentity
+}
+
+func (*IdentityAttribution) isAttribution() {}
+
+// Attribution is the verified caller recorded with a row: an *AdmissionAttribution for a
+// ServiceAccount caller or an *IdentityAttribution.
+type Attribution interface{ isAttribution() }
+
+// Caller is an admitted Dispatcher caller: a ServiceAccountCaller or an IdentityCaller.
+type Caller interface{ isCaller() }
+
+// ServiceAccountCaller distinguishes the caller's actual ServiceAccount from the explicit, Pod-bound
 // backend path that retains the existing app/notification/Actions authority.
-type CallerIdentity struct {
+type ServiceAccountCaller struct {
 	ServiceAccountIdentity *ServiceAccountIdentity
 	Privileged             bool
 	Attribution            *AdmissionAttribution
+}
+
+// IdentityCaller is a workload whose SVID named an Identity. It is never privileged: it owns the
+// Sessions whose execution identity is its Identity incarnation, name and UID.
+type IdentityCaller struct {
+	Identity *identitypb.Identity
+	Pod      *PodIdentity
+}
+
+func (ServiceAccountCaller) isCaller() {}
+func (IdentityCaller) isCaller()       {}
+
+func privileged(caller Caller) bool {
+	account, ok := caller.(ServiceAccountCaller)
+	return ok && account.Privileged
+}
+
+// callerAttribution is the Attribution a row records for caller, nil for an internal write.
+func callerAttribution(caller Caller) Attribution {
+	switch c := caller.(type) {
+	case ServiceAccountCaller:
+		if c.Attribution == nil {
+			return nil
+		}
+		return c.Attribution
+	case IdentityCaller:
+		return &IdentityAttribution{Identity: c.Identity, Pod: c.Pod}
+	default:
+		return nil
+	}
+}
+
+// validateCaller checks the attribution caller will record.
+func validateCaller(caller Caller, wakeCaller *Account) error {
+	switch c := caller.(type) {
+	case ServiceAccountCaller:
+		return validateAttribution(c.Attribution, wakeCaller)
+	case IdentityCaller:
+		if c.Identity.GetName() == "" || c.Identity.GetUid() == "" {
+			return errors.New("Identity caller requires a name and UID")
+		}
+		if c.Pod != nil && (c.Pod.Name == "" || c.Pod.UID == "") {
+			return errors.New("Identity caller has incomplete Pod provenance")
+		}
+		if wakeCaller != nil {
+			return errors.New("an Identity caller is never a wake caller")
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+// ownerScope is the SQL condition limiting Session rows (columns qualified by prefix) to those caller
+// may read, with its arguments numbered from next.
+func ownerScope(caller Caller, prefix string, next int) (string, []any) {
+	switch c := caller.(type) {
+	case ServiceAccountCaller:
+		account := accountOfIdentity(c.ServiceAccountIdentity)
+		return fmt.Sprintf("($%[1]d OR (%[5]sexecution_account_namespace=$%[2]d AND %[5]sexecution_account_name=$%[3]d AND %[5]sexecution_account_uid=$%[4]d))",
+				next, next+1, next+2, next+3, prefix),
+			[]any{c.Privileged, account.Namespace, account.Name, uidOfIdentity(c.ServiceAccountIdentity)}
+	case IdentityCaller:
+		return fmt.Sprintf("(%[3]sexecution_identity_name=$%[1]d AND %[3]sexecution_identity_uid::text=$%[2]d)", next, next+1, prefix),
+			[]any{c.Identity.GetName(), c.Identity.GetUid()}
+	default:
+		panic(fmt.Sprintf("unknown Dispatcher caller %T", caller))
+	}
+}
+
+// identityAttributionValues are the identity attribution columns of a row attribution records.
+func identityAttributionValues(attribution Attribution) []any {
+	identity, ok := attribution.(*IdentityAttribution)
+	if !ok {
+		return []any{nil, nil, nil, nil}
+	}
+	var podName, podUID any
+	if identity.Pod != nil {
+		podName, podUID = identity.Pod.Name, identity.Pod.UID
+	}
+	return []any{identity.Identity.GetName(), identity.Identity.GetUid(), podName, podUID}
+}
+
+// scanAttribution combines a row's ServiceAccount and Identity attribution columns.
+func scanAttribution(account *AdmissionAttribution, identityName, identityUID, podName, podUID sql.NullString) (Attribution, error) {
+	if identityName.Valid != identityUID.Valid || podName.Valid != podUID.Valid || podName.Valid && !identityName.Valid {
+		return nil, errors.New("Identity attribution is incomplete")
+	}
+	if !identityName.Valid {
+		if account == nil {
+			return nil, nil
+		}
+		return account, nil
+	}
+	if account != nil {
+		return nil, errors.New("row is attributed to both a ServiceAccount and an Identity")
+	}
+	result := &IdentityAttribution{Identity: &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}}
+	if podName.Valid {
+		result.Pod = &PodIdentity{Name: podName.String, UID: podUID.String}
+	}
+	return result, nil
 }
 
 type Dispatch struct {
@@ -131,7 +259,7 @@ type Dispatch struct {
 	Admission               *eventlogpb.EventEntry
 	DeliveryBlocker         *environmentpb.DeliveryBlocker
 	WakeAssessment          *environmentpb.WakeAssessment
-	Attribution             *AdmissionAttribution
+	Attribution             Attribution
 	Traceparent             string
 	CreatedAt, UpdatedAt    time.Time
 }
@@ -143,10 +271,14 @@ type Session struct {
 	// legacy row with no trustworthy owner; an empty UID with a set account is a privileged open
 	// waiting to bind the controller-owned ServiceAccount.
 	ExecutionPrincipal *ServiceAccountIdentity
+	// ExecutionIdentity is the Identity the Session's Sandbox named in `spec.identity` when the
+	// Session was created, nil when it named none. It is immutable and set beside ExecutionPrincipal,
+	// never instead of it.
+	ExecutionIdentity *identitypb.Identity
 	// Creator records the authenticated actor that brokered the session, separately from its owner
 	// and effective caller. For a delegated session this is the Actions ServiceAccount.
 	Creator              *ServiceAccountIdentity
-	Attribution          *AdmissionAttribution
+	Attribution          Attribution
 	WakeEligible         bool
 	WakeCaller           *Account
 	WakeFromIncarnation  *string
@@ -196,8 +328,10 @@ func validateAttribution(attribution *AdmissionAttribution, wakeCaller *Account)
 	return nil
 }
 
-func attributionValues(attribution *AdmissionAttribution) []any {
-	if attribution == nil {
+// attributionValues are the ServiceAccount attribution columns of a row attribution records.
+func attributionValues(recorded Attribution) []any {
+	attribution, ok := recorded.(*AdmissionAttribution)
+	if !ok {
 		return []any{nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
 	}
 	var actorPodName, actorPodUID, requestID, executionID any
@@ -346,7 +480,8 @@ const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox
 	actor_account_namespace, actor_account_name, actor_account_uid, actor_pod_name, actor_pod_uid,
 	effective_caller_account_namespace, effective_caller_account_name, effective_caller_account_uid,
 	action_request_id::text, action_execution_id::text, created_at, updated_at,
-	delivery_blocker, wake_assessment, delivery_attempted`
+	delivery_blocker, wake_assessment, delivery_attempted,
+	actor_identity_name, actor_identity_uid, actor_identity_pod_name, actor_identity_pod_uid`
 
 const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
 	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
@@ -354,20 +489,25 @@ const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sand
 	d.actor_account_namespace, d.actor_account_name, d.actor_account_uid, d.actor_pod_name, d.actor_pod_uid,
 	d.effective_caller_account_namespace, d.effective_caller_account_name, d.effective_caller_account_uid,
 	d.action_request_id::text, d.action_execution_id::text, d.created_at, d.updated_at,
-	d.delivery_blocker, d.wake_assessment, d.delivery_attempted`
+	d.delivery_blocker, d.wake_assessment, d.delivery_attempted,
+	d.actor_identity_name, d.actor_identity_uid, d.actor_identity_pod_name, d.actor_identity_pod_uid`
 
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	return scanDispatchColumns(row)
 }
 
-func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *ServiceAccountIdentity, error) {
-	var ownerNS, ownerName, ownerUID sql.NullString
-	dispatch, err := scanDispatchColumns(row, &ownerNS, &ownerName, &ownerUID)
+func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *ServiceAccountIdentity, *identitypb.Identity, error) {
+	var ownerNS, ownerName, ownerUID, identityName, identityUID sql.NullString
+	dispatch, err := scanDispatchColumns(row, &ownerNS, &ownerName, &ownerUID, &identityName, &identityUID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid {
-		return nil, nil, errors.New("terminal Session principal association is incomplete")
+	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid || identityName.Valid != identityUID.Valid {
+		return nil, nil, nil, errors.New("terminal Session principal association is incomplete")
+	}
+	var ownerIdentity *identitypb.Identity
+	if identityName.Valid {
+		ownerIdentity = &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}
 	}
 	var owner *ServiceAccountIdentity
 	if ownerNS.Valid {
@@ -376,7 +516,7 @@ func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *Ser
 			owner.Uid = ownerUID.String
 		}
 	}
-	return dispatch, owner, nil
+	return dispatch, owner, ownerIdentity, nil
 }
 
 func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any) (*Dispatch, error) {
@@ -384,6 +524,7 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	var callerNS, callerName, incarnation, reason sql.NullString
 	var actorNS, actorName, actorUID, actorPodName, actorPodUID sql.NullString
 	var effectiveNS, effectiveName, effectiveUID, actionRequestID, actionExecutionID sql.NullString
+	var identityName, identityUID, identityPodName, identityPodUID sql.NullString
 	var wakeAt sql.NullTime
 	var commandBytes, admissionBytes, blockerBytes, wakeBytes []byte
 	columns := []any{
@@ -393,6 +534,7 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 		&actorNS, &actorName, &actorUID, &actorPodName, &actorPodUID,
 		&effectiveNS, &effectiveName, &effectiveUID, &actionRequestID, &actionExecutionID,
 		&d.CreatedAt, &d.UpdatedAt, &blockerBytes, &wakeBytes, &d.DeliveryAttempted,
+		&identityName, &identityUID, &identityPodName, &identityPodUID,
 	}
 	columns = append(columns, additional...)
 	err := row.Scan(columns...)
@@ -437,7 +579,11 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	if err != nil {
 		return nil, err
 	}
-	d.Attribution, err = scanAdmissionAttribution(actor, actorPodName, actorPodUID, effectiveCaller, actionRequestID, actionExecutionID, d.WakeCaller)
+	account, err := scanAdmissionAttribution(actor, actorPodName, actorPodUID, effectiveCaller, actionRequestID, actionExecutionID, d.WakeCaller)
+	if err != nil {
+		return nil, err
+	}
+	d.Attribution, err = scanAttribution(account, identityName, identityUID, identityPodName, identityPodUID)
 	if err != nil {
 		return nil, err
 	}
@@ -452,16 +598,17 @@ func (s *Store) Enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 
 // EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
 // that appends a command, including for Pod-bound privileged backends.
-func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller CallerIdentity) (*Dispatch, error) {
-	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, &caller)
+func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller Caller) (*Dispatch, error) {
+	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, caller)
 }
 
-func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller *CallerIdentity) (*Dispatch, error) {
+// enqueue appends a command; a nil caller is an internal write.
+func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account, caller Caller) (*Dispatch, error) {
 	if command == nil || command.GetCommandId() == "" || sessionID == "" || sandboxName == "" {
 		return nil, errors.New("command_id, session_id and sandbox are required")
 	}
 	if caller != nil {
-		if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
+		if err := validateCaller(caller, wakeCaller); err != nil {
 			return nil, err
 		}
 	}
@@ -488,7 +635,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		query := "SELECT " + sessionColumns + " FROM session WHERE session_id=$1"
 		arguments := []any{sessionID}
 		if caller != nil {
-			query, arguments = sessionForCallerQuery, sessionCallerArguments(sessionID, *caller)
+			query, arguments = sessionForCaller(sessionID, caller)
 		}
 		session, err := scanSession(tx.QueryRowContext(ctx, query+" FOR SHARE", arguments...))
 		if errors.Is(err, sql.ErrNoRows) {
@@ -540,18 +687,17 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 			command.GetCommandId(), sessionID, sandboxName, sandboxUID, wakeEligible, ns, name, op, data, QueueState,
 			observability.Traceparent(ctx),
 		}
-		var attribution *AdmissionAttribution
-		if caller != nil {
-			attribution = caller.Attribution
-		}
+		attribution := callerAttribution(caller)
 		arguments = append(arguments, attributionValues(attribution)...)
 		arguments = append(arguments, nil, wakeAssessment)
+		arguments = append(arguments, identityAttributionValues(attribution)...)
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch
 			(command_id,session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 operation,command,state,traceparent,actor_account_namespace,actor_account_name,actor_account_uid,actor_pod_name,actor_pod_uid,
 			 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,action_request_id,action_execution_id,
-			 created_at,updated_at,delivery_blocker,wake_assessment)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now(),$22,$23) RETURNING `+dispatchColumns,
+			 created_at,updated_at,delivery_blocker,wake_assessment,
+			 actor_identity_name,actor_identity_uid,actor_identity_pod_name,actor_identity_pod_uid)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now(),$22,$23,$24,$25,$26,$27) RETURNING `+dispatchColumns,
 			arguments...))
 		if err != nil {
 			return err
@@ -569,14 +715,12 @@ func (s *Store) GetDispatch(ctx context.Context, id string) (*Dispatch, error) {
 	return d, err
 }
 
-func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller CallerIdentity) (*Dispatch, error) {
+func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller Caller) (*Dispatch, error) {
+	scope, arguments := ownerScope(caller, "o.", 2)
 	query := `SELECT ` + qualifiedDispatchColumns + ` FROM dispatch d
 		LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
-		WHERE d.command_id=$1 AND ($2 OR (o.execution_account_namespace=$3 AND
-			o.execution_account_name=$4 AND o.execution_account_uid=$5))`
-	d, err := scanDispatch(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
-		accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
-		uidOfIdentity(caller.ServiceAccountIdentity)))
+		WHERE d.command_id=$1 AND ` + scope
+	d, err := scanDispatch(s.DB.QueryRowContext(ctx, query, append([]any{id}, arguments...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -589,11 +733,11 @@ func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName strin
 	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, nil)
 }
 
-func (s *Store) ListDispatchesForCaller(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller CallerIdentity) ([]*Dispatch, error) {
-	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, &caller)
+func (s *Store) ListDispatchesForCaller(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller Caller) ([]*Dispatch, error) {
+	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, caller)
 }
 
-func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller *CallerIdentity) ([]*Dispatch, error) {
+func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller Caller) ([]*Dispatch, error) {
 	if (sessionID == "") == (sandboxName == "") {
 		return nil, errors.New("exactly one dispatch scope is required")
 	}
@@ -614,10 +758,9 @@ func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName strin
 		arguments = append(arguments, pq.Array(commandIDs))
 	}
 	if caller != nil {
-		query += fmt.Sprintf(" AND ($%d OR (o.execution_account_namespace=$%d AND o.execution_account_name=$%d AND o.execution_account_uid=$%d))",
-			len(arguments)+1, len(arguments)+2, len(arguments)+3, len(arguments)+4)
-		account := accountOfIdentity(caller.ServiceAccountIdentity)
-		arguments = append(arguments, caller.Privileged, account.Namespace, account.Name, uidOfIdentity(caller.ServiceAccountIdentity))
+		scope, scopeArguments := ownerScope(caller, "o.", len(arguments)+1)
+		query += " AND " + scope
+		arguments = append(arguments, scopeArguments...)
 	}
 	rows, err := s.DB.QueryContext(ctx, query+" ORDER BY d.position", arguments...)
 	if err != nil {
@@ -639,11 +782,11 @@ func (s *Store) Cancel(ctx context.Context, id string) (*Dispatch, error) {
 	return s.cancel(ctx, id, nil)
 }
 
-func (s *Store) CancelForCaller(ctx context.Context, id string, caller CallerIdentity) (*Dispatch, error) {
-	return s.cancel(ctx, id, &caller)
+func (s *Store) CancelForCaller(ctx context.Context, id string, caller Caller) (*Dispatch, error) {
+	return s.cancel(ctx, id, caller)
 }
 
-func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (*Dispatch, error) {
+func (s *Store) cancel(ctx context.Context, id string, caller Caller) (*Dispatch, error) {
 	var result *Dispatch
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		var err error
@@ -651,14 +794,13 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$1, reason='sender', updated_at=now()
 				WHERE command_id=$2 AND state=$3 AND NOT delivery_attempted RETURNING `+dispatchColumns, CancelledState, id, QueueState))
 		} else {
+			scope, arguments := ownerScope(caller, "o.", 5)
 			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
 				WHERE d.command_id=$2 AND d.state=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
 					SELECT 1 FROM session o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
-					AND o.execution_account_namespace=$5 AND o.execution_account_name=$6 AND o.execution_account_uid=$7))
+					AND `+scope+`))
 				RETURNING `+qualifiedDispatchColumns,
-				CancelledState, id, QueueState, caller.Privileged,
-				accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
-				uidOfIdentity(caller.ServiceAccountIdentity)))
+				append([]any{CancelledState, id, QueueState, privileged(caller)}, arguments...)...))
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -679,7 +821,7 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 			return nil, err
 		}
 	} else {
-		if _, err = s.GetDispatchForCaller(ctx, id, *caller); err != nil {
+		if _, err = s.GetDispatchForCaller(ctx, id, caller); err != nil {
 			return nil, err
 		}
 	}
@@ -693,7 +835,8 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, execution_a
 	action_request_id::text, action_execution_id::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
 	spec, setup_script, state, reason, traceparent, created_at, updated_at,
-	delivery_blocker, wake_assessment, environment_deleted_at`
+	delivery_blocker, wake_assessment, environment_deleted_at, execution_identity_name, execution_identity_uid::text,
+	creator_identity_name, creator_identity_uid, creator_identity_pod_name, creator_identity_pod_uid`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o := &Session{}
@@ -702,14 +845,23 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var actionRequestID, actionExecutionID sql.NullString
 	var callerNS, callerName, incarnation, script, reason sql.NullString
 	var wakeAt, environmentDeletedAt sql.NullTime
+	var identityName, identityUID sql.NullString
+	var creatorIdentityName, creatorIdentityUID, creatorIdentityPodName, creatorIdentityPodUID sql.NullString
 	var spec, blockerBytes, wakeBytes []byte
 	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
 		&creatorNS, &creatorName, &creatorUID, &effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
-		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt)
+		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt,
+		&identityName, &identityUID, &creatorIdentityName, &creatorIdentityUID, &creatorIdentityPodName, &creatorIdentityPodUID)
 	if err != nil {
 		return nil, err
+	}
+	if identityName.Valid != identityUID.Valid {
+		return nil, errors.New("Session execution identity is incomplete")
+	}
+	if identityName.Valid {
+		o.ExecutionIdentity = &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}
 	}
 	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid || creatorNS.Valid != creatorName.Valid ||
 		creatorNS.Valid != creatorUID.Valid {
@@ -731,7 +883,11 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	if callerNS.Valid && callerName.Valid {
 		o.WakeCaller = &Account{callerNS.String, callerName.String}
 	}
-	o.Attribution, err = scanAdmissionAttribution(o.Creator, creatorPodName, creatorPodUID, effectiveCaller, actionRequestID, actionExecutionID, o.WakeCaller)
+	account, err := scanAdmissionAttribution(o.Creator, creatorPodName, creatorPodUID, effectiveCaller, actionRequestID, actionExecutionID, o.WakeCaller)
+	if err != nil {
+		return nil, err
+	}
+	o.Attribution, err = scanAttribution(account, creatorIdentityName, creatorIdentityUID, creatorIdentityPodName, creatorIdentityPodUID)
 	if err != nil {
 		return nil, err
 	}
@@ -775,26 +931,40 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 
 // CreateSessionForCaller stores the immutable execution account separately from the verified
 // caller attribution. Retrying a concurrently inserted session requires retained read authority.
-func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Session, error) {
+func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
+	executionPrincipal := execution.Principal
 	if executionPrincipal == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
-		executionPrincipal.GetAccount().GetName() == "" || caller.Attribution == nil || caller.Attribution.Actor == nil ||
-		caller.Attribution.Actor.GetAccount().GetNamespace() == "" || caller.Attribution.Actor.GetAccount().GetName() == "" ||
-		caller.Attribution.Actor.GetUid() == "" {
+		executionPrincipal.GetAccount().GetName() == "" || callerAttribution(caller) == nil {
 		return nil, errors.New("execution principal and creator identity are required")
 	}
-	if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
+	if account, ok := caller.(ServiceAccountCaller); ok && (account.Attribution.Actor == nil ||
+		account.Attribution.Actor.GetAccount().GetNamespace() == "" || account.Attribution.Actor.GetAccount().GetName() == "" ||
+		account.Attribution.Actor.GetUid() == "") {
+		return nil, errors.New("execution principal and creator identity are required")
+	}
+	if err := validateCaller(caller, wakeCaller); err != nil {
 		return nil, err
 	}
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, executionPrincipal, &caller)
+	if identity := execution.Identity; identity != nil && (identity.GetName() == "" || identity.GetUid() == "") {
+		return nil, errors.New("execution identity requires a name and UID")
+	}
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller)
 }
 
 // authorizeRetry uses retained read authority: a receipt retry performs no new execution.
-func (o *Session) authorizeRetry(caller CallerIdentity) error {
-	if !caller.Privileged && (o.ExecutionPrincipal == nil || o.ExecutionPrincipal.GetUid() == "" ||
-		!sameServiceAccountIdentity(o.ExecutionPrincipal, caller.ServiceAccountIdentity)) {
-		return ErrNotFound
+func (o *Session) authorizeRetry(caller Caller) error {
+	switch c := caller.(type) {
+	case ServiceAccountCaller:
+		if c.Privileged || o.ExecutionPrincipal != nil && o.ExecutionPrincipal.GetUid() != "" &&
+			sameServiceAccountIdentity(o.ExecutionPrincipal, c.ServiceAccountIdentity) {
+			return nil
+		}
+	case IdentityCaller:
+		if o.ExecutionIdentity != nil && sameIdentity(o.ExecutionIdentity, c.Identity) {
+			return nil
+		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (o *Session) matchRequest(sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string) error {
@@ -815,7 +985,8 @@ func (o *Session) matchRequest(sandboxName, sandboxUID string, placement Session
 	return nil
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Session, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
+	executionPrincipal := execution.Principal
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
@@ -845,7 +1016,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		existing, err := scanSession(tx.QueryRowContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE session_id=$1", sessionID))
 		if err == nil {
 			if caller != nil {
-				if err := existing.authorizeRetry(*caller); err != nil {
+				if err := existing.authorizeRetry(caller); err != nil {
 					return err
 				}
 			}
@@ -862,30 +1033,36 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		if wakeCaller != nil {
 			ns, name = wakeCaller.Namespace, wakeCaller.Name
 		}
-		var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID any
+		var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID, identityName, identityUID any
+		if execution.Identity != nil {
+			identityName, identityUID = execution.Identity.GetName(), execution.Identity.GetUid()
+		}
 		if executionPrincipal != nil {
 			ownerNS, ownerName = executionPrincipal.GetAccount().GetNamespace(), executionPrincipal.GetAccount().GetName()
 			if executionPrincipal.GetUid() != "" {
 				ownerUID = executionPrincipal.GetUid()
 			}
 		}
-		var attribution *AdmissionAttribution
-		if caller != nil {
-			attribution = caller.Attribution
-			creator := attribution.Actor
+		attribution := callerAttribution(caller)
+		if account, ok := attribution.(*AdmissionAttribution); ok {
+			creator := account.Actor
 			creatorNS, creatorName, creatorUID = creator.GetAccount().GetNamespace(), creator.GetAccount().GetName(), creator.GetUid()
 		}
 		attributionArgs := attributionValues(attribution)
+		identityArgs := identityAttributionValues(attribution)
 		result, err = scanSession(tx.QueryRowContext(ctx, `INSERT INTO session
 			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
 			 creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+sessionColumns,
+			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment,
+			 execution_identity_name,execution_identity_uid,
+			 creator_identity_name,creator_identity_uid,creator_identity_pod_name,creator_identity_pod_uid)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25,$26,$27,$28,$29,$30,$31) RETURNING `+sessionColumns,
 			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
 			wakeCaller != nil, ns, name, data, setupScript, SessionWaitingState,
-			observability.Traceparent(ctx), nil, wakeAssessment))
+			observability.Traceparent(ctx), nil, wakeAssessment, identityName, identityUID,
+			identityArgs[0], identityArgs[1], identityArgs[2], identityArgs[3]))
 		if err != nil {
 			return err
 		}
@@ -902,29 +1079,25 @@ func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
 	return o, err
 }
 
-const sessionForCallerQuery = "SELECT " + sessionColumns + ` FROM session WHERE session_id=$1 AND ($2 OR
-	(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))`
-
-func sessionCallerArguments(id string, caller CallerIdentity) []any {
-	account := accountOfIdentity(caller.ServiceAccountIdentity)
-	return []any{id, caller.Privileged, account.Namespace, account.Name, uidOfIdentity(caller.ServiceAccountIdentity)}
+// sessionForCaller is the query reading Session id if caller may read it.
+func sessionForCaller(id string, caller Caller) (string, []any) {
+	scope, arguments := ownerScope(caller, "", 2)
+	return "SELECT " + sessionColumns + " FROM session WHERE session_id=$1 AND " + scope, append([]any{id}, arguments...)
 }
 
-func (s *Store) GetSessionForCaller(ctx context.Context, id string, caller CallerIdentity) (*Session, error) {
-	session, err := scanSession(s.DB.QueryRowContext(ctx, sessionForCallerQuery, sessionCallerArguments(id, caller)...))
+func (s *Store) GetSessionForCaller(ctx context.Context, id string, caller Caller) (*Session, error) {
+	query, arguments := sessionForCaller(id, caller)
+	session, err := scanSession(s.DB.QueryRowContext(ctx, query, arguments...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return session, err
 }
 
-func (s *Store) ListSessionsForCaller(ctx context.Context, after string, limit int, caller CallerIdentity) ([]*Session, error) {
+func (s *Store) ListSessionsForCaller(ctx context.Context, after string, limit int, caller Caller) ([]*Session, error) {
+	scope, arguments := ownerScope(caller, "", 3)
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session
-		WHERE session_id > $1 AND ($2 OR
-		(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))
-		ORDER BY session_id LIMIT $6`, after, caller.Privileged,
-		accountOfIdentity(caller.ServiceAccountIdentity).Namespace, accountOfIdentity(caller.ServiceAccountIdentity).Name,
-		uidOfIdentity(caller.ServiceAccountIdentity), limit)
+		WHERE session_id > $1 AND `+scope+` ORDER BY session_id LIMIT $2`, append([]any{after, limit}, arguments...)...)
 	if err != nil {
 		return nil, err
 	}

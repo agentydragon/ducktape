@@ -3129,18 +3129,19 @@ errors, or the tool namespace); nothing above depends on which host runs the cel
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the
-`WorkloadCredential` resolver resolves an Identity subject live with its UID (`resolver.Subject`);
-the proxy still refuses one.** The proxy accepts Identity subjects before any Sandbox presents one,
-together with `SERVICES_IDENTITY_PRINCIPAL`, proven on records naming an Identity, and
-`SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on staging. The proxy's decision keys on the
-identity the resolver yields, and decision history records it. The Kubernetes-audience projected
+**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the proxy
+decides an Identity caller by the bindings whose subject is that Identity, impersonates any account
+it holds a use rule for, and history records it by kind and name; the proxy test shows two
+Identities acting as one account, one losing its use rule without the other noticing, and the Rules
+API answers an Identity. Left: the exit in the egress harness once `SANDBOX_IDENTITY_SPEC` writes
+one.** `SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on
+staging. The Kubernetes-audience projected
 token is the only `projectedWorkloadToken` source; Sandboxes stop projecting it in
 `SANDBOX_IDENTITY_SPEC` and command boxes at `IDENTITY_CUTOVER`, and the source, the sidecar's
 `X-Agentplane-Workload-Token` forwarding, the proxy's second TokenReview per tunnel and the egress
 `TODO.md` entry on where that token is substituted go with the last of them. Impersonation on ServiceAccount subjects has landed
 ([egress SPEC](../egress/SPEC.md) § Decision), as have `policy/reader`'s Identity lookups, which
-egress, the Action Service and Notification watch but do not query yet. The k3s API server keeps no
+egress queries and the Action Service and Notification watch but do not query yet. The k3s API server keeps no
 audit log, so the audit entry naming both account and proxy is unverified there. **Exit:** the
 egress harness shows two identities acting as one account, one losing its use rule without the
 other noticing.
@@ -3148,13 +3149,20 @@ other noticing.
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
 **In progress (identity-consumers, 2026-11-10), consumers first, as `EGRESS_IDENTITY_RULES`: the
-resolver yields an Identity subject; `auth.SVIDResolver` still refuses one.** History's execution
+resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
+methods; LLM ingress serves and attributes Identity callers once given its `policy_namespace`. The
+Action Service's Gate admits an Identity SVID caller by the bindings naming it and records requests
+and cancellations by the Identity incarnation, and gives it Action boxes it owns on the default
+ServiceAccount; launches, Session delegation and the MCP edge's delegated path still need a
+ServiceAccount. Dispatcher records each Session's execution Identity from its Sandbox's
+`spec.identity`, places it on the wire and strands a Session whose Sandbox names another; its
+methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given its
+`policy_namespace`) for that Identity's Sessions. EnvironmentService, wake-on-send and History still
+need a ServiceAccount.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
-The seam is `workload_auth/auth`'s `Principal`: `SVIDResolver` currently returns the same
-ServiceAccount-shaped value a TokenReview does, from the credential's `WorkloadCredential` subject
-read uncached per request, so no handler can tell the two apart; the SVID path yields the identity
-reference and incarnation directly; `CreateSession` names an identity, Dispatcher is the authority
+The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves
+its workload-facing methods to `AnySubject` and authorizes and records by the union; `CreateSession` names an identity, Dispatcher is the authority
 for that association, and its delivery and wake path refuses a Session whose identity differs from
 its environment's current one, so a bypassed identity change strands Sessions rather than
 re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark the rest
@@ -3206,6 +3214,12 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
   launch sets binding an Identity) become unconditional here; the standing callers' binding subjects
   and the Kubernetes-rule-to-role-set move stay behind it until `IDENTITY_CUTOVER` flips it.
 - The agent Kubernetes docs lose the kubeconfig and point at the rules endpoint.
+
+Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
+a Session whose recorded execution identity differs), so the switch needs a step that either
+rewrites those Sessions' execution identity or retires them. On staging no Sandboxes run during the
+switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity caller's wake-on-send
+needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delivery_wake.go`).
 
 **Exit:** controller tests for a Sandbox with and without a live identity; Sandbox Pods render no
 projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
@@ -3264,6 +3278,9 @@ and proves the Identity by delegated authorization, decided by the operator on 2
 app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their remaining
 prerequisite: the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
 ServiceAccount-or-Identity union or is rewritten to an Identity.
+Once every service admits its workload callers through `auth.AnySubject`, a mechanical rename makes
+`auth.Principal`, today the ServiceAccount variant of `auth.Subject`, `AccountPrincipal` (team lead,
+2026-11-10).
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
 is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox
 Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section

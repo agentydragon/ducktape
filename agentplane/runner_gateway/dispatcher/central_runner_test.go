@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type openingFixture struct{ opening *Session }
@@ -32,7 +33,7 @@ func (s openingFixture) GetSession(context.Context, string) (*Session, error) {
 
 type nativeFixture struct{ calls int }
 
-func (r *nativeFixture) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (r *nativeFixture) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	r.calls++
 	return nil
 }
@@ -80,10 +81,15 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
-	if err := runner.CreateSession(context.Background(), sandbox, "session", spec, &setup, nil); err != nil {
+	execution := SessionExecution{
+		Principal: &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "test", Name: "executor"}, Uid: "account-uid"},
+		Identity:  &identitypb.Identity{Name: "executor-identity", Uid: "identity-uid"},
+	}
+	if err := runner.CreateSession(context.Background(), sandbox, "session", spec, &setup, execution); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" {
+	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" ||
+		!proto.Equal(fixture.opened.GetExecutionPrincipal(), execution.Principal) || !proto.Equal(fixture.opened.GetExecutionIdentity(), execution.Identity) {
 		t.Fatalf("unexpected opening: %v token %q", fixture.opened, fixture.token)
 	}
 	admission, err := runner.Deliver(context.Background(), sandbox, "session", &commandpb.Command{CommandId: "interrupt", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn"}}})
@@ -97,7 +103,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	}
 	nativeSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
 	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: EnvironmentHosted, Spec: nativeSpec}}
-	if err := runner.CreateSession(context.Background(), sandbox, "native", nativeSpec, nil, nil); err != nil {
+	if err := runner.CreateSession(context.Background(), sandbox, "native", nativeSpec, nil, SessionExecution{}); err != nil {
 		t.Fatal(err)
 	}
 	runner.Store = openingFixture{}
@@ -122,7 +128,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	}
 	runner.Target = nil
 	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec}}
-	if err := runner.CreateSession(context.Background(), sandbox, "disabled", spec, nil, nil); status.Code(err) != codes.FailedPrecondition {
+	if err := runner.CreateSession(context.Background(), sandbox, "disabled", spec, nil, SessionExecution{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
 	}
 }

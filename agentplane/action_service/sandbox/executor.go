@@ -12,7 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 )
 
-// Executor runs the sandbox Actions in this process, as the caller the request names. That identity comes from
+// Executor runs the sandbox Actions in this process, for the caller the request names: as its ServiceAccount, or
+// owned by its Identity. That identity comes from
 // ExecutionRequest.Caller, which the authenticated admission path sets and no argument can reach: a surface that
 // took the account as an argument would instead mean "stamp a Pod as any account you can name".
 //
@@ -41,22 +42,36 @@ func (e *Executor) Actions() map[string]catalog.ActionDefinition {
 // large repository does, but never runs unbounded. A caller no box can be given is refused before the lease is held:
 // nothing has happened, so the outcome is known.
 func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *worker.Lease) (store.ExecutionOutcome, error) {
-	if caller := request.Caller; caller.Namespace != e.binding.Namespace {
-		// A Pod can only run as a ServiceAccount of its own namespace, so a caller from anywhere else cannot be given
-		// a box that is it. Stamping the box as some other account would quietly hand it authority its caller never
-		// had.
-		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL, fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
-			"must live in %q; %q cannot be given one", e.binding.Namespace, caller.Namespace)), nil
+	var caller Caller
+	switch recorded := request.Caller.(type) {
+	case store.ServiceAccountCaller:
+		if recorded.Account.Namespace != e.binding.Namespace {
+			// A Pod can only run as a ServiceAccount of its own namespace, so a caller from anywhere else cannot be
+			// given a box that is it. Stamping the box as some other account would quietly hand it authority its
+			// caller never had.
+			return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL, fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
+				"must live in %q; %q cannot be given one", e.binding.Namespace, recorded.Account.Namespace)), nil
+		}
+		caller = Account(recorded.Account)
+	case store.IdentityCaller:
+		if e.inventory.policyNamespace != e.binding.Namespace {
+			// The Identity owns its boxes' records, and an owner reference cannot cross namespaces.
+			return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL, fmt.Sprintf("an Identity's sandboxes live in the policy namespace "+
+				"%q, and this group's live in %q", e.inventory.policyNamespace, e.binding.Namespace)), nil
+		}
+		caller = Identity(recorded.Identity)
+	default:
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN, "this request's caller is of a kind this release does not know"), nil
 	}
 	return worker.Hold(ctx, lease, func(ctx context.Context) (store.ExecutionOutcome, error) {
-		return e.attempt(ctx, request)
+		return e.attempt(ctx, request, caller)
 	})
 }
 
 // attempt is one attempt at request from a caller of the group's namespace. A refusal the caller can act on is a
 // failed Execution with its reason; only an outcome this cannot characterise is an error.
-func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	outcome, err := e.dispatch(ctx, request)
+func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest, caller Caller) (store.ExecutionOutcome, error) {
+	outcome, err := e.dispatch(ctx, request, caller)
 	var foreign *ForeignError
 	var unavailable *UnavailableError
 	var unrun *ExecError
@@ -84,8 +99,8 @@ type DisposeResult struct {
 	Existed bool   `json:"existed"`
 }
 
-func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	caller, action := request.Caller, request.Action.Name
+func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest, caller Caller) (store.ExecutionOutcome, error) {
+	action := request.Action.Name
 	switch action {
 	case string(contract.Create):
 		args, err := e.inputs.Create.Decode(request.Arguments)

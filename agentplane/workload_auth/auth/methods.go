@@ -25,6 +25,8 @@ const (
 	ruleAccounts
 	ruleSVIDOrAccounts
 	ruleReviewedServiceAccount
+	ruleReviewedServiceAccountOrIdentity
+	ruleAnySubject
 )
 
 // Rule is who may call one gRPC method.
@@ -32,6 +34,7 @@ type Rule struct {
 	kind              ruleKind
 	resolver          *Resolver
 	principalResolver PrincipalResolver
+	subjectResolver   SubjectResolver
 	accounts          sets.Set[Account]
 	delegation        *delegationPolicy
 }
@@ -51,6 +54,18 @@ func AnyAccount(principalResolver PrincipalResolver) Rule {
 }
 
 // Accounts admits a caller proving, by a bearer resolver reviews, one of accounts. No accounts admits nobody.
+// AnySubject admits any workload this resolver authenticates, a ServiceAccount or an Identity
+// subject. A ServiceAccount caller is admitted as AnyAccount admits it; an Identity caller only as
+// an IdentityAdmission, so the handler must read Admitted. Only a TokenReview Resolver also supports
+// delegated calls.
+func AnySubject(subjectResolver SubjectResolver) Rule {
+	resolver, isTokenReview := subjectResolver.(*Resolver)
+	if isTokenReview && resolver == nil {
+		subjectResolver = nil
+	}
+	return Rule{kind: ruleAnySubject, resolver: resolver, subjectResolver: subjectResolver}
+}
+
 func Accounts(resolver *Resolver, accounts []Account) Rule {
 	return Rule{kind: ruleAccounts, resolver: resolver, accounts: sets.New(accounts...)}
 }
@@ -68,6 +83,14 @@ func SVIDOrAccounts(resolver *Resolver, accounts []Account) Rule {
 // existing Principal callers continue to require Pod-bound TokenReview claims.
 func ReviewedServiceAccount(resolver *Resolver) Rule {
 	return Rule{kind: ruleReviewedServiceAccount, resolver: resolver}
+}
+
+// ReviewedServiceAccountOrIdentity admits a ServiceAccount exactly as ReviewedServiceAccount does,
+// and a workload SVID naming an Identity as an IdentityAdmission, which handlers read with Admitted:
+// AdmittedReviewedCaller, Caller and EffectiveCaller refuse it. The resolver's SVID resolver decides
+// whether Identity subjects resolve at all.
+func ReviewedServiceAccountOrIdentity(resolver *Resolver) Rule {
+	return Rule{kind: ruleReviewedServiceAccountOrIdentity, resolver: resolver}
 }
 
 // Methods maps the full name (`/package.Service/Method`) of each method a gRPC server serves to the Rule
@@ -162,6 +185,9 @@ func sameAdmission(a, b Admission) bool {
 		second, ok := b.(DelegatedAdmission)
 		return ok && first.Actor == second.Actor && sameServiceAccountIdentity(first.EffectiveCaller, second.EffectiveCaller) &&
 			proto.Equal(first.Provenance, second.Provenance)
+	case IdentityAdmission:
+		second, ok := b.(IdentityAdmission)
+		return ok && first == second
 	default:
 		return false
 	}
@@ -172,7 +198,8 @@ func WithReviewedCaller(ctx context.Context, caller ReviewedCaller) context.Cont
 	return context.WithValue(ctx, reviewedCallerKey{}, caller)
 }
 
-// AdmittedReviewedCaller is available only to a method admitted by ReviewedServiceAccount.
+// AdmittedReviewedCaller is available only to a ServiceAccount caller a ReviewedServiceAccount or
+// ReviewedServiceAccountOrIdentity method admitted.
 func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
 	caller, ok := ctx.Value(reviewedCallerKey{}).(ReviewedCaller)
 	if !ok {
@@ -236,11 +263,11 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAnyAccount, ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount:
+	case ruleAnyAccount, ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount, ruleReviewedServiceAccountOrIdentity, ruleAnySubject:
 	default:
 		return nil, errMethodNotAllowed
 	}
-	if rule.kind == ruleAnyAccount && rule.principalResolver == nil {
+	if rule.kind == ruleAnyAccount && rule.principalResolver == nil || rule.kind == ruleAnySubject && rule.subjectResolver == nil {
 		return nil, errMethodNotAllowed
 	}
 	resolveContext := ctx
@@ -267,9 +294,20 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		principal, err = rule.resolver.Resolve(resolveContext)
 	} else if rule.kind == ruleAccounts || rule.kind == ruleSVIDOrAccounts {
 		principal, err = rule.resolver.RequireAccount(resolveContext, rule.accounts)
-	} else if rule.kind == ruleReviewedServiceAccount {
+	} else if rule.kind == ruleReviewedServiceAccount || rule.kind == ruleReviewedServiceAccountOrIdentity {
 		var caller ReviewedCaller
-		caller, err = rule.resolver.ResolveReviewedCaller(resolveContext)
+		if rule.kind == ruleReviewedServiceAccount {
+			caller, err = rule.resolver.ResolveReviewedCaller(resolveContext)
+		} else {
+			var subject ReviewedSubject
+			if subject, err = rule.resolver.resolveReviewedSubject(resolveContext); err != nil {
+				return nil, err
+			}
+			if identity, ok := subject.(IdentityPrincipal); ok {
+				return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
+			}
+			caller = subject.(ReviewedCaller)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -279,6 +317,15 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			Pod:    caller.Pod,
 		})
 		return WithReviewedCaller(admitted, caller), nil
+	} else if rule.kind == ruleAnySubject {
+		var subject Subject
+		if subject, err = rule.subjectResolver.ResolveSubject(resolveContext); err != nil {
+			return nil, err
+		}
+		if identity, ok := subject.(IdentityPrincipal); ok {
+			return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
+		}
+		principal = subject.(Principal)
 	} else {
 		principal, err = rule.principalResolver.Resolve(resolveContext)
 	}

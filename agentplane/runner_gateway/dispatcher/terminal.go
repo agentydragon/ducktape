@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -25,6 +26,8 @@ type TerminalEvent struct {
 	ID       string
 	Dispatch *dispatcherpb.Dispatch
 	Owner    *ServiceAccountIdentity
+	// OwnerIdentity is the Session's execution Identity, nil when it has none.
+	OwnerIdentity *identitypb.Identity
 }
 
 func terminalPayloads(event TerminalEvent) ([]string, error) {
@@ -51,6 +54,8 @@ func terminalPayloads(event TerminalEvent) ([]string, error) {
 			ExecutionAccountNamespace: executionAccountField(event.Owner, "namespace"),
 			ExecutionAccountName:      executionAccountField(event.Owner, "name"),
 			ExecutionAccountUid:       executionAccountField(event.Owner, "uid"),
+			ExecutionIdentityName:     event.OwnerIdentity.GetName(),
+			ExecutionIdentityUid:      event.OwnerIdentity.GetUid(),
 		})
 		if err != nil {
 			return nil, err
@@ -109,7 +114,8 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		}
 		if len(positions) > 0 {
 			rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
-				o.execution_account_namespace,o.execution_account_name,o.execution_account_uid
+				o.execution_account_namespace,o.execution_account_name,o.execution_account_uid,
+				o.execution_identity_name,o.execution_identity_uid::text
 				FROM dispatch d LEFT JOIN session o ON o.session_id=d.session_id
 				AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 				WHERE d.position=ANY($1) ORDER BY d.position`, pq.Array(positions))
@@ -117,7 +123,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 				return err
 			}
 			for rows.Next() {
-				row, owner, err := scanDispatchWithOwner(rows)
+				row, owner, ownerIdentity, err := scanDispatchWithOwner(rows)
 				if err != nil {
 					rows.Close()
 					return err
@@ -127,7 +133,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 					rows.Close()
 					return err
 				}
-				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner})
+				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner, OwnerIdentity: ownerIdentity})
 			}
 			err = rows.Err()
 			rows.Close()

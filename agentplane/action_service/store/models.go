@@ -25,14 +25,33 @@ type ActionIdentity struct {
 	Name  string `json:"name"`
 }
 
-// ReadPrincipal is who reads requests: a CallerPrincipal reads its own, an OperatorPrincipal and a
-// ServiceReaderPrincipal read every owner's.
+// ReadPrincipal is who reads requests: an Owner reads its own, an OperatorPrincipal and a ServiceReaderPrincipal
+// read every owner's.
 type ReadPrincipal interface{ isReadPrincipal() }
 
 // Principal is an authenticated caller or operator. A protobuf Principal records its identity on an event.
 type Principal interface {
 	ReadPrincipal
 	isPrincipal()
+}
+
+// Owner is a workload that submits, reads and cancels its own requests: a CallerPrincipal or an IdentityPrincipal.
+type Owner interface {
+	Principal
+	isOwner()
+}
+
+// Identity is one incarnation of an Identity in the policy namespace.
+type Identity struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
+}
+
+// IdentityPrincipal is a workload whose SVID named an Identity incarnation. It owns the requests it submits by the
+// incarnation, not the name: a later Identity of the same name owns none of them, as it is granted none of the
+// earlier one's bindings.
+type IdentityPrincipal struct {
+	Identity Identity `json:"identity"`
 }
 
 // CallerPrincipal is a workload that proved one ServiceAccount. The UID is authenticated provenance; Account remains
@@ -54,10 +73,37 @@ type ServiceReaderPrincipal struct {
 }
 
 func (CallerPrincipal) isReadPrincipal()        {}
+func (IdentityPrincipal) isReadPrincipal()      {}
 func (OperatorPrincipal) isReadPrincipal()      {}
 func (ServiceReaderPrincipal) isReadPrincipal() {}
 func (CallerPrincipal) isPrincipal()            {}
+func (IdentityPrincipal) isPrincipal()          {}
 func (OperatorPrincipal) isPrincipal()          {}
+func (CallerPrincipal) isOwner()                {}
+func (IdentityPrincipal) isOwner()              {}
+
+// Caller is who submitted a request, as its row records it: a ServiceAccountCaller, an IdentityCaller, or an
+// UnknownCaller.
+type Caller interface{ isCaller() }
+
+// ServiceAccountCaller is a request a ServiceAccount submitted.
+type ServiceAccountCaller struct {
+	Account ServiceAccount
+	// UID is the verified ServiceAccount UID at admission. Nil means the admitting writer did not record it; it is
+	// unknown and must not be reconstructed from a currently existing account with the same name.
+	UID *string
+}
+
+// IdentityCaller is a request an Identity incarnation submitted.
+type IdentityCaller struct{ Identity Identity }
+
+// UnknownCaller is a request a newer release recorded for a kind of caller this one does not know. It is no
+// caller's to read or cancel, and no executor runs as it.
+type UnknownCaller struct{}
+
+func (ServiceAccountCaller) isCaller() {}
+func (IdentityCaller) isCaller()       {}
+func (UnknownCaller) isCaller()        {}
 
 // ExecutionState is where an Execution is. It is stored as text.
 type ExecutionState string
@@ -185,12 +231,8 @@ type ActionRequest struct {
 	Arguments   json.RawMessage
 	Title       string
 	Description *string
-	// Caller is the ServiceAccount that submitted the request.
-	Caller ServiceAccount
-	// CallerUID is the verified ServiceAccount UID at admission. Nil means the admitting writer did not record it;
-	// it is unknown and must not be reconstructed from a currently existing account with the same name.
-	CallerUID *string
-	State     action_servicepb.ActionState
+	Caller      Caller
+	State       action_servicepb.ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
 	CreatedAt time.Time
@@ -289,9 +331,7 @@ type ExecutionRequest struct {
 	Action      ActionIdentity
 	// Arguments is a JSON object.
 	Arguments json.RawMessage
-	Caller    ServiceAccount
-	// CallerUID is nil when the request's admitting writer did not record the UID.
-	CallerUID *string
+	Caller    Caller
 }
 
 // ExecutionOutcome is the terminal outcome an executor delivers.

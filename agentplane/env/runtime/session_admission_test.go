@@ -28,9 +28,11 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func closeRuntimeForTest(t *testing.T, r *Runtime) error {
@@ -77,6 +79,37 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 	if got := lookups.Load(); got != 1 {
 		t.Fatalf("conflicting reservation queried model config; lookups=%d", got)
+	}
+}
+
+func TestOpenSessionRetainsItsExecutionIdentity(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	ctx := sessionCallContext(r, t.Context())
+	request := openLifecycleSession("identity", filepath.Join(workspace, "project"))
+	request.ExecutionPrincipal = &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "test-sandboxes", Name: "sandbox"}, Uid: "account-uid"}
+	request.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity", Uid: "identity-uid"}
+	opened, err := r.CreateSession(ctx, request)
+	if err != nil || !proto.Equal(opened.GetAttached().GetExecutionIdentity(), request.ExecutionIdentity) {
+		t.Fatalf("opened Session executes as %v (%v), want %v", opened.GetAttached().GetExecutionIdentity(), err, request.ExecutionIdentity)
+	}
+	// A retry from a Dispatcher that predates the field keeps the retained Identity.
+	older := proto.Clone(request).(*environmentruntimepb.CreateSessionRequest)
+	older.ExecutionIdentity = nil
+	retried, err := r.CreateSession(ctx, older)
+	if err != nil || !proto.Equal(retried.GetAttached().GetExecutionIdentity(), request.ExecutionIdentity) {
+		t.Fatalf("retry without the Identity: %v (%v), want %v", retried.GetAttached().GetExecutionIdentity(), err, request.ExecutionIdentity)
+	}
+	replaced := proto.Clone(request).(*environmentruntimepb.CreateSessionRequest)
+	replaced.ExecutionIdentity.Uid = "replacement-identity-uid"
+	if _, err := r.CreateSession(ctx, replaced); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("retry under another Identity = %v, want AlreadyExists", err)
+	}
+	incomplete := openLifecycleSession("incomplete-identity", filepath.Join(workspace, "project"))
+	incomplete.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity"}
+	if _, err := r.CreateSession(ctx, incomplete); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("Identity without a UID = %v, want InvalidArgument", err)
 	}
 }
 
