@@ -710,7 +710,7 @@ async def _collect(
 
     with progress:
         bases = []
-        for base in output_base_gc.iter_output_user_root(
+        for base in output_base_gc.scan_output_user_root(
             options.output_user_root, session_bases=session_bases, progress=progress
         ):
             if early is not None and _Domain.BASES in domains:

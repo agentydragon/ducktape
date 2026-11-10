@@ -426,7 +426,7 @@ def list_output_bases(root: Path, *, session_bases: Sequence[Path]) -> list[tupl
     return [*hashed, *((base, BaseLayout.SESSION_ENV) for base in session_bases)]
 
 
-def iter_output_user_root(
+def scan_output_user_root(
     root: Path,
     *,
     session_bases: Sequence[Path],
@@ -454,27 +454,6 @@ def iter_output_user_root(
         progress.record("bases", verdict_of(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base)
         yield inspection
-
-
-def scan_output_user_root(
-    root: Path,
-    *,
-    session_bases: Sequence[Path],
-    uid: int | None = None,
-    proc_root: Path = Path("/proc"),
-    mountinfo_path: Path = Path("/proc/self/mountinfo"),
-    progress: ProgressSink = NULL_PROGRESS,
-) -> list[Inspection]:
-    return list(
-        iter_output_user_root(
-            root,
-            session_bases=session_bases,
-            uid=uid,
-            proc_root=proc_root,
-            mountinfo_path=mountinfo_path,
-            progress=progress,
-        )
-    )
 
 
 @contextmanager

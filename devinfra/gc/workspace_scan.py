@@ -21,7 +21,7 @@ import dataclasses
 import logging
 import subprocess
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -197,7 +197,7 @@ def base_workspace_branches(repo: Path, bases: list[Inspection]) -> set[str]:
     return {wt.branch for wt in _worktrees_at(repo, workspaces) if wt.branch}
 
 
-def _retained_workspaces(bases: list[Inspection]) -> set[Path]:
+def _retained_workspaces(bases: Iterable[Inspection]) -> set[Path]:
     return _resolved(
         {base.workspace for base in bases if isinstance(base, RetainedBase) and base.workspace is not None}
     )
@@ -402,7 +402,7 @@ def scan_workspace(
         )
         logger.info("Scanning Bazel output bases in %s", output_user_root)
 
-        for base in output_base_gc.iter_output_user_root(
+        for base in output_base_gc.scan_output_user_root(
             output_user_root,
             session_bases=session_bases,
             proc_root=proc_root,

@@ -66,7 +66,9 @@ def cache(tmp_path: Path) -> FakeCache:
 
 
 def _bases(cache: FakeCache, proc: Path, mountinfo: Path) -> list[output_base_gc.Inspection]:
-    return output_base_gc.scan_output_user_root(cache.root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    return list(
+        output_base_gc.scan_output_user_root(cache.root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    )
 
 
 def _scan(cache: FakeCache, proc: Path, mountinfo: Path) -> dict[Path, gc.EntryInspection]:

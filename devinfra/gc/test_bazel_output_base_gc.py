@@ -233,8 +233,8 @@ def test_scan_covers_session_env_bases_and_names_them_by_path(
 ) -> None:
     session_base = _session_env_base(tmp_path, tmp_path / "gone-too")
 
-    inspections = gc.scan_output_user_root(
-        output_root, session_bases=[session_base], proc_root=proc, mountinfo_path=mountinfo
+    inspections = list(
+        gc.scan_output_user_root(output_root, session_bases=[session_base], proc_root=proc, mountinfo_path=mountinfo)
     )
 
     assert [item.path for item in inspections] == [prunable_base, session_base]
@@ -311,7 +311,7 @@ def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path, proc: Path, 
     quarantine = root / ".bazel-output-base-gc-dead"
     quarantine.mkdir()
 
-    inspections = gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    inspections = list(gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
 
     assert len(inspections) == 2
     assert {_reason(item) for item in inspections} == {
@@ -440,7 +440,9 @@ def test_bazel_lock_conflicts_with_another_process(tmp_path: Path) -> None:
 def test_scan_and_render_report_flag_a_prunable_base(
     prunable_base: Path, output_root: Path, proc: Path, mountinfo: Path
 ) -> None:
-    inspections = gc.scan_output_user_root(output_root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    inspections = list(
+        gc.scan_output_user_root(output_root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    )
 
     assert prunable_base.exists()
     assert [type(item) for item in inspections] == [gc.PrunableBase]
