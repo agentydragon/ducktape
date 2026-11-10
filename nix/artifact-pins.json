@@ -1,8 +1,8 @@
 {
   "pins": {
     "bbr": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-fdf439e02d99/bbr-0.1.0-py3-none-any.whl",
-      "sha256": "/fQ54C2ZptnL7T7gU0pxUyCPPbbF6iG3663oBRkKTSk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-7ea3994b0a89/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "fqOZSwqJcNh7QM0kUQGFWViS4npXSe1aCeEB+x71TkY="
     },
     "bb": {
       "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.500/bazel-5.0.500-linux-x86_64",
@@ -37,8 +37,8 @@
       "sha256": "vrOsi8MiTTukG2VZNXgqzAfIB4eNA3gIDe3APkRo+Cw="
     },
     "workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-7c277c79b08b/workspace_gc-0.1.0-py3-none-any.whl",
-      "sha256": "fCd8ebCLa94jofmJtfTXThhi60KsaXTFTtJOENtsIaE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-27036c69c8ca/workspace_gc-0.1.0-py3-none-any.whl",
+      "sha256": "JwNsacjKQ0rqz/YfBBu9NlagcI943Tu65kJN0KOd8gg="
     },
     "ws": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ws-1510ae409720/ducktape_ws-0.1.0-py3-none-any.whl",
@@ -225,8 +225,8 @@
       "sha256": "4d70AOGPzoLYzLuvvXTxPUiZ+7KGOb/11eVTzbQK9qc="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-b464509e5ba6/ci_latency.skill",
-      "sha256": "tGRQnlumDqE5b7C+2DovYWEHDz/02pGsGP+grjNw/Ec="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-ff19e61367cb/ci_latency.skill",
+      "sha256": "/xnmE2fLAnCEoGvoiSPBWXw43rMMI0YfOAc5FQlvFd8="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
