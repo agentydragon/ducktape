@@ -999,6 +999,46 @@ fn heritage_observes_a_local_changed_by_an_earlier_operand() {
     assert_reader_split_diverges_with(definitions, &["make"]);
 }
 
+/// Opposing control: a direct `eval` runs string code that can read and
+/// write any binding visible by name, which no summary sees: refused at
+/// admission (A1) at any depth.
+#[test]
+fn direct_eval_at_any_depth_is_refused_at_admission() {
+    for definitions in [
+        "function flag() { let f = noop; eval('f = second'); return f; }",
+        "function flag() { return eval('second'); }",
+        "function flag() { eval('counter = 1'); return noop; }",
+        "function flag() { eval('second()'); return noop; }",
+        "function flag() { let f = noop; const set = () => eval('f = second'); set(); return f; }",
+    ] {
+        with_reader_split(&format!("{definitions}\n{CALL_FLAG}"), &[], |opts| {
+            expect_rejection_containing_all(opts, &["a1_eval", "admission_overrides"])
+        });
+    }
+}
+
+/// Positive anchor: in an ES module, an indirect `eval`, `Function` and
+/// `new Function` run in global scope, where no module binding is
+/// visible (`typeof second` is `"undefined"`): an ordinary opaque call
+/// that keeps the split.
+#[test]
+fn indirect_eval_and_function_in_a_module_keep_the_split() {
+    for call in [
+        "(0, eval)('typeof second')",
+        "Function('return typeof second')()",
+        "new Function('return typeof second')()",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "function flag() {{ {call}; return noop; }}\nexport {{ first }};\n{CALL_FLAG}"
+            ),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
 /// Opposing control: more iterator-protocol sites. A `catch` parameter's
 /// array pattern iterates the thrown value; a default below the root of a
 /// pattern (declaration, assignment, parameter, `for`-`of` head, `catch`)
@@ -1067,5 +1107,60 @@ fn iterating_strings_entries_and_native_patterns_keeps_the_split() {
             run_fixture,
         );
         assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// `new F()` of a plain function that stores its `this` in a module binding
+/// and stores `value` through `this`; `run` reaches the stored value
+/// through the binding.
+const THIS_STORE_SHAPES: &[(&str, &str)] = &[
+    (
+        "function F() { {guard}saved = this; this.fn = {value}; }",
+        "function flag() { new F(); return saved; }\nfunction run() { return flag().fn(); }",
+    ),
+    (
+        "function F() { this.fn = {value}; saved = this; }",
+        "function flag() { {guard}new F(); return saved.fn; }\nfunction run() { return flag()(); }",
+    ),
+];
+
+fn this_store_definitions(constructor: &str, rest: &str, guard: &str, value: &str) -> String {
+    format!(
+        "let saved = null;\n{}\n{}",
+        constructor
+            .replace("{guard}", guard)
+            .replace("{value}", value),
+        rest.replace("{guard}", guard)
+    )
+}
+
+/// Opposing control: `new` of a plain function runs its body, so what the
+/// body stores through `this` (here `second`) is published and reachable
+/// through the binding that saved `this`.
+#[test]
+fn new_of_a_plain_function_runs_its_body() {
+    for (constructor, rest) in THIS_STORE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &this_store_definitions(constructor, rest, guard, "second"),
+                &["saved", "F"],
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same constructors storing
+/// the effect-free `first` keep the split.
+#[test]
+fn new_of_a_plain_function_without_effects_keeps_the_split() {
+    for (constructor, rest) in THIS_STORE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &this_store_definitions(constructor, rest, guard, "first"),
+                &["saved", "F"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
     }
 }

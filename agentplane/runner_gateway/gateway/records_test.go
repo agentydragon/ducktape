@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
@@ -87,7 +88,7 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 					t.Fatal(err)
 				}
 				if kind == "Lease" {
-					_, err = records.claim(context.Background(), sandbox, testPodUID)
+					_, _, err = records.claim(context.Background(), sandbox, testPodUID)
 				} else {
 					err = records.pointControlEndpoints(context.Background(), sandbox, leaseUID, 1)
 				}
@@ -136,7 +137,7 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 			refused := func(at time.Duration) {
 				t.Helper()
 				now = start.Add(at)
-				if _, err := records.claim(ctx, identity, testPodUID); !errors.Is(err, errRunnerOwned) {
+				if _, _, err := records.claim(ctx, identity, testPodUID); !errors.Is(err, errRunnerOwned) {
 					t.Fatalf("claim at %v took a live connection: %v", at, err)
 				}
 			}
@@ -157,7 +158,7 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 			refused(seenAt)
 			refused(seenAt + duration - time.Second)
 			now = start.Add(seenAt + duration)
-			epoch, err := records.claim(ctx, identity, testPodUID)
+			epoch, _, err := records.claim(ctx, identity, testPodUID)
 			if err != nil {
 				t.Fatalf("lapsed connection was not taken over: %v", err)
 			}
@@ -165,6 +166,146 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 				t.Fatalf("takeover epoch = %d, want 2", epoch)
 			}
 		})
+	}
+}
+
+func TestConnectionReleaseAllowsImmediateTakeover(t *testing.T) {
+	ctx := t.Context()
+	identity := &sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
+	kube := newKubernetesFake()
+	old, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+		connectionHolder{name: "old-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+		connectionHolder{name: "new-gateway", ip: "192.0.2.11", port: sandboxapi.ControlServicePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, leaseUID, err := old.claim(ctx, identity, testPodUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.recordBootID(ctx, identity, epoch, "old-boot"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := next.claim(ctx, identity, testPodUID); !errors.Is(err, errRunnerOwned) {
+		t.Fatalf("live claim was not protected: %v", err)
+	}
+	if err := old.release(ctx, identity, leaseUID, epoch); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Spec.HolderIdentity != nil || lease.Spec.RenewTime != nil || *lease.Spec.LeaseTransitions != int32(epoch) ||
+		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" || sandboxlease.LastConnectedPodUID(lease.Annotations) != testPodUID {
+		t.Fatalf("release erased history or retained a live claim: %+v", lease)
+	}
+	newEpoch, _, err := next.claim(ctx, identity, testPodUID)
+	if err != nil || newEpoch != epoch+1 {
+		t.Fatalf("released Lease did not allow immediate takeover: epoch=%d, err=%v", newEpoch, err)
+	}
+	route, err := kube.DiscoveryV1().EndpointSlices(testNamespace).Get(ctx, testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(route.Endpoints) != 1 || len(route.Endpoints[0].Addresses) != 1 || route.Endpoints[0].Addresses[0] != "192.0.2.11" {
+		t.Fatalf("takeover did not repoint the control route: %+v", route.Endpoints)
+	}
+}
+
+func TestConnectionReleaseCannotClearSupersedingClaim(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*coordinationv1.Lease)
+	}{
+		{"newer epoch on same holder", func(lease *coordinationv1.Lease) { *lease.Spec.LeaseTransitions++ }},
+		{"new holder", func(lease *coordinationv1.Lease) { lease.Spec.HolderIdentity = stringPointer("new-gateway") }},
+		{"recreated Lease UID", func(lease *coordinationv1.Lease) { lease.UID = "replacement-lease" }},
+		{"recreated Sandbox UID", func(lease *coordinationv1.Lease) { lease.OwnerReferences[0].UID = "replacement-sandbox" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			identity := &sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
+			kube := newKubernetesFake()
+			old, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+				connectionHolder{name: "old-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+			if err != nil {
+				t.Fatal(err)
+			}
+			epoch, leaseUID, err := old.claim(ctx, identity, testPodUID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix
+			lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(lease)
+			if _, err := kube.CoordinationV1().Leases(testNamespace).Update(ctx, lease, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := old.release(ctx, identity, leaseUID, epoch); !errors.Is(err, errSupersededConnection) {
+				t.Fatalf("stale release result = %v, want superseded", err)
+			}
+			current, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.Spec.HolderIdentity == nil || current.Spec.RenewTime == nil {
+				t.Fatalf("stale release cleared successor: %+v", current.Spec)
+			}
+		})
+	}
+}
+
+func TestConnectionReleaseRechecksClaimAfterUpdateConflict(t *testing.T) {
+	ctx := t.Context()
+	identity := &sandboxreader.Identity{Name: testSandbox, Uid: testSandboxUID}
+	kube := newKubernetesFake()
+	old, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+		connectionHolder{name: "old-gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, leaseUID, err := old.claim(ctx, identity, testPodUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := testSandbox + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	resource := coordinationv1.SchemeGroupVersion.WithResource("leases")
+	intercepted := false
+	kube.PrependReactor("update", "leases", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if intercepted {
+			return false, nil, nil
+		}
+		intercepted = true
+		current, err := kube.Tracker().Get(resource, testNamespace, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		successor := current.(*coordinationv1.Lease).DeepCopy()
+		successor.Spec.HolderIdentity = stringPointer("new-gateway")
+		*successor.Spec.LeaseTransitions++
+		if err := kube.Tracker().Update(resource, successor, testNamespace); err != nil {
+			t.Fatal(err)
+		}
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Group: coordinationv1.GroupName, Resource: "leases"}, name, errors.New("successor claimed during release"))
+	})
+	if err := old.release(ctx, identity, leaseUID, epoch); !errors.Is(err, errSupersededConnection) || !intercepted {
+		t.Fatalf("racing release = %v, intercepted=%t", err, intercepted)
+	}
+	current, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Spec.HolderIdentity == nil || *current.Spec.HolderIdentity != "new-gateway" ||
+		*current.Spec.LeaseTransitions != int32(epoch+1) || current.Spec.RenewTime == nil {
+		t.Fatalf("stale release cleared the racing successor: %+v", current.Spec)
 	}
 }
 
@@ -176,7 +317,7 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	epoch, err := records.claim(context.Background(), identity, testPodUID)
+	epoch, _, err := records.claim(context.Background(), identity, testPodUID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +357,7 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	epoch, err := records.claim(ctx, identity, testPodUID)
+	epoch, _, err := records.claim(ctx, identity, testPodUID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +376,7 @@ func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, uid := range []string{testPodUID, "replacement-pod"} {
-		epoch, err = records.claim(ctx, identity, uid)
+		epoch, _, err = records.claim(ctx, identity, uid)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -288,7 +429,7 @@ func TestControlRouteRecoversAfterLeaseRecreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	epoch, err := current.claim(ctx, identity, testPodUID)
+	epoch, _, err := current.claim(ctx, identity, testPodUID)
 	if err != nil {
 		t.Fatal(err)
 	}

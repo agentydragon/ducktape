@@ -8,14 +8,19 @@
 //! the marked reading-only tree writer consumes.
 
 use source_identity::ChunkId;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use artifact::EmissionFiles;
 use artifact::reports::write_json;
+use final_global_resolution::{
+    GlobalResolutionReason, GlobalResolutionReport, GlobalResolutionSources,
+    assess_final_global_resolution,
+};
 use gate::{ChunkGateRejection, UnmatchedSpecClaim};
+use js_ast::GlobalUseElisions;
 use lowering::FinalizedCandidateEmissionDraft;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
@@ -55,15 +60,19 @@ pub struct ReconstructionPlan {
     vendor_manifest: Option<VendorManifestOutput>,
     unresolved_claims: Vec<UnmatchedSpecClaim>,
     browser_harness: Option<BrowserHarnessPlan>,
+    global_resolution_sources: GlobalResolutionSources,
+    global_use_elisions: BTreeMap<ChunkId, GlobalUseElisions>,
 }
 
 impl ReconstructionPlan {
     pub fn new(
         candidate: FinalizedCandidateEmissionDraft,
+        global_resolution_sources: GlobalResolutionSources,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
         vendor_manifest: Option<VendorManifestOutput>,
     ) -> Result<Self> {
+        let global_use_elisions = candidate.global_use_elisions().clone();
         let (files, vendor) = candidate.into_files_and_vendor_plan();
         let browser_harness = browser_options
             .map(|options| {
@@ -91,6 +100,8 @@ impl ReconstructionPlan {
             vendor_manifest,
             unresolved_claims,
             browser_harness,
+            global_resolution_sources,
+            global_use_elisions,
         })
     }
 
@@ -102,12 +113,42 @@ impl ReconstructionPlan {
         let excluded_chunk_ids = self.vendor.full_swap_chunk_ids();
         validate_emitted_exports(&self.files, &excluded_chunk_ids)?;
         reject_unresolved_claims(&self.unresolved_claims)?;
+        let global_resolution = assess_final_global_resolution(
+            &self.global_resolution_sources,
+            self.files.files(),
+            &excluded_chunk_ids,
+            &self.global_use_elisions,
+        );
+        let captures = global_resolution
+            .chunks
+            .iter()
+            .flat_map(|(chunk, assessment)| {
+                assessment
+                    .findings
+                    .iter()
+                    .filter(|finding| finding.reason == GlobalResolutionReason::CapturedByBinding)
+                    .map(move |finding| {
+                        format!(
+                            "  - chunk {chunk}: source global `{}` captured in {}",
+                            finding.symbol.as_deref().unwrap_or("<unknown>"),
+                            finding.output_files.join(", "),
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+        if !captures.is_empty() {
+            bail!(
+                "reconstructed program captures source global references:\n{}",
+                captures.join("\n")
+            );
+        }
         Ok(ValidatedPlan {
             files: self.files,
             vendor: self.vendor,
             vendor_manifest: self.vendor_manifest,
             excluded_chunk_ids,
             browser_harness: self.browser_harness,
+            global_resolution,
         })
     }
 }
@@ -120,6 +161,7 @@ pub struct ValidatedPlan {
     vendor_manifest: Option<VendorManifestOutput>,
     excluded_chunk_ids: BTreeSet<ChunkId>,
     browser_harness: Option<BrowserHarnessPlan>,
+    global_resolution: GlobalResolutionReport,
 }
 
 impl ValidatedPlan {
@@ -133,6 +175,10 @@ impl ValidatedPlan {
 
     pub fn browser_harness(&self) -> Option<&BrowserHarnessPlan> {
         self.browser_harness.as_ref()
+    }
+
+    pub fn global_resolution(&self) -> &GlobalResolutionReport {
+        &self.global_resolution
     }
 
     /// Write the replacement assets and manifest belonging to this accepted program.

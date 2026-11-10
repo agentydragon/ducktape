@@ -1685,9 +1685,18 @@ fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandRe
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
+    run_debundler_with_args(spec_path, package_roots, &[])
+}
+
+pub fn run_debundler_with_args(
+    spec_path: &Path,
+    package_roots: &[(&str, &Path)],
+    extra_args: &[&str],
+) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("run").arg("--spec").arg(spec_path);
+    command.args(extra_args);
     for (name, dir) in package_roots {
         command
             .arg("--package-root")
