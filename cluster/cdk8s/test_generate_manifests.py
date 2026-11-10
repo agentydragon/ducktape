@@ -1080,5 +1080,6 @@ def test_buildbuddy_secret_stays_paused_while_terraform_owns_it(
         and doc["metadata"].get("name") == "litellm-buildbuddy-sync"
     )
     assert terraform["metadata"]["namespace"] == "flux-system"
+    assert terraform["spec"]["suspend"] is True
     assert staged["metadata"]["annotations"]["crossplane.io/paused"] == "true"
     assert "Delete" not in staged["spec"]["managementPolicies"]
