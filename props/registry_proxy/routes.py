@@ -29,7 +29,7 @@ from props.backend.auth import (
     is_admin_or_evaluator,
     is_critic_dev_agent,
 )
-from props.core.oci_utils import BUILTIN_TAG, UpstreamRegistryConfig, get_upstream_registry_config, is_digest
+from props.core.oci_utils import BUILTIN_TAG, get_upstream_registry_config, is_digest
 from props.db.async_database import AsyncDatabase
 from props.db.models import AgentDefinition, AgentType
 from props.db.notifications import GRADER_DEFINITION_CHANGED_CHANNEL, GraderDefinitionChangedNotification
@@ -43,18 +43,9 @@ _OCI_VERSION_HEADER = {"Docker-Distribution-API-Version": "registry/2.0"}
 _AGENT_TYPE_DB_ENUM = ENUM(*(agent_type.value for agent_type in AgentType), name="agent_type_enum", create_type=False)
 
 
-def _get_upstream() -> UpstreamRegistryConfig:
-    """Read upstream registry config from env on each call.
-
-    Avoids caching at import time, which breaks tests that set env vars
-    via monkeypatch after module import.
-    """
-    return get_upstream_registry_config()
-
-
 async def _proxy_to_upstream(request: Request) -> Response:
     """Forward request to upstream registry and return response."""
-    upstream = _get_upstream()
+    upstream = get_upstream_registry_config()
     upstream_url = f"{upstream.url}{upstream.rewrite_path(request.url.path)}"
     if request.url.query:
         upstream_url += f"?{request.url.query}"
@@ -123,7 +114,7 @@ async def _extract_image_metadata(manifest_body: bytes, repository: str) -> _Ima
         if not config_digest:
             return _ImageMetadata(base_digest=None, display_name=None)
 
-        upstream = _get_upstream()
+        upstream = get_upstream_registry_config()
         config_url = f"{upstream.url}/v2/{upstream.repo_path(repository)}/blobs/{config_digest}"
         async with httpx.AsyncClient() as client:
             try:
