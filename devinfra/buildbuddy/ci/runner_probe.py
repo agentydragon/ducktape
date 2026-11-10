@@ -3,6 +3,9 @@
 This script runs inside the BuildBuddy runner VM. It records explicit,
 non-secret data into a persistent probe directory so a later recycled VM can
 read the previous run's local probe logs.
+
+CI invokes it with bare `python3`, outside Bazel's Python environment, so its
+imports must remain standard-library only.
 """
 
 from __future__ import annotations
