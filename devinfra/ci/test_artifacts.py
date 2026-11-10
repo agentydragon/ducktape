@@ -1,6 +1,4 @@
 import json
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest_bazel
 
@@ -11,9 +9,8 @@ def test_live_artifact_packages_are_unique() -> None:
     assert len({artifact.pkg for artifact in artifacts.ARTIFACTS}) == len(artifacts.ARTIFACTS)
 
 
-def test_release_artifacts_use_the_release_tag_prefix(tmp_path: Path) -> None:
-    registry = tmp_path / "targets.json"
-    registry.write_text(
+def test_release_artifacts_use_the_release_tag_prefix() -> None:
+    projected = artifacts.artifacts_from_json(
         json.dumps(
             {
                 "pins": {
@@ -21,10 +18,9 @@ def test_release_artifacts_use_the_release_tag_prefix(tmp_path: Path) -> None:
                     "shared": {"filename": "shared.whl", "release": "bundle"},
                 }
             }
-        )
+        ),
+        json.dumps({"skills": []}),
     )
-    with patch.object(artifacts, "artifact_targets_path", return_value=registry):
-        projected = artifacts._release_artifacts()
 
     assert [(item.pkg, item.filename, item.release_tag_prefix) for item in projected] == [
         ("standalone", "standalone.whl", "standalone"),
@@ -32,9 +28,9 @@ def test_release_artifacts_use_the_release_tag_prefix(tmp_path: Path) -> None:
     ]
 
 
-def test_skill_artifacts_include_only_nix_enabled_skills(tmp_path: Path) -> None:
-    registry = tmp_path / "skills.json"
-    registry.write_text(
+def test_skill_artifacts_include_only_nix_enabled_skills() -> None:
+    projected = artifacts.artifacts_from_json(
+        json.dumps({"pins": {}}),
         json.dumps(
             {
                 "skills": [
@@ -43,10 +39,8 @@ def test_skill_artifacts_include_only_nix_enabled_skills(tmp_path: Path) -> None
                     {"pkg": "disabled", "filename": "disabled.skill", "nix": False},
                 ]
             }
-        )
+        ),
     )
-    with patch.object(artifacts, "skills_registry_path", return_value=registry):
-        projected = artifacts._skill_artifacts()
 
     assert [(item.pkg, item.filename, item.release_tag_prefix) for item in projected] == [
         ("default", "default.skill", "default"),

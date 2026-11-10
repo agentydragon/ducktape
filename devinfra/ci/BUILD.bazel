@@ -23,6 +23,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        ":pin_publication",
         "@pypi//httpx",  # keep: sync-pins downloads wheel candidates
         "@pypi//pygithub",
     ],
@@ -33,10 +34,67 @@ py_test(
     srcs = ["test_sync_pins.py"],
     deps = [
         ":artifacts",  # keep: the test constructs pin metadata
+        ":pin_publication",
+        ":pin_publication_test_support",
+        ":plan_releases",
         ":sync_pins",
         "//:conftest",
+        "//devinfra/buildbuddy/ci:invocation_ids",
+        "@pypi//httpx",
+        "@pypi//pygithub",
         "@pypi//pytest",  # keep: the test uses parametrization and monkeypatch
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "pin_publication",
+    srcs = ["pin_publication.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":artifacts",
+        ":plan_releases",
+        ":publication_test_verdicts",
+        "//devinfra/buildbuddy/ci:bes",
+        "//devinfra/buildbuddy/ci:invocation_ids",
+    ],
+)
+
+py_library(
+    name = "pin_publication_test_support",
+    testonly = True,
+    srcs = ["pin_publication_test_support.py"],
+    deps = [
+        ":plan_releases",
+        "//devinfra/buildbuddy/ci:bes",
+    ],
+)
+
+py_test(
+    name = "test_pin_publication",
+    srcs = ["test_pin_publication.py"],
+    deps = [
+        ":pin_publication",
+        ":pin_publication_test_support",
+        ":plan_releases",
+        "//:conftest",
+        "//devinfra/buildbuddy/ci:bes",
+        "//devinfra/buildbuddy/ci:invocation_ids",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pin_push",
+    srcs = ["test_pin_push.py"],
+    data = ["//:.github/workflows/sync-pins.yml"],
+    deps = [
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

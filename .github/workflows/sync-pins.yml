@@ -1,5 +1,5 @@
 name: Sync artifact pins
-# Periodically sync nix/artifact-pins.json with the latest GitHub Releases.
+# Periodically select published content identified by exact-source devel CI.
 # Replaces per-commit dispatch from bb_release.py — one commit per cycle
 # regardless of how many releases landed since the last sync.
 #
@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: write
+  actions: read
 jobs:
   sync:
     name: Sync pins
@@ -32,11 +33,18 @@ jobs:
         with:
           private_key: ${{ secrets.DUCKTAPE_AUTOMATION_PRIVATE_KEY }}
 
-      - name: Sync pins with latest releases
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#bbapi"
+
+      - name: Sync pins with verified devel build identities
         id: sync
-        run: pip install uv && uv run devinfra/ci/sync_pins.py
+        run: |
+          pip install uv
+          uv run devinfra/ci/sync_pins.py --source-commit "$(git rev-parse HEAD)"
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Commit and push if changed
         env:
@@ -52,7 +60,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
-          git pull --rebase origin devel
+          # Never rebase a decision made for an older source onto new devel.
+          # A non-fast-forward push rejects the race; the next cycle recomputes.
           # Push as the ducktape-automation App. actions/checkout sets a
           # basic-auth Authorization header on github.com via an extraheader
           # in an `includeif.gitdir:*.path` temp file. Replacing it via

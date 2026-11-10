@@ -1,5 +1,14 @@
 # CI TODOs
 
+## Recover automatically from lost publication evidence
+
+Pin sync retains pins when its selected source's BuildBuddy evidence is lost;
+recovery currently requires rerunning that push CI run. Add structured failure
+classification before requesting automatic revalidation, with durable per-source
+coalescing and bounded backoff. Service/authentication failures and provenance
+mismatches must not trigger expensive CI loops. Preserve the push event's release
+gates, and test source advancement, partial reruns and retry suppression.
+
 ## Fetch publication artifacts explicitly from BuildBuddy
 
 Image publication and the release-artifact action still rely on `bb remote build`'s
