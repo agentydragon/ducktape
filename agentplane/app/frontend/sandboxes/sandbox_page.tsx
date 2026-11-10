@@ -23,7 +23,6 @@ import { useSearchParams } from "react-router";
 import { displayableError } from "../client";
 import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
 import {
-  deleteEnvironment,
   getSession,
   createSession,
   resumeSandbox,
@@ -119,7 +118,9 @@ export function SandboxPage({
     setPendingCreate(attempt);
   }
   const [launching, setLaunching] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<{ target: EnvironmentTarget; identityName: string } | null>(
+    null
+  );
   const [includeArchived, setIncludeArchived] = useState(false);
   const [threadLimit, setThreadLimit] = useState(200);
 
@@ -216,19 +217,6 @@ export function SandboxPage({
     } catch (failure: unknown) {
       setError(displayableError(failure));
     }
-  }
-
-  /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
-  async function remove(target: EnvironmentTarget): Promise<void> {
-    const failure = await deleteEnvironment(target).then(
-      () => null,
-      (reason: unknown) => reason
-    );
-    if (!failure) {
-      onBack();
-      return;
-    }
-    setError(displayableError(failure));
   }
 
   async function createThread(spec: SessionSpec, setupScript: string): Promise<void> {
@@ -415,7 +403,12 @@ export function SandboxPage({
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, sandbox.target!))}
+                onClick={() =>
+                  setConfirmingDelete({
+                    target: clone(EnvironmentTargetSchema, sandbox.target!),
+                    identityName: sandbox.identityName ?? "",
+                  })
+                }
               >
                 Delete
                 {!deletable(sandbox) && (
@@ -430,11 +423,12 @@ export function SandboxPage({
       )}
       {confirmingDelete && (
         <ConfirmDelete
-          name={name}
+          target={confirmingDelete.target}
+          identityName={confirmingDelete.identityName}
           onCancel={() => setConfirmingDelete(null)}
-          onConfirm={() => {
-            void remove(confirmingDelete);
+          onDeleted={() => {
             setConfirmingDelete(null);
+            onBack();
           }}
         />
       )}

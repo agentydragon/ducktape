@@ -8,6 +8,22 @@ When creating a Thread on an existing Sandbox, the form shows that Sandbox's Ide
 Identity bindings read-only. It distinguishes an unassigned Identity from a missing Identity resource,
 and keeps policy-watch loading and failures visible.
 
+## Sandbox deletion and identity cleanup
+
+The Sandbox list and page offer an independent identity-cleanup choice in the delete dialog when the
+selected Sandbox names an Identity. The choice starts off and is unavailable for a Flux-owned Identity,
+an incomplete or unhealthy Sandbox/Policy watch, a failed Session inventory, or any other Sandbox,
+Session, or unowned PolicyBinding still naming that Identity. Deleting the Sandbox alone remains
+available. A selected cleanup waits for the Sandbox to disappear from the live inventory before
+deleting the Identity, and shows a refusal or error with a retry action if cleanup cannot finish.
+
+The browser's paginated Session scan and live watches are advisory, not an atomic reference snapshot.
+The Policy Controller also rejects its known PolicyBinding and WorkloadCredential references, but
+currently does not enforce Sandbox or Session references at DeleteIdentity admission. A concurrent
+new Sandbox or Session reference can race cleanup; launch and delivery must fail closed if the named
+Identity no longer exists. Default-on cleanup requires an agreed app-minted origin marker, which is
+not yet present on Identities.
+
 ## Thread names
 
 An operator can set, rename, or clear a Thread name from the thread view. An unnamed Thread displays
