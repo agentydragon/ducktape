@@ -164,9 +164,24 @@ go_deps.module(
     version = "v0.0.0-20231108232855-2478ac86f678",
 )
 go_deps.module(
+    path = "github.com/pkg/browser",
+    sum = "h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=",
+    version = "v0.0.0-20240102092130-5ac0b6a4141c",
+)
+go_deps.module(
+    path = "github.com/tinylib/msgp",
+    sum = "h1:mOwYbyYDLPj35mkA2BjjYejgJk9BuHxDdvRnb6v2ZcQ=",
+    version = "v1.6.4",
+)
+go_deps.module(
+    path = "github.com/philhofer/fwd",
+    sum = "h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=",
+    version = "v1.2.0",
+)
+go_deps.module(
     path = "mvdan.cc/garble",
-    sum = "h1:DkcsIYE4+KEuflF9CIQPP3C+dyK4ofMGKLPrSQBr6i8=",
-    version = "v0.16.0",
+    sum = "h1:PWKaJuaU7pN8Wdb8R++L324hjRCYb53HWRAj+/g8aJY=",
+    version = "v0.18.0",
 )
 
 # Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead
@@ -520,6 +535,8 @@ use_repo(
     "com_github_openshift_api",
     "com_github_openshift_client_go",
     "com_github_pb33f_ordered_map_v2",
+    "com_github_philhofer_fwd",
+    "com_github_pkg_browser",
     "com_github_pressly_goose_v3",
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
@@ -534,12 +551,12 @@ use_repo(
     "com_github_siderolabs_go_pointer",
     "com_github_siderolabs_protoenc",
     "com_github_soheilhy_cmux",
-    "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_viper",
     "com_github_spiffe_go_spiffe_v2",
     "com_github_tcm1911_r2g2",
     "com_github_testcontainers_testcontainers_go",
+    "com_github_tinylib_msgp",
     "com_github_yosida95_uritemplate_v3",
     "com_github_zitadel_oidc_v3",
     "dev_dny_code_ssrf",
