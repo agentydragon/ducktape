@@ -1019,6 +1019,56 @@ fn heritage_observes_a_local_changed_by_an_earlier_operand() {
     assert_reader_split_diverges_with(definitions, &["make"]);
 }
 
+const MODULE_HERITAGE_UPDATES: &[(&str, &str, &[&str])] = &[
+    ("let base = first;", "base = h, base", &["base"]),
+    (
+        "let base = first; function save(v) { base = v; }",
+        "save(h), base",
+        &["base", "save"],
+    ),
+];
+
+fn module_heritage_update_definitions(
+    prefix: &str,
+    update: &str,
+    guard: &str,
+    value: &str,
+) -> String {
+    format!(
+        "{prefix}\nfunction make(h, unused) {{ {guard}return class extends ({update}) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make({value}, second); return new C(); }}"
+    )
+}
+
+#[test]
+fn class_heritage_preserves_inputs_of_module_binding_updates() {
+    for &(prefix, update, extra) in MODULE_HERITAGE_UPDATES {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &module_heritage_update_definitions(prefix, update, guard, "second"),
+                &members,
+            );
+        }
+    }
+}
+
+#[test]
+fn effect_free_module_heritage_updates_keep_unrelated_parameters_private() {
+    for &(prefix, update, extra) in MODULE_HERITAGE_UPDATES {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &module_heritage_update_definitions(prefix, update, guard, "first"),
+                &members,
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
 /// Opposing control: a direct `eval` runs string code that can read and
 /// write any binding visible by name, which no summary sees: refused at
 /// admission (A1) at any depth.

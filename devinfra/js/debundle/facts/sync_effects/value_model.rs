@@ -659,6 +659,10 @@ pub(super) struct ClassValueFacts {
     pub(super) default_has_instance: bool,
     pub(super) static_fields: BTreeMap<String, ValueExpr>,
     pub(super) super_class: Option<ValueExpr>,
+    /// Reads in the original heritage, including operands omitted by value lowering.
+    pub(super) super_class_inputs: BTreeSet<Id>,
+    /// Inline callables and classes need the enclosing-environment fallback.
+    pub(super) super_class_inputs_incomplete: bool,
     pub(super) lexical_heritage: Option<LexicalClassHeritage>,
     pub(super) opaque_instance: bool,
     pub(super) opaque_static: bool,
