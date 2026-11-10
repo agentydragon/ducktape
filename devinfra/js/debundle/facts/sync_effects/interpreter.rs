@@ -12790,7 +12790,7 @@ impl Executor<'_, '_> {
                                 .world
                                 .module
                                 .prefix_values
-                                .get(*binding)
+                                .get(binding)
                                 .is_some_and(|values| {
                                     values.iter().any(|value| {
                                         matches!(
