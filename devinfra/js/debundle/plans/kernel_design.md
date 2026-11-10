@@ -65,9 +65,6 @@ the family when every leaf has completed; the contract is in
   root rewinds (`effect_tv_array_iteration_test`,
   `unsealed_iteration_roots_rewind_to_the_flat_lane`).
 
-- **Field reads under a fork.** An own-data read leaves the initialization
-  domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on
-  a record field forks but its owner is not initialization-covered.
 - **Other fork producers**: optional calls and member access, `if` regions.
   They reuse `LocalSuspension::Fork` and the same join.
 - **The receiver-flow join** in `execution_index.rs` stays a separate

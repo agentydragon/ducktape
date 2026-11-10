@@ -1676,14 +1676,20 @@ fn kernel_constructor_body<'index>(
 pub(super) enum LocalActivation {
     Callable(u32),
     RootInitializer(RootInitializerIdentity),
-    Constructor { class: u32, instance: Values },
+    /// An admitted top-level expression statement: no binding receives its
+    /// value, so it has no lexical binding-effect identity.
+    RootStatement,
+    Constructor {
+        class: u32,
+        instance: Values,
+    },
 }
 
 impl LocalActivation {
     fn scope(&self) -> LocalExecutionScope {
         match self {
             Self::Callable(key) => LocalExecutionScope::Callable(*key),
-            Self::RootInitializer(_) => LocalExecutionScope::RootInitializer,
+            Self::RootInitializer(_) | Self::RootStatement => LocalExecutionScope::Root,
             Self::Constructor { class, .. } => LocalExecutionScope::Constructor(*class),
         }
     }
@@ -9468,7 +9474,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let body = self.inputs.index.ordered_initializers.get(&call.owner)?;
                 Some(LocalBodyIdentity::RootInitializer {
                     owner: call.owner,
-                    initializer_span: body.initializer_span()?,
+                    initializer_span: body.root_span()?,
                 })
             }
         }
@@ -9929,7 +9935,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 construct::bind_receiver(&mut frame, class, instance);
                 None
             }
-            LocalActivation::Callable(_) => None,
+            LocalActivation::Callable(_) | LocalActivation::RootStatement => None,
         };
         frame.borrowed_records = self.reachable_objects(&frame.inputs);
         let mut outcome = Outcome {
@@ -10028,7 +10034,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .get(&key)
                 .copied()
                 .unwrap_or(DUMMY_SP),
-            LocalExecutionScope::RootInitializer => body.initializer_span().unwrap_or(DUMMY_SP),
+            LocalExecutionScope::Root => body.root_span().unwrap_or(DUMMY_SP),
             LocalExecutionScope::Constructor(class) => self
                 .inputs
                 .index

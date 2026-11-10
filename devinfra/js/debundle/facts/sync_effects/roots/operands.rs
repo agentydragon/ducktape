@@ -11,6 +11,7 @@ use super::super::interpreter::{
 use super::super::local_operations::LocalBody;
 use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
+use super::super::own_data_transfer::resolve_writable_slot;
 use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
@@ -44,6 +45,10 @@ pub(super) struct RootOperands<'source> {
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
+    /// An admitted root expression statement. The body phase runs it through
+    /// the kernel and keeps it only if that execution seals the owner;
+    /// otherwise it takes it and the flattened lane runs.
+    pub(super) ordered_statement: Option<&'source LocalBody>,
     /// An initializer the body phase runs through the kernel and keeps as
     /// `ordered_initializer` only if that execution seals the owner; taken by
     /// the body phase. Never set beside `ordered_initializer`.
@@ -285,7 +290,7 @@ pub(super) fn prepare<'source>(
             let [(binding, _)] = assignments.as_slice() else {
                 return false;
             };
-            body.initializer_span().is_some_and(|span| {
+            body.root_span().is_some_and(|span| {
                 index
                     .initialization_source_identities
                     .get(&owner)
@@ -298,7 +303,7 @@ pub(super) fn prepare<'source>(
         };
         let (callee, span) = body.single_identifier_call_with_function_argument_initializer()?;
         let source = index.initialization_source_identities.get(&owner)?;
-        if !source.matches(owner, binding, body.initializer_span()?) {
+        if !source.matches(owner, binding, body.root_span()?) {
             return None;
         }
         let [call] = calls.as_slice() else {
@@ -405,7 +410,7 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::LocalMemberRead
                         && call.owner == owner
                         && call.caller.is_none()
-                        && body.initializer_span() == Some(call.span)
+                        && body.root_span() == Some(call.span)
                         && object_own_data_read_property(&call.callee, |id| {
                             inputs.flow.is_declared(id)
                                 || inputs.shadowed.contains(id.0.as_ref())
@@ -414,6 +419,65 @@ pub(super) fn prepare<'source>(
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
         });
+    let field_store = index
+        .ordered_statements
+        .get(&owner)
+        .and_then(|body| Some((body, body.root_field_store_statement()?)));
+    // The admitted store's operands run no code, so the slot the prefix
+    // proves writable is the slot the kernel's store rule reaches. Anything
+    // else this owner does keeps the flattened lane.
+    let ordered_statement = field_store
+        .filter(|(body, (receiver, property))| {
+            matches!(fact.kind, StatementKind::SideEffect)
+                && assignments.is_empty()
+                && calls.is_empty()
+                && fact.rebinds.eager.is_empty()
+                && fact.global_writes.is_empty()
+                && !inputs.exported_owners.contains(&owner)
+                && index.dynamic_scope_owners.is_empty()
+                && !index.opaque_top.contains(&owner)
+                && metadata_application.is_none()
+                && !certified_deferred_write
+                // The flat lane's callback-result record for this very store
+                // only taints the record unless the record reaches deferred
+                // or retained callbacks; those keep the flat lane.
+                && index.top_callback_result_writes[owner.0]
+                    .iter()
+                    .all(|write| matches!(&write.receiver, ValueExpr::Binding(written) if written == *receiver))
+                && index.top_exported_values[owner.0].is_empty()
+                && body.captured_writes().is_empty()
+                && body
+                    .free_reads()
+                    .iter()
+                    .all(|binding| executor.initialized_local_binding(binding))
+                && executor
+                    .state
+                    .world
+                    .module
+                    .prefix_values
+                    .get(*receiver)
+                    .is_some_and(|receivers| {
+                        resolve_writable_slot(&*executor, receivers, property).is_some()
+                            && !executor.callback_values(receivers).iter().any(|value| {
+                                matches!(
+                                    value,
+                                    AbstractValue::DeferredCallbacks(_)
+                                        | AbstractValue::AuditedRetainedResult(_, _)
+                                )
+                            })
+                    })
+        })
+        .map(|(body, _)| body);
+    // A field store refines only the generic non-declaration refusal.
+    let initialization_coverage_refusal = match initialization_coverage_refusal {
+        _ if ordered_statement.is_some() => None,
+        Some(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind)
+            if field_store.is_some() =>
+        {
+            Some(OwnerInitializationCoverageRefusalReason::UnprovedFieldStore)
+        }
+        refusal => refusal,
+    };
     // Every other initializer whose root calls are all local (a call with
     // arguments, an IIFE, a call inside a comma) or whose one call is an
     // array iteration row. The body phase runs it
@@ -463,6 +527,7 @@ pub(super) fn prepare<'source>(
         certified_deferred_write,
         provisional_roots,
         ordered_initializer,
+        ordered_statement,
         attempted_initializer,
         effect_initializer_source,
     }
@@ -539,7 +604,7 @@ fn ordered_effect_source<'source>(
     let [(binding, _)] = assignments else {
         return None;
     };
-    let span = body.initializer_span()?;
+    let span = body.root_span()?;
     let source = index.initialization_source_identities.get(&owner)?;
     source
         .matches(owner, binding, span)
