@@ -1128,7 +1128,6 @@ spec:
                   package_update: true
                   packages:
                   - docker.io
-                  - prometheus-node-exporter
                   fs_setup:
                   - device: /dev/disk/by-id/virtio-work
                     filesystem: ext4
@@ -1153,6 +1152,11 @@ spec:
                     - '0'
                     - '0'
                   runcmd:
+                  - - apt-get
+                    - install
+                    - -y
+                    - --no-install-recommends
+                    - prometheus-node-exporter
                   - - bash
                     - /run/buildbuddy-config/bootstrap.sh
                   power_state:

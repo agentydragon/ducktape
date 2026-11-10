@@ -192,7 +192,8 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
     cloud_init = yaml.safe_load(user_data)
-    assert "prometheus-node-exporter" in cloud_init["packages"]
+    (exporter_install,) = [command for command in cloud_init["runcmd"] if "prometheus-node-exporter" in command]
+    assert "--no-install-recommends" in exporter_install
     mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
     assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
     assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"
