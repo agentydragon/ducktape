@@ -1,12 +1,12 @@
 """tofu-controller: its HelmRepository and the HelmRelease, the `Terraform` CRD, and the Flux
 image automation that rolls the controller image.
 
-The controller image is ours: `third_party/tofu_controller` patches upstream to accept a Flux
-`ExternalArtifact` as a `Terraform` source. So the CRD installed here is that module's patched
-copy, not the chart's (the HelmRelease skips CRDs), and a post-renderer grants the chart's
-manager ClusterRole read access to ExternalArtifacts. The runner pods' image is ours too
-(`cluster/tf_runner`: upstream's runner with every provider baked in). `PINS_DIR` sets both
-images in the HelmRelease from the image policies below.
+The controller image is ours, built from the upstream commit pinned by
+`third_party/tofu_controller`. Its CRD accepts a Flux `ExternalArtifact` as a `Terraform`
+source, so we install that CRD instead of the chart's (the HelmRelease skips CRDs), and a
+post-renderer grants the chart's manager ClusterRole read access to ExternalArtifacts. The
+runner pods' image is ours too (`cluster/tf_runner`: upstream's runner with every provider
+baked in). `PINS_DIR` sets both images in the HelmRelease.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
@@ -45,8 +45,7 @@ IMAGE = "ghcr.io/agentydragon/tofu-controller"
 RUNNER_NAME = "tf-runner"
 RUNNER_IMAGE = "ghcr.io/agentydragon/tf-runner"
 _CRD = "ducktape_tofu_controller/infra.contrib.fluxcd.io_terraforms.yaml"
-# The chart's `tofu-manager-role` lists the source kinds upstream supports; the patched
-# controller also reads (and watches) ExternalArtifacts.
+# The pinned chart predates ExternalArtifact support; the controller reads and watches them.
 _EXTERNAL_ARTIFACT_RBAC_PATCH = """\
 - op: add
   path: /rules/-

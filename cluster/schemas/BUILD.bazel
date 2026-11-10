@@ -4,4 +4,4 @@
 #
 # infra.contrib.fluxcd.io/terraform_v1alpha2.json is the v1alpha2 openAPIV3Schema of
 # @ducktape_tofu_controller//:terraform_crd, shadowing the CRDs-catalog copy that lacks the
-# ExternalArtifact source kind; re-dump it when that module's patches change.
+# ExternalArtifact source kind; re-dump it when that module's pinned source changes.
