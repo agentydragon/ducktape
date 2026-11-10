@@ -566,7 +566,7 @@ fn tier0_derivation_matches_node() {
                     swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
                 let options = tier0::Options {
                     exports_reachable: false,
-                    upgrades: ALL_UPGRADES.into_iter().collect(),
+                    upgrades: ALL_UPGRADES.into_iter().chain(LATER_UPGRADES).collect(),
                     what_if_pure: Default::default(),
                     program: Some(
                         summary_effects::program::load(&directory, &chunk, None, &[])
@@ -998,6 +998,60 @@ fn program_reads_imported_var_strings_only_without_cycles() {
         ]),
         1
     );
+}
+
+/// An exported literal counts as unchangeable only while every chunk of the
+/// program reads nothing but named members of it.
+#[test]
+fn exported_literals_settle_only_when_every_chunk_reads_them_by_name() {
+    let settled = |other: &[u8]| {
+        let own: &[u8] = b"export const table = { key: 'a' };\nexport const label = table.key;\n";
+        let directory = scratch("exported_literal", &[("a.js", own), ("b.js", other)]);
+        let chunk = directory.join("a.js");
+        let count = js_ast::with_swc_globals(|| {
+            let source = std::fs::read_to_string(&chunk).expect("reading the chunk");
+            let parsed = js_ast::parse_js_module("a.js", &source).expect("it parses");
+            let unresolved = swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+            let options = tier0::Options {
+                exports_reachable: false,
+                upgrades: LATER_UPGRADES.into_iter().collect(),
+                what_if_pure: Default::default(),
+                program: Some(
+                    summary_effects::program::load(&directory, &chunk, None, &[])
+                        .expect("the program loads"),
+                ),
+                premises: Default::default(),
+                derive: true,
+            };
+            tier0::analyze(&parsed.module, unresolved, &options)
+                .derived
+                .settled_locals
+        });
+        std::fs::remove_dir_all(directory).expect("removing the scratch directory");
+        count
+    };
+    assert_eq!(
+        settled(b"import { table } from './a.js';\nexport const k = table.key;\n"),
+        1
+    );
+    assert_eq!(
+        settled(b"import { table } from './a.js';\nexport { table };\n"),
+        1
+    );
+    // Stored to, used as a value, or reachable through a namespace object.
+    assert_eq!(
+        settled(b"import { table } from './a.js';\ntable.key = 'b';\n"),
+        0
+    );
+    assert_eq!(
+        settled(b"import { table } from './a.js';\nexport const t = [table];\n"),
+        0
+    );
+    assert_eq!(
+        settled(b"import * as a from './a.js';\nexport const t = a;\n"),
+        0
+    );
+    assert_eq!(settled(b"export const load = () => import('./a.js');\n"), 0);
 }
 
 /// Programs for the upgrades, in the layout of the premise fixtures; the second line of each is unused.

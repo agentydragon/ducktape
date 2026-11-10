@@ -127,13 +127,18 @@ pub struct WholeWriteSite {
     pub chain: Vec<u32>,
 }
 
+/// The name, when it is that of a global the language defines.
+pub fn standard_global(name: &str) -> Option<&'static str> {
+    STANDARD_GLOBALS
+        .iter()
+        .copied()
+        .find(|standard| *standard == name)
+}
+
 impl WholeWriteSite {
     /// The global's name, when the language defines it.
     pub fn standard_global(&self) -> Option<&'static str> {
-        STANDARD_GLOBALS
-            .iter()
-            .copied()
-            .find(|name| *name == self.global)
+        standard_global(&self.global)
     }
 }
 

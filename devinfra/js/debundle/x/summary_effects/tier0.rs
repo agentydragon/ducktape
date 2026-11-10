@@ -454,10 +454,18 @@ fn unparen(mut expr: &Expr) -> &Expr {
     expr
 }
 
-/// The binding an enum-shaped statement defines: an inline function of one
-/// parameter whose body only stores literals on the parameter under literal
-/// names, called with `E || (E = {})`.
-fn enum_definition(expr: &Expr) -> Option<&Ident> {
+/// An enum-shaped call: an inline function or arrow of one parameter whose
+/// body only stores literals on the parameter under literal names, called
+/// with `E || (E = {})` or `E || {}`.
+struct EnumCall<'a> {
+    target: &'a Ident,
+    /// The argument assigns the binding: `E || (E = {})`.
+    assigns: bool,
+    /// The call returns the parameter.
+    returns: bool,
+}
+
+fn enum_call(expr: &Expr) -> Option<EnumCall<'_>> {
     let Expr::Call(CallExpr {
         callee: Callee::Expr(callee),
         args,
@@ -484,35 +492,53 @@ fn enum_definition(expr: &Expr) -> Option<&Ident> {
     else {
         return None;
     };
-    let (Expr::Ident(target), Expr::Assign(assign)) = (unparen(left), unparen(right)) else {
+    let Expr::Ident(target) = unparen(left) else {
         return None;
     };
-    let fresh = assign.op == AssignOp::Assign
-        && matches!(&assign.left, AssignTarget::Simple(SimpleAssignTarget::Ident(assigned))
-            if assigned.id.to_id() == target.to_id())
-        && matches!(unparen(&assign.right), Expr::Object(object) if object.props.is_empty());
-    let Expr::Fn(FnExpr {
-        ident: None,
-        function,
-    }) = unparen(callee)
-    else {
-        return None;
+    let empty =
+        |expr: &Expr| matches!(unparen(expr), Expr::Object(object) if object.props.is_empty());
+    let assigns = match unparen(right) {
+        Expr::Assign(assign) => {
+            let fresh = assign.op == AssignOp::Assign
+                && matches!(&assign.left, AssignTarget::Simple(SimpleAssignTarget::Ident(assigned))
+                    if assigned.id.to_id() == target.to_id())
+                && empty(&assign.right);
+            if !fresh {
+                return None;
+            }
+            true
+        }
+        other if empty(other) => false,
+        _ => return None,
     };
-    let [
-        Param {
-            pat: Pat::Ident(param),
-            decorators,
-            ..
+    // The parameter, and the body as statements or as one expression.
+    let (param, statements, expression): (&Pat, &[Stmt], Option<&Expr>) = match unparen(callee) {
+        Expr::Fn(FnExpr {
+            ident: None,
+            function,
+        }) if !function.is_async && !function.is_generator => match function.params.as_slice() {
+            [param] if param.decorators.is_empty() => {
+                (&param.pat, &function.body.as_ref()?.stmts, None)
+            }
+            _ => return None,
         },
-    ] = function.params.as_slice()
-    else {
+        Expr::Arrow(arrow) if !arrow.is_async && !arrow.is_generator => {
+            let [param] = arrow.params.as_slice() else {
+                return None;
+            };
+            match &*arrow.body {
+                ArrowFunctionBody::FunctionBody(block) => (param, &block.stmts, None),
+                ArrowFunctionBody::Expr(body) => (param, &[], Some(body)),
+            }
+        }
+        _ => return None,
+    };
+    let Pat::Ident(param) = param else {
         return None;
     };
-    if !fresh || !decorators.is_empty() || function.is_async || function.is_generator {
-        return None;
-    }
     let param = param.id.to_id();
-    let on_param = |expr: &Expr| matches!(expr, Expr::Ident(ident) if ident.to_id() == param);
+    let on_param =
+        |expr: &Expr| matches!(unparen(expr), Expr::Ident(ident) if ident.to_id() == param);
     // `e.name = literal`, `e["name"] = literal`.
     let named = |assign: &AssignExpr| {
         let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
@@ -546,16 +572,50 @@ fn enum_definition(expr: &Expr) -> Option<&Ident> {
             && matches!(&*assign.right, Expr::Lit(Lit::Str(_)))
             && matches!(unparen(&computed.expr), Expr::Assign(inner) if named(inner))
     };
-    let stores_only = function.body.as_ref()?.stmts.iter().all(|statement| {
-        let Stmt::Expr(statement) = statement else {
-            return false;
-        };
-        match unparen(&statement.expr) {
-            Expr::Seq(seq) => seq.exprs.iter().all(|part| store(part)),
-            other => store(other),
+    // Stores, then optionally the parameter itself.
+    let mut parts: Vec<&Expr> = Vec::new();
+    let mut returns = false;
+    fn spread<'e>(expr: &'e Expr, parts: &mut Vec<&'e Expr>) {
+        match unparen(expr) {
+            Expr::Seq(seq) => parts.extend(seq.exprs.iter().map(|part| unparen(part))),
+            other => parts.push(other),
         }
-    });
-    stores_only.then_some(target)
+    }
+    for (index, statement) in statements.iter().enumerate() {
+        match statement {
+            Stmt::Expr(statement) => spread(&statement.expr, &mut parts),
+            Stmt::Return(ReturnStmt {
+                arg: Some(value), ..
+            }) if index + 1 == statements.len() => {
+                spread(value, &mut parts);
+                returns = true;
+            }
+            _ => return None,
+        }
+    }
+    if let Some(expression) = expression {
+        spread(expression, &mut parts);
+        returns = true;
+    }
+    if returns {
+        // What is returned must be the parameter.
+        if !on_param(parts.pop()?) {
+            return None;
+        }
+    }
+    parts.iter().all(|part| store(part)).then_some(EnumCall {
+        target,
+        assigns,
+        returns,
+    })
+}
+
+/// The binding an enum-shaped statement defines: `enum_call` with the
+/// argument `E || (E = {})`.
+fn enum_definition(expr: &Expr) -> Option<&Ident> {
+    enum_call(expr)
+        .filter(|call| call.assigns)
+        .map(|call| call.target)
 }
 
 /// The global a recognized intrinsic use depends on, with the properties of
@@ -707,6 +767,8 @@ struct Classifier<'a> {
     primitive_functions: &'a FxHashMap<Binding, Vec<Binding>>,
     /// Bindings only enum-shaped statements assign: see `enum_definition`.
     enums: &'a FxHashSet<Binding>,
+    /// Bindings a `var` declares by an enum-shaped call on itself.
+    enum_declarations: &'a FxHashSet<Binding>,
     /// Literals nothing in the chunk can change: see `sealed_literals`.
     sealed: &'a FxHashSet<Binding>,
     /// Literals the statement reads a property of.
@@ -747,6 +809,8 @@ pub struct DerivedCounts {
     pub allocator_classes: usize,
     pub function_namers: usize,
     pub export_helpers: usize,
+    pub stable_imports: usize,
+    pub settled_locals: usize,
     pub namespace_members: usize,
     pub lazy_wrappers: usize,
     pub interop_helpers: usize,
@@ -777,6 +841,15 @@ pub struct ResolvedPremises {
     /// Derived: bindings holding the helper that defines getters on its
     /// first argument from the functions of its second.
     exporters: FxHashSet<Binding>,
+    /// Derived: bindings holding the helper that returns a fresh object
+    /// with a getter per function of its argument.
+    exporter_allocators: FxHashSet<Binding>,
+    /// Derived: imports whose value is fixed once their chunk has run, for
+    /// a chunk off any import cycle.
+    stable_imports: FxHashSet<Binding>,
+    /// Derived: literals of this chunk the whole program only reads named
+    /// members of.
+    settled_locals: FxHashSet<Binding>,
     pub given: usize,
     pub matched: usize,
 }
@@ -1482,6 +1555,57 @@ impl Classifier<'_> {
     /// `helper(decorators, Target.prototype, …)` or
     /// `Target = helper(decorators, Target)` under a decorator-helper
     /// premise.
+    /// Whether every property of the literal is a function under a plain
+    /// key, and the intrinsics the export helpers use are as defined: an
+    /// enumerable member of `Object.prototype` would be enumerated too.
+    fn export_getters(&mut self, getters: &Expr, tagged: bool) -> bool {
+        let Expr::Object(getters) = getters else {
+            return false;
+        };
+        let functions = getters.props.iter().all(|prop| {
+            matches!(prop, PropOrSpread::Prop(prop) if matches!(&**prop, Prop::KeyValue(pair)
+                if !matches!(pair.key, PropName::Computed(_))
+                    && matches!(unparen(&pair.value), Expr::Arrow(_) | Expr::Fn(_))))
+        });
+        functions
+            && (self.native_site || self.census.prototype_unwritten("Object"))
+            && self.untouched(vec![("Object", &["defineProperty"])], None, false)
+            && (!tagged || self.untouched(vec![("Symbol", &["toStringTag"])], None, false))
+    }
+
+    /// `exporter({ name: () => value, … })` for the derived helper that
+    /// returns a fresh object with one getter per property.
+    fn export_allocation(&mut self, call: &CallExpr) -> bool {
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let Expr::Ident(helper) = unparen(callee) else {
+            return false;
+        };
+        let Some(helper) = self.bindings.get(&helper.to_id()).copied() else {
+            return false;
+        };
+        let (getters, flag) = match call.args.as_slice() {
+            [ExprOrSpread { spread: None, expr }] => (expr, None),
+            [
+                ExprOrSpread { spread: None, expr },
+                ExprOrSpread {
+                    spread: None,
+                    expr: flag,
+                },
+            ] => (expr, Some(flag)),
+            _ => return false,
+        };
+        if !self.premises.exporter_allocators.contains(&helper)
+            || flag.is_some_and(|flag| !literal_only(flag))
+            || !self.export_getters(getters, true)
+        {
+            return false;
+        }
+        self.eager.push(helper);
+        true
+    }
+
     /// `exporter(target, { name: () => value, … })` for the derived helper:
     /// it defines one getter on `target` per property and calls nothing. An
     /// enumerable member of `Object.prototype` would be enumerated too.
@@ -1513,22 +1637,15 @@ impl Classifier<'_> {
         else {
             return false;
         };
-        let (Expr::Ident(target), Expr::Object(getters)) = (&**target, &**getters) else {
+        let Expr::Ident(target) = &**target else {
             return false;
         };
         let Some(target) = self.bindings.get(&target.to_id()).copied() else {
             return false;
         };
-        let functions = getters.props.iter().all(|prop| {
-            matches!(prop, PropOrSpread::Prop(prop) if matches!(&**prop, Prop::KeyValue(pair)
-                if !matches!(pair.key, PropName::Computed(_))
-                    && matches!(unparen(&pair.value), Expr::Arrow(_) | Expr::Fn(_))))
-        });
         if !self.premises.exporters.contains(&helper)
             || self.imports.contains(&target)
-            || !functions
-            || !(self.native_site || self.census.prototype_unwritten("Object"))
-            || !self.untouched(vec![("Object", &["defineProperty"])], None, false)
+            || !self.export_getters(getters, false)
         {
             return false;
         }
@@ -1798,6 +1915,15 @@ impl Classifier<'_> {
                 {
                     Err(ImpureCause::ForeignRead)
                 }
+                // The exporting chunk has run and never assigns the binding
+                // again: the read sees its one value.
+                Some(binding)
+                    if self.premised_args == 0
+                        && self.premises.stable_imports.contains(binding) =>
+                {
+                    self.eager.push(*binding);
+                    Ok(())
+                }
                 // Another chunk's code may change what the import holds.
                 Some(binding) if self.imports.contains(binding) => {
                     self.eager.push(*binding);
@@ -1907,7 +2033,7 @@ impl Classifier<'_> {
             }
             Expr::Seq(seq) => seq.exprs.iter().try_for_each(|expr| self.pure(expr)),
             Expr::Call(call) => {
-                if self.primitive_call(call) {
+                if self.primitive_call(call) || self.export_allocation(call) {
                     return Ok(());
                 }
                 Err(match &call.callee {
@@ -1945,6 +2071,14 @@ impl Classifier<'_> {
     fn declarator(&mut self, declarator: &VarDeclarator) -> Kind {
         if !matches!(declarator.name, Pat::Ident(_)) {
             return Kind::Impure(ImpureCause::Destructuring);
+        }
+        // An enum-shaped call on the declared `var` itself allocates the
+        // object it fills and reads nothing.
+        if let Pat::Ident(name) = &declarator.name
+            && let Some(binding) = self.bindings.get(&name.id.to_id())
+            && self.enum_declarations.contains(binding)
+        {
+            return Kind::Pure;
         }
         match &declarator.init {
             None => Kind::Pure,
@@ -2337,6 +2471,45 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     } else {
         FxHashSet::default()
     };
+    // `var E = (e => (…, e))(E || {})`: a `var` declared once and assigned
+    // nowhere reads as `undefined` in its own initializer.
+    let mut enum_declarations: FxHashSet<Binding> = FxHashSet::default();
+    if options.upgrades.contains(&Upgrade::EnumDefinitions) {
+        for item in &module.body {
+            let (ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(var),
+                ..
+            }))) = item
+            else {
+                continue;
+            };
+            if var.kind != VarDeclKind::Var {
+                continue;
+            }
+            for declarator in &var.decls {
+                let Pat::Ident(name) = &declarator.name else {
+                    continue;
+                };
+                let id = name.id.to_id();
+                let Some(binding) = bindings.get(&id) else {
+                    continue;
+                };
+                let own = declarator
+                    .init
+                    .as_deref()
+                    .and_then(enum_call)
+                    .is_some_and(|call| !call.assigns && call.returns && call.target.to_id() == id);
+                if own
+                    && declarations[*binding as usize] == 1
+                    && !assignments.plain.contains_key(&id)
+                    && !assignments.other.contains(&id)
+                {
+                    enum_declarations.insert(*binding);
+                }
+            }
+        }
+    }
     let mut classes: FxHashSet<Binding> = FxHashSet::default();
     let mut literals: FxHashMap<Binding, FxHashMap<String, bool>> = FxHashMap::default();
     let mut nested_literals: FxHashMap<(Binding, String), FxHashMap<String, bool>> =
@@ -2572,6 +2745,20 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 premises.exporters.insert(binding);
             }
         }
+        for id in &found.exporter_allocators {
+            if let Some(binding) = binding(id) {
+                derived.export_helpers += 1;
+                premises.exporter_allocators.insert(binding);
+            }
+        }
+        if off_cycle {
+            let stable = found.stable_imports.iter().filter_map(binding);
+            premises.stable_imports.extend(stable);
+            derived.stable_imports = premises.stable_imports.len();
+        }
+        let locals = found.settled_locals.iter().filter_map(binding);
+        premises.settled_locals.extend(locals);
+        derived.settled_locals = premises.settled_locals.len();
         for id in &found.namers {
             callee(id, PremiseKind::FunctionNamer, &mut derived.function_namers);
         }
@@ -2665,6 +2852,13 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut sealed = unhandled(&strict);
     sealed.extend(unhandled(&relaxed));
     sealed.extend(&premised);
+    // The whole program only reads named members of these, exported or not.
+    let program_wide = premises.settled_locals.iter().copied();
+    sealed.extend(program_wide.filter(|binding| {
+        literals
+            .get(binding)
+            .is_some_and(|keys| !keys.contains_key("__proto__"))
+    }));
     let mut units = Vec::with_capacity(sources.len());
     let never_written: FxHashSet<String> = options
         .premises
@@ -2703,6 +2897,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             sealed_members: &sealed_members,
             nested_literals: &nested_literals,
             enums: &enums,
+            enum_declarations: &enum_declarations,
             primitive_functions: &primitive_functions,
             pristine: Vec::new(),
             upgrades: &options.upgrades,

@@ -74,6 +74,25 @@ pub struct PairExample {
     pub later_reasons: Vec<Reason>,
 }
 
+/// The language-defined globals a side of the census holds, and `*`.
+fn families(
+    side: &rustc_hash::FxHashMap<String, crate::intrinsics::Writes>,
+) -> Vec<(String, bool)> {
+    let mut out: Vec<(String, bool)> = side
+        .iter()
+        .filter_map(|(global, writes)| {
+            let name = match crate::intrinsics::standard_global(global) {
+                Some(name) => name.to_string(),
+                None if global == "*" => global.clone(),
+                None => return None,
+            };
+            Some((name, writes.any))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 #[derive(Serialize)]
 pub struct WholeWriteSiteRow {
     pub family: &'static str,
@@ -678,6 +697,12 @@ pub struct Tier0Report {
     /// The same for the `prototype` objects of globals.
     pub global_prototypes_written: usize,
     pub global_prototypes_written_unnamed: usize,
+    /// The language-defined globals among them, sorted, each with whether
+    /// its prototype is written under an unnamed key; `*` stands for the
+    /// value of a global the census could not name.
+    pub global_prototype_families_written: Vec<(String, bool)>,
+    /// The same for writes of the binding or the value's own properties.
+    pub global_families_written: Vec<(String, bool)>,
     /// With `--examples`: per written global, the property names, or `*`.
     pub globals_written_detail: BTreeMap<String, Vec<String>>,
     /// The intrinsics in `intrinsic_families_used` whose value flows where
@@ -960,6 +985,8 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .values()
             .filter(|writes| writes.any)
             .count(),
+        global_prototype_families_written: families(&analysis.census.prototype_written),
+        global_families_written: families(&analysis.census.written),
         globals_written_detail: [
             ("", &analysis.census.written),
             (".prototype", &analysis.census.prototype_written),

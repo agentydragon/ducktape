@@ -30,6 +30,7 @@ var require_third = __commonJS((exports) => { exports.box = function (v) { retur
 const third = __toESM(require_third()); export const box = third.box; export const peek = third.peek; export const boxDefault = third.default.box;
 const before = 1, LISTED = '__listed__', after = 2; export { before, LISTED, after }; export let LOOSE = 'Set'; export function loosen() { LOOSE = 'Map'; } export var HOISTED = '__hoisted__'; export var CHANGED = 'Set'; export function change() { CHANGED = 'Map'; } export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
 export var __export = (target, all) => { for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); }; export var eager = (target, all) => { for (var name in all) __defProp(target, name, { value: all[name](), enumerable: true }); };
+export var __exportAll = (all, flag) => { let target = {}; for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); return flag || __defProp(target, Symbol.toStringTag, { value: 'Module' }), target; }; export var __exportIf = (all, flag) => { let target = {}; for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); if (!flag) __defProp(target, Symbol.toStringTag, { value: 'Module' }); return target; }; export var eagerAll = (all) => { let target = {}; for (var name in all) target[name] = all[name](); return target; };
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -289,3 +290,45 @@ import { __export } from './dep.js'; const ns = {}; let failed = 0; function tai
 taint();
 fill();
 console.log(failed);
+### commutes same: the imported helper that returns a fresh namespace, across an impure statement
+-
+import { __exportAll, __exportIf } from './dep.js'; let state = 0;
+state = 1;
+const ns = [__exportAll({ value: () => state }), __exportIf({ value: () => state }, 1)];
+console.log(ns[0].value, ns[1].value, String(ns[0]), String(ns[1]));
+### ordered differs: an imported helper of that call shape that invokes the functions
+-
+import { eagerAll } from './dep.js'; let state = 0;
+state = 1;
+const ns = eagerAll({ value: () => state });
+console.log(ns.value);
+### ordered differs: an impure statement makes Object.prototype enumerate a member before a namespace is built
+-
+import { __exportAll } from './dep.js'; function taint() { Object.prototype.extra = 1; }
+taint();
+const ns = __exportAll({ value: () => 1 });
+console.log(ns.value);
+### commutes same: an exported literal the whole program only reads by name, across an impure statement that reaches it
+-
+import { make } from './dep.js'; export const table = { key: 'a', other: 1 }; let seen; function peek() { seen = table.other; }
+peek();
+const label = table.key;
+console.log(seen, label);
+### ordered differs: an exported literal this chunk also stores to
+-
+import { make } from './dep.js'; export const table = { key: 'a' }; function rename() { table.key = 'b'; }
+rename();
+const label = table.key;
+console.log(label);
+### commutes same: a literal reading imports their chunk never reassigns, across an impure statement
+-
+import { make, PREFIX, Store } from './dep.js'; let state = 0;
+state = 1;
+const bundle = { make, PREFIX, Store };
+console.log(state, typeof bundle.make, bundle.PREFIX);
+### ordered differs: a literal reading an import its chunk reassigns
+-
+import { mutable, setMutable } from './dep.js';
+setMutable(5);
+const bundle = { mutable };
+console.log(bundle.mutable);

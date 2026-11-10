@@ -379,3 +379,33 @@ let state = 0;
 record.key;
 const record = { key: 1 };
 console.log(state);
+### commutes same: an enum definition written as an arrow with a sequence body
+-
+var Color; let state = 0;
+state = 1;
+((e) => (e[e.Red = 0] = "Red", e.Blue = "b", e))(Color || (Color = {}));
+console.log(state, Color.Red, Color[0], Color.Blue);
+### commutes same: an enum declared by the result of the call
+-
+let state = 0;
+state = 1;
+var Size = ((e) => { e[e.Small = 0] = "Small"; e.Large = "l"; return e; })(Size || {});
+console.log(state, Size.Small, Size[0], Size.Large);
+### ordered differs: an enum declared by the result of the call, also assigned elsewhere
+-
+function preset() { Size = { Small: 9 }; }
+preset();
+var Size = ((e) => (e.Large = "l", e))(Size || {});
+console.log(Size.Small, Size.Large);
+### ordered differs: an arrow enum whose value is a call
+-
+var Color; let n = 0; const next = () => ++n;
+n = 5;
+((e) => (e.Red = next(), e))(Color || (Color = {}));
+console.log(Color.Red);
+### ordered differs: an enum declared by a call that returns something else
+-
+let other = { Large: 1 }; function swap() { other = { Large: 2 }; }
+swap();
+var Size = ((e) => (e.Large = "l", other))(Size || {});
+console.log(Size.Large);

@@ -54,6 +54,24 @@ const EXPORTER: &str = "(target, all) => {
     Object.defineProperty(target, name, { get: all[name], enumerable: true });
 }";
 
+/// `ns = exporter({ name: () => value })` returns a fresh object with a
+/// getter per property of its argument, and calls none. Two spellings.
+const EXPORTER_NEW: [&str; 2] = [
+    "(all, flag) => {
+  let target = {};
+  for (var name in all)
+    Object.defineProperty(target, name, { get: all[name], enumerable: true });
+  return flag || Object.defineProperty(target, Symbol.toStringTag, { value: 'Module' }), target;
+}",
+    "(all, flag) => {
+  let target = {};
+  for (var name in all)
+    Object.defineProperty(target, name, { get: all[name], enumerable: true });
+  if (!flag) Object.defineProperty(target, Symbol.toStringTag, { value: 'Module' });
+  return target;
+}",
+];
+
 /// A lazy module: the chunk and binding holding its thunk.
 pub type LazyKey = (usize, Id);
 
@@ -65,6 +83,7 @@ enum Role {
     ToEsm,
     Namer,
     Exporter,
+    ExporterNew,
     /// A function; `facts` says whether it also touches private state.
     Allocator,
     /// A class whose construction only stores into the new object.
@@ -786,6 +805,18 @@ fn shape_statement(
             shape(&branch.test, names, outer)?,
             shape_statement(&branch.cons, names, outer)?
         ),
+        Stmt::Decl(Decl::Var(var)) => {
+            let mut out = String::new();
+            for declarator in &var.decls {
+                let (Pat::Ident(name), Some(init)) = (&declarator.name, &declarator.init) else {
+                    return None;
+                };
+                let init = shape(init, names, outer)?;
+                names.push(name.id.to_id());
+                out += &format!("let ${}={init},", names.len() - 1);
+            }
+            out
+        }
         Stmt::ForIn(looped) => {
             let ForHead::VarDecl(head) = &looped.left else {
                 return None;
@@ -876,6 +907,7 @@ struct Resolver<'a> {
     current: Facts,
     namer: String,
     exporter: String,
+    exporter_new: [String; 2],
     common_js: String,
     copy_props: String,
     to_esm: String,
@@ -1000,6 +1032,9 @@ impl<'a> Resolver<'a> {
                     }
                     if found == self.exporter {
                         return Role::Exporter;
+                    }
+                    if self.exporter_new.contains(&found) {
+                        return Role::ExporterNew;
                     }
                 }
             }
@@ -2064,6 +2099,16 @@ pub struct Derived {
     /// Bindings holding the helper that defines getters on its first
     /// argument from the functions of its second.
     pub exporters: Vec<Id>,
+    /// Bindings holding the helper that returns a fresh object with a
+    /// getter per function of its first argument.
+    pub exporter_allocators: Vec<Id>,
+    /// Imported bindings whose value cannot change once their exporting
+    /// chunk has run: a namespace import, or a binding its chunk declares
+    /// once and never assigns.
+    pub stable_imports: Vec<Id>,
+    /// Bindings of this chunk holding an object literal nothing in the
+    /// program handles except to read a named member, exported or not.
+    pub settled_locals: Vec<Id>,
     /// Imported bindings holding an object literal nothing in the program
     /// handles except to read a named member, with each key of the literal
     /// and whether its value is written as a primitive.
@@ -2102,6 +2147,7 @@ pub fn derive(
         current: Facts::default(),
         namer: canonical(NAMER),
         exporter: canonical(EXPORTER),
+        exporter_new: EXPORTER_NEW.map(canonical),
         common_js: canonical(COMMON_JS),
         copy_props: canonical(COPY_PROPS),
         to_esm: canonical(TO_ESM),
@@ -2118,8 +2164,36 @@ pub fn derive(
     let mut derived = Derived::default();
     let mut imported: Vec<Id> = resolver.chunks[0].imports.keys().cloned().collect();
     imported.sort();
-    if program.is_some() {
+    for id in &imported {
+        let namespace = resolver.chunks[0].imports[id].1 == "*";
+        let fixed = resolver.home(0, id).is_some_and(|(chunk, home)| {
+            chunk != 0 && resolver.chunks[chunk].defs.contains_key(&home)
+        });
+        if namespace || fixed {
+            derived.stable_imports.push(id.clone());
+        }
+    }
+    if let Some(program) = program {
         let settled = resolver.settled_literals();
+        // The program holds this chunk too, as another parse: its top-level
+        // bindings correspond by name.
+        let own = program
+            .modules
+            .iter()
+            .position(|(path, _)| *path == program.chunk)
+            .map(|index| index + 1);
+        let mut locals: Vec<Id> = resolver.chunks[0]
+            .defs
+            .keys()
+            .filter(|id| {
+                settled
+                    .keys()
+                    .any(|(chunk, home)| Some(*chunk) == own && home.0 == id.0)
+            })
+            .cloned()
+            .collect();
+        locals.sort();
+        derived.settled_locals = locals;
         for id in &imported {
             let keys = resolver
                 .home(0, id)
@@ -2169,6 +2243,7 @@ pub fn derive(
             }
             Role::Namer => derived.namers.push(id),
             Role::Exporter => derived.exporters.push(id),
+            Role::ExporterNew => derived.exporter_allocators.push(id),
             Role::CommonJs => derived.wrappers.push(id),
             Role::ToEsm => derived.interop.push(id),
             Role::Lazy(lazy) => {

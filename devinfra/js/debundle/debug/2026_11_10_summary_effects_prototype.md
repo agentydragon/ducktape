@@ -474,6 +474,21 @@ and tier 0 accepts a swap Node observes. Without premises tier 0 refuses all 41.
   none. The statement is confined to `target`, a local binding; it needs
   `Object.defineProperty` untouched and no chunk writing any member of
   `Object.prototype` (the helper's `for…in` would enumerate an added one).
+  The variant that takes only the record and returns a fresh namespace
+  (`ns = exporter({ name: () => value })`, two spellings, with a
+  `Symbol.toStringTag` unless a second argument says not) is a pure
+  definition under the same conditions plus `Symbol.toStringTag` untouched.
+- **Stable imports.** A read of an imported binding was ordered against
+  every impure statement, because code of another chunk, which any impure
+  statement may run, could assign the exported binding. It needs no ordering
+  when the binding is a namespace import or its exporting chunk declares it
+  once and never assigns it, and this chunk is off an import cycle (the
+  exporter has finished evaluating). A premised call that reads the
+  imported object keeps its ordering.
+- **Program-wide unchangeable literals.** A literal of this chunk that the
+  whole program only reads named members of (the settled-import conditions,
+  seen from the exporting side) counts as unchangeable although exported.
+  No cycle verdict is needed: no chunk can change it at any time.
 - **Aliases of a lazy module's member.** `const alias = ns.member` (or
   `ns.default.member`), declared once and never assigned, in this chunk or
   exported by another, is an allocator when the member is: the module has
@@ -498,8 +513,8 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 43 two-chunk programs run under Node in both
-orders (21 admitted with Node agreeing, 22 refused with Node showing the
+`derive_fixtures.txt` holds 50 two-chunk programs run under Node in both
+orders (24 admitted with Node agreeing, 26 refused with Node showing the
 divergence); seven of them exercise the census across chunks, not derivation. `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition
@@ -604,6 +619,10 @@ Two more upgrades, each for one statement shape:
   is confined to `E`: it stays ordered against any statement that reads `E`
   when it runs, any impure statement that reaches `E`, and another such
   statement on the same binding.
+  The function may be an arrow, with a block or a sequence body ending in
+  the parameter. `var E = (e => (…, e))(E || {})` is a pure definition when
+  `E` is a `var` declared once and assigned nowhere, and the call returns
+  its parameter.
 - `primitive-calls`: `f(args)` where `f` only ever holds one arrow or
   function expression with plain parameters whose body returns an expression
   of operators and templates over its parameters, literals and
@@ -637,8 +656,8 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 63 programs run under Node in both orders (19
-admitted with Node agreeing, 44 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 68 programs run under Node in both orders (21
+admitted with Node agreeing, 47 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks, a guarded polyfill
@@ -656,6 +675,7 @@ modules in a pair (largest group):
 | all eight upgrades                    |     341 / 4 (4) | 464 / 29 (25) |
 | all eight + derivation                |     128 / 4 (4) | 422 / 27 (23) |
 | all eight + derivation + 2/3 premises |     106 / 3 (3) | 372 / 27 (23) |
+| all ten + derivation, latest rules    |      85 / 3 (3) | 404 / 23 (23) |
 
 `main`'s drop from 166 modules to 4 is one statement: an object literal that
 reads two imports. As an impure statement it conflicted with every definition
