@@ -23,19 +23,6 @@ from util.yaml_file_settings import YamlFileSettings
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
 
-class GitHubVisibilitySettings(BaseModel):
-    """Go runtime settings for its unauthenticated GitHub repository visibility lookup."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    api_base_url: str = "https://api.github.com"
-    cache_ttl_seconds: float = Field(
-        default=86400.0,
-        ge=0,
-        description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
-    )
-
-
 class ServicePeer(BaseModel):
     """A gRPC service this one calls as its workload."""
 
@@ -87,7 +74,6 @@ class Settings(YamlFileSettings):
         allow_inf_nan=False,
         description="Maximum duration for orchestration_v1 Session operations.",
     )
-    github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_oidc: OperatorOidcSettings | None = None
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
