@@ -54,9 +54,9 @@ The sections below hold details, not competing priority queues.
    gate-before-write, atomic writes and dry-run reporting.
 3. **Public browser smoke.** The Excalidraw corpus, its accepted spec and its
    browser smoke landed (<excalidraw/README.md>); the smoke loads swapped
-   packages through an import map. Remaining per
-   <plans/excalidraw_live_smoke.md>: lazy-chunk coverage and the public
-   canonical-spec check.
+   packages through an import map. The public canonical-spec check is
+   `excalidraw:canonical_summary` (<plans/convergence_landing.md>). Remaining
+   per <plans/excalidraw_live_smoke.md>: lazy-chunk coverage.
    Node probes already run; browser loading is the missing contract, not a
    missing vendor schema.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
