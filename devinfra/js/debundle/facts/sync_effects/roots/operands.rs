@@ -10,9 +10,11 @@ use super::super::interpreter::{
 use super::super::local_operations::LocalBody;
 use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
+use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership};
 use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
+use crate::facts::abstract_domain::builtins::IterationResult;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKind};
@@ -307,7 +309,7 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
-    let root_array_iteration = root_array_iteration(executor, calls);
+    let root_array_iteration = root_array_iteration(executor, calls, &top_env, &top_captures);
     let root_construction = index
         .ordered_initializers
         .get(&owner)
@@ -427,12 +429,20 @@ pub(super) fn prepare<'source>(
 }
 
 /// The root's one invocation is an `Array.prototype` iteration row the
-/// kernel executes (`native/array_iteration.rs`): the original method on a
-/// dense literal array of primitives in the current prefix, with a local
-/// callback that has no live captures. Nothing runs between this check and the method's
-/// GetValue, so the kernel selects the same row; the row still rechecks the
-/// receiver after the arguments and after every callback.
-fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool {
+/// kernel can finish (`native/array_iteration.rs`), decided before it runs:
+/// the original method on a dense literal array of the current prefix, and a
+/// local callback with no live captures whose ordered plan invokes nothing,
+/// stores nothing outside its own bindings and reads no imported binding.
+/// Its elements are primitive, or records whose fields the callback only
+/// reads, each a settled own data slot holding primitives. A row that
+/// refuses after some callbacks ran would summarize with global reach, worse
+/// than the flat lane (`plans/kernel_design.md` § Root admission).
+fn root_array_iteration(
+    executor: &mut Executor<'_, '_>,
+    calls: &[Call],
+    top_env: &Context,
+    top_captures: &Context,
+) -> bool {
     let invocations: Vec<_> = calls
         .iter()
         .filter(|call| {
@@ -459,7 +469,8 @@ fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool
     let Some(proof) = index.array_iterations.get(&CallSite::from(call.span)) else {
         return false;
     };
-    if proof.row.member != property || !supported_row(proof.row.result, call.args.len()) {
+    let row = proof.row;
+    if row.member != property || !supported_row(row.result, call.args.len()) {
         return false;
     }
     let callback = match call.args.first() {
@@ -478,6 +489,46 @@ fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool
     {
         return false;
     }
+    let Some(key) = executor.local_call_target(&callback).map(|(key, _)| key) else {
+        return false;
+    };
+    // Borrowed from the source index, not the executor, so the checks below
+    // can evaluate against the prefix.
+    let Some(callable) = index.callables.get(&key) else {
+        return false;
+    };
+    let Some(plan) = callable.body_facts.ordered_plan() else {
+        return false;
+    };
+    // No invocation, no store outside the callback's own bindings and no
+    // read of an imported binding: a field the callback reads can then only
+    // change through the row's own snapshot recheck, and the callback reads
+    // no other chunk's mutable state.
+    if plan.invokes()
+        || plan.stores_outside()
+        || plan
+            .free_reads()
+            .iter()
+            .any(|binding| index.imported_bindings.contains(binding))
+    {
+        return false;
+    }
+    let accumulated = row.result == IterationResult::Accumulated;
+    // The accumulator stays primitive only from a primitive initial value
+    // through a callback that creates no object.
+    if accumulated
+        && (plan.allocates()
+            || !call.args.get(1).is_some_and(|initial| {
+                let values = executor.evaluate(initial, top_env, top_captures);
+                !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
+            }))
+    {
+        return false;
+    }
+    let element = plan
+        .parameters
+        .get(usize::from(accumulated))
+        .map(|parameter| plan.parameter_field_reads(&parameter.binding));
     let Some(receivers) = executor
         .state
         .world
@@ -493,12 +544,38 @@ fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool
     else {
         return false;
     };
-    // A refused row summarizes the remainder with global reach. Admit only
-    // receivers whose elements are primitive, so a callback reaches no
-    // element's stored capabilities; object elements keep the flat lane.
-    array_transfer::iteration_snapshot(executor, &selection).is_ok_and(|(slots, _)| {
-        slots
-            .iter()
-            .all(|slot| !slot.is_empty() && slot.iter().all(AbstractValue::is_primitive))
-    })
+    let Ok((slots, _)) = array_transfer::iteration_snapshot(executor, &selection) else {
+        return false;
+    };
+    let primitive =
+        |slot: &Values| !slot.is_empty() && slot.iter().all(AbstractValue::is_primitive);
+    match element {
+        // The callback never names the element.
+        None => true,
+        // The element flows into other operations: only a primitive is
+        // certain not to reach code the kernel cannot finish.
+        Some(None) => slots.iter().all(primitive),
+        Some(Some(fields)) if fields.is_empty() => true,
+        Some(Some(fields)) => slots.iter().all(|slot| {
+            !slot.is_empty()
+                && slot.iter().all(|value| {
+                    let AbstractValue::Value(Value::Alloc(Kind::Object, record)) = value else {
+                        return false;
+                    };
+                    let receivers = Values::from([value.clone()]);
+                    fields.iter().all(|field| {
+                        own_data_transfer::resolve_slot(
+                            &*executor,
+                            &receivers,
+                            field,
+                            OwnDataOwnership::CurrentPrefix,
+                        )
+                        .is_ok()
+                            && executor
+                                .property_values(*record, field)
+                                .is_some_and(primitive)
+                    })
+                })
+        }),
+    }
 }

@@ -349,8 +349,13 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         // separately by the ordered operation that produced it.
         EffectCoverageFragment::no_effects()
     }
-    fn module_prefix_receiver(&self, binding: &Id, _receivers: &Values) -> bool {
+    fn prefix_tracked_receiver(&self, binding: &Id, receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
+            || (!receivers.is_empty()
+                && receivers.iter().all(|value| {
+                    matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, record))
+                        if self.executor.state.iteration_element_records.contains(record))
+                }))
     }
     fn read_binding(
         &mut self,

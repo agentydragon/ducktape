@@ -1571,6 +1571,89 @@ impl LocalBody {
         }
     }
 
+    /// Whether some operation stores outside this activation: a field store,
+    /// a `this` field definition, or an assignment or update to a binding
+    /// this body does not declare.
+    pub(super) fn stores_outside(&self) -> bool {
+        let mut stores = !self.captured_writes().is_empty();
+        for expression in Self::expressions(&self.operations) {
+            expression.each(&mut |node| {
+                stores |= match node {
+                    LocalExpression::AssignField { .. }
+                    | LocalExpression::DefineThisField { .. }
+                    | LocalExpression::AssignThisField { .. } => true,
+                    LocalExpression::Assign { binding, .. }
+                    | LocalExpression::UpdateBinding { binding, .. } => {
+                        !self.bindings.contains_key(binding)
+                    }
+                    _ => false,
+                };
+            });
+        }
+        stores
+    }
+
+    /// Whether some operation creates an object: a record, array or closure
+    /// literal.
+    pub(super) fn allocates(&self) -> bool {
+        let mut allocates = false;
+        for expression in Self::expressions(&self.operations) {
+            expression.each(&mut |node| {
+                allocates |= matches!(
+                    node,
+                    LocalExpression::Record { .. }
+                        | LocalExpression::Array { .. }
+                        | LocalExpression::Closure(_)
+                );
+            });
+        }
+        allocates
+    }
+
+    /// How this body uses `parameter`: only as the receiver of the returned
+    /// own-property reads, or `None` when any other operation, a default or
+    /// a nested closure could use it.
+    pub(super) fn parameter_field_reads(&self, parameter: &Id) -> Option<BTreeSet<String>> {
+        let mut fields = BTreeSet::new();
+        let mut other = false;
+        let defaults = self
+            .parameters
+            .iter()
+            .filter_map(|parameter| parameter.default.as_ref());
+        for expression in Self::expressions(&self.operations).chain(defaults) {
+            expression.each(&mut |node| match node {
+                LocalExpression::ReadField {
+                    receiver, property, ..
+                } if receiver == parameter => {
+                    fields.insert(property.clone());
+                }
+                LocalExpression::Value(value) => {
+                    let mut reads = BTreeSet::new();
+                    value.bindings(&mut reads);
+                    other |= reads.contains(parameter);
+                }
+                LocalExpression::Assign { binding, .. }
+                | LocalExpression::UpdateBinding { binding, .. }
+                | LocalExpression::Construct {
+                    callee: binding, ..
+                } => other |= binding == parameter,
+                LocalExpression::AssignField { receiver, .. } => other |= receiver == parameter,
+                LocalExpression::Call { callee, .. } => {
+                    other |= match callee {
+                        LocalCallee::Binding(binding)
+                        | LocalCallee::Member {
+                            receiver: binding, ..
+                        } => binding == parameter,
+                        LocalCallee::Creation(_) => true,
+                    };
+                }
+                LocalExpression::Closure(_) => other = true,
+                _ => {}
+            });
+        }
+        (!other).then_some(fields)
+    }
+
     fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {
         operations.iter().filter_map(|operation| match operation {
             LocalOperation::Initialize(_, value) | LocalOperation::Return(value) => value.as_ref(),

@@ -294,3 +294,92 @@ fn a_row_inside_a_legacy_row_callback_stays_legacy() {
     assert_preserved_entry_output(&fixture, "7 2,4\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "nested legacy row");
 }
+
+/// A root over records whose fields the callback only reads is admitted: the
+/// row checks each record settled and source-shaped before its first callback,
+/// and the callback reads them at the current prefix, so the root's binding
+/// effects get the row's receipt. The relocation itself stays pending: an
+/// own-data read leaves the owner's initialization domains unknown
+/// (`EffectCoverageFragment::lexical_operation`).
+#[test]
+fn record_element_roots_get_receipts_pending_initialization_coverage() {
+    for (initializer, member, expected) in [
+        (
+            "entries.reduce((total, entry) => total + entry.size, 0)",
+            "reduce",
+            "7 3\n",
+        ),
+        ("entries.map((entry) => entry.size * 2)", "map", "7 2,4\n"),
+        (
+            "entries.filter((entry) => entry.size > 1)",
+            "filter",
+            "7 [object Object]\n",
+        ),
+        // A conditional forks the callback; the active records hold on both
+        // paths and are restored after the joined callback returns.
+        (
+            "entries.map((entry) => (entry.size > 1 ? entry.size : 0))",
+            "map",
+            "7 0,2\n",
+        ),
+    ] {
+        let source = format!(
+            "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst independent = 7;\nconst result = {initializer};\nlater = 42;\nconsole.log(independent, [result].flat().join(','));\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "run",
+                &[Member::new("entries"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_iteration_receipt(&fixture, member, initializer);
+        assert_effect_verdict_pending(&fixture, "incomplete", initializer);
+    }
+}
+
+/// Opposing control: an element getter is not an own data slot, so the root
+/// is not admitted and the getter's write stays ordered before its reader.
+#[test]
+fn an_element_getter_field_keeps_its_root_on_the_flat_lane() {
+    assert_rejected_split_diverges(
+        "const log = [];\nconst entries = [{ get size() { log.push('get'); return 1; } }];\nconst observed = log.length;\nvar result = entries.reduce((total, entry) => total + entry.size, 0);\nconsole.log(observed, log.length);\n",
+        &["log", "entries", "result"],
+        "0 1\n",
+        "1 1\n",
+    );
+}
+
+/// Valid splits whose roots are not admitted, so they keep the flat lane.
+/// A store through another name (`item.size = 2` while reading
+/// `entry.size`) or a field holding a closure could reach state the row did
+/// not check, and admission is decided before any callback runs.
+#[test]
+fn record_roots_with_stores_or_object_fields_keep_the_flat_lane() {
+    for (declarations, members, initializer, expected) in [
+        (
+            "const item = { size: 1 };\nconst entries = [item];",
+            &["item", "entries", "result"][..],
+            "entries.map((entry) => { item.size = 2; return entry.size; })",
+            "7 2\n",
+        ),
+        (
+            "let later = 0;\nconst entries = [{ size: 1, executor: () => later }];",
+            &["later", "entries", "result"][..],
+            "entries.map((entry) => entry.executor)",
+            "7 0\n",
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, typeof result[0] === 'function' ? result[0]() : result.join(','));\n"
+        );
+        let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("run", &members)],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_effect_verdict_pending(&fixture, "incomplete", initializer);
+    }
+}
