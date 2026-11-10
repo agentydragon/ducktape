@@ -246,7 +246,7 @@ func leaf(t *testing.T, ca *transporttesting.CA, name string) *x509.Certificate 
 
 func newResolver(t *testing.T) *resolver.Resolver {
 	t.Helper()
-	resolves, err := resolver.New(objects, []string{testNamespace})
+	resolves, err := resolver.New(objects, []string{testNamespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

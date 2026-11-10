@@ -55,4 +55,6 @@ scoped variants the model-call span is the trace root and supplies the trace nam
 
 - **`otel-owned` meets #15038's acceptance** without the preset or a failing placeholder exporter.
 - **No variant carries props' `trace_metadata`,** including `langfuse_otel`.
-- **Not covered:** streaming requests and rejected requests.
+- **Streaming** (`STREAM=true ./probe.sh`) gives the same per-span results on `baseline` and
+  `otel-owned`.
+- **Not covered:** rejected requests.

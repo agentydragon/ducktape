@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/delegate.rs (CoreTurnHost::notify) injects a
@@ -101,7 +102,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 	for _, notification := range notifications {
 		operationID := fmt.Sprintf("%s:notification:%d", conversation.ID, notification.sequence)
 		if !record {
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "discarded",
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_DISCARDED,
 				map[string]any{"call_id": notification.callID, "cell_id": notification.cellID}); err != nil {
 				return false, err
 			}
@@ -112,7 +113,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 			return false, err
 		}
 		output := []protocol.ContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "recorded",
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_RECORDED,
 			map[string]any{"cell_id": notification.cellID, "call_id": notification.callID, "output": output}); err != nil {
 			return false, err
 		}

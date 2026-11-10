@@ -3,10 +3,12 @@
 package admin
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
@@ -14,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -116,10 +119,11 @@ func historyFailure(err error) error {
 func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthRequest) (*egressadminpb.GetHealthResponse, error) {
 	index := s.index.Status()
 	counters := s.historyHealth.Health()
-	failing := make(map[string]*egressadminpb.KindFailure, len(index.Failing))
+	failing := make([]*egressadminpb.KindFailure, 0, len(index.Failing))
 	for kind, failure := range index.Failing {
-		failing[string(kind)] = &egressadminpb.KindFailure{Error: failure.Error, Since: timestamppb.New(failure.Since)}
+		failing = append(failing, &egressadminpb.KindFailure{Kind: kindOf(kind), Error: failure.Error, Since: timestamppb.New(failure.Since)})
 	}
+	slices.SortFunc(failing, func(a, b *egressadminpb.KindFailure) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
 	return &egressadminpb.GetHealthResponse{
 		Ready: index.Available, Synced: index.Synced, Draining: index.Draining,
 		DecisionHistory: &egressadminpb.DecisionHistoryHealth{
@@ -289,7 +293,7 @@ func decisionsOf(records []decision.Record) []*egressadminpb.Decision {
 			}
 		}
 		if record.Reason != nil {
-			decisions[i].Reason = proto.String(string(*record.Reason))
+			decisions[i].Reason = reasonOf(*record.Reason).Enum()
 		}
 		if record.Rule != nil {
 			decisions[i].Rule = proto.Int32(int32(*record.Rule))
@@ -307,4 +311,52 @@ func outcomeOf(outcome decision.Outcome) egressadminpb.Decision_Outcome {
 	}
 	// A replica of a newer release may have recorded an outcome this one does not name.
 	return egressadminpb.Decision_OUTCOME_UNSPECIFIED
+}
+
+func reasonOf(reason decision.Reason) egressadminpb.Decision_Reason {
+	switch reason {
+	case decision.TokenMissing:
+		return egressadminpb.Decision_REASON_TOKEN_MISSING
+	case decision.TokenRejected:
+		return egressadminpb.Decision_REASON_TOKEN_REJECTED
+	case decision.PodMismatch:
+		return egressadminpb.Decision_REASON_POD_MISMATCH
+	case decision.NoBinding:
+		return egressadminpb.Decision_REASON_NO_BINDING
+	case decision.NoRule:
+		return egressadminpb.Decision_REASON_NO_RULE
+	case decision.InvalidBody:
+		return egressadminpb.Decision_REASON_INVALID_BODY
+	case decision.PlaceholderUnresolved:
+		return egressadminpb.Decision_REASON_PLACEHOLDER_UNRESOLVED
+	case decision.CredentialUnavailable:
+		return egressadminpb.Decision_REASON_CREDENTIAL_UNAVAILABLE
+	case decision.ImpersonationForbidden:
+		return egressadminpb.Decision_REASON_IMPERSONATION_FORBIDDEN
+	case decision.AddressForbidden:
+		return egressadminpb.Decision_REASON_ADDRESS_FORBIDDEN
+	case decision.HostUnresolved:
+		return egressadminpb.Decision_REASON_HOST_UNRESOLVED
+	case decision.Unavailable:
+		return egressadminpb.Decision_REASON_UNAVAILABLE
+	}
+	// A replica of a newer release may have recorded a reason this one does not name.
+	return egressadminpb.Decision_REASON_UNKNOWN
+}
+
+func kindOf(kind watchhealth.Kind) egressadminpb.KindFailure_Kind {
+	switch kind {
+	case reader.PolicySets:
+		return egressadminpb.KindFailure_KIND_POLICY_SETS
+	case reader.PolicyBindings:
+		return egressadminpb.KindFailure_KIND_POLICY_BINDINGS
+	case reader.Identities:
+		return egressadminpb.KindFailure_KIND_IDENTITIES
+	case policy.Credentials:
+		return egressadminpb.KindFailure_KIND_EGRESS_CREDENTIALS
+	case policy.Secrets:
+		return egressadminpb.KindFailure_KIND_SECRETS
+	}
+	// The informers' kinds are named by request path; its error says which request failed.
+	return egressadminpb.KindFailure_KIND_UNKNOWN
 }

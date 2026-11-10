@@ -1,13 +1,17 @@
-# Static KVM worker
+# KVM workers
 
-Two always-running KubeVirt VMs each contain a BuildBuddy executor for the manual
-`kvm-vm` pool; the pool schedules across them, one action per VM. Required pod anti-affinity keeps the
-two on different nodes without naming a node, so one node failure or its disk contention
-reaches only one worker. Each VM runs the configuration below. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
-vCPUs, 16 GiB RAM and an 80 GiB block volume from `piraeus-ssd-local` for Docker layers, action workspaces and cache.
-The claim is one unreplicated copy on the node's SSD pool: the contents rebuild, the volume survives
-a VM restart, and it keeps the VM on its node. Pool members instead get a disk image on a filesystem volume of the same class, because CDI's importer cannot open a raw block device. The class retains deleted volumes, so remove a
-leftover volume by hand when deleting a worker.
+A KubeVirt `VirtualMachinePool` of two VMs, each containing a BuildBuddy executor for the manual
+`kvm-vm` pool; BuildBuddy schedules across them, one action per VM. Required pod anti-affinity keeps
+the members on different nodes without naming a node, so one node failure or its disk contention
+reaches only one worker. Each VM boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
+vCPUs, 16 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cache.
+The disk is a blank image on a filesystem volume from `piraeus-ssd-local`, created per VM by a CDI
+`DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
+raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
+copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node, and a template change
+replaces the VM and its volume. The class retains deleted volumes, so remove a leftover volume by hand when
+a worker is deleted. The pool replaces one VM at a time, so a template change never leaves the pool
+without an executor.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.
@@ -35,7 +39,7 @@ other seccomp policy changes are retained. The profile applies to every containe
 dedicated guest. `pivot_root` is additionally allowed only with `CAP_SYS_ADMIN`, so
 nested runc can use its normal root switch instead of the no-pivot fallback.
 
-The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
+The Kustomization is enabled, so Flux deploys the pool when this configuration lands.
 First boot configures the dedicated guest for nested KVM and reboots once before the
 executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
 `svm` or `vmx`; its guest loads the corresponding KVM driver. The worker may run on any node,
@@ -52,8 +56,7 @@ bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
 bbr test //agentplane/system_tests/suites:test_vm_kvm --nocache_test_results
 ```
 
-The outer policy denies ingress and admits DNS, BuildBuddy and its registry, Ubuntu package
+The outer policy admits only node-local Alloy to the executor's metrics port, and egress to DNS, BuildBuddy and its registry, Ubuntu package
 repositories over TLS, and Zot. Use
-`virtctl -n buildbuddy-executor console buildbuddy-kvm-worker` for diagnostics. Updating the
-VM template requires `virtctl -n buildbuddy-executor restart buildbuddy-kvm-worker`; this
-recreates its root disk; the work disk and its cache persist. Rotate the key too if the guest was compromised.
+`virtctl -n buildbuddy-executor console buildbuddy-kvm-worker-0` for diagnostics. Rotate the key too if
+the guest was compromised.

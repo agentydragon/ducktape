@@ -13,6 +13,7 @@ use super::super::adapters::application::LocalExecutionContext;
 use super::super::allocation_transfer::AllocationValue;
 use super::super::array_transfer::{ArrayIterationSelection, iteration_snapshot};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
+use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
 use super::super::kernel::frame::{
     LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue,
@@ -30,10 +31,63 @@ use analysis_model::PrimKinds;
 use swc_common::Span;
 
 /// The callback a row may invoke: one local callable with no live captures.
-struct AdmittedCallback {
+pub(in crate::facts::sync_effects) struct AdmittedCallback {
     key: u32,
     owner: source_identity::SourceUnitOrdinal,
     captured: Option<CapturedContext>,
+}
+
+/// The callback a row may invoke: one local, synchronous, non-generator
+/// callable with simple parameters and no live captures.
+pub(in crate::facts::sync_effects) fn admitted_callback(
+    index: &ExecutionIndex,
+    values: &Values,
+) -> Result<AdmittedCallback, OrderedCallAdmissionRefusal> {
+    let (key, captured) = match values.iter().collect::<Vec<_>>().as_slice() {
+        [AbstractValue::Value(Value::Alloc(Kind::Function, key))] => (*key, None),
+        [AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)] => {
+            // Call-effect coverage for a callee with live captures is
+            // Wave 3 row 12; until then the row refuses it.
+            if !captured.values.is_empty() {
+                return Err(OrderedCallAdmissionRefusal::ArrayIterationCapturingCallback);
+            }
+            (*key, Some(captured.clone()))
+        }
+        _ => return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported),
+    };
+    let callable = index
+        .callables
+        .get(&key)
+        .ok_or(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported)?;
+    if callable.generator
+        || callable.opaque
+        || callable.implicit_capture
+        || index.async_callables.contains(&key)
+        || callable.reads.iter().any(|id| id.0.as_ref() == "arguments")
+        || callable.params.iter().any(|param| param.binding.is_none())
+    {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported);
+    }
+    Ok(AdmittedCallback {
+        key,
+        owner: callable.owner,
+        captured,
+    })
+}
+
+/// The iteration rows `iterate_array` executes, by result shape and
+/// argument count. Other rows refuse with a typed reason.
+pub(in crate::facts::sync_effects) fn supported_row(
+    result: IterationResult,
+    arguments: usize,
+) -> bool {
+    matches!(
+        (result, arguments),
+        (
+            IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered,
+            1
+        ) | (IterationResult::Accumulated, 2)
+    )
 }
 
 impl LocalExecutionContext<'_, '_, '_> {
@@ -66,13 +120,7 @@ impl LocalExecutionContext<'_, '_, '_> {
             .array_iterations
             .get(&CallSite::from(span))
             .filter(|proof| proof.row.member == row.member);
-        let supported = matches!(
-            (row.result, arguments.len()),
-            (
-                IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered,
-                1
-            ) | (IterationResult::Accumulated, 2)
-        );
+        let supported = supported_row(row.result, arguments.len());
         let (Some(proof), true) = (proof, supported) else {
             return self.refuse_iteration(
                 frame,
@@ -82,7 +130,7 @@ impl LocalExecutionContext<'_, '_, '_> {
             );
         };
         let result_allocation = proof.result;
-        let callback = match self.admitted_callback(&arguments[0].values) {
+        let callback = match admitted_callback(self.executor.inputs.index, &arguments[0].values) {
             Ok(callback) => callback,
             Err(refusal) => return self.refuse_iteration(frame, reached, refusal, span),
         };
@@ -266,43 +314,6 @@ impl LocalExecutionContext<'_, '_, '_> {
             allocation: AllocationValue::opaque(values),
             effects,
             selection: None,
-        })
-    }
-
-    fn admitted_callback(
-        &self,
-        values: &Values,
-    ) -> Result<AdmittedCallback, OrderedCallAdmissionRefusal> {
-        let (key, captured) = match values.iter().collect::<Vec<_>>().as_slice() {
-            [AbstractValue::Value(Value::Alloc(Kind::Function, key))] => (*key, None),
-            [AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)] => {
-                // Call-effect coverage for a callee with live captures is
-                // Wave 3 row 12; until then the row refuses it.
-                if !captured.values.is_empty() {
-                    return Err(OrderedCallAdmissionRefusal::ArrayIterationCapturingCallback);
-                }
-                (*key, Some(captured.clone()))
-            }
-            _ => return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported),
-        };
-        let index = self.executor.inputs.index;
-        let callable = index
-            .callables
-            .get(&key)
-            .ok_or(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported)?;
-        if callable.generator
-            || callable.opaque
-            || callable.implicit_capture
-            || index.async_callables.contains(&key)
-            || callable.reads.iter().any(|id| id.0.as_ref() == "arguments")
-            || callable.params.iter().any(|param| param.binding.is_none())
-        {
-            return Err(OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported);
-        }
-        Ok(AdmittedCallback {
-            key,
-            owner: callable.owner,
-            captured,
         })
     }
 

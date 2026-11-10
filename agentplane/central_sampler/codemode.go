@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 const maxCodeModeFrame = 64 * 1024 * 1024
@@ -42,7 +43,6 @@ type CodeMode struct {
 
 type codeJournalEvent struct {
 	operationID string
-	phase       string
 	object      map[string]any
 	done        chan error
 }
@@ -100,7 +100,7 @@ func (r *CodeMode) sendJournaled(ctx context.Context, requestID int64, value, jo
 	}
 	operationID := r.operationID(requestID)
 	if r.store != nil {
-		if err := r.store.ProtocolEvent(ctx, r.owner, operationID, "javascript", "send", object); err != nil {
+		if err := r.store.ProtocolEvent(ctx, r.owner, operationID, eventpb.ExecutionProgress_KIND_JAVASCRIPT, eventpb.ExecutionProgress_PHASE_SEND, object); err != nil {
 			return err
 		}
 	}
@@ -114,13 +114,13 @@ func (r *CodeMode) operationID(id int64) string {
 	return fmt.Sprintf("%s:%d", r.sessionID, id)
 }
 
-func (r *CodeMode) enqueueProtocol(raw []byte, id int64, phase string) (<-chan error, bool) {
+func (r *CodeMode) enqueueProtocol(raw []byte, id int64) (<-chan error, bool) {
 	var object map[string]any
 	if err := decodeProtocolObject(raw, &object); err != nil {
 		return nil, false
 	}
 	done := make(chan error, 1)
-	event := codeJournalEvent{operationID: r.operationID(id), phase: phase, object: object, done: done}
+	event := codeJournalEvent{operationID: r.operationID(id), object: object, done: done}
 	select {
 	case r.journal <- event:
 		return done, true
@@ -137,7 +137,7 @@ func (r *CodeMode) journalLoop() {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
-		err := r.store.ProtocolEvent(ctx, r.owner, event.operationID, "javascript", event.phase, event.object)
+		err := r.store.ProtocolEvent(ctx, r.owner, event.operationID, eventpb.ExecutionProgress_KIND_JAVASCRIPT, eventpb.ExecutionProgress_PHASE_RECEIVE, event.object)
 		cancel()
 		event.done <- err
 		if err != nil {

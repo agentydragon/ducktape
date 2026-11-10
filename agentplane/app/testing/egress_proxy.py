@@ -52,7 +52,13 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
 
 
 def decision(
-    at: str, method: str, host: str, outcome: str, *, reason: str | None = None, address: str | None = None
+    at: str,
+    method: str,
+    host: str,
+    outcome: str,
+    *,
+    reason: pb.Decision.Reason | None = None,
+    address: str | None = None,
 ) -> pb.Decision:
     """One admission record as the proxy returns it over gRPC."""
     timestamp = Timestamp()

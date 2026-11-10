@@ -1,12 +1,23 @@
 import { toJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
-import { Decision_Outcome, type Decision } from "../../../egress/egress_admin_pb";
+import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/egress_admin_pb";
 
 /** An unrecognized outcome is neither an admission nor a refusal. */
 export function decisionOutcome(decision: Decision): "allow" | "deny" | "unknown" {
   if (decision.outcome === Decision_Outcome.ALLOW) return "allow";
   if (decision.outcome === Decision_Outcome.DENY) return "deny";
   return "unknown";
+}
+
+/** A refusal as the proxy's `x-agentplane-egress` header spells it; "unknown" for one the proxy or this
+ * bundle does not name. */
+export function decisionReason(decision: Decision): string | null {
+  if (decision.reason === undefined) return null;
+  if (decision.reason === Decision_Reason.UNKNOWN) return "unknown";
+  const name: string | undefined = Decision_Reason[decision.reason];
+  // UNSPECIFIED is never sent; a number this bundle lacks comes from a newer proxy.
+  if (name === undefined || decision.reason === Decision_Reason.UNSPECIFIED) return "unknown";
+  return name.toLowerCase().replaceAll("_", "-");
 }
 
 export function decisionAt(decision: Decision): string {
@@ -31,7 +42,7 @@ export interface DecisionGroup {
 }
 
 function why(decision: Decision): string | null {
-  return (decisionOutcome(decision) === "allow" ? decision.policy : decision.reason) ?? null;
+  return decisionOutcome(decision) === "allow" ? (decision.policy ?? null) : decisionReason(decision);
 }
 
 /** Groups a log served oldest first. Refusals come first, so one cannot scroll away under allowed

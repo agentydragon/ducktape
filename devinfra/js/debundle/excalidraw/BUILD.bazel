@@ -181,7 +181,33 @@ rust_test(
     ],
 )
 
-# Browser smoke over the accepted tree (plans/excalidraw_live_smoke.md).
+# Per-chunk verdicts and emitted-file hashes; an engine change diffs this file
+# between its base and its head.
+run_binary(
+    name = "canonical_summary",
+    srcs = [":debundle"],
+    outs = ["canonical_summary.json"],
+    args = [
+        "--out-dir",
+        "$(execpath :debundle)",
+        "--summary",
+        "$(execpath canonical_summary.json)",
+    ],
+    tool = ":summarize_tree_bin",
+)
+
+py_binary(
+    name = "summarize_tree_bin",
+    main_module = "devinfra.js.debundle.excalidraw.summarize_tree",
+    deps = [":summarize_tree"],
+)
+
+py_library(
+    name = "summarize_tree",
+    srcs = ["summarize_tree.py"],
+)
+
+# Browser smoke over the accepted tree.
 py_test(
     name = "test_smoke",
     srcs = ["test_smoke.py"],

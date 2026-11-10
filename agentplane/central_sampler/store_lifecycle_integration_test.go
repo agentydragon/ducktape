@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
@@ -21,7 +22,8 @@ func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
 	if _, err := store.DB().ExecContext(t.Context(), `DROP TABLE sampler_conversation_item`); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProtocolEvent(t.Context(), owner, "operation", "executor", "received", map[string]any{"frame": "ok"}); err != nil {
+	if err := store.ProtocolEvent(t.Context(), owner, "operation", eventpb.ExecutionProgress_KIND_EXECUTOR,
+		eventpb.ExecutionProgress_PHASE_NOTIFICATION, map[string]any{"frame": "ok"}); err != nil {
 		t.Fatalf("event write depended on loading the retained transcript: %v", err)
 	}
 }

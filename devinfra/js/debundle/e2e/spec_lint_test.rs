@@ -185,3 +185,94 @@ fn lint_reports_nothing_for_consumed_annotations() {
     );
     assert_eq!(lint(opts), Vec::new());
 }
+
+/// A pass that fails after linting (here the gate rejects a `sequenced`-only
+/// cycle) still reports its findings, and names its failure.
+#[test]
+fn lint_reports_the_pass_failure_beside_its_findings() {
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "probes/outer",
+                    &[
+                        Member::new("trace"),
+                        Member::new("alpha"),
+                        Member::new("gamma"),
+                    ],
+                    &[RECORD_INSTALL],
+                ),
+                logical_module("probes/inner", &[Member::new("beta")]),
+                logical_module("helpers/math", &[Member::new("seven")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_admission_overrides(&["a1_eval"]),
+    );
+    let report = spec_lint_json(&fixture.spec_path, &[]);
+    assert!(report["pass_error"].is_string(), "{report:#}");
+    let findings: Vec<LintFinding> = serde_json::from_value(report["findings"].clone()).unwrap();
+    assert!(
+        findings.iter().any(|finding| matches!(
+            finding.annotation,
+            LintedAnnotation::AdmissionOverride { .. }
+        )),
+        "{report:#}"
+    );
+}
+
+/// A `purity: pure` hint whose name no statement of its chunk reads is never
+/// consulted (the classifier reads a hint only at a direct call of the name):
+/// it is `inferable` without a probe, and the run emits the same tree without
+/// that hint. `seven` is called, so its hint stays a classifier lead. Any
+/// read counts, an export specifier included, so `unused` is not exported.
+#[test]
+fn unread_purity_hint_is_inferable_from_provenance() {
+    const UNREAD: &str = "function seven() { return 7; }\nfunction unused() { return 8; }\nconsole.log(seven());\nexport { seven };\n";
+    // `seven` keeps its hint; only `unused`'s varies.
+    let opts = |unused_hinted: bool| {
+        let unused = Member::new("unused");
+        FixtureOpts::new(
+            UNREAD,
+            vec![logical_module(
+                "helpers/math",
+                &[
+                    Member::new("seven").with_purity(MemberPurity::Pure),
+                    if unused_hinted {
+                        unused.with_purity(MemberPurity::Pure)
+                    } else {
+                        unused
+                    },
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+    };
+    let findings = lint(opts(true));
+    let verdict = |name: &str| {
+        findings
+            .iter()
+            .find_map(|finding| match &finding.annotation {
+                LintedAnnotation::PurityHint {
+                    owner: PurityHintOwner::LogicalMember(member),
+                } if member.name == name => Some(finding.verdict.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no finding for {name}: {findings:#?}"))
+    };
+    assert_eq!(
+        verdict("unused"),
+        InferenceVerdict::Inferable {
+            reason: InferableReason::NeverConsumed
+        }
+    );
+    assert!(
+        matches!(verdict("seven"), InferenceVerdict::Inconclusive { .. }),
+        "{findings:#?}"
+    );
+    assert_same_tree(
+        &run_fixture(opts(false)).out_root,
+        &run_fixture(opts(true)).out_root,
+    );
+}
