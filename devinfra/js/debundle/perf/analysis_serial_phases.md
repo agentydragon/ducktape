@@ -257,26 +257,61 @@ Not yet measured:
 
 Both need bundles rebuilt at intermediate sizes.
 
+## Landed: prefix values keyed by binding ordinal
+
+`World.module.prefix_values` was an `imbl` map keyed by `(Atom,
+SyntaxContext)`, so each lookup ordered binding names as strings.
+`PrefixValues` now owns the same map, keyed by each binding's ordinal in a
+per-run `TopBindings` table. Ordinals follow `Id` order, so iteration and joins
+are unchanged, and a lookup hashes the `Id` once and then compares integers.
+
+Base is `devel` at `d2f5b0f4`. Runs are single, on the same 4-core VM.
+
+| Shape   | Before                    | After                     |
+| ------- | ------------------------- | ------------------------- |
+| Split   | 34.5 s wall, 50.2 s CPU   | 24.3 s wall, 37.0 s CPU   |
+| Inlined | 347.5 s wall, 375.2 s CPU | 299.1 s wall, 318.7 s CPU |
+
+Peak RSS is unchanged (643 and 593–600 MiB). The `.analysis` bodies are
+byte-identical on both shapes.
+
+On the inlined editor chunk, against the profile above (export-surface memo
+engine), total samples went from 80,276 to 62,428:
+
+| Measure                                        | Before       | After |
+| ---------------------------------------------- | ------------ | ----- |
+| `Atom::cmp` self                               | 7.6%         | 2.5%  |
+| `unsettle` inclusive                           | 26.5%        | 18.3% |
+| `PrefixValues::get` inclusive                  | (name-keyed) | 9.1%  |
+| `invoke_possible_callbacks_transfer` inclusive | 59.4%        | 59.9% |
+| `OrdSet` construction inclusive                | 32.5%        | 33.9% |
+
+To rebuild the inlined shape, check out the corpus before roughjs was split:
+
+```sh
+git worktree add --detach <dir> 6114b352
+cd <dir> && bbr build //devinfra/js/debundle/excalidraw:{source,inputs}
+```
+
+Then project and analyze its `bb-out` tree as above, with no `--package-root`;
+its vendor marks are empty.
+
 ## Candidate optimizations, ranked
 
 Ranked from the inlined app-build editor chunk, the public analogue of the
 private single-chunk inputs:
 
-1. **Key `unsettle`'s prefix reads by binding ordinal.** The per-callable
-   `prefix_values` lookups by name cost about 13% inclusive, plus most of the
-   12% string-ordering self time. An id-keyed index or a precomputed callable →
-   prefix-value view removes the string comparisons.
-2. **Bound `unsettle`'s repeated reachability.** It re-walks the reachable heap
+1. **Bound `unsettle`'s repeated reachability.** It re-walks the reachable heap
    on every fallback. A monotonic "already unsettled" frontier, valid while the
    world is unchanged, is a candidate, with the same soundness bar as the
-   export-surface memo. 26.5% inclusive.
-3. **Avoid persistent-set construction for transient results.** 32.5%
-   inclusive across `bounded_invocation_fallback_transfer`, `callback_values`'
+   export-surface memo. 18.3% inclusive.
+2. **Avoid persistent-set construction for transient results.** 32.5%
+   inclusive (33.9% after ordinals) across `bounded_invocation_fallback_transfer`, `callback_values`'
    final build, `note_unknown_execution` and `insert_escaped_callback_values`.
 
 Earlier candidates, from the package build:
 
-4. **Start the largest chunk first.** Order the per-chunk `par_iter` inputs by
+3. **Start the largest chunk first.** Order the per-chunk `par_iter` inputs by
    descending source size. Results are collected into a `BTreeMap`, so output
    order is unchanged. It does nothing here, because the expensive chunk
    already starts first. On a corpus whose biggest chunk sorts last it saves up
@@ -287,11 +322,11 @@ Earlier candidates, from the package build:
      `--action_env=DUCKTAPE_DEBUNDLE_PROGRESS=1`; the action passes the default
      shell environment through, and Bazel prints the stderr of successful
      actions.
-5. **Parallelize `prepare_callable_capabilities` in the head.** It is 42% of a
+4. **Parallelize `prepare_callable_capabilities` in the head.** It is 42% of a
    5% head. A past parallel version cost peak RSS.
-6. **Parallelize the artifact write.** Per-chunk `snapshot` work can run under
+5. **Parallelize the artifact write.** Per-chunk `snapshot` work can run under
    Rayon, and zstd has multi-threaded compression. It is 3% here. Multi-threaded
    zstd must keep its output byte-stable for a fixed worker count.
 
 Single large chunks get no parallelism at all, because the per-chunk `par_iter`
-has one item. Item 4 does not help them.
+has one item. Item 3 does not help them.
