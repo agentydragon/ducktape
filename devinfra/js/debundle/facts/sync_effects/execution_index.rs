@@ -1348,6 +1348,11 @@ pub(super) struct Callable {
     /// declarator without an initializer outside a `for`-`in`/`of` head, and
     /// every `var` (hoisted). `local_assignments` never contributes that value.
     pub(super) undefined_before_assignment: BTreeSet<Id>,
+    /// Bindings a `for`-`in`/`of` head of this callable writes, and the
+    /// iterated values of its `for`-`of` loops. No `local_assignments` entry
+    /// records the elements a head binding takes.
+    pub(super) head_bindings: BTreeSet<Id>,
+    pub(super) iterated_values: Vec<ValueExpr>,
     hoisted_vars: BTreeSet<Id>,
     lexical_declarations: BTreeMap<Id, LocalBinding>,
     pub(super) self_binding: Option<Id>,
@@ -1370,6 +1375,64 @@ pub(super) struct Callable {
     pub(super) opaque: bool,
     pub(super) generator: bool,
     pub(super) may_fall_through: bool,
+}
+
+impl Callable {
+    /// The bindings this callable's own scope declares, parameters included.
+    pub(super) fn own_bindings(&self) -> BTreeSet<&Id> {
+        self.declared_locals
+            .iter()
+            .chain(&self.pattern_locals)
+            .chain(&self.hoisted_vars)
+            .chain(self.lexical_declarations.keys())
+            .chain(self.local_functions.keys())
+            .chain(&self.self_binding)
+            .chain(self.params.iter().flat_map(|parameter| &parameter.bindings))
+            .collect()
+    }
+
+    /// Bindings an enclosing scope declares that this callable assigns, or
+    /// writes through a loop head.
+    pub(super) fn captured_writes(&self) -> BTreeSet<&Id> {
+        let own = self.own_bindings();
+        self.rebinds
+            .iter()
+            .chain(&self.head_bindings)
+            .filter(|binding| !own.contains(binding))
+            .collect()
+    }
+
+    /// Bindings an enclosing scope declares that this callable reads.
+    pub(super) fn captured_reads(&self) -> BTreeSet<&Id> {
+        let own = self.own_bindings();
+        self.reads
+            .iter()
+            .filter(|binding| !own.contains(binding))
+            .collect()
+    }
+
+    /// Locals whose value an earlier assignment of this callable reads
+    /// although a later one assigns them: a loop, or a call between, can
+    /// carry the later value to the earlier read. Returns the readers'
+    /// targets and the locals they read.
+    pub(super) fn reads_before_assignment(&self) -> (BTreeSet<&Id>, BTreeSet<Id>) {
+        let mut readers = BTreeSet::new();
+        let mut sources = BTreeSet::new();
+        for (position, (target, value)) in self.local_assignments.iter().enumerate() {
+            let mut read = BTreeSet::new();
+            value.bindings(&mut read);
+            for binding in read {
+                if self.local_assignments[position..]
+                    .iter()
+                    .any(|(assigned, _)| *assigned == binding)
+                {
+                    readers.insert(target);
+                    sources.insert(binding);
+                }
+            }
+        }
+        (readers, sources)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -1597,6 +1660,8 @@ impl Default for Callable {
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
             undefined_before_assignment: BTreeSet::new(),
+            head_bindings: BTreeSet::new(),
+            iterated_values: Vec::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
             self_binding: None,
@@ -12330,6 +12395,13 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if let Some(key) = self.current {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .iterated_values
+                .push(ValueExpr::from_expr(&node.right));
+        }
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -13067,6 +13139,13 @@ impl Visit for ExecutionIndex {
                 }
             }
             _ => {}
+        }
+        if let Some(key) = self.current {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .head_bindings
+                .extend(assignments.iter().map(|(binding, _)| binding.clone()));
         }
         if let ForHead::Pat(pattern) = head {
             self.invalidate_property_key_pattern(pattern);

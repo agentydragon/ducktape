@@ -833,6 +833,14 @@ pub(super) struct ExecutionInputs<'source> {
     reentry_default: bool,
     pub(super) call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
+    /// Locals a source-summary lane reads as unknown in addition to its own
+    /// assignments: another callable writes them, or an assignment reads
+    /// them before a later one assigns them.
+    stale_locals: BTreeSet<Id>,
+    /// Locals whose stored values a read may see only as unknown: the
+    /// writes above, and a binding some callable writes that a closure
+    /// captures (its snapshot is unknown). Every store publishes its value.
+    untracked_locals: BTreeSet<Id>,
     pub(super) captured_local_bindings: FxHashSet<Id>,
     pub(super) var_bindings: BTreeSet<Id>,
     changed_member_roots: BTreeSet<Id>,
@@ -10122,6 +10130,47 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         frame
     }
 
+    /// A source-summary lane flattens control flow, and a value may leave
+    /// a set the lane tracks only once it is published: reading unknown
+    /// then reaches it through the escaped-callback pool. A local another
+    /// callable writes, one an assignment reads before a later assignment,
+    /// or a loop-head binding reads as unknown in addition to the lane's own
+    /// assignments; stores to `untracked_locals` and iterated values publish.
+    /// Only widens an entry the environment or an assignment gives. Kept out
+    /// of line for `invoke`'s frame size.
+    #[inline(never)]
+    fn widen_untracked_locals(&self, callable: &Callable, env: &mut Context) {
+        for (id, _) in &callable.local_assignments {
+            if self.inputs.stale_locals.contains(id) || callable.head_bindings.contains(id) {
+                env.entry(id.clone()).or_default().extend(unknown());
+            }
+        }
+        let stale: Vec<Id> = env
+            .keys()
+            .filter(|id| {
+                self.inputs.stale_locals.contains(*id) || callable.head_bindings.contains(*id)
+            })
+            .cloned()
+            .collect();
+        for id in stale {
+            env.entry(id).or_default().extend(unknown());
+        }
+    }
+
+    /// A loop head binds the iterated value's elements, which no assignment
+    /// records; publish what they can reach.
+    #[inline(never)]
+    fn publish_iterated_values(&mut self, callable: &Callable, env: &Context) {
+        for iterated in &callable.iterated_values {
+            let values = self.evaluate(iterated, env, env);
+            self.publish_values(
+                &values,
+                ClassMembersPublicationWriter::UntrackedLocalStore,
+                None,
+            );
+        }
+    }
+
     pub(super) fn invoke(
         &mut self,
         key: u32,
@@ -10529,6 +10578,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callable.undefined_before_assignment,
             &callable.local_assignments,
         );
+        self.widen_untracked_locals(callable, &mut env);
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
             // A chunk binding read later in this prefix must see the assigned
@@ -10552,8 +10602,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.state.world_mut().revision.bump_prefix();
                 }
             }
+            if self.inputs.untracked_locals.contains(id) {
+                self.publish_values(
+                    &values,
+                    ClassMembersPublicationWriter::UntrackedLocalStore,
+                    None,
+                );
+            }
             env.entry(id.clone()).or_default().extend(values);
         }
+        self.publish_iterated_values(callable, &env);
         let mut outcome = Outcome {
             complete: true,
             ..Outcome::default()
@@ -12508,6 +12566,48 @@ pub(crate) fn annotate_synchronous_calls(
         );
         initialized_bindings.insert(binding.clone());
     }
+    let stale_locals: BTreeSet<Id> = index
+        .callables
+        .values()
+        .flat_map(|callable| {
+            let (readers, _) = callable.reads_before_assignment();
+            callable
+                .captured_writes()
+                .into_iter()
+                .chain(readers)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .filter(|binding| !top_bindings.contains(binding))
+        .collect();
+    let untracked_locals: BTreeSet<Id> = {
+        let rebound: BTreeSet<&Id> = index
+            .callables
+            .values()
+            .flat_map(|callable| &callable.rebinds)
+            .collect();
+        index
+            .callables
+            .values()
+            .flat_map(|callable| {
+                let (_, sources) = callable.reads_before_assignment();
+                callable
+                    .captured_writes()
+                    .into_iter()
+                    .cloned()
+                    .chain(
+                        callable
+                            .captured_reads()
+                            .into_iter()
+                            .filter(|binding| rebound.contains(binding))
+                            .cloned(),
+                    )
+                    .chain(sources)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|binding| !top_bindings.contains(binding))
+            .collect()
+    };
     let inputs = ExecutionInputs {
         index: &index,
         graph: proofs.graph,
@@ -12550,6 +12650,8 @@ pub(crate) fn annotate_synchronous_calls(
             .values()
             .flat_map(|callable| callable.rebinds.iter().cloned())
             .collect(),
+        stale_locals,
+        untracked_locals,
         captured_local_bindings: captured_local_bindings(&index),
         var_bindings,
         changed_member_roots,

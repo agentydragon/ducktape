@@ -173,66 +173,16 @@ fn a_call_on_one_arm_only_stays_a_may_effect_without_a_receipt() {
     );
 }
 
-/// Opposing control: a test on a call whose callee has no ordered plan (the
-/// `if` keeps it on the source-summary lane) decides nothing the summary
-/// cannot prove. A binding read before any assignment is `undefined`, so
-/// `flag()` may be falsy and the arm writing `counter` is feasible; hoisting
-/// the reader of `counter` after `result` prints the written value.
-#[test]
-fn a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm() {
-    for body in [
-        "let r; if (first()) r = {}; return r;",
-        "var r; if (first()) r = {}; return r;",
-        "if (first()) { var r = {}; } return r;",
-        "if (!first()) return r; var r = {}; return r;",
-    ] {
-        let source = format!(
-            "let counter = 0;\nfunction first() {{ return 0; }}\nfunction second() {{ counter = 1; return 1; }}\nfunction flag() {{ {body} }}\nfunction run() {{ return flag() ? first() : second(); }}\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n"
-        );
-        let rejected = run_emit_on_rejection_fixture(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("reader", &[Member::new("observed")]),
-                    logical_module(
-                        "run",
-                        &[
-                            Member::new("counter"),
-                            Member::new("first"),
-                            Member::new("second"),
-                            Member::new("flag"),
-                            Member::new("run"),
-                            Member::new("result"),
-                        ],
-                    ),
-                ],
-            )
-            .with_unassigned_mode(unassigned_mode_inline()),
-        );
-        let report = rejected.translation_validation();
-        assert_eq!(report["gate_accepts"], false, "{body}: {report:#}");
-        assert_eq!(report["accepts"], false, "{body}: {report:#}");
-        assert_node_output(
-            &rejected
-                .source_root
-                .join(format!("{}.js", rejected.chunk_id)),
-            "0 1\n",
-            "",
-        );
-        assert_node_output(&rejected.entry_path(), "1 1\n", "");
-    }
-}
-
-/// Opposing control: a local only a closure assigns has no assignment the
-/// source-summary lane evaluates. It stays on the lane's fallback for an
-/// absent binding rather than becoming `undefined` alone, so the truthy arm
-/// that runs `second` is kept.
-#[test]
-fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
-    let source = "let counter = 0;\nfunction first() { return 0; }\nfunction second() { counter = 1; return 1; }\nfunction flag() { let r; const set = () => { r = {}; }; if (first()) {} set(); return r; }\nfunction run() { return flag() ? second() : first(); }\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n";
+/// The split moving `observed` (a read of `counter`) after `result`. When
+/// `flag()` can hold a value its source-summary lane omits, `second` runs and
+/// writes `counter`: the source prints `0 1`, the split `1 1`.
+fn assert_reader_split_diverges(definitions: &str) {
+    let source = format!(
+        "let counter = 0;\nfunction first() {{ return 0; }}\nfunction second() {{ counter = 1; return 1; }}\nfunction noop() {{ return 0; }}\n{definitions}\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n"
+    );
     let rejected = run_emit_on_rejection_fixture(
         FixtureOpts::new(
-            source,
+            &source,
             vec![
                 logical_module("reader", &[Member::new("observed")]),
                 logical_module(
@@ -241,6 +191,7 @@ fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
                         Member::new("counter"),
                         Member::new("first"),
                         Member::new("second"),
+                        Member::new("noop"),
                         Member::new("flag"),
                         Member::new("run"),
                         Member::new("result"),
@@ -251,8 +202,8 @@ fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     let report = rejected.translation_validation();
-    assert_eq!(report["gate_accepts"], false, "{report:#}");
-    assert_eq!(report["accepts"], false, "{report:#}");
+    assert_eq!(report["gate_accepts"], false, "{definitions}: {report:#}");
+    assert_eq!(report["accepts"], false, "{definitions}: {report:#}");
     assert_node_output(
         &rejected
             .source_root
@@ -261,4 +212,80 @@ fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
         "",
     );
     assert_node_output(&rejected.entry_path(), "1 1\n", "");
+}
+
+/// Opposing control: a test on a call whose callee has no ordered plan (the
+/// `if` keeps it on the source-summary lane) decides nothing the summary
+/// cannot prove. A binding read before any assignment is `undefined`, so
+/// `flag()` may be falsy and the arm writing `counter` is feasible.
+#[test]
+fn a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm() {
+    for body in [
+        "let r; if (first()) r = {}; return r;",
+        "var r; if (first()) r = {}; return r;",
+        "if (first()) { var r = {}; } return r;",
+        "if (!first()) return r; var r = {}; return r;",
+    ] {
+        assert_reader_split_diverges(&format!(
+            "function flag() {{ {body} }}\nfunction run() {{ return flag() ? first() : second(); }}"
+        ));
+    }
+}
+
+/// Opposing control: a local only a closure assigns has no assignment the
+/// source-summary lane evaluates. It stays on the lane's fallback for an
+/// absent binding rather than becoming `undefined` alone, so the truthy arm
+/// that runs `second` is kept.
+#[test]
+fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
+    assert_reader_split_diverges(
+        "function flag() { let r; const set = () => { r = {}; }; if (first()) {} set(); return r; }\nfunction run() { return flag() ? second() : first(); }",
+    );
+}
+
+/// Opposing control: where the source-summary lane cannot follow a value
+/// into a local (a closure's write, a value carried around a loop, a
+/// closure reading a later write, a loop head's elements), the read is
+/// unknown and the stored value is published, so a test (`?:`) keeps both
+/// arms and a call through the local (`flag()()`) reaches `second`.
+#[test]
+fn a_summarized_local_holds_every_value_any_read_can_see() {
+    let test = "function run() { return flag() ? first() : second(); }";
+    let call = "function run() { return flag()(); }";
+    for (body, run) in [
+        (
+            "let r = {}; const clear = () => { r = undefined; }; if (first()) {} clear(); return r;",
+            test,
+        ),
+        (
+            "let f = noop; const set = () => { f = second; }; if (first()) {} set(); return f;",
+            call,
+        ),
+        (
+            "let r = {}; let s = {}; for (const x of [1, 2]) { s = r; r = undefined; } if (first()) {} return s;",
+            test,
+        ),
+        (
+            "let f = noop; let g = noop; for (const x of [1, 2]) { g = f; f = second; } if (first()) {} return g;",
+            call,
+        ),
+        (
+            "let f = noop; const get = () => f; if (first()) {} f = second; return get();",
+            call,
+        ),
+        (
+            "let f = noop; let g = () => noop; for (const x of [1, 2]) { g = () => f; f = second; } if (first()) {} return g();",
+            call,
+        ),
+        (
+            "let r = {}; if (first()) {} for (r of [0]) {} return r;",
+            test,
+        ),
+        (
+            "if (first()) {} for (const h of [second]) { return h; } return noop;",
+            call,
+        ),
+    ] {
+        assert_reader_split_diverges(&format!("function flag() {{ {body} }}\n{run}"));
+    }
 }
