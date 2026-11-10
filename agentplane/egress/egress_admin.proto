@@ -26,15 +26,22 @@ service EgressAdmin {
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
 }
 
-// Refusals that never proved a ServiceAccount.
+// Refusals that never proved a ServiceAccount or an Identity.
 message Unauthenticated {}
+
+// An Identity in the proxy's policy namespace. Its decisions span every incarnation of the name.
+message IdentitySubject {
+  string name = 1;
+}
 
 // Whose decisions to read. Absent is invalid, so a caller never reads the unauthenticated refusals
 // by leaving a field out.
 message DecisionFilter {
   oneof scope {
+    // A ServiceAccount subject.
     agentplane.proto.ServiceAccount subject = 1;
     Unauthenticated unauthenticated = 2;
+    IdentitySubject identity = 3;
   }
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,7 +33,7 @@ func (s *Service) GetRules(ctx context.Context, _ *egressrulespb.GetRulesRequest
 		return nil, err
 	}
 	subject := policyapi.ServiceAccountRef{Namespace: principal.Account.Namespace, Name: principal.Account.Name}
-	response, err := responseOf(subject, s.index.ListEffectivePolicies(subject))
+	response, err := responseOf(subject, s.index.ListEffectivePolicies(reader.ServiceAccount(subject)))
 	if err != nil {
 		slog.Error("egress rules not presentable", "error", err)
 		return nil, status.Error(codes.Internal, "egress rules not presentable")

@@ -17,10 +17,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Authenticated is a caller the listener's policy proved. A bearer proves an auth.Principal; an SVID
+// proves either subject kind.
 type Authenticated struct {
-	Principal auth.Principal
-	Mode      listener.Mode
-	Bearer    string
+	Subject auth.Subject
+	Mode    listener.Mode
+	Bearer  string
 }
 
 func (Authenticated) String() string   { return "authenticated{redacted}" }
@@ -66,20 +68,21 @@ func (a *Authenticator) Authenticate(ctx context.Context, state *tls.ConnectionS
 		return Authenticated{}, &Rejection{Reason: reason, Detail: "credentials do not select one enabled authentication mode"}
 	}
 	if mode == listener.SPIFFE {
-		principal, err := ResolveSVID(ctx, state, a.records)
-		return Authenticated{Principal: principal, Mode: mode}, err
+		subject, err := ResolveSVID(ctx, state, a.records)
+		return Authenticated{Subject: subject, Mode: mode}, err
 	}
 	token, ok := BearerToken(bearer)
 	if !ok {
 		return Authenticated{}, &Rejection{Reason: decision.TokenMissing, Detail: "invalid bearer credential"}
 	}
 	principal, err := a.tokens.Identify(ctx, token)
-	return Authenticated{Principal: principal, Mode: mode, Bearer: token}, err
+	return Authenticated{Subject: principal, Mode: mode, Bearer: token}, err
 }
 
 // Resolve adapts a native gRPC call to the same authentication policy used by
 // the forward listener. TLS identity comes only from gRPC's authenticated peer
-// credentials; callers cannot supply an identity header.
+// credentials; callers cannot supply an identity header. It proves only a ServiceAccount
+// caller and refuses an Identity one.
 func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
 	var state *tls.ConnectionState
 	if remote, ok := peer.FromContext(ctx); ok {
@@ -96,7 +99,10 @@ func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
 	bearer := md.Get("authorization")
 	caller, err := a.Authenticate(ctx, state, bearer, len(bearer) > 0)
 	if err == nil {
-		return caller.Principal, nil
+		if principal, ok := caller.Subject.(auth.Principal); ok {
+			return principal, nil
+		}
+		return auth.Principal{}, status.Error(codes.Unauthenticated, "workload authentication refused")
 	}
 	if ctx.Err() != nil {
 		return auth.Principal{}, status.FromContextError(ctx.Err()).Err()
@@ -113,16 +119,25 @@ func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
 
 // VerifyProjected keeps the presented destination tokens bound to the caller's Pod. A standing
 // workload's SVID proves no Pod, so it has nothing to bind a token to: every token it presents is
-// dropped unreviewed, and a rule needing one refuses with `credential-unavailable`.
+// dropped unreviewed, and a rule needing one refuses with `credential-unavailable`. An Identity's
+// Pod is provenance, not its subject: a Pod token proves a ServiceAccount, never an Identity, so an
+// Identity caller's tokens are dropped unreviewed too.
 func (a *Authenticator) VerifyProjected(ctx context.Context, caller Authenticated, presented map[string]string) map[string]string {
-	if caller.Mode == listener.SPIFFE && caller.Principal.PodUID == "" {
+	principal, ok := caller.Subject.(auth.Principal)
+	if !ok {
+		if len(presented) > 0 {
+			slog.Warn("dropping projected tokens an Identity presented: a Pod token cannot prove one")
+		}
+		return map[string]string{}
+	}
+	if caller.Mode == listener.SPIFFE && principal.PodUID == "" {
 		if len(presented) > 0 {
 			slog.Warn("dropping projected tokens a standing workload presented: its credential proves no Pod")
 		}
 		return map[string]string{}
 	}
 	if caller.Mode == listener.SPIFFE {
-		return a.tokens.VerifyProjectedForSandbox(ctx, presented, caller.Principal.Account, caller.Principal.PodUID)
+		return a.tokens.VerifyProjectedForSandbox(ctx, presented, principal.Account, principal.PodUID)
 	}
-	return a.tokens.VerifyProjected(ctx, presented, caller.Principal)
+	return a.tokens.VerifyProjected(ctx, presented, principal)
 }

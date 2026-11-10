@@ -3057,17 +3057,18 @@ states rollback and verifies callers after image/config convergence.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**In progress (identity-consumers, 2026-11-10), consumers first: the `WorkloadCredential` resolver
-resolves an Identity subject live with its UID (`resolver.Subject`); the proxy still refuses one.**
-`SANDBOX_IDENTITY_SPEC` is the first requester to write one; until then every SVID resolves to a
-ServiceAccount. The proxy's decision keys on the
-identity the resolver yields, and decision history records it. The Kubernetes-audience projected
+**In progress (identity-consumers, 2026-11-10), consumers first: the proxy decides an Identity
+caller by its `identity:{name}` bindings, impersonates any account it holds a use rule for, and
+history records it by name; the proxy test shows two Identities acting as one account, one losing
+its use rule without the other noticing. Left: the Rules API answering an Identity, and the exit
+in the egress harness once `SANDBOX_IDENTITY_SPEC` writes one.** Until then every SVID resolves to
+a ServiceAccount. The Kubernetes-audience projected
 token is removed with the kubeconfig (`SANDBOX_IDENTITY_SPEC`); that was the only
 `projectedWorkloadToken` source, so the source, the sidecar's `X-Agentplane-Workload-Token`
 forwarding, the proxy's second TokenReview per tunnel and the egress `TODO.md` entry on where that
 token is substituted go with it. Impersonation on ServiceAccount subjects has landed
 ([egress SPEC](../egress/SPEC.md) § Decision), as have `policy/reader`'s Identity lookups, which
-egress, the Action Service and Notification watch but do not query yet. The k3s API server keeps no
+egress queries and the Action Service and Notification watch but do not query yet. The k3s API server keeps no
 audit log, so the audit entry naming both account and proxy is unverified there. **Exit:** the
 egress harness shows two identities acting as one account, one losing its use rule without the
 other noticing.

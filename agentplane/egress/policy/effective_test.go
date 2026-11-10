@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 func TestListEffectivePolicies(t *testing.T) {
-	stranger := policyapi.ServiceAccountRef{Namespace: namespace, Name: "stranger"}
+	stranger := reader.ServiceAccount{Namespace: namespace, Name: "stranger"}
 	index := standardIndex(
 		[]*policyapi.PolicySet{
 			policySet("github", githubRule, publicRule),
@@ -39,7 +40,7 @@ func TestListEffectivePolicies(t *testing.T) {
 	if dangling[0].Credential != nil {
 		t.Errorf("rule naming a credential the index lacks presents %v", dangling[0].Credential)
 	}
-	if got := index.ListEffectivePolicies(policyapi.ServiceAccountRef{Namespace: namespace, Name: "nobody"}); len(got) != 0 {
+	if got := index.ListEffectivePolicies(reader.ServiceAccount{Namespace: namespace, Name: "nobody"}); len(got) != 0 {
 		t.Errorf("a subject no binding names holds %v", got)
 	}
 }

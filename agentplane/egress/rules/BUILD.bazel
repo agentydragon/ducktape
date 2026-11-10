@@ -13,6 +13,7 @@ go_library(
         "//agentplane/egress/policy",
         "//agentplane/egress/resources",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/reader",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/workload_auth/auth",
         "@org_golang_google_grpc//codes",

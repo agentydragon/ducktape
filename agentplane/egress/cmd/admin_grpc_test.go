@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 
 type noDecisions struct{}
 
-func (noDecisions) Recent(context.Context, *decision.Subject) ([]decision.Record, error) {
+func (noDecisions) Recent(context.Context, decision.Subject) ([]decision.Record, error) {
 	return []decision.Record{}, nil
 }
 
@@ -73,7 +73,7 @@ func (noDecisions) Window() history.Window {
 // quietChanges reports once on subscribing and then nothing.
 type quietChanges struct{}
 
-func (quietChanges) Follow(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+func (quietChanges) Follow(ctx context.Context, _ decision.Subject, changed func(history.Change) error) error {
 	if err := changed(history.Initial{}); err != nil {
 		return err
 	}
