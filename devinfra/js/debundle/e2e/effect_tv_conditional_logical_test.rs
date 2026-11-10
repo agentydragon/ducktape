@@ -172,3 +172,53 @@ fn a_call_on_one_arm_only_stays_a_may_effect_without_a_receipt() {
         "{execution:#}"
     );
 }
+
+/// Opposing control: a test on a call whose callee has no ordered plan (the
+/// `if` keeps it on the source-summary lane) decides nothing the summary
+/// cannot prove. A binding read before any assignment is `undefined`, so
+/// `flag()` may be falsy and the arm writing `counter` is feasible; hoisting
+/// the reader of `counter` after `result` prints the written value.
+#[test]
+fn a_summarized_binding_read_before_its_assignment_keeps_the_falsy_arm() {
+    for body in [
+        "let r; if (first()) r = {}; return r;",
+        "var r; if (first()) r = {}; return r;",
+        "if (first()) { var r = {}; } return r;",
+        "if (!first()) return r; var r = {}; return r;",
+    ] {
+        let source = format!(
+            "let counter = 0;\nfunction first() {{ return 0; }}\nfunction second() {{ counter = 1; return 1; }}\nfunction flag() {{ {body} }}\nfunction run() {{ return flag() ? first() : second(); }}\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n"
+        );
+        let rejected = run_emit_on_rejection_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("reader", &[Member::new("observed")]),
+                    logical_module(
+                        "run",
+                        &[
+                            Member::new("counter"),
+                            Member::new("first"),
+                            Member::new("second"),
+                            Member::new("flag"),
+                            Member::new("run"),
+                            Member::new("result"),
+                        ],
+                    ),
+                ],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        let report = rejected.translation_validation();
+        assert_eq!(report["gate_accepts"], false, "{body}: {report:#}");
+        assert_eq!(report["accepts"], false, "{body}: {report:#}");
+        assert_node_output(
+            &rejected
+                .source_root
+                .join(format!("{}.js", rejected.chunk_id)),
+            "0 1\n",
+            "",
+        );
+        assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    }
+}

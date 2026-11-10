@@ -35,7 +35,17 @@ cluster-hosted Pod; one the Agentplane issuer owns can also act for a central Se
 Sandbox, or later an enrolled external machine. The central-Session decoupling did not strictly
 require the cutover, but building it on ServiceAccounts would add a contract the cutover has to undo.
 
-A Kubernetes ServiceAccount TokenReview is not a second identity source on Agentplane's own APIs.
+A Kubernetes ServiceAccount TokenReview is not a second identity source for agents.
+
+**Backend services (operator, 2026-11-10).** Agentplane's own services keep authenticating to each
+other as themselves with ServiceAccount tokens and TokenReview for privileged service-to-service
+calls; that is service identity, not agent identity, and keeps the API server dependency to the
+platform's internal hops only. No service holds a private key or certificate that resolves to an
+agent `Identity`: a service acting for an agent does so only under the
+[delegated authorization contract](../docs/delegated_authorization.md), authenticating as itself and
+naming the `Identity` as effective caller. Service-class SVIDs (a SPIFFE path resolvers never map to
+an agent `Identity`) stay open for later; nothing now needs them.
+
 Other bearer forms are not planned and no task depends on them; if we wanted, we could later accept
 bearer tokens resolving to the same `Identity`. The paths that do not meet this yet, with the
 bucket each falls in, are the

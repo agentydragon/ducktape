@@ -3986,7 +3986,12 @@ adapter's `call` rechecks the rest of the row (element reads,
 `ArraySpeciesCreate`, the receiver's exact length and dense slots) after the
 arguments. An iteration row invokes its callback through `Executor::invoke`
 once per element, so a callback with an ordered plan and no live captures
-runs in the kernel, and rechecks the receiver after every invocation. Its
+runs in the kernel, and rechecks the receiver after every invocation. An
+early-exit row (`some`, `every`, `find`, `findIndex`) keeps, at each callback
+result whose truthiness may stop it, the path state that stopped there
+(`ControlContext::branch`), runs on, and joins those paths with the one that
+ran past every element through `ExecutionPath::join` and
+`EffectCoverageFragment::join_alternatives`, as a kernel fork does. Its
 fresh result commits through the native `plan`/`commit` path. A refusal at any
 check keeps the effects of the callbacks that already ran and summarizes the
 remainder. Only depth-zero invocations take the kernel prologue, so a row
@@ -3999,7 +4004,9 @@ effects; `None` refuses it as `Unproved::CaptureStore`, which is the provider
 adapter's only answer. The application adapter accepts only a root expression
 statement (`roots/operands.rs` admits `binding = value`). The binding must be
 an unimported, non-`const` binding that is initialized at the prefix (or a
-`var`), that no closure reads or rebinds, and that is not exported. Its
+`var`), that no closure body reads or writes anywhere (including after an
+`await`, which `CallableFacts::{reads,rebinds}` stop recording), and that is
+not exported. Its
 fragment covers the global, heap and host domains and leaves lexical coverage
 unknown, so it seals the statement but never a lexical binding-effect receipt.
 The rebind is the owner's syntactic write of the binding's cell, the cell its

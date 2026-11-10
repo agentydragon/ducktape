@@ -755,13 +755,10 @@ impl Executor<'_, '_> {
                 .contains(binding)
         {
             UninitializedBindingStore
-        } else if index
-            .callables
-            .values()
-            .any(|callable| callable.reads.contains(binding) || callable.rebinds.contains(binding))
-        {
+        } else if index.captured_bindings.contains(binding) {
             // A closure may have read it already or read it later through
-            // its capture; neither is this owner's prefix value.
+            // its capture, including after an `await`; neither is this
+            // owner's prefix value.
             CapturedBindingStore
         } else if index.exported_bindings.contains(binding) {
             // Export-reentry facts cover only reads during this module's

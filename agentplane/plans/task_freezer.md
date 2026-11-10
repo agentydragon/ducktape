@@ -31,9 +31,8 @@ Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 
 Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
 (`workload_auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
-longer verifies this audience. Revisit the name for the remaining backend consumers, unless
-`SERVICE_CALLER_AUTH_DECISION` moves them to SVIDs and the audience goes; any rename must coordinate
-those verifiers and their projected tokens.
+longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
+name stays relevant; any rename must coordinate those verifiers and their projected tokens.
 
 ## Workload credentials
 
