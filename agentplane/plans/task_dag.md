@@ -3235,7 +3235,8 @@ references, grants and last activity and an unreferenced filter; delete refused 
 the identity page re-anchoring "View grants"; the session form with placement and identity, the
 set selector hidden for an existing identity; the permission-request approval card with new
 temporary account, widen shared, or deny; the finish dialog defaulting to delete an identity the
-app minted for that session. The Connection consent page (`/#/connection-enrollments/{handle}`) and
+app minted for that session; changing a stopped environment's identity, warning that the new
+identity reads what earlier ones left, and the identities an environment has run as on its page. The Connection consent page (`/#/connection-enrollments/{handle}`) and
 the OAuth clients tab's rebind picker choose an Identity from the edge's `connection_identities`
 instead of a ServiceAccount, a Connection's **View grants** shows that Identity's bindings, and an
 identity's page lists the Connections bound to it beside its Sandboxes and Sessions (operator,
