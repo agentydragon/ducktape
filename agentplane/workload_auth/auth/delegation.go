@@ -152,6 +152,14 @@ type DelegatedAdmission struct {
 
 func (DelegatedAdmission) isAdmission() {}
 
+// IdentityAdmission is a direct caller whose workload credential names an Identity. Only an
+// AnySubject method admits one, and it is never inserted into the legacy Caller context.
+type IdentityAdmission struct {
+	Caller IdentityPrincipal
+}
+
+func (IdentityAdmission) isAdmission() {}
+
 func withAdmission(ctx context.Context, admission Admission) context.Context {
 	return context.WithValue(ctx, admissionKey{}, admission)
 }
@@ -166,7 +174,7 @@ func Admitted(ctx context.Context) (Admission, error) {
 }
 
 // EffectiveCaller returns only the ServiceAccount identity used for ordinary resource checks.
-// It deliberately does not return the delegated actor or Pod proof.
+// It deliberately does not return the delegated actor or Pod proof, and refuses an Identity caller.
 func EffectiveCaller(ctx context.Context) (*ServiceAccountPrincipal, error) {
 	admission, err := Admitted(ctx)
 	if err != nil {
