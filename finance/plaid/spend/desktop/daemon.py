@@ -49,6 +49,10 @@ class PlaidSpendBusInterface(ServiceInterface):
     def get_view(self) -> DBusString:
         return json.dumps(self.owner.view, separators=(",", ":"))
 
+    @method(name="GetPaceHistory")
+    async def get_pace_history(self) -> DBusString:
+        return await self.owner.get_pace_history()
+
     @method(name="Login")
     def login(self) -> None:
         self.owner.start_login()
@@ -182,6 +186,17 @@ class PlaidSpendDaemon:
         self.view = view
         self._retry_delay = 2.0
         self.bus_interface.view_changed(json.dumps(view, separators=(",", ":")))
+
+    async def get_pace_history(self) -> str:
+        """Read the separate optional history endpoint with the daemon-owned token."""
+        token = await self.auth.access_token_for_api()
+        url = f"{API_URL}/api/v1/pace-history"
+        response = await self.http.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        if response.status_code == 401:
+            token = await self.auth.access_token_for_api(force_refresh=True)
+            response = await self.http.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        response.raise_for_status()
+        return json.dumps(response.json(), separators=(",", ":"))
 
     async def _stream_forever(self) -> None:
         try:

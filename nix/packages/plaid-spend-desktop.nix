@@ -36,12 +36,16 @@ python314Packages.buildPythonApplication {
 
   nativeBuildInputs = [
     pkgs.makeWrapper
+    pkgs.glib
     pkgs.unzip
   ];
   postInstall = ''
     extensionDir="$out/share/gnome-shell/extensions/${extensionUuid}"
     mkdir -p "$extensionDir"
     unzip -o ${extensionZip} -d "$extensionDir"
+    if [ -d "$extensionDir/schemas" ]; then
+      glib-compile-schemas "$extensionDir/schemas"
+    fi
 
     wrapProgram "$out/bin/plaid-spend-daemon" \
       --prefix PATH : ${

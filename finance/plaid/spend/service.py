@@ -56,6 +56,7 @@ from finance.plaid.spend.models import (
     StatementReason,
     UnavailableCardPeriod,
 )
+from finance.plaid.spend.pace_history import PaceHistory, pace_history
 from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
@@ -395,6 +396,59 @@ class SpendService:
             card_transactions=card_rows,
             statement_decisions=statement_decisions,
             transaction_details=details_by_key,
+        )
+
+    async def read_pace_history(self) -> PaceHistory | None:
+        policy = self._configuration.allowance
+        if policy is None:
+            return None
+        now = datetime.now(UTC)
+        synced: list[datetime | None] = []
+        try:
+            async with self._require_read_sessions()() as session, session.begin():
+                await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+                accounts = (
+                    (await session.execute(select_policy_accounts(sorted(policy.spending_account_ids))))
+                    .mappings()
+                    .all()
+                )
+                synced = [_as_utc(row["last_synced_at"]) for row in accounts]
+                valid = len(accounts) == len(policy.spending_account_ids) and all(
+                    row["type"] in ("credit", "depository")
+                    and value is not None
+                    and now - value <= timedelta(hours=policy.max_sync_age_hours)
+                    for row, value in zip(accounts, synced, strict=True)
+                )
+                if valid:
+                    rows = (
+                        (
+                            await session.execute(
+                                select_policy_transactions(sorted(policy.spending_account_ids), include_raw_json=False)
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
+                    evidence = self._configuration.sustainability
+                    return pace_history(
+                        policy,
+                        [Transaction.model_validate(dict(row)) for row in rows],
+                        time_zone=self._configuration.time_zone,
+                        now=now,
+                        last_synced_at=min(value for value in synced if value is not None),
+                        account_history=evidence.account_history if evidence else {},
+                    )
+        except SQLAlchemyError:
+            logger.warning("Could not read pace history from the spending source")
+        return PaceHistory(
+            generated_at=now,
+            time_zone=self._configuration.time_zone.key,
+            currency=policy.currency,
+            status=Status.UNAVAILABLE,
+            last_synced_at=min((value for value in synced if value is not None), default=None),
+            daily_reference_minor_units=round_minor_units(daily_reference(policy.monthly_minor_units), precision=0),
+            windows=[],
+            issues=["Spending account coverage or freshness is unavailable."],
         )
 
     async def _read_allowance(

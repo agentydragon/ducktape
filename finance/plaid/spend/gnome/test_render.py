@@ -13,10 +13,13 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
+from PIL import Image, ImageChops, ImageStat
 from python.runfiles import Runfiles
 
 from devinfra.oci.oci import load_oci_image
@@ -26,7 +29,7 @@ from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
 from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
-from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
+from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, gnome_session, string_reply, wait_until
 
 _EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
@@ -87,6 +90,28 @@ def fixture_json_dir(
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
+    view_payload = allowance_scenarios["allowance_paced"].model_dump(mode="json")
+    allowance = view_payload["allowance"]
+    allowance["available_minor_units"] = 1234500
+    allowance["daily_reference_minor_units"] = 2000
+    for period in allowance["recorded_pace_periods"]:
+        period["observed_daily_minor_units"] = {"rolling_7d": 2200, "rolling_30d": 2800}[period["period"]["id"]]
+    history = {
+        "status": "active",
+        "daily_reference_minor_units": 2000,
+        "windows": [
+            {
+                "period_id": period,
+                "points": [
+                    {"observed_daily_minor_units": None if day == 12 else 1000 + day * step} for day in range(30)
+                ],
+            }
+            for period, step in [("rolling_7d", 40), ("rolling_30d", 60)]
+        ],
+    }
+    (dest / "panel_composition.json").write_text(
+        json.dumps({"status": "ready", "error": "", "view": view_payload, "pace_history": history})
+    )
     return dest
 
 
@@ -108,6 +133,9 @@ def session(
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
         environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_TEST_NOW": "2026-10-15T12:00:00.000Z"},
+        display_size=(1920, 900),
+        compile_extension_schemas=True,
+        activate_display=True,
     ) as session:
         _assert_no_plaid_extension_error(session)
         yield session
@@ -198,12 +226,14 @@ def capture_menu(session: GnomeSession, test_outputs: BoundTestOutputs) -> Gnome
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
-    [("ready_two_cards", "$149 !"), ("authentication_required", "Sign in"), ("offline", "Offline")],
+    [("ready_two_cards", "$149"), ("authentication_required", "Sign in"), ("offline", "Offline")],
 )
 def test_card_status(
     session: GnomeSession, fixture_name: str, expected_label: str, capture_menu: GnomeMenuCapture
 ) -> None:
     with _menu(session, fixture_name, expected_label) as geometry:
+        if fixture_name == "ready_two_cards":
+            assert json.loads(string_reply(session.call("GetPanelState")))["level"] == "caution"
         capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
 
 
@@ -211,9 +241,9 @@ def test_allowance_paced(
     session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
 ) -> None:
     view = allowance_scenarios["allowance_paced"]
-    with _menu(session, "allowance_paced", "Flex $200") as geometry:
+    with _menu(session, "allowance_paced", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "Below leash" in menu_text
+        assert "7d pace at or below leash" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -228,9 +258,9 @@ def test_allowance_warning(
     session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
 ) -> None:
     view = allowance_scenarios["allowance_warning"]
-    with _menu(session, "allowance_warning", "Flex $200 !") as geometry:
+    with _menu(session, "allowance_warning", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "Pace high" in menu_text
+        assert "Forecast or 30d pace: warning" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -246,9 +276,9 @@ def test_allowance_warming(
     view = allowance_scenarios["allowance_warming"]
     allowance = view.allowance
     assert allowance is not None
-    with _menu(session, "allowance_warming", "Flex $700") as geometry:
+    with _menu(session, "allowance_warming", "$700") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "Pace warming up" in menu_text
+        assert "7d pace unavailable" in menu_text
         assert "7d n/a" in menu_text
         assert "30d n/a" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -259,16 +289,16 @@ def test_allowance_warming(
 def test_allowance_exhausted(
     session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
 ) -> None:
-    with _menu(session, "allowance_exhausted", "Flex -<$1 !!") as geometry:
+    with _menu(session, "allowance_exhausted", "-<$1") as geometry:
         view = allowance_scenarios["allowance_exhausted"]
-        assert "Exhausted" in _allowance_menu_text(session, view)
+        assert "Allowance exhausted" in _allowance_menu_text(session, view)
         capture_menu.capture(geometry, label="allowance exhausted")
 
 
 def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
     session: GnomeSession, capture_menu: GnomeMenuCapture
 ) -> None:
-    with _menu(session, "retrying", "Flex unavailable") as geometry:
+    with _menu(session, "retrying", "Offline") as geometry:
         menu_text = string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Retry in 20s" in menu_text
@@ -287,6 +317,107 @@ def test_authentication_required_has_no_retry_countdown(session: GnomeSession) -
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Sign-in required" in menu_text
         assert "Retry in" not in menu_text
+
+
+def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    def configure(**settings: object) -> None:
+        session.call("SetPanelSettings", json.dumps(settings))
+        session.wait_for_paint()
+
+    def state() -> dict[str, Any]:
+        return cast(dict[str, Any], json.loads(string_reply(session.call("GetPanelState"))))
+
+    try:
+        configure(
+            order=["pace", "sparkline", "status", "balance"],
+            visible=["status", "balance", "pace", "sparkline"],
+            window="7d",
+        )
+        with _menu(session, "panel_composition", "7d 110% $12.3k") as geometry:
+            assert state() == {"items": ["pace", "sparkline", "status", "balance"], "level": "caution", "window": "7d"}
+            assert "$12,345.00 available" in string_reply(session.call("GetMenuText"))
+            assert "Customize panel" in string_reply(session.call("GetMenuText"))
+            assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))
+            capture_menu.capture(geometry, label="custom panel 7d with sparkline", checkpoint="7d", left_padding=160)
+        configure(window="30d")
+        assert string_reply(session.call("GetPanelLabel")) == "30d 140% $12.3k"
+        assert state()["level"] == "danger"
+        geometry = session.open_menu()
+        capture_menu.capture(geometry, label="custom panel 30d with sparkline", checkpoint="30d", left_padding=160)
+        session.close_menu()
+        configure(order=["sparkline", "pace", "balance", "status"], visible=["sparkline", "pace"])
+        assert state()["items"] == ["sparkline", "pace"]
+        session.reload("/fixtures/allowance_paced.json")
+        assert state()["items"] == ["sparkline-unavailable", "pace"]
+        assert state()["level"] == "good"
+        configure(visible=[])
+        assert state()["items"] == ["status"]
+        _assert_no_plaid_extension_error(session)
+    finally:
+        configure(order=["status", "balance", "pace", "sparkline"], visible=["status", "balance"], window="7d")
+
+
+def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_json_dir: Path) -> None:
+    fixture = json.loads((fixture_json_dir / "panel_composition.json").read_text())
+    session.reload("/fixtures/panel_composition.json")
+    try:
+        with fake_daemon(session, destination=_FAKE_DBUS_DEST, object_path=_FAKE_DBUS_PATH) as daemon:
+            wait_until(lambda: bool(string_reply(session.call("GetDaemonOwner"))), "daemon did not connect")
+            daemon.call("SetHistory", json.dumps(fixture["pace_history"]))
+            session.call("SetPanelSettings", json.dumps({"visible": ["sparkline"]}))
+
+            def pending() -> int:
+                return int(string_reply(daemon.call("GetHistoryPending")))
+
+            wait_until(lambda: pending() == 1, "extension did not request pace history")
+            daemon.call("ReleaseGetHistory")
+            wait_until(
+                lambda: json.loads(string_reply(session.call("GetPanelState")))["items"] == ["sparkline"],
+                "extension did not draw daemon history",
+            )
+
+            daemon.call("SetView", json.dumps(fixture["view"]))
+            wait_until(lambda: pending() == 1, "extension did not refresh history")
+            daemon.call("SetView", json.dumps(fixture["view"]))
+            wait_until(lambda: pending() == 2, "extension did not request the new history")
+            daemon.call("ReleaseGetHistory")
+            session.wait_for_paint()
+            assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["sparkline-unavailable"]
+            daemon.call("ReleaseGetHistory")
+            wait_until(
+                lambda: json.loads(string_reply(session.call("GetPanelState")))["items"] == ["sparkline"],
+                "extension did not adopt the latest history",
+            )
+            _assert_no_plaid_extension_error(session)
+    finally:
+        session.call("SetPanelSettings", json.dumps({"visible": ["status", "balance"]}))
+
+
+def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTestOutputs) -> None:
+    session.close_menu()
+    before = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
+    session.call("OpenPreferences")
+
+    def preferences_visible() -> bool:
+        after = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
+        return sum(ImageStat.Stat(ImageChops.difference(before, after)).sum) > 1_000_000
+
+    try:
+        wait_until(preferences_visible, "GNOME did not show the panel preferences")
+    except TimeoutError as error:
+        result = session.exec(
+            "gdbus call --session --timeout 10 --dest org.gnome.Shell.Extensions "
+            "--object-path /org/gnome/Shell/Extensions --method org.gnome.Shell.Extensions.OpenExtensionPrefs "
+            "'plaid-spend@allegedly.works' '' '{}'"
+        )
+        raise AssertionError(f"Preferences service call failed: {exec_output(result)}") from error
+    test_outputs.publish(
+        role="screenshot",
+        data=session.screenshot(),
+        suffix="png",
+        label="panel preferences",
+        title="Plaid Spend GNOME extension",
+    )
 
 
 if __name__ == "__main__":
