@@ -130,7 +130,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     (work,) = template["spec"]["dataVolumeTemplates"]
     storage = work["spec"]["storage"]
     assert storage["storageClassName"] == "piraeus-ssd-local"
-    assert storage["volumeMode"] == "Block"
+    assert storage["volumeMode"] == "Filesystem"
     (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
     assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
     # The egress fence that the standalone VMs have must also cover pool members, which carry no VM-name label.
