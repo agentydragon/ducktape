@@ -239,7 +239,14 @@ pub(super) fn finalize(
                 OwnerInitializationCoverageRefusalReason::BindingNotInitialized
             });
         }
-        outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
+        // A refusal the execution itself named is more specific than the
+        // owner's syntactic one.
+        outcome.effects.initialization_coverage_refusal = outcome
+            .effects
+            .initialization_coverage_refusal
+            .or(initialization_coverage_refusal);
+    } else {
+        outcome.effects.initialization_coverage_refusal = None;
     }
     if let Some(identity) = outcome.root_binding_effect_identity.take() {
         let expected_root_calls = expected_root_calls(calls);

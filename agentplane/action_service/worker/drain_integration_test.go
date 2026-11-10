@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -63,7 +62,7 @@ func TestAnExecutionPastTheDrainIsStoppedUnknownAndNeverReplayed(t *testing.T) {
 	g.awaitStarted(t)
 	r.drain()
 	r.wait(t)
-	if got := f.get(t, stopped); got.State != action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN || errorKind(t, got) != string(store.UnknownCoordinatorStopped) {
+	if got := f.get(t, stopped); got.State != action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN || errorKind(t, got) != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_COORDINATOR_STOPPED {
 		t.Errorf("the stopped request is %s: %s", got.State, got.Execution.Error)
 	}
 	if pending := f.pending(t); len(pending) != 0 {

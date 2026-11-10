@@ -11,6 +11,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/worker",
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/store",
         "@com_github_google_uuid//:uuid",
         "@com_github_sethvargo_go_retry//:go-retry",

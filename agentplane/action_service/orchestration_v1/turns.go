@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -36,7 +37,7 @@ func resumeCursor(token string, ref contract.SandboxRef, sessionID string) (uint
 	encoded, err := base64.RawURLEncoding.DecodeString(token)
 	var resume turnResume
 	if err != nil || json.Unmarshal(encoded, &resume) != nil || resume.Version != 1 || resume.SandboxUID != string(ref.UID) || resume.SessionID != sessionID {
-		return 0, refuse("invalid_arguments", "invalid resume token for this Session and Sandbox incarnation")
+		return 0, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "invalid resume token for this Session and Sandbox incarnation")
 	}
 	return resume.Cursor, nil
 }
@@ -79,7 +80,7 @@ type TurnWait struct {
 
 func (e *Executor) sessionReadContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
 	if e.readBudget <= 0 {
-		return nil, nil, refuse("wait_unavailable", "direct-tool budget must exceed one second for Session reads")
+		return nil, nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_WAIT_UNAVAILABLE, "direct-tool budget must exceed one second for Session reads")
 	}
 	bounded, cancel := context.WithTimeout(ctx, e.readBudget)
 	return bounded, cancel, nil

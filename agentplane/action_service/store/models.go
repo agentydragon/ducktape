@@ -234,8 +234,8 @@ type Execution struct {
 	State ExecutionState
 	// Result is any JSON value; nil when there is none.
 	Result json.RawMessage
-	// Error is a JSON object; nil when there is none.
-	Error        json.RawMessage
+	// Error is nil when there is none.
+	Error        *action_servicepb.ExecutionError
 	CreatedAt    time.Time
 	StartedAt    *time.Time
 	CompletedAt  *time.Time
@@ -300,23 +300,9 @@ type ExecutionOutcome struct {
 	State ExecutionState
 	// Result is any JSON value; nil or JSON null for none.
 	Result json.RawMessage
-	// Error is a JSON object; nil or JSON null for none.
-	Error json.RawMessage
+	// Error is nil for none.
+	Error *action_servicepb.ExecutionError
 }
-
-// UnknownOutcomeReason is why an Execution ended without an outcome. It is the `kind` of its error.
-type UnknownOutcomeReason string
-
-const (
-	// UnknownExecutorLost is a lapsed lease whose executor's own heartbeat has also stopped.
-	UnknownExecutorLost UnknownOutcomeReason = "executor_lost"
-	// UnknownLeaseExpired is a lapsed lease whose executor is otherwise healthy.
-	UnknownLeaseExpired UnknownOutcomeReason = "lease_expired"
-	// UnknownAdapterOutcome is an executor that could not tell whether the effect happened.
-	UnknownAdapterOutcome UnknownOutcomeReason = "execution_outcome_unknown"
-	// UnknownCoordinatorStopped is an Execution its worker stopped while draining.
-	UnknownCoordinatorStopped UnknownOutcomeReason = "coordinator_stopped"
-)
 
 // terminalActionStates is the state of a request whose Execution ended in the key.
 var terminalActionStates = map[ExecutionState]action_servicepb.ActionState{
@@ -327,8 +313,12 @@ var terminalActionStates = map[ExecutionState]action_servicepb.ActionState{
 }
 
 // unknownOutcomeError is the `action_execution.error` of an Execution whose outcome could not be observed.
-func unknownOutcomeError(reason UnknownOutcomeReason) string {
-	return `{"kind": "` + string(reason) + `", "message": "dispatch outcome unknown; not replayed"}`
+func unknownOutcomeError(reason action_servicepb.ExecutionErrorKind) string {
+	document, err := encodeExecutionError(&action_servicepb.ExecutionError{Kind: reason, Message: "dispatch outcome unknown; not replayed"})
+	if err != nil {
+		panic(err)
+	}
+	return string(document)
 }
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
@@ -442,10 +432,7 @@ func (o ExecutionOutcome) Validate() error {
 	if o.Result != nil && !json.Valid(o.Result) {
 		return invalid("result must be a JSON value")
 	}
-	if o.Error != nil && string(o.Error) != "null" && !isObject(o.Error) {
-		return invalid("error must be a JSON object")
-	}
-	return nil
+	return validateExecutionError(o.Error)
 }
 
 func (v ProviderVote) Validate() error {

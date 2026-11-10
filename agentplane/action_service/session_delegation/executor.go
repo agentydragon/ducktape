@@ -10,6 +10,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -77,7 +78,7 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
 	delegated, err := e.delegatedContext(ctx, request)
 	if err != nil {
-		return worker.Failed("caller_identity_unavailable", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE, err.Error()), nil
 	}
 	result, err := e.dispatch(delegated, request)
 	var refused *refusal
@@ -88,7 +89,7 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	case errors.As(err, &refused):
 		return worker.Failed(refused.kind, refused.message), nil
 	case errors.Is(err, catalog.ErrInvalidArguments):
-		return worker.Failed("invalid_arguments", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, err.Error()), nil
 	case err != nil:
 		return store.ExecutionOutcome{}, err
 	default:
@@ -157,7 +158,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		case contract.GroupSessions:
 			return e.getSession(ctx, request)
 		default:
-			return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, "this executor does not expose %q", request.Action.Name)
 		}
 	case contract.ActionCreateSession:
 		args, err := e.inputs.CreateSession.Decode(request.Arguments)
@@ -169,10 +170,10 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		}
 		harness, err := args.Spec.Harness.Proto()
 		if err != nil {
-			return nil, refuse("invalid_arguments", "%s", err)
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "%s", err)
 		}
 		if !strings.HasPrefix(args.Spec.Cwd, "/") {
-			return nil, refuse("invalid_arguments", "spec.cwd must be an absolute path")
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "spec.cwd must be an absolute path")
 		}
 		request := &dispatcherpb.CreateSessionRequest{
 			SessionId:   args.SessionID,
@@ -236,7 +237,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		}
 		sessionID, err := uuid.Parse(args.SessionID)
 		if err != nil {
-			return nil, refuse("invalid_arguments", "session_id must be a UUID")
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "session_id must be a UUID")
 		}
 		var pageCursor string
 		if args.PageCursor != nil {
@@ -247,7 +248,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		})
 		if err != nil {
 			if status.Code(err) == codes.InvalidArgument {
-				return nil, refuse("invalid_arguments", "History rejected the Session page cursor or count")
+				return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "History rejected the Session page cursor or count")
 			}
 			// ReadTurns can return already projected turns alongside a context error. Its coverage
 			// error belongs to History, so attach it there and keep the partial page.
@@ -262,16 +263,16 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		receipt, err := e.dispatcher.GetDispatch(ctx, &dispatcherpb.GetDispatchRequest{CommandId: args.CommandID})
 		if err != nil {
 			if status.Code(err) == codes.NotFound {
-				return nil, refuse("input_not_found", "no input command exists for this command ID")
+				return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INPUT_NOT_FOUND, "no input command exists for this command ID")
 			}
 			return nil, readFailure("Session Dispatcher", err)
 		}
 		dispatch := receipt.GetDispatch()
 		if dispatch == nil || dispatch.GetCommandId() != args.CommandID || dispatch.GetSessionId() != args.SessionID {
-			return nil, refuse("input_not_found", "no input command belongs to the supplied Session")
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INPUT_NOT_FOUND, "no input command belongs to the supplied Session")
 		}
 		if dispatch.GetOperation() != commandpb.Operation_OPERATION_SUBMIT_INPUT {
-			return nil, refuse("not_input", "command_id does not identify submitted input")
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_NOT_INPUT, "command_id does not identify submitted input")
 		}
 		cancelled, err := e.dispatcher.CancelDispatch(ctx, &dispatcherpb.CancelDispatchRequest{CommandId: args.CommandID})
 		if err != nil {
@@ -294,7 +295,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		}
 		return protoEnvelope("dispatch", response.GetDispatch())
 	default:
-		return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
+		return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, "this executor does not expose %q", request.Action.Name)
 	}
 }
 
@@ -312,7 +313,7 @@ func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRe
 	response, err := e.environment.GetEnvironment(ctx, getRequest)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return nil, refuse("target_not_found", "the exact environment incarnation is no longer available")
+			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_TARGET_NOT_FOUND, "the exact environment incarnation is no longer available")
 		}
 		return nil, readFailure("Environment Service", err)
 	}
@@ -326,7 +327,7 @@ func (e *Executor) getSession(ctx context.Context, request store.ExecutionReques
 	}
 	sessionID, err := uuid.Parse(args.SessionID)
 	if err != nil {
-		return nil, refuse("invalid_arguments", "session_id must be a UUID")
+		return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "session_id must be a UUID")
 	}
 	snapshot, err := sessionclient.GetSession(ctx, e.dispatcher, e.history, sessionID)
 	if err != nil {
@@ -344,12 +345,15 @@ type sessionSnapshotResult struct {
 
 func validateTargetNamespace(callerNamespace string, target contract.TargetRef) error {
 	if target.Namespace != callerNamespace {
-		return refuse("invalid_arguments", "target.namespace must match the authenticated caller namespace")
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "target.namespace must match the authenticated caller namespace")
 	}
 	return nil
 }
 
-type refusal struct{ kind, message string }
+type refusal struct {
+	kind    action_servicepb.ExecutionErrorKind
+	message string
+}
 
 type resumeOutcomeError struct {
 	outcome store.ExecutionOutcome
@@ -357,17 +361,9 @@ type resumeOutcomeError struct {
 
 func (e *resumeOutcomeError) Error() string { return "resume returned a terminal execution outcome" }
 
-type resumeErrorDocument struct {
-	Kind              string          `json:"kind"`
-	Message           string          `json:"message"`
-	GRPCCode          string          `json:"grpc_code"`
-	ResumeEligibility json.RawMessage `json:"resume_eligibility,omitempty"`
-	WakeAssessment    json.RawMessage `json:"wake_assessment,omitempty"`
-}
-
 func (r *refusal) Error() string { return r.message }
 
-func refuse(kind, format string, args ...any) error {
+func refuse(kind action_servicepb.ExecutionErrorKind, format string, args ...any) error {
 	return &refusal{kind: kind, message: fmt.Sprintf(format, args...)}
 }
 
@@ -388,7 +384,7 @@ func protoEnvelope(field string, message proto.Message) (json.RawMessage, error)
 
 // readFailure is safe to return as a failed Action because reads do not mutate backend state.
 func readFailure(source string, err error) error {
-	return refuse("source_unavailable", "%s read failed: %s", source, status.Convert(err).Code())
+	return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SOURCE_UNAVAILABLE, "%s read failed: %s", source, status.Convert(err).Code())
 }
 
 func sanitizedSourceError(err error) *sessionclient.SourceError {
@@ -419,17 +415,17 @@ func writeFailure(source string, err error) error {
 	converted := status.Convert(err)
 	switch converted.Code() {
 	case codes.InvalidArgument:
-		return refuse("invalid_arguments", "%s rejected the request", source)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "%s rejected the request", source)
 	case codes.NotFound:
-		return refuse("target_not_found", "%s could not find the requested resource", source)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_TARGET_NOT_FOUND, "%s could not find the requested resource", source)
 	case codes.AlreadyExists:
-		return refuse("id_reused", "%s reports that a caller ID was used for different work", source)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ID_REUSED, "%s reports that a caller ID was used for different work", source)
 	case codes.PermissionDenied, codes.Unauthenticated:
-		return refuse("backend_refused", "%s refused the delegated caller", source)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED, "%s refused the delegated caller", source)
 	case codes.FailedPrecondition:
-		return refuse("rejected", "%s rejected the current resource state", source)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_REJECTED, "%s rejected the current resource state", source)
 	case codes.ResourceExhausted:
-		return refuse("capacity_exhausted", "%s could not accept the request", source)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CAPACITY_EXHAUSTED, "%s could not accept the request", source)
 	default:
 		return fmt.Errorf("%w: %s call outcome is unknown: %w", worker.ErrOutcomeUnknown, source, err)
 	}
@@ -440,40 +436,24 @@ func writeFailure(source string, err error) error {
 func resumeWriteFailure(err error) error {
 	converted := status.Convert(err)
 	classified := writeFailure("Environment Service", err)
-	grpcCode := converted.Code().String()
-	if name, ok := code.Code_name[int32(converted.Code())]; ok {
-		grpcCode = name
-	}
-	document := resumeErrorDocument{GRPCCode: grpcCode}
+	resume := &action_servicepb.ResumeFailure{GrpcCode: code.Code(converted.Code())}
+	failure := &action_servicepb.ExecutionError{Detail: &action_servicepb.ExecutionError_Resume{Resume: resume}}
 	state := store.ExecutionFailed
 	var refused *refusal
 	if errors.As(classified, &refused) {
-		document.Kind = refused.kind
-		document.Message = refused.message
+		failure.Kind, failure.Message = refused.kind, refused.message
 	} else {
 		state = store.ExecutionUnknown
-		document.Kind = string(store.UnknownAdapterOutcome)
-		document.Message = "resume outcome is unknown; not replayed"
+		failure.Kind = action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN
+		failure.Message = "resume outcome is unknown; not replayed"
 	}
 	for _, detail := range converted.Details() {
 		switch typed := detail.(type) {
 		case *environmentlifecyclepb.ResumeEligibility:
-			encoded, marshalErr := protojson.MarshalOptions{UseProtoNames: true}.Marshal(typed)
-			if marshalErr != nil {
-				return fmt.Errorf("marshal resume eligibility error detail: %w", marshalErr)
-			}
-			document.ResumeEligibility = encoded
+			resume.ResumeEligibility = typed
 		case *environmentlifecyclepb.WakeAssessment:
-			encoded, marshalErr := protojson.MarshalOptions{UseProtoNames: true}.Marshal(typed)
-			if marshalErr != nil {
-				return fmt.Errorf("marshal wake assessment error detail: %w", marshalErr)
-			}
-			document.WakeAssessment = encoded
+			resume.WakeAssessment = typed
 		}
 	}
-	encoded, marshalErr := json.Marshal(document)
-	if marshalErr != nil {
-		return fmt.Errorf("marshal resume error document: %w", marshalErr)
-	}
-	return &resumeOutcomeError{outcome: store.ExecutionOutcome{State: state, Error: encoded}}
+	return &resumeOutcomeError{outcome: store.ExecutionOutcome{State: state, Error: failure}}
 }

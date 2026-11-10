@@ -746,6 +746,11 @@ pub enum LexicalBindingEffectBody {
         intrinsic: crate::analysis_inputs::NativeIntrinsic,
         property: Option<String>,
     },
+    /// An imported callable replaced by its derived foreign call summary.
+    Imported {
+        defining_module: String,
+        export: String,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

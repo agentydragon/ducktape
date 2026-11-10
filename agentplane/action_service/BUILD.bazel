@@ -136,8 +136,10 @@ proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],
     deps = [
+        "//agentplane/proto:environment_lifecycle_proto",
         "//agentplane/proto:identity_proto",
         "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/rpc:code_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
@@ -146,7 +148,10 @@ proto_library(
 
 py_proto_library_with_mypy_stubs(
     name = "action_service_pb2",
-    deps = [":action_service_proto"],
+    deps = [
+        ":action_service_proto",
+        "@googleapis//google/rpc:code_proto",
+    ],
 )
 
 py_grpc_service_library(
@@ -166,8 +171,10 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb",
     proto = ":action_service_proto",
     deps = [
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//code",
     ],
 )
 
@@ -176,7 +183,10 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":action_service_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/rpc/*_pb.js:./agentplane/proto"},
     deps = [
+        "//agentplane/proto:code_pb",
+        "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:identity_pb",
         "//google/api:annotations_pb",
     ],

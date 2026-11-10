@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
@@ -246,7 +247,7 @@ func (w *Worker) claim(ctx, writes context.Context, id uuid.UUID) (*store.Execut
 
 // execute crosses the no-replay boundary, runs the Execution through its Executor, and returns how it ended.
 func (w *Worker) execute(executions, writes context.Context, lease *Lease) store.ExecutionOutcome {
-	stopped := unknownOutcome(store.UnknownCoordinatorStopped, stoppedMessage)
+	stopped := unknownOutcome(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_COORDINATOR_STOPPED, stoppedMessage)
 	if executions.Err() != nil {
 		return stopped
 	}
@@ -273,15 +274,15 @@ func (w *Worker) execute(executions, writes context.Context, lease *Lease) store
 	case executions.Err() != nil:
 		return stopped
 	case errors.Is(err, ErrOutcomeUnknown):
-		return unknownOutcome(store.UnknownAdapterOutcome, unknownMessage)
+		return unknownOutcome(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN, unknownMessage)
 	default:
 		return w.failed(lease, err)
 	}
 }
 
 func (w *Worker) failed(lease *Lease, err error) store.ExecutionOutcome {
-	slog.Warn("executor failed for Action request", "request_id", lease.claim.RequestID, "error", err)
-	return failedOutcome(err)
+	slog.Warn("executor failed for Action request", "request_id", lease.claim.RequestID, "error_type", fmt.Sprintf("%T", err), "error", err)
+	return Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL, failedMessage)
 }
 
 // finish records the outcome while renewing the lease: a known outcome is worth delivering even once the lease

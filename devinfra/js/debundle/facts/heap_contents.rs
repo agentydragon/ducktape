@@ -360,6 +360,24 @@ impl ArrayContentCollector<'_> {
         }
     }
 
+    /// One exact native input this summary consumed at `span`. The opaque
+    /// at-init call finder (`at_init_fallback.rs`) consults the same site
+    /// proofs at sites this collector also visits, so this record covers it.
+    fn record_native_input_use(
+        &mut self,
+        evidence: crate::analysis_inputs::NativeOperationInputEvidence,
+        span: swc_common::Span,
+    ) {
+        self.native_read_inputs.insert(
+            span.lo.0,
+            crate::reports::schema::NativeOperationInputUse {
+                evidence,
+                source_location: None,
+                span,
+            },
+        );
+    }
+
     fn record_member_read(&mut self, member: &MemberExpr) {
         if let Some((proof, evidence, _)) = self.native_reads.native_own_data_read(member.span) {
             if self.native_reads.primitive_class_key_read(member.span) {
@@ -470,10 +488,11 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        if self.fresh_freeze_proof.contains(node)
+        if let Some(evidence) = self.fresh_freeze_proof.input_evidence(node)
             && let Callee::Expr(callee) = &node.callee
             && let Expr::Member(member) = callee.unwrap_parens()
         {
+            self.record_native_input_use(evidence.clone(), node.span);
             // The selected original Object.freeze observes only this new
             // accessor-free record. Its callee slots are author-certified;
             // visit the callee's children and property values to retain every
@@ -486,7 +505,8 @@ impl Visit for ArrayContentCollector<'_> {
         }
         // This exact original native call cannot touch array contents or
         // invoke a callback. The same validated site proves item purity.
-        if self.native_facts.symbol_literal_proof(node).is_some() {
+        if let Some(input) = self.native_facts.symbol_literal_proof(node) {
+            self.record_native_input_use(input.evidence.clone(), node.span);
             return;
         }
         match &node.callee {
@@ -535,11 +555,8 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if self
-            .native_facts
-            .empty_native_constructor_proof(node)
-            .is_some()
-        {
+        if let Some(input) = self.native_facts.empty_native_constructor_proof(node) {
+            self.record_native_input_use(input.evidence.clone(), node.span);
             // Its exact global data binding and empty operand list are checked;
             // the platform result remains opaque to every subsequent use.
             return;

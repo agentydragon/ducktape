@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -299,7 +300,7 @@ func timeOf(timestamp *timestamppb.Timestamp) *time.Time {
 // readError is a failed read as the attempt's outcome. A read has no effect, so its outcome is never unknown: it
 // failed, and the caller may ask again.
 func readError(service string, err error) error {
-	return refuse("read_failed", "reading the %s: %v", service, err)
+	return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_READ_FAILED, "reading the %s: %v", service, err)
 }
 
 // sessionForRead ties both authorities' evidence to the live Sandbox incarnation before reading history.
@@ -329,7 +330,7 @@ func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, 
 		tied = append(tied, *written.Uid)
 	}
 	if len(tied) == 0 || slices.ContainsFunc(tied, func(uid string) bool { return uid != string(ref.UID) }) {
-		return nil, nil, nil, refuse("session_not_found", "no Session %s of Sandbox %q incarnation %s is known",
+		return nil, nil, nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SESSION_NOT_FOUND, "no Session %s of Sandbox %q incarnation %s is known",
 			sessionID, ref.Name, ref.UID)
 	}
 	return sandbox, session, summary, nil

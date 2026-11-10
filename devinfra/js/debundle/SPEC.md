@@ -3375,12 +3375,22 @@ calls or a call with a field-value operand, and has no direct
 binding/global/property writes or dynamic scope.
 Every call must initially select a synchronous local callable;
 member callees require a present ordinary data slot and
-an unused implicit receiver. A root whose every call is a direct call of an
-imported binding with a published summary uses the ordered plan too: each call
-is replaced by its summary, and under the summary's premises the effect verdict
-treats the call as touching no global property, heap, host or importer lexical
-cell. A summary whose body reads a private provider cell carries no such
-receipt. The summary is not a receipt for the root's lexical binding effects.
+an unused implicit receiver. A root may mix such local calls with direct calls
+of imported bindings that have a published summary, and uses the ordered plan
+too: each imported call is replaced by its summary, and under the summary's
+premises the effect verdict treats the call as touching no global property,
+heap, host or importer lexical cell. A summarized body invokes no argument, so
+a callback passed to it is only created at the call. An import whose
+callback-factory evidence is source-inferred is replaced the same way when it
+is called with one inline function, its summary returns only a fresh allocation
+and its body reads no private provider cell: the evidence keeps the call's
+timing and result consumers, the result retains the callback, and every later
+use of the result still reaches it. An author-asserted factory keeps its
+contract's consumers alone. A summary whose body reads a private provider cell
+carries no such receipt. A callback that
+captures a live cell of the activation creating it leaves the receiving call
+without a receipt (`callback_captures_live_cell`). A substituted call is a call edge of the root's lexical receipt, so a
+root whose every operation is covered seals its binding effects.
 Construction of an imported class keeps its established dispatch, since the
 class binding can be in its TDZ. Other native and imported whole-owner proof
 families retain their established dispatch until their value transfers accept

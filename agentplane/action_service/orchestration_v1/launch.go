@@ -11,6 +11,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -93,23 +94,23 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 func launchError(err error) error {
 	result := status.Convert(err)
 	if result.Code() == codes.AlreadyExists {
-		return refuse("sandbox_exists", "%s", result.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS, "%s", result.Message())
 	}
 	if result.Code() == codes.InvalidArgument {
 		for _, detail := range result.Details() {
 			if info, ok := detail.(*errdetails.ErrorInfo); ok && info.Domain == "agentplane.environments" {
 				switch info.Reason {
 				case "UNKNOWN_POLICY_SET":
-					return refuse("unknown_policy_set", "%s", result.Message())
+					return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET, "%s", result.Message())
 				case "LAUNCHER_POLICY_SET":
-					return refuse("launcher_policy_set", "%s", result.Message())
+					return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_POLICY_SET, "%s", result.Message())
 				}
 			}
 		}
-		return refuse("invalid_arguments", "%s", result.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "%s", result.Message())
 	}
 	if result.Code() == codes.PermissionDenied || result.Code() == codes.Unauthenticated {
-		return refuse("environment_refused", "%s", result.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED, "%s", result.Message())
 	}
 	return fmt.Errorf("%w: EnvironmentService create: %w", worker.ErrOutcomeUnknown, err)
 }
@@ -182,7 +183,7 @@ func (e *Executor) createOwned(ctx context.Context, object client.Object, owner 
 	if !slices.ContainsFunc(existing.GetOwnerReferences(), func(reference metav1.OwnerReference) bool {
 		return reference.UID == owner
 	}) {
-		return refuse("launcher_grant_exists", "%s exists and is not this Sandbox's", object.GetName())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_GRANT_EXISTS, "%s exists and is not this Sandbox's", object.GetName())
 	}
 	return nil
 }
@@ -194,7 +195,7 @@ func kubeError(doing string, err error) error {
 	var failed apierrors.APIStatus
 	if errors.As(err, &failed) {
 		if code := failed.Status().Code; code >= 400 && code < 500 && code != http.StatusRequestTimeout && code != http.StatusTooManyRequests {
-			return refuse("kubernetes_refused", "%s: %s", doing, failed.Status().Message)
+			return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_KUBERNETES_REFUSED, "%s: %s", doing, failed.Status().Message)
 		}
 	}
 	return fmt.Errorf("%w: %s: %w", worker.ErrOutcomeUnknown, doing, err)

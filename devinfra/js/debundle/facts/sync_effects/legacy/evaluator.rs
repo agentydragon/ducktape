@@ -497,6 +497,14 @@ impl Executor<'_, '_> {
                     });
                 for target in targets {
                     match target {
+                        // CLEANUP(added 2026-11-10): the ordered lane
+                        // substitutes a source-inferred factory that has a
+                        // derived summary (`retaining_factory_result` in
+                        // `roots/call_operands.rs`). This arm stays for the
+                        // roots the legacy gate still evaluates here: an
+                        // author-asserted or unsummarized factory, a
+                        // retained-result argument, and owners outside the
+                        // ordered root family. Remove with `legacy/` in L4e.
                         AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
                             if let ValueExpr::Binding(imported_local) = callee.as_ref()
                                 && let Some(&(owner, call_span)) =

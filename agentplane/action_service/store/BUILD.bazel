@@ -8,6 +8,7 @@ go_library(
         "approvals.go",
         "cancel.go",
         "decisions.go",
+        "execution_error.go",
         "executions.go",
         "models.go",
         "protobuf.go",
@@ -19,9 +20,12 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/postgres",
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@org_golang_google_genproto_googleapis_rpc//code",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
 )
@@ -29,6 +33,7 @@ go_library(
 go_test(
     name = "golden_test",
     srcs = [
+        "execution_error_test.go",
         "golden_test.go",
         "golden_vectors_test.go",
         "storage_values_test.go",
@@ -37,8 +42,10 @@ go_test(
     embedsrcs = ["golden.json"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "@com_github_google_uuid//:uuid",
+        "@org_golang_google_genproto_googleapis_rpc//code",
         "@org_golang_google_protobuf//proto",
     ],
 )
