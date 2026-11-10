@@ -95,6 +95,15 @@ ts_library(
     deps = [":types"],
 )
 
+spend_vitest_test(
+    name = "rule_display_test",
+    srcs = ["rule_display.test.ts"],
+    deps = [
+        ":rule_display",
+        "//:node_modules/vitest",
+    ],
+)
+
 ts_library(
     name = "spend_display",
     srcs = ["spend_display.tsx"],

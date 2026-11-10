@@ -360,13 +360,18 @@ async def test_review_rule_configuration_render(
     await rule_notes.locator("summary").click()
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
     await expect(page.get_by_text("Review", exact=True)).to_have_count(2)
-    await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
+    await expect(page.get_by_text('amount < 0 && (starts_with(name, "EXAMPLE") ||', exact=False)).to_have_count(1)
     await expect(page.get_by_text("One-off", exact=True)).to_have_count(2)
-    await page.get_by_text("example-funding-transfer", exact=True).wait_for()
+    one_off_id = page.get_by_text("example-funding-transfer", exact=True)
+    await one_off_id.wait_for()
+    # Long selectors need a readable column even when the badges wrap on mobile.
+    one_off_box = await one_off_id.bounding_box()
+    assert one_off_box is not None
+    assert one_off_box["width"] >= 160
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
     ).to_have_count(1)
-    await expect(page.get_by_text("Date is 2026-10-03", exact=False)).to_have_count(1)
+    await expect(page.get_by_text('date == "2026-10-03"', exact=False)).to_have_count(1)
     await page.get_by_text("Full reversal pairs", exact=True).wait_for()
     await page.get_by_text("example-full-reversal", exact=True).wait_for()
     await page.get_by_text("example-reversal-needs-review", exact=True).wait_for()
