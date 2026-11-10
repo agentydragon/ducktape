@@ -4,10 +4,12 @@
 // Why this works when symbols are gone: the Go runtime needs type metadata at
 // run time for interface dispatch, type assertions, reflection and map hashing,
 // so the linker cannot drop it and garble cannot rewrite it into nothing.
-// `.typelink` lists the reachable named types; each entry points at an
-// `abi.Type` that we expand recursively. Field *names* are garbled along with
-// everything else, but two things survive verbatim and carry most of the
-// signal:
+// Before Go 1.27, `.typelink` lists reachable named types; each entry points
+// at an `abi.Type` that we expand recursively. Go 1.27 replaces `.typelink`
+// with a contiguous descriptor range in `.go.type`, bounded by
+// `moduledata.types` and `moduledata.typedesclen`. Field *names* are garbled
+// along with everything else, but two things survive verbatim and carry most
+// of the signal:
 //
 //   - **struct tags**, because `encoding/json` reads them reflectively at run
 //     time — so `json:"session_ingress_token"` is intact even under
@@ -23,10 +25,10 @@
 //	gotypes -filter Config ./binary       # only types whose name contains Config
 //	gotypes -all-kinds ./binary           # non-struct named types too
 //
-// If output is empty or names look like garbage, the types base is wrong: it
-// defaults to `.rodata`'s address, which is right for most builds, but the
-// authoritative value is `moduledata.types`. Override it with -types-base
-// (and optionally -etypes to bound the walk).
+// On pre-Go 1.27 binaries, the types base defaults to an inferred address near
+// `.rodata`; the authoritative value is `moduledata.types`. Override it with
+// -types-base (and optionally -etypes to bound the walk). Go 1.27 binaries
+// read the descriptor range directly from `.go.module`.
 package main
 
 import (
@@ -46,6 +48,7 @@ const (
 	offKind    = 23
 	offStr     = 40
 	offKindLoc = 48 // start of the kind-specific type struct
+	ptrSize    = 8
 
 	tflagUncommon  = 1 << 0
 	tflagExtraStar = 1 << 1
@@ -202,6 +205,89 @@ func (m *image) children(t uint64) []uint64 {
 	return out
 }
 
+// descriptorSize returns the size of a Go 1.27 type descriptor. Go 1.27
+// groups descriptors in .go.type and records the end of the reflect-visible
+// prefix in runtime.moduledata.typedesclen instead of emitting .typelink.
+// Keep this in sync with internal/abi.Type.DescriptorSize.
+func (m *image) descriptorSize(t uint64) uint64 {
+	kind := m.u8(t+offKind) & 0x1f
+	tflag := m.u8(t + offTFlag)
+	baseSize := uint64(offKindLoc)
+	addSize := uint64(0)
+	switch kind {
+	case kindArray:
+		baseSize += 3 * ptrSize
+	case kindChan:
+		baseSize += 2 * ptrSize
+	case kindPointer, kindSlice:
+		baseSize += ptrSize
+	case kindFunc:
+		// FuncType has two uint16 counters and a pointer for every argument.
+		counts := m.u32(t + offKindLoc)
+		in := uint64(counts & 0xffff)
+		out := uint64((counts >> 16) & 0x7fff)
+		baseSize += ptrSize
+		addSize = (in + out) * ptrSize
+	case kindInterface:
+		// InterfaceType is Type + Name + a slice of Imethod entries.
+		methods := m.u64(t + offKindLoc + 16)
+		baseSize += 4 * ptrSize
+		addSize = methods * 8
+	case kindMap:
+		// abi.MapType is Type plus 10 pointer-sized fields and Flags.
+		baseSize += 10*ptrSize + 8
+	case kindStruct:
+		// StructType is Type + Name + a slice of StructField entries.
+		fields := m.u64(t + offKindLoc + 16)
+		baseSize += 4 * ptrSize
+		addSize = fields * structFieldSize
+	default:
+		// Basic type descriptors consist only of abi.Type.
+	}
+
+	size := baseSize
+	if tflag&tflagUncommon != 0 {
+		uncommon := t + baseSize
+		methodCount := uint64(m.u32(uncommon+4) & 0xffff)
+		size += 16 + methodCount*16 // abi.UncommonType and abi.Method
+	}
+	return size + addSize
+}
+
+// go127TypesRange reads the Go 1.27 moduledata types range. The linker moved
+// moduledata into .go.module and stores the type descriptor base, the length
+// of the reflect-visible descriptor prefix, and the end of the type region as
+// adjacent pointers/lengths. Matching the .go.type start and end avoids
+// depending on moduledata's full field offsets.
+func go127TypesRange(f *elf.File) (base, descriptorLen uint64, err error) {
+	typesSection := f.Section(".go.type")
+	moduleSection := f.Section(".go.module")
+	if typesSection == nil || moduleSection == nil {
+		return 0, 0, fmt.Errorf("no .typelink section or Go 1.27 .go.type/.go.module sections")
+	}
+	moduleData, err := moduleSection.Data()
+	if err != nil {
+		return 0, 0, err
+	}
+	typesEnd := typesSection.Addr + typesSection.Size
+	for off := 0; off+3*ptrSize <= len(moduleData); off += ptrSize {
+		candidate := binary.LittleEndian.Uint64(moduleData[off : off+ptrSize])
+		if candidate != typesSection.Addr {
+			continue
+		}
+		length := binary.LittleEndian.Uint64(moduleData[off+ptrSize : off+2*ptrSize])
+		end := binary.LittleEndian.Uint64(moduleData[off+2*ptrSize : off+3*ptrSize])
+		if length >= ptrSize && length <= typesSection.Size && end == typesEnd {
+			return candidate, length, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("could not find the Go 1.27 type descriptor range in .go.module")
+}
+
+func alignUp(v, alignment uint64) uint64 {
+	return (v + alignment - 1) &^ (alignment - 1)
+}
+
 func main() {
 	filter := flag.String("filter", "", "only print types whose name contains this substring")
 	allKinds := flag.String("all-kinds", "", "also report non-struct named types (any non-empty value)")
@@ -288,30 +374,60 @@ func run(path, filter string, allKinds bool, typesBase, etypes uint64) error {
 	}
 
 	tl := f.Section(".typelink")
-	if tl == nil {
-		return fmt.Errorf("no .typelink section: not a Go binary, or it was built with -ldflags=-w in a way that dropped type links")
-	}
-	tld, err := tl.Data()
-	if err != nil {
-		return err
-	}
-	if typesBase == 0 {
-		rodata := f.Section(".rodata")
-		if rodata == nil {
-			return fmt.Errorf("no .rodata section; pass -types-base explicitly")
-		}
-		typesBase, err = detectTypesBase(f, raw, tld, rodata.Addr)
+	var typelinks []uint64
+	if tl != nil {
+		tld, err := tl.Data()
 		if err != nil {
 			return err
 		}
+		if typesBase == 0 {
+			rodata := f.Section(".rodata")
+			if rodata == nil {
+				return fmt.Errorf("no .rodata section for .typelink; pass -types-base explicitly")
+			}
+			typesBase, err = detectTypesBase(f, raw, tld, rodata.Addr)
+			if err != nil {
+				return err
+			}
+		}
+		for i := 0; i+4 <= len(tld); i += 4 {
+			typelinks = append(typelinks, typesBase+uint64(int32(binary.LittleEndian.Uint32(tld[i:]))))
+		}
+	} else {
+		if typesBase != 0 {
+			return fmt.Errorf("-types-base is only supported for binaries with .typelink")
+		}
+		var descriptorLen uint64
+		typesBase, descriptorLen, err = go127TypesRange(f)
+		if err != nil {
+			return err
+		}
+		// Go 1.27 places the reflect-visible types contiguously after a
+		// pointer-sized header. The runtime uses the same alignment and
+		// DescriptorSize walk when it constructs the old typelink list.
+		go127Image := &image{f: f, data: raw, types: typesBase}
+		for t := typesBase + ptrSize; t < typesBase+descriptorLen; {
+			t = alignUp(t, ptrSize)
+			if t+uint64(offKindLoc) > typesBase+descriptorLen {
+				return fmt.Errorf("truncated type descriptor at %#x", t)
+			}
+			kind := go127Image.u8(t+offKind) & 0x1f
+			if kind == 0 || kind > 26 {
+				return fmt.Errorf("invalid type kind %d at %#x", kind, t)
+			}
+			size := go127Image.descriptorSize(t)
+			if size < uint64(offKindLoc) || t+size > typesBase+descriptorLen {
+				return fmt.Errorf("invalid descriptor size %#x for type at %#x", size, t)
+			}
+			typelinks = append(typelinks, t)
+			t += size
+		}
+		fmt.Fprintf(os.Stderr, "types base %#x (%d type descriptors)\n", typesBase, len(typelinks))
 	}
 	m := &image{f: f, data: raw, types: typesBase}
 
 	// Seed from .typelink, then expand transitively through composite types.
-	queue := make([]uint64, 0, len(tld)/4)
-	for i := 0; i+4 <= len(tld); i += 4 {
-		queue = append(queue, typesBase+uint64(int32(binary.LittleEndian.Uint32(tld[i:]))))
-	}
+	queue := append([]uint64(nil), typelinks...)
 
 	seen := map[uint64]bool{}
 	var found []uint64

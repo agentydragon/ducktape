@@ -9,9 +9,11 @@ token alone does not grant it. A Session UUID by itself grants nothing. Consumer
 `testing/go_service.py` runs the built Go service over a test database. Tests can inspect the fold's
 storage through `fold/models.py` and use the generated Thread entity messages for semantic reads.
 
-An optional, separate `delegation` setting names the Actions actor, caller namespaces and exact full
-History RPC method names that admit delegated reads. The shared workload-auth middleware rechecks the
-asserted caller's current ServiceAccount UID. Delegated Actions calls retain ordinary execution-principal
+An optional, separate `delegation` setting names the Actions actor, caller namespaces, whether it may
+assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
+method names that admit delegated reads. The shared workload-auth middleware rechecks the asserted
+caller's current ServiceAccount or Identity UID; a delegated Identity reads only the Sessions recorded
+with that incarnation, as its own workload does. Delegated Actions calls retain ordinary execution-principal
 read scope even if the actor is also a configured backend reader; actor Pod proof does not widen the read.
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.

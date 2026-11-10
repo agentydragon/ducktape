@@ -67,7 +67,7 @@ def view(variant: Variant = "ready", *, window_days: int = 90) -> Sustainability
     spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
     estimated_annual_draw = (
         None
-        if portfolio_unavailable or effective_tax_rate is None
+        if effective_tax_rate is None
         else int((Decimal(annualized_spending) / (Decimal(1) - effective_tax_rate)).quantize(Decimal(1)))
     )
     mandatory, flexible, provisional, total = (

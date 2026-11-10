@@ -50,6 +50,7 @@ def chart(app: App) -> Chart:
         "github_workflow_runs.vrl",
         "github_policy.vrl",
         "001_ci_feedback.sql",
+        "002_ci_feedback_optimization.sql",
         "grants.sql",
     ]
     k8s.KubeConfigMap(
@@ -104,7 +105,9 @@ def chart(app: App) -> Chart:
                             args=[
                                 "--no-psqlrc",
                                 "--set=ON_ERROR_STOP=1",
+                                "--single-transaction",
                                 "--file=/etc/cdviz/001_ci_feedback.sql",
+                                "--file=/etc/cdviz/002_ci_feedback_optimization.sql",
                                 "--file=/etc/cdviz/grants.sql",
                             ],
                             env=_database_env(),

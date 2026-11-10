@@ -251,7 +251,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
   token_profile: never-print-this
 `,
 		"action group":                       requiredFile + strings.Replace(testActionGroups, "server_id: test-group", "server_id: never-print-this", 1),
-		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
 		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
 		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
 		"executor kind":                      requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: never-print-this", 1),

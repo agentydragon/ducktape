@@ -54,7 +54,10 @@ type delegatedBackend struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	historypb.UnimplementedHistoryServiceServer
-	testing        *testing.T
+	testing *testing.T
+	// identity, when set, is the Identity every call must be delegated for instead of the
+	// test ServiceAccount.
+	identity       *identitypb.Identity
 	gotOpen        *dispatcherpb.CreateSessionRequest
 	openErr        error
 	openCalls      int
@@ -145,8 +148,16 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 	if err := proto.Unmarshal([]byte(values[0]), &envelope); err != nil {
 		b.testing.Fatalf("unmarshal delegation envelope: %v", err)
 	}
-	if envelope.GetCaller().GetAccount().GetNamespace() != testCallerNamespace || envelope.GetCaller().GetAccount().GetName() != testCallerName || envelope.GetCaller().GetUid() != testCallerUID ||
-		envelope.GetActionRequestId() != wantRequest.String() || envelope.GetActionExecutionId() != wantExecution.String() {
+	if envelope.GetActionRequestId() != wantRequest.String() || envelope.GetActionExecutionId() != wantExecution.String() {
+		b.testing.Fatalf("delegation envelope = %v", &envelope)
+	}
+	if b.identity != nil {
+		if !proto.Equal(envelope.GetIdentity(), b.identity) || envelope.GetCaller() != nil {
+			b.testing.Fatalf("delegation envelope = %v, want it for Identity %v", &envelope, b.identity)
+		}
+		return
+	}
+	if envelope.GetCaller().GetAccount().GetNamespace() != testCallerNamespace || envelope.GetCaller().GetAccount().GetName() != testCallerName || envelope.GetCaller().GetUid() != testCallerUID {
 		b.testing.Fatalf("delegation envelope = %v", &envelope)
 	}
 }
@@ -800,5 +811,31 @@ func TestMissingCallerUIDFailsClosedBeforeBackendCall(t *testing.T) {
 	}
 	if outcome.State != store.ExecutionFailed || backend.gotOpen != nil {
 		t.Fatalf("outcome=%+v backend opening=%v; missing caller UID must fail before RPC", outcome, backend.gotOpen)
+	}
+}
+
+// An Identity's request is forwarded as that Identity incarnation: the backend, not a caller
+// namespace, scopes it to what is recorded with the Identity.
+func TestAnIdentityCallersRequestIsDelegatedAsItsIdentity(t *testing.T) {
+	identity := &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}
+	backend := &delegatedBackend{testing: t, identity: identity}
+	executor := newDelegatedExecutor(t, backend)
+	request := requestFor("submit_input", map[string]any{
+		"target":     map[string]string{"namespace": "test-any-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
+		"session_id": testSessionID, "command_id": testCommandID, "text": "Do the requested work.",
+	}, nil)
+	request.Caller = store.IdentityCaller{Identity: store.Identity{Name: identity.GetName(), UID: identity.GetUid()}}
+	outcome, err := executor.attempt(t.Context(), request)
+	if err != nil || outcome.State != store.ExecutionSucceeded {
+		t.Fatalf("outcome=%+v error=%v", outcome, err)
+	}
+	if backend.gotSubmit.GetSessionId() != testSessionID || backend.gotSubmit.GetCommandId() != testCommandID {
+		t.Fatalf("SubmitInput request = %v", backend.gotSubmit)
+	}
+
+	request.Caller = store.UnknownCaller{}
+	outcome, err = executor.attempt(t.Context(), request)
+	if err != nil || outcome.State != store.ExecutionFailed || backend.submitCalls != 1 {
+		t.Fatalf("a caller of unknown kind: outcome=%+v error=%v submits=%d; want failure before any call", outcome, err, backend.submitCalls)
 	}
 }

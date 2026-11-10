@@ -114,9 +114,8 @@ including one inherited through a tunnel:
    deleting an Identity revokes every credential naming it and a same-named successor inherits
    none. A verifier constructed without the policy namespace refuses Identity subjects; the egress
    proxy and the Action Service ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority))
-   pass their own, LLM ingress and the Runner Gateway's Dispatcher theirs once given an optional
-   `policy_namespace`, and until each other service authorizes an Identity `Principal`
-   (`SERVICES_IDENTITY_PRINCIPAL`) every other verifier does.
+   pass their own, and LLM ingress, History, Notification and the Runner Gateway theirs from
+   `policy_namespace`, which staging sets for each.
 6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
    TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
    binds to it.

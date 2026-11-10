@@ -104,6 +104,10 @@ The CLI, GNOME popup and browser group subscription quotas separately from API b
 Provider headings stay short; labelled balance and grant rows preserve each pool's units,
 organization and product restrictions. Grant rows show remaining value and expiry; expanded
 details add the original amount. Banked resets are separate from monetary and paid-credit balances.
+Known zero banked resets remain available in details. The default shows zero only when
+included quota is exhausted and no displayed window awaits updated usage after its reset.
+Positive counts stay visible; an unknown count is never shown as zero. Stale readings retain
+their stale warning.
 
 GNOME places a single ungrouped balance in the provider heading for both prepaid money and
 paid credits. Its popup wraps to a bounded width. Broad API promo scopes are shown in

@@ -107,6 +107,39 @@ class _ParsedRecord:
     usage: tuple[UsageObservation, ...]
 
 
+@dataclass(frozen=True)
+class _SnapshotFileIdentity:
+    change_kind: str
+    file_type: str
+    byte_size: int
+    modified_at: datetime | None
+    session_id: UUID | None
+
+    @classmethod
+    def from_row(cls, row: SnapshotFileRow) -> _SnapshotFileIdentity:
+        return cls(
+            change_kind=row.change_kind,
+            file_type=row.file_type,
+            byte_size=row.byte_size,
+            modified_at=row.modified_at,
+            session_id=row.session_id,
+        )
+
+
+def _assert_snapshot_identity(row: ResticSnapshotRow, snapshot: ResticSnapshot) -> None:
+    if (
+        ResticSnapshot(
+            id=row.snapshot_id,
+            captured_at=row.captured_at,
+            parent_id=row.parent_snapshot_id,
+            tree_id=row.tree_id,
+            paths=tuple(row.paths),
+        )
+        != snapshot
+    ):
+        raise RuntimeError(f"Restic metadata changed for snapshot {snapshot.id}")
+
+
 class SnapshotIngestor:
     """Imports all retained snapshots for one Restic repository into Postgres."""
 
@@ -239,64 +272,100 @@ class SnapshotIngestor:
 
     def _prepare_snapshot(self, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> None:
         try:
-            with self._session_factory() as db, db.begin():
-                row = db.scalar(
-                    select(ResticSnapshotRow)
-                    .where(
-                        ResticSnapshotRow.machine_id == self._source.machine_id,
-                        ResticSnapshotRow.snapshot_id == snapshot.id,
+            while True:
+                with self._session_factory() as db, db.begin():
+                    row = db.scalar(
+                        select(ResticSnapshotRow)
+                        .where(
+                            ResticSnapshotRow.machine_id == self._source.machine_id,
+                            ResticSnapshotRow.snapshot_id == snapshot.id,
+                        )
+                        .with_for_update()
                     )
-                    .with_for_update()
-                )
-                if row is None:
-                    row = self._new_snapshot_row(snapshot)
-                    db.add(row)
-                    db.flush()
-                if row.inventory_status == "complete":
-                    return
+                    if row is None:
+                        row = self._new_snapshot_row(snapshot)
+                        db.add(row)
+                        db.flush()
+                    _assert_snapshot_identity(row, snapshot)
+                    if row.inventory_status == "complete":
+                        return
+                    comparison_snapshot_id = self._usable_parent(db, snapshot, available_snapshot_ids)
 
-                comparison_snapshot_id = self._usable_parent(db, snapshot, available_snapshot_ids)
                 if comparison_snapshot_id is None:
-                    files = self._source.restic.list_files(snapshot.id)
-                    entries = self._initial_entries(files)
+                    entries = self._initial_entries(self._source.restic.list_files(snapshot.id))
                 else:
                     changes = self._source.restic.diff_snapshots(comparison_snapshot_id, snapshot.id)
                     entries = self._changed_entries(changes)
 
-                row.comparison_snapshot_id = comparison_snapshot_id
-                row.inventory_error = None
-                for path, modifier, file_type, size, modified_at, status, error, location in entries:
-                    existing = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
-                    if existing is not None:
-                        continue
-                    session_id = None
-                    if location is not None:
-                        session_row = self._ensure_session(db, location)
-                        session_id = session_row.id
-                    db.add(
-                        SnapshotFileRow(
-                            machine_id=self._source.machine_id,
-                            snapshot_id=snapshot.id,
-                            path=path,
-                            session_id=session_id,
-                            change_kind=modifier,
-                            file_type=file_type,
-                            byte_size=size,
-                            modified_at=modified_at,
-                            status=status,
-                            error=error,
+                with self._session_factory() as db, db.begin():
+                    row = db.scalar(
+                        select(ResticSnapshotRow)
+                        .where(
+                            ResticSnapshotRow.machine_id == self._source.machine_id,
+                            ResticSnapshotRow.snapshot_id == snapshot.id,
                         )
+                        .with_for_update()
                     )
-                row.inventory_status = "complete"
-                row.processing_status = "pending"
+                    if row is None:
+                        raise RuntimeError(f"snapshot ledger row disappeared for {snapshot.id}")
+                    _assert_snapshot_identity(row, snapshot)
+                    if row.inventory_status == "complete":
+                        return
+                    current_comparison_snapshot_id = self._usable_parent(
+                        db, snapshot, available_snapshot_ids, lock=True
+                    )
+                    if comparison_snapshot_id is not None and current_comparison_snapshot_id != comparison_snapshot_id:
+                        # A diff is valid only while its exact parent remains fully processed.
+                        # Re-read the snapshot independently if that trust boundary changed.
+                        continue
+
+                    row.comparison_snapshot_id = comparison_snapshot_id
+                    row.inventory_error = None
+                    for path, modifier, file_type, size, modified_at, status, error, location in entries:
+                        existing = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
+                        if existing is not None:
+                            continue
+                        session_id = None
+                        if location is not None:
+                            session_row = self._ensure_session(db, location)
+                            session_id = session_row.id
+                        db.add(
+                            SnapshotFileRow(
+                                machine_id=self._source.machine_id,
+                                snapshot_id=snapshot.id,
+                                path=path,
+                                session_id=session_id,
+                                change_kind=modifier,
+                                file_type=file_type,
+                                byte_size=size,
+                                modified_at=modified_at,
+                                status=status,
+                                error=error,
+                            )
+                        )
+                    row.inventory_status = "complete"
+                    row.processing_status = "pending"
+                    return
         except Exception as exc:
             self._mark_inventory_failed(snapshot, exc)
 
-    def _usable_parent(self, db: DbSession, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> str | None:
+    def _usable_parent(
+        self, db: DbSession, snapshot: ResticSnapshot, available_snapshot_ids: set[str], *, lock: bool = False
+    ) -> str | None:
         parent_id = snapshot.parent_id
         if parent_id is None or parent_id not in available_snapshot_ids:
             return None
-        parent = db.get(ResticSnapshotRow, (self._source.machine_id, parent_id))
+        parent = (
+            db.scalar(
+                select(ResticSnapshotRow)
+                .where(
+                    ResticSnapshotRow.machine_id == self._source.machine_id, ResticSnapshotRow.snapshot_id == parent_id
+                )
+                .with_for_update()
+            )
+            if lock
+            else db.get(ResticSnapshotRow, (self._source.machine_id, parent_id))
+        )
         if parent is None:
             # A pruned/missing diff base cannot safely seed path state. Inventory this snapshot itself.
             return None
@@ -676,26 +745,82 @@ class SnapshotIngestor:
 
     def _process_file(self, snapshot: ResticSnapshot, path: str) -> None:
         try:
+            with self._session_factory() as db, db.begin():
+                snapshot_row = db.scalar(
+                    select(ResticSnapshotRow)
+                    .where(
+                        ResticSnapshotRow.machine_id == self._source.machine_id,
+                        ResticSnapshotRow.snapshot_id == snapshot.id,
+                    )
+                    .with_for_update()
+                )
+                if snapshot_row is None:
+                    raise RuntimeError(f"missing snapshot row for {snapshot.id}")
+                _assert_snapshot_identity(snapshot_row, snapshot)
+                row = db.scalar(
+                    select(SnapshotFileRow)
+                    .where(
+                        SnapshotFileRow.machine_id == self._source.machine_id,
+                        SnapshotFileRow.snapshot_id == snapshot.id,
+                        SnapshotFileRow.path == path,
+                    )
+                    .with_for_update()
+                )
+                if row is None or row.status not in ("pending", "failed"):
+                    return
+                location = self._classify(path)
+                if location is None:
+                    row.status = "unclassified"
+                    return
+                if row.change_kind == "-":
+                    row.status = "deleted"
+                    return
+                if any(
+                    part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")
+                ):
+                    raise ValueError(f"unrecognized Restic diff modifier: {row.change_kind}")
+                file_identity = _SnapshotFileIdentity.from_row(row)
+                inventory_status = snapshot_row.inventory_status
+                comparison_snapshot_id = snapshot_row.comparison_snapshot_id
+
             with cast(BinaryIO, tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")) as contents:
+                self._source.restic.dump_to(snapshot.id, path, contents)
+                contents.seek(0)
+                sha256, byte_size, record_count = _fingerprint_file(contents)
+                contents.seek(0)
+
                 with self._session_factory() as db, db.begin():
-                    row = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path), with_for_update=True)
+                    snapshot_row = db.scalar(
+                        select(ResticSnapshotRow)
+                        .where(
+                            ResticSnapshotRow.machine_id == self._source.machine_id,
+                            ResticSnapshotRow.snapshot_id == snapshot.id,
+                        )
+                        .with_for_update()
+                    )
+                    if snapshot_row is None:
+                        raise RuntimeError(f"snapshot row disappeared for {snapshot.id}")
+                    _assert_snapshot_identity(snapshot_row, snapshot)
+                    row = db.scalar(
+                        select(SnapshotFileRow)
+                        .where(
+                            SnapshotFileRow.machine_id == self._source.machine_id,
+                            SnapshotFileRow.snapshot_id == snapshot.id,
+                            SnapshotFileRow.path == path,
+                        )
+                        .with_for_update()
+                    )
                     if row is None or row.status not in ("pending", "failed"):
                         return
-                    location = self._classify(path)
-                    if location is None:
-                        row.status = "unclassified"
-                        return
-                    if row.change_kind == "-":
-                        row.status = "deleted"
-                        return
-                    if any(
-                        part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")
+                    if _SnapshotFileIdentity.from_row(row) != file_identity:
+                        raise RuntimeError(f"snapshot file identity changed while reading {path}")
+                    if (
+                        snapshot_row.inventory_status != inventory_status
+                        or snapshot_row.comparison_snapshot_id != comparison_snapshot_id
                     ):
-                        raise ValueError(f"unrecognized Restic diff modifier: {row.change_kind}")
-                    self._source.restic.dump_to(snapshot.id, path, contents)
-                    contents.seek(0)
-                    sha256, byte_size, record_count = _fingerprint_file(contents)
-                    contents.seek(0)
+                        # Inventory may have retried while Restic was reading. Leave this row eligible
+                        # for the next pass, which will capture the new comparison-parent decision.
+                        return
                     session_row = (
                         db.get(SessionRow, row.session_id) if row.session_id else self._ensure_session(db, location)
                     )
@@ -711,6 +836,9 @@ class SnapshotIngestor:
                     byte_size=byte_size,
                     record_count=record_count,
                     contents=contents,
+                    file_identity=file_identity,
+                    inventory_status=inventory_status,
+                    comparison_snapshot_id=comparison_snapshot_id,
                 )
         except Exception as exc:
             self._mark_file_failed(snapshot.id, path, exc)
@@ -726,6 +854,9 @@ class SnapshotIngestor:
         byte_size: int,
         record_count: int,
         contents: BinaryIO,
+        file_identity: _SnapshotFileIdentity,
+        inventory_status: str,
+        comparison_snapshot_id: str | None,
     ) -> None:
         version_id = uuid5(session_id, f"{PARSER_VERSION}:{sha256}")
         parent = None
@@ -792,6 +923,9 @@ class SnapshotIngestor:
             byte_size=byte_size,
             record_count=record_count,
             metadata=metadata,
+            file_identity=file_identity,
+            inventory_status=inventory_status,
+            comparison_snapshot_id=comparison_snapshot_id,
         )
 
     def _store_record_batch(
@@ -877,10 +1011,24 @@ class SnapshotIngestor:
         byte_size: int,
         record_count: int,
         metadata: dict[str, Any],
+        file_identity: _SnapshotFileIdentity,
+        inventory_status: str,
+        comparison_snapshot_id: str | None,
     ) -> None:
         with self._session_factory() as db, db.begin():
+            snapshot_row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
+            if snapshot_row is None:
+                raise RuntimeError(f"snapshot row disappeared for {snapshot.id}")
+            _assert_snapshot_identity(snapshot_row, snapshot)
             snapshot_file = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path), with_for_update=True)
             if snapshot_file is None or snapshot_file.status not in ("pending", "failed"):
+                return
+            if _SnapshotFileIdentity.from_row(snapshot_file) != file_identity:
+                raise RuntimeError(f"snapshot file identity changed while parsing {path}")
+            if (
+                snapshot_row.inventory_status != inventory_status
+                or snapshot_row.comparison_snapshot_id != comparison_snapshot_id
+            ):
                 return
             session_row = db.get(SessionRow, session_id, with_for_update=True)
             if session_row is None:
@@ -1276,11 +1424,18 @@ class SnapshotIngestor:
 
     def _mark_inventory_failed(self, snapshot: ResticSnapshot, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
-            row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
+            row = db.scalar(
+                select(ResticSnapshotRow)
+                .where(
+                    ResticSnapshotRow.machine_id == self._source.machine_id,
+                    ResticSnapshotRow.snapshot_id == snapshot.id,
+                )
+                .with_for_update()
+            )
             if row is None:
                 row = self._new_snapshot_row(snapshot)
                 db.add(row)
-            elif row.inventory_status == "complete":
+            if row.inventory_status == "complete":
                 return
             row.inventory_status = "failed"
             row.inventory_error = _error_text(exc)
@@ -1288,7 +1443,15 @@ class SnapshotIngestor:
 
     def _mark_file_failed(self, snapshot_id: str, path: str, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
-            row = db.get(SnapshotFileRow, (self._source.machine_id, snapshot_id, path), with_for_update=True)
+            row = db.scalar(
+                select(SnapshotFileRow)
+                .where(
+                    SnapshotFileRow.machine_id == self._source.machine_id,
+                    SnapshotFileRow.snapshot_id == snapshot_id,
+                    SnapshotFileRow.path == path,
+                )
+                .with_for_update()
+            )
             if row is not None and row.status in ("pending", "failed"):
                 row.status = "failed"
                 row.error = _error_text(exc)

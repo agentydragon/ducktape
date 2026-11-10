@@ -127,8 +127,17 @@ type IdentityAttribution struct {
 
 func (*IdentityAttribution) isAttribution() {}
 
+// DelegatedIdentityAttribution records a trusted platform component's call on behalf of an
+// Identity: the Identity it was authorized as and the component that named it.
+type DelegatedIdentityAttribution struct {
+	Identity   *identitypb.Identity
+	Delegation IdentityDelegation
+}
+
+func (*DelegatedIdentityAttribution) isAttribution() {}
+
 // Attribution is the verified caller recorded with a row: an *AdmissionAttribution for a
-// ServiceAccount caller or an *IdentityAttribution.
+// ServiceAccount caller, an *IdentityAttribution or a *DelegatedIdentityAttribution.
 type Attribution interface{ isAttribution() }
 
 // Caller is an admitted Dispatcher caller: a ServiceAccountCaller or an IdentityCaller.
@@ -142,12 +151,34 @@ type ServiceAccountCaller struct {
 	Attribution            *AdmissionAttribution
 }
 
-// IdentityCaller is a workload whose SVID named an Identity. It is never privileged: it owns the
-// Sessions whose execution identity is its Identity incarnation, name and UID.
+// IdentityCaller is a call authorized as an Identity. It is never privileged: it owns the Sessions
+// whose execution identity is its Identity incarnation, name and UID, however the Identity was
+// proven.
 type IdentityCaller struct {
 	Identity *identitypb.Identity
-	Pod      *PodIdentity
+	// Proof is an IdentitySVID or an IdentityDelegation.
+	Proof IdentityProof
 }
+
+// IdentityProof is how a call proved its Identity.
+type IdentityProof interface{ isIdentityProof() }
+
+// IdentitySVID is a workload whose own SVID named the Identity, with the Pod its accepted
+// incarnation runs in, nil for a standing workload.
+type IdentitySVID struct {
+	Pod *PodIdentity
+}
+
+// IdentityDelegation is a trusted platform component that named the Identity in a delegation
+// envelope: its Pod-bound ServiceAccount and the Action the call served.
+type IdentityDelegation struct {
+	Actor    *ServiceAccountIdentity
+	ActorPod PodIdentity
+	Action   ActionCorrelation
+}
+
+func (IdentitySVID) isIdentityProof()       {}
+func (IdentityDelegation) isIdentityProof() {}
 
 func (ServiceAccountCaller) isCaller() {}
 func (IdentityCaller) isCaller()       {}
@@ -166,7 +197,14 @@ func callerAttribution(caller Caller) Attribution {
 		}
 		return c.Attribution
 	case IdentityCaller:
-		return &IdentityAttribution{Identity: c.Identity, Pod: c.Pod}
+		switch proof := c.Proof.(type) {
+		case IdentitySVID:
+			return &IdentityAttribution{Identity: c.Identity, Pod: proof.Pod}
+		case IdentityDelegation:
+			return &DelegatedIdentityAttribution{Identity: c.Identity, Delegation: proof}
+		default:
+			return nil
+		}
 	default:
 		return nil
 	}
@@ -181,8 +219,17 @@ func validateCaller(caller Caller, wakeCaller *Account) error {
 		if c.Identity.GetName() == "" || c.Identity.GetUid() == "" {
 			return errors.New("Identity caller requires a name and UID")
 		}
-		if c.Pod != nil && (c.Pod.Name == "" || c.Pod.UID == "") {
-			return errors.New("Identity caller has incomplete Pod provenance")
+		switch proof := c.Proof.(type) {
+		case IdentitySVID:
+			if proof.Pod != nil && (proof.Pod.Name == "" || proof.Pod.UID == "") {
+				return errors.New("Identity caller has incomplete Pod provenance")
+			}
+		case IdentityDelegation:
+			if err := proof.validate(); err != nil {
+				return err
+			}
+		default:
+			return errors.New("Identity caller has no proof")
 		}
 		if wakeCaller != nil {
 			return errors.New("an Identity caller is never a wake caller")
@@ -221,6 +268,58 @@ func identityAttributionValues(attribution Attribution) []any {
 		podName, podUID = identity.Pod.Name, identity.Pod.UID
 	}
 	return []any{identity.Identity.GetName(), identity.Identity.GetUid(), podName, podUID}
+}
+
+func (d IdentityDelegation) validate() error {
+	if d.Actor.GetAccount().GetNamespace() == "" || d.Actor.GetAccount().GetName() == "" || d.Actor.GetUid() == "" ||
+		d.ActorPod.Name == "" || d.ActorPod.UID == "" || d.Action.RequestID == "" || d.Action.ExecutionID == "" {
+		return errors.New("delegated Identity attribution is incomplete")
+	}
+	return nil
+}
+
+// delegatedIdentityAttributionValues are the delegated Identity columns of a row attribution records.
+func delegatedIdentityAttributionValues(attribution Attribution) []any {
+	delegated, ok := attribution.(*DelegatedIdentityAttribution)
+	if !ok {
+		return []any{nil, nil, nil, nil, nil, nil, nil, nil, nil}
+	}
+	proof := delegated.Delegation
+	return []any{
+		delegated.Identity.GetName(), delegated.Identity.GetUid(),
+		proof.Actor.GetAccount().GetNamespace(), proof.Actor.GetAccount().GetName(), proof.Actor.GetUid(),
+		proof.ActorPod.Name, proof.ActorPod.UID, proof.Action.RequestID, proof.Action.ExecutionID,
+	}
+}
+
+// scanDelegatedIdentityAttribution reads a dispatch row's delegated Identity columns, nil when
+// none is recorded.
+func scanDelegatedIdentityAttribution(columns [9]sql.NullString) (*DelegatedIdentityAttribution, error) {
+	recorded := 0
+	for _, column := range columns {
+		if column.Valid {
+			recorded++
+		}
+	}
+	switch recorded {
+	case 0:
+		return nil, nil
+	case len(columns):
+	default:
+		return nil, errors.New("delegated Identity attribution is incomplete")
+	}
+	result := &DelegatedIdentityAttribution{
+		Identity: &identitypb.Identity{Name: columns[0].String, Uid: columns[1].String},
+		Delegation: IdentityDelegation{
+			Actor:    serviceAccountIdentityFor(Account{Namespace: columns[2].String, Name: columns[3].String}, columns[4].String),
+			ActorPod: PodIdentity{Name: columns[5].String, UID: columns[6].String},
+			Action:   ActionCorrelation{RequestID: columns[7].String, ExecutionID: columns[8].String},
+		},
+	}
+	if err := result.Delegation.validate(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // scanAttribution combines a row's ServiceAccount and Identity attribution columns.
@@ -482,7 +581,10 @@ const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox
 	effective_caller_account_namespace, effective_caller_account_name, effective_caller_account_uid,
 	action_request_id::text, action_execution_id::text, created_at, updated_at,
 	delivery_blocker, wake_assessment, delivery_attempted,
-	actor_identity_name, actor_identity_uid, actor_identity_pod_name, actor_identity_pod_uid`
+	actor_identity_name, actor_identity_uid, actor_identity_pod_name, actor_identity_pod_uid,
+	delegated_identity_name, delegated_identity_uid, delegator_account_namespace, delegator_account_name,
+	delegator_account_uid, delegator_pod_name, delegator_pod_uid,
+	delegated_action_request_id::text, delegated_action_execution_id::text`
 
 const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
 	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
@@ -491,7 +593,10 @@ const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sand
 	d.effective_caller_account_namespace, d.effective_caller_account_name, d.effective_caller_account_uid,
 	d.action_request_id::text, d.action_execution_id::text, d.created_at, d.updated_at,
 	d.delivery_blocker, d.wake_assessment, d.delivery_attempted,
-	d.actor_identity_name, d.actor_identity_uid, d.actor_identity_pod_name, d.actor_identity_pod_uid`
+	d.actor_identity_name, d.actor_identity_uid, d.actor_identity_pod_name, d.actor_identity_pod_uid,
+	d.delegated_identity_name, d.delegated_identity_uid, d.delegator_account_namespace, d.delegator_account_name,
+	d.delegator_account_uid, d.delegator_pod_name, d.delegator_pod_uid,
+	d.delegated_action_request_id::text, d.delegated_action_execution_id::text`
 
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	return scanDispatchColumns(row)
@@ -526,6 +631,7 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	var actorNS, actorName, actorUID, actorPodName, actorPodUID sql.NullString
 	var effectiveNS, effectiveName, effectiveUID, actionRequestID, actionExecutionID sql.NullString
 	var identityName, identityUID, identityPodName, identityPodUID sql.NullString
+	var delegated [9]sql.NullString
 	var wakeAt sql.NullTime
 	var commandBytes, admissionBytes, blockerBytes, wakeBytes []byte
 	columns := []any{
@@ -536,6 +642,9 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 		&effectiveNS, &effectiveName, &effectiveUID, &actionRequestID, &actionExecutionID,
 		&d.CreatedAt, &d.UpdatedAt, &blockerBytes, &wakeBytes, &d.DeliveryAttempted,
 		&identityName, &identityUID, &identityPodName, &identityPodUID,
+	}
+	for i := range delegated {
+		columns = append(columns, &delegated[i])
 	}
 	columns = append(columns, additional...)
 	err := row.Scan(columns...)
@@ -587,6 +696,16 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 	d.Attribution, err = scanAttribution(account, identityName, identityUID, identityPodName, identityPodUID)
 	if err != nil {
 		return nil, err
+	}
+	delegatedIdentity, err := scanDelegatedIdentityAttribution(delegated)
+	if err != nil {
+		return nil, err
+	}
+	if delegatedIdentity != nil {
+		if d.Attribution != nil {
+			return nil, errors.New("dispatch is attributed to both a delegated Identity and another caller")
+		}
+		d.Attribution = delegatedIdentity
 	}
 	return d, nil
 }
@@ -692,13 +811,17 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		arguments = append(arguments, attributionValues(attribution)...)
 		arguments = append(arguments, nil, wakeAssessment)
 		arguments = append(arguments, identityAttributionValues(attribution)...)
+		arguments = append(arguments, delegatedIdentityAttributionValues(attribution)...)
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch
 			(command_id,session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 operation,command,state,traceparent,actor_account_namespace,actor_account_name,actor_account_uid,actor_pod_name,actor_pod_uid,
 			 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,action_request_id,action_execution_id,
 			 created_at,updated_at,delivery_blocker,wake_assessment,
-			 actor_identity_name,actor_identity_uid,actor_identity_pod_name,actor_identity_pod_uid)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now(),$22,$23,$24,$25,$26,$27) RETURNING `+dispatchColumns,
+			 actor_identity_name,actor_identity_uid,actor_identity_pod_name,actor_identity_pod_uid,
+			 delegated_identity_name,delegated_identity_uid,delegator_account_namespace,delegator_account_name,delegator_account_uid,
+			 delegator_pod_name,delegator_pod_uid,delegated_action_request_id,delegated_action_execution_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),now(),$22,$23,$24,$25,$26,$27,
+			 $28,$29,$30,$31,$32,$33,$34,$35,$36) RETURNING `+dispatchColumns,
 			arguments...))
 		if err != nil {
 			return err
@@ -944,6 +1067,10 @@ func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, session
 		account.Attribution.Actor.GetAccount().GetNamespace() == "" || account.Attribution.Actor.GetAccount().GetName() == "" ||
 		account.Attribution.Actor.GetUid() == "") {
 		return nil, errors.New("execution principal and creator identity are required")
+	}
+	// The session table records no delegated Identity creator: CreateSession refuses one.
+	if _, delegated := callerAttribution(caller).(*DelegatedIdentityAttribution); delegated {
+		return nil, errors.New("a delegated Identity caller opens no Session")
 	}
 	if err := validateCaller(caller, wakeCaller); err != nil {
 		return nil, err

@@ -143,6 +143,46 @@ def seed(connection: psycopg.Connection, now: datetime) -> None:
         run(211, sha, at, gate)
         job(211, sha, at, gate, gate + 1, "success")
 
+    # A cancelled workflow overrides an unfinished job, but must not override a
+    # job that had already finished when the cancellation arrived.
+    sha, at = head(212, 15)
+    for gate in range(2):
+        run(212, sha, at, gate)
+        if gate == 0:
+            job(212, sha, at, gate, 1, "success")
+        write(
+            at + timedelta(minutes=2),
+            {
+                "action": "completed",
+                "workflow_run": {
+                    "id": 2120 + gate,
+                    "name": WORKFLOWS[gate],
+                    "run_attempt": 1,
+                    "head_sha": sha,
+                    "head_branch": "feedback-212",
+                    "created_at": at.isoformat(),
+                    "pull_requests": [{"number": 212}],
+                    "conclusion": "cancelled",
+                },
+            },
+        )
+
+
+def assert_equivalent(connection: psycopg.Connection, now: datetime) -> None:
+    # Compare complete row multisets at boundaries that cut through a rerun,
+    # superseded head, repeated SHA, cancellation, and policy observation.
+    for start, end in ((180, 0), (180, 10), (180, 19), (21, 15), (60, 30), (360, 300)):
+        bounds = (now - timedelta(minutes=start), now - timedelta(minutes=end))
+        difference = connection.execute(
+            "(SELECT * FROM cdviz.ci_feedback(%s, %s) "
+            "EXCEPT ALL SELECT * FROM cdviz.ci_feedback_baseline(%s, %s)) "
+            "UNION ALL "
+            "(SELECT * FROM cdviz.ci_feedback_baseline(%s, %s) "
+            "EXCEPT ALL SELECT * FROM cdviz.ci_feedback(%s, %s))",
+            bounds * 4,
+        ).fetchall()
+        assert difference == [], (bounds, difference)
+
 
 def assert_histories(connection: psycopg.Connection, now: datetime) -> None:
     rows = (
@@ -175,6 +215,11 @@ def assert_histories(connection: psycopg.Connection, now: datetime) -> None:
     assert by_pr["210"]["state"] == "unknown"
     assert by_pr["211"]["clock"] == "Workflow creation proxy"
     assert by_pr["211"]["green_seconds"] == 180
+    cancellation = connection.execute(
+        "SELECT state, observed_gates, missing_gates FROM cdviz.ci_feedback(%s, %s) WHERE pr = '212'",
+        (now - timedelta(hours=3), now),
+    ).fetchone()
+    assert cancellation == ("cancelled", 2, "Build artifacts + imports check")
 
 
 def assert_unknown_histories(connection: psycopg.Connection, now: datetime) -> None:
@@ -191,6 +236,7 @@ def assert_unknown_histories(connection: psycopg.Connection, now: datetime) -> N
             ).fetchall()
             assert rows
             assert all(row == ("unknown", None, None) for row in rows)
+            assert_equivalent(connection, now)
 
     # GitHub source clocks have finite precision. Two different revisions at
     # the same instant cannot acquire an invented order from their SHA sort.
@@ -212,3 +258,4 @@ def assert_unknown_histories(connection: psycopg.Connection, now: datetime) -> N
             (now - timedelta(hours=3), now),
         ).fetchall()
         assert rows == [("unknown", None, None), ("unknown", None, None)]
+        assert_equivalent(connection, now)

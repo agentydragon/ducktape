@@ -31,6 +31,7 @@ import re
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -79,6 +80,10 @@ class _ProviderPopup:
     @property
     def status(self) -> str:
         return self.text("GetStatusText")
+
+    @property
+    def burn(self) -> str:
+        return self.text("GetBurnText")
 
     @property
     def reset(self) -> str:
@@ -178,6 +183,41 @@ def test_render(session: GnomeSession, fixture_name: str, capture_menu: GnomeMen
         session.close_menu()
 
 
+@pytest.mark.parametrize(
+    ("scenario", "default_visible", "known"),
+    [("ordinary", False, True), ("exhausted", True, True), ("pending", False, True), ("unknown", False, False)],
+)
+def test_banked_reset_visibility(
+    session: GnomeSession, capture_menu: GnomeMenuCapture, scenario: str, default_visible: bool, known: bool
+) -> None:
+    _reload_fixture(session, f"banked_resets_{scenario}")
+    popup = _ProviderPopup(session, "codex")
+    assert (popup.reset == "Banked resets: 0") == default_visible
+    assert ("Banked resets: 0" in popup.details) == known
+    if known:
+        session.open_menu()
+        try:
+            session.call("SetDetailsOpen", "codex", "true")
+            session.wait_for_paint()
+            capture_menu.capture(
+                session.open_menu(), label=f"{scenario} zero reset details", checkpoint="reset-details"
+            )
+        finally:
+            session.close_menu()
+
+
+def test_zero_resets_move_into_details_when_a_different_window_passes_reset(session: GnomeSession) -> None:
+    _reload_fixture(session, "banked_resets_exhausted")
+    popup = _ProviderPopup(session, "codex")
+    assert popup.reset == "Banked resets: 0"
+    session.call("SetPresentationTime", str(datetime.fromisoformat("2026-01-15T12:01:00Z").timestamp() * 1000))
+    assert not popup.reset
+    assert "Banked resets: 0" in popup.details
+    session.call("SetPresentationTime", str(datetime.fromisoformat("2026-01-15T12:11:00Z").timestamp() * 1000))
+    assert "Stale" in popup.status
+    assert "Banked resets: 0" in popup.details
+
+
 def test_claude_prepaid_balance(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_prepaid_balance")
     popup = _ProviderPopup(session, "claude")
@@ -188,8 +228,8 @@ def test_claude_prepaid_balance(session: GnomeSession) -> None:
 def test_claude_reset_grants(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_reset_grants")
     grants = _ProviderPopup(session, "claude").grants
-    assert "Fable resets: 2" in grants
-    assert "Full resets: 1" in grants
+    assert "Fable resets: 2 left" in grants
+    assert "Full resets: 1 left" in grants
     assert "paused" in grants
 
 
@@ -222,8 +262,8 @@ def test_openai_platform_credits(session: GnomeSession) -> None:
     popup = _ProviderPopup(session, "openai_platform")
     grants = popup.grants
     assert popup.header == "OpenAI API — Available balance: $125.75"
-    assert "Grant: $100.00" in grants
-    assert "Grant: $25.75" in grants
+    assert "Grant: $100.00 left" in grants
+    assert "Grant: $25.75 left" in grants
     assert "expires" in grants
     assert "original $100.00" in popup.details
     assert string_reply(session.call("GetEmptyLabelText")) == "AI quota"
@@ -267,6 +307,18 @@ def test_binding_summary(session: GnomeSession) -> None:
     assert "+18 pp" in _ProviderPopup(session, "codex").panel
     assert "-15 pp" in _ProviderPopup(session, "zai").panel
     assert "Forecasts use average usage since the window started." in _ProviderPopup(session, "claude").details
+
+
+def test_peak_burn_identifies_affected_models_in_compact_menu(session: GnomeSession) -> None:
+    _reload_fixture(session, "zai_peak")
+    burn = _ProviderPopup(session, "zai").burn
+    assert "3x burn until" in burn
+    assert "GLM-5.3, GLM-5-Turbo" in burn
+    geometry = session.open_menu()
+    try:
+        assert geometry[2] <= 480, f"peak scope widens popup: {geometry}"
+    finally:
+        session.close_menu()
 
 
 def test_reset_pending(session: GnomeSession) -> None:

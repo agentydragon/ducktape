@@ -1,12 +1,21 @@
 """Tests for reading the mounted shared Restic credential source."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import pytest_bazel
 import yaml
 
-from x.ai_session_archive.cli import _restic_environment
+from x.ai_session_archive.cli import _restic_environment, main
+
+
+def test_importer_image_can_run_its_own_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://archive@db/archive")
+    monkeypatch.delenv("RESTIC_REPOSITORY", raising=False)
+    with patch("x.ai_session_archive.migrate_cli.RUNNER") as runner:
+        main(["--migrate-database"])
+    runner.apply.assert_called_once_with("postgresql://archive@db/archive")
 
 
 def test_restic_environment_reads_only_the_requested_machine_credentials(tmp_path: Path) -> None:

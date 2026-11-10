@@ -74,10 +74,11 @@ func MethodsWithDelegation(
 	resolver *auth.Resolver,
 	delegator auth.Delegator,
 	serviceAccounts auth.ServiceAccountUIDReader,
+	identities auth.IdentityUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
 	methods, err := Methods(resolver).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts, identities,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated History methods: %w", err)
@@ -102,9 +103,16 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	if identity, ok := admission.(auth.IdentityAdmission); ok {
+	// An Identity reads the Sessions recorded with its exact incarnation, whether its own workload
+	// called or a trusted platform component acts for it.
+	switch identity := admission.(type) {
+	case auth.IdentityAdmission:
 		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
 			Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID,
+		})), nil
+	case auth.DelegatedIdentityAdmission:
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
 		})), nil
 	}
 	caller, err := auth.EffectiveCaller(ctx)

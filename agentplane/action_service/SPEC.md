@@ -111,8 +111,10 @@ while that Identity of that UID exists, and a watch rechecks it before every fra
 a service reader. It is recorded by name and UID on its requests and cancellation events, and owns,
 reads, cancels and spends idempotency keys by incarnation: a later Identity of the same name shares
 nothing with it, as it shares none of its bindings. Its policy is the bindings naming its Identity.
-Executors that act as the calling ServiceAccount (`orchestration_v1` launches,
-`session_delegation`) refuse an Identity's request with `caller_not_service_account`; MCP groups
+`orchestration_v1` launches, which act as the calling ServiceAccount, refuse an Identity's request
+with `caller_not_service_account`. `session_delegation` forwards it as that Identity incarnation,
+which Dispatcher and History authorize as the Identity's own workload; the Environment Service
+admits no Identity caller and refuses it, and Dispatcher refuses its `sessions/create`. MCP groups
 run it, and a `pod` group gives it boxes of its own. A request a newer release recorded for a caller kind this one does not know names no
 caller in its receipt, is no workload's, and the executors that act as the caller refuse it.
 

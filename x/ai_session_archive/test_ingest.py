@@ -1,20 +1,59 @@
 import json
+from dataclasses import replace
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
 import pytest_bazel
 from sqlalchemy.orm import sessionmaker
 
+from x.ai_session_archive.database import ResticSnapshotRow
 from x.ai_session_archive.ingest import (
     ArchiveSource,
     HarnessRoot,
     SnapshotIngestor,
+    _assert_snapshot_identity,
     _extract_session_metadata,
     _remember_session_kind,
 )
 from x.ai_session_archive.models import Harness, SessionKind
 from x.ai_session_archive.record_json import ParsedRecordJson, parse_record_json
-from x.ai_session_archive.restic import ResticChange, ResticRepository
+from x.ai_session_archive.restic import ResticChange, ResticRepository, ResticSnapshot
+
+SNAPSHOT = ResticSnapshot(
+    id="snapshot-test",
+    captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+    parent_id="parent-test",
+    tree_id="tree-test",
+    paths=("/.claude", "/.codex"),
+)
+
+
+@pytest.mark.parametrize(
+    "changed_snapshot",
+    [
+        replace(SNAPSHOT, id="other-snapshot"),
+        replace(SNAPSHOT, captured_at=datetime(2026, 1, 2, tzinfo=UTC)),
+        replace(SNAPSHOT, parent_id=None),
+        replace(SNAPSHOT, tree_id=None),
+        replace(SNAPSHOT, paths=("/.claude",)),
+        replace(SNAPSHOT, paths=("/.codex", "/.claude")),
+    ],
+)
+def test_snapshot_identity_rejects_metadata_drift(changed_snapshot: ResticSnapshot) -> None:
+    snapshot_row = ResticSnapshotRow(
+        machine_id="identity-test",
+        snapshot_id="snapshot-test",
+        captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+        parent_snapshot_id="parent-test",
+        tree_id="tree-test",
+        paths=["/.claude", "/.codex"],
+        inventory_status="complete",
+        processing_status="failed",
+    )
+    _assert_snapshot_identity(snapshot_row, SNAPSHOT)
+    with pytest.raises(RuntimeError, match="Restic metadata changed"):
+        _assert_snapshot_identity(snapshot_row, changed_snapshot)
 
 
 def test_unit_restic_question_modifier_is_an_indexable_content_change() -> None:

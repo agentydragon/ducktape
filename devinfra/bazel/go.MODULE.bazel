@@ -9,7 +9,7 @@ go_sdk = use_extension(
     "go_sdk",
     dev_dependency = True,
 )
-go_sdk.download(version = "1.26.4")
+go_sdk.download(version = "1.27.3")
 go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
@@ -164,9 +164,24 @@ go_deps.module(
     version = "v0.0.0-20231108232855-2478ac86f678",
 )
 go_deps.module(
+    path = "github.com/pkg/browser",
+    sum = "h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=",
+    version = "v0.0.0-20240102092130-5ac0b6a4141c",
+)
+go_deps.module(
+    path = "github.com/tinylib/msgp",
+    sum = "h1:mOwYbyYDLPj35mkA2BjjYejgJk9BuHxDdvRnb6v2ZcQ=",
+    version = "v1.6.4",
+)
+go_deps.module(
+    path = "github.com/philhofer/fwd",
+    sum = "h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=",
+    version = "v1.2.0",
+)
+go_deps.module(
     path = "mvdan.cc/garble",
-    sum = "h1:DkcsIYE4+KEuflF9CIQPP3C+dyK4ofMGKLPrSQBr6i8=",
-    version = "v0.16.0",
+    sum = "h1:PWKaJuaU7pN8Wdb8R++L324hjRCYb53HWRAj+/g8aJY=",
+    version = "v0.18.0",
 )
 
 # Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead
@@ -255,8 +270,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/arch",
-    sum = "h1:jZ6dpec5haP/fUv1kLCbuJy6dnRrfX6iVK08lZBFpk4=",
-    version = "v0.26.0",
+    sum = "h1:8sSET5wB0+exBm0FGmOtdHMqjlRdV2DRD3/IV6OZgho=",
+    version = "v0.29.0",
 )
 go_deps.module(
     path = "golang.org/x/net",
@@ -377,8 +392,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mattn/go-colorable",
-    sum = "h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=",
-    version = "v0.1.14",
+    sum = "h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=",
+    version = "v0.1.15",
 )
 go_deps.module(
     path = "github.com/mattn/go-isatty",
@@ -520,6 +535,8 @@ use_repo(
     "com_github_openshift_api",
     "com_github_openshift_client_go",
     "com_github_pb33f_ordered_map_v2",
+    "com_github_philhofer_fwd",
+    "com_github_pkg_browser",
     "com_github_pressly_goose_v3",
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
@@ -534,12 +551,12 @@ use_repo(
     "com_github_siderolabs_go_pointer",
     "com_github_siderolabs_protoenc",
     "com_github_soheilhy_cmux",
-    "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_viper",
     "com_github_spiffe_go_spiffe_v2",
     "com_github_tcm1911_r2g2",
     "com_github_testcontainers_testcontainers_go",
+    "com_github_tinylib_msgp",
     "com_github_yosida95_uritemplate_v3",
     "com_github_zitadel_oidc_v3",
     "dev_dny_code_ssrf",

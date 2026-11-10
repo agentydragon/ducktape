@@ -156,7 +156,7 @@ func serveDiscoveryWithOptions(
 				return "", false, nil
 			}
 			return executionUID, true, nil
-		}))
+		}), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,9 +222,9 @@ func bearing(t *testing.T, token string) context.Context {
 func delegatedBearing(t *testing.T, token string, account auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
-		},
+		}},
 		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
@@ -981,7 +981,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, CallerNamespaces: []string{discoveryNamespace}}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, _ auth.Account) (string, bool, error) { return executionUID, true, nil }))
+	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, CallerNamespaces: []string{discoveryNamespace}}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, _ auth.Account) (string, bool, error) { return executionUID, true, nil }), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

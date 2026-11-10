@@ -212,19 +212,25 @@ describe("QuotaBoard", () => {
     expect(card?.textContent).not.toContain("Numeric pace");
   });
 
-  it("shows a zero reset balance when an included quota window is exhausted", () => {
+  it("moves known zero resets into details after any displayed reset deadline passes", () => {
     const quotas = sampleQuotas();
     const codex = quotas.providers[0]!;
-    codex.display_windows[0]!.exhausted = true;
-    const result = codex.display.result;
-    if (result?.kind === "success") result.available_reset_credits = 0;
+    const exhausted = codex.display_windows[0]!;
+    exhausted.exhausted = true;
+    const other = { ...exhausted, exhausted: false, reset_at: "2026-01-15T12:01:00Z" };
+    codex.display_windows.push(other);
+    const result = codex.display.result!;
+    result.available_reset_credits = 0;
     render(quotas);
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    expect(card.querySelector(".aiquota-strip-line")?.textContent).toBe("Banked resets: 0");
 
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-strip-line')?.textContent).toBe(
-      "Banked resets: 0"
-    );
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).not.toContain(
-      "Reset expiry details"
-    );
+    render(quotas, Date.parse("2026-01-15T12:01:00Z"));
+    expect(card.querySelector(".aiquota-strip-line")).toBeNull();
+    expect(card.querySelector(".aiquota-strip details p")?.textContent).toBe("Banked resets: 0");
+
+    render(quotas, Date.parse("2026-01-15T14:45:00Z"));
+    expect(card.querySelector(".aiquota-badge-stale")).not.toBeNull();
+    expect(card.querySelector(".aiquota-strip details p")?.textContent).toBe("Banked resets: 0");
   });
 });

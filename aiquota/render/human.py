@@ -14,7 +14,15 @@ from aiquota.render.format import (
     format_peak_schedule,
     format_reset_credit_summary,
 )
-from aiquota.render.view_model import AllQuotasView, BalanceView, GrantView, ProviderView, WindowView, to_view
+from aiquota.render.view_model import (
+    AllQuotasView,
+    BalanceView,
+    GrantView,
+    ProviderView,
+    WindowView,
+    show_reset_credits,
+    to_view,
+)
 
 _API_PROVIDERS = {"openai_platform", "anthropic_platform"}
 _TINTS = {"cool": "blue", "ok": "white", "warn": "yellow", "hot": "red", "unknown": "white", "stale": "yellow"}
@@ -113,18 +121,20 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
             if schedule:
                 lines.append(Text(f"    {schedule}"))
 
-    if result is not None and result.available_reset_credits is not None:
-        exhausted = any(window.exhausted for window in pv.display_windows)
-        if result.available_reset_credits > 0 or details or exhausted:
-            summary = format_reset_credit_summary(
-                result.available_reset_credits,
-                result.available_reset_credit_expiries,
-                result.reset_credit_expiry_lookup_failed,
-                now,
-                tz,
-                details=details,
-            )
-            lines.append(Text(f"  Banked resets: {summary}"))
+    if (
+        result is not None
+        and result.available_reset_credits is not None
+        and show_reset_credits(result.available_reset_credits, pv.display_windows, details=details)
+    ):
+        summary = format_reset_credit_summary(
+            result.available_reset_credits,
+            result.available_reset_credit_expiries,
+            result.reset_credit_expiry_lookup_failed,
+            now,
+            tz,
+            details=details,
+        )
+        lines.append(Text(f"  Banked resets: {summary}"))
 
     if pv.display_windows:
         lines.extend(

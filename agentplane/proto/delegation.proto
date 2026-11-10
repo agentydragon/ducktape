@@ -10,7 +10,14 @@ import "agentplane/proto/identity.proto";
 // must trust that service to delegate and authorize caller normally; the IDs
 // provide audit correlation, not approval proof.
 message Delegation {
-  ServiceAccountIdentity caller = 1;
+  // The caller the RPC acts for. A receiver that predates `identity` reads an
+  // envelope naming one as having no caller and refuses it.
+  oneof effective_caller {
+    ServiceAccountIdentity caller = 1;
+    // An Identity in the receiver's policy namespace, by name and the UID of
+    // the incarnation the actor recorded.
+    Identity identity = 4;
+  }
   string action_request_id = 2;
   string action_execution_id = 3;
 }
