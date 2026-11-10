@@ -36,7 +36,7 @@ name stays relevant; any rename must coordinate those verifiers and their projec
 
 ## Workload credentials
 
-Deferred by the operator on 2026-11-09 with `WORKLOAD_AUTH_CUTOVER`
+Deferred by the operator on 2026-11-09 with the proxy bearer hop removal (#15247)
 ([workload authentication](../docs/workload_authentication.md#standing-workloads)).
 
 ### `STANDING_WORKLOAD_INCARNATIONS` — standing workloads' weaker credential
