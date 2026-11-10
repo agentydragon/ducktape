@@ -3149,7 +3149,7 @@ other noticing.
 
 **In progress (identity-consumers, 2026-11-10), consumers first, as `EGRESS_IDENTITY_RULES`: the
 resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
-methods; no service uses `AnySubject` yet.** History's execution
+methods; LLM ingress serves and attributes Identity callers once given its `policy_namespace`.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
 The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves

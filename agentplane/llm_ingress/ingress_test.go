@@ -520,8 +520,8 @@ func mustRequest(t *testing.T, method, url string, headers http.Header) *http.Re
 }
 
 // forwardedHeaders applies what Rewrite applies to the outgoing request headers.
-func forwardedHeaders(headers http.Header, principal auth.Principal, attribution attributionConfig) (http.Header, error) {
-	verified, err := verifiedRequestHeaders(principal, testBackendKey, attribution, "")
+func forwardedHeaders(headers http.Header, subject auth.Subject, attribution attributionConfig) (http.Header, error) {
+	verified, err := verifiedRequestHeaders(subject, testBackendKey, attribution, "")
 	if err != nil {
 		return nil, err
 	}
@@ -614,6 +614,39 @@ func TestCredentialAndIdentityHeadersAreReplacedByVerifiedOnes(t *testing.T) {
 	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil ||
 		metadata["agentplane.pod_uid"] != "pod-a-uid" {
 		t.Fatalf("trusted metadata was not stamped: %v, err=%v", metadata, err)
+	}
+}
+
+func TestIdentityCallerIsAttributedByIdentityWithoutAccountClaims(t *testing.T) {
+	subject := auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"},
+		PodName:  "sandbox-a", PodUID: "pod-a-uid",
+	}
+	attribution := defaultAttribution()
+	attribution.Baggage = []attributionField{
+		{Key: "agentplane.namespace", Source: verifiedNamespace},
+		{Key: "agentplane.identity", Source: verifiedIdentity},
+		{Key: "agentplane.pod_uid", Source: verifiedPodUID},
+	}
+	forwarded, err := forwardedHeaders(http.Header{}, subject, attribution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]string
+	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"agentplane.identity":     "agent-a",
+		"agentplane.identity_uid": "identity-a-uid",
+		"agentplane.pod_name":     "sandbox-a",
+		"agentplane.pod_uid":      "pod-a-uid",
+	}
+	if !maps.Equal(metadata, want) {
+		t.Fatalf("Identity caller metadata = %v, want %v without namespace or service_account", metadata, want)
+	}
+	if got := forwarded.Get("Baggage"); got != "agentplane.identity=agent-a,agentplane.pod_uid=pod-a-uid" {
+		t.Fatalf("Identity caller baggage = %q, want its identity and Pod alone", got)
 	}
 }
 
