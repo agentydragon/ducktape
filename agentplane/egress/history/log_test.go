@@ -100,7 +100,7 @@ func TestADecisionIsLoggedByItsValues(t *testing.T) {
 	}
 	if line.Decision.Outcome != string(decision.Deny) || line.Decision.Reason != string(reason) ||
 		line.Decision.Host != record.Host || line.Decision.Port != record.Port ||
-		line.Decision.Subject != record.Subject.Namespace+"/"+record.Subject.Name {
+		line.Decision.Subject != "test-namespace/test-workload" {
 		t.Fatalf("logged %+v", line)
 	}
 }

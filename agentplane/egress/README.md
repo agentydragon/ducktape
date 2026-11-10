@@ -22,8 +22,8 @@ One Go package per concern:
   Every request passes identity, policy, credential and address checks before anything is dialed.
   One forward listener on port 8888 accepts an explicit list of hop authentication modes.
 - `identity`: the shared `workload_auth` resolver behind the existing token hop, translating a
-  refused bearer into the reason the client sees. SVID requests resolve the URI to a live Sandbox
-  before using its ServiceAccount as the policy subject.
+  refused bearer into the reason the client sees. SVID requests resolve the URI to its live
+  `WorkloadCredential`, whose subject -- a ServiceAccount or an Identity -- is the policy subject.
 - `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
   placeholder directs it to, and substitution. The bindings and their egress rules are a
   `../policy/reader` index. No I/O.
@@ -95,7 +95,8 @@ The deployment supplies proxy settings through its YAML file and `AGENTPLANE_EGR
 The `forward` listener requires serving TLS files and an `auth` list containing SPIFFE with its
 trust bundle. The proxy presents `spiffe://agentplane/egress-proxy` and requires a Runtime SVID
 with explicit clientAuth. Every request checks the live Sandbox UID, accepted credential and Pod
-binding before reading policy. The subject is always that Sandbox's own ServiceAccount. Clearing
+binding before reading policy. The subject is the record's: a ServiceAccount, or an Identity in
+`rules_namespace` fenced on its UID. Clearing
 or replacing acceptance, changing the binding, or removing the Sandbox revokes access; quiescence
 keeps the accepted credential available for final History sealing. Caller headers cannot select a
 subject, and bearer credentials cannot authenticate the hop.

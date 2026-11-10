@@ -21,13 +21,13 @@ type windowTestDecisions struct {
 	readCalls   int
 }
 
-func (d *windowTestDecisions) Recent(_ context.Context, subject *decision.Subject) ([]decision.Record, error) {
+func (d *windowTestDecisions) Recent(_ context.Context, subject decision.Subject) ([]decision.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.recentCalls++
 	result := make([]decision.Record, 0, len(d.initial))
 	for _, record := range d.initial {
-		if windowKey(record.Subject) == windowKey(subject) {
+		if record.Subject == subject {
 			result = append(result, record)
 		}
 	}
@@ -64,7 +64,7 @@ type windowTestChanges struct {
 	follows   int
 }
 
-func (c *windowTestChanges) Follow(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+func (c *windowTestChanges) Follow(ctx context.Context, _ decision.Subject, changed func(history.Change) error) error {
 	if err := changed(history.Initial{}); err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (c *windowTestChanges) Follow(ctx context.Context, _ *decision.Subject, cha
 }
 
 func TestSubjectWindowSharesSnapshotAndReadsCommittedIDsIncrementally(t *testing.T) {
-	subject := &decision.Subject{Namespace: "test-ns", Name: "test-app"}
+	subject := decision.ServiceAccount{Namespace: "test-ns", Name: "test-app"}
 	now := time.Now()
 	oldest := windowTestRecord(subject, now.Add(-3*time.Minute))
 	newest := windowTestRecord(subject, now.Add(-time.Minute))
@@ -148,7 +148,7 @@ func TestSubjectWindowSharesSnapshotAndReadsCommittedIDsIncrementally(t *testing
 }
 
 func TestBoundedWindowExpiresOldEntriesAndRetainsNewestCapacity(t *testing.T) {
-	subject := &decision.Subject{Namespace: "test-ns", Name: "test-app"}
+	subject := decision.ServiceAccount{Namespace: "test-ns", Name: "test-app"}
 	now := time.Now()
 	expired := windowTestRecord(subject, now.Add(-2*time.Hour))
 	older := windowTestRecord(subject, now.Add(-3*time.Minute))
@@ -163,23 +163,22 @@ func TestBoundedWindowExpiresOldEntriesAndRetainsNewestCapacity(t *testing.T) {
 }
 
 func TestFailedWaiterCleanupPreservesReplacementWindow(t *testing.T) {
-	subject := &decision.Subject{Namespace: "test-ns", Name: "test-app"}
-	key := windowKey(subject)
+	subject := decision.ServiceAccount{Namespace: "test-ns", Name: "test-app"}
 	oldCanceled := false
 	old := &subjectWindow{
-		key: key,
+		subject: subject,
 		cancel: func() {
 			oldCanceled = true
 		},
 	}
-	replacement := &subjectWindow{key: key, cancel: func() {}}
-	windows := &decisionWindows{active: map[watchedSubject]*subjectWindow{key: replacement}}
+	replacement := &subjectWindow{subject: subject, cancel: func() {}}
+	windows := &decisionWindows{active: map[decision.Subject]*subjectWindow{subject: replacement}}
 
 	windows.mu.Lock()
 	windows.stopIfUnusedLocked(old)
 	windows.mu.Unlock()
 
-	if windows.active[key] != replacement {
+	if windows.active[subject] != replacement {
 		t.Fatal("stale failed feed cleanup removed the replacement subject window")
 	}
 	if oldCanceled {
@@ -187,6 +186,6 @@ func TestFailedWaiterCleanupPreservesReplacementWindow(t *testing.T) {
 	}
 }
 
-func windowTestRecord(subject *decision.Subject, at time.Time) decision.Record {
+func windowTestRecord(subject decision.Subject, at time.Time) decision.Record {
 	return decision.Record{EventID: uuid.New(), At: at, Subject: subject}
 }

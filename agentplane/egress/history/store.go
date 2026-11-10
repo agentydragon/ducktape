@@ -35,9 +35,9 @@ const (
 
 const columns = "event_id, decided_at, producer_id, subject_namespace, subject_name, source_pod_uid, connection_id, " +
 	"phase, method, host, port, outcome, reason, binding, policy, rule, substituted, address, " +
-	"impersonated_namespace, impersonated_name"
+	"impersonated_namespace, impersonated_name, subject_identity"
 
-const columnCount = 20
+const columnCount = 21
 
 // Open opens the history database with the connection bounds every operation relies on: a small pool
 // and a connect timeout, either of which the URL may override.
@@ -148,51 +148,74 @@ func insertStatement(records []decision.Record) (string, []any) {
 			fmt.Fprintf(&query, "$%d", i*columnCount+column+1)
 		}
 		query.WriteByte(')')
-		namespace, name := subjectColumns(record.Subject)
-		impersonatedNamespace, impersonatedName := subjectColumns(record.Impersonated)
+		namespace, name, identity := subjectColumns(record.Subject)
+		var impersonatedNamespace, impersonatedName *string
+		if account := record.Impersonated; account != nil {
+			impersonatedNamespace, impersonatedName = &account.Namespace, &account.Name
+		}
 		args = append(args, record.EventID, record.At, record.ProducerID, namespace, name, record.SourcePodUID,
 			record.ConnectionID, record.Phase, record.Method, record.Host, record.Port, record.Outcome,
 			record.Reason, record.Binding, record.Policy, record.Rule, record.Substituted, record.Address,
-			impersonatedNamespace, impersonatedName)
+			impersonatedNamespace, impersonatedName, identity)
 	}
 	query.WriteString(" ON CONFLICT (event_id) DO NOTHING")
 	return query.String(), args
 }
 
-func subjectColumns(subject *decision.Subject) (namespace, name *string) {
-	if subject == nil {
-		return nil, nil
+// subjectColumns is a subject as its row stores it: a ServiceAccount's namespace and name, or an
+// Identity's name; all three are NULL for a request that never authenticated.
+func subjectColumns(subject decision.Subject) (namespace, name, identity *string) {
+	switch subject := subject.(type) {
+	case nil:
+		return nil, nil, nil
+	case decision.ServiceAccount:
+		return &subject.Namespace, &subject.Name, nil
+	case decision.Identity:
+		return nil, nil, &subject.Name
+	default:
+		panic(fmt.Sprintf("unknown decision subject %T", subject))
 	}
-	return &subject.Namespace, &subject.Name
 }
 
 // scanRecord reads one row selected as `columns`.
 func scanRecord(rows *sql.Rows) (decision.Record, error) {
 	var record decision.Record
-	var namespace, name, impersonatedNamespace, impersonatedName sql.NullString
+	var namespace, name, impersonatedNamespace, impersonatedName, identity sql.NullString
 	if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
 		&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
 		&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address,
-		&impersonatedNamespace, &impersonatedName); err != nil {
+		&impersonatedNamespace, &impersonatedName, &identity); err != nil {
 		return decision.Record{}, err
 	}
-	if namespace.Valid && name.Valid {
-		record.Subject = &decision.Subject{Namespace: namespace.String, Name: name.String}
+	// The table's constraints admit at most one subject kind per row.
+	switch {
+	case namespace.Valid && name.Valid:
+		record.Subject = decision.ServiceAccount{Namespace: namespace.String, Name: name.String}
+	case identity.Valid:
+		record.Subject = decision.Identity{Name: identity.String}
 	}
 	if impersonatedNamespace.Valid && impersonatedName.Valid {
-		record.Impersonated = &decision.Subject{Namespace: impersonatedNamespace.String, Name: impersonatedName.String}
+		record.Impersonated = &decision.ServiceAccount{Namespace: impersonatedNamespace.String, Name: impersonatedName.String}
 	}
 	return record, nil
 }
 
 // Recent is one subject's retained decisions, oldest first and at most the store's capacity of the
 // latest, or -- for a nil subject -- those of refusals that never authenticated.
-func (s *Store) Recent(ctx context.Context, subject *decision.Subject) ([]decision.Record, error) {
+func (s *Store) Recent(ctx context.Context, subject decision.Subject) ([]decision.Record, error) {
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	where, args := "subject_namespace IS NULL AND subject_name IS NULL", []any{}
-	if subject != nil {
+	var where string
+	var args []any
+	switch subject := subject.(type) {
+	case nil:
+		where = "subject_namespace IS NULL AND subject_name IS NULL AND subject_identity IS NULL"
+	case decision.ServiceAccount:
 		where, args = "subject_namespace = $1 AND subject_name = $2", []any{subject.Namespace, subject.Name}
+	case decision.Identity:
+		where, args = "subject_identity = $1", []any{subject.Name}
+	default:
+		panic(fmt.Sprintf("unknown decision subject %T", subject))
 	}
 	args = append(args, time.Now().Add(-s.retention), s.capacity)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
