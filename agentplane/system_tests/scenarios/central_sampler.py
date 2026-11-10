@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from contextlib import aclosing
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +16,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
+from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.driver.central_sampler import (
@@ -34,7 +36,7 @@ from agentplane.system_tests.driver.sandbox import (
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
-from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
+from agentplane.testing.scripted_model import ModelRequest, Reasoning, ShellCall, Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -394,6 +396,40 @@ async def _wait_for_executor_dispatch_after(
         stream.cancel()
 
 
+async def _follow_code_mode_cell(
+    model: CodexModel, request: ModelRequest[ResponsesRequest], call_id: str, *, timeout_s: float
+) -> tuple[ModelRequest[ResponsesRequest], str, str]:
+    """Wait for the same running code-mode cell; never reissue its executor operation."""
+    output_blocks: list[str] = []
+    visible_blocks: list[str] = []
+    waits = 0
+    async with asyncio.timeout(timeout_s):
+        while True:
+            (output,) = [output for output in request.tool_outputs if output.call_id == call_id]
+            output_blocks.extend(output.blocks)
+            visible_blocks.extend(
+                [*request.user_texts, *(block for item in request.tool_outputs for block in item.blocks)]
+            )
+            running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
+            if running is None:
+                return request, "\n".join(output_blocks), "\n".join(visible_blocks)
+            waits += 1
+            wait_call_id = f"{call_id}-wait-{waits}"
+            async with request._exchange as exchange:
+                await exchange.send(
+                    *responses_sse.response_stream(
+                        [
+                            responses_sse.FunctionCall(
+                                wait_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 1000}
+                            )
+                        ],
+                        model=MODEL,
+                    ).events
+                )
+            request = await model.request()
+            call_id = wait_call_id
+
+
 async def _wait_for_failed_gateway_resume(
     deployed: CentralStack, session_id: str, after_cursor: int, read_call_id: str
 ) -> int:
@@ -664,8 +700,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         assert outage_seconds < 30, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
-        (read_output,) = [output for output in request.tool_outputs if output.call_id == "read-live-process"]
-        read_text = "\n".join(read_output.blocks)
+        request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=20)
         assert "Script completed" in read_text, read_text
         assert "finished\\n" in read_text, "the original in-flight read did not return process output: " + read_text
         assert '"exit_code":0' in read_text, "the original process did not exit successfully: " + read_text
@@ -822,10 +857,8 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         assert killed_native is not None
         executor_pod, executor_pod_uid, old_exec_server = killed_native
         request = await asyncio.wait_for(model.request(), timeout=45)
-        (read_output,) = [output for output in request.tool_outputs if output.call_id == "read-expiring-process"]
-        read_text = "\n".join(read_output.blocks)
-        visible = "\n".join(
-            [*request.user_texts, *(block for output in request.tool_outputs for block in output.blocks)]
+        request, read_text, visible = await _follow_code_mode_cell(
+            model, request, "read-expiring-process", timeout_s=20
         )
         if "retained exec-server session was definitively lost" not in visible:
             await model.reply(request, ShellCall("observe-replacement", "true"))

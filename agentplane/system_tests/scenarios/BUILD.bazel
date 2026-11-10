@@ -61,6 +61,7 @@ py_library(
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:history_service_pb2",
+        "//agentplane/native/codex/testing:requests",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:identity_pb2",
