@@ -13685,6 +13685,13 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_return_stmt(&mut self, ret: &ReturnStmt) {
+        // A generator's return value reaches its consumer through `next()`
+        // or `yield*`, as a yielded one does.
+        if let (Some(key), Some(argument)) = (self.current, &ret.arg)
+            && self.callables[&key].generator
+        {
+            self.record_published_source(argument);
+        }
         ret.visit_children_with(self);
         if ret.arg.is_none()
             && let Some(key) = self.current

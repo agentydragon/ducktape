@@ -860,6 +860,10 @@ pub(super) struct ExecutionInputs<'source> {
     reentry_default: bool,
     pub(super) call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
+    /// Callables whose `arguments` some read reaches: their own, or one in
+    /// a callable nested in them (an arrow's `arguments` is its enclosing
+    /// function's). Over-approximates for a nested function's own.
+    reads_arguments: BTreeSet<u32>,
     /// Locals a source-summary lane reads as unknown in addition to its own
     /// assignments: another callable writes them, or an assignment reads
     /// them before a later one assigns them.
@@ -10240,6 +10244,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn escape_untracked_environment(
         &mut self,
         callable: &Callable,
+        reads_arguments: bool,
         args: &[Values],
         env: &mut Context,
     ) {
@@ -10248,8 +10253,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.escape_untracked_values(values);
             }
         }
-        // `arguments` reads every incoming value as unknown.
-        if callable.reads.iter().any(|id| id.0 == "arguments") {
+        // `arguments` reads every incoming value as unknown, also from an
+        // arrow nested in the callable, whose `arguments` is this one's.
+        if reads_arguments {
             for values in args {
                 self.escape_untracked_values(values);
             }
@@ -10544,8 +10550,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Outcome::default();
         };
         let mut env = captured_context.clone();
+        // A callable reading `arguments` (itself or through a nested arrow)
+        // runs on the source-summary lane, which publishes its arguments.
+        let reads_arguments = self.inputs.reads_arguments.contains(&key);
         let ordered_prologue = covered_prologue
             && !unsupported_inputs
+            && !reads_arguments
             && self.state.array_iteration_depth == 0
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && callable.member_value_writes.is_empty()
@@ -10648,6 +10658,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         //   borrowed parameters, array iteration) in the kernel's own-data
         //   store.
         if !unsupported_inputs
+            && !reads_arguments
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = callable.body_facts.ordered_plan()
             // A default-bearing plan must execute its prologue in the shared
@@ -10732,7 +10743,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callable.local_assignments,
         );
         self.widen_untracked_locals(callable, &mut env);
-        self.escape_untracked_environment(callable, &args, &mut env);
+        self.escape_untracked_environment(callable, reads_arguments, &args, &mut env);
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
             // A chunk binding read later in this prefix must see the assigned
@@ -12794,6 +12805,20 @@ pub(crate) fn annotate_synchronous_calls(
                     .flat_map(|callable| callable.calls.iter()),
             )
             .map(|call| (CallSite::from(call.span), (call.owner, call.span)))
+            .collect(),
+        reads_arguments: index
+            .callable_spans
+            .iter()
+            .filter(|(_, span)| {
+                index.callable_spans.iter().any(|(inner, inner_span)| {
+                    span.lo <= inner_span.lo
+                        && inner_span.hi <= span.hi
+                        && index.callables.get(inner).is_some_and(|callable| {
+                            callable.reads.iter().any(|id| id.0 == "arguments")
+                        })
+                })
+            })
+            .map(|(key, _)| *key)
             .collect(),
         mutable_captures: index
             .callables
