@@ -74,6 +74,34 @@ the family when every leaf has completed; the contract is in
 - `classes.active_construction`;
 - `descriptors.{copy_results,private}`.
 
+## Native `Set` construction: what is left
+
+Wave 3 row 2's `new Set(iterable)` kernel row and its `const s = new Set(items)`
+roots are deferred. A `World` owner for primitive-only Set contents by
+allocation (proof dependencies, joined by `World::join` like
+`DenseArrays.primitive`, a new owner rather than a reuse of the array map) is
+approved in principle. Starting points:
+
+- **No Set contents model.** The legacy row returns only `Alloc(Set, site)`
+  (`execute_native_resolution`: "no Set contents, size, properties or
+  singleton proof"). A later `[...set]` or iteration gets its receipt only
+  from `SetIterableProof::stable_spread_source` / `stable_spread_dependencies`,
+  the recognizer this row replaces, so the row needs the contents owner above.
+- **Constructor dependencies the recognizer supplies today.** The builtin
+  `Set` row requires only `IntrinsicSlot::Global(Set)`, but the constructor
+  calls `this.add` and runs the Array iterator over its argument. The legacy
+  path takes `Set.prototype.add` intactness and the protected iterable
+  interval from the recognizer's premise (`dependencies_for_constructor`,
+  `native_iterable_operand`). A kernel row needs
+  `PrototypeProperty(Set, "add")` and the Array iterator slots, in the row
+  (`facts/abstract_domain/builtins.rs`, after <../docs/purity_soundness.md>) or
+  checked by the adapter.
+- **Open callee read.** The application adapter's `read_binding` gives the
+  global `Set` open coverage and `construct()` admits only local classes, so
+  a native branch must prove the callee's identity at the read (as
+  `native_callee` does for member callees) and resolve the row with
+  `resolve_native_call(CallKind::New, …)` over the supplied operands.
+
 ## Kernel rules waiting for their construct
 
 - **Regions**: the kernel allocates and restores cells. The only refusal is
