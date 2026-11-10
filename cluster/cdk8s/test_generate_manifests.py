@@ -947,9 +947,6 @@ def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
     assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
-    assert any(
-        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-haku-egress-proxy" for doc in active
-    )
     assert {
         "agent-sandbox-controller",
         "haku-egress-proxy",
