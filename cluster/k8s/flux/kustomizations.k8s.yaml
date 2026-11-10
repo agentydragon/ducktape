@@ -1645,6 +1645,15 @@ spec:
     - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
+  patches:
+    - patch: |
+        - op: add
+          path: /spec/suspend
+          value: true
+      target:
+        group: infra.contrib.fluxcd.io
+        kind: Terraform
+        version: v1alpha2
   path: ./k8s
   prune: true
   retryInterval: 1m

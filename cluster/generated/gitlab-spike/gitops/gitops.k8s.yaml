@@ -31,6 +31,7 @@ spec:
     kind: ExternalArtifact
     name: tf-gitops-gitlab-spike
     namespace: ducktape-flux
+  suspend: true
   vars:
     - name: human_ssh_keys
       value:
