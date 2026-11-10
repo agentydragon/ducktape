@@ -57,6 +57,9 @@ func (a *Account) UnmarshalText(text []byte) error {
 }
 
 // Principal is the account and Pod binding established by verified workload credentials.
+// It is the ServiceAccount variant of Subject.
+// TODO: rename to AccountPrincipal once every service admits workloads through AnySubject
+// (IDENTITY_CUTOVER, agentplane/plans/task_dag.md).
 // ServiceAccountUID is populated only when the resolver also verifies the canonical account UID.
 type Principal struct {
 	Account           Account
