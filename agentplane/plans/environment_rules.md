@@ -105,10 +105,12 @@ Rules for the operations:
   while a retained Session on that Sandbox UID names another Identity, applies first.
 - **Settings stay with roles.** `SetEnvironmentWakeOnSend` and `SetEnvironmentIdleSuspend` change the
   target's own policy and stay with the configured managers; no operation grants them.
-- **`create_session` is checked once, at Dispatcher.** Dispatcher owns which Sessions exist: it
+- **`create_session` is a grant on Dispatcher only.** Dispatcher owns which Sessions exist: it
   admits the logical Session, takes commands for it, and later materializes it by calling the
-  Environment Runtime's or the sampler's `CreateSession`. Those calls come from Dispatcher, a
-  platform component, and evaluate no rule. TODO (operator, 2026-11-10): rename the runtime-side
+  Environment Runtime's or the sampler's `CreateSession`. No grant of any type lets an agent call
+  a runtime's `CreateSession` directly (operator, 2026-11-10): the Gateway admits only Dispatcher
+  on that method (`runner_gateway/gateway/gateway.go`), and a Session an agent wants goes through
+  Dispatcher. TODO (operator, 2026-11-10): rename the runtime-side
   `CreateSession` (`env/runtime/control/environment_runtime.proto`) to say it starts a native
   Session that Dispatcher already admitted, so it does not read as a second authority.
 
