@@ -1137,14 +1137,25 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         assert "mutation was not replayed" in visible, visible
         await model.reply(request, ShellCall("probe-budget-session", "cat gateway-budget-marker"))
         request = await asyncio.wait_for(model.request(), timeout=45)
-        (probe_output,) = [output for output in request.tool_outputs if output.call_id == "probe-budget-session"]
-        if "retained exec-server session was definitively lost" in "\n".join(probe_output.blocks):
-            assert "no mutation was replayed" in "\n".join(probe_output.blocks), probe_output
+        probe_outputs = [output for output in request.tool_outputs if output.call_id == "probe-budget-session"]
+        assert probe_outputs, probe_outputs
+        assert probe_outputs[0].blocks, probe_outputs
+        probe_output = probe_outputs[0]
+        probe_text = "\n".join(probe_output.blocks)
+        if "retained exec-server session was definitively lost" in probe_text:
+            assert len(probe_outputs) == 2, probe_outputs
+            assert probe_text.startswith("Script failed\n"), probe_text
+            assert "was not dispatched" in probe_text, probe_text
+            assert "no mutation was replayed" in probe_text, probe_text
+            notice_text = "\n".join(probe_outputs[1].blocks)
+            assert notice_text.startswith("The retained exec-server session was definitively lost."), notice_text
+            assert "no mutation was replayed" in notice_text, notice_text
             await _assert_replacement_native_session_started(recovered, session_id, cursor, native_session_id)
             await model.reply(request, ShellCall("verify-budget-once", "cat gateway-budget-marker"))
             request = await asyncio.wait_for(model.request(), timeout=30)
             (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-budget-once"]
         else:
+            assert len(probe_outputs) == 1, probe_outputs
             await _assert_original_native_session_resumed(recovered, session_id, cursor, native_session_id)
             marker_output = probe_output
         assert _code_mode_shell_stdout(marker_output) == "once\n", marker_output
