@@ -436,6 +436,8 @@ pub struct ResolvedPremises {
     /// Per derived allocator: argument positions that must be fresh object
     /// literals.
     literal_params: FxHashMap<Binding, Vec<usize>>,
+    /// Per derived allocator: the intrinsic collections it constructs.
+    allocator_intrinsics: FxHashMap<Binding, Vec<&'static str>>,
     pub given: usize,
     pub matched: usize,
 }
@@ -883,6 +885,18 @@ impl Classifier<'_> {
                 .get(*position)
                 .is_some_and(|arg| crate::derive::plain_literal(&arg.expr))
         }) {
+            return false;
+        }
+        // A derived allocator constructs these intrinsics.
+        let needed: Vec<Dependency> = self
+            .premises
+            .allocator_intrinsics
+            .get(&callee_binding)
+            .into_iter()
+            .flatten()
+            .map(|global| (*global, &[] as &[_]))
+            .collect();
+        if !needed.is_empty() && !self.untouched(needed, None) {
             return false;
         }
         if let Some(reads) = self.premises.allocator_reads.get(&callee_binding) {
@@ -1711,9 +1725,12 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 premises
                     .literal_params
                     .insert(*binding, allocator.literal_params.clone());
+                premises
+                    .allocator_intrinsics
+                    .insert(*binding, allocator.intrinsics.clone());
             }
         }
-        for (id, reads) in &found.classes {
+        for (id, reads, intrinsics) in &found.classes {
             callee(
                 id,
                 PremiseKind::AllocatorNew,
@@ -1722,6 +1739,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             if let Some(class) = bindings.get(id) {
                 let reads = reads.iter().filter_map(|id| bindings.get(id).copied());
                 premises.allocator_reads.insert(*class, reads.collect());
+                premises
+                    .allocator_intrinsics
+                    .insert(*class, intrinsics.clone());
             }
         }
         for id in &found.namers {

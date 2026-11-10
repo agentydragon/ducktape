@@ -86,7 +86,12 @@ struct Facts {
     /// Parameter positions whose properties it reads: a call must pass a
     /// fresh object literal there.
     literal_params: Vec<usize>,
+    /// Intrinsic collections it constructs empty.
+    intrinsics: Vec<&'static str>,
 }
+
+/// Collections an allocator may construct empty.
+const COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
 
 /// State a chunk keeps for its own functions, by how it was declared.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -817,7 +822,21 @@ impl<'a> Resolver<'a> {
             return false;
         };
         let mut scope = Scope::new(chunk, params, enclosing);
-        let Some((last, rest)) = body.split_last() else {
+        // A function declared in the body is a closure, there before any
+        // statement of the body runs.
+        for statement in body {
+            if let Stmt::Decl(Decl::Fn(function)) = statement {
+                scope.params.insert(function.ident.to_id());
+                scope.fresh.insert(function.ident.to_id());
+            }
+        }
+        // Declarations after the `return` are hoisted above it.
+        let trailing = body
+            .iter()
+            .rev()
+            .take_while(|statement| matches!(statement, Stmt::Decl(Decl::Fn(_))))
+            .count();
+        let Some((last, rest)) = body[..body.len() - trailing].split_last() else {
             return false;
         };
         rest.iter()
@@ -830,6 +849,9 @@ impl<'a> Resolver<'a> {
     fn statement(&mut self, statement: &Stmt, scope: &mut Scope<'_>) -> bool {
         match statement {
             Stmt::Expr(statement) => self.value(&statement.expr, scope).is_some(),
+            // Declaring a function runs nothing, whatever its body, and an
+            // `async` or generator body runs only when called.
+            Stmt::Decl(Decl::Fn(_)) => true,
             Stmt::Decl(Decl::Var(var)) => var.decls.iter().all(|declarator| {
                 let Pat::Ident(name) = &declarator.name else {
                     return false;
@@ -866,8 +888,9 @@ impl<'a> Resolver<'a> {
                 }
                 let key = (chunk, base.to_id());
                 self.current.reads.push(base.to_id());
-                let inherited = self.facts.get(&key).map(|facts| facts.reads.clone());
-                self.current.reads.extend(inherited.unwrap_or_default());
+                let inherited = self.facts.get(&key).cloned().unwrap_or_default();
+                self.current.reads.extend(inherited.reads);
+                self.current.intrinsics.extend(inherited.intrinsics);
                 true
             }
             Some(_) => return false,
@@ -935,13 +958,18 @@ impl<'a> Resolver<'a> {
                         && !matches!(method.key, PropName::Computed(_))
                 }
                 ClassMember::PrivateMethod(method) => method.kind == MethodKind::Method,
-                ClassMember::ClassProp(prop) => {
-                    prop.is_static
-                        || prop.value.as_deref().is_none_or(|value| {
-                            matches!(
-                                value,
-                                Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_))
-                            )
+                // A field initializer runs at construction, without the
+                // constructor's parameters.
+                ClassMember::ClassProp(ClassProp {
+                    is_static, value, ..
+                })
+                | ClassMember::PrivateProp(PrivateProp {
+                    is_static, value, ..
+                }) => {
+                    *is_static
+                        || value.as_deref().is_none_or(|value| {
+                            let mut scope = Scope::new(chunk, Vec::new(), &none);
+                            self.value(value, &mut scope).is_some()
                         })
                 }
                 ClassMember::StaticBlock(_) | ClassMember::Empty(_) => true,
@@ -1047,6 +1075,16 @@ impl<'a> Resolver<'a> {
                 let Expr::Ident(class) = &*new.callee else {
                     return None;
                 };
+                // `new Map()`: an empty collection, if the intrinsic is as
+                // the language defines it.
+                if class.ctxt == self.chunks[scope.chunk].unresolved {
+                    let collection = COLLECTIONS.iter().find(|name| **name == &*class.sym)?;
+                    new.args.as_ref().is_none_or(Vec::is_empty).then_some(())?;
+                    if !self.current.intrinsics.contains(collection) {
+                        self.current.intrinsics.push(collection);
+                    }
+                    return Some(true);
+                }
                 if scope.params.contains(&class.to_id())
                     || self.role(scope.chunk, &class.to_id()) != Role::AllocatorClass
                 {
@@ -1054,8 +1092,9 @@ impl<'a> Resolver<'a> {
                 }
                 let key = (scope.chunk, class.to_id());
                 self.current.reads.push(class.to_id());
-                let reads = self.facts.get(&key).map(|facts| facts.reads.clone());
-                self.current.reads.extend(reads.unwrap_or_default());
+                let facts = self.facts.get(&key).cloned().unwrap_or_default();
+                self.current.reads.extend(facts.reads);
+                self.current.intrinsics.extend(facts.intrinsics);
                 for arg in new.args.iter().flatten() {
                     if arg.spread.is_some() {
                         return None;
@@ -1195,6 +1234,7 @@ impl<'a> Resolver<'a> {
                 self.current.reads.push(callee.to_id());
                 self.current.reads.extend(facts.reads);
                 self.current.private |= facts.private;
+                self.current.intrinsics.extend(facts.intrinsics);
                 for (position, arg) in call.args.iter().enumerate() {
                     if facts.literal_params.contains(&position) && !plain_literal(&arg.expr) {
                         return None;
@@ -1332,7 +1372,10 @@ impl<'a> Resolver<'a> {
         let allocates =
             function.is_some_and(|function| self.allocator(*chunk, function, &constants));
         let facts = std::mem::replace(&mut self.current, outer);
-        allocates && !facts.private && facts.literal_params.is_empty()
+        allocates
+            && !facts.private
+            && facts.literal_params.is_empty()
+            && facts.intrinsics.is_empty()
     }
 
     /// Whether a lazy module's body names `__esModule`: its interop
@@ -1402,6 +1445,8 @@ pub struct Allocator {
     pub private: bool,
     /// Argument positions that must be fresh object literals.
     pub literal_params: Vec<usize>,
+    /// Intrinsic collections a call constructs empty.
+    pub intrinsics: Vec<&'static str>,
 }
 
 /// What derivation found for the bindings of one chunk.
@@ -1410,8 +1455,9 @@ pub struct Derived {
     /// Bindings that are allocators.
     pub allocators: Vec<Allocator>,
     /// Classes whose construction only stores into the new object, with
-    /// the bindings of this chunk a construction reads.
-    pub classes: Vec<(Id, Vec<Id>)>,
+    /// the bindings of this chunk a construction reads and the intrinsic
+    /// collections it constructs.
+    pub classes: Vec<(Id, Vec<Id>, Vec<&'static str>)>,
     /// Bindings holding the function-naming helper.
     pub namers: Vec<Id>,
     /// `binding.path` that is an allocator.
@@ -1477,13 +1523,14 @@ pub fn derive(
                 let facts = resolver.facts.get(&home).cloned().unwrap_or_default();
                 let reads = if home.0 == 0 { facts.reads } else { Vec::new() };
                 if class {
-                    derived.classes.push((id, reads));
+                    derived.classes.push((id, reads, facts.intrinsics));
                 } else {
                     derived.allocators.push(Allocator {
                         binding: id,
                         reads,
                         private: facts.private,
                         literal_params: facts.literal_params,
+                        intrinsics: facts.intrinsics,
                     });
                 }
             }

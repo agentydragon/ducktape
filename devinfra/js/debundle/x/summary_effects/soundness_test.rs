@@ -222,6 +222,16 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "const root = globalThis; root[k] = 1; const a = new Map();",
             "window[`Ma${suffix}`] = class {}; const a = new Map();",
             "window[prefix + 'Map'] = class {}; const a = new Map();",
+            "const key = 'Map'; globalThis[key] = class {}; const a = new Map();",
+            "let key = 'registry'; key = 'Map'; globalThis[key] = class {}; const a = new Map();",
+            "let key = 'registry'; function pick() { key = 'Map'; } globalThis[key] = class {}; const a = new Map();",
+            "Object.assign(globalThis, { Map: class {} }); const a = new Map();",
+            "Object.assign(globalThis, extra); const a = new Map();",
+            "Object.assign(globalThis, { ...extra }); const a = new Map();",
+            "for (const name of ['other', 'Map']) globalThis[name] = class {}; const a = new Map();",
+            "for (const name of names) globalThis[name] = 1; const a = new Map();",
+            "[['Map', 1]].forEach(([name, value]) => { globalThis[name] = value; }); const a = new Map();",
+            "const root = globalThis; root[k].set = 1; const a = new Map();",
             "(function (root) { root.Map = class {}; })(globalThis); const a = new Map();",
             "((root, name) => { root[name] = 1; })(window, 'Map'); const a = new Map();",
             // A store through `.prototype` of something an escaped
@@ -242,6 +252,17 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "window[`callback_${id}`] = () => {}; const a = new Map();",
             "window['callback_' + id] = () => {}; const a = new Map();",
             "window[0] = 1; const a = new Map();",
+            // A key that is a binding holding one known key.
+            "const tag = Symbol.for('app'); globalThis[tag] = 1; const a = new Map();",
+            "const tag = Symbol('app'); globalThis[tag] ??= {}; delete globalThis[tag]; const a = new Map();",
+            "const name = 'callback_' + id; window[name] = () => {}; const a = new Map();",
+            "const key = 'registry'; const root = typeof globalThis === 'object' ? globalThis : window; root[key] = {}; const a = new Map();",
+            "Object.assign(globalThis, { helper() {}, other: 1 }); const a = new Map();",
+            "for (const name of ['first', 'second']) Object.defineProperty(globalThis, name, { value: 1 }); const a = new Map();",
+            "[['first', 1], ['second', 2]].forEach(([name, value]) => { globalThis[name] = value; }); const a = new Map();",
+            "for (const name in { first: 1, second: 2 }) globalThis[name] = 1; const a = new Map();",
+            // A store into a record read off the global object.
+            "const root = globalThis; root.registry.items[k] = 1; const a = new Map();",
             "function listen(target) { target.onload = null; } listen(window); const a = new Map();",
             "function check(target) { return typeof target; } check(Map); const a = new Map();",
             "const supported = [Map, Set].every(Boolean); const a = new Map();",
@@ -532,6 +553,15 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "const k = Symbol.for('t'); function tagged(a) { return { k, a }; } const x = tagged(1);",
             "function opt(a, b) { return { a, b: b === void 0 ? null : b }; } const x = opt(1);",
             "const later = (f) => () => f; const x = later(1);",
+            // Functions declared in the body are closures, whatever they do.
+            "function guard(check, next) { async function run(input) { if (await check(input)) return next(input); } return run; } const x = guard(() => true, () => 1);",
+            "function guard(check) { return run; function run(input) { return check(input); } } const x = guard(() => true);",
+            "function each(items) { function* walk() { yield* items; } return { walk }; } const x = each([1]);",
+            "function debounce(fn, ms) { let timer; function wrapped(...args) { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); } wrapped.cancel = () => clearTimeout(timer); return wrapped; } const x = debounce(() => {}, 10);",
+            // Fields that only allocate.
+            "class Store { items = []; index = new Map(); on = () => this.items; #seen = new Set(); constructor(name) { this.name = name; } } const x = new Store('a');",
+            "function tag(name) { return { name }; } class Logger { constructor(name) { this.tag = tag(name); } } const x = new Logger('a');",
+            "class Registry { entries = new Map(); } const make = () => new Registry(); const x = make();",
             // A property read of an argument written as a plain literal.
             "function f(o) { return { v: o.v }; } const x = f({ v: 1 });",
             "function f(t, o) { return { t, k: o.key, o }; } const k = 1; const x = f('a', { key: k });",
@@ -568,6 +598,14 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "function* f(a) { return { a }; } const x = f(1);",
             "function f(a) { if (a) return {}; return []; } const x = f(1);",
             "function f(a) { return { get a() { return a; } }; } const x = f(1);",
+            // The outer function itself is asynchronous, or runs its inner one.
+            "async function guard(check) { function run() {} return run; } const x = guard(1);",
+            "function guard(check) { function run() { return check(); } return run(); } const x = guard(() => 1);",
+            // Fields that run code, or an intrinsic the chunk modifies.
+            "class Store { items = load(); } const x = new Store();",
+            "class Store { id = counter++; } let counter = 0; const x = new Store();",
+            "globalThis.Map = class {}; class Store { index = new Map(); } const x = new Store();",
+            "class Store { index = new Map([[key, 1]]); } const key = {}; const x = new Store();",
             // A constructor that does more than store.
             "class A { constructor(v) { this.v = v; log(v); } } const x = new A(1);",
             "class A { set v(x) {} constructor(v) { this.v = v; } } const x = new A(1);",
@@ -825,6 +863,16 @@ fn program_resolves_rooted_specifiers_and_reads_any_bytes() {
         "a.js",
         &["/$virtual/root/".to_string()]
     ));
+    // A chunk that does not parse may load anything, so a chunk that
+    // imports it counts as on a cycle; one that does not is unaffected.
+    std::fs::write(directory.join("broken.js"), b"export const = ;\n").expect("writing a chunk");
+    std::fs::write(
+        directory.join("d.js"),
+        b"import './broken.js';\nexport const d = 1;\n",
+    )
+    .expect("writing a chunk");
+    assert!(on_cycle(&directory, "d.js", &[]));
+    assert!(!on_cycle(&directory, "c.js", &[]));
     std::fs::remove_dir_all(directory).expect("removing the scratch directory");
 }
 

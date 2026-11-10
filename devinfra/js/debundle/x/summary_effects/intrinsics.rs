@@ -53,6 +53,11 @@ pub struct Census {
 }
 
 impl Census {
+    /// Counts every global as written: the chunk could not be read.
+    pub fn refuse_everything(&mut self) {
+        self.all = true;
+    }
+
     /// Marks the census as that of program chunk `index`.
     pub fn locate(&mut self, index: usize) {
         for (chunk, _) in &mut self.all_sites {
@@ -145,47 +150,28 @@ fn strip(mut expr: &Expr) -> &Expr {
     expr
 }
 
-/// A key the census can name: an identifier, a string literal, or a
-/// well-known symbol.
-fn key(prop: &MemberProp, unresolved: SyntaxContext) -> Option<String> {
-    match prop {
-        MemberProp::Ident(name) => Some(name.sym.to_string()),
-        MemberProp::PrivateName(_) => None,
-        MemberProp::Computed(computed) => match strip(&computed.expr) {
-            Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
-            Expr::Lit(Lit::Num(number)) => Some(number.value.to_string()),
-            Expr::Member(MemberExpr {
-                obj,
-                prop: MemberProp::Ident(name),
-                ..
-            }) if matches!(&**obj, Expr::Ident(symbol)
-                if symbol.ctxt == unresolved && &*symbol.sym == "Symbol") =>
-            {
-                Some(format!("@@{}", name.sym))
-            }
-            // A registry or fresh symbol is no binding's name and no
-            // well-known symbol.
-            Expr::Call(CallExpr {
-                callee: Callee::Expr(callee),
-                ..
-            }) if matches!(strip(callee), Expr::Ident(symbol)
-                if symbol.ctxt == unresolved && &*symbol.sym == "Symbol")
-                || matches!(strip(callee), Expr::Member(MemberExpr {
-                    obj,
-                    prop: MemberProp::Ident(method),
-                    ..
-                }) if &*method.sym == "for" && matches!(&**obj, Expr::Ident(symbol)
-                    if symbol.ctxt == unresolved && &*symbol.sym == "Symbol")) =>
-            {
-                Some("@@other".to_string())
-            }
-            _ => None,
-        },
-    }
+/// What the census knows of a computed key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyValue {
+    /// One name: a string, a number, `@@iterator` for a well-known symbol,
+    /// `@@other` for a registry or fresh symbol, which is no binding's name.
+    Named(String),
+    /// A string that starts so: `` `cb_${id}` ``, `"cb_" + id`.
+    Prefix(String),
+    /// One of these names.
+    Names(Vec<String>),
 }
 
-/// What a computed key certainly starts with: `` `cb_${id}` ``, `"cb_" + id`.
-fn key_prefix(prop: &MemberProp) -> Option<String> {
+/// Bindings declared once and never assigned, by the key they hold.
+type KeyBindings = FxHashMap<Id, KeyValue>;
+
+fn is_symbol(expr: &Expr, unresolved: SyntaxContext) -> bool {
+    matches!(strip(expr), Expr::Ident(symbol)
+        if symbol.ctxt == unresolved && &*symbol.sym == "Symbol")
+}
+
+/// The key an expression written in place evaluates to.
+fn key_value(expr: &Expr, unresolved: SyntaxContext) -> Option<KeyValue> {
     fn prefix(expr: &Expr) -> Option<String> {
         match strip(expr) {
             Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
@@ -199,10 +185,138 @@ fn key_prefix(prop: &MemberProp) -> Option<String> {
             _ => None,
         }
     }
-    let MemberProp::Computed(computed) = prop else {
+    Some(match strip(expr) {
+        Expr::Lit(Lit::Str(value)) => KeyValue::Named(js_ast::str_value(value)),
+        Expr::Lit(Lit::Num(number)) => KeyValue::Named(number.value.to_string()),
+        Expr::Tpl(template) if template.exprs.is_empty() => KeyValue::Named(prefix(expr)?),
+        Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(name),
+            ..
+        }) if is_symbol(obj, unresolved) => KeyValue::Named(format!("@@{}", name.sym)),
+        Expr::Call(CallExpr {
+            callee: Callee::Expr(callee),
+            ..
+        }) if is_symbol(callee, unresolved)
+            || matches!(strip(callee), Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(method),
+                ..
+            }) if &*method.sym == "for" && is_symbol(obj, unresolved)) =>
+        {
+            KeyValue::Named("@@other".to_string())
+        }
+        other => KeyValue::Prefix(prefix(other).filter(|prefix| !prefix.is_empty())?),
+    })
+}
+
+/// The key a computed property expression evaluates to: written in place,
+/// or a binding that only ever holds one.
+fn computed_key(expr: &Expr, unresolved: SyntaxContext, keys: &KeyBindings) -> Option<KeyValue> {
+    match strip(expr) {
+        Expr::Ident(binding) if binding.ctxt != unresolved => keys.get(&binding.to_id()).cloned(),
+        other => key_value(other, unresolved),
+    }
+}
+
+/// A key the census can name.
+fn key(prop: &MemberProp, unresolved: SyntaxContext, keys: &KeyBindings) -> Option<String> {
+    match prop {
+        MemberProp::Ident(name) => Some(name.sym.to_string()),
+        MemberProp::PrivateName(_) => None,
+        MemberProp::Computed(computed) => match computed_key(&computed.expr, unresolved, keys)? {
+            KeyValue::Named(name) => Some(name),
+            KeyValue::Prefix(_) | KeyValue::Names(_) => None,
+        },
+    }
+}
+
+/// The names an object literal defines, when it has no spread, accessor or
+/// computed key.
+fn literal_keys(expr: &Expr) -> Option<Vec<String>> {
+    let Expr::Object(object) = strip(expr) else {
         return None;
     };
-    prefix(&computed.expr).filter(|prefix| !prefix.is_empty())
+    object
+        .props
+        .iter()
+        .map(|prop| match prop {
+            PropOrSpread::Prop(prop) => match &**prop {
+                Prop::Shorthand(key) => Some(key.sym.to_string()),
+                Prop::KeyValue(KeyValueProp { key, .. }) | Prop::Method(MethodProp { key, .. }) => {
+                    match key {
+                        PropName::Ident(key) => Some(key.sym.to_string()),
+                        PropName::Str(key) => Some(js_ast::str_value(key)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            PropOrSpread::Spread(_) => None,
+        })
+        .collect()
+}
+
+/// The keys iterating `expr` yields, and whether each item is a
+/// `[key, value]` pair: an array of strings or of such pairs,
+/// `Object.keys(literal)`, `Object.entries(literal)`.
+fn iterated_keys(expr: &Expr, unresolved: SyntaxContext) -> Option<(Vec<String>, bool)> {
+    let string = |expr: &Expr| match strip(expr) {
+        Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
+        _ => None,
+    };
+    match strip(expr) {
+        Expr::Array(array) => {
+            let elements: Option<Vec<&Expr>> = array
+                .elems
+                .iter()
+                .map(|element| match element {
+                    Some(ExprOrSpread { spread: None, expr }) => Some(&**expr),
+                    _ => None,
+                })
+                .collect();
+            let elements = elements?;
+            if let Some(names) = elements.iter().map(|element| string(element)).collect() {
+                return Some((names, false));
+            }
+            let firsts: Option<Vec<String>> = elements
+                .iter()
+                .map(|element| match strip(element) {
+                    Expr::Array(pair) => match pair.elems.first() {
+                        Some(Some(ExprOrSpread { spread: None, expr })) => string(expr),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect();
+            Some((firsts?, true))
+        }
+        Expr::Call(CallExpr {
+            callee: Callee::Expr(callee),
+            args,
+            ..
+        }) => {
+            let Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(method),
+                ..
+            }) = strip(callee)
+            else {
+                return None;
+            };
+            let on_object = matches!(strip(obj), Expr::Ident(object)
+                if object.ctxt == unresolved && &*object.sym == "Object");
+            let [ExprOrSpread { spread: None, expr }] = args.as_slice() else {
+                return None;
+            };
+            match (on_object, &*method.sym) {
+                (true, "keys") => Some((literal_keys(expr)?, false)),
+                (true, "entries") => Some((literal_keys(expr)?, true)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 /// The expressions whose value `expr` may take: itself, or the operands a
@@ -234,11 +348,38 @@ fn passed_through<'e>(expr: &'e Expr, out: &mut Vec<&'e Expr>) {
 
 /// Local functions called by name, with the parameter each argument
 /// position binds, where it is a plain identifier.
-#[derive(Default)]
 struct Functions {
+    unresolved: SyntaxContext,
     params: FxHashMap<Id, Vec<Option<Id>>>,
     declared: FxHashMap<Id, usize>,
     assigned: FxHashSet<Id>,
+    keys: KeyBindings,
+}
+
+impl Functions {
+    /// Binds what one item of an iteration over `names` is destructured
+    /// into: `key`, or `[key, …]` for pairs.
+    fn iteration(&mut self, pattern: &Pat, names: Vec<String>, pairs: bool) {
+        let binding = match (pattern, pairs) {
+            (Pat::Ident(name), false) => Some(name),
+            (Pat::Array(pair), true) => match pair.elems.first() {
+                Some(Some(Pat::Ident(name))) => Some(name),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(name) = binding {
+            self.keys.insert(name.id.to_id(), KeyValue::Names(names));
+        }
+    }
+
+    fn loop_head(&mut self, head: &ForHead, names: Vec<String>, pairs: bool) {
+        if let ForHead::VarDecl(declaration) = head
+            && let [declarator] = declaration.decls.as_slice()
+        {
+            self.iteration(&declarator.name, names, pairs);
+        }
+    }
 }
 
 struct UsesArguments(bool);
@@ -296,6 +437,13 @@ impl Visit for Functions {
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         if let Pat::Ident(name) = &declarator.name {
             *self.declared.entry(name.id.to_id()).or_default() += 1;
+            if let Some(key) = declarator
+                .init
+                .as_deref()
+                .and_then(|init| key_value(init, self.unresolved))
+            {
+                self.keys.insert(name.id.to_id(), key);
+            }
             if let Some(positions) = declarator
                 .init
                 .as_deref()
@@ -313,10 +461,56 @@ impl Visit for Functions {
         }
         assign.visit_children_with(self);
     }
+
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        if let Expr::Ident(target) = strip(&update.arg) {
+            self.assigned.insert(target.to_id());
+        }
+        update.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, looped: &ForOfStmt) {
+        if let Some((names, pairs)) = iterated_keys(&looped.right, self.unresolved) {
+            self.loop_head(&looped.left, names, pairs);
+        }
+        looped.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, looped: &ForInStmt) {
+        if let Some(names) = literal_keys(&looped.right) {
+            self.loop_head(&looped.left, names, false);
+        }
+        looped.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        // `[…].forEach((key) => …)`.
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(method),
+                ..
+            }) = strip(callee)
+            && &*method.sym == "forEach"
+            && let Some((names, pairs)) = iterated_keys(obj, self.unresolved)
+            && let [ExprOrSpread { spread: None, expr }] = call.args.as_slice()
+        {
+            let first = match strip(expr) {
+                Expr::Arrow(arrow) => arrow.params.first(),
+                Expr::Fn(function) => function.function.params.first().map(|param| &param.pat),
+                _ => None,
+            };
+            if let Some(pattern) = first {
+                self.iteration(pattern, names, pairs);
+            }
+        }
+        call.visit_children_with(self);
+    }
 }
 
 struct Flow {
     unresolved: SyntaxContext,
+    keys: KeyBindings,
     taints: FxHashMap<Id, Taint>,
     params: FxHashMap<Id, Vec<Option<Id>>>,
 }
@@ -342,7 +536,7 @@ impl Flow {
                     }
                 }
                 Expr::Member(member) => {
-                    let name = key(&member.prop, self.unresolved);
+                    let name = key(&member.prop, self.unresolved, &self.keys);
                     for base in self.taint(&member.obj) {
                         match (base, &name) {
                             (Intrinsic::GlobalObject, Some(name)) => {
@@ -465,9 +659,34 @@ impl Visitor<'_> {
         match strip(expr) {
             Expr::Member(member) => {
                 global(&member.obj).is_some_and(|name| GLOBAL_OBJECTS.contains(&&*name))
-                    && key(&member.prop, self.flow.unresolved).is_some()
+                    && key(&member.prop, self.flow.unresolved, &self.flow.keys).is_some()
             }
             other => global(other).is_some(),
+        }
+    }
+
+    /// A store on `target` under `prop`.
+    fn store(&mut self, target: &Expr, prop: &MemberProp) {
+        let keys = match prop {
+            MemberProp::Ident(name) => Some(KeyValue::Named(name.sym.to_string())),
+            MemberProp::PrivateName(_) => None,
+            MemberProp::Computed(computed) => {
+                computed_key(&computed.expr, self.flow.unresolved, &self.flow.keys)
+            }
+        };
+        self.write_key(target, keys);
+    }
+
+    fn write_key(&mut self, target: &Expr, keys: Option<KeyValue>) {
+        match keys {
+            None => self.write(target, None, None),
+            Some(KeyValue::Named(name)) => self.write(target, Some(name), None),
+            Some(KeyValue::Prefix(prefix)) => self.write(target, None, Some(prefix)),
+            Some(KeyValue::Names(names)) => {
+                for name in names {
+                    self.write(target, Some(name), None);
+                }
+            }
         }
     }
 
@@ -504,7 +723,8 @@ impl Visitor<'_> {
             return;
         };
         // A local may also hold an escaped intrinsic the census lost.
-        let on_prototype = key(&member.prop, self.flow.unresolved).as_deref() == Some("prototype");
+        let on_prototype = key(&member.prop, self.flow.unresolved, &self.flow.keys).as_deref()
+            == Some("prototype");
         if on_prototype && !self.named_by_global(&member.obj) {
             let stores = &mut self.census.unfollowed_prototype_stores;
             match &prop {
@@ -630,11 +850,7 @@ impl Visit for Visitor<'_> {
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         match &assign.left {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                self.write(
-                    &member.obj,
-                    key(&member.prop, self.flow.unresolved),
-                    key_prefix(&member.prop),
-                );
+                self.store(&member.obj, &member.prop);
             }
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                 if binding.id.ctxt == self.flow.unresolved {
@@ -650,11 +866,7 @@ impl Visit for Visitor<'_> {
 
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
         if let Expr::Member(member) = strip(&update.arg) {
-            self.write(
-                &member.obj,
-                key(&member.prop, self.flow.unresolved),
-                key_prefix(&member.prop),
-            );
+            self.store(&member.obj, &member.prop);
         }
         update.visit_children_with(self);
     }
@@ -663,11 +875,7 @@ impl Visit for Visitor<'_> {
         match unary.op {
             UnaryOp::Delete => {
                 if let Expr::Member(member) = strip(&unary.arg) {
-                    self.write(
-                        &member.obj,
-                        key(&member.prop, self.flow.unresolved),
-                        key_prefix(&member.prop),
-                    );
+                    self.store(&member.obj, &member.prop);
                 }
             }
             UnaryOp::TypeOf | UnaryOp::Bang | UnaryOp::Void => self.consume(&unary.arg),
@@ -680,14 +888,25 @@ impl Visit for Visitor<'_> {
         if let Callee::Expr(callee) = &call.callee {
             self.consume(callee);
             if let (Some(mutator), Some(target)) = (self.mutator(callee), call.args.first()) {
-                let prop = match (mutator, call.args.get(1)) {
-                    ("defineProperty" | "set", Some(name)) => match strip(&name.expr) {
-                        Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
-                        _ => None,
-                    },
+                let keys = match mutator {
+                    "defineProperty" | "set" => call.args.get(1).and_then(|name| {
+                        computed_key(&name.expr, self.flow.unresolved, &self.flow.keys)
+                    }),
+                    // `Object.assign(target, { a, b })` defines those names.
+                    "assign" => call.args[1..]
+                        .iter()
+                        .map(|source| {
+                            source
+                                .spread
+                                .is_none()
+                                .then(|| literal_keys(&source.expr))
+                                .flatten()
+                        })
+                        .collect::<Option<Vec<_>>>()
+                        .map(|names| KeyValue::Names(names.concat())),
                     _ => None,
                 };
-                self.write(&target.expr, prop, None);
+                self.write_key(&target.expr, keys);
             }
         }
         for (_, value) in self.flow.arguments(call) {
@@ -742,18 +961,28 @@ pub fn census(
     unresolved: SyntaxContext,
     object_aliases: &FxHashMap<Id, String>,
 ) -> Census {
-    let mut functions = Functions::default();
+    let mut functions = Functions {
+        unresolved,
+        params: FxHashMap::default(),
+        declared: FxHashMap::default(),
+        assigned: FxHashSet::default(),
+        keys: KeyBindings::default(),
+    };
     module.visit_with(&mut functions);
     let Functions {
         mut params,
         declared,
         assigned,
+        mut keys,
+        ..
     } = functions;
+    keys.retain(|id, _| declared.get(id).copied().unwrap_or(1) == 1 && !assigned.contains(id));
     // A binding that may hold another function receives arguments the
     // census cannot place.
     params.retain(|id, _| declared[id] == 1 && !assigned.contains(id));
     let mut flow = Flow {
         unresolved,
+        keys,
         taints: FxHashMap::default(),
         params,
     };

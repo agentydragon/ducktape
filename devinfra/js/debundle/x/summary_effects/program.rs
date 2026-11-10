@@ -27,6 +27,9 @@ pub struct ProgramFacts {
     pub chunk: PathBuf,
     /// Top-level `await` sites in any chunk of the program.
     pub top_level_awaits: usize,
+    /// Chunks that did not parse. Each is taken to write every global, to
+    /// await at its top level, and to load any chunk.
+    pub unparsed_chunks: usize,
     /// Relative or rooted import specifiers, in any chunk, that name no
     /// chunk read: each is an edge the cycle verdict does not see.
     pub unresolved_specifiers: usize,
@@ -206,6 +209,7 @@ pub fn load(
         directory: canonical_root,
     };
     let mut modules = Vec::new();
+    let mut unparsed_chunks = 0;
     let chunk = chunk
         .canonicalize()
         .with_context(|| format!("resolving {}", chunk.display()))?;
@@ -216,7 +220,22 @@ pub fn load(
         // A chunk may embed bytes that are not UTF-8 in a string.
         let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
         let source = String::from_utf8_lossy(&bytes);
-        let parsed = js_ast::parse_js_module(&path.display().to_string(), &source)?;
+        // A chunk that does not parse may do anything: write any global,
+        // await, and load any chunk.
+        let Ok(parsed) = js_ast::parse_js_module(&path.display().to_string(), &source) else {
+            anyhow::ensure!(path != chunk, "{} does not parse", path.display());
+            unparsed_chunks += 1;
+            merged.refuse_everything();
+            graph.insert(
+                path,
+                Imports {
+                    unknown_requires: 1,
+                    top_level_awaits: 1,
+                    ..Imports::default()
+                },
+            );
+            continue;
+        };
         let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
         let mut imports = Imports::default();
         parsed.module.visit_with(&mut imports);
@@ -287,6 +306,7 @@ pub fn load(
         modules,
         chunk,
         top_level_awaits,
+        unparsed_chunks,
         unresolved_specifiers: graph
             .iter()
             .flat_map(|(path, imports)| {

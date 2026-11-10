@@ -620,6 +620,8 @@ pub struct Tier0Report {
     /// Top-level `await` sites in the program; any makes dynamic imports
     /// count for the cycle verdict.
     pub program_top_level_awaits: Option<usize>,
+    /// Program chunks that did not parse; each is taken to do anything.
+    pub program_unparsed_chunks: Option<usize>,
     /// Relative or rooted import specifiers that name no chunk read. Each is
     /// an edge the cycle verdict and derivation do not see.
     pub program_unresolved_specifiers: Option<usize>,
@@ -876,6 +878,10 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .program
             .as_ref()
             .map(|program| program.top_level_awaits),
+        program_unparsed_chunks: options
+            .program
+            .as_ref()
+            .map(|program| program.unparsed_chunks),
         program_unresolved_specifiers: options
             .program
             .as_ref()

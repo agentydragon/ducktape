@@ -16,6 +16,10 @@ const hooks = [];
 export function once(compute) { let done = false, value; hooks.push(() => { done = false; }); return () => done ? value : (done = true, value = compute()); }
 export function hookCount() { return hooks.length; }
 export function element(type, props) { return { type, key: props.key, props }; }
+export function guard(check, next) { async function run(input) { if (await check(input)) return next(input); } return run; }
+export class Store { items = []; index = new Map(); constructor(name) { this.name = name; } }
+let made = 0;
+export class Counted { id = ++made; }
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -125,3 +129,27 @@ import { element } from './dep.js'; const props = { key: 'a' }; function rename(
 rename();
 const node = element('div', props);
 console.log(node.key);
+### commutes same: a function that returns an inner async function, across an impure statement
+-
+import { guard } from './dep.js'; let state = 0;
+state = 1;
+const checked = guard(() => true, (input) => input + state);
+checked(1).then((value) => console.log(state, value));
+### commutes same: an inner function retains callbacks that read a later definition
+-
+import { guard } from './dep.js';
+const checked = guard(() => later, () => 2);
+var later = true;
+checked(1).then((value) => console.log(value));
+### commutes same: a class with allocating field initializers, across an impure statement
+-
+import { Store } from './dep.js'; let state = 0;
+state = 1;
+const store = new Store('a');
+console.log(state, store.items.length, store.index.size, store.name);
+### ordered differs: a class whose field initializer counts
+-
+import { Counted } from './dep.js';
+const a = new Counted();
+const b = new Counted();
+console.log(a.id, b.id);
