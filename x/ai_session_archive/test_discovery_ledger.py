@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import BinaryIO
+from unittest.mock import patch
 
 import pytest_bazel
 from sqlalchemy import select
@@ -122,6 +123,99 @@ def test_new_snapshots_are_discovered_on_next_run_without_resetting_existing_row
         rows = list(db.scalars(select(ResticSnapshotRow).where(ResticSnapshotRow.machine_id == MACHINE_ID)))
     assert {row.snapshot_id for row in rows} == {first.id, second.id}
     assert all(row.processing_status == "complete" for row in rows)
+
+
+def test_pending_snapshot_uses_parent_completed_earlier_in_same_run(postgres_engine: Engine) -> None:
+    first = _snapshot(1)
+    second = _snapshot(2, parent_id=first.id)
+    repository = MemoryResticRepository([first, second])
+
+    report = _ingestor(postgres_engine, repository).ingest()
+
+    assert report.snapshots_complete == 2
+    assert repository.listed_files == [first.id]
+    assert repository.diffed == [(first.id, second.id)]
+    with sessionmaker(postgres_engine)() as db:
+        second_row = db.get(ResticSnapshotRow, (MACHINE_ID, second.id))
+    assert second_row is not None
+    assert second_row.comparison_snapshot_id == first.id
+
+
+def test_repeated_ingest_skips_completed_snapshot_work(postgres_engine: Engine) -> None:
+    snapshot = _snapshot(1)
+    repository = MemoryResticRepository([snapshot])
+    ingestor = _ingestor(postgres_engine, repository)
+
+    first_report = ingestor.ingest()
+    assert first_report.snapshots_complete == 1
+    assert repository.dumped == [snapshot.id]
+
+    with (
+        patch.object(ingestor, "_prepare_snapshot", wraps=ingestor._prepare_snapshot) as prepare_snapshot,
+        patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
+        patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
+    ):
+        second_report = ingestor.ingest()
+
+    assert second_report.snapshots_complete == 1
+    assert prepare_snapshot.call_count == 0
+    assert process_snapshot.call_count == 0
+    # Keep the latest-snapshot refresh so old metadata observations can still be backfilled.
+    assert process_metadata.call_count == 1
+    assert process_metadata.call_args_list[0].kwargs == {"refresh_completed": True}
+    assert repository.listed_files == [snapshot.id]
+    assert repository.dumped == [snapshot.id]
+
+
+def test_metadata_retry_and_partial_status_are_independent_of_transcript_completion(postgres_engine: Engine) -> None:
+    snapshot = _snapshot(1)
+    repository = MemoryResticRepository([snapshot])
+    ingestor = _ingestor(postgres_engine, repository)
+    factory = sessionmaker(postgres_engine)
+
+    assert ingestor.ingest().snapshots_complete == 1
+    original_dumps = repository.dumped.copy()
+
+    with factory.begin() as db:
+        row = db.get(ResticSnapshotRow, (MACHINE_ID, snapshot.id))
+        assert row is not None
+        assert row.processing_status == "complete"
+        row.codex_metadata_status = "failed"
+
+    with (
+        patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
+        patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
+    ):
+        retry_report = ingestor.ingest()
+
+    assert retry_report.snapshots_complete == 1
+    assert process_metadata.call_count == 1
+    assert process_metadata.call_args_list[0].kwargs == {"refresh_completed": True}
+    assert process_snapshot.call_count == 0
+    assert repository.dumped == original_dumps
+    with factory() as db:
+        row = db.get(ResticSnapshotRow, (MACHINE_ID, snapshot.id))
+        assert row is not None
+        assert row.processing_status == "complete"
+        assert row.codex_metadata_status == "complete"
+
+    with factory.begin() as db:
+        row = db.get(ResticSnapshotRow, (MACHINE_ID, snapshot.id))
+        assert row is not None
+        row.codex_metadata_status = "partial"
+
+    with (
+        patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
+        patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
+    ):
+        partial_report = ingestor.ingest()
+
+    assert partial_report.snapshots_complete == 1
+    assert partial_report.codex_metadata_partial == 1
+    assert process_metadata.call_count == 1
+    assert process_metadata.call_args_list[0].kwargs == {"refresh_completed": True}
+    assert process_snapshot.call_count == 0
+    assert repository.dumped == original_dumps
 
 
 def test_resumed_pending_ledger_retries_oldest_without_reimporting_complete_newer_snapshot(

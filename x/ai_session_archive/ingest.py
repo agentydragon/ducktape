@@ -119,10 +119,30 @@ class SnapshotIngestor:
             # Make the latest names visible before a potentially long historical transcript import.
             self._process_codex_metadata(snapshots[-1], refresh_completed=True)
             self._project_codex_titles(allow_index_only=False)
+
+        with self._session_factory() as db:
+            snapshot_states = {
+                snapshot_id: (inventory_status, processing_status, codex_metadata_status)
+                for snapshot_id, inventory_status, processing_status, codex_metadata_status in db.execute(
+                    select(
+                        ResticSnapshotRow.snapshot_id,
+                        ResticSnapshotRow.inventory_status,
+                        ResticSnapshotRow.processing_status,
+                        ResticSnapshotRow.codex_metadata_status,
+                    ).where(
+                        ResticSnapshotRow.machine_id == self._source.machine_id,
+                        ResticSnapshotRow.snapshot_id.in_(available_snapshot_ids),
+                    )
+                )
+            }
         for snapshot in snapshots:
-            self._prepare_snapshot(snapshot, available_snapshot_ids)
-            self._process_codex_metadata(snapshot)
-            self._process_snapshot(snapshot)
+            inventory_status, processing_status, metadata_status = snapshot_states[snapshot.id]
+            if inventory_status != "complete":
+                self._prepare_snapshot(snapshot, available_snapshot_ids)
+            if metadata_status not in ("complete", "partial"):
+                self._process_codex_metadata(snapshot)
+            if inventory_status != "complete" or processing_status != "complete":
+                self._process_snapshot(snapshot)
         with self._session_factory() as db:
             all_inventoried = all(
                 row.inventory_status == "complete" and row.processing_status == "complete"
