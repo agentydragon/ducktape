@@ -1,58 +1,8 @@
 {
   "reviewed_at_utc": "2026-11-09 to 2026-11-10",
   "source_devel_commit": "5720cbd391b4d02dd84d98c75c9e73801d6d3059",
-  "scope": "A reviewed snapshot of the upstream issues, patches, workarounds and forked features identified in the November 9–10 investigation; not a comprehensive scan of every dependency or a live status feed.",
+  "scope": "A reviewed snapshot of the upstream issues, patches, workarounds and forked features identified in the November 9–10 investigation, excluding items no longer tracked after fixes; not a comprehensive scan of every dependency or a live status feed.",
   "entries": [
-    {
-      "id": "seaweed-csi",
-      "project": "SeaweedFS CSI",
-      "title": "Dead FUSE mount blocks recovery",
-      "kind": "Issue",
-      "status": "Released",
-      "priority": "High",
-      "impact": "Dead staging mounts can leave workloads stuck until manual cleanup.",
-      "upstream": "PR #325 adds bounded statfs probing and safe detach; present in v1.4.35 and newer. On November 10, Ducktape deployed v1.4.38 to the controller and all six node drivers; six OnDelete mount pods still run v1.4.29 or v1.4.30.",
-      "next_step": "Complete the mount rollout safely and verify dead-mount and consumer recovery. Review for recurrence at least one month after the full rollout before closing the issue.",
-      "links": [
-        {
-          "label": "Our issue",
-          "url": "https://github.com/agentydragon/ducktape/issues/4786"
-        },
-        {
-          "label": "Upstream PR",
-          "url": "https://github.com/seaweedfs/seaweedfs-csi-driver/pull/325"
-        },
-        {
-          "label": "CSI upgrade",
-          "url": "https://github.com/agentydragon/ducktape/pull/15303"
-        }
-      ]
-    },
-    {
-      "id": "seaweed-raft",
-      "project": "SeaweedFS",
-      "title": "Snapshot followers do not campaign",
-      "kind": "Issue",
-      "status": "Released",
-      "priority": "High",
-      "impact": "Restarting the leader after followers restored snapshots caused a leader outage.",
-      "upstream": "Raft PR #16 is included from SeaweedFS 4.49. Ducktape deployed 4.53 on November 10; /cluster/status can still return 200 without a leader.",
-      "next_step": "Verify the snapshot-election scenario and readiness separately; review recurrence after one month. The 4.53 rollout replaced all six volume servers concurrently.",
-      "links": [
-        {
-          "label": "Our issue",
-          "url": "https://github.com/agentydragon/ducktape/issues/11070"
-        },
-        {
-          "label": "Upstream PR",
-          "url": "https://github.com/seaweedfs/raft/pull/16"
-        },
-        {
-          "label": "Server upgrade",
-          "url": "https://github.com/agentydragon/ducktape/pull/15308"
-        }
-      ]
-    },
     {
       "id": "seaweed-ref",
       "project": "SeaweedFS",
