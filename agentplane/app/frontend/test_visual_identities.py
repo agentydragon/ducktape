@@ -74,7 +74,7 @@ async def test_session_form_shows_the_selected_environment_identity(view: Visual
     form = view.page.get_by_role("group", name="New thread")
     identity = form.get_by_role("region", name="Environment identity")
     await expect(identity).to_be_visible()
-    await expect(identity.get_by_text("referenced-identity")).to_be_visible()
+    await expect(identity.get_by_text("referenced-identity ·")).to_be_visible()
     grants = identity.get_by_role("table")
     await expect(grants.get_by_text("referenced-identity-operator-grant")).to_be_visible()
     await expect(identity.get_by_role("button", name="Revoke")).to_have_count(0)
