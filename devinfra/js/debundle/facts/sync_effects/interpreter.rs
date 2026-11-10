@@ -10236,31 +10236,55 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// A class value created now: its members read the enclosing scope's
-    /// bindings as unknown later, so publish what those hold here. A local
-    /// binding as the heritage (`class extends h`) is the base a later
-    /// construction runs on unknown arguments; publish it too.
+    /// bindings as unknown later, so publish what those hold here. Its
+    /// superclass can also be called after this environment has gone away.
     pub(super) fn escape_class_captures(&mut self, class: u32, env: &Context, captures: &Context) {
         let heritage = self
             .inputs
             .index
             .class_values
             .get(&class)
-            .and_then(|facts| match &facts.super_class {
-                Some(ValueExpr::Binding(binding)) => Some(binding),
-                _ => None,
-            });
-        let values: Values = self
+            .and_then(|facts| facts.super_class.clone());
+        let mut values: Values = self
             .inputs
             .class_captured_reads
             .get(&class)
             .into_iter()
             .flatten()
-            .chain(heritage)
             .filter(|binding| !self.inputs.top_bindings.contains(*binding))
             .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
             .flatten()
             .cloned()
             .collect();
+
+        if let Some(heritage) = heritage {
+            // Keep both inputs to the heritage expression and the constructor
+            // it produces: a factory can return a different callable from its
+            // arguments. The flattened class value retains neither.
+            let mut inputs = BTreeSet::new();
+            heritage.bindings(&mut inputs);
+            values.extend(
+                inputs
+                    .iter()
+                    .filter(|binding| !self.inputs.top_bindings.contains(*binding))
+                    .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
+                    .flatten()
+                    .cloned(),
+            );
+            let base = self.evaluate(&heritage, env, captures);
+            if base.is_empty() || base.contains(&AbstractValue::Value(Value::Top)) {
+                // Unsupported heritage syntax can lose its local references
+                // when lowered. An unknown base must retain everything this
+                // environment could have supplied to it.
+                values.extend(
+                    env.iter()
+                        .chain(captures)
+                        .filter(|(binding, _)| !self.inputs.top_bindings.contains(*binding))
+                        .flat_map(|(_, possible)| possible.iter().cloned()),
+                );
+            }
+            values.extend(base);
+        }
         if !values.is_empty() {
             self.escape_untracked_values(&values);
         }

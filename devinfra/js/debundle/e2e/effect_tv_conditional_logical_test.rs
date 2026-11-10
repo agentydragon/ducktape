@@ -892,6 +892,84 @@ fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
     }
 }
 
+// The analyzer's class values do not retain their creation environment. The
+// superclass can be an enclosing value reached through an expression, a
+// local object, or a factory; a later `new` must still reach it.
+const COMPOUND_CLASS_HERITAGE: &[(&str, &str, &[&str])] = &[
+    ("return class extends (0, h) {};", "", &[]),
+    (
+        "const o = { Base: h }; return class extends o.Base {};",
+        "",
+        &[],
+    ),
+    (
+        "return class extends mixin(h) {};",
+        "function mixin(v) { return v; }",
+        &["mixin"],
+    ),
+    ("return class extends (first() ? first : h) {};", "", &[]),
+    ("return class extends (h || first) {};", "", &[]),
+    (
+        "function factory() { return h; } return class extends factory() {};",
+        "",
+        &[],
+    ),
+    // These were already rejected: keep the unknown-property and unknown-syntax
+    // controls beside the newly covered cases.
+    (
+        "const o = { Base: h }; const key = 'Base'; return class extends o[key] {};",
+        "",
+        &[],
+    ),
+    (
+        "const factory = () => h; return class extends factory`` {};",
+        "",
+        &[],
+    ),
+];
+
+fn compound_heritage_definitions(make: &str, prefix: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{prefix}\n{}",
+        class_capture_definitions(
+            make,
+            "const C = make({value}); return new C();",
+            guard,
+            value
+        ),
+    )
+}
+
+#[test]
+fn a_class_publishes_compound_heritage_captures() {
+    for &(make, prefix, extra) in COMPOUND_CLASS_HERITAGE {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &compound_heritage_definitions(make, prefix, guard, "second"),
+                &members,
+            );
+        }
+    }
+}
+
+#[test]
+fn a_class_with_effect_free_compound_heritage_keeps_the_split() {
+    for &(make, prefix, extra) in COMPOUND_CLASS_HERITAGE {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &compound_heritage_definitions(make, prefix, guard, "first"),
+                &members,
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
 /// Opposing control: more iterator-protocol sites. A `catch` parameter's
 /// array pattern iterates the thrown value; a default below the root of a
 /// pattern (declaration, assignment, parameter, `for`-`of` head, `catch`)
