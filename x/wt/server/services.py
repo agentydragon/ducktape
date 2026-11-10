@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from x.wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
-from x.wt.server.gitstatusd_listener import GitstatusdListener
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_ids import make_worktree_id
 from x.wt.server.worktree_index import WorktreeIndex
@@ -46,44 +43,6 @@ class WorktreeIndexService:
         if not idx:
             return None
         return idx.main
-
-
-class GitstatusdService:
-    def __init__(
-        self,
-        get_client: Callable[[Path], GitstatusdListener | None],
-        iter_client_paths: Callable[[], Iterable[Path]] | None = None,
-        ensure_watcher_for_path: Callable[[Path], Awaitable[object]] | None = None,
-        list_watchers: Callable[[], list[DebouncedGitstatusRefresh]] | None = None,
-        clear_watchers: Callable[[], None] | None = None,
-    ) -> None:
-        self._get_client = get_client
-        self._iter_client_paths = iter_client_paths
-        self._ensure_watcher_for_path = ensure_watcher_for_path
-        self._list_watchers = list_watchers
-        self._clear_watchers = clear_watchers
-        # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
-        self.get_client = get_client
-
-    def is_running(self, path: Path) -> bool:
-        client = self._get_client(path)
-        return bool(client and client.is_running)
-
-    async def start(self) -> None:
-        if not (self._iter_client_paths and self._ensure_watcher_for_path):
-            return
-        for p in list(self._iter_client_paths()):
-            if not self._get_client(p):
-                continue
-            await self._ensure_watcher_for_path(p)
-
-    async def stop(self) -> None:
-        if not (self._list_watchers and self._clear_watchers):
-            return
-        for w in list(self._list_watchers()):
-            with contextlib.suppress(Exception):
-                await w.stop()
-        self._clear_watchers()
 
 
 async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:

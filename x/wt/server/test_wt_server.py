@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import psutil
 import pytest
@@ -103,6 +104,20 @@ async def test_stop_cancels_periodic_discovery(real_config):
     await daemon.stop()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+async def test_stop_clears_git_watchers_even_if_one_fails(real_config):
+    daemon = WtDaemon(real_config)
+    failed = Mock(stop=AsyncMock(side_effect=RuntimeError("failed to stop")))
+    healthy = Mock(stop=AsyncMock())
+    daemon.git_watchers[make_worktree_id("failed")] = failed
+    daemon.git_watchers[make_worktree_id("healthy")] = healthy
+
+    await daemon.stop()
+
+    failed.stop.assert_awaited_once()
+    healthy.stop.assert_awaited_once()
+    assert daemon.git_watchers == {}
 
 
 if __name__ == "__main__":

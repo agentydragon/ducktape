@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from x.wt.server.git_manager import GitManager, NoSuchRefError
 from x.wt.server.github_watcher import GitHubWatcher
+from x.wt.server.gitstatusd_listener import GitstatusdListener
 from x.wt.server.rpc import ServiceDependencies, rpc
-from x.wt.server.services import GitstatusdService
 from x.wt.server.worktree_ids import make_worktree_id, parse_worktree_id
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.env import is_test_mode
@@ -72,7 +73,7 @@ async def _compute_worktree_status(
     worktree_path: Path,
     *,
     git_manager: GitManager,
-    gitstat: GitstatusdService,
+    gitstatusd_client: Callable[[Path], GitstatusdListener | None],
     ahead_behind_data: dict[str, BranchAheadBehind],
     config: Configuration,
     github_watcher: GitHubWatcher | None,
@@ -84,7 +85,7 @@ async def _compute_worktree_status(
         commit_info = _get_commit_info(git_manager, worktree_path)
         ahead, behind = _get_ahead_behind(ahead_behind_data, branch_name)
 
-        gs_client = gitstat.get_client(worktree_path)
+        gs_client = gitstatusd_client(worktree_path)
         worktree_last_error: str | None = None
         pr_info: PRInfo = PRInfoDisabled()
 
@@ -178,7 +179,7 @@ async def _compute_worktree_status(
 
 @rpc.method("get_status", params=StatusParams)
 async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusResponse:
-    gitstat = deps.gitstatusd
+    gitstatusd_client = deps.gitstatusd_client
     github_watcher = deps.github_watcher
     git_refs_watcher = deps.git_refs_watcher
     git_manager = deps.git_manager
@@ -210,7 +211,7 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
         result = await _compute_worktree_status(
             worktree_path,
             git_manager=git_manager,
-            gitstat=gitstat,
+            gitstatusd_client=gitstatusd_client,
             ahead_behind_data=ahead_behind_data,
             config=config,
             github_watcher=github_watcher,
@@ -228,7 +229,7 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
         items[make_worktree_id(item.name)] = item
 
     total_wt = len(worktree_paths)
-    with_git = sum(1 for p in (gitstat.get_client(pth) for pth in worktree_paths) if p and p.is_running)
+    with_git = sum(1 for p in (gitstatusd_client(pth) for pth in worktree_paths) if p and p.is_running)
 
     any_wt_error = any(
         not isinstance(it.result, StatusResultOk) or it.result.status.last_error is not None for it in items.values()
