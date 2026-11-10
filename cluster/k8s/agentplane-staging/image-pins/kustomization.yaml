@@ -5,7 +5,7 @@ images:
     newTag: devel-20261110040845-0365b10 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261110024743-a5e6fd5 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261110054428-0de64b5 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
     newTag: devel-20261110022505-6287673 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
