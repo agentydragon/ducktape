@@ -273,6 +273,119 @@ function BudgetScenario({ data }) {
   <//>`;
 }
 
+function SeaweedVolumeFullness({ data }) {
+  const snapshot = data.seaweed_volume_fullness;
+  const gib = (bytes) => bytes / 1024 ** 3;
+  const formatGiB = (value) => `${Math.round(value).toLocaleString()} GiB`;
+  const rows = snapshot.volumes.map((volume) => ({
+    ...volume,
+    filesystemPercent:
+      (100 * volume.filesystem_used_bytes) /
+      (volume.filesystem_used_bytes + volume.filesystem_available_bytes),
+    poolPercent: 100 * (1 - volume.pool_free_kib / volume.pool_total_kib),
+  }));
+  const hdd = rows.filter((row) => row.tier === "HDD");
+
+  return html`<${Stack}
+    component="section"
+    id="seaweed-volumes"
+    gap="md"
+    my="xl"
+  >
+    <${Title} order=${2}>Seaweed volume fullness<//>
+    <${Text} c="dimmed" size="sm">
+      ${`Read-only observations: ${snapshot.observed_utc}. These are a separate, non-atomic snapshot from the pool-budget scenario above.`}
+    <//>
+    <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="lg">
+      <${Figure}
+        title="HDD fullness by node"
+        caption="Percentages have different denominators: df excludes filesystem-reserved blocks; LV allocation is relative to the thin volume; pool use includes every workload in the shared thin pool. Do not add them."
+        slug="seaweed-hdd-fullness"
+      >
+        <${BarChart}
+          h=${290}
+          data=${hdd}
+          dataKey="node"
+          series=${[
+            {
+              name: "filesystemPercent",
+              label: "Filesystem used",
+              color: "blue.6",
+            },
+            {
+              name: "lvm_lv_used_percent",
+              label: "LV allocated",
+              color: "grape.6",
+            },
+            { name: "poolPercent", label: "Pool used", color: "orange.6" },
+          ]}
+          withLegend
+          barProps=${{ isAnimationActive: false }}
+          yAxisProps=${{ width: 44, domain: [0, 100], tickFormatter: (value) => `${value}%` }}
+          barChartProps=${{ margin: { right: 12, bottom: 8 } }}
+          valueFormatter=${(value) => `${Number(value).toFixed(1)}%`}
+        />
+      <//>
+      <${Paper} withBorder p="md" radius="md">
+        <${Stack} gap="sm">
+          <${Text} fw=${700}>What this means<//>
+          <${Text} size="sm">
+            HDD node 103711 is the fullest filesystem at about 50%; the other
+            two are about 43%. Its thin pool is also the fullest of the three.
+            The SSD volume filesystems are each under 2% used.
+          <//>
+          <${Text} size="sm">
+            Pool free space is shared with other PVCs, so filesystem
+            availability is not a reservation. A smaller replacement PVC would
+            reduce declared limits, not the bytes already stored. Growth,
+            temporary copies and two-copy object placement still need headroom.
+          <//>
+          <${Anchor} href=${snapshot.source_dashboard} size="sm"
+            >Live Piraeus storage dashboard<//
+          >
+        <//>
+      <//>
+    <//>
+    <${Table.ScrollContainer} minWidth=${770}>
+      <${Table} striped withTableBorder>
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th}>Node / tier<//><${Table.Th}>PVC limit<//>
+            <${Table.Th}>Filesystem used<//
+            ><${Table.Th}>Filesystem available<//> <${Table.Th}>LV allocated<//
+            ><${Table.Th}>Pool free<//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          ${rows.map(
+            (row) =>
+              html`<${Table.Tr} key=${row.pv}>
+                <${Table.Td}>${row.node} / ${row.tier}<//>
+                <${Table.Td}>${formatGiB(row.pvc_size_gib)}<//>
+                <${Table.Td}
+                  >${`${formatGiB(gib(row.filesystem_used_bytes))} (${row.filesystemPercent.toFixed(1)}%)`}<//
+                >
+                <${Table.Td}
+                  >${formatGiB(gib(row.filesystem_available_bytes))}<//
+                >
+                <${Table.Td}
+                  >${formatGiB(row.linstor_allocated_kib / 1024 ** 2)}<//
+                >
+                <${Table.Td}>${formatGiB(row.pool_free_kib / 1024 ** 2)}<//>
+              <//>`,
+          )}
+        <//>
+      <//>
+    <//>
+    <${Text} size="sm" c="dimmed">
+      Filesystem use and LV allocation describe the same volume at different
+      layers; they are not additive. Availability excludes reserved filesystem
+      blocks. The values do not predict reclaim after deletion or compaction. On
+      a narrow screen, scroll the table horizontally for all columns.
+    <//>
+  <//>`;
+}
+
 function LangfuseEvidence({ data }) {
   const ageRows = data.langfuse_ages.map((row) => ({
     age: row.age,
@@ -794,6 +907,7 @@ export function StorageRemediation() {
     <//>
     <${Group} component="nav" gap="md">
       <${Anchor} href="#budget">Budget scenario<//>
+      <${Anchor} href="#seaweed-volumes">Seaweed volume fullness<//>
       <${Anchor} href="#langfuse">Langfuse evidence<//>
       <${Anchor} href="#observability">Mimir and Loki<//>
       <${Anchor} href="#storage-questions">Storage questions<//>
@@ -809,6 +923,7 @@ export function StorageRemediation() {
     <//>
     <${StorageQuestions} data=${data} />
     <${BudgetScenario} data=${data} />
+    <${SeaweedVolumeFullness} data=${data} />
     <${LangfuseEvidence} data=${data} />
     <${ObservabilityEvidence} data=${data} />
     <${Options} data=${data} />
