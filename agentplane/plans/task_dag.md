@@ -3159,8 +3159,10 @@ ServiceAccount. Dispatcher records each Session's execution Identity from its Sa
 methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given its
 `policy_namespace`) for that Identity's Sessions. History, once given its `policy_namespace`, binds
 an Identity runner's Sessions to the Identity incarnation pinned to its Sandbox and retains their
-execution Identity; its read API still admits only ServiceAccount bearers. EnvironmentService and
-wake-on-send still need a ServiceAccount.** History's execution
+execution Identity; its read API still admits only ServiceAccount bearers. Notification's inboxes
+are also owned by the Session's Dispatcher-recorded Identity, which reads and manages them; creating
+subscriptions and messaging still need a ServiceAccount. EnvironmentService and wake-on-send still
+need a ServiceAccount.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
 The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves

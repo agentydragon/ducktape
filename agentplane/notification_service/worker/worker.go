@@ -254,6 +254,11 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 	if err := w.Store.EstablishInboxOwner(ctx, claim.Owner, claim.DestinationRef, claim.SessionID, uid); err != nil {
 		return err
 	}
+	if identity, ok := sessionidentity.Identity(session.GetSession(), claim.SessionID, claim.DestinationRef); ok {
+		if err := w.Store.EstablishInboxIdentity(ctx, claim.DestinationRef, claim.SessionID, identity); err != nil {
+			return err
+		}
+	}
 	claim.OwnerUID = &uid
 	destinationErr := w.checkDestination(ctx, claim)
 	var stale *staleDestinationError

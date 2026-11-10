@@ -166,8 +166,8 @@ func testMergeabilityPayload(pullRequestNumber int64) storagecodec.MergeabilityP
 const testSandboxUID = "test-uid"
 
 // incarnation is the fixture's owner as its Sandbox incarnation.
-func (f fixture) incarnation() Owner {
-	return Owner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: f.sandboxUID}
+func (f fixture) incarnation() AccountOwner {
+	return AccountOwner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: f.sandboxUID}
 }
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and

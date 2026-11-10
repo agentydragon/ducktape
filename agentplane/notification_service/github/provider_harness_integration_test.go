@@ -139,7 +139,7 @@ var (
 	testOwner       = model.ServiceAccount{Namespace: "test", Name: "owner"}
 	testDestination = model.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
 	// testIncarnation is testOwner as the Sandbox testDestination names.
-	testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testDestination.UID}
+	testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}

@@ -27,6 +27,14 @@ Unproven inboxes retain their contents and operator read access. Workers pause s
 until the Session proves the original owner; an Action source also requires its recorded `caller_uid`.
 An unknown or different sender UID cannot reuse a previously accepted message key.
 
+An inbox is also owned by the Identity incarnation the Dispatcher recorded its Session as executing as
+(`Session.identity`), established from the Session authority when a subscription or message opens the inbox,
+when a worker delivers to it, or when the ServiceAccount owner is reconciled; it is immutable once set. A Sandbox
+SVID whose WorkloadCredential names an Identity (resolved in `namespace`, which also holds the policy objects the
+service watches) reads, acknowledges and retires the inboxes and manages the subscriptions of its Sandbox that
+are established for its Identity incarnation; the Sandbox is the credential's controller owner. Creating a
+subscription and sending or reading messages still need a ServiceAccount caller.
+
 For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
 subscriptions active. Workers continue reconciling subscription sources and store unread
 entries and prepared notices, but do not submit notices until the original UID is found.

@@ -79,23 +79,26 @@ type Options struct {
 
 // Methods admits authenticated workloads using the source configured on this listener; individual RPCs
 // enforce resource ownership. Passing the listener's source keeps TLS SVID and TokenReview methods on the same
-// method policy without coupling either resolver to the servicers' options.
-func Methods(options Options, principalResolver auth.PrincipalResolver) auth.Methods {
-	workloads := auth.AnyAccount(principalResolver)
+// method policy without coupling either resolver to the servicers' options. A workload's own inboxes and
+// subscriptions also admit an Identity caller (AnySubject); creating a subscription and messaging still act
+// for a ServiceAccount.
+func Methods(options Options, resolver *auth.Resolver) auth.Methods {
+	workloads := auth.AnyAccount(resolver)
+	owners := auth.AnySubject(resolver)
 	return auth.Methods{
 		notificationspb.Notifications_CreateSubscription_FullMethodName: workloads,
-		notificationspb.Notifications_ListSubscriptions_FullMethodName:  workloads,
-		notificationspb.Notifications_GetSubscription_FullMethodName:    workloads,
-		notificationspb.Notifications_RenewSubscription_FullMethodName:  workloads,
-		notificationspb.Notifications_CancelSubscription_FullMethodName: workloads,
-		notificationspb.Notifications_ListInboxes_FullMethodName:        workloads,
-		notificationspb.Notifications_GetInbox_FullMethodName:           workloads,
-		notificationspb.Notifications_WatchInbox_FullMethodName:         workloads,
-		notificationspb.Notifications_WatchInboxEntries_FullMethodName:  workloads,
-		notificationspb.Notifications_WatchSubscriptions_FullMethodName: workloads,
-		notificationspb.Notifications_ReadInbox_FullMethodName:          workloads,
-		notificationspb.Notifications_AcknowledgeInbox_FullMethodName:   workloads,
-		notificationspb.Notifications_RetireInbox_FullMethodName:        workloads,
+		notificationspb.Notifications_ListSubscriptions_FullMethodName:  owners,
+		notificationspb.Notifications_GetSubscription_FullMethodName:    owners,
+		notificationspb.Notifications_RenewSubscription_FullMethodName:  owners,
+		notificationspb.Notifications_CancelSubscription_FullMethodName: owners,
+		notificationspb.Notifications_ListInboxes_FullMethodName:        owners,
+		notificationspb.Notifications_GetInbox_FullMethodName:           owners,
+		notificationspb.Notifications_WatchInbox_FullMethodName:         owners,
+		notificationspb.Notifications_WatchInboxEntries_FullMethodName:  owners,
+		notificationspb.Notifications_WatchSubscriptions_FullMethodName: owners,
+		notificationspb.Notifications_ReadInbox_FullMethodName:          owners,
+		notificationspb.Notifications_AcknowledgeInbox_FullMethodName:   owners,
+		notificationspb.Notifications_RetireInbox_FullMethodName:        owners,
 		notificationspb.Notifications_SendMessage_FullMethodName:        workloads,
 		notificationspb.Notifications_GetMessage_FullMethodName:         workloads,
 	}

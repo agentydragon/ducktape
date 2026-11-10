@@ -102,6 +102,9 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err != nil {
 		return nil, err
 	}
+	if err := s.establishIdentity(ctx, session.GetSession(), message.DestinationRef, message.SessionID); err != nil {
+		return nil, err
+	}
 	return &notificationspb.SendMessageResponse{Message: sentMessageView(sent)}, nil
 }
 
