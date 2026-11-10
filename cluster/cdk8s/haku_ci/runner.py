@@ -212,8 +212,8 @@ def _add_egress_fence(chart: Chart) -> None:
     Deviation from haku-sandbox's force-egress: no kube-apiserver rule -- haku-ci runs with
     automountServiceAccountToken:false and has no RBAC, so it never calls the k8s API.
 
-    Any Cilium egress rule flips the selected pods to default-deny egress; egress_gateway.py's
-    policies add only the relay hops.
+    Any Cilium egress rule flips the selected pods to default-deny egress. This policy admits the
+    runners' hop to the relay; egress_gateway.py's policies add only the relay's hop to the proxy.
     """
     cilium.force_proxy_egress(
         chart,

@@ -194,7 +194,8 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> None:
             selector=k8s.LabelSelector(match_labels=gateway.pods.selector),
         ),
     )
-    # Additive to haku-ci's force-proxy CCNP (haku_ci/runner.py), which already admits DNS.
+    # Additive to haku-ci's force-proxy CCNP (haku_ci/runner.py), which already admits DNS and the
+    # runners' hop to this relay.
     NetworkPolicy(
         scope,
         "haku-ci-egress-network",
@@ -202,13 +203,6 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> None:
         endpoint_selector=gateway.pods.selector,
         ingress=[clients.admit(gateway.pod_port)],
         egress=[proxy.egress()],
-    )
-    NetworkPolicy(
-        scope,
-        "haku-ci-runner-to-egress-network",
-        metadata=ApiObjectMetadata(name=f"runner-to-{NAME}", namespace=namespace),
-        endpoint_selector=clients.selector,
-        egress=[gateway.egress()],
     )
     NetworkPolicy(
         scope,

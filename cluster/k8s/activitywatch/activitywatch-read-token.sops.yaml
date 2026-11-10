@@ -5,22 +5,17 @@
 # the write token so read and write are separate credentials -- and unlike the write
 # token, no desktop reads it, so it is encrypted only to Flux (cluster-secrets) +
 # admin via the generic cluster/k8s rule. Rotate by re-minting and re-encrypting.
-#
-# CLEANUP(added 2026-09-24): drop haku-egress-proxy from the reflection
-#   annotations and the description below at the next re-encrypt; nothing there
-#   reads the reflected copy. The document MAC covers annotation values, so they
-#   cannot be edited without the cluster age key.
 apiVersion: v1
 kind: Secret
 metadata:
     name: activitywatch-read-token
     namespace: activitywatch
     annotations:
-        description: Read-only ActivityWatch bearer; checked by the bearer-proxy read route (5603) and mirrored to haku-console plus haku-egress-proxy for egress placeholder substitution.
+        description: Read-only ActivityWatch bearer; checked by the bearer-proxy read route (5603) and mirrored to haku-console for egress placeholder substitution.
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy,haku-console
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy,haku-console
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
 type: Opaque
 stringData:
     token: ENC[AES256_GCM,data:Eo//MbwAS5D+TNI0hlbK/T2DL66OfLwlTPatuikY5JKMW9b6t3zdNhBvp7a/GigDYqBTyk5/oImWwcCvVO/otA==,iv:cc7K59nTizCAtk7v0II11kprqljyDQ9IgWI19OnVeOI=,tag:Si49dG50qI/+r/NtpRhDHA==,type:str]
@@ -45,6 +40,6 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-09-01T12:47:29Z"
-    mac: ENC[AES256_GCM,data:tBXT6iaMXFAtOIAZcpkQqamH2UZfo6+tdVVwYTttkQy9wgtn8pxVSka6UvcD/2N4epzsin1arNhrxsWTDS5HDONFIX+2CoFRZtexwSrf+WuOZiLA1t+/WPo3lzNEJG2Q3Xwb7p1fYCfON6ae6SVFY0suLo0uRTeWcZnqUKZW1Ns=,iv:UhjfDZ5w+02VkYWtnl6Y3D0h6UadbZF+/7Zsd6PeNXk=,tag:spUqp9MMJynT6XjFolFURA==,type:str]
+    lastmodified: "2026-11-10T01:37:15Z"
+    mac: ENC[AES256_GCM,data:e5iVJ5mNrhpin7xAdfijKtukELQNTt4khKimC7MJhuXLEpKdDITIzhhRa0oRPRQ4+i8nLRFmKuJE0FxnqElmVWBusAR6oN5vDKpdRn1sUlV8yhFgoH8MMCNfRYIJhNR9EkjNMFuMLGaayPKl5eh3kpkB6E8HOpcq5t4Kqo7xntE=,iv:NmtU6pJb1raqHi7rrBxjnWtyGbgNqw2sMYFvdUir8cs=,tag:kg8dVmUebL1ba65sxgvCxg==,type:str]
     version: 3.13.3

@@ -162,12 +162,121 @@ Within `callback_values`, `AbstractValue` ordering compares ids:
 `Captured` compares by interned identity, and no `Atom` strings are compared
 there.
 
+## Landed: export-surface callback memo
+
+`possible_callback_pool` used to recompute the export-surface callback walk on
+every fixpoint iteration of every opaque call. `ExecutionState` now keeps the
+last walk per surface, together with clones of each persistent world
+collection the walk reads and the `Values` of each lexical cell it read
+through closure captures. It reuses the result only when every one of those
+is still `ptr_eq` to the current world. Holding a clone makes any later write
+copy the collection, so pointer equality proves the contents are equal.
+
+Back-to-back on the same inputs, after the transient walk set:
+
+| Measure                                    | Before        | After         |
+| ------------------------------------------ | ------------- | ------------- |
+| Total samples (999 Hz `task-clock`)        | 12,290        | 11,358 (−8%)  |
+| Tail samples                               | 7,485         | 6,978 (−7%)   |
+| `export_surface_callback_values` inclusive | 1,972 (26.3%) | 1,050 (15.0%) |
+| Wall, 3 interleaved runs without `perf`    | 10.7–11.1 s   | 9.7–10.1 s    |
+| CPU, same runs                             | 12.3–12.8 s   | 11.3–11.6 s   |
+| Peak RSS, same runs                        | 377 MiB       | 377 MiB       |
+
+In the same interleaved batch, the engine before both changes took 14.8–15.8 s
+wall and 16.3–16.7 CPU s. The VM was faster in this batch than in the earlier
+transient-set measurement, so compare figures within one batch only.
+
+The remaining 15% is walks after a world change, where the memo misses. Output
+identity: the `.analysis` bodies are byte-identical, and so are all 789 files
+of `debundle run --graphs`, apart from `engine_sha256`.
+
+## App-build corpus (`//devinfra/js/debundle/excalidraw`)
+
+The production app build of the same package, with React and vendor code
+bundled, run with its residual-baseline tree spec.
+
+Inputs were staged with `bbr build //devinfra/js/debundle/excalidraw:{source,inputs}`.
+The projection comes from `debundle_project_analysis --tree-config ...
+--out-root ...`. The current spec's vendor marks need `--package-root` with
+`clsx@1.1.1` and `roughjs@4.6.4`, because a copied analyzer has no runfiles.
+
+Two bundle shapes:
+
+- **Split:** current `devel`, where `app/vendor/` puts roughjs and clsx in
+  their own chunks.
+- **Inlined:** #15267's commit `6114b352`, where roughjs sits inside the
+  545 KB shared editor chunk.
+
+`-c opt` analyzers on a 4-core VM, one run each:
+
+| Engine                           | Split: wall, CPU, RSS   | Inlined: wall, CPU, RSS   |
+| -------------------------------- | ----------------------- | ------------------------- |
+| Before both changes (`e22674c9`) | 36.0 s, 51.2 s, 642 MiB | 397.4 s, 425.8 s, 600 MiB |
+| Transient walk set               | 35.0 s, 49.9 s, 581 MiB | 385.1 s, 412.8 s, 597 MiB |
+| Plus export-surface memo         | 34.6 s, 48.3 s, 582 MiB | 361.9 s, 390.4 s, 598 MiB |
+
+The `.analysis` bodies of all three engines are byte-identical on both shapes.
+
+Where the time goes:
+
+- **Split:** `main` takes about 30 s of chunk analysis, and the editor chunk
+  takes 14–16 s alongside it.
+- **Inlined:** the editor chunk takes 358–394 s, alone after the first 2.3 s.
+  It is single-threaded, and its cost is about 25× the split editor chunk's for
+  72 more source units out of 1,859.
+
+### Inlined editor chunk profile
+
+80,276 samples at 199 Hz, `task-clock`, frame pointers, with the export-surface
+memo engine:
+
+| Symbol (inclusive unless noted)                                                     |       Share | Class                                                              |
+| ----------------------------------------------------------------------------------- | ----------: | ------------------------------------------------------------------ |
+| `runtime_callbacks::dispatch` → `invoke_possible_callbacks_transfer`                |         59% | algorithmic: callback-pool fixpoint per opaque call                |
+| `promote_deferred_callbacks`                                                        |         40% | algorithmic                                                        |
+| `bounded_invocation_fallback`                                                       |         35% | algorithmic                                                        |
+| building an `imbl` `OrdSet<AbstractValue>` from an iterator, one insert per element |       32.5% | persistent-structure churn, spread over callers (each 2–7%)        |
+| `Executor::unsettle`                                                                |       26.5% | algorithmic: reachable heap × fallback events                      |
+| `OrdMap<(Atom, SyntaxContext), Values>` operations                                  |       22.7% | name-keyed lookups; 13 points of it under `unsettle`               |
+| `callback_values`; `export_surface_callback_values`                                 | 15.9%; 9.5% | algorithmic (remaining misses)                                     |
+| `Atom::cmp` + `hstr::Atom::as_str` (self)                                           |       12.0% | string ordering of binding names; `unsettle` is the largest caller |
+
+`unsettle` runs on each bounded fallback and each unknown call. Each run
+re-walks every value reachable from its inputs. For every reachable callable
+it looks up each of the callable's read bindings in `prefix_values`, which is
+keyed by `(Atom, SyntaxContext)`, so every lookup compares binding names as
+strings. The private single-chunk flat profile has the same shape: `imbl`
+inserts, `Atom` ordering, `AbstractValue` ordering, `callback_values` and
+`unsettle` as the largest self cost.
+
+Not yet measured:
+
+- which roughjs construct makes the reachable graph or the fallback count grow;
+- how cost scales when that chunk grows or shrinks.
+
+Both need bundles rebuilt at intermediate sizes.
+
 ## Candidate optimizations, ranked
 
-1. **Memoize the export-surface callback walk.** It is 25% of the current tail.
-   Not trivially safe: the key must cover every heap, prefix and publication
-   mutation the walk observes.
-2. **Start the largest chunk first.** Order the per-chunk `par_iter` inputs by
+Ranked from the inlined app-build editor chunk, the public analogue of the
+private single-chunk inputs:
+
+1. **Key `unsettle`'s prefix reads by binding ordinal.** The per-callable
+   `prefix_values` lookups by name cost about 13% inclusive, plus most of the
+   12% string-ordering self time. An id-keyed index or a precomputed callable →
+   prefix-value view removes the string comparisons.
+2. **Bound `unsettle`'s repeated reachability.** It re-walks the reachable heap
+   on every fallback. A monotonic "already unsettled" frontier, valid while the
+   world is unchanged, is a candidate, with the same soundness bar as the
+   export-surface memo. 26.5% inclusive.
+3. **Avoid persistent-set construction for transient results.** 32.5%
+   inclusive across `bounded_invocation_fallback_transfer`, `callback_values`'
+   final build, `note_unknown_execution` and `insert_escaped_callback_values`.
+
+Earlier candidates, from the package build:
+
+4. **Start the largest chunk first.** Order the per-chunk `par_iter` inputs by
    descending source size. Results are collected into a `BTreeMap`, so output
    order is unchanged. It does nothing here, because the expensive chunk
    already starts first. On a corpus whose biggest chunk sorts last it saves up
@@ -178,11 +287,11 @@ there.
      `--action_env=DUCKTAPE_DEBUNDLE_PROGRESS=1`; the action passes the default
      shell environment through, and Bazel prints the stderr of successful
      actions.
-3. **Parallelize `prepare_callable_capabilities` in the head.** It is 42% of a
+5. **Parallelize `prepare_callable_capabilities` in the head.** It is 42% of a
    5% head. A past parallel version cost peak RSS.
-4. **Parallelize the artifact write.** Per-chunk `snapshot` work can run under
+6. **Parallelize the artifact write.** Per-chunk `snapshot` work can run under
    Rayon, and zstd has multi-threaded compression. It is 3% here. Multi-threaded
    zstd must keep its output byte-stable for a fixed worker count.
 
 Single large chunks get no parallelism at all, because the per-chunk `par_iter`
-has one item. Item 1 applies to them; item 2 does not.
+has one item. Item 4 does not help them.

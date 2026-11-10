@@ -256,6 +256,7 @@ pub struct SavedChunkFactAnalysis<'a> {
     top_level_await: Option<SourceUnitOrdinal>,
     redundant_purity_hints: Cow<'a, [RedundantPurityHint]>,
     redundant_pure_member_hints: Cow<'a, [RedundantPureMemberHint]>,
+    unconsulted_purity_hints: Cow<'a, BTreeSet<String>>,
 }
 
 impl<'a> SavedChunkFactAnalysis<'a> {
@@ -273,6 +274,7 @@ impl<'a> SavedChunkFactAnalysis<'a> {
             top_level_await: analysis.top_level_await,
             redundant_purity_hints: Cow::Borrowed(&analysis.redundant_purity_hints),
             redundant_pure_member_hints: Cow::Borrowed(&analysis.redundant_pure_member_hints),
+            unconsulted_purity_hints: Cow::Borrowed(&analysis.unconsulted_purity_hints),
         })
     }
 
@@ -290,6 +292,7 @@ impl<'a> SavedChunkFactAnalysis<'a> {
             top_level_await: self.top_level_await,
             redundant_purity_hints: self.redundant_purity_hints.into_owned(),
             redundant_pure_member_hints: self.redundant_pure_member_hints.into_owned(),
+            unconsulted_purity_hints: self.unconsulted_purity_hints.into_owned(),
         })
     }
 }

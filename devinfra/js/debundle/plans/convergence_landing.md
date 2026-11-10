@@ -74,10 +74,41 @@ Every PR in this plan:
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
    cannot meet that and say so in their description.
 8. Runs the canonical-spec check (§ below) when it changes any acceptance,
-   placement, emitted order or emitted bytes. Mechanical refactors, report-only
-   additions and test-only splits skip it and say so.
+   placement, emitted order or emitted bytes: always the public half, and the
+   private half where the session can reach it. Mechanical refactors,
+   report-only additions and test-only splits skip it and say so.
 
 ## Canonical-spec check
+
+Two halves: a public corpus every session can run, and the private corpus.
+
+### Public: Excalidraw
+
+`//devinfra/js/debundle/excalidraw:canonical_summary` reduces the Excalidraw
+corpus's accepted tree (<../excalidraw/README.md>) to one JSON file: per chunk,
+the ordinary gate verdict and the translation-validation verdict and counts;
+per emitted file, its SHA-256. Build it at the slice's head and at its `devel`
+base, and diff the two. Cloud sessions use `bbr`; `bbapi artifact download`
+fetches the output by name from each invocation that `bbr` prints:
+
+```sh
+TASK=${TMPDIR:-/tmp}/agents/<date>/<slug>
+git worktree add --detach "$TASK/base" "$(git merge-base HEAD origin/devel)"
+bbr build //devinfra/js/debundle/excalidraw:canonical_summary   # head; note the invocation
+(cd "$TASK/base" && bbr build //devinfra/js/debundle/excalidraw:canonical_summary)
+bbapi artifact download <head-invocation> canonical_summary.json -o "$TASK/head.json"
+bbapi artifact download <base-invocation> canonical_summary.json -o "$TASK/base.json"
+diff "$TASK/base.json" "$TASK/head.json"
+```
+
+A changed verdict, translation-validation count or emitted hash is judged by
+item 8's rule, as for the private corpus. The corpus's `test_debundle_tree`,
+`spec_output_test` and `test_smoke` run in ordinary CI whenever a slice changes
+the analyzer or pipeline, and also block a slice that breaks acceptance or
+browser loading. It covers one esbuild-minified program and does not replace
+the private half.
+
+### Private
 
 The private corpus lives in the sibling repository `../gaffer-private`, which
 pins Ducktape by commit (`DUCKTAPE_COMMIT` in its `MODULE.bazel`; procedure in
@@ -255,16 +286,16 @@ controls it accepted, and 11 are report-shape assertions; none panicked. The
 group assignment comes from test contracts, not observed root causes, so a
 slice may recover more or fewer cases than its row says.
 
-| Order | Slice                                                                                                                                                                                                                                                                                                                                                                                  | Cases | Targets owned / touched | Needs                                   |
-| ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------: | --------------------------------------- |
-|     1 | **Landed**: descriptor and native rows, frozen-namespace recognizer deleted. Left: descriptor carriers escaping to later calls (L4c)                                                                                                                                                                                                                                                   |    38 |                 10 / 11 | L1b, L2a                                |
-|     2 | Array iteration rows with callbacks (`intrinsic_array_iteration`), `new Set(iterable)` (`set_iterable_reentry`), the multi-declarator `stable_array_spread` owner; array spread landed (`IterateSpread`). Kernel rows only: the legacy executor and both recognizers feed the legacy gate and are tombstoned for L4e (§ Slice contract item 1)                                         |    23 |                   7 / 7 | L1b, L2a; forks for the early-exit rows |
-|     3 | **PR 1 landed**: the provider adapter runs every provider body, and summarized imported calls are substituted with an effect receipt. Left: unsummarized provider bodies in the caller transfer (needs the provider program registry, slice 6), imported construction (class TDZ, slice 6), then callbacks and retained factories as PR 2 (`imported_callback_timing_test` spans both) |    77 |                 11 / 16 | L2a, L2b, L2d                           |
-|     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                                                                                                                                                                                                            |    26 |                   2 / 5 | L2b, L1f                                |
-|     5 | **Root `new` landed** (`kernel/construct.rs`). Left: `new` in callable bodies, constructors reading argument properties, class definitions with static members                                                                                                                                                                                                                         |    15 |                   2 / 5 | L2a; parallel to 4                      |
-|     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                                                                                                                                                                                                            |     7 |                   1 / 1 | L2a, L2b; required by L4a               |
-|     7 | Purity-annotation authority (`purity_test`)                                                                                                                                                                                                                                                                                                                                            |    16 |                   1 / 1 | L2c                                     |
-|     8 | Downstream naming, CLI and audit fixtures that fail at the gate before their feature runs                                                                                                                                                                                                                                                                                              |    26 |                   8 / 8 | re-measure after 1–5; not a slice       |
+| Order | Slice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Cases | Targets owned / touched | Needs                                   |
+| ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------: | --------------------------------------- |
+|     1 | **Landed**: descriptor and native rows, frozen-namespace recognizer deleted. Left: descriptor carriers escaping to later calls (L4c)                                                                                                                                                                                                                                                                                                                                                                                                           |    38 |                 10 / 11 | L1b, L2a                                |
+|     2 | **Iteration rows landed** (`native/array_iteration.rs`: `forEach`, `map`, `filter`, `reduce` with an initial value, non-capturing callbacks; legacy executor tombstoned for L4e); array spread landed (`IterateSpread`). Left: `new Set(iterable)` (`set_iterable_reentry`) and the multi-declarator `stable_array_spread` owner, kernel rules only with both recognizers tombstoned (§ Slice contract item 1); the early-exit rows and `flatMap`, which need a kernel-issued callback call so each result forks; capturing callbacks (row 12) |    23 |                   7 / 7 | L1b, L2a; forks for the early-exit rows |
+|     3 | **PR 1 landed**: the provider adapter runs every provider body, and summarized imported calls are substituted with an effect receipt. Left: unsummarized provider bodies in the caller transfer (needs the provider program registry, slice 6), imported construction (class TDZ, slice 6), then callbacks and retained factories as PR 2 (`imported_callback_timing_test` spans both)                                                                                                                                                         |    77 |                 11 / 16 | L2a, L2b, L2d                           |
+|     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                                                                                                                                                                                                                                                                                                                                                                    |    26 |                   2 / 5 | L2b, L1f                                |
+|     5 | **Root `new` landed** (`kernel/construct.rs`). Left: `new` in callable bodies, constructors reading argument properties, class definitions with static members                                                                                                                                                                                                                                                                                                                                                                                 |    15 |                   2 / 5 | L2a; parallel to 4                      |
+|     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                                                                                                                                                                                                                                                                                                                                                                    |     7 |                   1 / 1 | L2a, L2b; required by L4a               |
+|     7 | Purity-annotation authority (`purity_test`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |    16 |                   1 / 1 | L2c                                     |
+|     8 | Downstream naming, CLI and audit fixtures that fail at the gate before their feature runs                                                                                                                                                                                                                                                                                                                                                                                                                                                      |    26 |                   8 / 8 | re-measure after 1–5; not a slice       |
 
 Rows 9–12 have no red target at the reference head. They come from the L4c
 audit's missing-coverage classes (<../debug/2026_11_09_l4c_discrepancy_audit.md>
