@@ -7,6 +7,7 @@ package(
     default_visibility = [
         "//agentplane/system_tests:__pkg__",
         "//agentplane/system_tests/suites:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
     ],
 )
 

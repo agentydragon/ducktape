@@ -53,7 +53,7 @@ Verify guest boot, the outer network fence and these manual checks:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
-bbr test //agentplane/system_tests/suites:test_vm_kvm --nocache_test_results
+bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 ```
 
 The outer policy admits only node-local Alloy to the executor's metrics port, and egress to DNS, BuildBuddy and its registry, Ubuntu package

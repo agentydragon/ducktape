@@ -48,7 +48,7 @@ for the measured phases and remaining adoption requirements.
 
 The manual `kvm_vm_test` target runs the same `/dev/kvm` smoke check on pool
 `kvm-vm`, using Docker workload isolation. After that pool is deployed,
-`//agentplane/system_tests/suites:test_vm_kvm` runs the existing `test_vm.py`
+`//agentplane/system_tests/x/vm_kvm:test_vm_kvm` runs the existing `test_vm.py`
 scenarios with KubeVirt hardware acceleration (`useEmulation: false`). Both
 targets inherit the repository's pinned Ubuntu RBE action image and set
 `init-dockerd=false`; the worker guest's Docker executor runs the action, while
@@ -67,5 +67,5 @@ Run the smoke check first, then the full VM system-test suite:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
-bbr test //agentplane/system_tests/suites:test_vm_kvm --nocache_test_results
+bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 ```

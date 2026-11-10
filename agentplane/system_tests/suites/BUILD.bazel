@@ -8,6 +8,9 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
+# The experimental KVM variant under x/vm_kvm runs this file.
+exports_files(["test_vm.py"])
+
 # Bazel-built Debian guest and production launcher on the dedicated KVM worker.
 k3s_suite(
     name = "test_firecracker",
@@ -72,37 +75,6 @@ k3s_suite(
     srcs = ["test_vm.py"],
     boot_evidence = True,
     stack = "vm",
-    deps = [
-        "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:offered_models",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scenario",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
-        "//agentplane/system_tests/vm:configuration",
-        "//agentplane/system_tests/vm:trace_contract",
-        "//devinfra/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# The manual hardware-accelerated lane runs the same scenarios on a KVM-capable worker.
-k3s_suite(
-    name = "test_vm_kvm",
-    srcs = ["test_vm.py"],
-    boot_evidence = True,
-    main = "test_vm.py",
-    require_kvm = True,
-    stack = "vm",
-    tags = ["manual"],
     deps = [
         "//:conftest",
         "//agentplane/app/testing:client",

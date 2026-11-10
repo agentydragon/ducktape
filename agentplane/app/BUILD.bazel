@@ -253,6 +253,7 @@ oci_image(
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
         "//agentplane/system_tests/suites:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
     ],
     workdir = "/",
 )
