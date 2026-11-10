@@ -353,6 +353,23 @@ cost. Preserve separate executor resource limits and the [execution ownership co
 including fencing escaped descendants before a successor and not replaying uncertain effects. This
 is a design investigation; it does not select removal or block current work.
 
+### `EXECUTOR_SURVIVES_CONTROL_ROLLS` — an executor session outlives a Gateway or sampler roll
+
+Operator direction, 2026-11-10: fix as part of the eventual Agentplane-owned execution server
+(`POD_EXECUTOR_COMPANION_REVIEW`; Codex-compatible or not), not as a patch on the Codex exec-server;
+the [principle](../docs/principles.md#components-roll-and-fail-independently) is that a roll takes
+no casualties. Observed on staging on 2026-11-10: three rollouts in four minutes (sampler at
+11:38:51Z and 11:42:13Z, Runner Gateway at 11:40:19Z, from merges #15439 and #15440) cut the Sandbox
+runtime's control stream for about a minute (`runner stream lost ... EOF`,
+`EnvironmentRuntimeConnected` back at 11:41:23Z). The sampler reconnects its executor stream lazily
+on the next executor call and Codex 0.162.1 expires a detached native session after 30 seconds
+([execution SPEC](../env/runtime/execution/SPEC.md#sessions-and-effects)), so every central Session
+saw "The retained exec-server session was definitively lost" and lost its process handles. The
+replacement keeps the native session and its processes alive across any control-plane disconnect,
+by holding the session in the environment or by an eager reconnect inside the expiry window. The
+sampler's drain-time handling of live cells is a separate fix dispatched the same day
+(`central_sampler/runtime.go`).
+
 ### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
 
 Deferred by the operator on 2026-10-31; revisit when selective sampling recovery is prioritized.
