@@ -10,8 +10,9 @@ The disk is a blank image on a filesystem volume from `piraeus-ssd-local`, creat
 raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
 copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node, and a template change
 replaces the VM and its volume. The class retains deleted volumes, so remove a leftover volume by hand when
-a worker is deleted. The pool replaces one VM at a time, so a template change never leaves the pool
-without an executor.
+a worker is deleted. A member counts as ready once its executor has registered with BuildBuddy (the
+executor's `/readyz` on port 8080, which needs the `server-type` header), so the pool restarts members one at a time
+and waits for each to register before the next.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.

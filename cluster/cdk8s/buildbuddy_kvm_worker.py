@@ -27,6 +27,10 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesLimits,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbe,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGet,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGetHttpHeaders,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGetPort,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesCloudInitNoCloud,
@@ -177,6 +181,25 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                 ]
             ),
         ),
+        # Ready once the executor has registered with BuildBuddy, not merely once the VM runs, so a rollout does
+        # not restart the next member while the pool has no executor. `/readyz` answers 200 when registered and 503
+        # otherwise, on the executor's HTTP port; it rejects a request that does not name the server type.
+        readiness_probe=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbe(
+            http_get=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGet(
+                path="/readyz",
+                port=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGetPort.from_number(
+                    8080
+                ),
+                http_headers=[
+                    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGetHttpHeaders(
+                        name="server-type", value="buildbuddy-executor"
+                    )
+                ],
+            ),
+            period_seconds=10,
+            failure_threshold=3,
+            success_threshold=1,
+        ),
         ports=[],
         disks={
             "work": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
@@ -317,12 +340,12 @@ def chart(app: App) -> Chart:
                     Rule.alert(
                         "BuildBuddyKvmPoolEmpty",
                         f"absent(up{{{target}}} == 1)",
-                        for_="5m",
+                        for_="2m",
                         labels={"severity": "critical"},
-                        summary="No KVM worker is reachable",
+                        summary="No KVM worker is ready",
                         description=(
-                            "No BuildBuddy KVM worker has been scrapable for 5 minutes, so tests targeting pool "
-                            "kvm-vm fail immediately instead of queueing."
+                            "No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting "
+                            "pool kvm-vm fail immediately instead of queueing."
                         ),
                     )
                 ],

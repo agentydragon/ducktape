@@ -28,6 +28,7 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecNetworks,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecNetworksPod,
+    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbe,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesContainerDisk,
@@ -62,12 +63,14 @@ def container_disk_pool_template(
     affinity: VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinity | None = None,
     tolerations: Sequence[VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations] | None = None,
     autoattach_graphics_device: bool | None = None,
+    readiness_probe: VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbe | None = None,
 ) -> VirtualMachinePoolSpecVirtualMachineTemplate:
     """The pool's VM template: each VM, and its pods, are labelled `labels` (the pool's selector must
     match them) and boot `image` as an ephemeral containerDisk under EFI without Secure Boot, reaching
     the pod network through masquerade on `ports`. Each of `disks` attaches as a virtio disk the guest
     finds at `/dev/disk/by-id/virtio-<key>`; a disk backed by one of `data_volume_templates` gets its own
-    volume per VM. The remaining argument names are the corresponding VMI fields.
+    volume per VM. `readiness_probe` decides when a member counts as ready, and so when the pool moves on during a rollout. The
+    remaining argument names are the corresponding VMI fields.
     """
     return VirtualMachinePoolSpecVirtualMachineTemplate(
         metadata={"labels": dict(labels)},
@@ -80,6 +83,7 @@ def container_disk_pool_template(
                     node_selector=dict(node_selector) if node_selector is not None else None,
                     affinity=affinity,
                     tolerations=list(tolerations) if tolerations is not None else None,
+                    readiness_probe=readiness_probe,
                     domain=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomain(
                         cpu=cpu,
                         resources=resources,
