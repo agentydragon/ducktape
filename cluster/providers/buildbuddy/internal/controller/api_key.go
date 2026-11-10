@@ -179,14 +179,10 @@ func (e *apiKeyExternal) Create(ctx context.Context, cr *v1alpha1.APIKey) (manag
 		meta.SetExternalName(cr, ambiguousExternalName+string(cr.UID))
 		return managed.ExternalCreation{}, errors.New("BuildBuddy returned no API-key ID; automatic creation is blocked to avoid duplicating it")
 	}
-	// Persist the ID even if readback fails, so the next reconcile can recover
-	// the value without creating another key.
+	// Let Crossplane persist the ID before the next observation reads the
+	// value, so a readback failure cannot cause another create.
 	meta.SetExternalName(cr, id)
-	details, err := e.connectionSecretDetails(ctx, cr, groupID, id)
-	if err != nil {
-		return managed.ExternalCreation{}, err
-	}
-	return managed.ExternalCreation{ConnectionDetails: details}, nil
+	return managed.ExternalCreation{}, nil
 }
 
 func (e *apiKeyExternal) Update(ctx context.Context, cr *v1alpha1.APIKey) (managed.ExternalUpdate, error) {
@@ -287,11 +283,11 @@ func (e *apiKeyExternal) connectionSecretDetails(ctx context.Context, cr *v1alph
 		return nil, errors.New("writeConnectionSecretToRef is required for BuildBuddy API keys")
 	}
 	secret := &corev1.Secret{}
-	if err := e.kube.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: ref.Name}, secret); err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("check API-key connection Secret: %w", err)
-	}
-	controller := metav1.GetControllerOf(secret)
-	if secret.Name != "" && (controller == nil || controller.UID != cr.UID) {
+	if err := e.kube.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: ref.Name}, secret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("check API-key connection Secret: %w", err)
+		}
+	} else if controller := metav1.GetControllerOf(secret); controller == nil || controller.UID != cr.UID {
 		return nil, errors.New("API-key connection Secret already exists and is not controlled by this APIKey")
 	}
 	value, err := e.api.APIKeyValue(ctx, groupID, id)

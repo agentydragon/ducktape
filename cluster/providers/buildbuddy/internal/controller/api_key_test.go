@@ -34,6 +34,7 @@ type fakeBuildBuddyAPIKey struct {
 	createCalls     int
 	updateCalls     int
 	deleteCalls     int
+	readbackCalls   int
 	createErr       error
 	commitBeforeErr bool
 	readbackErr     error
@@ -50,6 +51,7 @@ func (f *fakeBuildBuddyAPIKey) APIKeys(_ context.Context, groupID string) ([]bui
 }
 
 func (f *fakeBuildBuddyAPIKey) APIKeyValue(_ context.Context, groupID, id string) ([]byte, error) {
+	f.readbackCalls++
 	if f.readbackErr != nil {
 		return nil, f.readbackErr
 	}
@@ -116,12 +118,12 @@ func TestAPIKeyReconciliation(t *testing.T) {
 	cr := newAPIKeyResource()
 	ctx := context.Background()
 
-	creation, err := e.Create(ctx, cr)
+	_, err := e.Create(ctx, cr)
 	if err != nil {
 		t.Fatal("create API key:", err)
 	}
-	if meta.GetExternalName(cr) != "fake-api-key-id" || string(creation.ConnectionDetails[apiKeyConnectionSecretKey]) != "fake-generated-key" {
-		t.Fatal("create did not set the ID and read back the connection detail")
+	if meta.GetExternalName(cr) != "fake-api-key-id" {
+		t.Fatal("create did not set the ID")
 	}
 	status, err := json.Marshal(cr.Status)
 	if err != nil || strings.Contains(string(status), "fake-generated-key") {
@@ -206,6 +208,9 @@ func TestAPIKeyReconcilerCreatesAndPreservesConnectionSecret(t *testing.T) {
 	if _, err := r.Reconcile(ctx, req); err != nil {
 		t.Fatal("reconcile new API key:", err)
 	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("observe new API key:", err)
+	}
 	stored := &v1alpha1.APIKey{}
 	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
 		t.Fatal("get reconciled API key:", err)
@@ -258,6 +263,9 @@ func TestAPIKeyReconcilerRestoresConnectionSecret(t *testing.T) {
 			if _, err := r.Reconcile(ctx, req); err != nil {
 				t.Fatal("create managed API key:", err)
 			}
+			if _, err := r.Reconcile(ctx, req); err != nil {
+				t.Fatal("observe managed API key:", err)
+			}
 			secret := &corev1.Secret{}
 			secretKey := types.NamespacedName{Namespace: cr.Namespace, Name: cr.Spec.WriteConnectionSecretToReference.Name}
 			if err := kube.Get(ctx, secretKey, secret); err != nil {
@@ -299,9 +307,18 @@ func TestAPIKeyReconcilerRecoversWhenReadbackEnabled(t *testing.T) {
 	r, kube := newAPIKeyTestReconciler(t, cr, api)
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name}}
 	if _, err := r.Reconcile(ctx, req); err != nil {
-		t.Fatal("reconcile with readback disabled:", err)
+		t.Fatal("create with readback disabled:", err)
 	}
 	stored := &v1alpha1.APIKey{}
+	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
+		t.Fatal("get created APIKey:", err)
+	}
+	if meta.GetExternalName(stored) != "fake-api-key-id" || api.readbackCalls != 0 {
+		t.Fatal("created key ID must be persisted before value readback")
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("observe with readback disabled:", err)
+	}
 	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
 		t.Fatal("get APIKey after readback failure:", err)
 	}
