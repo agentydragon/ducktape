@@ -32,6 +32,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        ":egress_gateway",
         ":runner_config",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
@@ -41,6 +42,7 @@ py_library(
         "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/providers/keda:scaledjob",
         "//cluster/cdk8s/providers/keda:triggerauthentication",
+        "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
