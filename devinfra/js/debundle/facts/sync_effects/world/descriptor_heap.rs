@@ -271,8 +271,11 @@ impl<'a> DescriptorHeap<'a> {
     }
 
     /// A fresh array whose elements are some of `contents`, in unknown
-    /// positions. Like a qualitative spread literal, it keeps only their
-    /// reachability: no slot, length or primitive-contents claim.
+    /// positions. It keeps only their reachability: no slot, length or
+    /// primitive-contents claim. Unlike a tainted literal it is not marked
+    /// tainted: it has no accessor, and the site never seeds a writability
+    /// witness, so the row-execution, spread and own-data proofs that need a
+    /// dense or primitive snapshot or a source record shape all refuse it.
     pub(in crate::facts::sync_effects) fn contents_array(
         &mut self,
         allocation: u32,

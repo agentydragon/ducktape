@@ -244,3 +244,78 @@ fn a_row_inside_a_legacy_row_callback_stays_legacy() {
     assert_preserved_entry_output(&fixture, "7 2,4\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "nested legacy row");
 }
+
+/// Each refusal the row makes after selecting its method is typed. The
+/// split stays valid (Node parity) and the root's coverage stays open.
+/// `array_iteration_intrinsics_changed` needs a modeled `Array` intrinsic
+/// write between GetValue and the call or inside a callback; every lowered
+/// form of such a write refuses earlier, so no fixture reaches it today.
+#[test]
+fn row_refusals_carry_their_typed_reasons() {
+    for (body, expected, refusal) in [
+        (
+            "const items = [1, 2]; return items.flatMap((x) => [x, x]);",
+            "7 1,1,2,2\n",
+            "array_iteration_row_unsupported",
+        ),
+        (
+            "const items = [1, 2]; return [items.reduce((sum, x) => sum + x)];",
+            "7 3\n",
+            "array_iteration_row_unsupported",
+        ),
+        (
+            "const items = [1, 2]; items.forEach((x) => x, null); return items;",
+            "7 1,2\n",
+            "array_iteration_row_unsupported",
+        ),
+        (
+            "const items = [1, 2]; const pending = items.map(async (x) => x); return [pending.length];",
+            "7 2\n",
+            "array_iteration_callback_unsupported",
+        ),
+        (
+            "const items = [1, 2]; return items.map((x) => { console.log(x); return x; });",
+            "1\n2\n7 1,2\n",
+            "array_iteration_callback_incomplete",
+        ),
+        (
+            "const items = [1, 2]; return items.map((x, index, array) => { array.push(0); return x; });",
+            "7 1,2\n",
+            "array_iteration_receiver_unproved",
+        ),
+    ] {
+        let source = format!("function run() {{ {body} }}\n{RELOCATION}");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "run",
+                &[Member::new("run"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_eq!(
+            array_iteration_refusals(&fixture, "result"),
+            vec![Value::from(refusal)],
+            "{body}"
+        );
+    }
+}
+
+/// An empty receiver never invokes its callback; the row still commits its
+/// fresh result.
+#[test]
+fn an_empty_receiver_keeps_its_receipt() {
+    let source = format!(
+        "function run() {{ const items = []; return items.map((x) => x * 2); }}\n{RELOCATION}"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module(
+            "run",
+            &[Member::new("run"), Member::new("result")],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 \n");
+    assert_iteration_receipt(&fixture, "map", "empty receiver");
+    assert_commuting_relocation(&fixture, "empty receiver");
+}
