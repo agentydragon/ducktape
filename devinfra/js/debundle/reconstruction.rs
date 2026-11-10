@@ -123,15 +123,17 @@ impl ReconstructionPlan {
             .chunks
             .iter()
             .flat_map(|(chunk, assessment)| {
-                assessment.findings.iter().filter_map(move |finding| {
-                    (finding.reason == GlobalResolutionReason::CapturedByBinding).then(|| {
+                assessment
+                    .findings
+                    .iter()
+                    .filter(|finding| finding.reason == GlobalResolutionReason::CapturedByBinding)
+                    .map(move |finding| {
                         format!(
                             "  - chunk {chunk}: source global `{}` captured in {}",
                             finding.symbol.as_deref().unwrap_or("<unknown>"),
                             finding.output_files.join(", "),
                         )
                     })
-                })
             })
             .collect::<Vec<_>>();
         if !captures.is_empty() {
