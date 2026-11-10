@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
@@ -77,32 +76,12 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 				closePlatformRoutes(started)
 				return nil, fmt.Errorf("platform route %q TLS CONNECT requires a proxy hop", name)
 			}
-			proxyTransport, okay := s.proxyHop.transport.(tlsProxyTransport)
-			_, spiffeAuth := s.proxyHop.auth.(spiffeProxyAuth)
-			if !okay || !spiffeAuth || proxyTransport.svid == nil {
-				closePlatformRoutes(started)
-				return nil, fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy transport", name)
-			}
-			serverCredentials, err := proxyTransport.svid.ClientCredentials(configured.ServerURI)
+			serverCredentials, err := s.proxyHop.transport.svid.ClientCredentials(configured.ServerURI)
 			if err != nil {
 				closePlatformRoutes(started)
 				return nil, fmt.Errorf("configure platform route %q TLS: %w", name, err)
 			}
 			transportCredentials = serverCredentials
-		case tlsBearerConnectRouteTransportConfig:
-			proxyTransport, ok := s.config.Proxy.Transport.(tlsProxyTransportConfig)
-			if !ok || s.proxyHop == nil {
-				closePlatformRoutes(started)
-				return nil, fmt.Errorf("platform route %q requires a TLS proxy hop", name)
-			}
-			serverCredentials, err := (&environment_runtime_transport.ClientTLS{CAFile: proxyTransport.CAFile, ServerURI: configured.ServerURI}).Credentials()
-			if err != nil {
-				closePlatformRoutes(started)
-				return nil, fmt.Errorf("configure platform route %q TLS: %w", name, err)
-			}
-			transportCredentials = serverCredentials
-			tokenFile = configured.TokenFile
-
 		default:
 			closePlatformRoutes(started)
 			return nil, fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)

@@ -47,8 +47,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   its open questions; the kinds, grants, impersonation
   and the catalog behind its switch have landed
 - [Workload identity lifecycle](workload_identity_lifecycle.md) — the Kubernetes-token and
-  ServiceAccount-bound paths left on Agentplane APIs, removing the proxy's bearer hop, and open
-  questions on backend callers and the app's token
+  ServiceAccount-bound paths left on Agentplane APIs, and open questions on backend callers and the
+  app's token
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements

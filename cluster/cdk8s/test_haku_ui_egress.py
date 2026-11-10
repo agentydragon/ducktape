@@ -93,7 +93,6 @@ def test_haku_sandbox_reaches_the_tls_proxy_and_actions(resources: list[dict[str
     actions = _settings(resources, "actions-settings")
 
     assert ui_egress.NAMESPACE in egress["allowed_service_account_namespaces"]
-    assert {method["mode"] for method in egress["forward"]["auth"]} == {"spiffe", "kubernetes_bearer"}
     assert egress["forward"]["tls"]
     assert ui_egress.NAMESPACE in actions["caller_service_account_namespaces"]
     # Callers are watched in every allowed namespace, but policies and bindings only in the staging one.

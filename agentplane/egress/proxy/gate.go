@@ -25,9 +25,8 @@ const proxyAuthorization = "Proxy-Authorization"
 // deniedHeader carries the machine-readable reason of a refusal.
 const deniedHeader = "x-agentplane-egress"
 
-// authenticated is a hop bearer a connection proved, and what it may present for substitution.
+// authenticated is the SVID a connection proved, and what it may present for substitution.
 type authenticated struct {
-	bearer    string
 	principal auth.Principal
 	// projected holds the tokens the sidecar offered, by audience, that were reviewed as this Pod's.
 	projected map[string]string
@@ -47,10 +46,10 @@ type outcome struct {
 // gate decides one request or CONNECT and records the decision. The hop headers are this proxy's
 // alone: they are removed here, before anything else reads the request, whatever is decided.
 func (p *Proxy) gate(req *http.Request, client *connection, body []byte, host string, port int) (policy.Decision, upstream.Pin) {
-	hop, supplied := req.Header[proxyAuthorization]
+	_, supplied := req.Header[proxyAuthorization]
 	req.Header.Del(proxyAuthorization)
 	presented := takeProjectedTokens(req.Header)
-	result := p.decide(req, client, hop, supplied, presented, body, host, port)
+	result := p.decide(req, client, supplied, presented, body, host, port)
 	p.record(req, client, host, port, result)
 	return result.decision, result.pin
 }
@@ -69,11 +68,11 @@ func takeProjectedTokens(header http.Header) map[string]string {
 }
 
 func (p *Proxy) decide(
-	req *http.Request, client *connection, hop []string, supplied bool, presented map[string]string,
+	req *http.Request, client *connection, supplied bool, presented map[string]string,
 	body []byte, host string, port int,
 ) outcome {
 	ctx := req.Context()
-	who, err := p.authenticate(ctx, client, hop, supplied, presented)
+	who, err := p.authenticate(ctx, client, supplied, presented)
 	if err != nil {
 		var rejection *identity.Rejection
 		if errors.As(err, &rejection) {
@@ -132,30 +131,21 @@ func (p *Proxy) decide(
 	return outcome{decision: admitted, pin: pin, caller: who}
 }
 
-// authenticate proves the hop bearer, or the one this connection proved before, and binds the
-// presented projected tokens to the Pod it proved. A bearer presented on a request replaces
-// whatever the connection held before: it stands on its own, so a malformed or rejected one never
-// falls back to the earlier state.
+// authenticate re-resolves the connection's SVID on every request and binds the presented
+// projected tokens to the Pod it proves. `supplied` is a Proxy-Authorization header on the request,
+// which this listener refuses rather than ignores.
 func (p *Proxy) authenticate(
-	ctx context.Context, client *connection, hop []string, supplied bool, presented map[string]string,
+	ctx context.Context, client *connection, supplied bool, presented map[string]string,
 ) (*authenticated, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	previous := client.auth
-	hasCertificate := client.peerState != nil && len(client.peerState.PeerCertificates) > 0
-	if supplied && !hasCertificate {
-		previous = nil
-	}
-	if !supplied && !hasCertificate && previous != nil && previous.bearer != "" {
-		hop, supplied = []string{"Bearer " + previous.bearer}, true
-	}
-	caller, err := p.options.Authentication.Authenticate(ctx, client.peerState, hop, supplied)
+	caller, err := p.options.Authentication.Authenticate(ctx, client.peerState, supplied)
 	if err != nil {
 		client.auth = nil
 		return nil, err
 	}
-	// An explicit bearer starts a new proof; an inherited tunnel credential must
-	// still identify the same Pod incarnation on every request.
+	// A tunnel's requests must still identify the same Pod incarnation as its CONNECT.
 	if previous != nil && caller.Principal != previous.principal {
 		client.auth = nil
 		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "authenticated tunnel identity changed"}
@@ -166,7 +156,7 @@ func (p *Proxy) authenticate(
 	} else if previous != nil {
 		projected = maps.Clone(previous.projected)
 	}
-	client.auth = &authenticated{bearer: caller.Bearer, principal: caller.Principal, projected: projected}
+	client.auth = &authenticated{principal: caller.Principal, projected: projected}
 	return client.auth, nil
 }
 

@@ -2043,8 +2043,8 @@ is a long name at the top of `agentplane/`, and it no longer describes its job: 
 SPIFFE mTLS trust, URI and EKU checks, and the TLS client and server configuration that every
 first-party service and the egress proxy use, not only Environment Runtime's transport. Choose a
 short name and home that matches that job, and coordinate with the `agentplane/workload_identity`
-packages the [workload identity lifecycle](workload_identity_lifecycle.md) proposes, which may
-absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
+packages ([workload authentication](../docs/workload_authentication.md#workloadcredentials)), which
+may absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
 and doc link. Exit: no import of the old path remains.
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
@@ -3028,13 +3028,11 @@ given the policy namespace yet and `Principal` has no Identity form, so an SVID 
 ServiceAccount `Principal` a TokenReview does (`SERVICES_IDENTITY_PRINCIPAL`,
 `EGRESS_IDENTITY_RULES`); a Sandbox sidecar forwards its Kubernetes-audience token beside the SVID
 for `kubectl` substitution (`SANDBOX_IDENTITY_SPEC`); an MCP edge Connection is bound to a
-ServiceAccount and the edge forwards a token minted for it (`IDENTITY_CUTOVER`); the proxy's
-`forward` listener and the sidecar keep an unused bearer hop, each marked
-`CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOVER`).
+ServiceAccount and the edge forwards a token minted for it (`IDENTITY_CUTOVER`).
 
 ```mermaid
 flowchart LR
-    WORKLOAD_AUTH_CUTOVER[Ready: bearer hop removal]
+    WORKLOAD_AUTH_CUTOVER[In review: bearer hop removal]
     SERVICE_CALLER_AUTH_DECISION[Decision: backend callers and the app's token]
     CENTRAL_SESSION_ACTING_DESIGN[Decision: a central Session acting as its identity]
     SERVICES_IDENTITY_PRINCIPAL -->|implementation waits| CENTRAL_SESSION_ACTING_DESIGN
@@ -3051,19 +3049,14 @@ flowchart LR
 
 ### `WORKLOAD_AUTH_CUTOVER` — remove the proxy bearer hop
 
-**Ready (audit, 2026-11-10).** Every workload requester has landed (Sandboxes, command/build boxes,
-Haku's and `haku-ci`'s standing records); what remains is step 5 of the
-[workload identity lifecycle](workload_identity_lifecycle.md#step-5-remove-the-bearer-hop). Nothing
-projects the `agentplane-egress` audience for the hop: the sampler's `llm` and Notification's
-`actions` tokens carry it only for LLM ingress and the Action Service, and the one hop client
-configured, `public-coder-agent`'s relay, is parked at 0 replicas. Keep the shared TLS listener and
-service-owned verification, without proxy identity assertions or insecure transport fallback.
-Haku's separate ActionClient migration remains deferred in the
-[task freezer](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client).
-**Exit:** the proxy bearer configuration and hop resolver, the sidecar's bearer proxy auth and
-plaintext transport, and `public_coder`'s relay settings are gone at the `CLEANUP(added 2026-11-09)`
-sites the lifecycle plan lists; `kubernetes_bearer` stays on service listeners for their backend
-callers. The staging PR states rollback.
+**In review (#15247, 2026-11-10).** Every workload requester presents a `WorkloadCredential` SVID
+(Sandboxes, command/build boxes, Haku's and `haku-ci`'s standing records), so the proxy's `forward`
+listener authenticates SVIDs alone: its bearer mode and hop resolver, the sidecar's bearer proxy
+auth and plaintext transport, and `public_coder`'s bearer relay settings are removed;
+`kubernetes_bearer` stays on service listeners for backend callers. Rollback: revert; no caller
+depends on the bearer hop. #15256 has rolled out on staging and no command box predates it.
+**Exit:** after image and config convergence on staging, Sandboxes, boxes and the standing
+workloads reach the proxy and Rules by SVID; then remove this node.
 
 ### `SERVICE_CALLER_AUTH_DECISION` — backend callers and the app's token under the target
 
@@ -3125,7 +3118,8 @@ re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark
 historical, as History migration 8 did. Action boxes run as the caller's Identity here, not in
 `SANDBOX_IDENTITY_SPEC`: `stamp` (`action_service/sandbox/inventory.go`) names the caller's
 Identity as the box record's subject and runs the box on the default ServiceAccount, which needs the
-Action Service to know its caller as an Identity. **Exit:** the existing service tests pass with identity
+Action Service to know its caller as an Identity. A caller with no Sandbox has its box records owned by its `Identity`; its
+`kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. **Exit:** the existing service tests pass with identity
 principals, a retained Session with a deleted Sandbox reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else

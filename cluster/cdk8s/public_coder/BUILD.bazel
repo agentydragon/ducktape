@@ -53,7 +53,6 @@ py_library(
         "//agentplane/crds:policyset",
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
-        "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:settings_file",

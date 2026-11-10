@@ -30,10 +30,22 @@ Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 ### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
 
 Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
-(`workload_auth/audience.py`). Sandbox callers now authenticate with SVIDs; the egress proxy still
-verifies this audience on its unused hop until `WORKLOAD_AUTH_CUTOVER`. Revisit the name for the
-remaining backend consumers, unless `SERVICE_CALLER_AUTH_DECISION` moves them to SVIDs and the
-audience goes; any rename must coordinate those verifiers and their projected tokens.
+(`workload_auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
+longer verifies this audience. Revisit the name for the remaining backend consumers, unless
+`SERVICE_CALLER_AUTH_DECISION` moves them to SVIDs and the audience goes; any rename must coordinate
+those verifiers and their projected tokens.
+
+## Workload credentials
+
+Deferred by the operator on 2026-11-09 with `WORKLOAD_AUTH_CUTOVER`
+([workload authentication](../docs/workload_authentication.md#standing-workloads)).
+
+### `STANDING_WORKLOAD_INCARNATIONS` — standing workloads' weaker credential
+
+Revisit when a standing workload needs Pod provenance or its shared credential's reach becomes a
+concern. A standing record is one non-rotating credential with no Pod provenance, weaker than the
+per-incarnation credentials of Sandboxes and boxes: bring standing workloads up to per-incarnation
+credentials, or accept the weaker guarantee everywhere.
 
 ## Haku
 

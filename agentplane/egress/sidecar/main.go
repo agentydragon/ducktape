@@ -53,19 +53,10 @@ func newSidecar(c config) (*sidecar, error) {
 	return &sidecar{config: c, proxyHop: hop}, nil
 }
 
-type proxyConnectionTransport interface {
-	dial(context.Context, string) (net.Conn, error)
-}
-
-type plaintextProxyTransport struct{}
-
-func (plaintextProxyTransport) dial(ctx context.Context, address string) (net.Conn, error) {
-	return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", address)
-}
-
+// tlsProxyTransport dials the central proxy presenting the workload SVID.
 type tlsProxyTransport struct {
 	security *tls.Config
-	svid     *environment_runtime_transport.Config
+	svid     environment_runtime_transport.Config
 }
 
 func (transport tlsProxyTransport) dial(ctx context.Context, address string) (net.Conn, error) {
@@ -85,48 +76,18 @@ func (transport tlsProxyTransport) dial(ctx context.Context, address string) (ne
 
 type proxyHop struct {
 	address   string
-	auth      proxyAuth
-	transport proxyConnectionTransport
+	transport tlsProxyTransport
 }
 
 func newProxyHop(config proxyConfig) (*proxyHop, error) {
-	auth := config.Transport.auth()
-	if _, err := auth.requestToken(); err != nil {
-		return nil, fmt.Errorf("load proxy hop credential: %w", err)
+	client := environment_runtime_transport.Config{
+		CertFile: config.Transport.Auth.CertFile,
+		KeyFile:  config.Transport.Auth.KeyFile,
+		CAFile:   config.Transport.CAFile,
 	}
-	var transport proxyConnectionTransport
-	switch configured := config.Transport.(type) {
-	case plaintextProxyTransportConfig:
-		transport = plaintextProxyTransport{}
-	case tlsProxyTransportConfig:
-		var security *tls.Config
-		switch configuredAuth := configured.Auth.(type) {
-		case spiffeProxyAuth:
-			client := environment_runtime_transport.Config{
-				CertFile: configuredAuth.CertFile,
-				KeyFile:  configuredAuth.KeyFile,
-				CAFile:   configured.CAFile,
-			}
-			var err error
-			security, err = client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
-			if err != nil {
-				return nil, fmt.Errorf("configure SPIFFE proxy authentication: %w", err)
-			}
-			transport = tlsProxyTransport{security: security, svid: &client}
-		case kubernetesBearerProxyAuth:
-			var err error
-			security, err = (environment_runtime_transport.ClientTLS{
-				CAFile: configured.CAFile, ServerURI: environment_runtime_transport.EgressProxyURI,
-			}).TLSConfig()
-			if err != nil {
-				return nil, fmt.Errorf("configure bearer proxy TLS: %w", err)
-			}
-			transport = tlsProxyTransport{security: security}
-		default:
-			return nil, fmt.Errorf("unsupported proxy authentication type %T", configuredAuth)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported proxy transport type %T", configured)
+	security, err := client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		return nil, fmt.Errorf("configure SPIFFE proxy authentication: %w", err)
 	}
-	return &proxyHop{address: config.Address, auth: auth, transport: transport}, nil
+	return &proxyHop{address: config.Address, transport: tlsProxyTransport{security: security, svid: client}}, nil
 }

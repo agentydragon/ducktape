@@ -56,8 +56,7 @@ from agentplane.egress.resources import placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.workload_auth.listener import TLS, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
@@ -617,12 +616,7 @@ class Egress(Construct):
                     cert_file=Path("/etc/agentplane-egress/svid/tls.crt"),
                     key_file=Path("/etc/agentplane-egress/svid/tls.key"),
                 ),
-                auth=[
-                    SPIFFEAuth(ca_file=Path(_SVID_CA_FILE)),
-                    # CLEANUP(added 2026-11-09): Remove the bearer mode; no workload projects a
-                    # proxy-hop bearer since command boxes present SVIDs.
-                    KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-                ],
+                auth=[SPIFFEAuth(ca_file=Path(_SVID_CA_FILE))],
             ).model_dump(mode="json", exclude_none=True),
         }
         settings = SettingsFile(
