@@ -6,13 +6,11 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, egress_fences, node_scheduling
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -218,7 +216,7 @@ def _sandbox_fence(chart: Chart) -> None:
     haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, and haku-egress-proxy
     port 8080. Blocks: direct external internet access.
     """
-    cilium.force_proxy_egress(
+    fence = cilium.force_proxy_egress(
         chart,
         "haku-sandbox-force-proxy-egress",
         name="haku-sandbox-force-proxy-egress",
@@ -231,11 +229,14 @@ def _sandbox_fence(chart: Chart) -> None:
         cluster_ports=None,
         kube_apiserver=True,
     )
+    # haku-sandbox's only egress restriction. It outlives this Kustomization, whose deletion prunes
+    # everything else here, and moves to the Haku namespace's chart when the proxy is retired.
+    # CLEANUP(added 2026-11-10): drop with this module once the Haku chart owns the policy.
+    fence.metadata.add_annotation("kustomize.toolkit.fluxcd.io/prune", "disabled")
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
     _ca(chart)
     _mitmproxy(chart)
     _sandbox_fence(chart)
@@ -259,7 +260,6 @@ def haku_egress_proxy(
     artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
-    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -267,8 +267,7 @@ def haku_egress_proxy(
         artifact,
         retry_interval=None,
         wait=None,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust),
         decryption=SOPS_DECRYPTION,
     )

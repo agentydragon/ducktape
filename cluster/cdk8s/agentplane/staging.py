@@ -76,6 +76,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     CLAUDE_AI,
     HAKU_AGENT,
+    HAKU_CI,
     HAKU_UI,
     add_staging_action_policies,
     caller_role_sets,
@@ -121,6 +122,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGIS
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agentplane.identity import Identity
@@ -563,8 +565,8 @@ ENV = Environment(
         ),
         traffic_distribution="PreferClose",
         zones=node_scheduling.HOME_AND_OVH_ZONES,
-        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE),
-        standing_workload_namespaces=(haku_ui_egress.NAMESPACE,),
+        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE, runner.NAMESPACE),
+        standing_workload_namespaces=(haku_ui_egress.NAMESPACE, runner.NAMESPACE),
     ),
     app=AppProps(
         origin=f"https://{_HOSTNAME}",
@@ -731,6 +733,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     )
     haku_ui_egress.add_gateway_resources(chart, namespace=STAGING_NAMESPACE)
     haku_ui_egress.add_workload_credentials(chart)
+    egress_gateway.add_gateway(chart, env, clients=runner.RUNNER_PODS)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
     # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
@@ -950,7 +953,8 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
     for caller, description in (
         (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
         (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
-        (HAKU_UI, "Haku's operator UI and haku-anki, in haku-sandbox."),
+        (HAKU_UI, "Haku's operator UI, haku-anki and haku-jupyter, in haku-sandbox."),
+        (HAKU_CI, "haku-ci's builds, through its egress relay."),
         (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
     ):
         Identity(

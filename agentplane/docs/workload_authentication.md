@@ -75,12 +75,15 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
 ### Standing workloads
 
 A record with no owner and no binding is standing: a workload with replicas, not a controller-owned
-incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet) and Anki's (`haku-anki`, a
-Deployment) into `haku-sandbox` (`cluster/cdk8s/haku/ui_egress.py`), both with subject `haku-ui`;
+incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet), Anki's (`haku-anki`, a
+Deployment) and Jupyter's (`haku-jupyter`, a Deployment) into `haku-sandbox`
+(`cluster/cdk8s/haku/ui_egress.py`), all with subject `haku-ui`;
 Haku's deployer Role cannot write a record. The issuer keeps its one credential ID and names its
 Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress sidecar alone.
 Any Pod Haku creates in `haku-sandbox` could mount it, the reach the `haku-ui` ServiceAccount
-already gives.
+already gives. haku-ci's egress relay (`haku-ci-egress`, a Deployment in `haku-ci`;
+`cluster/cdk8s/haku_ci/egress_gateway.py`) is one too: its subject is its own ServiceAccount, and
+only the relay mounts `svid-haku-ci-egress`, so builds in the privileged runner Pods never hold it.
 
 Every replica presents the same SVID and proves no Pod: the proxy drops any Pod token such a caller
 forwards, and decisions record no source Pod ([egress SPEC](../egress/SPEC.md)). This is weaker
@@ -187,10 +190,9 @@ other Certificate against the issuer is refused. Certificates against other issu
 ## TokenReview and projected credentials
 
 The central egress proxy's `forward` listener requires TLS and allows either a Runtime SVID or a
-Kubernetes bearer with the `agentplane-egress` audience. Action command/build boxes use a
-Pod-bound bearer for this hop; the proxy verifies it with TokenReview and resolves the caller's
-ServiceAccount and Pod binding. Sandbox sidecars select the SVID mode. Sandbox Runtime templates do
-not project the proxy hop bearer.
+Kubernetes bearer with the `agentplane-egress` audience, which it verifies with TokenReview. No
+deployed workload uses the bearer: Sandbox, command/build box and standing-workload sidecars select
+the SVID mode, and their templates do not project the proxy hop bearer.
 
 `projectedWorkloadToken` is a separate destination credential. A sidecar offers its explicit
 destination-audience token, and the proxy substitutes it only after TokenReview binds it to the same
@@ -228,10 +230,8 @@ metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 
 ## Non-Sandbox and future callers
 
-Action command/build boxes retain Pod-bound bearer credentials over verified TLS;
-the relevant listener audience and service method policy still decide whether each call is admitted.
-These configured workload paths remain active while Sandbox traffic uses SVIDs. The independent
-identity and SVID lifecycle for non-Sandbox and future callers remains deferred.
+No non-Sandbox workload holds a proxy-hop bearer: command/build boxes and standing workloads present
+their `WorkloadCredential` SVIDs.
 Do not infer that arbitrary callers are admitted, or treat an egress placeholder, source IP, or
 caller-supplied identity header as authentication.
 

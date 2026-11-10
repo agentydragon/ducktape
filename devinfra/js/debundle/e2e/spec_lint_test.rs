@@ -57,7 +57,7 @@ fn fixture(annotated: bool) -> FixtureOpts<'static> {
 
 fn lint(opts: FixtureOpts<'_>) -> Vec<LintFinding> {
     let fixture = write_validate_fixture_spec(opts);
-    let report = spec_lint_json(&fixture.spec_path);
+    let report = spec_lint_json(&fixture.spec_path, &[]);
     assert!(report.get("unlinted_chunks").is_none(), "{report:#}");
     serde_json::from_value(report["findings"].clone())
         .unwrap_or_else(|error| panic!("{error}: {report:#}"))
@@ -70,7 +70,7 @@ fn lint_reports_each_inferable_annotation_kind_by_authored_identity() {
         findings
             .iter()
             .all(|finding| finding.rule == LintRule::InferableAnnotation
-                && finding.chunk == "static/app"),
+                && finding.chunk.as_deref() == Some("static/app")),
         "{findings:#?}"
     );
     let [commuting, admission, purity] = findings.as_slice() else {

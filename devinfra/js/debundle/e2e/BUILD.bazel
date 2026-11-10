@@ -192,6 +192,13 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "foreign_cell_read_order_test",
+    deps = [
+        ":graph_support",
+    ],
+)
+
+debundle_e2e_test(
     name = "provider_summary_effect_test",
     deps = [
         ":graph_support",
@@ -282,6 +289,30 @@ debundle_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_probe_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_host_provenance_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_trusted_summary_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
     ],
 )
@@ -1462,4 +1493,9 @@ debundle_e2e_test(name = "export_availability_test")
 debundle_e2e_test(
     name = "runtime_resource_closure_test",
     deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "call_initializer_seal_test",
+    deps = [":graph_support"],
 )

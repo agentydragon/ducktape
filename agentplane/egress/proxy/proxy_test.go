@@ -144,6 +144,8 @@ type lab struct {
 	// lookup answers the proxy's DNS lookups; replace it before sending traffic.
 	lookup      func(host string) []netip.Addr
 	resolutions atomic.Int64
+	// skew moves the resolver's clock forward, to expire the pins it holds.
+	skew atomic.Int64
 }
 
 var keyCredential = resources.Credential{
@@ -222,12 +224,15 @@ func newLab(t *testing.T) *lab {
 	l.options = Options{
 		CA: intercept, UpstreamRoots: upstreamRoot, Policy: l.index, Record: l.records.record,
 		Authentication: authentication,
-		Upstream: upstream.NewResolver([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, upstream.WithLookup(
-			func(_ context.Context, host string) ([]netip.Addr, error) {
+		// Loopback addresses stand in for upstream hosts.
+		Upstream: upstream.NewResolver(
+			[]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+			upstream.WithLookup(func(_ context.Context, host string) ([]netip.Addr, error) {
 				l.resolutions.Add(1)
 				return l.lookup(host), nil
-			},
-		)),
+			}),
+			upstream.WithClock(func() time.Time { return time.Now().Add(time.Duration(l.skew.Load())) }),
+		),
 	}
 	l.start(t, proxyTLS)
 	return l
@@ -263,8 +268,19 @@ func (l *lab) start(t *testing.T, tlsConfig *tls.Config) {
 
 func (l *lab) upstream(t *testing.T, name string, tlsEnabled bool, handler http.Handler) (*httptest.Server, *countedListener) {
 	t.Helper()
+	return l.upstreamOn(t, "127.0.0.1:0", name, tlsEnabled, handler)
+}
+
+// upstreamOn is upstream listening on address.
+func (l *lab) upstreamOn(t *testing.T, address, name string, tlsEnabled bool, handler http.Handler) (*httptest.Server, *countedListener) {
+	t.Helper()
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewUnstartedServer(handler)
-	counted := &countedListener{Listener: server.Listener, closed: make(chan struct{}, 16)}
+	server.Listener.Close()
+	counted := &countedListener{Listener: listener, closed: make(chan struct{}, 16)}
 	server.Listener = counted
 	server.EnableHTTP2 = true
 	if tlsEnabled {
@@ -535,32 +551,75 @@ func TestInteractiveH2AndH2CTrailersCredentialAndCancellation(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("client cancellation never reached upstream")
 			}
-			// Both requests reuse the address the CONNECT pinned.
-			if counted.accepts.Load() != 2 || l.resolutions.Load() != 1 {
+			// Both requests go to the address the CONNECT pinned, on one pooled connection.
+			if counted.accepts.Load() != 1 || l.resolutions.Load() != 1 {
 				t.Fatalf("TCP=%d DNS=%d", counted.accepts.Load(), l.resolutions.Load())
 			}
 		})
 	}
 }
 
-func TestUpstreamConnectionIsReleasedAfterItsOnlyResponse(t *testing.T) {
+// get sends one request for path on a tunnel of its own and returns the body.
+func (l *lab) get(t *testing.T, port, path string, encrypted bool) string {
+	t.Helper()
+	_, client := l.tunnel(t, port, encrypted)
+	response, err := client.RoundTrip(request(bounded(t), port, path, encrypted, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil || response.StatusCode != 200 {
+		t.Fatalf("%s: status %d, %v", path, response.StatusCode, err)
+	}
+	return string(body)
+}
+
+func TestUpstreamConnectionIsReusedAcrossTunnelsForOnePinAndClosedOnDrain(t *testing.T) {
 	for _, encrypted := range []bool{true, false} {
 		t.Run(fmt.Sprint("tls=", encrypted), func(t *testing.T) {
 			l := newLab(t)
 			upstream, counted := l.upstream(t, fixtureHost, encrypted, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("done")) }))
-			_, client := l.tunnel(t, portOf(upstream), encrypted)
-			response, err := client.RoundTrip(request(bounded(t), portOf(upstream), "/allowed", encrypted, nil))
-			if err != nil {
+			for range 3 {
+				l.get(t, portOf(upstream), "/allowed", encrypted)
+			}
+			if counted.accepts.Load() != 1 {
+				t.Fatalf("%d upstream connections for one pin, want 1", counted.accepts.Load())
+			}
+			if err := l.proxy.Drain(bounded(t)); err != nil {
 				t.Fatal(err)
 			}
-			io.Copy(io.Discard, response.Body)
-			response.Body.Close()
 			select {
 			case <-counted.closed:
 			case <-time.After(5 * time.Second):
-				t.Fatal("upstream connection stayed open after its only response")
+				t.Fatal("idle upstream connection stayed open after drain")
 			}
 		})
+	}
+}
+
+func TestUpstreamConnectionIsNotReusedOnceTheHostIsPinnedElsewhere(t *testing.T) {
+	l := newLab(t)
+	handler := func(answer string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(answer)) })
+	}
+	first, firstConnections := l.upstream(t, fixtureHost, true, handler("first"))
+	_, secondConnections := l.upstreamOn(t, net.JoinHostPort("127.0.0.2", portOf(first)), fixtureHost, true, handler("second"))
+	var address atomic.Pointer[netip.Addr]
+	address.Store(new(netip.MustParseAddr("127.0.0.1")))
+	l.lookup = func(string) []netip.Addr { return []netip.Addr{*address.Load()} }
+	if body := l.get(t, portOf(first), "/allowed", true); body != "first" {
+		t.Fatalf("first admission reached %q", body)
+	}
+	// The pin expires and the host now resolves elsewhere: the next request goes there, although a
+	// connection to the old address sits idle.
+	address.Store(new(netip.MustParseAddr("127.0.0.2")))
+	l.skew.Store(int64(time.Hour))
+	if body := l.get(t, portOf(first), "/allowed", true); body != "second" {
+		t.Fatalf("re-pinned admission reached %q", body)
+	}
+	if firstConnections.accepts.Load() != 1 || secondConnections.accepts.Load() != 1 {
+		t.Fatalf("connections: first=%d second=%d", firstConnections.accepts.Load(), secondConnections.accepts.Load())
 	}
 }
 

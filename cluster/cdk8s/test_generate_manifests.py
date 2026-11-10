@@ -81,7 +81,9 @@ def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy_and_an_ssd
     isolated = {
         doc["spec"]["endpointSelector"]["matchLabels"]["kubevirt.io/domain"]
         for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+        if doc["kind"] == "CiliumNetworkPolicy"
+        and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+        and "kubevirt.io/domain" in doc["spec"]["endpointSelector"]["matchLabels"]
     }
     assert isolated == workers.keys()
     claims = {
@@ -104,6 +106,80 @@ def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy_and_an_ssd
         assert claim["storageClassName"] == "piraeus-ssd-local"
         assert claim["volumeMode"] == "Block"
     assert len(claims) == len(workers)
+
+
+def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_disk(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+    template = pool["spec"]["virtualMachineTemplate"]
+    labels = pool["spec"]["selector"]["matchLabels"]
+    assert labels.items() <= template["metadata"]["labels"].items()
+    assert labels.items() <= template["spec"]["template"]["metadata"]["labels"].items()
+    guest = template["spec"]["template"]["spec"]
+    assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
+    # Every pool member avoids any node that runs a worker, including the standalone worker VMs.
+    (term,) = guest["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+    assert term["topologyKey"] == "kubernetes.io/hostname"
+    assert {
+        (expression["key"], value)
+        for expression in term["labelSelector"]["matchExpressions"]
+        for value in expression["values"]
+    } == labels.items()
+    (work,) = template["spec"]["dataVolumeTemplates"]
+    storage = work["spec"]["storage"]
+    assert storage["storageClassName"] == "piraeus-ssd-local"
+    assert storage["volumeMode"] == "Block"
+    (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
+    assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
+    # The egress fence that the standalone VMs have must also cover pool members, which carry no VM-name label.
+    fence = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy"
+        and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+        and doc["spec"]["endpointSelector"]["matchLabels"] == labels
+    )["spec"]
+    assert fence["egress"], fence
+    assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in fence["egress"])
+
+
+def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    workers = [
+        doc
+        for doc in documents
+        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    ]
+    service = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "Service" and doc["metadata"]["name"] == "buildbuddy-kvm-worker-metrics"
+    )
+    monitor = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    port = next(port for port in service["spec"]["ports"] if port["name"] == "metrics")
+    for worker in workers:
+        pod_labels = worker["spec"]["template"]["metadata"]["labels"]
+        assert service["spec"]["selector"].items() <= pod_labels.items()
+    assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
+    assert monitor["spec"]["endpoints"][0]["port"] == port["name"]
+    for policy in (
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    ):
+        (rule,) = policy["spec"]["ingress"]
+        assert rule["fromEndpoints"] == [
+            {"matchLabels": {"app.kubernetes.io/name": "alloy-node", "k8s:io.kubernetes.pod.namespace": "monitoring"}}
+        ]
+        assert [p["port"] for p in rule["toPorts"][0]["ports"]] == [str(port["port"])]
 
 
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
@@ -168,7 +244,12 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
         if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == worker["metadata"]["name"]
     )["spec"]
     assert policy["endpointSelector"]["matchLabels"].items() <= worker["spec"]["template"]["metadata"]["labels"].items()
-    assert policy["ingress"] == [{}]
+    # Ingress admits only named peers (the metrics scraper); the exact peer and port are pinned in
+    # test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy.
+    assert all(
+        rule.get("fromEndpoints") and not rule.get("fromEntities") and not rule.get("fromCIDR")
+        for rule in policy["ingress"]
+    )
     assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in policy["egress"])
 
 
@@ -866,9 +947,6 @@ def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
     assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
-    assert any(
-        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-haku-egress-proxy" for doc in active
-    )
     assert {
         "agent-sandbox-controller",
         "haku-egress-proxy",

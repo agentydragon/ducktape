@@ -33,8 +33,10 @@ spec:
                     - hil
                     - home
                     - proxmox
-                - key: node-role.kubernetes.io/control-plane
-                  operator: DoesNotExist
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile

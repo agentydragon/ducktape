@@ -1,5 +1,6 @@
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "pipeline_report_flags_test")
+load("//devinfra/python:defs.bzl", "py_test")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "pipeline_report_flags_test", "product_family_test")
 
 package(default_testonly = True)
 
@@ -188,6 +189,69 @@ pipeline_report_flags_test(
     target_under_test = ":full_reentry",
 )
 
+product_family_test(
+    name = "product_family_test",
+    analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_analysis",
+    graphs = "//devinfra/js/debundle/pipeline_rule_test/product:product_graphs",
+    passing = "//devinfra/js/debundle/pipeline_rule_test/product:product_passing",
+    readable = "//devinfra/js/debundle/pipeline_rule_test/product:product_readable",
+    residual_baseline = "//devinfra/js/debundle/pipeline_rule_test/product:product_residual_baseline",
+    residual_baseline_analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_residual_baseline_analysis",
+    target_under_test = "//devinfra/js/debundle/pipeline_rule_test/product:product",
+)
+
+product_family_test(
+    name = "product_shared_baseline_test",
+    analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_analysis",
+    graphs = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_graphs",
+    residual_baseline = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_residual_baseline",
+    residual_baseline_analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_residual_baseline_analysis",
+    residual_baseline_reuses_analysis = True,
+    target_under_test = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline",
+)
+
+# Declared targets and launcher arguments, as Bazel sees them after expansion.
+genquery(
+    name = "product_targets",
+    expression = "//devinfra/js/debundle/pipeline_rule_test/product:all",
+    opts = ["--output=xml"],
+    # Exactly the expected family: an undeclared target fails the query, a
+    # missing one fails analysis. Launcher helpers are in their launchers' closure.
+    scope = ["//devinfra/js/debundle/pipeline_rule_test/product:" + name for name in [
+        "product",
+        "product_analysis",
+        "product_graphs",
+        "product_readable",
+        "product_passing",
+        "product_residual_baseline",
+        "product_residual_baseline_analysis",
+        "product_cli",
+        "product_cli_worker",
+        "product_cli_lazy",
+        "product_shared_baseline",
+        "product_shared_baseline_analysis",
+        "product_shared_baseline_graphs",
+        "product_shared_baseline_residual_baseline",
+        "product_shared_baseline_residual_baseline_analysis",
+        "product_minimal",
+        "product_minimal_analysis",
+        "product_minimal_graphs",
+    ]],
+)
+
+py_test(
+    name = "test_debundle_product",
+    srcs = ["test_debundle_product.py"],
+    data = [":product_targets"],
+    env = {"PRODUCT_TARGETS": "$(rlocationpath :product_targets)"},
+    deps = [
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 test_suite(
     name = "tests",
     tests = [
@@ -199,6 +263,9 @@ test_suite(
         ":full_report_filtered_test",
         ":full_report_test",
         ":identity_inputs_test",
+        ":product_family_test",
+        ":product_shared_baseline_test",
         ":readable_test",
+        ":test_debundle_product",
     ],
 )

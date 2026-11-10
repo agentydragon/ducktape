@@ -2348,10 +2348,34 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
   `reason` `no_sequenced_edge` or `summarized_endpoints`) and an
   `admission_overrides` check the chunk does not violate
   (`no_admission_violation`) are inferable.
+- `inferable` (`never_consumed`): a `host_behavior.reentry_free_operations`
+  entry no chunk's analysis consumed. Its only reader records every use it
+  grants, so an absent record means no fact used it
+  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk.
 - `inconclusive`: a probe suggests the annotation is unnecessary but does not
-  establish that. A `purity: pure` hint the classifier infers without the hint
+  establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
+  the fact it supported may have another derivation. While any chunk is
+  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint the classifier infers without the hint
   (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
   hint are not rerun.
+
+`spec lint --probe-analysis` decides `purity: pure` hints (logical-module and
+`chunk_renames` annotations) and consumed `reentry_free_operations` entries
+instead of leaving them as leads. It
+prepares the input once, runs the whole program as a baseline and then once per
+hint with only that hint withheld from an in-memory copy of the spec, each run
+writing its reports and full graphs to a fresh directory. A hint is `inferable`
+(`withheld_run_unchanged`) when its run is accepted and every report is
+identical to the baseline's: dependency graphs with their precision losses,
+atomic groups and module contents. Only the hint diagnostics a withheld hint
+changes by construction (`spec_lint.json`, `modules.json`'s
+`redundant_purity_hints`) are excluded. A rejected or different run means the
+hint is used and produces no finding. A baseline that is not accepted
+(`baseline_not_accepted`), a run that cannot execute (`probe_failed`) and a hint
+past `--max-probes` (`not_probed`) are `inconclusive`; `--probe-chunk` limits
+probing to named chunks and skips program-wide entries. Each probe costs one full pipeline run on the prepared
+input, reported per hint under `probes`. One hint is withheld at a time: two
+hints each reported inferable are not proven jointly removable.
 
 Findings are warnings: lint exits 0 whenever the pass produced reports, never
 edits the spec, and removal stays a reviewed edit followed by validation. A
