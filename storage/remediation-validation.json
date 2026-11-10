@@ -1,26 +1,19 @@
 {
-  "validated_at_utc": "2026-11-10T21:56:28.990080+00:00",
-  "scope": "The updated storage page, root index, and shared presentation files; the earlier inventory retains its own 2026-11-09 observation window.",
+  "validated_at_utc": "2026-11-10T22:20:35.301975+00:00",
+  "scope": "The follow-up questions, storage page and root index; earlier inventory, remediation and observability snapshots retain their original observation windows.",
   "files_sha256": {
-    "index.html": "84f59e774b5f94b445e3cc3305d6be4b66e89f8f9dc3f0c3078ae604ba694f89",
+    "index.html": "5161ca4a621059a79799e6a584940e210347eaf3730a353601607ccb39d69096",
     "storage/index.html": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
-    "storage/remediation.js": "9c7dcd3b05c8dedb365841f954328f12931b508b8fbf81d7362e778da5cc14d4",
-    "storage/remediation-evidence.json": "365283a84edf8fa94b0d22540e2387b2525abd8cb5883bd24c10f7749793ddc5",
+    "storage/remediation.js": "8bb6d27e342bee5064c578efe4ec6c1363c65f9a49307b8cb13b5aef6306c768",
+    "storage/remediation-evidence.json": "3dffb746da5f8365165f3bd7cb681a64b09a3ad9e4f23b1cf615c1ab4045a7e2",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "browser_test": {
-    "invocations": [
-      {
-        "url": "https://app.buildbuddy.io/invocation/a2afd0b2-994a-4146-8ce4-e49bdd3acad6",
-        "result": "Home: 4/4 passed. Report: 10/12 passed; two dark controls cases timed out."
-      },
-      {
-        "url": "https://app.buildbuddy.io/invocation/3e4cfdee-6ebb-4366-8a6f-286ba27843e2",
-        "result": "Focused retry of the two dark controls cases: 2/2 passed."
-      }
-    ],
-    "execution": "Bazel remote execution using a temporary test harness serving byte-identical copies of the listed site files and real pinned CDN resources.",
+    "question_cards_invocation": "https://app.buildbuddy.io/invocation/0af161ab-a1f8-492d-b5dc-bf6465b44e36",
+    "index_invocation": "https://app.buildbuddy.io/invocation/b3af6d2e-4241-41c6-9ad3-4d18dc913a5b",
+    "initial_index_attempt": "One shard timed out before the browser fixture started in the question-cards invocation; the separate index invocation passed all four shards, reusing three cached passes.",
+    "execution": "Bazel remote execution with a temporary harness serving byte-identical copies of the listed files and pinned CDN resources.",
     "cases": [
       "1280x900 light",
       "1280x900 dark",
@@ -28,26 +21,24 @@
       "390x844 dark"
     ],
     "checks": [
-      "Home index links and responsive layout",
-      "Rendered existing and new chart bars and no page-wide horizontal overflow",
-      "Mimir and Loki evidence disclosures and aggregate queries",
-      "Scenario arithmetic and mutually exclusive ClickHouse options",
-      "Decision filtering and persistence across reload",
-      "Live system color preference changes"
+      "All five question cards and source links",
+      "No page-wide horizontal overflow",
+      "System theme changes",
+      "Storage index link",
+      "Budget and mutually exclusive ClickHouse scenario controls",
+      "Decision filtering and persistence after reload"
     ],
     "captures": [
       "home-card",
-      "overview",
-      "mimir-age",
-      "mimir-series",
-      "loki-sources",
-      "mimir-details",
-      "audit",
-      "ksm",
-      "methods",
-      "scenario"
+      "langfuse-compression",
+      "seaweed-compression",
+      "zot-usage",
+      "zot-retention",
+      "clickhouse-resize",
+      "controls"
     ],
-    "result": "All cases passed across the two invocations; the matrix had two timeouts that passed in the focused retry."
+    "result": "Question cards and index suites passed in their respective invocations."
   },
-  "visual_review": "Inspected desktop and mobile screenshots in both themes, including the new charts and evidence panels. Query examples wrap on narrow screens."
+  "visual_review": "Inspected the follow-up cards on desktop and mobile in light and dark themes, and the root index; source links and values are legible.",
+  "prior_validation": "https://github.com/agentydragon/ducktape/blob/4eb9edee98/storage/remediation-validation.json"
 }

@@ -90,7 +90,7 @@
       "effort": "Medium–high",
       "confidence": "Measured age inventory; reclaim and archive overhead unmeasured",
       "risk": "Raw-only historical information; verify archive and replay before expiry.",
-      "detail": "The 30-day cutoff covers 420.792 GB logical. Two Seaweed copies give an approximate 841.6 GB upper bound before archive costs, vacuum and discard. Objects older than 90 days total 75.688 GB logical. Keep media and exports outside any raw-event lifecycle.",
+      "detail": "The 30-day cutoff covers 420.792 GB logical. Two Seaweed copies give an approximate 841.6 GB upper bound before archive costs, vacuum and discard. Seaweed compresses some underlying chunks, so actual physical reclaim can be substantially smaller than twice the S3 logical size. Objects older than 90 days total 75.688 GB logical. Keep media and exports outside any raw-event lifecycle.",
       "link": "https://github.com/agentydragon/ducktape/issues/15022"
     },
     {
@@ -102,8 +102,8 @@
       "gain_type": "Declared limit",
       "effort": "Medium",
       "confidence": "Measured 500-GiB claims; 116 GB used per filesystem",
-      "risk": "Rebuild one replica at a time with the other healthy and Keeper quorum intact.",
-      "detail": "This lowers the claim limits, not existing bytes. It is an alternative to removing a ClickHouse replica. Allow for growth and verify the rebuild path.",
+      "risk": "New smaller PVCs and full replica catch-up are needed; verify Keeper, schema, data and consumers. Old Retain volumes need separate recovery-gated retirement.",
+      "detail": "This lowers claim limits only after the old backing volumes are retired, not the current data bytes. Kubernetes cannot shrink the existing PVCs. With hard node anti-affinity, preserve both original hosts and two active replicas by using 103711 as a temporary third copy, then replacing each original replica in turn: 2→3→2→3→2→3→2. This requires three new PVCs/transfers and has not been rehearsed. It is an alternative to removing a ClickHouse replica.",
       "node_delta_gb": {
         "102453": -214.7483648,
         "103656": -214.7483648
@@ -147,9 +147,9 @@
       "gain": "107 GB limit; ~6 GB allocated",
       "gain_type": "Limit and physical",
       "effort": "Medium",
-      "confidence": "Measured current diskful allocation",
+      "confidence": "100-GiB claim and ~3.72 GiB filesystem use; observed active client traffic",
       "risk": "A node failure interrupts cache service and dependent image pulls until recovery.",
-      "detail": "Keep the copy on 102453 and replace the replicated claim with a single-copy claim; the current 103711 replica accounts for this estimated reduction. Confirm upstream refill and egress behavior.",
+      "detail": "Keep the copy on 102453 and replace the replicated claim with a single-copy claim; the current 103711 replica accounts for this estimated reduction. Zot is actively serving manifest and blob requests, so confirm upstream refill and egress behavior before accepting the loss of replica failover.",
       "node_delta_gb": {
         "103711": -107.3741824
       }
@@ -329,5 +329,150 @@
     "loki_ksm_sample_lines": 1500,
     "loki_ksm_chunk_ratio_pct": [4.1, 5.9],
     "sampling_note": "Mimir block age groups use maxTime of all 171 block metadata records and the file sizes on the filer, validated against a 963-object S3 listing. Blocks straddling a cutoff are included on the newer side. Mimir active-series counts are point-in-time estimates, not compressed bytes. Loki indexed byte estimates can include chunks overlapping interval boundaries, exclude streams without job, and are not physical bytes. Four five-minute windows estimate the audit share and chunk compression; nine 1,000-line node/time samples correlate audit fragments; neither is byte-weighted across the month. Four short KSM chunk samples estimate compression. No individual log lines or credentials were saved."
+  },
+  "followup_questions": {
+    "observed_utc": "2026-11-10 UTC",
+    "questions": [
+      {
+        "id": "langfuse-compression",
+        "question": "Is Langfuse S3 data compressed across objects?",
+        "answer": "Langfuse uploads plain JSON. SeaweedFS compresses some underlying chunks with gzip level 1; compression is per chunk, not across objects.",
+        "details": [
+          "All 36 sampled S3 responses had JSON content type, no Content-Encoding and plain-JSON prefixes; 35 were fully read and parsed. In the complete set of 43 OTEL objects listed for November 10 at inspection time, each had one chunk; 40 were stored compressed and three were not. Together their 17,068,868 S3-body bytes occupied 5,109,775 bytes of chunk bodies, excluding overhead and copies.",
+          "All 12 sampled historical legacy objects and 12 sampled historical OTEL objects had uncompressed chunk metadata. These bounded samples are not a bucket-wide census. Media and exports were empty, so their formats were not checked.",
+          "The 40 compressed chunks were independently decoded as gzip/DEFLATE. SeaweedFS 4.53 uses Go gzip BestSpeed (level 1) and keeps compressed output when it is sufficiently smaller; larger objects may span separate chunks. S3 transparently returns decompressed JSON. The earlier zstd/gzip chart compares fetched bodies and is not a measurement of incremental savings over current disk use. An OTEL JSON object contains a resource-spans batch, so repetitions inside a chunk can compress together, but no compression dictionary crosses object boundaries."
+        ],
+        "sources": [
+          {
+            "label": "Langfuse JSON upload",
+            "url": "https://github.com/langfuse/langfuse/blob/v4.67.0/packages/shared/src/server/services/StorageService.ts#L1008"
+          },
+          {
+            "label": "SeaweedFS gzip implementation",
+            "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/util/compression_stream.go#L19"
+          },
+          {
+            "label": "SeaweedFS independent chunk upload",
+            "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/operation/upload_chunked.go#L308"
+          },
+          {
+            "label": "Compression selection",
+            "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/operation/upload_content.go#L382"
+          },
+          {
+            "label": "Langfuse OTEL batch upload",
+            "url": "https://github.com/langfuse/langfuse/blob/v4.67.0/packages/shared/src/server/otel/OtelIngestionProcessor.ts#L346"
+          }
+        ]
+      },
+      {
+        "id": "seaweed-compression",
+        "question": "Does SeaweedFS S3 and its operator support compression?",
+        "answer": "Yes: SeaweedFS automatically gzip-compresses eligible S3 upload chunks. Our operator-managed deployment already uses that behavior.",
+        "details": [
+          "In SeaweedFS 4.53, the S3 uploader passes the Content-Type to its chunk uploader. Recognized types such as application/json are eligible; the compressed chunk is kept only if it is smaller than 90% of the original. Each chunk is compressed independently with gzip/DEFLATE at Go BestSpeed (level 1). S3 transparently returns the original object.",
+          "The operator chart 0.1.42 / controller 1.0.39 has no dedicated compression enable, algorithm, level, MIME-list or threshold setting. It exposes generic arguments and environment variables, but these do not create a missing native knob. It does expose filer.maxMB; ours is unset, so the S3 chunk size defaults to 4 MiB.",
+          "This applies to eligible new writes and does not retroactively compress old objects. Changing storage of old data would require an independently verified rewrite or migration; physical reclaim would also depend on compaction. Client-provided S3 Content-Encoding is separate from transparent storage compression."
+        ],
+        "sources": [
+          {
+            "label": "S3 upload path",
+            "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/s3api/s3api_object_handlers_put.go#L752"
+          },
+          {
+            "label": "Compression selection",
+            "url": "https://github.com/seaweedfs/seaweedfs/blob/4.53/weed/operation/upload_content.go#L382"
+          },
+          {
+            "label": "Operator filer maxMB",
+            "url": "https://github.com/seaweedfs/seaweedfs-operator/blob/seaweedfs-operator-0.1.42/api/v1/seaweed_types.go#L740"
+          },
+          {
+            "label": "Operator extra arguments",
+            "url": "https://github.com/seaweedfs/seaweedfs-operator/blob/seaweedfs-operator-0.1.42/api/v1/seaweed_types.go#L978"
+          }
+        ]
+      },
+      {
+        "id": "zot-usage",
+        "question": "Is the Zot pull-through cache actively used?",
+        "answer": "Yes: clients actively request manifests and image blobs from Zot. The available metrics cannot yet establish a cache-hit percentage or total bandwidth saved.",
+        "details": [
+          "For the 24 hours ending 2026-11-10 22:02:23 UTC, Loki recorded 1,782 successful client manifest GETs and about 105.7 GB of successful blob response bodies. Clients included containerd, Docker and BuildKit. Response bytes can include upstream misses and repeat transfers; they are not measured bytes saved.",
+          "A nearby 24-hour Prometheus window showed about 679.5 outer-cluster kubelet pull operations, while Zot counted about 3,949.7 manifest reads, including internal reads and HEAD requests. These have different units and coverage. Nested K3s, Docker and BuildBuddy consumers are not captured by the outer kubelet denominator, so do not divide the values to infer a hit rate.",
+          "The cache filesystem used about 3.72 GiB of its 100-GiB claim at inspection. The Grafana dashboard separates client requests, blob bytes, kubelet calls, cache size and GC; a universal all-pulls denominator requires additional runtime/source telemetry."
+        ],
+        "sources": [
+          {
+            "label": "Zot Grafana dashboard",
+            "url": "https://grafana.allegedly.works/d/zot-cache-image-pulls"
+          },
+          {
+            "label": "Grafana dashboard PR",
+            "url": "https://github.com/agentydragon/ducktape/pull/15542"
+          },
+          {
+            "label": "Zot cache configuration",
+            "url": "https://github.com/agentydragon/ducktape/blob/8b3bce5e45ecd478b24e7d24f06dacccafc628cc/cluster/k8s/oci-cache/config.json"
+          },
+          {
+            "label": "24-hour manifest query",
+            "url": "https://grafana.allegedly.works/explore?orgId=1&schemaVersion=1&panes=%7B%22A%22%3A%7B%22datasource%22%3A%22fc9a18f9-6955-4e40-95c1-66e32e7e8431%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22sum%28count_over_time%28%7Bnamespace%3D%5C%22oci-cache%5C%22%2Ccontainer%3D%5C%22zot%5C%22%7D+%7C%3D+%5C%22HTTP+API%5C%22+%7C+json+%7C+message%3D%5C%22HTTP+API%5C%22+%7C+method%3D%5C%22GET%5C%22+%7C+path%3D~%5C%22%2Fv2%2F.%2A%2Fmanifests%2F.%2A%5C%22+%7C+statusCode%3D%5C%22200%5C%22+%7C+__error__%3D%5C%22%5C%22+%5B24h%5D%29%29%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22fc9a18f9-6955-4e40-95c1-66e32e7e8431%22%7D%2C%22instant%22%3Atrue%2C%22queryType%22%3A%22instant%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%222026-11-09T22%3A02%3A23%2B00%3A00%22%2C%22to%22%3A%222026-11-10T22%3A02%3A23%2B00%3A00%22%7D%7D%7D"
+          },
+          {
+            "label": "24-hour blob-byte query",
+            "url": "https://grafana.allegedly.works/explore?orgId=1&schemaVersion=1&panes=%7B%22A%22%3A%7B%22datasource%22%3A%22fc9a18f9-6955-4e40-95c1-66e32e7e8431%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22sum%28sum_over_time%28%7Bnamespace%3D%5C%22oci-cache%5C%22%2Ccontainer%3D%5C%22zot%5C%22%7D+%7C%3D+%5C%22HTTP+API%5C%22+%7C+json+%7C+message%3D%5C%22HTTP+API%5C%22+%7C+method%3D%5C%22GET%5C%22+%7C+path%3D~%5C%22%2Fv2%2F.%2A%2Fblobs%2F.%2A%5C%22+%7C+statusCode%3D~%5C%22200%7C206%5C%22+%7C+unwrap+bodySize+%7C+__error__%3D%5C%22%5C%22+%5B24h%5D%29%29%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22fc9a18f9-6955-4e40-95c1-66e32e7e8431%22%7D%2C%22instant%22%3Atrue%2C%22queryType%22%3A%22instant%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%222026-11-09T22%3A02%3A23%2B00%3A00%22%2C%22to%22%3A%222026-11-10T22%3A02%3A23%2B00%3A00%22%7D%7D%7D"
+          }
+        ]
+      },
+      {
+        "id": "zot-retention",
+        "question": "Does Zot have a retention policy?",
+        "answer": "Yes. GC is enabled with a 24-hour interval, and a policy retains recently used tags per repository.",
+        "details": [
+          "For every repository, tags are kept if pulled within 720 hours (30 days) OR among the 20 most recently pulled. Other tags are eligible for removal. Unreferenced untagged manifests are eligible after the 24-hour retention delay; orphan blobs use gcDelay of one hour. Referenced multi-architecture children are preserved; there is no hard byte cap, and the top 20 tags can remain indefinitely.",
+          "The process is active: over the sampled 24-hour window the GC counters increased by about 139 deleted blobs and 59 deleted manifests. Eleven successful repository jobs appeared in one daily sweep; the GC run counter is per repository, not eleven global sweeps."
+        ],
+        "sources": [
+          {
+            "label": "Pinned cluster configuration",
+            "url": "https://github.com/agentydragon/ducktape/blob/8b3bce5e45ecd478b24e7d24f06dacccafc628cc/cluster/k8s/oci-cache/config.json"
+          },
+          {
+            "label": "Zot 2.1.21 GC implementation",
+            "url": "https://github.com/project-zot/zot/blob/v2.1.21/pkg/storage/gc/gc.go"
+          },
+          {
+            "label": "Zot retention matching",
+            "url": "https://github.com/project-zot/zot/blob/v2.1.21/pkg/retention/retention.go#L238"
+          }
+        ]
+      },
+      {
+        "id": "clickhouse-resize",
+        "question": "Can we shrink the existing ClickHouse PVCs?",
+        "answer": "Kubernetes does not support shrinking a PVC in place. Use smaller replacement volumes; four simultaneous replicas are unnecessary.",
+        "details": [
+          "The two existing 500-GiB replicas use about 116 GB each. Replacing them with 300-GiB claims would reduce declared limits by about 215 GB per replica only after the old backing resources are actually retired; it does not immediately free 200 GiB of data per replica.",
+          "Hard node anti-affinity permits at most three replicas on the three HDD hosts. To end on both original hosts while keeping two running replicas, add a temporary replica on 103711, replace the old replica on 103656, replace the old replica on 102453, then retire the temporary one. The active replica count is 2→3→2→3→2→3→2: three new PVCs and transfers, at most three active replicas.",
+          "Only two new replicas would finish on 103711 and one original host. Alternatively, replacing one original replica at a time without the temporary third copy would leave only one copy during each rebuild, reducing fault tolerance.",
+          "This is a proposed sequence, not a rehearsed migration. A 300-GiB claim on 103711 passed read-only capacity checks, but temporarily raises its already-overcommitted limits. Verify Keeper quorum, schema and view definitions, replication catch-up and consumer behavior before removing each old copy. Retain leaves old volumes behind; their removal is a separate recovery-gated step. LINSTOR supports some lower-level shrinking, but that is not a supported Kubernetes PVC shrink path. If both old volumes and the temporary volume are retained through the rotation, the five volume limits peak at 1,900 GiB; physical allocation is a separate measure."
+        ],
+        "sources": [
+          {
+            "label": "Kubernetes PVC resizing",
+            "url": "https://kubernetes.io/docs/concepts/storage/persistent-volumes/"
+          },
+          {
+            "label": "Altinity operator schema discovery",
+            "url": "https://github.com/Altinity/clickhouse-operator/blob/0.27.3/pkg/model/chi/schemer/sql.go"
+          },
+          {
+            "label": "LINSTOR volume management",
+            "url": "https://linbit.com/drbd-user-guide/linstor-guide-1_0-en/"
+          }
+        ]
+      }
+    ]
   }
 }
