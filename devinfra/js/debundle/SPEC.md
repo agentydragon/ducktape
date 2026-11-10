@@ -2355,7 +2355,7 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
 - `inconclusive`: a probe suggests the annotation is unnecessary but does not
   establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
   the fact it supported may have another derivation. While any chunk is
-  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint the classifier infers without the hint
+  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint whose name no statement of its chunk reads is `inferable` (`never_consumed`): the classifier consults a hint only at a direct call of the name and the code graph only at a read of the name as an import. A read hint the classifier infers without the hint
   (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
   hint are not rerun.
 

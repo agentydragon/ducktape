@@ -274,6 +274,14 @@ fn probe_annotations(
         .filter(|target| {
             chunks.is_empty() || target.chunk().is_some_and(|chunk| chunks.contains(chunk))
         })
+        // Provenance already decided these exactly.
+        .filter(|target| {
+            !report.findings.iter().any(|finding| {
+                finding.annotation == target.annotation()
+                    && finding.chunk.as_deref() == target.chunk()
+                    && matches!(finding.verdict, InferenceVerdict::Inferable { .. })
+            })
+        })
         .collect();
     if targets.is_empty() {
         return Ok(());

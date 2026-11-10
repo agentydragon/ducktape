@@ -232,8 +232,9 @@ to one exact source/spec pair and held to the interactive budget in
   outside the interpreter's hot paths, one kind per change, then lint it the
   same way (never consumed → `inferable`, consumed → probe): the `node_global`
   alias, the `heap_contents` / `at_init_fallback` native-input exits, the
-  loader keys, and a per-statement declared-purity use list written at each
-  classifier arm (never a `ProofDependencies` field). The hot-path kinds
+  loader keys, and, for `purity: pure` hints read by name, a per-statement use
+  list written at each classifier arm (never a `ProofDependencies` field);
+  unread hints are already linted. The hot-path kinds
   (`reentry_free_builtin_modules` / `_bun_modules` static closure,
   `initializer_call_effect_inputs`, `deferred_global_publications`,
   `initializer_purity`, `no_reentry_*`) stay probe-only until the

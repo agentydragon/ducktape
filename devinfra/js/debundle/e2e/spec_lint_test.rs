@@ -185,3 +185,57 @@ fn lint_reports_nothing_for_consumed_annotations() {
     );
     assert_eq!(lint(opts), Vec::new());
 }
+
+/// A `purity: pure` hint whose name no statement of its chunk reads is never
+/// consulted (the classifier reads a hint only at a direct call of the name):
+/// it is `inferable` without a probe, and the run emits the same tree without
+/// that hint. `seven` is called, so its hint stays a classifier lead.
+#[test]
+fn unread_purity_hint_is_inferable_from_provenance() {
+    const UNREAD: &str = "function seven() { return 7; }\nfunction unused() { return 8; }\nconsole.log(seven());\nexport { seven, unused };\n";
+    // `seven` keeps its hint; only `unused`'s varies.
+    let opts = |unused_hinted: bool| {
+        let unused = Member::new("unused");
+        FixtureOpts::new(
+            UNREAD,
+            vec![logical_module(
+                "helpers/math",
+                &[
+                    Member::new("seven").with_purity(MemberPurity::Pure),
+                    if unused_hinted {
+                        unused.with_purity(MemberPurity::Pure)
+                    } else {
+                        unused
+                    },
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+    };
+    let findings = lint(opts(true));
+    let verdict = |name: &str| {
+        findings
+            .iter()
+            .find_map(|finding| match &finding.annotation {
+                LintedAnnotation::PurityHint {
+                    owner: PurityHintOwner::LogicalMember(member),
+                } if member.name == name => Some(finding.verdict.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no finding for {name}: {findings:#?}"))
+    };
+    assert_eq!(
+        verdict("unused"),
+        InferenceVerdict::Inferable {
+            reason: InferableReason::NeverConsumed
+        }
+    );
+    assert!(
+        matches!(verdict("seven"), InferenceVerdict::Inconclusive { .. }),
+        "{findings:#?}"
+    );
+    assert_same_tree(
+        &run_fixture(opts(false)).out_root,
+        &run_fixture(opts(true)).out_root,
+    );
+}
