@@ -9,10 +9,12 @@ use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
 use super::super::local_operations::LocalBody;
+use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use super::super::value_model::{Context, ValueExpr};
+use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKind};
 use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
@@ -313,6 +315,7 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
+    let root_array_iteration = root_array_iteration(executor, calls);
     // Every call of the root is a direct call of an imported binding that
     // carries a published foreign call summary. The ordered lane substitutes
     // each summary, so it runs no provider or application code.
@@ -411,8 +414,9 @@ pub(super) fn prepare<'source>(
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
         });
-    // Every other initializer whose root calls are all local: a call with
-    // arguments, an IIFE, a call inside a comma. The body phase runs it
+    // Every other initializer whose root calls are all local (a call with
+    // arguments, an IIFE, a call inside a comma) or whose one call is an
+    // array iteration row. The body phase runs it
     // through the kernel and keeps that execution only if it seals the owner.
     let attempted_initializer =
         (ordered_initializer.is_none() && initializer_source.is_none() && root_shape)
@@ -421,7 +425,7 @@ pub(super) fn prepare<'source>(
             .filter(admitted_body)
             .filter(|_| {
                 calls.iter().any(|call| call.kind == CallKind::Call)
-                    && executor.ordered_root_calls_are_local(calls)
+                    && (executor.ordered_root_calls_are_local(calls) || root_array_iteration)
             })
             .and_then(|body| {
                 Some((
@@ -462,6 +466,66 @@ pub(super) fn prepare<'source>(
         attempted_initializer,
         effect_initializer_source,
     }
+}
+
+/// Whether the root's one invocation is worth attempting as an
+/// `Array.prototype` iteration row (`native/array_iteration.rs`): a supported
+/// row over a module binding holding one dense literal array, with a local
+/// callback that has no live captures. A cheap filter with no side effects:
+/// the attempt runs through `body::execute`, which keeps the kernel
+/// execution only if it seals the owner and otherwise rewinds to the flat
+/// lane (`plans/kernel_design.md` § Root admission). The row itself proves
+/// the method, the receiver and every callback.
+fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
+    let invocations: Vec<_> = calls
+        .iter()
+        .filter(|call| {
+            call.caller.is_none()
+                && !matches!(
+                    call.kind,
+                    CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
+                )
+        })
+        .collect();
+    let [call] = invocations.as_slice() else {
+        return false;
+    };
+    if call.kind != CallKind::Call || call.has_spread {
+        return false;
+    }
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = &call.callee else {
+        return false;
+    };
+    let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+        return false;
+    };
+    let index = executor.inputs.index;
+    let Some(proof) = index.array_iterations.get(&CallSite::from(call.span)) else {
+        return false;
+    };
+    if proof.row.member != property || !supported_row(proof.row.result, call.args.len()) {
+        return false;
+    }
+    let prefix = &executor.state.world.module.prefix_values;
+    let callback = match call.args.first() {
+        Some(ValueExpr::Alloc(Kind::Function, key)) => {
+            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))])
+        }
+        Some(ValueExpr::Binding(binding)) if executor.initialized_local_binding(binding) => {
+            match prefix.get(binding) {
+                Some(values) => values.clone(),
+                None => return false,
+            }
+        }
+        _ => return false,
+    };
+    admitted_callback(index, &callback).is_ok()
+        && executor.initialized_local_binding(receiver)
+        && prefix.get(receiver).is_some_and(|values| {
+            matches!(values.iter().collect::<Vec<_>>().as_slice(),
+                [AbstractValue::Value(Value::Alloc(Kind::Object, array))]
+                    if executor.state.world.arrays.dense.contains_key(array))
+        })
 }
 
 /// Canonical source identity is independent of leaf/value admission. Retain

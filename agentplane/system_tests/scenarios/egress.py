@@ -217,7 +217,7 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
     refused = await _decision_for(cluster, client, view.target.name, view.target.uid, UNLISTED_HOST)
     assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
-    assert refused.reason == "no-rule", f"{refused!r}"
+    assert refused.reason == Decision.REASON_NO_RULE, f"{refused!r}"
 
     kubernetes = await _decision_for(cluster, client, view.target.name, view.target.uid, KUBERNETES_HOST)
     assert kubernetes.outcome == Decision.OUTCOME_ALLOW, f"{kubernetes!r}"
@@ -486,7 +486,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
             cluster, client, first.target.name, first.target.uid, KUBERNETES_HOST, after=after
         )
         assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
-        assert refused.reason == "placeholder-unresolved", f"{refused!r}"
+        assert refused.reason == Decision.REASON_PLACEHOLDER_UNRESOLVED, f"{refused!r}"
         assert await _whoami(cluster, second, credential) == username
     finally:
         await cluster.kubectl("delete", "serviceaccount", account, "-n", accounts, "--ignore-not-found")

@@ -6,7 +6,8 @@ the roster: one JS-list line and one `inline_in_entry` policy per chunk the
 template does not already configure. A chunk named in the alias file is copied
 under that stable ID, found through the esbuild metafile as the output that
 bundles the named module, and listed against its hashed name so imports of the
-hashed path resolve to it.
+hashed path resolve to it. The page and the bundle's other assets are copied
+beside the chunks, where the browser harness reads its snapshot.
 """
 
 import argparse
@@ -41,6 +42,7 @@ def main() -> None:
     parser.add_argument("--inputs-root", required=True, help="Bin-relative path of --chunks-dir.")
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--aliases", type=Path, required=True)
+    parser.add_argument("--index-html", type=Path, required=True)
     parser.add_argument("--js-list", type=Path, required=True)
     parser.add_argument("--js-list-path", required=True, help="Bin-relative path of --js-list.")
     parser.add_argument("--config", type=Path, required=True)
@@ -55,6 +57,13 @@ def main() -> None:
     for chunk_id, chunk in zip(chunk_ids, chunks, strict=True):
         (args.chunks_dir / f"{chunk_id}.js").parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(args.bundle_dir / chunk, args.chunks_dir / f"{chunk_id}.js")
+    for asset in args.bundle_dir.rglob("*"):
+        if asset.is_file() and asset.suffix != ".js":
+            target = args.chunks_dir / asset.relative_to(args.bundle_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(asset, target)
+    shutil.copyfile(args.index_html, args.chunks_dir / "index.html")
+    (args.chunks_dir / "asset-summary.json").write_text(json.dumps({"entryPoints": {"html": "index.html"}}))
     args.js_list.write_text(
         "".join(
             f"{chunk_id}.js\t{chunk}\n" if chunk in aliases else f"{chunk}\n"
@@ -64,6 +73,7 @@ def main() -> None:
 
     config = yaml.safe_load(args.template.read_text())
     config["inputs"] = {"root": args.inputs_root, "js_list_path": args.js_list_path}
+    config["browser_harness"] = {"asset_summary_path": f"{args.inputs_root}/asset-summary.json"}
     policies = config.setdefault("unassigned_mode", {})
     for chunk_id in chunk_ids:
         policies.setdefault(chunk_id, {"kind": "inline_in_entry"})

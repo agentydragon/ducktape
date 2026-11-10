@@ -188,7 +188,7 @@ func newLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	proxyClientTLS.NextProtos = []string{"http/1.1"}
-	svids, err := resolver.New(workload.Objects, []string{runner.Namespace})
+	svids, err := resolver.New(workload.Objects, []string{runner.Namespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

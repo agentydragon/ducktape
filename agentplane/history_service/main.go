@@ -152,7 +152,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		if err != nil {
 			return err
 		}
-		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces)
+		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, nil)
 		if err != nil {
 			return err
 		}

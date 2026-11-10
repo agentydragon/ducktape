@@ -73,6 +73,17 @@ async def _open_phone_navigation(page: Page) -> None:
         await page.get_by_role("button", name="Toggle navigation").click()
 
 
+async def _expect_notice_badges(page: Page, *, stale: bool) -> None:
+    """The fixture's unprocessed-count and failed-delivery badges in the sidebar, all
+    painted, and faded exactly when the notice stream is down."""
+    badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
+    for state, count in [("pending", 4), ("error", 2)]:
+        await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
+    for badge in await badges.all():
+        await expect(badge).to_be_visible()
+        await expect(badge).to_have_css("opacity", "0.5" if stale else "1")
+
+
 async def _open_settings(page: Page) -> None:
     await _open_phone_navigation(page)
     await page.get_by_role("button", name="Settings").click()
