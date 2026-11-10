@@ -15,9 +15,8 @@ Pod recipe (`cluster/cdk8s/agentplane/sandbox_pod.py`) and nothing else.
 **A box runs under its caller's ServiceAccount.** The account is the Pod's execution subject and
 the subject of the box's own `WorkloadCredential`, which the service requests per box, named after
 its Pod and bound to it ([the record contract](../../docs/workload_authentication.md#workloadcredentials)).
-The issued Secret is mounted into the egress sidecar alone, which still authenticates the proxy hop
-with a Pod-bound bearer until the templates select the SVID; policy remains the caller's
-`PolicyBinding`s. Workload containers receive only the local proxy address and public trust bundle.
+The issued Secret is mounted into the egress sidecar alone, which presents it to the proxy and the
+egress rules route; policy remains the caller's `PolicyBinding`s. Workload containers receive only the local proxy address and public trust bundle.
 They mount neither a token nor an SVID.
 
 The guard the rule rests on: the ServiceAccount comes from `ExecutionRequest.caller`, which the

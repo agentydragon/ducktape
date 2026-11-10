@@ -494,6 +494,11 @@ let identities: Identity[] = [
   { name: "git-origin-identity", description: "Git-origin identity, applied by Flux", git: true },
   { name: "identity-with-an-expiring-binding", description: "Identity with an expiring binding it owns", git: false },
   { name: "referenced-identity", description: "Referenced identity: an operator binding names it", git: false },
+  {
+    name: "credential-referenced-identity",
+    description: "Credential-referenced identity: a workload credential acts as it",
+    git: false,
+  },
 ].map(({ name, description, git }) =>
   create(IdentitySchema, {
     identity: { namespace: "agentplane-visual", name, uid: `identity-${name}` },
@@ -547,7 +552,12 @@ let identityBindings: PolicyBinding[] = [
   })
 );
 
-/** The Policy Service's DeleteIdentity: its Flux and unowned-binding refusals, then garbage collection. */
+/** The WorkloadCredentials acting as an identity, which the page cannot see but the Policy Service refuses on. */
+const identityCredentials = [
+  { credential: "agentplane-visual/standing-agent", identity: "credential-referenced-identity" },
+];
+
+/** The Policy Service's DeleteIdentity: its Flux, unowned-binding and credential refusals, then garbage collection. */
 function deleteIdentity(name: string, uid: string | null): unknown {
   const identity = identities.find((item) => item.identity?.name === name);
   if (!identity) return undefined;
@@ -559,19 +569,27 @@ function deleteIdentity(name: string, uid: string | null): unknown {
   const referencing = identityBindings.filter(
     (binding) => binding.spec?.subject?.identity?.name === name && !owned(binding)
   );
-  if (referencing.length)
+  const credentials = identityCredentials.filter((item) => item.identity === name);
+  if (referencing.length || credentials.length)
     return Response.json(
       {
         code: 9,
-        message: "Identity is named by PolicyBindings it does not own",
+        message: "Identity is named by PolicyBindings it does not own or WorkloadCredentials",
         details: [
           {
             "@type": "type.googleapis.com/google.rpc.PreconditionFailure",
-            violations: referencing.map((binding) => ({
-              type: "PolicyBinding",
-              subject: binding.identity?.name,
-              description: "names this Identity and is not owned by it",
-            })),
+            violations: [
+              ...referencing.map((binding) => ({
+                type: "PolicyBinding",
+                subject: binding.identity?.name,
+                description: "names this Identity and is not owned by it",
+              })),
+              ...credentials.map(({ credential }) => ({
+                type: "WorkloadCredential",
+                subject: credential,
+                description: "acts as this Identity",
+              })),
+            ],
           },
         ],
       },

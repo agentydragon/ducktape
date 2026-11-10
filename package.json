@@ -59,6 +59,7 @@
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.15.0",
     "@eslint/js": "^9",
+    "@excalidraw/excalidraw": "0.18.1",
     "@tailwindcss/cli": "^4.3.3",
     "@types/dompurify": "^3.0.0",
     "@types/node": "^24.0.0",
@@ -68,6 +69,7 @@
     "@typescript-eslint/parser": "^8.70.0",
     "@vitest/eslint-plugin": "^1.6.27",
     "cdk8s-cli": "^2.207.58",
+    "clsx": "1.1.1",
     "esbuild": "^0.28.0",
     "eslint": "^9",
     "eslint-plugin-import-x": "^4.17.1",
@@ -82,6 +84,7 @@
     "openapi-typescript": "^7.10.1",
     "prettier": "^3.9.10",
     "quicktype-core": "26.0.0",
+    "roughjs": "4.6.4",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.0",
     "vite": "^8.0.0",

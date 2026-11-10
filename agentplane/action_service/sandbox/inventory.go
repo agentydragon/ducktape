@@ -49,7 +49,8 @@ const defaultContainerAnnotation = "kubectl.kubernetes.io/default-container"
 // egressSidecar is the egress sidecar's container, as agentplane/egress/sidecar_config.py names it.
 const egressSidecar = "egress-sidecar"
 
-// The box's SVID, mounted into its egress sidecar alone, where a template's sidecar settings name its files.
+// The box's SVID, mounted into its egress sidecar alone, where the command box templates' sidecar settings read it
+// (cluster/cdk8s/agentplane/command_sandbox.py, `_SVID_DIR`).
 const (
 	svidVolume    = "workload-svid"
 	svidMountPath = "/run/agentplane/workload-svid"

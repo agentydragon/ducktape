@@ -26,6 +26,8 @@
 //!   `classify_var_decl_purity`, `classify_class_static_purity`, and the
 //!   result-primitive / safe-key predicates.
 //! - `native_rows` — the purity projection of builtin summary rows.
+//! - `order_dependent_reads` — reads of cells whose writers the reading
+//!   chunk's dependency graph cannot order.
 
 pub(crate) use crate::analysis_inputs::ProofDependencies;
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
@@ -49,6 +51,7 @@ mod effect_inference;
 mod fluent;
 mod fresh_record;
 mod native_rows;
+mod order_dependent_reads;
 mod purity_type;
 mod redundant_hints;
 pub mod saved;
@@ -62,6 +65,7 @@ pub(crate) use effect_inference::*;
 pub(crate) use fluent::*;
 pub(crate) use fresh_record::*;
 pub(crate) use native_rows::*;
+pub(crate) use order_dependent_reads::*;
 pub(crate) use purity_type::Effects;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;

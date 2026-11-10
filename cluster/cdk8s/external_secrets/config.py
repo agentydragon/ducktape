@@ -99,8 +99,8 @@ def chart(app: App) -> Chart:
     # Before adding a namespace, check what it actually needs. A namespace that only wants
     # the forgejo-images-creds pull secret belongs on the scoped
     # kubernetes-forgejo-images-secret-store instead — that grants one dockerconfigjson,
-    # where an entry here grants every Secret in flux-system. haku-egress-proxy and
-    # osm-mcp were each on this list for exactly that reason and have moved.
+    # where an entry here grants every Secret in flux-system. osm-mcp was on this
+    # list for exactly that reason and has moved.
     _store(
         chart,
         "kubernetes-flux-system-secret-store",
@@ -136,8 +136,8 @@ def chart(app: App) -> Chart:
             "grocy-sf",
             "grocy-vallejo",
             "ha-mcp",
+            "haku-ci",
             "haku-console",
-            "haku-egress-proxy",
             "haku-mailbox",
             "home-assistant",
             "litellm",

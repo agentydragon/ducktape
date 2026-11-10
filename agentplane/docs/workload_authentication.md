@@ -69,7 +69,30 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
 - **Subjects** change only together with a new binding, and `spec.pod` only with a new binding
   (CRD transition rules), so a running incarnation is never re-pointed.
 - **Who writes:** the Sandbox Controller and the Action Service may create, update and delete records
-  in their namespace; only the Policy Controller may write `workloadcredentials/status`.
+  in their namespace, and Flux applies standing ones; only the Policy Controller may write
+  `workloadcredentials/status`.
+
+### Standing workloads
+
+A record with no owner and no binding is standing: a workload with replicas, not a controller-owned
+incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet), Anki's (`haku-anki`, a
+Deployment) and Jupyter's (`haku-jupyter`, a Deployment) into `haku-sandbox`
+(`cluster/cdk8s/haku/ui_egress.py`), all with subject `haku-ui`;
+Haku's deployer Role cannot write a record. The issuer keeps its one credential ID and names its
+Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress sidecar alone.
+Any Pod Haku creates in `haku-sandbox` could mount it, the reach the `haku-ui` ServiceAccount
+already gives. haku-ci's egress relay (`haku-ci-egress`, a Deployment in `haku-ci`;
+`cluster/cdk8s/haku_ci/egress_gateway.py`) is one too: its subject is its own ServiceAccount, and
+only the relay mounts `svid-haku-ci-egress`, so builds in the privileged runner Pods never hold it.
+
+Every replica presents the same SVID and proves no Pod: the proxy drops any Pod token such a caller
+forwards, and decisions record no source Pod ([egress SPEC](../egress/SPEC.md)). This is weaker
+than a per-incarnation credential. Revocation is deleting the record, which Flux recreates with a
+fresh ID, or a Flux prune.
+
+**Gotcha:** a running sidecar refuses a reloaded SVID whose URI differs from the first it loaded
+(`environment_runtime_transport` pins it), so after a record is recreated the workload regains
+egress only on a rollout restart. Routine renewals keep the URI.
 
 ### How a verifier resolves a peer
 
@@ -145,8 +168,7 @@ alone, so a `cluster-internal-ca` leaf naming an Agentplane URI authenticates in
 
 - Listeners verifying client SVIDs: a leaf naming a live Sandbox's URI does not authenticate, so the
   live record lookup is not the only check. A runner's control listener refuses one naming the
-  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding), except
-  Firecracker runners).
+  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding)).
 - Clients verifying server SVIDs: the Gateway dialing runners (`runner_security`), the egress sidecar
   and launcher relay dialing the proxy and services, and backend clients and probes through
   `cluster/cdk8s/agentplane/workload_tls.py`. A leaf at a runner's or service's address naming its URI
@@ -168,10 +190,9 @@ other Certificate against the issuer is refused. Certificates against other issu
 ## TokenReview and projected credentials
 
 The central egress proxy's `forward` listener requires TLS and allows either a Runtime SVID or a
-Kubernetes bearer with the `agentplane-egress` audience. Action command/build boxes use a
-Pod-bound bearer for this hop; the proxy verifies it with TokenReview and resolves the caller's
-ServiceAccount and Pod binding. Sandbox sidecars select the SVID mode. Sandbox Runtime templates do
-not project the proxy hop bearer.
+Kubernetes bearer with the `agentplane-egress` audience, which it verifies with TokenReview. No
+deployed workload uses the bearer: Sandbox, command/build box and standing-workload sidecars select
+the SVID mode, and their templates do not project the proxy hop bearer.
 
 `projectedWorkloadToken` is a separate destination credential. A sidecar offers its explicit
 destination-audience token, and the proxy substitutes it only after TokenReview binds it to the same
@@ -209,10 +230,8 @@ metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 
 ## Non-Sandbox and future callers
 
-Action command/build boxes and Haku UI/Anki retain Pod-bound bearer credentials over verified TLS;
-the relevant listener audience and service method policy still decide whether each call is admitted.
-These configured workload paths remain active while Sandbox traffic uses SVIDs. The independent
-identity and SVID lifecycle for non-Sandbox and future callers remains deferred.
+No non-Sandbox workload holds a proxy-hop bearer: command/build boxes and standing workloads present
+their `WorkloadCredential` SVIDs.
 Do not infer that arbitrary callers are admitted, or treat an egress placeholder, source IP, or
 caller-supplied identity header as authentication.
 

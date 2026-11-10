@@ -67,7 +67,7 @@ def _command(*args: str) -> str:
     return shlex.join([CLI, "--json", *args])
 
 
-def _submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
+def submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
     """The `agentplane` arguments that submit one Action request under a fresh key."""
     return [
         "actions",
@@ -144,7 +144,7 @@ class ScriptedAgent:
     async def submit(
         self, group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool
     ) -> action_service_pb2.ActionRequest:
-        return await self.run(*_submission(group, action, arguments, title=title, wait=wait))
+        return await self.run(*submission(group, action, arguments, title=title, wait=wait))
 
     async def submit_echo(self, group: str, message: str, *, wait: bool) -> action_service_pb2.ActionRequest:
         return await self.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
@@ -706,7 +706,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         # The launched Sandbox's turn asks for the same read with its own account, which no grant names.
         own = await _play_cli_turn(
             scripted.model(view.kubernetes_diagnostics.pod.name, harness),
-            *_submission(
+            *submission(
                 ORCHESTRATION_GROUP,
                 "read_turns",
                 {**session, "count": 1},

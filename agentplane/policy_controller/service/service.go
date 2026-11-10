@@ -21,6 +21,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -48,13 +49,16 @@ const (
 type Service struct {
 	policypb.UnimplementedPolicyServiceServer
 	namespace string
-	objects   client.WithWatch
-	sandboxes *sandboxreader.Reader
-	readers   sets.Set[auth.Account]
-	writers   []auth.Account
+	// workloadNamespaces are where the workload-identity issuer serves WorkloadCredentials; none
+	// when it is off, since no record is issued then.
+	workloadNamespaces []string
+	objects            client.WithWatch
+	sandboxes          *sandboxreader.Reader
+	readers            sets.Set[auth.Account]
+	writers            []auth.Account
 }
 
-func New(namespace string, objects client.WithWatch, readers, writers []auth.Account) (*Service, error) {
+func New(namespace string, workloadNamespaces []string, objects client.WithWatch, readers, writers []auth.Account) (*Service, error) {
 	if namespace == "" || objects == nil {
 		return nil, errors.New("policy namespace and Kubernetes watch client are required")
 	}
@@ -62,7 +66,10 @@ func New(namespace string, objects client.WithWatch, readers, writers []auth.Acc
 	if err != nil {
 		return nil, err
 	}
-	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, readers: sets.New(readers...), writers: slices.Clone(writers)}, nil
+	return &Service{
+		namespace: namespace, workloadNamespaces: slices.Sorted(slices.Values(workloadNamespaces)), objects: objects,
+		sandboxes: sandboxes, readers: sets.New(readers...), writers: slices.Clone(writers),
+	}, nil
 }
 
 func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Methods {
@@ -475,8 +482,6 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		slog.ErrorContext(ctx, "PolicyService PolicyBinding read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "PolicyBinding inventory is unavailable")
 	}
-	// TODO: also refuse while a WorkloadCredential's identity subject names this Identity, as a
-	// violation of its own type that the app's identity page can name beside the bindings.
 	var referencing []string
 	for _, binding := range bindings.Items {
 		bound := binding.Spec.Subject.Identity
@@ -485,15 +490,42 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		}
 		referencing = append(referencing, binding.Name)
 	}
-	if len(referencing) > 0 {
-		slices.Sort(referencing)
+	slices.Sort(referencing)
+	// A credential acting as this incarnation; its subject's UID fences it from any other.
+	var credentials []string
+	for _, namespace := range s.workloadNamespaces {
+		var list workloadapi.WorkloadCredentialList
+		if err := s.objects.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+			slog.ErrorContext(ctx, "PolicyService WorkloadCredential read failed", "namespace", namespace, "error", err)
+			return nil, status.Error(codes.Unavailable, "WorkloadCredential inventory is unavailable")
+		}
+		for _, credential := range list.Items {
+			if subject := credential.Spec.Subject.Identity; subject != nil && subject.Name == identity.Name && subject.UID == identity.UID {
+				credentials = append(credentials, credential.Namespace+"/"+credential.Name)
+			}
+		}
+	}
+	slices.Sort(credentials)
+	if len(referencing) > 0 || len(credentials) > 0 {
 		failure := &errdetails.PreconditionFailure{}
+		var named []string
+		if len(referencing) > 0 {
+			named = append(named, "PolicyBindings it does not own: "+strings.Join(referencing, ", "))
+		}
 		for _, name := range referencing {
 			failure.Violations = append(failure.Violations, &errdetails.PreconditionFailure_Violation{
 				Type: "PolicyBinding", Subject: name, Description: "names this Identity and is not owned by it",
 			})
 		}
-		refusal, err := status.New(codes.FailedPrecondition, "Identity is named by PolicyBindings it does not own: "+strings.Join(referencing, ", ")).WithDetails(failure)
+		if len(credentials) > 0 {
+			named = append(named, "WorkloadCredentials: "+strings.Join(credentials, ", "))
+		}
+		for _, name := range credentials {
+			failure.Violations = append(failure.Violations, &errdetails.PreconditionFailure_Violation{
+				Type: workloadapi.Kind, Subject: name, Description: "acts as this Identity",
+			})
+		}
+		refusal, err := status.New(codes.FailedPrecondition, "Identity is named by "+strings.Join(named, "; and by ")).WithDetails(failure)
 		if err != nil {
 			return nil, status.Error(codes.Internal, "Identity refusal could not be encoded")
 		}

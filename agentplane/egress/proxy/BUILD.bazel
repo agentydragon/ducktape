@@ -8,6 +8,7 @@ go_library(
         "passthrough.go",
         "proxy.go",
         "tunnel.go",
+        "upstreams.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/proxy",
     visibility = ["//agentplane/egress:__subpackages__"],

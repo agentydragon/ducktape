@@ -38,6 +38,25 @@ async def _focus(page: Page, target: Locator) -> None:
     await _in_viewport(target)
 
 
+async def _mount_code_blocks(page: Page) -> None:
+    """Mount every lazy `CodeBlock` once, so the layout no longer depends on the scroll path taken.
+
+    A `CodeBlock` mounts its editor only once it nears the viewport; until then a line-count
+    placeholder stands in at a different height. Which placeholders an IntersectionObserver saw
+    while earlier clicks scrolled the page is timing, so the height above a focused target varied
+    between runs. A `releaseWhenFar` block keeps its measured height when it unmounts again, so once
+    every block has mounted the layout is fixed.
+    """
+    for placeholder in await page.locator(".ui-code-block-placeholder").element_handles():
+        await placeholder.evaluate("element => element.scrollIntoView({ block: 'center' })")
+        await page.wait_for_function(
+            "element => !element.isConnected || !element.classList.contains('ui-code-block-placeholder')",
+            arg=placeholder,
+        )
+        # The editor's first measurement can precede its settled height, which a far block keeps.
+        await wait_for_stable(page)
+
+
 async def _open_raw_switches(page: Page) -> None:
     switches = page.locator("label").filter(has_text=re.compile(r"^Raw$"))
     await expect(switches.first).to_be_visible()

@@ -1114,6 +1114,114 @@ pub(super) struct ExecutionState {
     active: BTreeSet<ActiveInvocation>,
     /// Context lookup only; completed outcomes live in the shared fact store.
     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
+    export_callback_memos: ExportCallbackMemos,
+}
+
+/// Which export surface an export-callback walk starts from.
+#[derive(Clone, Copy)]
+enum ExportSurface {
+    /// The bindings the reentry policy exposes to opaque calls.
+    Reentry,
+    /// Every exported binding plus the default export surface.
+    Exported,
+}
+
+/// The last export-callback walk per surface, reused while every world input
+/// it read is unchanged. The walk's other inputs are `ExecutionInputs`, fixed
+/// for the run, and interned captures, which are immutable.
+#[derive(Default)]
+pub(super) struct ExportCallbackMemos(std::cell::RefCell<[Option<ExportCallbackMemo>; 2]>);
+
+struct ExportCallbackMemo {
+    reads: ExportSurfaceReads,
+    callbacks: Values,
+}
+
+/// Clones of the persistent world collections an export-callback walk reads.
+/// Holding a clone makes any later write copy the collection first, so
+/// `ptr_eq` against it proves the contents are unchanged.
+///
+/// Sync: every world field read by `visit_export_surface_callback_roots`,
+/// `walk_callback_values` and `visit_stored_references_with_edges`.
+struct ExportSurfaceReads {
+    prefix_values: Context,
+    exported_runtime_values: Values,
+    global_escaped_callbacks: Values,
+    prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
+    descriptors: OrdMap<CallSite, OwnDescriptorMapState>,
+    /// The walk reads lexical cells only through the captures of the closures
+    /// it expands, and every expanded closure is in its result.
+    cells: Vec<(LexicalCellId, Values)>,
+}
+
+impl ExportSurfaceReads {
+    fn new(world: &World, callbacks: &Values) -> Self {
+        let cells = callbacks
+            .iter()
+            .filter_map(|value| match value {
+                AbstractValue::Closure(_, captured) => Some(captured),
+                _ => None,
+            })
+            .flat_map(|captured| captured.values.cells.values())
+            .map(|cell| (*cell, world.cells[cell.0].values.clone()))
+            .collect();
+        Self {
+            prefix_values: world.module.prefix_values.clone(),
+            exported_runtime_values: world.publication.exported_runtime_values.clone(),
+            global_escaped_callbacks: world.publication.global_escaped_callbacks.clone(),
+            prefix_object_properties: world.surface.prefix_object_properties.clone(),
+            applied_accessors: world.surface.applied_accessors.clone(),
+            descriptors: world.descriptors.clone(),
+            cells,
+        }
+    }
+
+    fn unchanged(&self, world: &World) -> bool {
+        self.prefix_values.ptr_eq(&world.module.prefix_values)
+            && self
+                .exported_runtime_values
+                .ptr_eq(&world.publication.exported_runtime_values)
+            && self
+                .global_escaped_callbacks
+                .ptr_eq(&world.publication.global_escaped_callbacks)
+            && self
+                .prefix_object_properties
+                .ptr_eq(&world.surface.prefix_object_properties)
+            && self
+                .applied_accessors
+                .ptr_eq(&world.surface.applied_accessors)
+            && self.descriptors.ptr_eq(&world.descriptors)
+            && self.cells.iter().all(|(id, values)| {
+                world
+                    .cells
+                    .get(*id)
+                    .is_some_and(|cell| cell.values.ptr_eq(values))
+            })
+    }
+}
+
+impl ExportCallbackMemos {
+    fn slot(surface: ExportSurface) -> usize {
+        match surface {
+            ExportSurface::Reentry => 0,
+            ExportSurface::Exported => 1,
+        }
+    }
+
+    fn get(&self, surface: ExportSurface, world: &World) -> Option<Values> {
+        self.0.borrow()[Self::slot(surface)]
+            .as_ref()
+            .filter(|memo| memo.reads.unchanged(world))
+            .map(|memo| memo.callbacks.clone())
+    }
+
+    fn store(&self, surface: ExportSurface, world: &World, callbacks: &Values) {
+        self.0.borrow_mut()[Self::slot(surface)] = Some(ExportCallbackMemo {
+            reads: ExportSurfaceReads::new(world, callbacks),
+            callbacks: callbacks.clone(),
+        });
+    }
 }
 
 /// Run-level admission facts of one owner's execution: what the admission
@@ -1126,7 +1234,7 @@ pub(super) struct ExecutionState {
 /// returned in its `RuntimeResult`, and drained into the owner's
 /// `SynchronousCalls` by `execute_owner`. The fields are private so a fact
 /// enters only through a named admission predicate.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Observations {
     native_integrity_checks: BTreeSet<NativeIntegrityCheck>,
     native_prototype_property_checks: BTreeMap<String, NativePrototypePropertyCheck>,
@@ -1267,6 +1375,8 @@ impl ExecutionState {
             capture_contexts: _,
             callback_sets: _,
             invocation_memos: _,
+            // Validated against the world contents each walk read.
+            export_callback_memos: _,
             // Control state: the same at the end of every leaf's body as at
             // the fork, because each leaf runs the same remaining body.
             active_class_member_promotions: _,
@@ -1332,6 +1442,126 @@ impl ExecutionState {
         self.fallback_local_owners = fallback_local_owners;
         self.fallback_local_deferred = fallback_local_deferred;
         (allocation_judgment, outcome)
+    }
+}
+
+/// Everything an abandoned root attempt may have changed besides identity
+/// allocators, so the owner can run on another lane as if it never ran.
+// CLEANUP(added 2026-11-09): delete with the flat-lane rerun in
+//   `roots::body::execute` at L4e, its only caller.
+pub(super) struct RootAttemptCheckpoint {
+    path: ExecutionPath,
+    prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
+    native_point_effects: NativePointEffects,
+    activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
+    author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+    proof_uses: Vec<CallbackFactoryUseFact>,
+    returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
+    statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
+    statement_invoked_callables: BTreeSet<u32>,
+    array_iteration_protected_objects: BTreeSet<u32>,
+    array_iteration_unsupported: bool,
+    invocation_count: usize,
+    observations: Observations,
+    evaluation_effects: EvaluationEffects,
+}
+
+impl Executor<'_, '_> {
+    /// The destructuring classifies every field, so a new one fails to
+    /// compile until it is placed.
+    pub(super) fn checkpoint_root_attempt(&self) -> RootAttemptCheckpoint {
+        let ExecutionState {
+            world: _,
+            callback_fallback: _,
+            fallback_callback_sizes: _,
+            fallback_outcome: _,
+            fallback_local_owners: _,
+            fallback_local_deferred: _,
+            prior_reachability_roots,
+            native_point_effects,
+            activated_native_effects,
+            author_host_contract_uses,
+            proof_uses,
+            returned_record_proof_uses,
+            statement_executed_owners,
+            statement_invoked_callables,
+            array_iteration_protected_objects,
+            array_iteration_unsupported,
+            invocation_count,
+            // Identity allocators stay live; the rewind moves the restored
+            // world past every cell id and revision the attempt minted.
+            capture_contexts: _,
+            callback_sets: _,
+            invocation_memos: _,
+            // Validated against whichever world is current, restored or not.
+            export_callback_memos: _,
+            // A source function of the program alone.
+            class_member_effects: _,
+            // Control state: an owner's body leaves it as it found it.
+            active_class_member_promotions: _,
+            current_top_owner: _,
+            checking_record_factory_contract: _,
+            prior_effect_owners: _,
+            array_iteration_depth: _,
+            invocation_depth: _,
+            active: _,
+            assumption: _,
+        } = &*self.state;
+        RootAttemptCheckpoint {
+            path: self
+                .state
+                .path(&self.allocation_judgment, &Outcome::default()),
+            prior_reachability_roots: prior_reachability_roots.clone(),
+            native_point_effects: native_point_effects.clone(),
+            activated_native_effects: activated_native_effects.clone(),
+            author_host_contract_uses: author_host_contract_uses.clone(),
+            proof_uses: proof_uses.clone(),
+            returned_record_proof_uses: returned_record_proof_uses.clone(),
+            statement_executed_owners: statement_executed_owners.clone(),
+            statement_invoked_callables: statement_invoked_callables.clone(),
+            array_iteration_protected_objects: array_iteration_protected_objects.clone(),
+            array_iteration_unsupported: *array_iteration_unsupported,
+            invocation_count: *invocation_count,
+            observations: self.observations.clone(),
+            evaluation_effects: self.evaluation_effects.clone(),
+        }
+    }
+
+    pub(super) fn rewind_root_attempt(&mut self, checkpoint: RootAttemptCheckpoint) {
+        let RootAttemptCheckpoint {
+            path,
+            prior_reachability_roots,
+            native_point_effects,
+            activated_native_effects,
+            author_host_contract_uses,
+            proof_uses,
+            returned_record_proof_uses,
+            statement_executed_owners,
+            statement_invoked_callables,
+            array_iteration_protected_objects,
+            array_iteration_unsupported,
+            invocation_count,
+            observations,
+            evaluation_effects,
+        } = checkpoint;
+        let attempted = self.state.world.clone();
+        let (allocation_judgment, _) = self.state.enter(path);
+        super::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
+        self.allocation_judgment = allocation_judgment;
+        let state = &mut *self.state;
+        state.prior_reachability_roots = prior_reachability_roots;
+        state.native_point_effects = native_point_effects;
+        state.activated_native_effects = activated_native_effects;
+        state.author_host_contract_uses = author_host_contract_uses;
+        state.proof_uses = proof_uses;
+        state.returned_record_proof_uses = returned_record_proof_uses;
+        state.statement_executed_owners = statement_executed_owners;
+        state.statement_invoked_callables = statement_invoked_callables;
+        state.array_iteration_protected_objects = array_iteration_protected_objects;
+        state.array_iteration_unsupported = array_iteration_unsupported;
+        state.invocation_count = invocation_count;
+        self.observations = observations;
+        self.evaluation_effects = evaluation_effects;
     }
 }
 
@@ -1936,21 +2166,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Every slot census-intact, for a proof that records no inference use.
-    /// A failure records the mutated families like [`Self::native_guard_intact`].
+    /// Success records the census's proof dependencies (the program premises
+    /// that kept the slots intact); a failure records the mutated families
+    /// like [`Self::native_guard_intact`].
     fn census_slots_intact(
         &mut self,
         guard: NativeIntegrityGuard,
         slots: &[IntrinsicSlot],
     ) -> bool {
         self.observe_native_prefix(guard, None);
-        let intact = matches!(
-            self.inputs.index.integrity.require(slots, None),
-            Integrity::Intact(_)
-        );
-        if !intact {
-            self.record_failed_native_guard(guard, slots);
+        match self.inputs.index.integrity.require(slots, None) {
+            Integrity::Intact(dependencies) => {
+                self.record_proof_dependencies(guard, dependencies);
+                true
+            }
+            _ => {
+                self.record_failed_native_guard(guard, slots);
+                false
+            }
         }
-        intact
     }
 
     fn record_failed_native_guard(&mut self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {
@@ -5890,7 +6124,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut pending: Vec<T>,
         trace_targets: Option<&BTreeSet<u32>>,
     ) -> (Values, BTreeMap<u32, BoundedInvocationFallbackInputPath>) {
-        let mut callbacks = Values::new();
+        // Also the walk's visited set: probed once per reached value. A
+        // transient hash set keeps those probes off the persistent `Values`
+        // tree, which is built once, in order, from the result.
+        let mut callbacks = FxHashSet::default();
         let mut paths = BTreeMap::new();
         let mut visited_objects = BTreeSet::new();
         let mut visited_descriptor_maps = BTreeSet::new();
@@ -5979,7 +6216,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
-        (callbacks, paths)
+        (callbacks.into_iter().collect(), paths)
     }
 
     /// A direct call or construction of an imported callable carrying a
@@ -8139,17 +8376,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !self.inputs.export_reentry_enabled {
             return Values::new();
         }
-        self.export_surface_callback_values(
-            &self.inputs.reentry_bindings,
-            self.inputs.reentry_default,
-        )
+        self.export_surface_callback_values(ExportSurface::Reentry)
     }
 
     fn export_callback_values(&self) -> Values {
-        self.export_surface_callback_values(&self.inputs.index.exported_bindings, true)
+        self.export_surface_callback_values(ExportSurface::Exported)
     }
 
-    fn export_surface_callback_values(&self, bindings: &BTreeSet<Id>, default: bool) -> Values {
+    fn export_surface_callback_values(&self, surface: ExportSurface) -> Values {
+        let world: &World = &self.state.world;
+        if let Some(callbacks) = self.state.export_callback_memos.get(surface, world) {
+            return callbacks;
+        }
+        let (bindings, default) = match surface {
+            ExportSurface::Reentry => (&self.inputs.reentry_bindings, self.inputs.reentry_default),
+            ExportSurface::Exported => (&self.inputs.index.exported_bindings, true),
+        };
         // Discover the whole export surface in one traversal. Exported aliases,
         // unknown values, and shared objects must not each re-expand the same
         // escaped callback/capture graph independently.
@@ -8157,7 +8399,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.visit_export_surface_callback_roots(bindings, default, |_, value| {
             values.insert(value);
         });
-        self.callback_values(&values)
+        let callbacks = self.callback_values(&values);
+        self.state
+            .export_callback_memos
+            .store(surface, world, &callbacks);
+        callbacks
     }
 
     fn visit_export_surface_callback_roots(
@@ -10102,6 +10348,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
                             || self.inputs.imported_primitive_read(binding).is_some()
+                            || self.inputs.index.foreign_call_imports.contains_key(binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -10173,13 +10420,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         // CLEANUP(added 2026-11-09): the source-summary lane after this block
-        // is the flat lane for bodies that have an ordered plan. It stays until
-        // the kernel covers each gate that still routes such a body there:
-        // `requires_keyed_collection_new` (no application keyed-collection
-        // lane), captured writes to bindings without an active cell, free
-        // reads outside module, imported-primitive and intact-native bindings,
-        // and `established_writes` (member-write proofs the kernel's own-data
-        // store lacks). Remove each gate with the lane it protects.
+        // is the flat lane for bodies that have an ordered plan. Each gate
+        // below routes such a body there until the kernel has the rule named;
+        // remove the gate with that rule, and the lane with the last gate.
+        // - `requires_keyed_collection_new`: an application keyed-collection
+        //   lane.
+        // - captured writes to bindings without an active cell: a kernel
+        //   store to a module binding that records the rebind
+        //   (`Unproved::CaptureStore` summarizes the remainder today).
+        // - free reads outside module, summarized-import, imported-primitive
+        //   and intact-native bindings: global-object and callback-factory
+        //   import reads with their global-cell provenance.
+        // - `established_writes`: member-write proofs (fresh local records,
+        //   borrowed parameters, array iteration) in the kernel's own-data
+        //   store.
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = callable.body_facts.ordered_plan()
@@ -10195,6 +10449,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
                     || self.inputs.imported_primitive_read(binding).is_some()
+                    || self.inputs.index.foreign_call_imports.contains_key(binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(
@@ -12321,6 +12576,7 @@ pub(crate) fn annotate_synchronous_calls(
         callback_sets: CaptureInterner::default(),
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
+        export_callback_memos: ExportCallbackMemos::default(),
     };
     let results =
         super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
