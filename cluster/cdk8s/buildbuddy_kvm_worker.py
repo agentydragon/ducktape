@@ -241,6 +241,8 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
         },
         # CDI creates one claim per VM from this template: a blank disk image on a filesystem volume on the node's
         # SSD pool. Not a raw block volume: CDI's importer runs as a non-root user, which cannot open the device.
+        # TODO(https://github.com/agentydragon/ducktape/issues/15297): use raw block once containerd on these nodes
+        # sets device_ownership_from_security_context.
         # The contents rebuild, so the class's single unreplicated copy is enough.
         data_volume_templates=[
             VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplates(
