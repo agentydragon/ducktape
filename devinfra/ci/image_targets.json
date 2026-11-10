@@ -48,6 +48,11 @@
       "test": "//platform_sessions/management/gateway:gateway_test",
       "registry": "forgejo"
     },
+    "provider-buildbuddy": {
+      "target": "//cluster/providers/buildbuddy:image",
+      "test": "//cluster/providers/buildbuddy/...",
+      "registry": "forgejo"
+    },
     "props-backend": {
       "target": "//props/backend:image",
       "test": "//props/backend/...",

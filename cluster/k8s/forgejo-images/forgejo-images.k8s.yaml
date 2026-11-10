@@ -338,6 +338,11 @@ spec:
       name: props-registry-proxy
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'provider-buildbuddy'
+      kind: ImageRepository
+      name: provider-buildbuddy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'public-coder-agent'
       kind: ImageRepository
       name: public-coder-agent

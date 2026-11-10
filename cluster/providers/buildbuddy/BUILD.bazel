@@ -1,0 +1,46 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+exports_files([
+    "go.mod",
+    "go.sum",
+])
+
+genrule(
+    name = "package_manifest",
+    srcs = [
+        "package/crossplane.yaml",
+        "//cluster/providers/buildbuddy/apis/v1alpha1:crds",
+    ],
+    outs = ["package.yaml"],
+    cmd = 'cat $(location package/crossplane.yaml) > "$@"; for crd in $(location //cluster/providers/buildbuddy/apis/v1alpha1:crds)/*.yaml; do printf "\\n---\\n" >> "$@"; cat "$$crd" >> "$@"; done',
+)
+
+pkg_tar(
+    name = "package_layer",
+    srcs = [":package_manifest"],
+    package_dir = "/",
+)
+
+pkg_tar(
+    name = "binary_layer",
+    srcs = ["//cluster/providers/buildbuddy/cmd/provider"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
+# The xpkg and its controller share one image: Crossplane reads package.yaml
+# from the flattened OCI filesystem and runs this image as the provider runtime.
+oci_image(
+    name = "image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/provider"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":binary_layer",
+        ":package_layer",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "65532:65532",
+    visibility = ["//visibility:public"],
+)

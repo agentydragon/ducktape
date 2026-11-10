@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "buildbuddy",
+    srcs = ["client.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/internal/buildbuddy",
+    visibility = ["//cluster/providers/buildbuddy:__subpackages__"],
+    deps = ["@buildbuddy_crypto//nacl/box"],
+)
+
+go_test(
+    name = "client_test",
+    srcs = ["client_test.go"],
+    embed = [":buildbuddy"],
+    deps = ["@buildbuddy_crypto//nacl/box"],
+)

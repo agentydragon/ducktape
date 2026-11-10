@@ -183,6 +183,18 @@ spec:
       name: litellm-buildbuddy-sync
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-provider-buildbuddy/**"
+          to: "@artifact/cluster/generated/crossplane-provider-buildbuddy/"
+        - from: "@repo/cluster/k8s/crossplane-provider-buildbuddy-image-pins/**"
+          to: "@artifact/cluster/k8s/crossplane-provider-buildbuddy-image-pins/"
+      name: crossplane-provider-buildbuddy
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/litellm-buildbuddy-crossplane/**"
+          to: "@artifact/cluster/generated/litellm-buildbuddy-crossplane/"
+      name: litellm-buildbuddy-crossplane
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/reflector/**"
           to: "@artifact/cluster/generated/reflector/"
       name: reflector

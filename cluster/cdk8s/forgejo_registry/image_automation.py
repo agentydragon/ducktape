@@ -90,6 +90,7 @@ IMAGES = (
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
+    "provider-buildbuddy",
     "public-coder-agent",
     "rtl-tcp",
     "ssh-mcp",

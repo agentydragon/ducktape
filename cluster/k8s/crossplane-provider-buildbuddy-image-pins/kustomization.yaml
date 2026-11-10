@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+configurations:
+  - kustomizeconfig
+images:
+  - name: git.allegedly.works/ducktape-ci/provider-buildbuddy
+    newTag: latest # {"$imagepolicy": "flux-system:provider-buildbuddy:tag"}

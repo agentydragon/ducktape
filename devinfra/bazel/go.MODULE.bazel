@@ -22,6 +22,32 @@ go_deps = use_extension(
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
+# Isolate the provider's Crossplane/Kubernetes dependency graph from the
+# first-party Go graph, just as the tofu-controller module does.
+buildbuddy_provider_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", dev_dependency = True, isolate = True)
+buildbuddy_provider_deps.from_file(go_mod = "//cluster/providers/buildbuddy:go.mod")
+
+# The module ships generated protobuf Go sources. Generating go_proto_library
+# would pull rules_go's shared gRPC runtime into the isolated dependency graph.
+buildbuddy_provider_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable_global"],
+    path = "github.com/crossplane/crossplane-runtime/v2",
+)
+use_repo(
+    buildbuddy_provider_deps,
+    buildbuddy_controller_runtime = "io_k8s_sigs_controller_runtime",
+    buildbuddy_controller_tools = "io_k8s_sigs_controller_tools",
+    buildbuddy_crossplane_apis = "com_github_crossplane_crossplane_apis_v2",
+    buildbuddy_crossplane_runtime = "com_github_crossplane_crossplane_runtime_v2",
+    buildbuddy_crossplane_tools = "com_github_crossplane_crossplane_tools",
+    buildbuddy_crypto = "org_golang_x_crypto",
+    buildbuddy_go_logr = "com_github_go_logr_logr",
+    buildbuddy_k8s_api = "io_k8s_api",
+    buildbuddy_k8s_apimachinery = "io_k8s_apimachinery",
+    buildbuddy_k8s_client_go = "io_k8s_client_go",
+)
+
 # COSI Runtime's generated BUILD files import this transitive module directly.
 go_deps.module(
     path = "github.com/gertd/go-pluralize",
