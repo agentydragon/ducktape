@@ -10,8 +10,9 @@ Remove completed work from this plan as it lands. The deployed design is in
 ## Operational gaps
 
 - **LINSTOR recovery:** export LINSTOR metadata off-cluster and rehearse a
-  controller restore; establish a volume backup/restore path for strict-local
-  claims whose application has no replica.
+  controller restore; establish a backup/restore path for strict-local claims
+  without application replication. Platform Sessions state and capture coverage
+  is audited in the [disposable restore drill](../runbooks/platform_sessions_storage_restore_drill.md).
 - **Alerts:** add coverage for degraded or diskless-only resources and stalled
   resync. The replicated class already carries production data, including Matrix
   media. Thin data/metadata alerts exist.
