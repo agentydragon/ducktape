@@ -108,9 +108,10 @@ func (r Record) LogValue() slog.Value {
 	}
 	switch subject := r.Subject.(type) {
 	case ServiceAccount:
-		attrs = append(attrs, slog.String("subject", subject.Namespace+"/"+subject.Name))
+		attrs = append(attrs, slog.String("subject_kind", "ServiceAccount"),
+			slog.String("subject_namespace", subject.Namespace), slog.String("subject_name", subject.Name))
 	case Identity:
-		attrs = append(attrs, slog.String("identity", subject.Name))
+		attrs = append(attrs, slog.String("subject_kind", "Identity"), slog.String("subject_name", subject.Name))
 	}
 	if r.Impersonated != nil {
 		attrs = append(attrs, slog.String("impersonated", r.Impersonated.Namespace+"/"+r.Impersonated.Name))
