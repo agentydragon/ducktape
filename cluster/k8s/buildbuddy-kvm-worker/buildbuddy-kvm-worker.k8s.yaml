@@ -850,7 +850,8 @@ data:
       app_target: grpcs://remote.buildbuddy.io:443
       api_key: "${BUILDBUDDY_API_KEY}"
       millicpu: 4000
-      memory_bytes: 15032385536
+      # 7 GiB of the VM's 8 GiB; sizing evidence is beside the VM memory in cluster/cdk8s/buildbuddy_kvm_worker.py.
+      memory_bytes: 7516192768
       max_concurrent_tasks: 1
       root_directory: /buildbuddy/remotebuilds
       local_cache_directory: /buildbuddy/filecache
@@ -1075,10 +1076,10 @@ spec:
             resources:
               limits:
                 cpu: "4"
-                memory: 16Gi
+                memory: 8Gi
               requests:
                 cpu: "4"
-                memory: 16Gi
+                memory: 8Gi
           networks:
             - name: default
               pod: {}
