@@ -15,7 +15,8 @@ import asyncio
 import base64
 import math
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import AsyncExitStack, asynccontextmanager
 from types import MappingProxyType
 from typing import Literal
 
@@ -111,6 +112,58 @@ async def wait_for_stable(page: Page, *, timeout_ms: int = WAIT_TIMEOUT_MS) -> N
                 requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
     except TimeoutError as exc:
         raise AssertionError(f"render readiness: {stage} did not settle within {timeout_ms}ms") from exc
+
+
+async def repaint(page: Page) -> None:
+    """Repaint the whole page and wait for the painted frame, so every layer is rastered where it is now.
+
+    Chromium's compositor keeps a layer's tiles rastered at the pixel alignment they were rastered for,
+    and re-rasters for a new alignment only when nothing defers it: an active scroll or a pending
+    activation does (cc `PictureLayerImpl::UpdateTilingsForRasterScaleAndTranslation`). A sticky
+    heading is its own layer and changes alignment as it sticks and unsticks, so which frame last
+    rastered it decided whether its text landed a device pixel off. A full paint invalidation makes
+    the compositor raster every layer afresh.
+
+    Enabling the DevTools LayerTree domain is that invalidation: Blink turns on paint debug info and,
+    finding it newly enabled, invalidates the paint of every view (`LocalFrameView::PaintTree`). Debug
+    info changes nothing drawn. Blink drops it again at the first paint after the domain is disabled,
+    so a later call, after a painted frame, invalidates again.
+    """
+    async with AsyncExitStack() as stack:
+        session = await page.context.new_cdp_session(page)
+        stack.push_async_callback(session.detach)
+        await session.send("LayerTree.enable")
+        await wait_for_stable(page)
+        await session.send("LayerTree.disable")
+
+
+# What `page.screenshot()` does by default (`caret="hide"`), for a capture taken over the DevTools
+# protocol instead. A constructed sheet, not a `<style>`, so a page's CSP does not refuse it.
+_HIDE_CARET_JS = """() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync("*, *::before, *::after { caret-color: transparent !important; }");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    window.__visualHiddenCaret__ = sheet;
+}"""
+_SHOW_CARET_JS = """() => {
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(sheet => sheet !== window.__visualHiddenCaret__);
+    delete window.__visualHiddenCaret__;
+}"""
+
+
+@asynccontextmanager
+async def hidden_caret(page: Page) -> AsyncIterator[None]:
+    """Hide the text caret, which blinks on wall-clock time, for a capture `page.screenshot()` does not take.
+
+    Whether a blinking caret is drawn depends on how long the capture took since the focused field last
+    changed, so a slower capture can catch it off.
+    """
+    await page.evaluate(_HIDE_CARET_JS)
+    try:
+        await wait_for_stable(page)
+        yield
+    finally:
+        await page.evaluate(_SHOW_CARET_JS)
 
 
 class PageErrors:

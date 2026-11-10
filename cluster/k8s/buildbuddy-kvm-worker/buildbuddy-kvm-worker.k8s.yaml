@@ -1465,7 +1465,7 @@ spec:
                 requests:
                   storage: 80Gi
               storageClassName: piraeus-ssd-local
-              volumeMode: Block
+              volumeMode: Filesystem
       runStrategy: Always
       template:
         metadata:

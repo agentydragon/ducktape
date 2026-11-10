@@ -202,26 +202,25 @@ def _config() -> runner_config.Config:
 
 
 def _add_egress_fence(chart: Chart) -> None:
-    """Block all direct external egress from haku-ci (agent-controlled build compute). Allows: DNS,
-    cluster-internal traffic (the in-cluster Forgejo git + OCI registry it clones/pushes/long-polls),
-    and haku-egress-proxy port 8080, the retired path kept until that proxy is removed. External
-    traffic goes through the haku-ci-egress relay, which egress_gateway.py's policies admit, and
-    Agentplane egress decides each request by the haku-ci-build-fetch PolicySet.
+    """Force all external egress from the haku-ci runner (agent-controlled build compute) through
+    the haku-ci-egress relay to Agentplane egress (egress_gateway.py). Allows: DNS, cluster-internal
+    traffic (the in-cluster Forgejo git + OCI registry it clones/pushes/long-polls), and the relay.
+    Blocks all direct external internet -- the base-image registries, npm/pypi, Bazel/toolchain,
+    and Forgejo-action hosts reach only what PolicySet haku-ci-build-fetch admits
+    (agentplane/actions_staging_policies.py).
 
     Deviation from haku-sandbox's force-egress: no kube-apiserver rule -- haku-ci runs with
     automountServiceAccountToken:false and has no RBAC, so it never calls the k8s API.
 
-    Any Cilium egress rule flips the selected pods to default-deny egress; egress_gateway.py's
-    policies add only the relay hops.
+    Any Cilium egress rule flips the selected pods to default-deny egress. This policy admits the
+    runners' hop to the relay; egress_gateway.py's policies add only the relay's hop to the proxy.
     """
     cilium.force_proxy_egress(
         chart,
         "force-proxy-egress",
         name="haku-ci-force-proxy-egress",
         namespaces=[NAMESPACE],
-        proxy_namespace="haku-egress-proxy",
-        proxy_name="haku-egress-proxy",
-        proxy_port=8080,
+        proxy=egress_gateway.service(NAMESPACE),
         # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how the
         # runner reaches the in-cluster Forgejo git + OCI registry (forgejo-http.forgejo:3000)
         # it clones source from, pushes images to, and long-polls for jobs, plus the
@@ -273,11 +272,11 @@ def _dind() -> InitContainer:
             f"--host=tcp://0.0.0.0:{_DOCKER_PORT}",
             "--tls=false",
             # Pull Docker Hub base images through the in-cluster oci-cache Zot mirror instead of
-            # docker.io (+ its CDN fronts) directly -- that's why the Docker Hub FQDNs are gone from
-            # the haku-egress-proxy allowlist. The mirror serves Docker Hub at its root and fetches
+            # docker.io (+ its CDN fronts) directly -- that's why haku-ci-build-fetch holds no Docker
+            # Hub host. The mirror serves Docker Hub at its root and fetches
             # from origin under oci-cache's own egress. `.svc.cluster.local` so NO_PROXY routes it
             # direct (not via the proxy); insecure-registry because oci-cache is plain HTTP on :80.
-            # Classic dockerd only mirrors Docker Hub -- ghcr/quay still go direct via the proxy.
+            # Classic dockerd only mirrors Docker Hub -- ghcr/quay would go via the proxy (not admitted).
             "--registry-mirror=http://oci-cache.oci-cache.svc.cluster.local",
             "--insecure-registry=oci-cache.oci-cache.svc.cluster.local",
             # RootlessKit's slirp4netns forwards container DNS queries to CoreDNS as-is, and the

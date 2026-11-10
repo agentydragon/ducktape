@@ -43,8 +43,8 @@ that fallback is intentionally not a reliable path through the egress fence.
 ## Consumers
 
 - **haku-ci dind** pulls Docker Hub base images via `--registry-mirror` (see
-  `cluster/cdk8s/haku_ci/runner.py`); the Docker Hub FQDNs are consequently dropped
-  from the `haku-egress-proxy` allowlist. ghcr/quay aren't mirrored through haku-ci yet,
+  `cluster/cdk8s/haku_ci/runner.py`), so haku-ci's egress PolicySet (`haku-ci-build-fetch`)
+  holds no Docker Hub host. ghcr/quay aren't mirrored through haku-ci yet,
   but this is intentionally downprioritized while Haku image builds move to Bazel
   `rules_oci`: the remaining haku-ci Dockerfile path uses Docker Hub bases, which are
   already covered.
@@ -82,10 +82,10 @@ deferred because Talos machine-config changes reboot nodes.
    `credentialsFile` to Zot's `sync` config keyed by `registry-1.docker.io` with a Docker
    Hub username + PAT. Anonymous pull-through works without it.
 
-4. **Haku dind allowlist — ghcr/quay (deferred).** Docker Hub already routes through the
-   mirror (see Consumers above). Dropping `ghcr.io` + `pkg-containers.githubusercontent.com`
-   from the haku-egress-proxy fence (`cluster/cdk8s/egress_fences.py`) would require
-   haku-ci's dind to mirror ghcr too,
+4. **Haku dind — ghcr/quay (deferred).** Docker Hub already routes through the
+   mirror (see Consumers above). haku-ci's egress PolicySet holds no ghcr/quay host (none was
+   pulled in the 2026-11-08/09 audit), so a build that needs one either gets the host added or
+   has haku-ci's dind mirror ghcr too,
    which classic dockerd can't — enable Docker's containerd image store + `hosts.toml`, or
    move to buildkit. The mirror side already works (`/v2/ghcr/... → 200`), but this is not
    worth doing unless post-`rules_oci` haku-ci still has frequent or painful ghcr/quay pulls.

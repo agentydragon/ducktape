@@ -107,8 +107,8 @@ KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # It is the name to prefer: the public name below would hairpin out through the Gateway and back
 # for a Service one hop away.
 FORGEJO_HOST = forgejo.HTTP.fqdn
-# The same Service under the shorter names its search path resolves (haku-egress-proxy's clients
-# still spell it `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
+# The same Service under the shorter names its search path resolves (haku-ci's runners spell it
+# `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
 # so a spelling left out is refused `no-rule` although it dials the same address.
 FORGEJO_HOST_ALIASES = (forgejo.HTTP.host, f"{forgejo.HTTP.name}.{forgejo.HTTP.pods.namespace}")
 # Forgejo by its public name: HTTPS through the Gateway, resolving to public addresses.
@@ -727,7 +727,7 @@ class Egress(Construct):
 
     def _add_certificate_and_bundle(self) -> None:
         # The interception root the proxy issues leaves from, separate from the cluster's
-        # internal CA (the haku-egress-proxy pattern). Published as a ConfigMap of the same
+        # internal CA. Published as a ConfigMap of the same
         # name, which every sandbox Pod mounts over its system bundle and as its Java trust
         # store (sandbox_pod.py).
         interception_root_ca(

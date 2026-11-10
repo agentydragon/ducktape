@@ -128,19 +128,72 @@ of samples. The event is `task-clock`; the VM has no hardware counters.
 | `drop_glue` (self)                                                                                      |            9% | deallocation churn                                             |
 | `AbstractValue::cmp` (self)                                                                             |            6% | ordering inside the persistent sets                            |
 
+The hot-spot table above is the profile before the transient walk set landed.
 `possible_callback_pool` recomputes `available_export_callbacks()` on every
-iteration of each opaque call's callback fixpoint. `callback_values` builds its
-result by inserting each found callback into a fresh persistent `imbl` set.
+iteration of each opaque call's callback fixpoint.
+
+## Landed: transient `callback_values` walk set
+
+`walk_callback_values` used its persistent `imbl` result as its visited set.
+It now probes an `FxHashSet` and builds the ordered `Values` once at the end.
+
+Before/after on the same staged inputs and spec, with the base and candidate
+built from the same tree except for this change:
+
+| Measure                             | Before      | After        |
+| ----------------------------------- | ----------- | ------------ |
+| Tail samples (999 Hz `task-clock`)  | 15,424      | 9,971 (−35%) |
+| `callback_values` inclusive samples | 8,437       | 3,619 (−57%) |
+| `Values::insert` share of tail      | 39.2%       | 1.7%         |
+| Wall, 3 runs without `perf`         | 18.2–18.6 s | 13.6–13.9 s  |
+| CPU, same runs                      | 20.2–20.6 s | 15.6–16.0 s  |
+| Peak RSS, same runs                 | 376–377 MiB | 377–378 MiB  |
+
+Output identity:
+
+- The `.analysis` bodies are byte-identical. The headers are identical once
+  `analysis_engine_sha256` is masked.
+- A full `debundle run --graphs` (789 files: emitted modules, dependency
+  graphs, gate and translation-validation reports) is byte-identical, run from
+  the same binary path, spec and output directory. The only difference is
+  `engine_sha256` in `program_graph.json.gz`.
+
+Within `callback_values`, `AbstractValue` ordering compares ids:
+`Captured` compares by interned identity, and no `Atom` strings are compared
+there.
+
+## Landed: export-surface callback memo
+
+`possible_callback_pool` used to recompute the export-surface callback walk on
+every fixpoint iteration of every opaque call. `ExecutionState` now keeps the
+last walk per surface, together with clones of each persistent world
+collection the walk reads and the `Values` of each lexical cell it read
+through closure captures. It reuses the result only when every one of those
+is still `ptr_eq` to the current world. Holding a clone makes any later write
+copy the collection, so pointer equality proves the contents are equal.
+
+Back-to-back on the same inputs, after the transient walk set:
+
+| Measure                                    | Before        | After         |
+| ------------------------------------------ | ------------- | ------------- |
+| Total samples (999 Hz `task-clock`)        | 12,290        | 11,358 (−8%)  |
+| Tail samples                               | 7,485         | 6,978 (−7%)   |
+| `export_surface_callback_values` inclusive | 1,972 (26.3%) | 1,050 (15.0%) |
+| Wall, 3 interleaved runs without `perf`    | 10.7–11.1 s   | 9.7–10.1 s    |
+| CPU, same runs                             | 12.3–12.8 s   | 11.3–11.6 s   |
+| Peak RSS, same runs                        | 377 MiB       | 377 MiB       |
+
+In the same interleaved batch, the engine before both changes took 14.8–15.8 s
+wall and 16.3–16.7 CPU s. The VM was faster in this batch than in the earlier
+transient-set measurement, so compare figures within one batch only.
+
+The remaining 15% is walks after a world change, where the memo misses. Output
+identity: the `.analysis` bodies are byte-identical, and so are all 789 files
+of `debundle run --graphs`, apart from `engine_sha256`.
 
 ## Candidate optimizations, ranked
 
-1. **Bulk-build the `callback_values` result.** Collect into an ordinary set or
-   sorted vector and convert once. The result is identical. The upper bound is
-   about 36% of this tail; the `AbstractValue` comparisons stay.
-2. **Memoize the export-surface callback walk per world revision.** Up to 29%
-   of this tail. Not trivially safe: the key must cover every heap, prefix and
-   publication mutation the walk observes.
-3. **Start the largest chunk first.** Order the per-chunk `par_iter` inputs by
+1. **Start the largest chunk first.** Order the per-chunk `par_iter` inputs by
    descending source size. Results are collected into a `BTreeMap`, so output
    order is unchanged. It does nothing here, because the expensive chunk
    already starts first. On a corpus whose biggest chunk sorts last it saves up
@@ -151,14 +204,11 @@ result by inserting each found callback into a fresh persistent `imbl` set.
      `--action_env=DUCKTAPE_DEBUNDLE_PROGRESS=1`; the action passes the default
      shell environment through, and Bazel prints the stderr of successful
      actions.
-4. **Parallelize `prepare_callable_capabilities` in the head.** It is 42% of a
+2. **Parallelize `prepare_callable_capabilities` in the head.** It is 42% of a
    5% head. A past parallel version cost peak RSS.
-5. **Parallelize the artifact write.** Per-chunk `snapshot` work can run under
+3. **Parallelize the artifact write.** Per-chunk `snapshot` work can run under
    Rayon, and zstd has multi-threaded compression. It is 3% here. Multi-threaded
    zstd must keep its output byte-stable for a fixed worker count.
 
-No candidate is both trivially safe and over 20% of the measured tail. Item 1
-comes closest; its real effect needs a before/after profile on these inputs.
-
 Single large chunks get no parallelism at all, because the per-chunk `par_iter`
-has one item. Items 1 and 2 apply to them; item 3 does not.
+has one item. Item 1 does not help them.
