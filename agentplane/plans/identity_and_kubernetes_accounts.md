@@ -149,8 +149,12 @@ one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-service
 - Deleting an Identity revokes what a workload acting as it can do, since its credentials stop
   resolving, but deletes no Sandbox, environment or box. `Sandbox.spec.identity` is a name-based
   reference: a Sandbox acts as whichever Identity holds that name now, so a recreated same-named
-  Identity becomes its acting identity again, while credentials stay UID-fenced and the old
-  incarnation's stop working.
+  Identity becomes its acting identity again, while the Sandbox's credentials, which pin the
+  incarnation's UID, stop working. A `WorkloadCredential`'s Identity `uid` is optional (operator,
+  2026-11-10): a record naming one binds that incarnation and fails closed on a replacement; a
+  record without one follows the live Identity of that name. Pinning is the requester's explicit
+  choice: the Sandbox Controller and the Action Service pin, a Flux-rendered standing record cannot
+  know the UID of an Identity applied beside it and does not.
 
 ## Changing an environment's identity
 
