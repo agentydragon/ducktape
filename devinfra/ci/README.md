@@ -75,10 +75,15 @@ does not prove an ancestor's artifacts match arbitrary later skipped changes.
 A missing ordinary run (including delayed GitHub event creation), pending run,
 or 32-commit traversal limit retains pins instead of selecting older evidence.
 Failed or cancelled newer runs also never fall through to an older source.
+Cancelled workflow runs and cancelled Bazel jobs cannot promote normal-build
+evidence, matching the existing publication cancellation policy.
 The RBE image pin continues to require its normal CI sweep.
 
 The selected immutable SHA supplies the artifact registry, skills registry and
 RBE image pin through GitHub's read API; discovery does not change the checkout.
+Partial reruns use each record in GitHub's latest-job view and that job's own
+attempt. A newer release matrix invalidates an older package job it omitted;
+historical job lists are never stitched together to recover omitted rows.
 Release creation dates never order promotions: an A → B → A revert selects the
 existing A release again. Old or feature-branch CI runs cannot select pins,
 including after a newer CI source requested A without changing any pins.

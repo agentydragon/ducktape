@@ -122,7 +122,7 @@ HASH = base64.b64encode(hashlib.sha256(b"stamped asset").digest()).decode()
 
 
 def _configure(monkeypatch, tmp_path, filenames, selected):
-    jobs: list[SimpleNamespace] = []
+    jobs = [SimpleNamespace(name="bazel-ci / Test & Build", status="completed", conclusion="success", run_attempt=1)]
     current = run(jobs=lambda **_: jobs)
     repo = SimpleNamespace(
         get_branch=lambda _: SimpleNamespace(commit=SimpleNamespace(sha=SOURCE)),
@@ -150,13 +150,16 @@ def _configure(monkeypatch, tmp_path, filenames, selected):
 
 
 @pytest.mark.parametrize("overall_success", [True, False])
+@pytest.mark.parametrize("run_attempt", [1, 2])
 def test_rollback_selects_existing_a_instead_of_newer_b_without_release_job(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, overall_success: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, overall_success: bool, run_attempt: int
 ) -> None:
     a = SimpleNamespace(tag_name="bbr-" + "a" * 12, target_commitish="feature-origin", draft=False, prerelease=False)
     repo, current = _configure(monkeypatch, tmp_path, {"bbr": "wheel.whl"}, {"bbr": a})
     # No Release bbr job: planner skipped existing A, despite unrelated failure.
     current.conclusion = "failure"
+    current.run_attempt = run_attempt  # A partial rerun may carry the successful normal job from attempt 1.
+    current.jobs()[0].conclusion = "success" if overall_success else "failure"
     monkeypatch.setattr(sync_pins, "read_build", {BUILD: dataclasses.replace(normal(), successful=overall_success)}.get)
     source = tmp_path / "pins.json"
     source.write_text(
@@ -167,7 +170,13 @@ def test_rollback_selects_existing_a_instead_of_newer_b_without_release_job(
     assert result.pins["bbr"].url == f"{sync_pins.BASE}/{a.tag_name}/wheel.whl"
     # The sync commit has a new SHA and its own CI run, but still builds A.
     pin_commit = "3" * 40
-    pin_run = run(source=pin_commit, identity=201, jobs=lambda **_: [])
+    pin_run = run(
+        source=pin_commit,
+        identity=201,
+        jobs=lambda **_: [
+            SimpleNamespace(name="bazel-ci / Test & Build", status="completed", conclusion="success", run_attempt=1)
+        ],
+    )
     repo.get_branch = lambda _: SimpleNamespace(commit=SimpleNamespace(sha=pin_commit))
     repo.get_workflow = lambda _: SimpleNamespace(get_runs=lambda **_: [pin_run])
     identity = str(invocation_id(run_id="201", attempt="1", role="build"))

@@ -11,7 +11,7 @@ import dataclasses
 import re
 import shlex
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from devinfra.buildbuddy.ci import bes
@@ -57,7 +57,7 @@ def publication_source(repo: Any, checkout_sha: str) -> tuple[str, Any] | None:
     for _ in range(32):
         run = current_run(workflow.get_runs(branch="devel", event="push", head_sha=source), source)
         if run is not None and not (run.status == "completed" and run.conclusion == "skipped"):
-            return (source, run) if run.status == "completed" else None
+            return (source, run) if run.status == "completed" and run.conclusion != "cancelled" else None
         commit = repo.get_commit(source)
         if "[skip ci]" not in commit.commit.message.lower() or not commit.parents:
             return None
@@ -100,6 +100,42 @@ def _options(args: tuple[str, ...] | None, command: str) -> Counter[str] | None:
     if values and values[0] == command:
         values.pop(0)
     return Counter(values) if values and all(values) else None
+
+
+def job_attempts(jobs: Iterable[Any], *, run_attempt: int) -> tuple[str, dict[str, str]]:
+    """Use only GitHub's latest-job view, preserving each carried job's attempt.
+
+    Never combine historical job lists: a full rerun's matrix may omit a package
+    that existed in an older attempt. A newer matrix invalidates that old row.
+    A replacement job that failed or is pending also suppresses its old result.
+    """
+    grouped: dict[str, list[Any]] = {}
+    for job in jobs:
+        grouped.setdefault(job.name, []).append(job)
+    latest: dict[str, Any] = {}
+    for name, rows in grouped.items():
+        if any(not isinstance(row.run_attempt, int) or row.run_attempt < 1 for row in rows):
+            continue
+        attempt = max(row.run_attempt for row in rows)
+        matching = [row for row in rows if row.run_attempt == attempt]
+        if attempt <= run_attempt and len(matching) == 1:
+            latest[name] = matching[0]
+    normal = latest.get("bazel-ci / Test & Build")
+    normal_attempt = (
+        str(normal.run_attempt)
+        if normal and normal.status == "completed" and normal.conclusion in {"success", "failure", "timed_out"}
+        else ""
+    )
+    matrix = latest.get("release / Compute release matrix")
+    releases = {
+        name: str(job.run_attempt)
+        for name, job in latest.items()
+        if name.startswith("release / Release ")
+        and job.status == "completed"
+        and job.conclusion == "success"
+        and (job.run_attempt == run_attempt or (matrix and job.run_attempt >= matrix.run_attempt))
+    }
+    return normal_attempt, releases
 
 
 def _release_flags(flags: str) -> list[str]:
@@ -174,12 +210,12 @@ def desired_tags(
     run_id: str,
     attempt: str,
     rbe_image: str,
-    successful_jobs: set[str],
+    successful_jobs: Mapping[str, str],
     read: Callable[[str], bes.Invocation | None],
 ) -> dict[str, str]:
     """Resolve each group independently; missing evidence never selects a fallback source."""
     build_id = str(invocation_id(run_id=run_id, attempt=attempt, role="build"))
-    normal = read(build_id)
+    normal = read(build_id) if attempt else None
     if not verified_build(normal, identity=build_id, source_commit=source_commit, rbe_image=rbe_image):
         normal = None
     by_label = normal.by_label() if normal else {}
@@ -199,8 +235,10 @@ def desired_tags(
 
     def select(release: Release) -> tuple[str, str | None]:
         value = digest(release, normal) if release.uses_default_config and by_label else None
-        if value is None and f"release / Release {release.pkg}" in successful_jobs:
-            identity = str(invocation_id(run_id=run_id, attempt=attempt, role="release-unstamped", scope=release.pkg))
+        if value is None and (own_attempt := successful_jobs.get(f"release / Release {release.pkg}")):
+            identity = str(
+                invocation_id(run_id=run_id, attempt=own_attempt, role="release-unstamped", scope=release.pkg)
+            )
             own = read(identity)
             if verified_build(
                 own, identity=identity, source_commit=source_commit, rbe_image=rbe_image, release=release

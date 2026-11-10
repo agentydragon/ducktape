@@ -10,6 +10,7 @@ from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci.pin_publication import (
     current_run,
     desired_tags,
+    job_attempts,
     publication_source,
     source_configuration,
     verified_build,
@@ -87,7 +88,7 @@ def test_unknown_no_run_transition_retains_pins_instead_of_using_older_ci(messag
 def test_newer_failed_cancelled_or_unmarked_skipped_run_never_falls_back(conclusion: str) -> None:
     newer = run(conclusion=conclusion)
     repo = SourceRepo({SOURCE: [newer], "older": [run("older")]}, {SOURCE: ("ordinary source", "older")})
-    expected = None if conclusion == "skipped" else (SOURCE, newer)
+    expected = None if conclusion in {"skipped", "cancelled"} else (SOURCE, newer)
     assert publication_source(repo, SOURCE) == expected
     assert repo.queried == [SOURCE]
 
@@ -121,6 +122,70 @@ def test_selected_source_supplies_registry_and_image_snapshot_consistently() -> 
     assert set(requests) == {(path, SOURCE) for path in documents}
 
 
+def job(name: str, attempt: int, status: str = "completed", conclusion: str = "success") -> SimpleNamespace:
+    return SimpleNamespace(name=name, run_attempt=attempt, status=status, conclusion=conclusion)
+
+
+def test_partial_rerun_uses_each_latest_jobs_actual_invocation_attempt() -> None:
+    normal_attempt, releases = job_attempts(
+        [
+            job("bazel-ci / Test & Build", 1),
+            job("release / Compute release matrix", 1),
+            job("release / Release manual", 1),
+            job("release / Release unrelated", 2),
+        ],
+        run_attempt=2,
+    )
+    assert normal_attempt == "1"
+    assert releases == {"release / Release manual": "1", "release / Release unrelated": "2"}
+    row = release("manual")
+    identity = str(invocation_id(run_id="200", attempt="1", role="release-unstamped", scope="manual"))
+    streams = {identity: own_build(row, identity)}
+    assert desired_tags(
+        [row],
+        source_commit=SOURCE,
+        run_id="200",
+        attempt=normal_attempt,
+        rbe_image=RBE,
+        successful_jobs=releases,
+        read=streams.get,
+    ) == {"manual": content_tag("manual", "a" * 64)}
+
+
+def test_full_rerun_new_matrix_does_not_inherit_an_omitted_old_package() -> None:
+    normal_attempt, releases = job_attempts(
+        [
+            job("bazel-ci / Test & Build", 2),
+            job("release / Compute release matrix", 2),
+            job("release / Release old", 1),
+        ],
+        run_attempt=2,
+    )
+    assert normal_attempt == "2"
+    assert releases == {}
+
+
+@pytest.mark.parametrize(("status", "conclusion"), [("queued", ""), ("completed", "failure"), ("completed", "skipped")])
+def test_replacement_job_cannot_reuse_previous_passing_attempt(status: str, conclusion: str) -> None:
+    _, releases = job_attempts(
+        [
+            job("release / Compute release matrix", 1),
+            job("release / Release package", 1),
+            job("release / Release package", 2, status, conclusion),
+        ],
+        run_attempt=2,
+    )
+    assert releases == {}
+
+
+@pytest.mark.parametrize("conclusion", ["success", "failure", "timed_out", "cancelled", "skipped"])
+def test_normal_job_conclusions_match_release_cancellation_policy(conclusion: str) -> None:
+    attempt, _ = job_attempts(
+        [job("bazel-ci / Test & Build", 1), job("bazel-ci / Test & Build", 2, conclusion=conclusion)], run_attempt=2
+    )
+    assert attempt == ("" if conclusion in {"cancelled", "skipped"} else "2")
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -145,7 +210,7 @@ def select(rows: list[Release], streams: dict[str, Invocation], jobs: set[str] |
         run_id="200",
         attempt="1",
         rbe_image=RBE,
-        successful_jobs=jobs or set(),
+        successful_jobs=dict.fromkeys(jobs or set(), "1"),
         read=streams.get,
     )
 

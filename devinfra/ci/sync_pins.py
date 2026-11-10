@@ -26,7 +26,7 @@ from github import Auth, Github
 from github.GithubException import GithubException
 
 from devinfra.ci.artifacts import Pin, Sources, sources_path, url_sha256
-from devinfra.ci.pin_publication import desired_tags, publication_source, read_build, source_configuration
+from devinfra.ci.pin_publication import desired_tags, job_attempts, publication_source, read_build, source_configuration
 
 # gazelle:include_dep @pypi//httpx
 
@@ -92,17 +92,14 @@ def main(argv: list[str] | None = None) -> None:
     source_commit, run = selected
     print(f"Selecting published content from CI-eligible devel source {source_commit}")
     releases = config.releases
+    normal_attempt, successful_jobs = job_attempts(run.jobs(_filter="latest"), run_attempt=run.run_attempt)
     tags = desired_tags(
         releases,
         source_commit=source_commit,
         run_id=str(run.id),
-        attempt=str(run.run_attempt),
+        attempt=normal_attempt,
         rbe_image=config.rbe_image,
-        successful_jobs={
-            job.name
-            for job in run.jobs(_filter="latest")
-            if job.status == "completed" and job.conclusion == "success" and job.run_attempt == run.run_attempt
-        },
+        successful_jobs=successful_jobs,
         read=read_build,
     )
     sources = Sources.model_validate_json(sources_path().read_text())
