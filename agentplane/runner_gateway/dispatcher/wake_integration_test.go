@@ -328,7 +328,7 @@ func (w *identityWake) RequestWake(_ context.Context, _ *lifecycle.Target, calle
 // as it is asked for a ServiceAccount sender's account.
 func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
 	ctx := context.Background()
-	identity := &identitypb.Identity{Name: "identity-sender", Uid: "identity-sender-uid"}
+	identity := &identitypb.Identity{Name: "identity-sender", Uid: uuid.NewString()}
 	actor := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "actions"}, "actions-uid")
 	for name, proof := range map[string]IdentityProof{
 		"own workload": IdentitySVID{Pod: &PodIdentity{Name: "sender-pod", UID: "sender-pod-uid"}},
@@ -340,12 +340,15 @@ func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store := testStore(t, 3)
 			sessionID, sandboxName, sandboxUID := "identity-wake-session-"+uuid.NewString()[:8], "identity-wake-sandbox", uuid.NewString()
-			sender := IdentityCaller{Identity: identity, Proof: proof}
 			spec := &sessionpb.SessionSpec{}
+			// Only the Identity's own workload opens the Session here (a seed: in production a privileged
+			// caller does); the sender under test then queues input to it.
 			if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID,
-				testPlacement(spec, sandboxName, sandboxUID), spec, nil, nil, SessionExecution{Identity: identity}, sender); err != nil {
+				testPlacement(spec, sandboxName, sandboxUID), spec, nil, nil, SessionExecution{Identity: identity},
+				IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
 				t.Fatal("open the Identity-run Session:", err)
 			}
+			sender := IdentityCaller{Identity: identity, Proof: proof}
 			row, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input("identity-wake-command-"+uuid.NewString()[:8], "hello"), nil, sender)
 			if err != nil {
 				t.Fatal("enqueue the Identity sender's input:", err)
