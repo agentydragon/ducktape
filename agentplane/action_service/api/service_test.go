@@ -69,7 +69,7 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 	}
 	if err := s.store.FinishExecution(t.Context(), submitted.ID, claim.Lease, store.ExecutionOutcome{
 		State: store.ExecutionFailed, Result: json.RawMessage(`["test-partial", 1]`),
-		Error: json.RawMessage(`{"kind": "test_failure", "message": "test message"}`),
+		Error: &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		Execution: &action_servicepb.Execution{
 			Id: stored.Execution.ID.String(), State: action_servicepb.ExecutionState_EXECUTION_STATE_FAILED,
 			Result:    structpb.NewListValue(result),
-			Error:     structOf(t, map[string]any{"kind": "test_failure", "message": "test message"}),
+			Error:     &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"},
 			CreatedAt: timestamppb.New(stored.Execution.CreatedAt), StartedAt: timestamppb.New(*stored.Execution.StartedAt),
 			CompletedAt: timestamppb.New(*stored.Execution.CompletedAt),
 		},

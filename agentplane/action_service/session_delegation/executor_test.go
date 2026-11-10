@@ -16,6 +16,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -31,6 +32,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/code"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -328,26 +330,12 @@ func TestResumeUnknownReplyIsNotReplayed(t *testing.T) {
 	if err != nil || outcome.State != store.ExecutionUnknown || backend.resumeCalls != 1 {
 		t.Fatalf("resume outcome=%+v error=%v calls=%d; want one unknown-outcome attempt", outcome, err, backend.resumeCalls)
 	}
-	var failure struct {
-		Kind           string `json:"kind"`
-		GRPCCode       string `json:"grpc_code"`
-		WakeAssessment struct {
-			State  string `json:"state"`
-			Reason string `json:"reason"`
-			Error  struct {
-				Code    int32  `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-		} `json:"wake_assessment"`
-	}
-	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-		t.Fatal(err)
-	}
-	if failure.Kind != string(store.UnknownAdapterOutcome) || failure.GRPCCode != "UNAVAILABLE" ||
-		failure.WakeAssessment.State != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN.String() ||
-		failure.WakeAssessment.Reason != environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN.String() ||
-		failure.WakeAssessment.Error.Code != int32(codes.Unavailable) || failure.WakeAssessment.Error.Message != "patch result unknown" {
-		t.Fatalf("unknown resume error details = %+v", failure)
+	failure, resume := outcome.Error, outcome.Error.GetResume()
+	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN || resume.GetGrpcCode() != code.Code_UNAVAILABLE ||
+		resume.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN ||
+		resume.GetWakeAssessment().GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN ||
+		resume.GetWakeAssessment().GetError().GetCode() != int32(codes.Unavailable) || resume.GetWakeAssessment().GetError().GetMessage() != "patch result unknown" {
+		t.Fatalf("unknown resume error details = %v", failure)
 	}
 }
 
@@ -370,22 +358,12 @@ func TestResumePolicyDenialIsMappedToBackendRefusal(t *testing.T) {
 	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
 		t.Fatalf("denied resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
 	}
-	var failure struct {
-		Kind              string `json:"kind"`
-		GRPCCode          string `json:"grpc_code"`
-		ResumeEligibility struct {
-			State  string `json:"state"`
-			Reason string `json:"reason"`
-		} `json:"resume_eligibility"`
-	}
-	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-		t.Fatal(err)
-	}
-	if failure.Kind != "backend_refused" || failure.GRPCCode != "PERMISSION_DENIED" ||
-		failure.ResumeEligibility.State != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED.String() ||
-		failure.ResumeEligibility.Reason != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED.String() ||
-		strings.Contains(string(outcome.Error), "private policy detail") {
-		t.Fatalf("denied resume error = %s", outcome.Error)
+	failure, resume := outcome.Error, outcome.Error.GetResume()
+	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED || resume.GetGrpcCode() != code.Code_PERMISSION_DENIED ||
+		resume.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		resume.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
+		strings.Contains(failure.String(), "private policy detail") {
+		t.Fatalf("denied resume error = %v", failure)
 	}
 }
 
@@ -410,23 +388,12 @@ func TestResumeRateLimitPreservesWakeAssessmentRetryTime(t *testing.T) {
 	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
 		t.Fatalf("rate limited resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
 	}
-	var failure struct {
-		Kind           string `json:"kind"`
-		GRPCCode       string `json:"grpc_code"`
-		WakeAssessment struct {
-			State   string `json:"state"`
-			Reason  string `json:"reason"`
-			RetryAt string `json:"retry_at"`
-		} `json:"wake_assessment"`
-	}
-	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-		t.Fatal(err)
-	}
-	if failure.Kind != "capacity_exhausted" || failure.GRPCCode != "RESOURCE_EXHAUSTED" ||
-		failure.WakeAssessment.State != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED.String() ||
-		failure.WakeAssessment.Reason != environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED.String() ||
-		failure.WakeAssessment.RetryAt != "2026-11-01T12:00:00Z" {
-		t.Fatalf("rate limit resume error details = %+v; raw=%s", failure, outcome.Error)
+	failure, resume := outcome.Error, outcome.Error.GetResume()
+	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CAPACITY_EXHAUSTED || resume.GetGrpcCode() != code.Code_RESOURCE_EXHAUSTED ||
+		resume.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED ||
+		resume.GetWakeAssessment().GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED ||
+		!resume.GetWakeAssessment().GetRetryAt().AsTime().Equal(retryAt.AsTime()) {
+		t.Fatalf("rate limit resume error details = %v", failure)
 	}
 }
 
@@ -686,13 +653,7 @@ func TestSessionWritesRejectTargetOutsideAuthenticatedCallerNamespace(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			var failure struct {
-				Kind string `json:"kind"`
-			}
-			if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-				t.Fatalf("decode Action error %s: %v", outcome.Error, err)
-			}
-			if outcome.State != store.ExecutionFailed || failure.Kind != "invalid_arguments" {
+			if outcome.State != store.ExecutionFailed || outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS {
 				t.Fatalf("outcome=%+v error=%v; want invalid_arguments", outcome, err)
 			}
 			if backend.openCalls != 0 || backend.submitCalls != 0 || backend.interruptCalls != 0 {

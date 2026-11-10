@@ -397,11 +397,10 @@ survive a settings change. Other input constraints agree across advertisement an
 
 ### Execution schema-check diagnostics
 
-A failed execution-time `tools/list` keeps `kind=mcp_unavailable` and adds the exception type,
-elapsed schema-check time and connection age (since client initialization) to the retained execution
-error and a warning log. A directly raised HTTP status exception also supplies its status code.
-SDK-wrapped exceptions remain opaque; use the HTTP client's existing status log for correlation
-rather than traversing arbitrary exception graphs. No exception text, headers, URLs, response bodies
+A failed execution-time `tools/list` fails as `EXECUTION_ERROR_KIND_MCP_UNAVAILABLE` and adds the
+elapsed schema-check time and connection age (since client initialization) to the execution error's
+`McpUnavailable` diagnostics and a warning log; only the log names the error's Go type. SDK-wrapped errors remain opaque; use
+the HTTP client's existing status log for correlation rather than traversing arbitrary error graphs. No exception text, headers, URLs, response bodies
 or raw MCP session IDs are copied into these diagnostics.
 
 This is observability, not a retry or network-policy change. For an operator-authorized reproduction,

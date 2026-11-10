@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -57,11 +58,14 @@ func NewExecutor(
 func (e *Executor) Actions() map[string]catalog.ActionDefinition { return e.inputs.Actions() }
 
 // refusal is an attempt refused for a reason its caller can act on, before or without any effect.
-type refusal struct{ kind, message string }
+type refusal struct {
+	kind    action_servicepb.ExecutionErrorKind
+	message string
+}
 
 func (r *refusal) Error() string { return r.message }
 
-func refuse(kind, format string, args ...any) error {
+func refuse(kind action_servicepb.ExecutionErrorKind, format string, args ...any) error {
 	return &refusal{kind: kind, message: fmt.Sprintf(format, args...)}
 }
 
@@ -82,7 +86,7 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	case errors.As(err, &refused):
 		return worker.Failed(refused.kind, refused.message), nil
 	case errors.Is(err, catalog.ErrInvalidArguments):
-		return worker.Failed("invalid_arguments", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, err.Error()), nil
 	}
 	return outcome, err
 }
@@ -157,6 +161,6 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		return worker.Succeeded(e.listSessions(ctx, args))
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
-		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, fmt.Sprintf("this executor has no %q", action)), nil
 	}
 }

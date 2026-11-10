@@ -31,8 +31,11 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 
 func TestUnknownOutcomeReasonsBelongToStoredVocabulary(t *testing.T) {
 	stored := loadGolden(t).Enums["unknown_outcome_reason"]
-	for _, reason := range []UnknownOutcomeReason{UnknownExecutorLost, UnknownLeaseExpired, UnknownAdapterOutcome, UnknownCoordinatorStopped} {
-		if !slices.Contains(stored, string(reason)) {
+	for _, reason := range []action_servicepb.ExecutionErrorKind{
+		action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED,
+		action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_COORDINATOR_STOPPED,
+	} {
+		if !slices.Contains(stored, storedErrorKinds[reason]) {
 			t.Errorf("stored vocabulary has no reason %s among %v", reason, stored)
 		}
 	}
@@ -52,7 +55,7 @@ func TestTerminalStatesMapToStoredRequestStates(t *testing.T) {
 func TestEndedExecutionsHoldStoredErrors(t *testing.T) {
 	for _, vector := range loadGolden(t).UnknownOutcomes {
 		t.Run(vector.Reason, func(t *testing.T) {
-			sameJSON(t, []byte(unknownOutcomeError(UnknownOutcomeReason(vector.Reason))), vector.Error)
+			sameJSON(t, []byte(unknownOutcomeError(errorKindFromStored(vector.Reason))), vector.Error)
 		})
 	}
 }

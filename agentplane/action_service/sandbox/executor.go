@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -44,7 +45,7 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 		// A Pod can only run as a ServiceAccount of its own namespace, so a caller from anywhere else cannot be given
 		// a box that is it. Stamping the box as some other account would quietly hand it authority its caller never
 		// had.
-		return worker.Failed("caller_not_local", fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL, fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
 			"must live in %q; %q cannot be given one", e.binding.Namespace, caller.Namespace)), nil
 	}
 	return worker.Hold(ctx, lease, func(ctx context.Context) (store.ExecutionOutcome, error) {
@@ -61,13 +62,13 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	var unrun *ExecError
 	switch {
 	case errors.As(err, &foreign):
-		return worker.Failed("sandbox_not_yours", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_YOURS, err.Error()), nil
 	case errors.As(err, &unavailable):
-		return worker.Failed("sandbox_unavailable", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE, err.Error()), nil
 	case errors.As(err, &unrun):
-		return worker.Failed("exec_failed", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXEC_FAILED, err.Error()), nil
 	case errors.Is(err, catalog.ErrInvalidArguments):
-		return worker.Failed("invalid_arguments", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, err.Error()), nil
 	}
 	return outcome, err
 }
@@ -127,6 +128,6 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		return worker.Succeeded(DisposeResult{Name: string(args.Name), Existed: existed}, err)
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
-		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, fmt.Sprintf("this executor has no %q", action)), nil
 	}
 }

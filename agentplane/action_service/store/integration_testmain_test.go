@@ -129,6 +129,16 @@ func (f fixture) count(t *testing.T, query string, args ...any) int {
 	return count
 }
 
+// storedError is the `action_execution.error` document of a request's Execution.
+func (f fixture) storedError(t *testing.T, id uuid.UUID) []byte {
+	t.Helper()
+	var document []byte
+	if err := f.db.QueryRowContext(t.Context(), `SELECT error FROM action_execution WHERE request_id = $1`, id).Scan(&document); err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
 // awaitBound only fails a test whose condition never comes.
 const awaitBound = 30 * time.Second
 

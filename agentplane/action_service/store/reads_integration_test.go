@@ -172,7 +172,9 @@ func TestRequestViewsDoNotDependOnTheReader(t *testing.T) {
 	want := f.get(t, request.ID)
 	sameJSON(t, want.Arguments, body.Arguments)
 	sameJSON(t, want.Execution.Result, []byte(result))
-	sameJSON(t, want.Execution.Error, []byte(failure))
+	if got := want.Execution.Error; got.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN || got.GetMessage() != "test message" {
+		t.Errorf("an error stored under a kind this release does not name reads %v", got)
+	}
 	if want.Caller != caller.Account {
 		t.Errorf("caller = %+v", want.Caller)
 	}
