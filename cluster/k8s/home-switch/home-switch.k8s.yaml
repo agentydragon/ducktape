@@ -93,6 +93,7 @@ spec:
     name: tf-gitops-home-switch
     namespace: ducktape-flux
   storeReadablePlan: human
+  suspend: true
   vars:
     - name: switch_address
       value: 192.168.1.100

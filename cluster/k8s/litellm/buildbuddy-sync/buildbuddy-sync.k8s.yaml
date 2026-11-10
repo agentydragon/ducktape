@@ -36,6 +36,7 @@ spec:
     kind: ExternalArtifact
     name: tf-gitops-litellm-buildbuddy-sync
     namespace: ducktape-flux
+  suspend: true
   vars:
     - name: buildbuddy_api_key
       valueFrom:
