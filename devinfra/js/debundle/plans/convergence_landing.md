@@ -63,20 +63,22 @@ Every PR in this plan:
    and do not land either.
 4. Has no `#[cfg(test)]` hooks or forced-target overrides in production modules
    (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
-5. Keeps the legacy gate authoritative until the flip PR. A refusal the legacy
-   gate would not have made is a regression unless the PR proves the acceptance
-   was unsafe with a Node divergence. The reverse also holds: an acceptance
-   the legacy gate would not have made is a regression unless the effect
-   verdict accepts the same candidate and the PR shows Node parity with
-   `swapped_pairs > 0`. A slice feeds the legacy gate through the facts it
+5. Keeps the legacy gate authoritative until the flip PR, and guards one
+   direction only. An acceptance the legacy gate would not have made is a
+   regression unless the effect verdict accepts the same candidate and the PR
+   shows Node parity with `swapped_pairs > 0`. A refusal it would not have
+   made is over-restriction: allowed, listed in the PR, and where a canonical
+   spec loses an acceptance that spec is migrated in gaffer-private
+   (§ Compatibility). A slice feeds the legacy gate through the facts it
    reads, so the PR compares every e2e evaluation's legacy verdict, effect
    status and emitted order with its `devel` base (the `DEBUNDLE_TV_AUDIT=1`
-   records) and lists each difference with its evidence. "No difference" is a
-   stated result, not an assumption: three of the first Wave 3 slices changed
-   legacy inputs without saying so (§ Root admission below).
+   records) and lists each difference; a refusal that became an acceptance
+   carries its evidence. "No difference" is a stated result, not an
+   assumption: three of the first Wave 3 slices changed legacy inputs without
+   saying so (§ Root admission below).
 6. Keeps every `devel` test or replaces it with a stronger one in the forms of
    item 3. A refusal that becomes an acceptance needs a relocation with Node
-   parity; an acceptance that becomes a refusal needs a Node divergence. The
+   parity; an acceptance that becomes a refusal is listed (item 5). The
    tests #14552 dropped are listed in § Test debt; the slice that owns them
    restores the behavior they protected in those forms.
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
@@ -172,17 +174,27 @@ network access:
 
 3. Compare each product's ordinary gate and translation-validation summaries
    and emitted-file inventory against the same build at the slice's `devel`
-   base. A new rejection, a changed emitted order or changed emitted bytes is a
-   regression unless the PR shows the old acceptance was unsafe with a Node
-   divergence. Run the focused runtime targets named in `DUCKTAPE_PINNING.md`
-   when the slice touches browser or vendor loading.
+   base. A changed emitted order or changed emitted bytes is attributed to the
+   rule that caused it, with the reordered statements checked against source.
+   A new rejection is attributed the same way and the spec is migrated
+   (§ Compatibility). Run the focused runtime targets named in
+   `DUCKTAPE_PINNING.md` when the slice touches browser or vendor loading.
 
 Not every spec passes cleanly at the current pin; that is the recorded state,
-not a target. A slice may update a gaffer-private spec for compatibility with a
-changed contract (new premise key, renamed field, explicit claim replacing a
-removed implicit rule) in a paired gaffer-private PR, and must not make a spec
-pass by weakening an obligation. A slice does not have to make a spec more
-correct than it is today.
+not a target. A slice does not have to make a spec more correct than it is
+today.
+
+## Compatibility
+
+Debundle's only consumers are the gaffer-private specs and BUILD files, and no
+analysis output is stored between pins. So nothing here is kept for
+compatibility: spec keys, premise shapes, saved-analysis and report schemas,
+Bazel target and output names, and legacy-gate acceptances that a slice
+over-restricts may all change. The change lands without a shim, and the
+consumer is migrated in the gaffer-private PR that moves the pin (new premise
+key, renamed field, explicit claim replacing a removed implicit rule,
+co-location where an acceptance was lost). A migration must not make a spec
+pass by weakening an obligation.
 
 ## Debt inventory
 
