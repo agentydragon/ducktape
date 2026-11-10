@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 
 use spec::{AdmissionCheck, ReentryFreeOperation, ResolvedMemberSelector};
 
+use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use crate::graph::{CommutingStatementsUnused, UnusedCommutingEndpoint, UnusedPremiseReason};
 use crate::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 
@@ -28,6 +29,58 @@ pub struct ChunkSpecLint {
     pub findings: Vec<LintFinding>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub consumed_reentry_free_operations: BTreeSet<ReentryFreeOperation>,
+    /// Loader keys the program's export-reentry loader closures consumed.
+    #[serde(default)]
+    pub loader_key_uses: LoaderKeyUses,
+}
+
+/// What the program's loader closures consumed (docs/premise_provenance.md).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "uses", rename_all = "snake_case")]
+pub enum LoaderKeyUses {
+    /// Every closure that decided a policy recorded the keys it consumed.
+    Recorded {
+        host_keys: BTreeSet<HostBehaviorKey>,
+        premise_keys: BTreeSet<ProgramPremiseKey>,
+    },
+    /// A policy rests on a closure whose only failure is reach-back
+    /// (`reentry_through`): its keys suppressed other failures without being
+    /// recorded, so no key can be judged unused.
+    Unattributed,
+}
+
+impl Default for LoaderKeyUses {
+    fn default() -> Self {
+        Self::Recorded {
+            host_keys: BTreeSet::new(),
+            premise_keys: BTreeSet::new(),
+        }
+    }
+}
+
+impl LoaderKeyUses {
+    pub fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (
+                Self::Recorded {
+                    mut host_keys,
+                    mut premise_keys,
+                },
+                Self::Recorded {
+                    host_keys: other_host,
+                    premise_keys: other_premise,
+                },
+            ) => {
+                host_keys.extend(other_host);
+                premise_keys.extend(other_premise);
+                Self::Recorded {
+                    host_keys,
+                    premise_keys,
+                }
+            }
+            _ => Self::Unattributed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +110,13 @@ pub enum LintedAnnotation {
     TrustedDataflowSummaries { spec_location: String },
     /// One `host_behavior.reentry_free_operations` entry.
     ReentryFreeOperation { operation: ReentryFreeOperation },
+    /// A `host_behavior` loader key: `loader_result_for_evaluating_module`,
+    /// `synchronous_load_runs_app_callbacks`, `synchronous_load_drains_microtasks`
+    /// or one `reentry_free_embedded_loaders` entry.
+    LoaderHostBehavior { key: HostBehaviorKey },
+    /// A `program_premises` key the loader closure reads
+    /// (`non_literal_loader_calls`).
+    LoaderProgramPremise { key: ProgramPremiseKey },
     /// One `chunk_analysis_options.<chunk>.commuting_statements` entry.
     CommutingStatements {
         spec_location: String,
@@ -133,6 +193,16 @@ pub enum InconclusiveReason {
 }
 
 impl LintFinding {
+    /// A program-wide annotation (no `chunk`).
+    pub fn program_wide(annotation: LintedAnnotation, verdict: InferenceVerdict) -> Self {
+        Self {
+            rule: LintRule::InferableAnnotation,
+            chunk: None,
+            annotation,
+            verdict,
+        }
+    }
+
     /// A `host_behavior.reentry_free_operations` entry, from its recorded uses.
     pub fn reentry_free_operation(
         operation: ReentryFreeOperation,
@@ -197,6 +267,19 @@ impl LintFinding {
             },
             verdict: InferenceVerdict::Inferable {
                 reason: InferableReason::NoAdmissionViolation,
+            },
+        }
+    }
+
+    /// A `purity: pure` hint whose name no statement of its chunk reads, so
+    /// no classifier arm or import read consulted it.
+    pub fn unconsulted_purity_hint(chunk: &str, owner: PurityHintOwner) -> Self {
+        Self {
+            rule: LintRule::InferableAnnotation,
+            chunk: Some(chunk.to_owned()),
+            annotation: LintedAnnotation::PurityHint { owner },
+            verdict: InferenceVerdict::Inferable {
+                reason: InferableReason::NeverConsumed,
             },
         }
     }

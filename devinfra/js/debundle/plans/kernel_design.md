@@ -28,7 +28,8 @@ the family when every leaf has completed; the contract is in
   lane is a conditional or logical operator still takes the flat lane
   (`roots/operands.rs`, the `ordered_initializer` families). Admitting it
   needs a typed loss for an unproved member read at the root instead of the
-  remainder summary, or legacy-accepted roots regress.
+  remainder summary, or legacy-accepted roots regress. New admissions use the
+  attempted lane (<convergence_landing.md> § Root admission).
 
   **Admission is only safe when the kernel can finish the root.** A refusal
   after some callbacks have run cannot be handed back to the legacy row (that
@@ -115,9 +116,10 @@ approved in principle. Starting points:
 
 ## Provider execution
 
-Landed with Wave 3 slice 3 PR 1: the provider adapter is the one place a
-provider body runs (`ProviderContext::seal_{callable,class}`), and summary
-substitution is the fast path with an effect receipt
+Landed with Wave 3 slice 3: the provider adapter is the one place a
+provider body runs (`ProviderContext::seal_{callable,class}`), summary
+substitution is the fast path with an effect receipt, and a callback passed to
+a summarized call or retained by a summarized factory is a deferred effect
 (<../docs/design.md> § The synchronous execution kernel).
 
 What remains is running a provider body inside a caller transfer, for bodies
@@ -134,6 +136,20 @@ invokes an argument):
   adapter's hardcoded isolation today and become decisions on `scope`. The
   pooled-region refusal in `operation_support_receipt` lands with regions.
 - Summary substitution stays the fast path tried before the adapter runs.
+
+Left of the callback family:
+
+- **Live captures.** A callback that captures a cell of the activation
+  creating it gets no receipt for the call that receives it
+  (`callback_captures_live_cell`); this is call-effect coverage for callees
+  with live captures (<convergence_landing.md> Wave 3 row 12).
+- **Invoking a retained result.** `wrapped()` runs a provider closure, which
+  is an unsummarized provider body: it needs the provider program registry
+  above, and then the retained callback's own receipt at that call.
+- **Factories the ordered lane does not substitute**: author-asserted
+  callback factories, namespace-member factories, factories whose body reads a
+  provider cell, and factories called with anything but one inline function
+  keep the flattened lane's callback-factory arms.
 
 The flat lane `invoke_with_cells` still takes bodies with an ordered plan
 behind four gates; its `CLEANUP` in `interpreter.rs` names the kernel rule each

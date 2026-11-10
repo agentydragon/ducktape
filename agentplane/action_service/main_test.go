@@ -294,10 +294,9 @@ func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	request := service.run(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-group", Name: "test-action"}, `{}`)
-	var failure struct{ Kind string }
-	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != action_servicepb.ActionState_ACTION_STATE_FAILED ||
-		failure.Kind != "*worker.UnsupportedActionError" {
-		t.Errorf("the request is %s with execution error %s, %v", request.State, request.Execution.Error, err)
+	if request.State != action_servicepb.ActionState_ACTION_STATE_FAILED ||
+		request.Execution.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL {
+		t.Errorf("the request is %s with execution error %v", request.State, request.Execution.Error)
 	}
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the cancellation that stopped it", err)

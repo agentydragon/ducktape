@@ -52,6 +52,7 @@ use super::world::descriptor_heap::{
     self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
 };
 use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
+use super::world::prefix_values::{PrefixValues, TopBindings};
 use super::world::{World, WorldScope};
 use crate::analysis_inputs::{
     AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, NativeIntrinsic, ProofDependencies,
@@ -1148,7 +1149,7 @@ struct ExportCallbackMemo {
 /// Sync: every world field read by `visit_export_surface_callback_roots`,
 /// `walk_callback_values` and `visit_stored_references_with_edges`.
 struct ExportSurfaceReads {
-    prefix_values: Context,
+    prefix_values: PrefixValues,
     exported_runtime_values: Values,
     global_escaped_callbacks: Values,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
@@ -1254,9 +1255,19 @@ pub(super) struct Observations {
     inference_uses: BTreeSet<crate::analysis_provenance::InferenceUse>,
     /// Exact source-checked receivers whose prototype premises the author supplies.
     record_factory_prototype_premises: RecordFactoryPrototypePremises,
+    /// The typed reason an operation of this owner's execution withheld its
+    /// effect receipt. Report-only.
+    owner_coverage_refusal: Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
 }
 
 impl Observations {
+    pub(super) fn refuse_owner_coverage(
+        &mut self,
+        reason: crate::facts::OwnerInitializationCoverageRefusalReason,
+    ) {
+        self.owner_coverage_refusal.get_or_insert(reason);
+    }
+
     fn record_failed_native_guard(&mut self, check: NativeIntegrityCheck) {
         self.native_integrity_checks.insert(check);
     }
@@ -1355,6 +1366,7 @@ impl Observations {
         effects.inference_uses = std::mem::take(&mut self.inference_uses)
             .into_iter()
             .collect();
+        effects.initialization_coverage_refusal = self.owner_coverage_refusal.take();
     }
 }
 
@@ -6338,7 +6350,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         result
     }
 
-    fn record_foreign_call_use(&mut self, summary: &crate::analysis_inputs::ForeignCallSummary) {
+    pub(super) fn record_foreign_call_use(
+        &mut self,
+        summary: &crate::analysis_inputs::ForeignCallSummary,
+    ) {
         use crate::analysis_provenance::{InferenceRule, InferenceUse};
         let mut derivation_rules = BTreeSet::from([InferenceRule::ForeignCallSummary]);
         if !summary.native_constructions.is_empty() {
@@ -8805,8 +8820,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .world_mut()
                 .module
                 .prefix_values
-                .entry(id.clone())
-                .or_default()
+                .entry_or_default(id)
                 .insert(AbstractValue::Value(Value::Top));
             if changed {
                 self.state.world_mut().revision.bump_prefix();
@@ -9562,60 +9576,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.native_call_identity(CallKind::Call, &call.callee, CallSite::from(call.span)),
                 Some(NativeCallIdentity::Proved(..))
             )
-    }
-
-    /// Native and imported calls whose proofs still project source operands
-    /// retain their established whole-owner path. This chooses a source
-    /// family before execution; the ordered call transfer still checks each
-    /// actual target and never retries a failed invocation.
-    pub(super) fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
-        calls
-            .iter()
-            .filter(|call| call.kind == CallKind::Call)
-            .all(|call| {
-                let (targets, member) = match &call.callee {
-                    ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
-                        Some(Values::from([AbstractValue::Value(Value::Alloc(
-                            Kind::Function,
-                            *key,
-                        ))])),
-                        false,
-                    ),
-                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
-                        self.state.world.module.prefix_values.get(binding).cloned(),
-                        false,
-                    ),
-                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
-                        let ValueExpr::Binding(receiver) = receiver.as_ref() else {
-                            return false;
-                        };
-                        if !self.initialized_local_binding(receiver) {
-                            return false;
-                        }
-                        let targets = self
-                            .state
-                            .world
-                            .module
-                            .prefix_values
-                            .get(receiver)
-                            .and_then(|values| {
-                                self.present_own_data_read(values, property)
-                                    .map(|read| read.values)
-                            });
-                        (targets, true)
-                    }
-                    _ => return false,
-                };
-                let Some(targets) = targets else {
-                    return false;
-                };
-                let Some((key, callable)) = self.local_call_target(&targets) else {
-                    return false;
-                };
-                !callable.generator
-                    && !self.inputs.index.async_callables.contains(&key)
-                    && (!member || self.method_receiver_is_unused(&targets))
-            })
     }
 
     pub(super) fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
@@ -10383,6 +10343,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             || self.inputs.top_bindings.contains(binding)
                             || self.inputs.imported_primitive_read(binding).is_some()
                             || self.inputs.index.foreign_call_imports.contains_key(binding)
+                            || self.substitutes_factory_calls(&callable.calls, binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -10463,8 +10424,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         //   store to a module binding that records the rebind
         //   (`Unproved::CaptureStore` summarizes the remainder today).
         // - free reads outside module, summarized-import, imported-primitive
-        //   and intact-native bindings: global-object and callback-factory
-        //   import reads with their global-cell provenance.
+        //   and intact-native bindings: global-object reads, and reads of a
+        //   callback-factory import the ordered lane does not substitute,
+        //   with their global-cell provenance.
         // - `established_writes`: member-write proofs (fresh local records,
         //   borrowed parameters, array iteration) in the kernel's own-data
         //   store.
@@ -10484,6 +10446,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     || self.inputs.top_bindings.contains(binding)
                     || self.inputs.imported_primitive_read(binding).is_some()
                     || self.inputs.index.foreign_call_imports.contains_key(binding)
+                    || self.substitutes_factory_calls(&callable.calls, binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(
@@ -10562,8 +10525,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .world_mut()
                     .module
                     .prefix_values
-                    .entry(id.clone())
-                    .or_default();
+                    .entry_or_default(id);
                 let before = possible.len();
                 possible.extend(values.iter().cloned());
                 if possible.len() != before {
@@ -10802,7 +10764,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         transfer_complete
     }
 
-    fn method_receiver_is_unused(&self, targets: &Values) -> bool {
+    pub(super) fn method_receiver_is_unused(&self, targets: &Values) -> bool {
         self.inputs.index.dynamic_scope_owners.is_empty()
             && !targets.is_empty()
             && targets.iter().all(|target| {
@@ -11101,20 +11063,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if actual == source
             )))
         {
-            if targets.contains(&AbstractValue::CallbackFactory)
-                && let ValueExpr::Binding(binding) = &call.callee
-            {
-                for kind in [
-                    CallbackFactoryUseKind::CallTiming,
-                    CallbackFactoryUseKind::ReturnShape,
-                ] {
-                    self.record_callback_factory_use(binding, kind, call.owner, call.span);
-                }
-            }
-            let callbacks = self.callback_values(&args[0]);
-            return CallTransfer::Values(Values::from([
-                self.audited_retained_result(RetainedResultKind::Factory, callbacks)
-            ]));
+            let records_evidence = targets.contains(&AbstractValue::CallbackFactory);
+            return CallTransfer::Values(self.retained_factory_carrier(
+                call,
+                records_evidence,
+                &args[0],
+            ));
         }
         if needs_value {
             // Publication can change properties and captured state, but cannot
@@ -11748,12 +11702,18 @@ enum NativeOwnDataReadCandidate {
 /// Exact native calls whose own heap action cannot observe an existing array
 /// or Set. Argument evaluation remains the collector's responsibility.
 pub(crate) struct FreshRecordFreezeHeapProof {
-    sites: BTreeSet<(u32, u32)>,
+    /// Each certified call site and the `native_call_identity_inputs` entry
+    /// that certified it.
+    sites: BTreeMap<(u32, u32), crate::analysis_inputs::NativeOperationInputEvidence>,
 }
 
 impl FreshRecordFreezeHeapProof {
-    pub(crate) fn contains(&self, call: &CallExpr) -> bool {
-        self.sites.contains(&(call.span.lo.0, call.span.hi.0))
+    /// The author input certifying `call`, if the proof covers it.
+    pub(crate) fn input_evidence(
+        &self,
+        call: &CallExpr,
+    ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence> {
+        self.sites.get(&(call.span.lo.0, call.span.hi.0))
     }
 }
 
@@ -11874,7 +11834,7 @@ impl PreparedSynchronousCallIndex {
                     return None;
                 };
                 (call.span == input.call_span && self.index.plain_data_objects.contains(object))
-                    .then_some((call.span.lo.0, call.span.hi.0))
+                    .then(|| ((call.span.lo.0, call.span.hi.0), input.evidence.clone()))
             })
             .collect();
         FreshRecordFreezeHeapProof { sites }
@@ -12514,11 +12474,16 @@ pub(crate) fn annotate_synchronous_calls(
     } else {
         BTreeSet::new()
     };
-    let mut initial_values = Context::new();
+    let mut initial_values = PrefixValues::new(Arc::new(TopBindings::new(
+        top_bindings
+            .iter()
+            .chain(index.hoisted_bindings.keys())
+            .cloned(),
+    )));
     let mut initialized_bindings = BTreeSet::new();
     for (binding, key) in &index.hoisted_bindings {
         initial_values.insert(
-            binding.clone(),
+            binding,
             Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))]),
         );
         initialized_bindings.insert(binding.clone());
@@ -12831,7 +12796,7 @@ impl Executor<'_, '_> {
                                 .world
                                 .module
                                 .prefix_values
-                                .get(*binding)
+                                .get(binding)
                                 .is_some_and(|values| {
                                     values.iter().any(|value| {
                                         matches!(

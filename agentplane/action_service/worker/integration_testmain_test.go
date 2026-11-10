@@ -362,14 +362,11 @@ func sameJSON(t *testing.T, got, want json.RawMessage) {
 	}
 }
 
-// errorKind is the `kind` of an Execution's error document.
-func errorKind(t *testing.T, request store.ActionRequest) string {
+// errorKind is the kind of an Execution's error.
+func errorKind(t *testing.T, request store.ActionRequest) action_servicepb.ExecutionErrorKind {
 	t.Helper()
-	var document struct {
-		Kind string `json:"kind"`
+	if request.Execution == nil || request.Execution.Error == nil {
+		t.Fatalf("execution %+v has no error", request.Execution)
 	}
-	if err := json.Unmarshal(request.Execution.Error, &document); err != nil {
-		t.Fatalf("execution error %s: %v", request.Execution.Error, err)
-	}
-	return document.Kind
+	return request.Execution.Error.GetKind()
 }

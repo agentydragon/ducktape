@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -220,18 +221,12 @@ func resultOf[T any](a attempted) T {
 }
 
 // failure is the kind of an attempt that failed with a reason the caller can act on.
-func (a attempted) failure() string {
+func (a attempted) failure() action_servicepb.ExecutionErrorKind {
 	a.t.Helper()
 	if a.err != nil || a.outcome.State != store.ExecutionFailed {
 		a.t.Fatalf("attempt = %s %s, %v; want it to fail", a.outcome.State, a.outcome.Result, a.err)
 	}
-	var failure struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(a.outcome.Error, &failure); err != nil {
-		a.t.Fatal(err)
-	}
-	return failure.Kind
+	return a.outcome.Error.GetKind()
 }
 
 // recordingDispatcher is a Session Dispatcher that records each command and answers with a Dispatch of it, or with

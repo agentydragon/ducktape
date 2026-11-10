@@ -24,7 +24,7 @@ func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.Provider
 		if err != nil {
 			return err
 		}
-		sources, err := e.Store.recordEvidenceWithSources(ctx, tx, e.Owner, conversation, session, e.IntentID, string(payload.Kind()), "received", payload)
+		sources, err := e.Store.recordEvidenceWithSources(ctx, tx, e.Owner, conversation, session, e.IntentID, payload.Kind(), eventpb.ExecutionProgress_PHASE_RECEIVED, payload)
 		if err != nil {
 			return err
 		}

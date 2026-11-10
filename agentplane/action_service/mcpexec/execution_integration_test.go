@@ -72,8 +72,8 @@ func TestAToolsErrorResultIsItsAnswerUnlessItCannotTellTheOutcome(t *testing.T) 
 			if test.state == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 				sameJSON(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test failure"}],
 					"isError": true}`))
-			} else if kind := errorKind(t, request); kind != string(store.UnknownAdapterOutcome) {
-				t.Errorf("kind %q", kind)
+			} else if kind := errorKind(t, request); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN {
+				t.Errorf("kind %v", kind)
 			}
 			if made := tool.made(); len(made) != 1 {
 				t.Errorf("the tool was called %d times", len(made))
@@ -87,15 +87,15 @@ func TestAnExecutionReadsTheToolsAgainBeforeItCallsOne(t *testing.T) {
 		name string
 		// now is the tool the server offers when the Execution starts; nil when it offers none.
 		now  *mcp.Tool
-		kind string
+		kind action_servicepb.ExecutionErrorKind
 	}{
-		{"of a tool the server no longer offers", nil, "unknown_action"},
+		{"of a tool the server no longer offers", nil, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION},
 		{"whose schema the arguments no longer match", &mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(
 			`{"type": "object", "properties": {"text": {"type": "integer"}}}`,
-		)}, "incompatible_action_schema"},
+		)}, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INCOMPATIBLE_ACTION_SCHEMA},
 		{"whose schema is no longer a JSON Schema", &mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(
 			`{"type": "object", "properties": {"text": {"type": 1}}}`,
-		)}, "mcp_invalid_schema"},
+		)}, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before, after := &calls{}, &calls{}
@@ -112,12 +112,12 @@ func TestAnExecutionReadsTheToolsAgainBeforeItCallsOne(t *testing.T) {
 
 			request := f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action_servicepb.ActionState_ACTION_STATE_FAILED)
 			if kind := errorKind(t, request); kind != test.kind {
-				t.Errorf("kind %q, want %q", kind, test.kind)
+				t.Errorf("kind %v, want %v", kind, test.kind)
 			}
 			if len(before.made()) != 0 || len(after.made()) != 0 {
 				t.Error("a tool was called")
 			}
-			if test.kind == "mcp_invalid_schema" {
+			if test.kind == action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA {
 				awaitGroup(t, s.groups, unavailableFor(
 					action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_INVALID_CATALOG, anyDetail,
 				))
@@ -150,8 +150,8 @@ func TestASessionThatFailsUnderACallEndsItUnknownAndIsReplaced(t *testing.T) {
 	// The call's connection breaks: the server may have run the tool, so the Execution cannot tell and is never
 	// replayed.
 	u.http.CloseClientConnections()
-	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != string(store.UnknownAdapterOutcome) {
-		t.Errorf("kind %q", kind)
+	if kind := errorKind(t, f.await(t, id, action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN {
+		t.Errorf("kind %v", kind)
 	}
 	// The server closes the failed session once the tool it still runs returns.
 	g.open()
@@ -208,8 +208,8 @@ func TestAnExecutionPastItsDeadlineEndsUnknown(t *testing.T) {
 
 	// The lease renews for as long as the call runs: only the deadline ends it.
 	request := f.await(t, f.allowed(t, "test_hang", `{}`), action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN)
-	if kind := errorKind(t, request); kind != string(store.UnknownAdapterOutcome) {
-		t.Errorf("kind %q", kind)
+	if kind := errorKind(t, request); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN {
+		t.Errorf("kind %v", kind)
 	}
 }
 

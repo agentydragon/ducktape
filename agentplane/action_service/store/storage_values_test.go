@@ -41,7 +41,7 @@ func TestAReasonCodeThisReleaseDoesNotNameReadsAsUnknown(t *testing.T) {
 	}
 }
 
-func TeststoredStateNamesRoundTrip(t *testing.T) {
+func TestStoredStateNamesRoundTrip(t *testing.T) {
 	pairs := []struct {
 		state action_servicepb.ActionState
 		text  string

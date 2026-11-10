@@ -233,7 +233,11 @@ func TestExecutionsPythonLeftAreDispatchedSweptAndReconciled(t *testing.T) {
 	if expired := f.expire(t); !slices.Equal(expired, []uuid.UUID{lost}) {
 		t.Errorf("the sweep ended %v, want only the attempt Python left in flight, %v", expired, lost)
 	}
-	sameJSON(t, f.get(t, swept).Execution.Error, pythonError)
+	if got, want := f.get(t, swept).Execution.Error, (&action_servicepb.ExecutionError{
+		Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST, Message: "dispatch outcome unknown; not replayed",
+	}); !proto.Equal(got, want) {
+		t.Errorf("the error Python stored reads %v, want %v", got, want)
+	}
 
 	for name, finished := range map[string]struct {
 		id    uuid.UUID

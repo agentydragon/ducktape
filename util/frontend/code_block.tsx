@@ -335,6 +335,17 @@ function MountedCodeBlock({
   );
 }
 
+/** Re-measure the CodeBlock editors inside `container` after something changed which part of them
+ * is visible without scrolling or resizing them, such as an ancestor that stops clipping them.
+ * CodeMirror draws only the lines near its visible part and re-measures that on scroll and resize,
+ * and then only once it has seen the editor intersect the viewport, so lines past a stale visible
+ * part would stay undrawn. */
+export function remeasureCodeBlocks(container: Element): void {
+  for (const editor of container.querySelectorAll<HTMLElement>(".cm-editor")) {
+    EditorView.findFromDOM(editor)?.requestMeasure();
+  }
+}
+
 /** Read-only code and text viewer for application payloads. Syntax tokens, hidden Unicode markers,
  * and copy all share the same original document. Editor views mount near the viewport because
  * transcript history can contain many code-bearing rows. */

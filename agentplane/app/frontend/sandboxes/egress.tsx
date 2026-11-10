@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router";
 
 import { WatchDecisionsResponseSchema, type Decision } from "../../../egress/egress_admin_pb";
 import { TimeAgo } from "../time_ago";
-import { decisionAt, decisionOutcome, type DecisionGroup, groupDecisions } from "./decision_groups";
+import { decisionAt, decisionOutcome, decisionReason, type DecisionGroup, groupDecisions } from "./decision_groups";
 import { followWatch } from "../watch_stream";
 import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
@@ -21,7 +21,7 @@ const MEMBERS_SHOWN = 50;
 function reasonOf(decision: Decision): string {
   return decisionOutcome(decision) === "allow"
     ? [decision.policy, decision.substituted ? "credential substituted" : null].filter((part) => part).join(" · ")
-    : (decision.reason ?? "");
+    : (decisionReason(decision) ?? "");
 }
 
 function destination(decision: { host: string; port: number }): string {

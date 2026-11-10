@@ -4036,6 +4036,24 @@ private provider cell is substituted without that receipt, because the summary
 says nothing about the cell's writers. A provider body without a summary stays
 an unknown call in the importer.
 
+**A callback handed to a summarized call is a deferred effect.** The summary
+proves the provider body invokes no argument and writes only its own
+allocations, so the call's receipt covers creating and retaining the callback
+and nothing the callback does. A callback-factory import with
+source-inferred evidence and a derived summary that reads no provider cell is
+substituted on the ordered lane
+(`roots/call_operands.rs`, `retaining_factory_result`): its result is the
+audited carrier of the callback, and a later call, read or publication of the
+result reaches the callback through that carrier with no receipt of its own.
+A substituted call is a call edge of the caller's lexical receipt
+(`LocalBodyIdentity::Imported`). A root that mixes local and substituted
+calls, or calls a retaining factory, is attempted on the kernel and kept only
+if it seals; otherwise the flattened lane runs it as before. A sealed root
+whose result is such a private carrier is no reachability root, as on the
+flattened lane. A callback that captures a live activation cell withholds
+the receiving call's receipt and names
+`callback_captures_live_cell` as the owner's coverage refusal.
+
 **An undecided test forks the body; the family is joined when it
 completes.** A conditional or a short-circuiting logical operator whose
 operand's abstract value does not decide the test yields

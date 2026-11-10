@@ -2351,11 +2351,11 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
 - `inferable` (`never_consumed`): a `host_behavior.reentry_free_operations`
   entry no chunk's analysis consumed. Its only reader records every use it
   grants, so an absent record means no fact used it
-  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk.
+  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk. The loader keys (`loader_result_for_evaluating_module`, `synchronous_load_runs_app_callbacks`, `synchronous_load_drains_microtasks`, each `reentry_free_embedded_loaders` entry and `program_premises.non_literal_loader_calls`) are `inferable` when no target's export-reentry loader closure consumed them; a closure that sets a `reentry_through` policy marks every loader key consumed, and `non_literal_loader_calls` beside an `napi` loader is always consumed.
 - `inconclusive`: a probe suggests the annotation is unnecessary but does not
   establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
   the fact it supported may have another derivation. While any chunk is
-  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint the classifier infers without the hint
+  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint whose name no statement of its chunk reads is `inferable` (`never_consumed`): the classifier consults a hint only at a direct call of the name and the code graph only at a read of the name as an import. A read hint the classifier infers without the hint
   (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
   hint are not rerun.
 
@@ -2380,7 +2380,8 @@ hints each reported inferable are not proven jointly removable.
 Findings are warnings: lint exits 0 whenever the pass produced reports, never
 edits the spec, and removal stays a reviewed edit followed by validation. A
 chunk the pass stopped before is listed in `unlinted_chunks`; its annotations
-are unchecked, not clean. Annotations a run consumes, and the other premise
+are unchecked, not clean. When the pass itself failed after linting (a gate
+rejection, a selector error), its error is reported as `pass_error`. Annotations a run consumes, and the other premise
 kinds, produce no finding; no finding is not a verdict that an annotation is
 needed.
 
@@ -3374,12 +3375,22 @@ calls or a call with a field-value operand, and has no direct
 binding/global/property writes or dynamic scope.
 Every call must initially select a synchronous local callable;
 member callees require a present ordinary data slot and
-an unused implicit receiver. A root whose every call is a direct call of an
-imported binding with a published summary uses the ordered plan too: each call
-is replaced by its summary, and under the summary's premises the effect verdict
-treats the call as touching no global property, heap, host or importer lexical
-cell. A summary whose body reads a private provider cell carries no such
-receipt. The summary is not a receipt for the root's lexical binding effects.
+an unused implicit receiver. A root may mix such local calls with direct calls
+of imported bindings that have a published summary, and uses the ordered plan
+too: each imported call is replaced by its summary, and under the summary's
+premises the effect verdict treats the call as touching no global property,
+heap, host or importer lexical cell. A summarized body invokes no argument, so
+a callback passed to it is only created at the call. An import whose
+callback-factory evidence is source-inferred is replaced the same way when it
+is called with one inline function, its summary returns only a fresh allocation
+and its body reads no private provider cell: the evidence keeps the call's
+timing and result consumers, the result retains the callback, and every later
+use of the result still reaches it. An author-asserted factory keeps its
+contract's consumers alone. A summary whose body reads a private provider cell
+carries no such receipt. A callback that
+captures a live cell of the activation creating it leaves the receiving call
+without a receipt (`callback_captures_live_cell`). A substituted call is a call edge of the root's lexical receipt, so a
+root whose every operation is covered seals its binding effects.
 Construction of an imported class keeps its established dispatch, since the
 class binding can be in its TDZ. Other native and imported whole-owner proof
 families retain their established dispatch until their value transfers accept

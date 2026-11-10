@@ -64,7 +64,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	}
 	var svidResolver *auth.SVIDResolver
 	if c.RPC.Has(authlistener.SPIFFE) {
-		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces)
+		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces, nil)
 		if err != nil {
 			return err
 		}

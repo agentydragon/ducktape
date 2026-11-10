@@ -68,46 +68,6 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
-def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy_and_an_ssd_work_disk(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    workers = {
-        doc["metadata"]["name"]: doc
-        for doc in documents
-        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
-    }
-    assert len(workers) == 2
-    isolated = {
-        doc["spec"]["endpointSelector"]["matchLabels"]["kubevirt.io/domain"]
-        for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy"
-        and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
-        and "kubevirt.io/domain" in doc["spec"]["endpointSelector"]["matchLabels"]
-    }
-    assert isolated == workers.keys()
-    claims = {
-        doc["metadata"]["name"]: doc["spec"]
-        for doc in documents
-        if doc["kind"] == "PersistentVolumeClaim" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
-    }
-    for name, worker in workers.items():
-        template = worker["spec"]["template"]
-        assert template["metadata"]["labels"]["kubevirt.io/domain"] == name
-        assert template["spec"]["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
-        (term,) = template["spec"]["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
-        assert term["topologyKey"] == "kubernetes.io/hostname"
-        (expression,) = term["labelSelector"]["matchExpressions"]
-        assert expression["key"] == "kubevirt.io/domain"
-        assert expression["operator"] == "In"
-        assert set(expression["values"]) == workers.keys() - {name}
-        (work,) = [volume for volume in template["spec"]["volumes"] if volume["name"] == "work"]
-        claim = claims[work["persistentVolumeClaim"]["claimName"]]
-        assert claim["storageClassName"] == "piraeus-ssd-local"
-        assert claim["volumeMode"] == "Block"
-    assert len(claims) == len(workers)
-
-
 def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_disk(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
@@ -115,11 +75,13 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     template = pool["spec"]["virtualMachineTemplate"]
     labels = pool["spec"]["selector"]["matchLabels"]
+    # A template change must not replace every worker at once, which would leave the pool without an executor.
+    assert pool["spec"]["maxUnavailable"] == 1
     assert labels.items() <= template["metadata"]["labels"].items()
     assert labels.items() <= template["spec"]["template"]["metadata"]["labels"].items()
     guest = template["spec"]["template"]["spec"]
     assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
-    # Every pool member avoids any node that runs a worker, including the standalone worker VMs.
+    # Every pool member avoids any node that already runs a worker.
     (term,) = guest["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
     assert term["topologyKey"] == "kubernetes.io/hostname"
     assert {
@@ -133,7 +95,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert storage["volumeMode"] == "Filesystem"
     (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
     assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
-    # The egress fence that the standalone VMs have must also cover pool members, which carry no VM-name label.
+    # The egress fence selects pool members by the shared worker label.
     fence = next(
         doc
         for doc in documents
@@ -149,11 +111,7 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
-    workers = [
-        doc
-        for doc in documents
-        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
-    ]
+    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     service = next(
         doc
         for doc in documents
@@ -165,9 +123,8 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
     )
     port = next(port for port in service["spec"]["ports"] if port["name"] == "metrics")
-    for worker in workers:
-        pod_labels = worker["spec"]["template"]["metadata"]["labels"]
-        assert service["spec"]["selector"].items() <= pod_labels.items()
+    pod_labels = pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["metadata"]["labels"]
+    assert service["spec"]["selector"].items() <= pod_labels.items()
     assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
     assert monitor["spec"]["endpoints"][0]["port"] == port["name"]
     for policy in (
@@ -186,13 +143,10 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
-    worker = next(
-        doc
-        for doc in documents
-        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
-    )
-    guest = worker["spec"]["template"]["spec"]
-    assert worker["spec"]["runStrategy"] == "Always"
+    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+    worker = pool["spec"]["virtualMachineTemplate"]["spec"]
+    guest = worker["template"]["spec"]
+    assert worker["runStrategy"] == "Always"
     assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
     kubevirt = next(doc["spec"] for doc in documents if doc["kind"] == "KubeVirt")
     control_plane_toleration = {
@@ -228,7 +182,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     disks = {disk.get("serial"): disk["name"] for disk in guest["domain"]["devices"]["disks"]}
     volumes = {volume["name"]: volume for volume in guest["volumes"]}
     assert volumes[disks["bbkey"]]["secret"]["secretName"] == "buildbuddy-api-key"
-    assert "persistentVolumeClaim" in volumes[disks["work"]]
+    assert "dataVolume" in volumes[disks["work"]]
     user_data = next(
         volume["cloudInitNoCloud"]["userData"] for volume in guest["volumes"] if "cloudInitNoCloud" in volume
     )
@@ -237,13 +191,16 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
     assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
     assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"
-    assert volumes[disks["bbconfig"]]["configMap"]["name"] == worker["metadata"]["name"]
+    config_map = next(
+        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    assert volumes[disks["bbconfig"]]["configMap"]["name"] == config_map["metadata"]["name"]
     policy = next(
         doc
         for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == worker["metadata"]["name"]
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
     )["spec"]
-    assert policy["endpointSelector"]["matchLabels"].items() <= worker["spec"]["template"]["metadata"]["labels"].items()
+    assert policy["endpointSelector"]["matchLabels"].items() <= worker["template"]["metadata"]["labels"].items()
     # Ingress admits only named peers (the metrics scraper); the exact peer and port are pinned in
     # test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy.
     assert all(

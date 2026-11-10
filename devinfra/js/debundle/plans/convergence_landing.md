@@ -65,7 +65,15 @@ Every PR in this plan:
    (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
 5. Keeps the legacy gate authoritative until the flip PR. A refusal the legacy
    gate would not have made is a regression unless the PR proves the acceptance
-   was unsafe with a Node divergence.
+   was unsafe with a Node divergence. The reverse also holds: an acceptance
+   the legacy gate would not have made is a regression unless the effect
+   verdict accepts the same candidate and the PR shows Node parity with
+   `swapped_pairs > 0`. A slice feeds the legacy gate through the facts it
+   reads, so the PR compares every e2e evaluation's legacy verdict, effect
+   status and emitted order with its `devel` base (the `DEBUNDLE_TV_AUDIT=1`
+   records) and lists each difference with its evidence. "No difference" is a
+   stated result, not an assumption: three of the first Wave 3 slices changed
+   legacy inputs without saying so (§ Root admission below).
 6. Keeps every `devel` test or replaces it with a stronger one in the forms of
    item 3. A refusal that becomes an acceptance needs a relocation with Node
    parity; an acceptance that becomes a refusal needs a Node divergence. The
@@ -74,10 +82,65 @@ Every PR in this plan:
 7. Stays reviewable: target under ~3k changed lines. The kernel slices in Wave 2
    cannot meet that and say so in their description.
 8. Runs the canonical-spec check (§ below) when it changes any acceptance,
-   placement, emitted order or emitted bytes. Mechanical refactors, report-only
-   additions and test-only splits skip it and say so.
+   placement, emitted order or emitted bytes: always the public half, and the
+   private half where the session can reach it. Mechanical refactors,
+   report-only additions and test-only splits skip it and say so.
+
+## Root admission
+
+Relocation is decided for top-level statements, so a kernel rule recovers
+coverage only when the root that reaches it is kernel-run. A root on the
+ordered lane keeps the kernel's outcome even when the kernel could not finish:
+a refusal after part of the body ran becomes a remainder summary with global
+reach, which is worse than what the flat lane produced for the same root, and
+the legacy gate reads it. Found three times on real slices: iteration roots
+over record elements (three e2e targets regressed), retaining-factory and
+mixed roots (three legacy refusals became acceptances with an `incomplete`
+effect verdict), and root field stores (the sealed outcome replaced the flat
+lane's heap-content facts).
+
+- **A newly admitted root goes through the attempted lane**
+  (`attempted_initializer` in `roots/`, landed with row 10): run the kernel;
+  when the owner does not seal, rewind and let the flat lane produce the
+  outcome as before. Admission is then safe by construction, and the
+  admission predicate is only a filter for roots worth attempting.
+- The committed `ordered_initializer` families that predate this rule move to
+  the attempted lane as their slices are touched; each move states what the
+  rewind restores and shows no legacy verdict changed.
+- A refused attempt runs the root twice. Each slice reports how many e2e roots
+  attempt and rewind; the cost gate below applies.
 
 ## Canonical-spec check
+
+Two halves: a public corpus every session can run, and the private corpus.
+
+### Public: Excalidraw
+
+`//devinfra/js/debundle/excalidraw:canonical_summary` reduces the Excalidraw
+corpus's accepted tree (<../excalidraw/README.md>) to one JSON file: per chunk,
+the ordinary gate verdict and the translation-validation verdict and counts;
+per emitted file, its SHA-256. Build it at the slice's head and at its `devel`
+base, and diff the two. Cloud sessions use `bbr`; `bbapi artifact download`
+fetches the output by name from each invocation that `bbr` prints:
+
+```sh
+TASK=${TMPDIR:-/tmp}/agents/<date>/<slug>
+git worktree add --detach "$TASK/base" "$(git merge-base HEAD origin/devel)"
+bbr build //devinfra/js/debundle/excalidraw:canonical_summary   # head; note the invocation
+(cd "$TASK/base" && bbr build //devinfra/js/debundle/excalidraw:canonical_summary)
+bbapi artifact download <head-invocation> canonical_summary.json -o "$TASK/head.json"
+bbapi artifact download <base-invocation> canonical_summary.json -o "$TASK/base.json"
+diff "$TASK/base.json" "$TASK/head.json"
+```
+
+A changed verdict, translation-validation count or emitted hash is judged by
+item 8's rule, as for the private corpus. The corpus's `test_debundle_tree`,
+`spec_output_test` and `test_smoke` run in ordinary CI whenever a slice changes
+the analyzer or pipeline, and also block a slice that breaks acceptance or
+browser loading. It covers one esbuild-minified program and does not replace
+the private half.
+
+### Private
 
 The private corpus lives in the sibling repository `../gaffer-private`, which
 pins Ducktape by commit (`DUCKTAPE_COMMIT` in its `MODULE.bazel`; procedure in
@@ -259,7 +322,7 @@ slice may recover more or fewer cases than its row says.
 | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------: | --------------------------------------- |
 |     1 | **Landed**: descriptor and native rows, frozen-namespace recognizer deleted. Left: descriptor carriers escaping to later calls (L4c)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |    38 |                 10 / 11 | L1b, L2a                                |
 |     2 | **Iteration rows landed** (`native/array_iteration.rs`: `forEach`, `map`, `filter`, `reduce` with an initial value, non-capturing callbacks; legacy executor tombstoned for L4e; top-level roots attempted and rewound unless they seal; record-element roots wait on rows 13 and 14 and on own-data reads covering the initialization domains); array spread landed (`IterateSpread`). Left: `new Set(iterable)` (`set_iterable_reentry`), deferred: it needs a primitive-only Set-contents `World` owner, the constructor's `Set.prototype.add` and Array-iterator slots that the recognizer's premise supplies today, and a native-identity proof for the open `Set` callee read (<kernel_design.md> § Native `Set` construction); the multi-declarator `stable_array_spread` owner; both recognizers are tombstoned only once a kernel rule covers their top-level shapes (§ Slice contract item 1); the early-exit rows and `flatMap`, which need a kernel-issued callback call so each result forks; capturing callbacks (row 12) |    23 |                   7 / 7 | L1b, L2a; forks for the early-exit rows |
-|     3 | **PR 1 landed**: the provider adapter runs every provider body, and summarized imported calls are substituted with an effect receipt. Left: unsummarized provider bodies in the caller transfer (needs the provider program registry, slice 6), imported construction (class TDZ, slice 6), then callbacks and retained factories as PR 2 (`imported_callback_timing_test` spans both)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |    77 |                 11 / 16 | L2a, L2b, L2d                           |
+|     3 | **Landed** (PR 1, PR 2): the provider adapter runs every provider body; summarized imported calls, roots mixing them with local calls, callbacks passed to them and retaining callback factories are substituted with an effect receipt. Left: unsummarized provider bodies in the caller transfer, including invoking a retained result (needs the provider program registry, slice 6), imported construction (class TDZ, slice 6), callbacks with live captures (row 12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |    77 |                 11 / 16 | L2a, L2b, L2d                           |
 |     4 | Host timing and reentry (`bundle_owned_globals_test` carries six accepted controls that must stay refusals)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |    26 |                   2 / 5 | L2b, L1f                                |
 |     5 | **Root `new` landed** (`kernel/construct.rs`). Left: `new` in callable bodies, constructors reading argument properties, class definitions with static members                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |    15 |                   2 / 5 | L2a; parallel to 4                      |
 |     6 | Qualified module cells and provider initialization, with the withdrawn L1e saved identities                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |     7 |                   1 / 1 | L2a, L2b; required by L4a               |
@@ -289,6 +352,15 @@ export aggregated by missing rule for those chunks (L4c); rows 4–7 and 9–12
 are then dispatched in the order that export gives, widest canonical recovery
 first. Until it exists, rows 9 and 10 go next: they have no dependencies and
 the largest e2e reach.
+
+Canonical checks so far are recorded with the private corpus, not here. Two
+things they showed that shape this plan: a coverage slice can move emitted
+placement on a real spec while every e2e fixture stays unchanged, so the
+post-merge check is not optional; and a cold build of the accepted products
+does not fit the remote runner's one-hour limit, because analysis is
+single-threaded for most of its 10–47 minutes per product
+(<analysis_performance.md>, `../perf/analysis_serial_phases.md`). Run one
+product per invocation.
 
 Saved-analysis parity has no red target; every slice keeps the direct/saved
 parity tests green.
@@ -331,6 +403,16 @@ parity tests green.
   (`realizability/effect_translation_validation.rs`) becomes an acceptance
   that keeps the premise in the audit list. Uncovered havoc pairs stay
   `incomplete`.
+
+  Premise attribution is a deliverable of the flip. The legacy graph carries
+  no attribution (edges come from purity and effect summaries; proof
+  dependencies never reach `graph/`, `atomic_groups.rs` or `gate.rs`), so
+  "was this annotation needed for this acceptance" has no answer today beyond
+  recorded uses (<../docs/premise_provenance.md>). The effect verdict already
+  records `covered_owner_dependencies` and `relocation_dependencies`; once it
+  decides, `spec lint` reports from them which premises an accepted candidate
+  rests on, and an annotation that no accepted relocation depends on is
+  inferable without a rerun.
 
   Two preconditions:
   - The terminal-call stop in the application adapter clears `complete`

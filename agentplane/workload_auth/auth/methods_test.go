@@ -552,7 +552,7 @@ func TestDelegationUsesTheConfiguredListenerModeAndMethodGrant(t *testing.T) {
 
 	t.Run("SPIFFE-only listener refuses delegated bearer before review", func(t *testing.T) {
 		objects, sandbox, _ := svidFixture(t)
-		svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace})
+		svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

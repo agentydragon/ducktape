@@ -89,7 +89,7 @@ has not yet been invoked. See [the cancellation API](../action_service/README.md
 
 ## Reason codes
 
-`UnknownOutcomeReason` (`error.kind` on an `execution_unknown` Execution):
+The `ExecutionErrorKind` of an `execution_unknown` Execution's error, as `action_execution.error` stores it:
 
 | Code                        | Meaning                                                                    |
 | --------------------------- | -------------------------------------------------------------------------- |

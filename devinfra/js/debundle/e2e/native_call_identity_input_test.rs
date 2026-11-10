@@ -312,6 +312,49 @@ fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
     }));
 }
 
+/// The callable heap summary of a function nobody calls during
+/// initialization still consumes the freeze proof, so the input's use is
+/// recorded on the declaring source unit (regression: only an interpreted call
+/// recorded it, leaving this consumption invisible).
+#[test]
+fn uncalled_certified_freeze_records_its_heap_proof_use() {
+    let function = "function makeRecord(name) { return Object.freeze({ name }); }";
+    let source = format!("{function}\nconsole.log(typeof makeRecord);\nexport {{ makeRecord }};\n");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "records/factory",
+                &[Member::new("makeRecord")],
+            )],
+        )
+        .with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&source, "makeRecord", function)],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "function\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(
+        graph["nodes"].as_array().unwrap().iter().any(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|binding| binding["binding"] == "makeRecord")
+                })
+                && node["synchronous_execution"]["native_operation_input_uses"]
+                    .as_array()
+                    .is_some_and(|uses| {
+                        uses.iter()
+                            .any(|used| used["evidence"]["operation"] == "object_freeze")
+                    })
+        }),
+        "{graph}"
+    );
+}
+
 #[test]
 fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
     let function = "function makeRecord(name) { return Object.freeze({ name }); }";
