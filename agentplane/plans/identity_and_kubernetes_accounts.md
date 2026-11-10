@@ -29,6 +29,12 @@ form below is an explicit, named mapping to one `Identity`:
 3. **Kubernetes' own authentication**, only where a component talks to the Kubernetes API: as
    itself, through Flux, or as an account by the proxy's impersonation.
 
+**Why (operator, 2026-11-10):** to keep Agentplane identity from being hard-baked to the Kubernetes
+API server. An identity that only a ServiceAccount and TokenReview can carry ties every caller to a
+cluster-hosted Pod; one the Agentplane issuer owns can also act for a central Session with no
+Sandbox, or later an enrolled external machine. The central-Session decoupling did not strictly
+require the cutover, but building it on ServiceAccounts would add a contract the cutover has to undo.
+
 A Kubernetes ServiceAccount TokenReview is not a second identity source on Agentplane's own APIs.
 Other bearer forms are not planned and no task depends on them; if we wanted, we could later accept
 bearer tokens resolving to the same `Identity`. The paths that do not meet this yet, with the
