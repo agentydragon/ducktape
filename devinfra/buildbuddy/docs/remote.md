@@ -74,6 +74,14 @@ happens on the runner.
 `--config=buildbuddy_{bes_backend,bes_results_url,remote_cache}` and, for
 `build` and non-remote `run`, `--remote_upload_local_results`.
 
+`bbr build` also defaults to `--remote_build_event_upload=all` so the CLI can
+download locally generated outputs such as template-expanded launchers.
+Bazel's default `minimal` mode advertises their CAS URIs without uploading
+them; `--remote_upload_local_results` alone does not cover these internal
+actions. Explicit user arguments can override the default. Direct `bb remote
+build` callers need to supply the upload flag themselves. See the
+[Gazelle artifact diagnosis](../debug/bb_remote_peers_exhausted.md).
+
 ### 3. Runner bootstrap
 
 Source: `enterprise/server/cmd/ci_runner/main.go`

@@ -7,6 +7,7 @@
 # 2026-04-12 (invocation 5a95cd6f showed Role=claude-code, Tags=session:...).
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -188,6 +189,7 @@ class TestBuildCommand:
             "--disable_retry=true",
             "build",
             f"--invocation_id={inv_id}",
+            "--remote_build_event_upload=all",
             "--config=nolint",
             "//foo",
         ]
@@ -202,6 +204,7 @@ class TestBuildCommand:
             "--disable_retry=true",
             "build",
             f"--invocation_id={inv_id}",
+            "--remote_build_event_upload=all",
             "--build_metadata=TAGS=session:xyz",
             "--build_metadata=ROLE=agent",
             "//foo",
@@ -235,6 +238,7 @@ class TestBuildCommand:
             "--output_base=/tmp/bazel",
             "build",
             f"--invocation_id={inv_id}",
+            "--remote_build_event_upload=all",
             "//foo",
         ]
 
@@ -297,6 +301,44 @@ class TestMain:
         monkeypatch.delenv("BBR_BAZELRC", raising=False)
         monkeypatch.chdir(Path(repo.workdir))
         monkeypatch.setattr(sys, "argv", ["bbr", *argv])
+
+    @pytest.mark.parametrize(
+        ("args", "expected_upload_mode"),
+        [
+            (["build", "//fake:target"], "all"),
+            (["build", "--remote_build_event_upload=minimal", "//fake:target"], "minimal"),
+            (["test", "//fake:target"], None),
+        ],
+    )
+    def test_bb_child_receives_build_upload_policy(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], expected_upload_mode: str | None
+    ) -> None:
+        repo = _make_repo(tmp_path)
+        received = tmp_path / "received.json"
+        bb = tmp_path / "bb"
+        bb.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys\n"
+            "with open(os.environ['TEST_BB_ARGS'], 'w') as output:\n"
+            "    json.dump(sys.argv[1:], output)\n"
+        )
+        bb.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+        monkeypatch.setenv("TEST_BB_ARGS", str(received))
+        monkeypatch.delenv("BBR_BAZELRC", raising=False)
+        monkeypatch.delenv("BBR_BUILDBUDDY_API_KEY_FILE", raising=False)
+        monkeypatch.chdir(Path(repo.workdir))
+        monkeypatch.setattr(sys, "argv", ["bbr", *args])
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 0
+        child_args = json.loads(received.read_text())
+        # Bazel options must follow its verb; repeated values use the last one.
+        bazel_options = child_args[child_args.index(args[0]) + 1 :]
+        modes = [arg.split("=", 1)[1] for arg in bazel_options if arg.startswith("--remote_build_event_upload=")]
+        assert (modes[-1] if modes else None) == expected_upload_mode
 
     def test_id_printed_and_recorded_before_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
