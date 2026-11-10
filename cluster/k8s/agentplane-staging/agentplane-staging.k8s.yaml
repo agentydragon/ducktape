@@ -9203,6 +9203,17 @@ spec:
   subject:
     serviceAccount: haku-ui
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: WorkloadCredential
+metadata:
+  annotations:
+    description: The SVID haku-jupyter's egress sidecar presents to the egress proxy.
+  name: haku-jupyter
+  namespace: haku-sandbox
+spec:
+  subject:
+    serviceAccount: haku-ui
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -11947,6 +11958,26 @@ spec:
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: haku-notebook-fetch
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - codeload.github.com
+        - files.pythonhosted.org
+        - github.com
+        - objects.githubusercontent.com
+        - pypi.org
+        - raw.githubusercontent.com
+        - registry.npmjs.org
+      methods:
+        - GET
+        - HEAD
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
@@ -11958,6 +11989,7 @@ spec:
     - home-assistant-reads
     - grocy-sf-reads
     - ankiweb-sync
+    - haku-notebook-fetch
   subject:
     name: haku-ui
     namespace: haku-sandbox
