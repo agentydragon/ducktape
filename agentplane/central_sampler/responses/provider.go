@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 const maxProviderErrorBytes = 1024 * 1024
@@ -337,7 +338,9 @@ func decodeProviderEvent(data string) (Event, error) {
 // streamEvent is the evidence of one Responses SSE event, recorded in its canonical JSON form.
 type streamEvent struct{ value any }
 
-func (streamEvent) Kind() protocol.ProviderEvidenceKind { return protocol.EvidenceResponsesEvent }
+func (streamEvent) Kind() eventpb.ExecutionProgress_Kind {
+	return eventpb.ExecutionProgress_KIND_PROVIDER
+}
 
 func (event streamEvent) MarshalJSON() ([]byte, error) { return json.Marshal(event.value) }
 

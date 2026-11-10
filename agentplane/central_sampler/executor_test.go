@@ -921,7 +921,7 @@ func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner
 	if err != nil {
 		t.Fatal(err)
 	}
-	frame := &executorpb.ExecutionNativeFrame{Direction: "receive", Payload: []byte("native notification")}
+	frame := &executorpb.ExecutionNativeFrame{Direction: "notification", Payload: []byte("native notification")}
 	journal := func(owner Owner, operationID string) error {
 		t.Helper()
 		streamCtx := &cancelDuringJournalContext{Context: context.Background(), done: make(chan struct{})}
