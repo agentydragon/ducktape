@@ -360,8 +360,13 @@ intent/result journal distinguishes this from an operation known not to have bee
 On service shutdown, the runtime stops starting Session work and claiming unowned or expired work,
 wakes idle resident drivers to release their leases, and lets active top-level effects reach their
 durable result within the existing drain window. The gRPC server can continue durably admitting
-commands until graceful stop; other replicas continue admitting commands throughout. A live
-JavaScript cell may continue its own nested executor calls until that cell settles. Active owners
+commands until graceful stop; other replicas continue admitting commands throughout. A Session
+with an effect in flight (an unresolved nested intent or a pending provider step) keeps its owner
+until that effect settles. A live JavaScript cell or process handle keeps its owner while a
+command is active: the owner continues serving the turn, including the model's `wait` on the cell
+and the cell's own nested executor calls, until no live cell, handle or unresolved intent remains,
+then releases. A Session whose turn is complete releases at once, even with a background cell or
+handle still live. Active owners
 keep renewing their leases during drain. The runtime joins resident drivers and completes
 ownership release before shutting down the shared host;
 the next replica can then claim the released Session and resume its committed command.

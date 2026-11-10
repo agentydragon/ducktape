@@ -23,6 +23,7 @@ type Runtime struct {
 	settings     Settings
 	claimLease   func(context.Context, string, time.Duration) (Owner, error)
 	releaseLease func(context.Context, Owner) error
+	newExecutor  func(context.Context, *Store, Owner, *Session, Settings) (*Executor, func() error, error)
 
 	mu               sync.Mutex
 	runCtx           context.Context
@@ -54,7 +55,7 @@ func (s *residentSession) signal() {
 
 func NewRuntime(store *Store, settings Settings) *Runtime {
 	return &Runtime{
-		store: store, settings: settings, claimLease: store.Claim, releaseLease: store.Release,
+		store: store, settings: settings, claimLease: store.Claim, releaseLease: store.Release, newExecutor: NewExecutor,
 		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
 		changed: make(chan struct{}, 1), draining: make(chan struct{}),
 	}
@@ -83,7 +84,9 @@ func (r *Runtime) Run(ctx context.Context, work <-chan struct{}) error {
 	// A service shutdown stops new work immediately, but an already dispatched effect must
 	// retain its context long enough to reach a durable result or the drain deadline.
 	r.runCtx, r.cancel = context.WithCancel(context.WithoutCancel(ctx))
-	r.codeHost = NewCodeModeHost(context.Background(), r.settings, r.store)
+	if r.codeHost == nil { // tests attach a fake host before Run
+		r.codeHost = NewCodeModeHost(context.Background(), r.settings, r.store)
+	}
 	codeHost := r.codeHost
 	r.mu.Unlock()
 
@@ -431,6 +434,33 @@ func (r *Runtime) isDraining() bool {
 	}
 }
 
+// drainReleases reports whether a draining driver releases its Session now. An effect in flight
+// (unresolved intent, pending provider step) always keeps the owner: detaching the host would
+// cancel it mid-way. A live cell or process handle keeps the owner only while a command is active,
+// because only the turn in progress can settle it (the model's `wait`); an idle Session with a
+// background cell releases immediately, as the successor sees the same live handle either way.
+// Serving continues until that work settles or the drain deadline cancels it. The continuation
+// is logged once per driver.
+func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner Owner, activeCommand *string, continued *bool) (bool, error) {
+	if !r.isDraining() {
+		return false, nil
+	}
+	work, err := r.store.LiveWork(ctx, owner)
+	if err != nil {
+		return false, err
+	}
+	if !work.KeepsOwner(activeCommand != nil) {
+		return true, nil
+	}
+	if !*continued {
+		*continued = true
+		slog.Info("central sampler drain keeps serving Session with live work", "session_id", sessionID, "conversation_id", owner.ConversationID,
+			"generation", owner.Generation, "live_cells", work.LiveCells, "live_processes", work.LiveProcesses,
+			"unresolved_intents", work.UnresolvedIntents, "pending", work.Pending, "pod_name", os.Getenv("HOSTNAME"))
+	}
+	return false, nil
+}
+
 func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, task *residentSession) (*string, error) {
 	if !r.acquireExecution(ctx, task) {
 		return nil, nil
@@ -467,6 +497,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		}
 	}()
 	var activeCommand *string
+	drainContinued := false
 	client := &http.Client{}
 	for {
 		if ctx.Err() != nil {
@@ -485,8 +516,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		if changed {
 			continue
 		}
-		if r.isDraining() {
-			return activeCommand, nil
+		if release, err := r.drainReleases(ctx, sessionID, owner, activeCommand, &drainContinued); err != nil || release {
+			return activeCommand, err
 		}
 		command, err := r.store.NextCommand(ctx, owner, sessionID)
 		if errors.Is(err, protocol.ErrPrecondition) {
@@ -584,8 +615,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		if err := proto.Unmarshal(command.Payload, payload); err != nil {
 			return activeCommand, err
 		}
-		if r.isDraining() {
-			return activeCommand, nil
+		if release, err := r.drainReleases(ctx, sessionID, owner, activeCommand, &drainContinued); err != nil || release {
+			return activeCommand, err
 		}
 		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 		var result TurnResult
@@ -608,9 +639,9 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 				if changed {
 					continue
 				}
-				if r.isDraining() {
+				if release, releaseErr := r.drainReleases(turnCtx, sessionID, owner, activeCommand, &drainContinued); releaseErr != nil || release {
 					cancel()
-					return activeCommand, nil
+					return activeCommand, releaseErr
 				}
 				conversation, readErr := r.store.Read(turnCtx, owner)
 				if readErr != nil {
@@ -699,7 +730,7 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 	}
 	setupCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 	defer cancel()
-	executor, closeTransport, err := NewExecutor(setupCtx, r.store, owner, session, r.settings)
+	executor, closeTransport, err := r.newExecutor(setupCtx, r.store, owner, session, r.settings)
 	if err != nil {
 		if ctx.Err() == nil {
 			finishCtx, finishCancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -762,7 +793,7 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner Owner
 	if err != nil {
 		return nil, err
 	}
-	executor, closeTransport, err := NewExecutor(ctx, r.store, owner, session, r.settings)
+	executor, closeTransport, err := r.newExecutor(ctx, r.store, owner, session, r.settings)
 	if err != nil {
 		return nil, err
 	}
