@@ -228,6 +228,13 @@ The legacy gate accepts it. Three checks:
   check does not follow callbacks escaped by earlier statements, so it bounds
   the statement's own closure, not the pool.
 
+The acceptance therefore rests on one rule: impure statements keep their
+mutual order while definitions the legacy graph calls pure move freely. What
+the reference check leaves open, whether an unknown callee can invoke a
+callback escaped by an earlier statement that reads the moved definition, is
+the question a replacement producer answers with the set escaped as of that
+statement.
+
 ## Reading
 
 Under global reach, coverage is all-or-nothing at the module level as well as
