@@ -77,7 +77,7 @@ def chart(app: App) -> Chart:
         "provider",
         metadata=ApiObjectMetadata(name="provider-buildbuddy"),
         spec=ProviderSpec(
-            package="git.allegedly.works/ducktape-ci/provider-buildbuddy:latest",
+            package="git.allegedly.works/ducktape-ci/crossplane-provider-buildbuddy:latest",
             package_pull_secrets=[ProviderSpecPackagePullSecrets(name=FORGEJO_PULL_SECRET)],
             revision_activation_policy="Automatic",
             runtime_config_ref=ProviderSpecRuntimeConfigRef(name=runtime.name),

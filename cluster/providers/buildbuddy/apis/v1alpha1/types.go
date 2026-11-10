@@ -1,3 +1,5 @@
+// Adapted from Crossplane provider-template; see LICENSE-APACHE-2.0.
+
 package v1alpha1
 
 import (

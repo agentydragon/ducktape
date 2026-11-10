@@ -2,11 +2,7 @@ package controller
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1"
 	"github.com/agentydragon/ducktape/cluster/providers/buildbuddy/internal/buildbuddy"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
-	"golang.org/x/crypto/nacl/box"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,40 +17,34 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+type fakeBuildBuddy struct {
+	present bool
+	writes  int
+	keyID   string
+}
+
+func (f *fakeBuildBuddy) Exists(context.Context, string) (bool, error) { return f.present, nil }
+func (f *fakeBuildBuddy) PublicKey(context.Context) (buildbuddy.PublicKey, error) {
+	return buildbuddy.PublicKey{ID: f.keyID}, nil
+}
+
+func (f *fakeBuildBuddy) Put(context.Context, string, []byte, buildbuddy.PublicKey) error {
+	f.present = true
+	f.writes++
+	return nil
+}
+func (f *fakeBuildBuddy) Delete(context.Context, string) error { f.present = false; return nil }
+func (f *fakeBuildBuddy) Close() error                         { return nil }
+
 func TestSecretReconciliation(t *testing.T) {
-	public, _, err := box.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	present, writes := false, 0
-	keyID := "fake-key-1"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch strings.TrimPrefix(r.URL.Path, "/") {
-		case "ListSecrets":
-			var secrets []map[string]string
-			if present {
-				secrets = append(secrets, map[string]string{"name": "FAKE_KEY"})
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"secret": secrets})
-		case "GetPublicKey":
-			_ = json.NewEncoder(w).Encode(map[string]any{"publicKey": map[string]string{"id": keyID, "value": base64.StdEncoding.EncodeToString(public[:])}})
-		case "UpdateSecret":
-			present = true
-			writes++
-		case "DeleteSecret":
-			present = false
-		default:
-			http.Error(w, "unknown", http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
+	api := &fakeBuildBuddy{keyID: "fake-key-1"}
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "input", Namespace: "test", UID: types.UID("first"), ResourceVersion: "1"}, Data: map[string][]byte{"value": []byte("fake-value")}}
 	kube := fake.NewClientBuilder().WithScheme(scheme).WithObjects(source).Build()
-	e := &external{kube: kube, api: &buildbuddy.Client{URL: server.URL + "/", HTTP: server.Client()}}
+	e := &external{kube: kube, api: api}
 	cr := &v1alpha1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "test", Annotations: map[string]string{"crossplane.io/external-name": "FAKE_KEY"}}, Spec: v1alpha1.SecretSpec{ForProvider: v1alpha1.SecretParameters{ValueSecretRef: xpv2.LocalSecretKeySelector{LocalSecretReference: xpv2.LocalSecretReference{Name: "input"}, Key: "value"}}}}
 	ctx := context.Background()
 	obs, err := e.Observe(ctx, cr)
@@ -95,7 +84,7 @@ func TestSecretReconciliation(t *testing.T) {
 	if _, err := e.Update(ctx, cr); err != nil {
 		t.Fatal(err)
 	}
-	keyID = "fake-key-2"
+	api.keyID = "fake-key-2"
 	obs, err = e.Observe(ctx, cr)
 	if err != nil || obs.ResourceUpToDate {
 		t.Fatalf("public key rotation: %+v %v", obs, err)
@@ -112,11 +101,11 @@ func TestSecretReconciliation(t *testing.T) {
 	if err := kube.Delete(ctx, source); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Observe(ctx, cr); err == nil || !present {
+	if _, err := e.Observe(ctx, cr); err == nil || !api.present {
 		t.Fatal("missing source must fail without deleting remote secret")
 	}
-	if writes != 4 {
-		t.Fatalf("got %d writes", writes)
+	if api.writes != 4 {
+		t.Fatalf("got %d writes", api.writes)
 	}
 }
 

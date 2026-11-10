@@ -2,25 +2,21 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
 load("//cluster/providers/buildbuddy:codegen.bzl", "provider_codegen")
 load("//devinfra/go:controller_gen.bzl", "controller_crds")
 
-_API_SRCS = [
-    "doc.go",
-    "register.go",
-    "secret_types.go",
-    "types.go",
-]
-
-_API_DEPS = [
-    "@buildbuddy_crossplane_apis//core/v2:core",
-    "@buildbuddy_k8s_apimachinery//pkg/apis/meta/v1:meta",
-    "@buildbuddy_k8s_apimachinery//pkg/runtime/schema",
-    "@buildbuddy_controller_runtime//pkg/scheme",
-]
-
 go_library(
     name = "inputs",
-    srcs = _API_SRCS,
+    srcs = [
+        "doc.go",
+        "register.go",
+        "secret_types.go",
+        "types.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1",
-    deps = _API_DEPS,
+    deps = [
+        "@buildbuddy_controller_runtime//pkg/scheme",
+        "@buildbuddy_crossplane_apis//core/v2:core",
+        "@buildbuddy_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@buildbuddy_k8s_apimachinery//pkg/runtime/schema",
+    ],
 )
 
 go_path(
@@ -60,13 +56,13 @@ genrule(
 
 go_library(
     name = "v1alpha1",
-    srcs = _API_SRCS + [
+    srcs = [
         "scheme.go",
         ":generated",
     ],
-    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1",
+    embed = [":inputs"],
     visibility = ["//cluster/providers/buildbuddy:__subpackages__"],
-    deps = _API_DEPS + [
+    deps = [
         "@buildbuddy_crossplane_runtime//pkg/resource",
         "@buildbuddy_k8s_apimachinery//pkg/runtime",
     ],

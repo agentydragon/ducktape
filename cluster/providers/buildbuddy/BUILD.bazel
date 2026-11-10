@@ -29,6 +29,12 @@ pkg_tar(
     package_dir = "/usr/local/bin",
 )
 
+pkg_tar(
+    name = "license_layer",
+    srcs = ["LICENSE-APACHE-2.0"],
+    package_dir = "/usr/share/licenses/provider-buildbuddy",
+)
+
 # The xpkg and its controller share one image: Crossplane reads package.yaml
 # from the flattened OCI filesystem and runs this image as the provider runtime.
 oci_image(
@@ -38,6 +44,7 @@ oci_image(
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":binary_layer",
+        ":license_layer",
         ":package_layer",
         "//third_party/debian_slim:cacerts",
     ],

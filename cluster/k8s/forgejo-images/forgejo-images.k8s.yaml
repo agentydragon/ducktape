@@ -228,6 +228,11 @@ spec:
       name: cpap-sync
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'crossplane-provider-buildbuddy'
+      kind: ImageRepository
+      name: crossplane-provider-buildbuddy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'environment-tools'
       kind: ImageRepository
       name: environment-tools
@@ -336,11 +341,6 @@ spec:
       filter: req.package.name == 'props-registry-proxy'
       kind: ImageRepository
       name: props-registry-proxy
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'provider-buildbuddy'
-      kind: ImageRepository
-      name: provider-buildbuddy
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'public-coder-agent'

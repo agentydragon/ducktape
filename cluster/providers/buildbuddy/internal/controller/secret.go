@@ -68,7 +68,11 @@ func (c *connector) Connect(ctx context.Context, cr *v1alpha1.Secret) (managed.T
 	if err != nil {
 		return nil, fmt.Errorf("read provider credentials: %w", err)
 	}
-	return &external{kube: c.kube, api: &buildbuddy.Client{URL: buildbuddy.DefaultURL, APIKey: string(apiKey)}}, nil
+	api, err := buildbuddy.NewClient(string(apiKey))
+	if err != nil {
+		return nil, err
+	}
+	return &external{kube: c.kube, api: api}, nil
 }
 
 // Crossplane grants provider pods broad Secret RBAC. Do not let a managed
@@ -81,9 +85,17 @@ func (c *connector) validateCredentials(namespace string, credentials v1alpha1.P
 	return nil
 }
 
+type buildBuddyAPI interface {
+	PublicKey(context.Context) (buildbuddy.PublicKey, error)
+	Exists(context.Context, string) (bool, error)
+	Put(context.Context, string, []byte, buildbuddy.PublicKey) error
+	Delete(context.Context, string) error
+	Close() error
+}
+
 type external struct {
 	kube   client.Client
-	api    *buildbuddy.Client
+	api    buildBuddyAPI
 	source *corev1.Secret
 	key    buildbuddy.PublicKey
 }
@@ -144,7 +156,7 @@ func (e *external) Update(ctx context.Context, cr *v1alpha1.Secret) (managed.Ext
 func (e *external) Delete(ctx context.Context, cr *v1alpha1.Secret) (managed.ExternalDelete, error) {
 	return managed.ExternalDelete{}, e.api.Delete(ctx, meta.GetExternalName(cr))
 }
-func (e *external) Disconnect(context.Context) error { return nil }
+func (e *external) Disconnect(context.Context) error { return e.api.Close() }
 
 func SetupSecret(mgr ctrl.Manager, sourceSecret, credentialSecret string) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1alpha1.Secret{}, sourceIndex, func(obj client.Object) []string {

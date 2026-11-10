@@ -48,7 +48,7 @@
       "test": "//platform_sessions/management/gateway:gateway_test",
       "registry": "forgejo"
     },
-    "provider-buildbuddy": {
+    "crossplane-provider-buildbuddy": {
       "target": "//cluster/providers/buildbuddy:image",
       "test": "//cluster/providers/buildbuddy/...",
       "registry": "forgejo"

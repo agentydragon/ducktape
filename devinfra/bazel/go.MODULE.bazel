@@ -27,6 +27,17 @@ go_deps.from_file(go_mod = "//third_party:go.mod")
 buildbuddy_provider_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", dev_dependency = True, isolate = True)
 buildbuddy_provider_deps.from_file(go_mod = "//cluster/providers/buildbuddy:go.mod")
 
+# Generated BuildBuddy protos use the workspace gRPC and protobuf runtimes.
+# Share those modules so the isolated provider has only one copy at link time.
+override_repo(
+    buildbuddy_provider_deps,
+    "org_golang_google_grpc",
+    "org_golang_x_crypto",
+    "org_golang_x_net",
+    "org_golang_x_sys",
+    "org_golang_x_text",
+)
+
 # The module ships generated protobuf Go sources. Generating go_proto_library
 # would pull rules_go's shared gRPC runtime into the isolated dependency graph.
 buildbuddy_provider_deps.gazelle_override(

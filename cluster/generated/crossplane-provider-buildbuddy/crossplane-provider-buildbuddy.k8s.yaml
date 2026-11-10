@@ -26,7 +26,7 @@ kind: Provider
 metadata:
   name: provider-buildbuddy
 spec:
-  package: git.allegedly.works/ducktape-ci/provider-buildbuddy:latest
+  package: git.allegedly.works/ducktape-ci/crossplane-provider-buildbuddy:latest
   packagePullSecrets:
     - name: forgejo-images-creds
   revisionActivationPolicy: Automatic

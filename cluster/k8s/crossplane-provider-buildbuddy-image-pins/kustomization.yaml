@@ -3,5 +3,5 @@ kind: Component
 configurations:
   - kustomizeconfig
 images:
-  - name: git.allegedly.works/ducktape-ci/provider-buildbuddy
-    newTag: latest # {"$imagepolicy": "flux-system:provider-buildbuddy:tag"}
+  - name: git.allegedly.works/ducktape-ci/crossplane-provider-buildbuddy
+    newTag: latest # {"$imagepolicy": "flux-system:crossplane-provider-buildbuddy:tag"}

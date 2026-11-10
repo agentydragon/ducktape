@@ -5,6 +5,11 @@ uses Crossplane's managed reconciler, controller-runtime, controller-gen and
 angryjet. Bazel generates the Kubernetes DeepCopy methods, Crossplane interface
 methods and CRDs from the API types; generated Go code is not checked in. The
 image contains both the controller and its Crossplane package metadata.
+It calls BuildBuddy's gRPC API using the repository's generated protobuf bindings.
+
+The API types, registration and ProviderConfig controller are adapted from the
+[Crossplane provider template](https://github.com/crossplane/provider-template/tree/d3efb9cfe9c1a61903d2ac2c5b402258e7e4d55b),
+licensed under [Apache 2.0](LICENSE-APACHE-2.0).
 
 `Secret` is namespaced. Its `crossplane.io/external-name` annotation is the
 BuildBuddy environment variable name; `spec.forProvider.valueSecretRef` selects a

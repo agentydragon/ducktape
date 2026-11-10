@@ -2,90 +2,84 @@
 package buildbuddy
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
+	servicepb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	secretspb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	"golang.org/x/crypto/nacl/box"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
-const DefaultURL = "https://app.buildbuddy.io/rpc/BuildBuddyService/"
+const requestTimeout = 20 * time.Second
 
 type Client struct {
-	URL    string
-	APIKey string
-	HTTP   *http.Client
+	rpc    servicepb.BuildBuddyServiceClient
+	conn   *grpc.ClientConn
+	apiKey string
 }
 
 type PublicKey struct {
-	ID    string `json:"id"`
-	Value string `json:"value"`
+	ID    string
+	Value string
 }
 
-func (c *Client) request(ctx context.Context, method string, payload any, result any) error {
-	body, err := json.Marshal(payload)
+// NewClient opens a TLS connection to BuildBuddy's gRPC service. Dialing is lazy.
+func NewClient(apiKey string) (*Client, error) {
+	if apiKey == "" {
+		return nil, errors.New("BuildBuddy API key is empty")
+	}
+	conn, err := grpc.NewClient("dns:///app.buildbuddy.io:443", grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})))
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("create BuildBuddy connection: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+method, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-buildbuddy-api-key", c.APIKey)
-	httpClient := c.HTTP
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 20 * time.Second}
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("BuildBuddy %s: %w", method, err)
-	}
-	defer resp.Body.Close()
-	if method == "DeleteSecret" && resp.StatusCode == http.StatusNotFound {
-		return nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("BuildBuddy %s returned HTTP %d", method, resp.StatusCode)
-	}
-	if result == nil {
-		_, err = io.Copy(io.Discard, resp.Body)
-		return err
-	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(result)
+	return &Client{rpc: servicepb.NewBuildBuddyServiceClient(conn), conn: conn, apiKey: apiKey}, nil
+}
+
+func (c *Client) Close() error { return c.conn.Close() }
+
+func (c *Client) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", c.apiKey), cancel
+}
+
+// Do not include server error messages: they may contain sensitive request data.
+func rpcError(method string, err error) error {
+	return fmt.Errorf("BuildBuddy %s failed: %s", method, status.Code(err))
 }
 
 func (c *Client) PublicKey(ctx context.Context) (PublicKey, error) {
-	var response struct {
-		PublicKey PublicKey `json:"publicKey"`
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+	response, err := c.rpc.GetPublicKey(ctx, &secretspb.GetPublicKeyRequest{})
+	if err != nil {
+		return PublicKey{}, rpcError("GetPublicKey", err)
 	}
-	if err := c.request(ctx, "GetPublicKey", struct{}{}, &response); err != nil {
-		return PublicKey{}, err
-	}
-	if response.PublicKey.ID == "" || response.PublicKey.Value == "" {
+	key := response.GetPublicKey()
+	if key.GetId() == "" || key.GetValue() == "" {
 		return PublicKey{}, errors.New("BuildBuddy returned an incomplete public key")
 	}
-	return response.PublicKey, nil
+	return PublicKey{ID: key.GetId(), Value: key.GetValue()}, nil
 }
 
 func (c *Client) Exists(ctx context.Context, name string) (bool, error) {
-	var response struct {
-		Secrets []struct {
-			Name string `json:"name"`
-		} `json:"secret"`
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+	response, err := c.rpc.ListSecrets(ctx, &secretspb.ListSecretsRequest{})
+	if err != nil {
+		return false, rpcError("ListSecrets", err)
 	}
-	if err := c.request(ctx, "ListSecrets", struct{}{}, &response); err != nil {
-		return false, err
-	}
-	for _, secret := range response.Secrets {
-		if secret.Name == name {
+	for _, secret := range response.GetSecret() {
+		if secret.GetName() == name {
 			return true, nil
 		}
 	}
@@ -106,11 +100,21 @@ func (c *Client) Put(ctx context.Context, name string, value []byte, key PublicK
 	if err != nil {
 		return fmt.Errorf("seal BuildBuddy secret: %w", err)
 	}
-	return c.request(ctx, "UpdateSecret", map[string]any{"secret": map[string]string{
-		"name": name, "value": base64.StdEncoding.EncodeToString(sealed),
-	}}, nil)
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+	_, err = c.rpc.UpdateSecret(ctx, &secretspb.UpdateSecretRequest{Secret: &secretspb.Secret{Name: name, Value: base64.StdEncoding.EncodeToString(sealed)}})
+	if err != nil {
+		return rpcError("UpdateSecret", err)
+	}
+	return nil
 }
 
 func (c *Client) Delete(ctx context.Context, name string) error {
-	return c.request(ctx, "DeleteSecret", map[string]any{"secret": map[string]string{"name": name}}, nil)
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+	_, err := c.rpc.DeleteSecret(ctx, &secretspb.DeleteSecretRequest{Secret: &secretspb.Secret{Name: name}})
+	if err != nil && status.Code(err) != codes.NotFound {
+		return rpcError("DeleteSecret", err)
+	}
+	return nil
 }

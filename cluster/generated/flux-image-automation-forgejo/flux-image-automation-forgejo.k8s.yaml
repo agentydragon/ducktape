@@ -801,6 +801,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: crossplane-provider-buildbuddy
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/crossplane-provider-buildbuddy
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: crossplane-provider-buildbuddy
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: crossplane-provider-buildbuddy
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: environment-tools
   namespace: flux-system
 spec:
@@ -1344,31 +1369,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: props-registry-proxy
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: provider-buildbuddy
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/provider-buildbuddy
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: provider-buildbuddy
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: provider-buildbuddy
   policy:
     alphabetical:
       order: asc
