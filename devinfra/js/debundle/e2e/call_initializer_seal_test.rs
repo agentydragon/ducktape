@@ -110,7 +110,7 @@ fn unmodeled_body_and_invoking_patterns_keep_the_owner_open() {
             "iterator in an array pattern",
             "function make() { return { *[Symbol.iterator]() { yield globalThis.mode; } }; }\nconst [value] = make();",
             &["make", "value"][..],
-            "incomplete",
+            "blocked_by_effect",
             "ready\n",
             "undefined\n",
         ),
