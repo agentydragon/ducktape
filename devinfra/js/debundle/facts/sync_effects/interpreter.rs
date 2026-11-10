@@ -10239,12 +10239,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// bindings as unknown later, so publish what those hold here. Its
     /// superclass can also be called after this environment has gone away.
     pub(super) fn escape_class_captures(&mut self, class: u32, env: &Context, captures: &Context) {
-        let heritage = self
-            .inputs
-            .index
-            .class_values
-            .get(&class)
-            .and_then(|facts| facts.super_class.clone());
         let mut values: Values = self
             .inputs
             .class_captured_reads
@@ -10257,33 +10251,68 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .cloned()
             .collect();
 
-        if let Some(heritage) = heritage {
-            // Keep both inputs to the heritage expression and the constructor
-            // it produces: a factory can return a different callable from its
-            // arguments. The flattened class value retains neither.
-            let mut inputs = BTreeSet::new();
-            heritage.bindings(&mut inputs);
-            values.extend(
-                inputs
-                    .iter()
-                    .filter(|binding| !self.inputs.top_bindings.contains(*binding))
-                    .flat_map(|binding| env.get(binding).or_else(|| captures.get(binding)))
-                    .flatten()
-                    .cloned(),
-            );
-            let base = self.evaluate(&heritage, env, captures);
-            if base.is_empty() || base.contains(&AbstractValue::Value(Value::Top)) {
-                // Unsupported heritage syntax can lose its local references
-                // when lowered. An unknown base must retain everything this
-                // environment could have supplied to it.
+        match self
+            .inputs
+            .index
+            .class_values
+            .get(&class)
+            .and_then(|facts| facts.super_class.as_ref())
+        {
+            Some(ValueExpr::Binding(binding)) if !self.inputs.top_bindings.contains(binding) => {
                 values.extend(
-                    env.iter()
-                        .chain(captures)
-                        .filter(|(binding, _)| !self.inputs.top_bindings.contains(*binding))
-                        .flat_map(|(_, possible)| possible.iter().cloned()),
+                    env.get(binding)
+                        .or_else(|| captures.get(binding))
+                        .into_iter()
+                        .flatten()
+                        .cloned(),
                 );
             }
-            values.extend(base);
+            Some(ValueExpr::Binding(_)) | None => {}
+            Some(heritage) => {
+                // The eventual base retains none of this environment. Publish
+                // its inputs without evaluating the expression again: a
+                // heritage factory may have effects already accounted for by
+                // the flattened call pass.
+                let mut inputs = BTreeSet::new();
+                heritage.bindings(&mut inputs);
+                let mut incomplete = heritage.bindings_may_be_incomplete();
+                for binding in inputs {
+                    let possible = if self.inputs.top_bindings.contains(&binding) {
+                        self.state.world.module.prefix_values.get(&binding)
+                    } else {
+                        env.get(&binding).or_else(|| captures.get(&binding))
+                    };
+                    if let Some(possible) = possible {
+                        values.extend(possible.iter().cloned());
+                    } else {
+                        incomplete = true;
+                    }
+                }
+                if incomplete {
+                    // An untracked local factory or lowered-away input can
+                    // return a base reaching any of these capabilities.
+                    values.extend(
+                        env.iter()
+                            .chain(captures)
+                            .filter(|(binding, _)| !self.inputs.top_bindings.contains(*binding))
+                            .flat_map(|(_, possible)| possible.iter().cloned()),
+                    );
+                }
+                if incomplete && let Some(owner) = self.inputs.index.class_owners.get(&class) {
+                    let reads = &self.inputs.facts[owner.0].reads;
+                    values.extend(
+                        reads
+                            .eager
+                            .iter()
+                            .chain(&reads.lazy)
+                            .filter_map(|binding| {
+                                self.state.world.module.prefix_values.get(binding)
+                            })
+                            .flatten()
+                            .cloned(),
+                    );
+                }
+            }
         }
         if !values.is_empty() {
             self.escape_untracked_values(&values);

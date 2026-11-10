@@ -1145,6 +1145,41 @@ impl ValueExpr {
         }
     }
 
+    /// Whether lowering may have omitted inputs used to produce this value.
+    /// A function or class allocation can capture locals without naming them
+    /// in the value expression; computed keys and unknown syntax can also
+    /// hide their operands.
+    pub(super) fn bindings_may_be_incomplete(&self) -> bool {
+        match self {
+            Self::Unknown | Self::Alloc(Kind::Function | Kind::Class, _) => true,
+            Self::Binding(_) | Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
+            Self::ArrayIteratorPrototype(value)
+            | Self::SetIteratorPrototype(value)
+            | Self::LogicalNot(value)
+            | Self::Void(value) => value.bindings_may_be_incomplete(),
+            Self::StrictEquality(left, right) => {
+                left.bindings_may_be_incomplete() || right.bindings_may_be_incomplete()
+            }
+            Self::Conditional { test, alternatives } => {
+                test.bindings_may_be_incomplete()
+                    || alternatives.iter().any(Self::bindings_may_be_incomplete)
+            }
+            Self::Member(object, _, key, _) => {
+                !matches!(key, MemberKey::Static) || object.bindings_may_be_incomplete()
+            }
+            Self::Call(callee, args, _) | Self::New(callee, args, _) => {
+                callee.bindings_may_be_incomplete()
+                    || args.iter().any(Self::bindings_may_be_incomplete)
+            }
+            Self::Alternatives(values) | Self::Sequence(values) | Self::Primitive(values) => {
+                values.iter().any(Self::bindings_may_be_incomplete)
+            }
+            Self::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(name, value)| name.is_none() || value.bindings_may_be_incomplete()),
+        }
+    }
+
     /// Whether this value has an explicit namespace path through its syntax or
     /// a binding already proven to carry that path. Unrelated call/constructor
     /// results are covered by the namespace contract's author audit, while

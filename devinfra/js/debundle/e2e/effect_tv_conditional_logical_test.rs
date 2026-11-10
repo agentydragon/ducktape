@@ -970,6 +970,29 @@ fn a_class_with_effect_free_compound_heritage_keeps_the_split() {
     }
 }
 
+#[test]
+fn compound_heritage_does_not_publish_an_unrelated_parameter() {
+    let definitions = "function make(h, unused) { return class extends (0, h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(first, second); return new C(); }";
+    let fixture = with_reader_split(definitions, &["make"], run_fixture);
+    assert_preserved_entry_output(&fixture, "0 0\n");
+}
+
+#[test]
+fn a_constructor_created_in_the_heritage_keeps_its_effects() {
+    for body in ["second();", "counter = 1;"] {
+        let definitions = format!(
+            "function make() {{ return class extends (0, function Base() {{ {body} }}) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
+        );
+        assert_reader_split_diverges_with(&definitions, &["make"]);
+    }
+}
+
+#[test]
+fn a_heritage_factory_runs_at_class_creation() {
+    let definitions = "function factory() { second(); return first; }\nfunction make() { return class extends factory() {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(); return new C(); }";
+    assert_reader_split_diverges_with(definitions, &["factory", "make"]);
+}
+
 /// Opposing control: more iterator-protocol sites. A `catch` parameter's
 /// array pattern iterates the thrown value; a default below the root of a
 /// pattern (declaration, assignment, parameter, `for`-`of` head, `catch`)
