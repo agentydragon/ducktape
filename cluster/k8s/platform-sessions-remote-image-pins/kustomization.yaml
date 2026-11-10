@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/platform-sessions-gateway
-    newTag: devel-20261108204351-bb2089f # {"$imagepolicy": "flux-system:platform-sessions-gateway:tag"}
+    newTag: devel-20261110095400-5ba4944 # {"$imagepolicy": "flux-system:platform-sessions-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
     newTag: main-20261108211932-d54cdf6 # {"$imagepolicy": "flux-system:platform-sessions-blueshield:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
