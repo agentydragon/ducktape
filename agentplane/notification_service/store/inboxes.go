@@ -127,27 +127,43 @@ func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID st
 	return id, err
 }
 
-// ensureInbox is the owner's inbox for a destination Session, created if absent and returned locked for update.
-func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.ServiceAccount, ref model.DestinationRef, sessionID, ownerUID string) (Inbox, error) {
-	if ownerUID == "" {
-		return Inbox{}, ErrNotFound
+// ensureInbox is the owner's inbox for a destination Session, created if absent and returned locked
+// for update. An IdentityOwner's inbox has no owner_uid, and its owner_namespace and owner_name name
+// the destination Sandbox, as an AccountOwner's account does (a Sandbox runs as the ServiceAccount of
+// its own name), so the inbox key and the inbox quota stay per Sandbox.
+func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner Owner, ref model.DestinationRef, sessionID string) (Inbox, error) {
+	account := model.ServiceAccount{Namespace: ref.Namespace, Name: ref.Name}
+	var ownerUID, identityName, identityUID any
+	switch owner := owner.(type) {
+	case AccountOwner:
+		if owner.AccountUID == "" || owner.SandboxUID != ref.UID {
+			return Inbox{}, ErrNotFound
+		}
+		account, ownerUID = owner.Account, owner.AccountUID
+	case IdentityOwner:
+		if owner.Identity.Name == "" || owner.Identity.UID == "" || owner.SandboxUID != ref.UID {
+			return Inbox{}, ErrNotFound
+		}
+		identityName, identityUID = owner.Identity.Name, owner.Identity.UID
+	default:
+		panic(fmt.Sprintf("unknown inbox owner %T", owner))
 	}
 	written := now()
 	key := model.DestinationKey(ref, sessionID)
 	// Serialize only creation for an owner, to enforce the total destination quota.
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, owner.Namespace+"/"+owner.Name); err != nil {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, account.Namespace+"/"+account.Name); err != nil {
 		return Inbox{}, err
 	}
 	var existing uuid.UUID
 	err := tx.QueryRowContext(ctx,
 		`SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3`,
-		owner.Namespace, owner.Name, key).Scan(&existing)
+		account.Namespace, account.Name, key).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
 		var count int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2
 				AND destination_uid = $3`,
-			owner.Namespace, owner.Name, ref.UID).Scan(&count); err != nil {
+			account.Namespace, account.Name, ref.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
 		if count >= s.quotas.InboxesPerAccount {
@@ -159,15 +175,18 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10)
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid,
+			owner_identity_name, owner_identity_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10, $11, $12)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), owner.Namespace, owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written, ownerUID); err != nil {
+		uuid.New(), account.Namespace, account.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written, ownerUID,
+		identityName, identityUID); err != nil {
 		return Inbox{}, err
 	}
+	predicate, args := ownerPredicate(owner, "", 2)
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
-		`SELECT `+inboxColumns+` FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 AND owner_uid = $4 FOR UPDATE`,
-		owner.Namespace, owner.Name, key, ownerUID))
+		`SELECT `+inboxColumns+` FROM inbox WHERE destination_key = $1 AND `+predicate+` FOR UPDATE`,
+		append([]any{key}, args...)...))
 	// A different destination or owner may already have this globally unique Session ID.
 	// Do not disclose that inbox or treat a conflicting creation as its owner.
 	if errors.Is(err, sql.ErrNoRows) {

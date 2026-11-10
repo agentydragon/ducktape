@@ -267,13 +267,14 @@ type Dispatch struct {
 type Session struct {
 	SessionID, SandboxName, SandboxUID string
 	Placement                          SessionPlacement
-	// ExecutionPrincipal is the immutable logical owner of the Session. A nil account means a
-	// legacy row with no trustworthy owner; an empty UID with a set account is a privileged open
-	// waiting to bind the controller-owned ServiceAccount.
+	// ExecutionPrincipal is the immutable logical owner of the Session. A nil account with a nil
+	// ExecutionIdentity means a legacy row with no trustworthy owner; an empty UID with a set account
+	// is a privileged open waiting to bind the controller-owned ServiceAccount.
 	ExecutionPrincipal *ServiceAccountIdentity
 	// ExecutionIdentity is the Identity the Session's Sandbox named in `spec.identity` when the
-	// Session was created, nil when it named none. It is immutable and set beside ExecutionPrincipal,
-	// never instead of it.
+	// Session was created, nil when it named none. It is immutable. Beside a nil ExecutionPrincipal it
+	// is an Identity-run Session: its Sandbox had no managed ServiceAccount, and delivery checks only
+	// that the Sandbox still names this Identity.
 	ExecutionIdentity *identitypb.Identity
 	// Creator records the authenticated actor that brokered the session, separately from its owner
 	// and effective caller. For a delegated session this is the Actions ServiceAccount.
@@ -933,8 +934,10 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 // caller attribution. Retrying a concurrently inserted session requires retained read authority.
 func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
 	executionPrincipal := execution.Principal
-	if executionPrincipal == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
-		executionPrincipal.GetAccount().GetName() == "" || callerAttribution(caller) == nil {
+	// An Identity-run Session records no ServiceAccount; every other names one.
+	if executionPrincipal == nil && execution.Identity == nil || executionPrincipal != nil &&
+		(executionPrincipal.GetAccount().GetNamespace() == "" || executionPrincipal.GetAccount().GetName() == "") ||
+		callerAttribution(caller) == nil {
 		return nil, errors.New("execution principal and creator identity are required")
 	}
 	if account, ok := caller.(ServiceAccountCaller); ok && (account.Attribution.Actor == nil ||

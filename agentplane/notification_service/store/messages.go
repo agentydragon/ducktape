@@ -98,7 +98,7 @@ type SentMessage struct {
 // caller has confirmed that the Session runs in the destination Sandbox.
 func (s *Store) OpenInbox(ctx context.Context, recipient model.ServiceAccount, ref model.DestinationRef, sessionID, ownerUID string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		_, err := s.ensureInbox(ctx, tx, recipient, ref, sessionID, ownerUID)
+		_, err := s.ensureInbox(ctx, tx, AccountOwner{Account: recipient, AccountUID: ownerUID, SandboxUID: ref.UID}, ref, sessionID)
 		return err
 	})
 }
