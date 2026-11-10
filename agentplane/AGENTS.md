@@ -1,5 +1,11 @@
 @README.md
 
+## Session resilience
+
+For Session lifecycle, transport and recovery changes, account for active work, retained History
+and the user's next input through ordinary rolls and brief outages. Follow the
+[resilience principles](docs/principles.md#components-roll-and-fail-independently).
+
 ## Service boundaries
 
 The integration app is a client of the backend services, never their dependency
