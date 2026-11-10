@@ -37,6 +37,26 @@ func TestSandboxPodViewIncludesEmptyStatus(t *testing.T) {
 	}
 }
 
+func TestViewProjectsOptionalIdentityName(t *testing.T) {
+	resource := testSandbox("worker", "sandbox-uid", sandboxapi.OperatingModeRunning)
+	withoutIdentity, err := View(resource, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutIdentity.IdentityName != nil {
+		t.Fatalf("identity name without spec.identity = %q; want absent", withoutIdentity.GetIdentityName())
+	}
+
+	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "visual-agent"}
+	withIdentity, err := View(resource, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withIdentity.IdentityName == nil || withIdentity.GetIdentityName() != "visual-agent" {
+		t.Fatalf("identity name = %v; want visual-agent", withIdentity.IdentityName)
+	}
+}
+
 func TestSandboxPodViewPreservesOwnerReferences(t *testing.T) {
 	controller := true
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{
