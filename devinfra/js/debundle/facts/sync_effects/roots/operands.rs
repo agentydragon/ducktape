@@ -322,6 +322,23 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
+    // Every call of the root is a direct call of an imported binding that
+    // carries a published foreign call summary. The ordered lane substitutes
+    // each summary, so it runs no provider or application code.
+    let provider_root_calls = {
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+            .peekable();
+        calls.peek().is_some()
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && !call.has_spread
+                    && executor
+                        .foreign_call_summary(call.kind, &call.callee)
+                        .is_some()
+            })
+    };
     // Every call of the root is a local call or a direct call of an import
     // the ordered lane replaces by its derived summary, with at least one of
     // the latter. A substituted call runs no provider or application code.
@@ -379,7 +396,7 @@ pub(super) fn prepare<'source>(
         .filter(|body| {
             (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
-                || summarized_root_calls
+                || provider_root_calls
                 || selected_audited_initializer.is_some())
                 && (calls
                 .iter()
@@ -409,7 +426,7 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
-                || summarized_root_calls
+                || provider_root_calls
                 || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead
@@ -424,8 +441,9 @@ pub(super) fn prepare<'source>(
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
         });
-    // Every other initializer whose root calls are all local: a call with
-    // arguments, an IIFE, a call inside a comma. The body phase runs it
+    // Every other initializer whose root calls are all local, or local and
+    // summarized imports: a call with arguments, an IIFE, a call inside a
+    // comma, a retaining factory call. The body phase runs it
     // through the kernel and keeps that execution only if it seals the owner.
     let attempted_initializer =
         (ordered_initializer.is_none() && initializer_source.is_none() && root_shape)
@@ -434,7 +452,7 @@ pub(super) fn prepare<'source>(
             .filter(admitted_body)
             .filter(|_| {
                 calls.iter().any(|call| call.kind == CallKind::Call)
-                    && executor.ordered_root_calls_are_local(calls)
+                    && (executor.ordered_root_calls_are_local(calls) || summarized_root_calls)
             })
             .and_then(|body| {
                 Some((

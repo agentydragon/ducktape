@@ -661,6 +661,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         .contains(identity.binding.0.as_ref())
                 });
         let substituted_summary = self.substituted_call_summary(&call);
+        let caller = self.executor.local_body_identity_for_call(&call);
         let result = self.executor.request(RuntimeOperation::Call {
             call,
             environment: frame.environment.clone(),
@@ -746,6 +747,17 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     if !normal_value {
                         // An unavailable operand throws before the body runs.
                         effects.uncertain_completion();
+                    }
+                    if let Some(caller) = caller {
+                        effects.selected_local_call(LocalCallReceipt {
+                            caller,
+                            call_span: span,
+                            target: LocalBodyIdentity::Imported {
+                                defining_module: summary.defining_module.clone(),
+                                export: summary.export.clone(),
+                            },
+                            dependencies: Box::new(summary.dependencies.clone()),
+                        });
                     }
                     effects
                 } else {

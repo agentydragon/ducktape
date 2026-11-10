@@ -3388,8 +3388,8 @@ use of the result still reaches it. An author-asserted factory keeps its
 contract's consumers alone. A summary whose body reads a private provider cell
 carries no such receipt. A callback that
 captures a live cell of the activation creating it leaves the receiving call
-without a receipt (`callback_captures_live_cell`). The summary is not a
-receipt for the root's lexical binding effects.
+without a receipt (`callback_captures_live_cell`). A substituted call is a call edge of the root's lexical receipt, so a
+root whose every operation is covered seals its binding effects.
 Construction of an imported class keeps its established dispatch, since the
 class binding can be in its TDZ. Other native and imported whole-owner proof
 families retain their established dispatch until their value transfers accept

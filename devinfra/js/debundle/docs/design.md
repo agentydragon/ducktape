@@ -4033,8 +4033,12 @@ substituted on the ordered lane
 (`roots/call_operands.rs`, `retaining_factory_result`): its result is the
 audited carrier of the callback, and a later call, read or publication of the
 result reaches the callback through that carrier with no receipt of its own.
-A root whose result is such a private carrier is no reachability root, as on
-the flattened lane. A callback that captures a live activation cell withholds
+A substituted call is a call edge of the caller's lexical receipt
+(`LocalBodyIdentity::Imported`). A root that mixes local and substituted
+calls, or calls a retaining factory, is attempted on the kernel and kept only
+if it seals; otherwise the flattened lane runs it as before. A sealed root
+whose result is such a private carrier is no reachability root, as on the
+flattened lane. A callback that captures a live activation cell withholds
 the receiving call's receipt and names
 `callback_captures_live_cell` as the owner's coverage refusal.
 
