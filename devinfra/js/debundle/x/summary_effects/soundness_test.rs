@@ -16,8 +16,9 @@ const ALL_UPGRADES: [tier0::Upgrade; 4] = [
     tier0::Upgrade::IntrinsicHeritage,
     tier0::Upgrade::IntrinsicMemberReads,
 ];
-const LATER_UPGRADES: [tier0::Upgrade; 5] = [
+const LATER_UPGRADES: [tier0::Upgrade; 6] = [
     tier0::Upgrade::EnumDefinitions,
+    tier0::Upgrade::PrimitiveCalls,
     tier0::Upgrade::LocalHeritage,
     tier0::Upgrade::StaticFields,
     tier0::Upgrade::LiteralMemberReads,

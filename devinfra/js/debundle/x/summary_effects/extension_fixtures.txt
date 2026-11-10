@@ -313,3 +313,33 @@ const table = { colors: { red: '#f00' } }; function repaint() { Object.values(ta
 repaint();
 const red = table.colors.red;
 console.log(red);
+### commutes same: a call of a function over primitives with a literal argument, across an impure statement
+-
+const unit = 'px'; const fmt = (n) => `${n}${unit}`; const scale = function (a, b) { return a * 2 + (b === void 0 ? 0 : b); }; let state = 0;
+state = 1;
+const width = [fmt(4), scale(3), scale(1, -2)];
+console.log(state, width.join());
+### ordered differs: the function reads a binding an impure statement changes
+-
+let unit = 'px'; const fmt = (n) => `${n}${unit}`; function metric() { unit = 'em'; }
+metric();
+const width = fmt(4);
+console.log(width);
+### ordered differs: the argument converts by running code
+-
+let n = 0; const fmt = (v) => `${v}!`; const counter = { toString() { return String(++n); } };
+n = 5;
+const label = fmt(counter);
+console.log(label);
+### ordered differs: the function binding is reassigned
+-
+let fmt = (v) => `${v}!`; function swap() { fmt = (v) => v; }
+swap();
+const label = fmt(1);
+console.log(label);
+### ordered differs: the function calls its argument
+-
+let n = 0; const run = (f) => `${f()}`; const bump = () => ++n;
+n = 5;
+const label = run(bump);
+console.log(label);

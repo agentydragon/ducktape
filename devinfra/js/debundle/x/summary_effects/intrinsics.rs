@@ -31,6 +31,24 @@ pub struct Writes {
     pub props: FxHashSet<String>,
 }
 
+/// Why the census does not vouch for a use of an intrinsic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Refusal {
+    /// Some chunk stores on the global object under a key the census cannot
+    /// name.
+    GlobalObjectUnnamedStore,
+    /// Or under a key that starts like the global's name.
+    GlobalObjectPrefixedStore,
+    /// The binding, or a property the use reads off its value, is written.
+    ValueWritten,
+    /// A member of its `prototype` the use depends on is written.
+    PrototypeWritten,
+    /// The intrinsic escapes and a store through an unfollowed
+    /// `<base>.prototype` may hit the member.
+    EscapedWithUnfollowedPrototypeStore,
+}
+
 /// How a store came to count as a write of a whole global.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -201,13 +219,25 @@ impl Census {
     /// and of properties the value itself owns, which a store on its
     /// prototype cannot change.
     pub fn untouched(&self, global: &str, props: &[&str], prototype_members: bool) -> bool {
-        if self.all
-            || self
-                .prefixes
-                .iter()
-                .any(|prefix| global.starts_with(prefix.as_str()))
+        self.refusal(global, props, prototype_members).is_none()
+    }
+
+    /// Why a use of the global is not known to be untouched.
+    pub fn refusal(
+        &self,
+        global: &str,
+        props: &[&str],
+        prototype_members: bool,
+    ) -> Option<Refusal> {
+        if self.all {
+            return Some(Refusal::GlobalObjectUnnamedStore);
+        }
+        if self
+            .prefixes
+            .iter()
+            .any(|prefix| global.starts_with(prefix.as_str()))
         {
-            return false;
+            return Some(Refusal::GlobalObjectPrefixedStore);
         }
         let clear =
             |writes: &Writes| !writes.any && props.iter().all(|prop| !writes.props.contains(*prop));
@@ -219,10 +249,17 @@ impl Census {
                 })
                 .all(|(_, writes)| clear(writes))
         };
-        named(&self.written)
-            && (!prototype_members
-                || named(&self.prototype_written)
-                    && (!self.escaped(global) || clear(&self.unfollowed_prototype_stores)))
+        if !named(&self.written) {
+            return Some(Refusal::ValueWritten);
+        }
+        if !prototype_members {
+            return None;
+        }
+        if !named(&self.prototype_written) {
+            return Some(Refusal::PrototypeWritten);
+        }
+        (self.escaped(global) && !clear(&self.unfollowed_prototype_stores))
+            .then_some(Refusal::EscapedWithUnfollowedPrototypeStore)
     }
 }
 

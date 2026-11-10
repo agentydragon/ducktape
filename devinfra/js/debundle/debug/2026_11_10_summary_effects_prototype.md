@@ -162,6 +162,11 @@ prototype. The value of a global the census cannot name (`globalThis[name]`)
 stands for every global, or for those whose name starts with a known prefix:
 a store on it or on its `prototype` counts against each of them.
 
+The report counts the intrinsic uses the census refused per family and
+reason (`intrinsic_refusals`: an unnamed or prefixed store on the global
+object, a write of the value, a write of the prototype, or an escaped
+intrinsic with a store through an unfollowed `.prototype`).
+
 The report lists each store that counts as a write of a whole global the
 language defines (`whole_write_sites`): the family, the chunk, the byte
 offset of the store's target, how it counted (the binding assigned, a member
@@ -402,7 +407,7 @@ Two points differ from what was asked, both for soundness:
   mutually ordered. Only `decorator` (no private state) lets two classes'
   decorator statements pass each other.
 
-`premise_fixtures.txt` holds 39 programs, each run under Node in both orders:
+`premise_fixtures.txt` holds 41 programs, each run under Node in both orders:
 17 where a premise lets a swap through and Node agrees, 18 where the premises
 hold but the swap is observable and tier 0 refuses, and 4 where a premise is
 false (a `pure_call` that counts, a `callback_factory` that calls its
@@ -569,10 +574,36 @@ impure:
   element named by it, or any use of the binding as a value disqualifies it.
   Nothing but the binding then holds the object, so an impure statement that
   reaches the binding can only read it; the read is a pure definition
-  ordered only against the literal's declaration.
+  ordered only against the literal's declaration. Some uses of the whole
+  binding neither change nor keep the object and are passed over:
+  `Object.keys`, `values` and `entries` of it (while the census leaves those
+  statics alone), `k in table`, `for (k in table)`, a computed read
+  `table[k]`, `{ ...table }`, `typeof`, `!` and strict comparison. The
+  premise `immutable_bindings` (source units) says the same of a literal
+  binding outright.
+  `table.member.key` is accepted the same way when `table.member` is written
+  as a plain object literal with `key`, `table` qualifies without the
+  passed-over uses (a listing would hand the inner object out), and every
+  `table.member` in the chunk is the object of a named read.
 - `import-reads`: a read of an imported binding is a pure definition that
   stays ordered against every impure statement, since another chunk's code
   may change what the import holds.
+
+Two more upgrades, each for one statement shape:
+
+- `enum-definitions`: `(function (e) { e[e.A = 0] = "A"; e.B = "b"; })(E ||
+(E = {}))`, an inline function of one parameter whose body only stores
+  literals on the parameter under literal names, for a binding declared once
+  without a value and assigned nowhere but in such arguments. The statement
+  is confined to `E`: it stays ordered against any statement that reads `E`
+  when it runs, any impure statement that reaches `E`, and another such
+  statement on the same binding.
+- `primitive-calls`: `f(args)` where `f` only ever holds one arrow or
+  function expression with plain parameters whose body returns an expression
+  of operators and templates over its parameters, literals and
+  primitive-only bindings, and every argument is such an expression. The
+  call reads `f` and those bindings eagerly. Function declarations are not
+  covered.
 
 Two rules ride on those upgrades and the first four:
 
@@ -593,8 +624,8 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 38 programs run under Node in both orders (13
-admitted with Node agreeing, 25 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 57 programs run under Node in both orders (18
+admitted with Node agreeing, 39 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks, a guarded polyfill

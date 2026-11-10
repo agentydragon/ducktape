@@ -171,6 +171,9 @@ pub struct Tier0 {
     pub exports_reachable: bool,
     /// Intrinsic uses left impure because the census found a write.
     pub intrinsics_denied: usize,
+    /// The same per family the use depends on and why the census refused.
+    pub intrinsic_refusals:
+        std::collections::BTreeMap<(&'static str, crate::intrinsics::Refusal), usize>,
     pub premises_given: usize,
     /// Premises whose callee the chunk names.
     pub premises_matched: usize,
@@ -325,6 +328,98 @@ pub enum Upgrade {
     /// binding declared without a value and assigned nowhere else: its
     /// effects are confined to `E` (`enum_definition`).
     EnumDefinitions,
+    /// `f(primitives…)` for a local function that only ever returns an
+    /// expression of operators and templates over its parameters, literals
+    /// and primitive-only bindings (`primitive_function`).
+    PrimitiveCalls,
+}
+
+/// The primitive-only bindings a function reads, if it does nothing but
+/// return an expression of operators and templates over its plain
+/// parameters, literals and such bindings: called with primitives it runs no
+/// other code, cannot throw and returns a primitive.
+fn primitive_function(
+    function: &Expr,
+    bindings: &FxHashMap<Id, Binding>,
+    primitives: &FxHashSet<Binding>,
+) -> Option<Vec<Binding>> {
+    let (params, body): (Vec<&Pat>, &Expr) = match function {
+        Expr::Arrow(arrow) if !arrow.is_async && !arrow.is_generator => (
+            arrow.params.iter().collect(),
+            match &*arrow.body {
+                ArrowFunctionBody::Expr(body) => body,
+                ArrowFunctionBody::FunctionBody(block) => returned(&block.stmts)?,
+            },
+        ),
+        Expr::Fn(FnExpr { function, .. }) if !function.is_async && !function.is_generator => (
+            function.params.iter().map(|param| &param.pat).collect(),
+            returned(&function.body.as_ref()?.stmts)?,
+        ),
+        _ => return None,
+    };
+    let params: FxHashSet<Id> = params
+        .into_iter()
+        .map(|param| match param {
+            Pat::Ident(name) => Some(name.id.to_id()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    let mut reads = Vec::new();
+    over_primitives(body, &params, bindings, primitives, &mut reads).then_some(reads)
+}
+
+/// The expression of a body that is one `return`.
+fn returned(statements: &[Stmt]) -> Option<&Expr> {
+    match statements {
+        [
+            Stmt::Return(ReturnStmt {
+                arg: Some(value), ..
+            }),
+        ] => Some(value),
+        _ => None,
+    }
+}
+
+/// The grammar of `primitive`, with parameters standing for primitives.
+fn over_primitives(
+    expr: &Expr,
+    params: &FxHashSet<Id>,
+    bindings: &FxHashMap<Id, Binding>,
+    primitives: &FxHashSet<Binding>,
+    reads: &mut Vec<Binding>,
+) -> bool {
+    let mut recurse = |expr: &Expr| over_primitives(expr, params, bindings, primitives, reads);
+    match expr {
+        Expr::Paren(paren) => recurse(&paren.expr),
+        Expr::Lit(Lit::Num(_) | Lit::Str(_) | Lit::Bool(_) | Lit::Null(_)) => true,
+        Expr::Ident(ident) if params.contains(&ident.to_id()) => true,
+        Expr::Ident(ident) => match bindings.get(&ident.to_id()) {
+            Some(binding) if primitives.contains(binding) => {
+                reads.push(*binding);
+                true
+            }
+            _ => false,
+        },
+        Expr::Tpl(template) => template.exprs.iter().all(|expr| recurse(expr)),
+        Expr::Unary(unary) => {
+            matches!(
+                unary.op,
+                UnaryOp::Minus
+                    | UnaryOp::Plus
+                    | UnaryOp::Bang
+                    | UnaryOp::Tilde
+                    | UnaryOp::Void
+                    | UnaryOp::TypeOf
+            ) && recurse(&unary.arg)
+        }
+        Expr::Bin(binary) => {
+            !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf)
+                && recurse(&binary.left)
+                && recurse(&binary.right)
+        }
+        Expr::Cond(cond) => recurse(&cond.test) && recurse(&cond.cons) && recurse(&cond.alt),
+        _ => false,
+    }
 }
 
 /// The named data properties of an object literal: the key, whether the
@@ -607,6 +702,9 @@ struct Classifier<'a> {
     /// their keys, where the inner object cannot change either.
     sealed_members: &'a FxHashSet<(Binding, String)>,
     nested_literals: &'a FxHashMap<(Binding, String), FxHashMap<String, bool>>,
+    /// Bindings that only ever hold a function pure over primitives, with
+    /// the bindings a call of it reads: see `primitive_function`.
+    primitive_functions: &'a FxHashMap<Binding, Vec<Binding>>,
     /// Bindings only enum-shaped statements assign: see `enum_definition`.
     enums: &'a FxHashSet<Binding>,
     /// Literals nothing in the chunk can change: see `sealed_literals`.
@@ -620,7 +718,7 @@ struct Classifier<'a> {
     /// The globals the accepted intrinsic uses depend on.
     intrinsics: Vec<&'static str>,
     /// Intrinsic uses the census refused.
-    denied: usize,
+    denied: Vec<(&'static str, crate::intrinsics::Refusal)>,
     premises: &'a ResolvedPremises,
     /// Bindings read by the arguments of premised calls.
     deep: Vec<Binding>,
@@ -889,6 +987,31 @@ impl Classifier<'_> {
         }
     }
 
+    /// A call of a function pure over primitives with primitive arguments.
+    fn primitive_call(&mut self, call: &CallExpr) -> bool {
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let Expr::Ident(callee) = unparen(callee) else {
+            return false;
+        };
+        let Some(binding) = self.bindings.get(&callee.to_id()).copied() else {
+            return false;
+        };
+        let Some(reads) = self.primitive_functions.get(&binding) else {
+            return false;
+        };
+        let primitive_arguments = call
+            .args
+            .iter()
+            .all(|arg| arg.spread.is_none() && self.primitive_arg(&arg.expr));
+        if primitive_arguments {
+            self.eager.push(binding);
+            self.eager.extend(reads);
+        }
+        primitive_arguments
+    }
+
     fn primitive_arg(&mut self, expr: &Expr) -> bool {
         let mut reads = Vec::new();
         let ok = primitive(
@@ -1071,20 +1194,22 @@ impl Classifier<'_> {
         extra_prop: Option<&str>,
         prototype_members: bool,
     ) -> bool {
-        let ok = dependencies.iter().all(|(global, props)| {
+        let refusal = dependencies.iter().find_map(|(global, props)| {
             let mut props: Vec<&str> = props.to_vec();
             props.extend(extra_prop);
-            self.native_site
-                || self.never_written.contains(*global)
-                || self.census.untouched(global, &props, prototype_members)
+            if self.native_site || self.never_written.contains(*global) {
+                return None;
+            }
+            let refusal = self.census.refusal(global, &props, prototype_members)?;
+            Some((*global, refusal))
         });
-        if ok {
-            self.intrinsics
-                .extend(dependencies.iter().map(|(global, _)| *global));
-        } else {
-            self.denied += 1;
+        match refusal {
+            None => self
+                .intrinsics
+                .extend(dependencies.iter().map(|(global, _)| *global)),
+            Some(refusal) => self.denied.push(refusal),
         }
-        ok
+        refusal.is_none()
     }
 
     /// Records a read of a property of the literal `table` holds. The read
@@ -1707,10 +1832,15 @@ impl Classifier<'_> {
                 self.pure(&binary.right)
             }
             Expr::Seq(seq) => seq.exprs.iter().try_for_each(|expr| self.pure(expr)),
-            Expr::Call(call) => Err(match &call.callee {
-                Callee::Expr(callee) => self.call_cause(callee),
-                _ => ImpureCause::CallOther,
-            }),
+            Expr::Call(call) => {
+                if self.primitive_call(call) {
+                    return Ok(());
+                }
+                Err(match &call.callee {
+                    Callee::Expr(callee) => self.call_cause(callee),
+                    _ => ImpureCause::CallOther,
+                })
+            }
             Expr::TaggedTpl(tagged) => Err(self.call_cause(&tagged.tag)),
             Expr::OptChain(chain) => Err(match &*chain.base {
                 OptChainBase::Call(call) => self.call_cause(&call.callee),
@@ -2232,6 +2362,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         }
     }
     let mut primitives: FxHashSet<Binding> = FxHashSet::default();
+    let mut function_candidates: Vec<(Binding, Option<&Expr>)> = Vec::new();
     if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
         // The initializer of each binding declared by one identifier
         // declarator and never assigned.
@@ -2256,6 +2387,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 candidates.push((*binding, declarator.init.as_deref()));
             }
         }
+        function_candidates = candidates.clone();
         // An import that only ever holds a primitive, by its exporting
         // chunk's declaration. Off an import cycle that chunk has run before
         // this one starts, so the binding already holds its one value.
@@ -2279,10 +2411,26 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             }
         }
     }
+    let primitive_functions: FxHashMap<Binding, Vec<Binding>> =
+        if options.upgrades.contains(&Upgrade::PrimitiveCalls) {
+            function_candidates
+                .iter()
+                .filter_map(|(binding, init)| {
+                    let reads = primitive_function(unparen((*init)?), &bindings, &primitives)?;
+                    Some((*binding, reads))
+                })
+                .collect()
+        } else {
+            FxHashMap::default()
+        };
 
     let mut refused = 0;
     let mut top_level_awaits = 0;
     let mut intrinsics_denied = 0;
+    let mut intrinsic_refusals: std::collections::BTreeMap<
+        (&'static str, crate::intrinsics::Refusal),
+        usize,
+    > = Default::default();
     let mut premise_uses: std::collections::BTreeMap<PremiseKind, usize> = Default::default();
     let mut premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
     let mut derived = DerivedCounts {
@@ -2415,7 +2563,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut sealed_members: FxHashSet<(Binding, String)> = FxHashSet::default();
     if let Some(mentions) = &strict {
         let whole = unhandled(&strict);
-        for ((binding, member), _) in &nested_literals {
+        for (binding, member) in nested_literals.keys() {
             let id = bindings
                 .iter()
                 .find(|(_, candidate)| *candidate == binding)
@@ -2467,13 +2615,14 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             sealed_members: &sealed_members,
             nested_literals: &nested_literals,
             enums: &enums,
+            primitive_functions: &primitive_functions,
             pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,
             unresolved,
             eager: Vec::new(),
             intrinsics: Vec::new(),
-            denied: 0,
+            denied: Vec::new(),
             premises: &premises,
             deep: Vec::new(),
             targets: Vec::new(),
@@ -2522,7 +2671,10 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             usize::from(classifier.native_site && !classifier.intrinsics.is_empty());
         refused += scan.refused;
         top_level_awaits += scan.top_level_awaits;
-        intrinsics_denied += classifier.denied;
+        intrinsics_denied += classifier.denied.len();
+        for refusal in classifier.denied {
+            *intrinsic_refusals.entry(refusal).or_default() += 1;
+        }
         if matches!(kind, Kind::Pure | Kind::Contained) {
             for global in &classifier.intrinsics {
                 *families_used.entry(*global).or_default() += 1;
@@ -2786,6 +2938,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         imported_strings: imported_strings.len(),
         exports_reachable,
         intrinsics_denied,
+        intrinsic_refusals,
         families_used,
         census,
     }
