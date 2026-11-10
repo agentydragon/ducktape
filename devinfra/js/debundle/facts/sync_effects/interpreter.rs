@@ -164,6 +164,22 @@ fn seed_undefined_before_assignment(
     }
 }
 
+/// Whether an incoming argument may be `undefined`, so its parameter's
+/// default may run: no value, unknown, or a primitive kind set including
+/// `undefined`. Only objects, functions and other primitives exclude it.
+#[inline(never)]
+fn may_be_undefined(values: &Values) -> bool {
+    values.is_empty()
+        || values.iter().any(|value| match value {
+            AbstractValue::Value(Value::Prim(kinds)) => kinds.intersects(PrimKinds::UNDEFINED),
+            AbstractValue::Value(Value::Alloc(..))
+            | AbstractValue::Closure(..)
+            | AbstractValue::ClassMembers(_)
+            | AbstractValue::Instance(..) => false,
+            _ => true,
+        })
+}
+
 pub(super) fn unknown() -> Values {
     Values::from([AbstractValue::Value(Value::Top)])
 }
@@ -10226,7 +10242,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .cloned()
                 .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
             if let Some(default) = &parameter.default
-                && values.contains(&AbstractValue::UNDEFINED)
+                && may_be_undefined(&values)
             {
                 values.remove(&AbstractValue::UNDEFINED);
                 values.extend(self.evaluate(default, env, env));
@@ -10541,7 +10557,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .cloned()
                 .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
             if let Some(default) = &param.default
-                && values.contains(&AbstractValue::UNDEFINED)
+                && may_be_undefined(&values)
             {
                 values.remove(&AbstractValue::UNDEFINED);
                 values.extend(self.evaluate(default, &env, &env));

@@ -520,3 +520,23 @@ fn a_top_level_value_reaching_a_binding_only_as_unknown_is_published() {
         );
     }
 }
+
+/// Opposing control: a parameter default runs whenever the incoming value
+/// may be `undefined`, not only when it is the literal `undefined` value: a
+/// global `undefined` read, a missing property and an unknown argument may
+/// each be `undefined`, so the default (`second`) is among the values.
+#[test]
+fn a_parameter_default_runs_for_an_argument_that_may_be_undefined() {
+    for parameter in ["{ p } = { p: second }", "p = second"] {
+        for argument in [
+            "undefined",
+            "[][0]",
+            "({}).q",
+            "JSON.parse('null') ?? undefined",
+        ] {
+            assert_reader_split_diverges(&format!(
+                "function flag({parameter}) {{ if (first()) {{}} return p; }}\nfunction run() {{ return flag({argument})(); }}"
+            ));
+        }
+    }
+}
