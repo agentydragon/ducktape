@@ -3045,6 +3045,9 @@ flowchart LR
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
+    SESSION_IDENTITY_AUTHZ[Design: Session reads and sends authorized by identity]
+    SERVICES_IDENTITY_PRINCIPAL --> SESSION_IDENTITY_AUTHZ
+    CENTRAL_SESSION_ACTING_DESIGN --> SESSION_IDENTITY_AUTHZ
 ```
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
@@ -3268,6 +3271,28 @@ its SA, RoleBindings, grant, credential, set and use binding are gone with no co
 deleting an identity removes everything it owned; a Firecracker guest's relay authenticates with the
 SVID. The Policy Controller's envtests run no garbage collector, so these scenarios are the first to
 show account-owned objects going with their account. **Exit:** the scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
+
+### `SESSION_IDENTITY_AUTHZ` — Session reads and sends authorized by identity
+
+**Design, not started (operator, 2026-11-10).** Who may send to a Session's inbox, read and manage
+that inbox, and read its History is decided today through the Sandbox hosting it:
+
+- Notification's `SendMessage` checks a `session_inbox_access` rule bound to the sender's
+  ServiceAccount naming the target Sandbox.
+- An inbox's owner (`store.AccountOwner`/`IdentityOwner`) pins the Sandbox incarnation it was
+  opened for.
+- History binds a Session to its writer's Sandbox and scopes reads to the execution ServiceAccount
+  or Identity (`storage.OwnedBy`/`OwnedByIdentity`).
+
+`SERVICES_IDENTITY_PRINCIPAL` keeps that shape and adds Identity variants. The intended direction
+is different: the Session's Identity and the policy bindings naming it decide who may send to and
+read a Session, whichever Sandbox (if any) hosts it. A central-sampler Session has no Sandbox at all
+(`CENTRAL_SESSION_ACTING_DESIGN`), and the Sandbox hosting a Session stops carrying authority once
+Sandboxes run as Identities (`IDENTITY_CUTOVER`). It also depends on open question 11 of the
+[plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), who creates a launched
+Sandbox's Identity. The Sandbox-anchored sites carry `TODO(SESSION_IDENTITY_AUTHZ)`. **Exit:** a
+decided design for send, inbox and History-read authorization keyed on the Session's Identity, and
+the PRs it implies.
 
 ### `IDENTITY_CUTOVER` — the staging cutover
 

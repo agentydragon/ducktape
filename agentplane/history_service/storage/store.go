@@ -87,6 +87,9 @@ type ReadScope struct {
 	all       bool
 }
 
+// TODO(SESSION_IDENTITY_AUTHZ): decide History reads by the Session's Identity and its bindings, not
+// by the execution account or the writer's Sandbox (agentplane/plans/task_dag.md).
+
 // OwnedBy returns a scope for exactly one ServiceAccount incarnation. An incomplete identity yields
 // a scope that denies reads.
 func OwnedBy(principal ExecutionPrincipal) ReadScope {
