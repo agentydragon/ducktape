@@ -13,6 +13,7 @@ FIXTURE_NAMES = (
     "empty",
     "tints",
     "binding_summary",
+    "zai_peak",
     "hot",
     "exhausted",
     "extra_enabled_not_burning",

@@ -81,6 +81,10 @@ class _ProviderPopup:
         return self.text("GetStatusText")
 
     @property
+    def burn(self) -> str:
+        return self.text("GetBurnText")
+
+    @property
     def reset(self) -> str:
         return self.text("GetResetText")
 
@@ -188,8 +192,8 @@ def test_claude_prepaid_balance(session: GnomeSession) -> None:
 def test_claude_reset_grants(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_reset_grants")
     grants = _ProviderPopup(session, "claude").grants
-    assert "Fable resets: 2" in grants
-    assert "Full resets: 1" in grants
+    assert "Fable resets: 2 left" in grants
+    assert "Full resets: 1 left" in grants
     assert "paused" in grants
 
 
@@ -222,8 +226,8 @@ def test_openai_platform_credits(session: GnomeSession) -> None:
     popup = _ProviderPopup(session, "openai_platform")
     grants = popup.grants
     assert popup.header == "OpenAI API — Available balance: $125.75"
-    assert "Grant: $100.00" in grants
-    assert "Grant: $25.75" in grants
+    assert "Grant: $100.00 left" in grants
+    assert "Grant: $25.75 left" in grants
     assert "expires" in grants
     assert "original $100.00" in popup.details
     assert string_reply(session.call("GetEmptyLabelText")) == "AI quota"
@@ -267,6 +271,18 @@ def test_binding_summary(session: GnomeSession) -> None:
     assert "+18 pp" in _ProviderPopup(session, "codex").panel
     assert "-15 pp" in _ProviderPopup(session, "zai").panel
     assert "Forecasts use average usage since the window started." in _ProviderPopup(session, "claude").details
+
+
+def test_peak_burn_identifies_affected_models_in_compact_menu(session: GnomeSession) -> None:
+    _reload_fixture(session, "zai_peak")
+    burn = _ProviderPopup(session, "zai").burn
+    assert "3x burn until" in burn
+    assert "GLM-5.3, GLM-5-Turbo" in burn
+    geometry = session.open_menu()
+    try:
+        assert geometry[2] <= 480, f"peak scope widens popup: {geometry}"
+    finally:
+        session.close_menu()
 
 
 def test_reset_pending(session: GnomeSession) -> None:

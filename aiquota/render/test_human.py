@@ -73,6 +73,13 @@ def test_details_show_grant_originals_full_deadlines_pace_and_peak_schedule(
     assert "$100.00 granted" in credits
 
 
+def test_peak_burn_identifies_affected_models(quota_fixture: Callable[[str], AllQuotas]) -> None:
+    quotas = quota_fixture("zai_peak")
+    rendered = human.render(quotas, now=quotas.fetched_at, tz=UTC)
+    assert "3x burn until" in rendered
+    assert "GLM-5.3, GLM-5-Turbo" in rendered
+
+
 def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_details(
     quota_fixture: Callable[[str], AllQuotas],
 ) -> None:

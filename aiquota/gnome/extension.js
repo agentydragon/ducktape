@@ -125,7 +125,7 @@ function formatExpiry(expiry, details = false) {
 function formatGrant(grant, details = false, includeGroup = false) {
   const parts = [];
   if (includeGroup && grant.group) parts.push(grant.group);
-  parts.push(`${grant.label}: ${grant.remaining}`);
+  parts.push(`${grant.label}: ${grant.remaining} left`);
   parts.push(formatExpiry(grant.expires_at, details));
   if (details) parts.push(`original ${grant.original}`);
   const scope = details ? (grant.scope_detail ?? grant.scope) : grant.scope;
@@ -170,7 +170,8 @@ function formatBurnSummary(burn) {
   if (!changesAt) return null;
   const until = formatDuration(Math.max(0, (changesAt.getTime() - nowMs()) / 1000));
   if (burn.in_peak) {
-    return `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until})`;
+    const scope = burn.applies_to ? ` · ${burn.applies_to}` : "";
+    return `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until})${scope}`;
   }
   return `${formatMultiplier(burn.multiplier)} burn — next ${formatMultiplier(burn.peak_multiplier)} in ${until}`;
 }
@@ -313,6 +314,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetGrantText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetReadingGroups"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="groups"/></method>' +
           '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetBurnText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelProviders"><arg type="s" direction="out" name="providers"/></method>' +
@@ -353,6 +355,8 @@ const QuotaIndicator = GObject.registerClass(
             ),
           GetStatusText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
+          GetBurnText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.burnRow?._summaryLabel.get_text() ?? "",
           GetResetText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
           GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",

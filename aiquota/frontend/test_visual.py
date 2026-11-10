@@ -76,6 +76,14 @@ async def test_claude_reset_grants(view: VisualPage) -> None:
     await expect(card.get_by_text("paused", exact=False)).to_be_visible()
 
 
+@pytest.mark.parametrize("scene", ["zai_peak"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_peak_burn_identifies_affected_models(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="z.ai quota"]')
+    await expect(card.get_by_text("3x burn until", exact=False)).to_be_visible()
+    await expect(card.get_by_text("GLM-5.3, GLM-5-Turbo", exact=False)).to_be_visible()
+
+
 @pytest.mark.parametrize("scene", ["openai_platform_credits"])
 @pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
 async def test_openai_platform_credits(view: VisualPage) -> None:
