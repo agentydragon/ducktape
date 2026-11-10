@@ -44,12 +44,7 @@ from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
-from agentplane.system_tests.deployment.rendered_fixture import (
-    LocalModel,
-    Models,
-    OperatorTokenIssuer,
-    PublicLiteLLM,
-)
+from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, OperatorTokenIssuer, PublicLiteLLM
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
