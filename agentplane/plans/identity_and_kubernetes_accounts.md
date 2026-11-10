@@ -116,6 +116,21 @@ A managed account's `EgressCredential` and one-rule `PolicySet` are emitted by t
 owned by the account, so a temporary account's grants, use bindings, credential and set go with its
 one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)).
 
+**Acting as is not authority** (operator, 2026-11-10). "A Sandbox acts as Identity I" means only
+that its workloads authenticate as I and their outgoing calls are authorized by I's bindings. It
+confers no authority over the Sandbox: not reading, resuming, waking, deleting or managing it, nor
+over an environment or an Action box. That authority comes only from explicit grants, a `PolicySet`
+rule bound to a subject, which may happen to be I if someone writes that binding but is never
+implied. Deleting an Identity revokes what a Sandbox acting as it can do, since its credentials stop
+resolving, but deletes no Sandbox, environment or box. `Sandbox.spec.identity` is a name-based
+reference: a Sandbox acts as whichever Identity holds that name now, so a recreated same-named
+Identity becomes its acting identity again, while credentials stay UID-fenced and the old
+incarnation's stop working. Explicit environment rules, saying who may read, resume or wake which
+environments, are the mechanism that replaces implicit ownership. No such `PolicySet` rule type
+exists yet (`Rule.Type` has `kubernetes_role_binding`, `kubernetes_cluster_role_binding`, `egress`,
+`action_auto_approve`, `session_inbox_access`); it is an open item tied to open question 11 and
+[`SESSION_IDENTITY_AUTHZ`](task_dag.md#session_identity_authz--session-reads-and-sends-authorized-by-identity).
+
 ## Changing an environment's identity
 
 `Sandbox.spec.identity` may be absent or changed while the environment is suspended or stopped, and
@@ -216,6 +231,18 @@ convergence: decisions for a running Sandbox until proxy, services and bindings 
 from the moment the proxy drops the Kubernetes-audience token until the agent reads the shared
 account's credential. Running Sandboxes are replaced, since a Pod's ServiceAccount cannot change in
 place.
+
+**End state for Sessions** (operator, 2026-11-10): a Session has an Identity, never a ServiceAccount;
+Kubernetes is reached only at egress, by impersonation through a use rule. The services get there by
+expand → switch → contract: they first accept Identity callers and record Identities beside the
+ServiceAccount (`SERVICES_IDENTITY_PRINCIPAL`, `EGRESS_IDENTITY_RULES`), Sandboxes then run as their
+Identity (`SANDBOX_IDENTITY_SPEC`), and the Session ServiceAccount paths are then deleted
+([`SESSION_SA_PRINCIPAL_REMOVAL`](task_dag.md#session_sa_principal_removal--sessions-carry-no-serviceaccount)). Workload and Session
+principals end as Identities. The callers that stay ServiceAccount-authenticated are privileged
+platform components (the app, central sampler, Action Service executors, MCP edge, gateway proxy),
+authorized by component role rather than by bindings; one acting for an Identity names it through
+[delegated authorization](../docs/delegated_authorization.md), whose effective caller becomes an
+Identity only (`IDENTITY_CUTOVER`).
 
 ## Open questions and tricky bits
 

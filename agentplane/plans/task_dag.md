@@ -3043,6 +3043,12 @@ flowchart LR
     EGRESS_IDENTITY_RULES -->|consumers first| SANDBOX_IDENTITY_SPEC
     SERVICES_IDENTITY_PRINCIPAL -->|consumers first| SANDBOX_IDENTITY_SPEC
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
+    SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
+    SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
+    SESSION_SA_PRINCIPAL_REMOVAL --> SESSION_IDENTITY_AUTHZ
+    SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
+    SESSION_IDENTITY_AUTHZ --> SESSION_SUBAGENT_DELEGATION
+    CENTRAL_SESSION_ACTING_DESIGN --> SESSION_SUBAGENT_DELEGATION
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and sends authorized by identity]
@@ -3192,7 +3198,16 @@ verifier its policy namespace and `get` on Identities there, without which a ver
 Identity subject, and on the open question of who creates a launched Sandbox's `Identity`
 ([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).**
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
-only before the controller's first report or at `status.stopStage: Stopped`. The switch is one
+only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
+Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes
+its acting identity again, while credentials stay UID-fenced. Acting as an Identity confers no
+authority over the Sandbox, its environment or its boxes, and deleting the Identity revokes the
+Sandbox's credentials without deleting it ([plan](identity_and_kubernetes_accounts.md#identity-lifetime);
+operator, 2026-11-10). Authority over environments comes only from explicit rules, which do not
+exist yet, so Identity callers get no EnvironmentService read, resume or wake until they do. #15380
+derived them from acting-as and was closed unmerged: `resumePolicy.allowOwnIdentity`, Identity
+wake-on-send and its Dispatcher migration are rebuilt once an explicit environment rule type exists
+(its code is kept on branch `identity-consumers-environment-self-read-deferred`). The switch is one
 change, not a mode behind a setting or behind `Environment.identity_catalog` (operator,
 2026-11-09); draft #15239 holds the controller part and draft #15258 the template part:
 
@@ -3244,6 +3259,29 @@ needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delive
 projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
 Kubernetes use rule has nothing in the accounts namespace.
 
+### `SESSION_SA_PRINCIPAL_REMOVAL` — Sessions carry no ServiceAccount
+
+**Blocked on `SANDBOX_IDENTITY_SPEC`.** The contract step of expand → switch → contract (operator,
+2026-11-10). The end state: a Session has an Identity, never a ServiceAccount execution principal;
+Agentplane-internal authentication is by SVID, and Kubernetes is reached only at egress, by
+impersonation through a use rule. `SERVICES_IDENTITY_PRINCIPAL` expanded every Session consumer to
+carry an Identity beside the ServiceAccount; `SANDBOX_IDENTITY_SPEC` switches every Sandbox to run as
+its Identity; this node deletes the ServiceAccount side for Sessions:
+
+- Dispatcher: `Attached.execution_principal` (`ServiceAccountIdentity`), the Session's ServiceAccount
+  execution principal and its columns, and the placement and delivery branches for a Sandbox that
+  still has its ServiceAccount (#15360's dual path).
+- History: the ServiceAccount `writer_*` and `execution_*` columns and `storage.OwnedBy`, keeping
+  `OwnedByIdentity` (and its successor under `SESSION_IDENTITY_AUTHZ`).
+- Notification: ServiceAccount-owned inboxes, the ServiceAccount sender columns and quota, and the
+  special case for a subscription spanning Sessions of both kinds.
+- Action Service: a ServiceAccount caller remains only for backends that are not Sessions; a
+  Sandbox-originated caller is always an Identity.
+
+Sessions from before the switch are retired at the switch, not migrated: no Sandboxes run on staging
+then. **Exit:** no Session-facing code path, column or wire field names a ServiceAccount, and the
+services' tests pass without one.
+
 ### `APP_IDENTITIES_UI` — identities in the app
 
 **In progress (team lead, 2026-11-09: a first slice); parallel with the service work.**
@@ -3278,6 +3316,21 @@ deleting an identity removes everything it owned; a Firecracker guest's relay au
 SVID. The Policy Controller's envtests run no garbage collector, so these scenarios are the first to
 show account-owned objects going with their account. **Exit:** the scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
 
+### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
+
+**Design, not started (operator, 2026-11-10).** How a Session asks Agentplane to create a new
+Session, a sub-agent, and then messages it: the way one Session delegates to another. Dispatcher's
+`CreateSession` refuses an Identity caller (`PermissionDenied`), deliberately retired pending this
+node: it had admitted an Identity for a Sandbox acting as that Identity, which is the implicit
+authority acting-as does not confer. Privileged platform components keep creating Sessions, and an
+Identity keeps reading, steering, interrupting and cancelling its own Identity-recorded Sessions.
+The design builds on the existing [delegated authorization](../docs/delegated_authorization.md)
+(a platform component acting for an Identity, the envelope naming that Identity), decides who may
+create and message a sub-Session under `SESSION_IDENTITY_AUTHZ`, settles which Identity the
+sub-Session runs as with open question 11 of the
+[plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), and covers Sessions with
+no environment (`CENTRAL_SESSION_ACTING_DESIGN`). **Exit:** a decided design and the PRs it implies.
+
 ### `SESSION_IDENTITY_AUTHZ` — Session reads and sends authorized by identity
 
 **Design, not started (operator, 2026-11-10).** Who may send to a Session's inbox, read and manage
@@ -3298,7 +3351,10 @@ Sandboxes run as Identities (`IDENTITY_CUTOVER`). It also depends on open questi
 [plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), who creates a launched
 Sandbox's Identity. The Sandbox-anchored sites carry `TODO(SESSION_IDENTITY_AUTHZ)`. **Exit:** a
 decided design for send, inbox and History-read authorization keyed on the Session's Identity, and
-the PRs it implies.
+the PRs it implies. It follows `SESSION_SA_PRINCIPAL_REMOVAL`: once a Session has only an Identity,
+the Sandbox is the only remaining anchor to replace. It also reviews any policy bound to a platform
+component's ServiceAccount as though the component were an identity (`IDENTITY_CUTOVER`): components
+are authorized by role and name the Identity they act for through delegation.
 
 ### `IDENTITY_CUTOVER` — the staging cutover
 
@@ -3320,9 +3376,41 @@ and proves the Identity by delegated authorization, decided by the operator on 2
 app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their remaining
 prerequisite: the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
 ServiceAccount-or-Identity union or is rewritten to an Identity.
-Once every service admits its workload callers through `auth.AnySubject`, a mechanical rename makes
-`auth.Principal`, today the ServiceAccount variant of `auth.Subject`, `AccountPrincipal` (team lead,
-2026-11-10).
+Standing workloads already speak SPIFFE: Haku UI, Anki and Jupyter, and the `haku-ci` egress relay,
+present SVIDs, but their `WorkloadCredential` subjects are still the ServiceAccounts
+`haku-sandbox/haku-ui` and `haku-ci/haku-ci-egress`, held for policy binding, not for authentication
+(operator, 2026-11-10). Here Haku UI, Anki and Jupyter take one shared Identity (today's shared
+`haku-ui` account) and the relay its own: their standing `WorkloadCredential`s name Identity
+subjects, their `PolicyBinding`s move to `subject.identity`, and the ServiceAccount subjects and any
+Role or RoleBinding that existed only to carry them are deleted. The resolver's ServiceAccount
+branch (`workload_identity/resolver`, `resolver.ServiceAccount`) goes once these records have moved.
+The ServiceAccount variant goes for Sessions (`SESSION_SA_PRINCIPAL_REMOVAL`) and standing workloads
+only. ServiceAccount-authenticated callers that remain are privileged Agentplane platform components,
+kept on ServiceAccounts permanently (operator, 2026-11-10): the app (History `reader_accounts`,
+Environment readers and managers, Policy Controller readers), the central sampler (History
+`sampler_accounts`, Dispatcher `executor_callers`), the Action Service's launch and Session
+delegation executors (Dispatcher callers, environment launchers), the MCP edge (delegation actor,
+`mintable_accounts`) and the gateway proxy's callers. They are not a second credential kind mapping
+to one identity: each is authorized by its component role, the per-service allowlists and settings,
+never by policy bindings as though it were an identity, and mostly acts on behalf of many Identities.
+When one acts for an Identity it names that Identity explicitly through the existing
+[delegated authorization](../docs/delegated_authorization.md) design: a `Delegation` envelope
+(`agentplane/proto/delegation.proto`) carried beside the actor's own credential, the actor and
+effective-caller split, used by the Action Service's caller-privilege Actions and Session delegation
+and planned for the MCP edge's `connection_identities` path ([plan](identity_and_kubernetes_accounts.md#mcp-edge)).
+So `auth.Subject`'s ServiceAccount variant, the TokenReview path and `auth.Principal` stay, meaning
+"platform component caller"; once services have migrated, `auth.Principal` takes a name saying so
+(`ComponentPrincipal` or `PlatformCaller`, to be decided), not `AccountPrincipal`.
+
+The delegation envelope becomes "acting on behalf of this Identity" only (operator, 2026-11-10): the
+actor is a platform component, authenticated as a ServiceAccount and authorized by component role;
+the effective caller is always an Identity (name, and UID where fenced), never a ServiceAccount.
+Today `Delegation.caller` is a `ServiceAccountIdentity`, and Identity callers do not fit it (#15296
+left the Action Service's delegated path ServiceAccount-only). A prerequisite PR adds an Identity
+effective caller beside it, with receivers accepting either; here the ServiceAccount effective-caller
+fields are deleted, after Sessions and standing workloads have moved to Identities. Anything that
+binds policy to a platform component's ServiceAccount as though it were an identity is reviewed
+against this framing here or under `SESSION_IDENTITY_AUTHZ`.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
 is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox
 Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section
