@@ -40,33 +40,9 @@ func (c *connector) Connect(ctx context.Context, cr *v1alpha1.Secret) (managed.T
 	if err := c.usage.Track(ctx, cr); err != nil {
 		return nil, fmt.Errorf("track provider config usage: %w", err)
 	}
-	ref := cr.GetProviderConfigReference()
-	if ref == nil {
-		return nil, errors.New("provider config reference is required")
-	}
-	var credentials v1alpha1.ProviderCredentials
-	switch ref.Kind {
-	case "ProviderConfig":
-		pc := &v1alpha1.ProviderConfig{}
-		if err := c.kube.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: ref.Name}, pc); err != nil {
-			return nil, err
-		}
-		credentials = pc.Spec.Credentials
-	case "ClusterProviderConfig":
-		pc := &v1alpha1.ClusterProviderConfig{}
-		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name}, pc); err != nil {
-			return nil, err
-		}
-		credentials = pc.Spec.Credentials
-	default:
-		return nil, fmt.Errorf("unsupported provider config kind %q", ref.Kind)
-	}
-	if err := c.validateCredentials(cr.Namespace, credentials); err != nil {
-		return nil, err
-	}
-	apiKey, err := resource.CommonCredentialExtractor(ctx, credentials.Source, c.kube, credentials.CommonCredentialSelectors)
+	apiKey, err := providerAPIKey(ctx, c.kube, cr.Namespace, cr.Spec.ProviderConfigReference, c.credentialSecret)
 	if err != nil {
-		return nil, fmt.Errorf("read provider credentials: %w", err)
+		return nil, err
 	}
 	api, err := buildbuddy.NewClient(string(apiKey))
 	if err != nil {
@@ -78,11 +54,46 @@ func (c *connector) Connect(ctx context.Context, cr *v1alpha1.Secret) (managed.T
 // Crossplane grants provider pods broad Secret RBAC. Do not let a managed
 // resource use that privilege to read an arbitrary Secret.
 func (c *connector) validateCredentials(namespace string, credentials v1alpha1.ProviderCredentials) error {
+	return validateProviderCredentials(namespace, c.credentialSecret, credentials)
+}
+
+func validateProviderCredentials(namespace, credentialSecret string, credentials v1alpha1.ProviderCredentials) error {
 	if credentials.Source != xpv2.CredentialsSourceSecret || credentials.SecretRef == nil ||
-		credentials.SecretRef.Namespace != namespace || credentials.SecretRef.Name != c.credentialSecret {
+		credentials.SecretRef.Namespace != namespace || credentials.SecretRef.Name != credentialSecret {
 		return errors.New("provider credentials must reference the configured secret in the managed resource namespace")
 	}
 	return nil
+}
+
+func providerAPIKey(ctx context.Context, kube client.Client, namespace string, ref *xpv2.ProviderConfigReference, credentialSecret string) ([]byte, error) {
+	if ref == nil {
+		return nil, errors.New("provider config reference is required")
+	}
+	var credentials v1alpha1.ProviderCredentials
+	switch ref.Kind {
+	case "ProviderConfig":
+		pc := &v1alpha1.ProviderConfig{}
+		if err := kube.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, pc); err != nil {
+			return nil, err
+		}
+		credentials = pc.Spec.Credentials
+	case "ClusterProviderConfig":
+		pc := &v1alpha1.ClusterProviderConfig{}
+		if err := kube.Get(ctx, types.NamespacedName{Name: ref.Name}, pc); err != nil {
+			return nil, err
+		}
+		credentials = pc.Spec.Credentials
+	default:
+		return nil, fmt.Errorf("unsupported provider config kind %q", ref.Kind)
+	}
+	if err := validateProviderCredentials(namespace, credentialSecret, credentials); err != nil {
+		return nil, err
+	}
+	apiKey, err := resource.CommonCredentialExtractor(ctx, credentials.Source, kube, credentials.CommonCredentialSelectors)
+	if err != nil {
+		return nil, fmt.Errorf("read provider credentials: %w", err)
+	}
+	return apiKey, nil
 }
 
 type buildBuddyAPI interface {

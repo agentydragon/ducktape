@@ -4,4 +4,4 @@ metadata:
   name: provider-buildbuddy
   annotations:
     meta.crossplane.io/source: github.com/agentydragon/ducktape
-    meta.crossplane.io/description: Manages BuildBuddy organization secrets from Kubernetes Secrets.
+    meta.crossplane.io/description: Manages BuildBuddy organization secrets and group API keys.
