@@ -64,6 +64,7 @@ def container_disk_pool_template(
     tolerations: Sequence[VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations] | None = None,
     autoattach_graphics_device: bool | None = None,
     readiness_probe: VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbe | None = None,
+    termination_grace_period_seconds: int | None = None,
 ) -> VirtualMachinePoolSpecVirtualMachineTemplate:
     """The pool's VM template: each VM, and its pods, are labelled `labels` (the pool's selector must
     match them) and boot `image` as an ephemeral containerDisk under EFI without Secure Boot, reaching
@@ -84,6 +85,7 @@ def container_disk_pool_template(
                     affinity=affinity,
                     tolerations=list(tolerations) if tolerations is not None else None,
                     readiness_probe=readiness_probe,
+                    termination_grace_period_seconds=termination_grace_period_seconds,
                     domain=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomain(
                         cpu=cpu,
                         resources=resources,

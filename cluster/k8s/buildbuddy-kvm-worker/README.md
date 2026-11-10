@@ -12,7 +12,15 @@ copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node. 
 restarts each member in place and keeps its volume, cache and image store; deleting a member deletes the
 volume claim, but the class retains the underlying volume, so remove a leftover by hand. A member counts as ready once its executor has registered with BuildBuddy (the
 executor's `/readyz` on port 8080, which needs the `server-type` header), so the pool restarts members one at a time
-and waits for each to register before the next.
+and waits for each to register before the next. Pool scale-in asks KubeVirt to shut down the
+VM through ACPI; the executor stops accepting work and drains active tasks for up to the
+pinned 24-hour task limit plus its 1-minute termination grace, then has 15 seconds for cleanup.
+BuildBuddy applies action timeouts after input download, so a task still preparing inputs at
+shutdown can be canceled before using its full action timeout. Docker, systemd and KubeVirt
+have longer outer deadlines. This covers normal pool scale-in, not node or host failure. Roll
+out this template update in a quiet window: existing VMs retain the old short stop deadlines
+until replaced, so the update can interrupt active work. Before enabling autoscaling, verify
+both VMs were replaced from the new template and re-registered.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.
