@@ -128,7 +128,7 @@ def test_extra_status_transitions() -> None:
         ],
         fetched_at=_NOW,
     )
-    statuses = {pv.provider: pv.extra_status for pv in to_view(quotas).providers}
+    statuses = {pv.provider: pv.extra_status for pv in to_view(quotas, _NOW).providers}
     assert statuses == {"claude": "active", "codex": "informational", "zai": "none", "opus": "none"}
 
 
@@ -141,7 +141,7 @@ def test_paid_credits_active_only_with_balance_and_exhausted_window() -> None:
     providers.append(ProviderQuota(provider="no_credits", last_output=_fetch(short_window=window)))
     statuses = {
         view.provider: view.paid_credits_active
-        for view in to_view(AllQuotas(providers=providers, fetched_at=_NOW)).providers
+        for view in to_view(AllQuotas(providers=providers, fetched_at=_NOW), _NOW).providers
     }
     assert statuses == {"positive": True, "empty": False, "no_credits": False}
 
@@ -457,3 +457,34 @@ def test_error_summaries_keep_authentication_and_transport_failures_distinct() -
         )
         view = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0]
         assert (view.error_summary, view.error_detail) == (summary, error)
+
+
+def test_current_paid_signals_expire_without_losing_monthly_spend() -> None:
+    quotas = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="claude",
+                last_output=_fetch(
+                    short_window=QuotaWindow(used_percent=100, reset_seconds=7200, window_seconds=18000),
+                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25.5, utilization=25.5),
+                    paid_credits=PaidCredits(balance="500"),
+                ),
+            )
+        ],
+    )
+    original = to_view(quotas, _NOW)
+    fresh = original.providers[0]
+    assert fresh.currently_over_plan
+    assert fresh.paid_credits_active
+    for refreshed in (
+        refresh_view(original, _NOW + timedelta(minutes=10)),
+        refresh_view(original, _NOW, connection_error="offline"),
+        refresh_view(original, _NOW + timedelta(hours=2)),
+    ):
+        provider = refreshed.providers[0]
+        assert not provider.currently_over_plan
+        assert not provider.paid_credits_active
+        assert provider.monthly_extra_spend == fresh.monthly_extra_spend
+        assert provider.extra_status == "informational"
+        assert provider.status in {"Included quota exhausted", "Reset time passed · awaiting updated usage"}

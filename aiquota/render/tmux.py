@@ -32,7 +32,7 @@ def _render_provider(pq: ProviderView) -> str:
     summary = windows[index] if index is not None and 0 <= index < len(windows) else None
     stale = pq.stale_since is not None
 
-    if summary is not None and summary.reset_pending:
+    if any(window.reset_pending for window in windows):
         value = "↻?"
         color = "stale"
     elif pq.paid_credits_active or pq.currently_over_plan:

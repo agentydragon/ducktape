@@ -14,6 +14,7 @@ import {
   formatExtraSpend as sharedFormatExtraSpend,
   refreshWindowTiming,
   showResetCredits,
+  quotaActivity,
   staleObservationAt,
   formatClock,
   formatDuration as sharedFormatDuration,
@@ -100,12 +101,8 @@ function formatCompactDollars(usd) {
   return `$${roundHalfToEven(usd)}`;
 }
 
-// The "currently burning extra" decision lives in the Python view model
-// (see aiquota/render/view_model.py) and is delivered to us by the desktop
-// daemon as state.currentlyOverPlan. Don't
-// reintroduce a local copy: see aiquota/AGENTS.md.
 function formatExtraSpend(extra) {
-  if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
+  if (!extra) return null;
   return sharedFormatExtraSpend(extra.used_usd, extra.monthly_limit_usd);
 }
 
@@ -196,12 +193,12 @@ function emptyProviderState() {
     errorSummary: null,
     errorDetail: null,
     extraSpend: null,
+    monthlyExtraSpend: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
     resetCreditExpiryLookupFailed: false,
     currentlyOverPlan: false,
     paidCreditsActive: false,
-    status: null,
     // Peak-burn schedule from the Python view model; null when the provider has none.
     burn: null,
     staleSince: null,
@@ -918,12 +915,12 @@ const QuotaIndicator = GObject.registerClass(
           errorSummary: pq.error_summary ?? null,
           errorDetail: pq.error_detail ?? null,
           extraSpend: this._mapExtraSpend(result?.extra_spend),
+          monthlyExtraSpend: pq.monthly_extra_spend ?? null,
           availableResetCredits: result?.available_reset_credits ?? null,
           availableResetCreditExpiries: result?.available_reset_credit_expiries ?? [],
           resetCreditExpiryLookupFailed: result?.reset_credit_expiry_lookup_failed === true,
           currentlyOverPlan: pq.currently_over_plan === true,
           paidCreditsActive: pq.paid_credits_active === true,
-          status: pq.status ?? null,
           burn: pq.burn ?? null,
           summaryTint: pq.summary_tint ?? "unknown",
           summaryIndex: pq.summary_index ?? null,
@@ -993,10 +990,12 @@ const QuotaIndicator = GObject.registerClass(
       }
       const liveWindows = windows.map((window) => withLiveReset(window));
       const exhaustedWindows = liveWindows.filter((window) => window.exhausted);
-      const resetPending = liveWindows.some((window) => window.resetPending);
       const stale = staleAge != null;
-      const overPlan = !resetPending && !stale && state.currentlyOverPlan === true;
-      const paidCreditsActive = !resetPending && !stale && state.paidCreditsActive === true;
+      const {
+        resetPending,
+        overPlan,
+        paidCredits: paidCreditsActive,
+      } = quotaActivity(liveWindows, stale, state.currentlyOverPlan, state.paidCreditsActive);
       const tint = resetPending || stale ? "stale" : overPlan || paidCreditsActive ? "hot" : state.summaryTint;
       this._setTint(icon, paceLabel, tint);
       const paceText = state.summaryIndex == null ? "" : (liveWindows[state.summaryIndex]?.pace ?? "");
@@ -1083,10 +1082,18 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderStatusRow(item, state) {
       const { staleAge } = effectiveState(state);
-      const hasData = state.windows.length > 0 || state.balances.length > 0 || state.grants.length > 0;
+      const hasData =
+        state.windows.length > 0 ||
+        state.balances.length > 0 ||
+        state.grants.length > 0 ||
+        state.monthlyExtraSpend != null;
       const parts = [];
-      const resetPending = state.windows.some((window) => withLiveReset(window).resetPending);
-      const status = resetPending ? "Reset time passed · awaiting updated usage" : state.status;
+      const { resetPending, status } = quotaActivity(
+        state.windows.map((window) => withLiveReset(window)),
+        staleAge != null,
+        state.currentlyOverPlan,
+        state.paidCreditsActive
+      );
       if (status) parts.push(status);
       if (state.errorSummary) parts.push(state.errorSummary);
       if (staleAge != null) parts.push(`Stale · observation ${formatAge(staleAge)} old`);
@@ -1101,7 +1108,7 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderSpendRow(item, state) {
-      const spend = formatExtraSpend(state.extraSpend);
+      const spend = formatExtraSpend(state.monthlyExtraSpend);
       item.visible = spend != null;
       item._summaryLabel.set_text(spend ?? "");
     }

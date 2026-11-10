@@ -54,3 +54,7 @@ palette scoped to `.aiquota-scope` and derived from the host Mantine theme; the 
   requests are happening or a charge was incurred. `ExtraSpend.is_enabled` only means the
   feature is on; `used_usd` is month-cumulative. Surfaces consume this via
   `currently_over_plan` / `extra_status` in <render/view_model.py>.
+  `monthly_extra_spend` selects positive month-cumulative spend even when extra usage is disabled
+  or the latest refresh failed. Keep this history visible with its provider freshness/error state.
+  Current paid/extra signals require a fresh reading and no displayed window awaiting updated
+  usage; disconnected GNOME and web clients recheck those deadlines via `quotaActivity`.

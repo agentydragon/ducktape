@@ -278,6 +278,65 @@ def test_warnings_precede_readings_and_spend_precedes_windows(session: GnomeSess
         session.close_menu()
 
 
+@pytest.mark.parametrize("fixture_name", ["extra_disabled_positive", "extra_spend_fallback"])
+def test_monthly_spend_is_history_even_when_disabled_or_refresh_failed(
+    session: GnomeSession, fixture_name: str
+) -> None:
+    _reload_fixture(session, fixture_name)
+    popup = _ProviderPopup(session, "claude")
+    assert "Extra spend this month: $25.50 of $100 limit" in popup.text("GetSpendText")
+    assert "Extra spend" not in popup.status
+    assert "No quota or balance readings" not in popup.status
+    if popup.windows:
+        session.open_menu()
+        try:
+            positions = json.loads(popup.text("GetRowPositions"))
+            assert positions["spend"] < positions["window"]
+        finally:
+            session.close_menu()
+    assert "extra usage enabled" not in popup.status
+    assert "⚡" not in popup.panel
+    if fixture_name == "extra_spend_fallback":
+        assert "Stale · observation" in popup.status
+        assert "Refresh failed" in popup.status
+
+
+@pytest.mark.parametrize("fixture_name", ["multi_window_reset_pending", "stale_paid_signals"])
+def test_uncertain_paid_signals_are_suppressed_across_windows(session: GnomeSession, fixture_name: str) -> None:
+    _reload_fixture(session, fixture_name)
+    for provider in ("claude", "codex"):
+        popup = _ProviderPopup(session, provider)
+        assert "⚡" not in popup.panel
+        assert "extra usage enabled" not in popup.status
+        assert "paid credits available" not in popup.status
+        if fixture_name == "multi_window_reset_pending":
+            assert popup.panel.startswith("↻?")
+            assert "awaiting updated usage" in popup.status
+        else:
+            assert popup.panel.startswith("~")
+            assert "Stale · observation" in popup.status
+
+
+@pytest.mark.parametrize("deadline", ["stale_at", "reset_at"])
+def test_disconnected_view_drops_paid_signal_at_live_deadline(
+    session: GnomeSession, fixture_json_dir: Path, deadline: str
+) -> None:
+    _reload_fixture(session, "paid_credits")
+    popup = _ProviderPopup(session, "codex")
+    assert "⚡" in popup.panel
+    data = json.loads((fixture_json_dir / "paid_credits.json").read_text())
+    provider = next(item for item in data["providers"] if item["provider"] == "codex")
+    if deadline == "stale_at":
+        provider["stale_at"] = data["fetched_at"]
+    else:
+        provider["display_windows"][0]["reset_at"] = data["fetched_at"]
+    session.call("SetStreamStatus", "disconnected", "cached view retained")
+    session.call("SetViewForTest", json.dumps(data))
+    assert "⚡" not in popup.panel
+    assert "paid credits available" not in popup.status
+    assert len(popup.windows) == 2
+
+
 def test_openai_platform_credits(session: GnomeSession) -> None:
     _reload_fixture(session, "openai_platform_credits")
     popup = _ProviderPopup(session, "openai_platform")

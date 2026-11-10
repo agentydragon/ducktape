@@ -96,6 +96,7 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
         pv.display_windows
         or pv.balances
         or pv.grants
+        or pv.monthly_extra_spend is not None
         or (result is not None and (result.available_reset_credits or 0) > 0)
     )
 
@@ -138,8 +139,8 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
             if schedule:
                 lines.append(Text(f"    {schedule}"))
 
-    extra = result.extra_spend if result is not None else None
-    if extra is not None and extra.used_usd > 0:
+    extra = pv.monthly_extra_spend
+    if extra is not None:
         lines.append(
             Text(
                 f"  Extra spend this month: {_usd(extra.used_usd)} of {_usd(extra.monthly_limit_usd, whole=True)} limit"

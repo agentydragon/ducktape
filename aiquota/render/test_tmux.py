@@ -1,10 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from aiquota.models import AllQuotas, FetchError, FetchSuccess, PaidCredits, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render.tmux import _AI_GLYPH, render, render_provider, render_view
 from aiquota.render.view_model import to_view
+from aiquota.testing.quota_fixtures import load_quota_fixture
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -80,7 +83,8 @@ def test_paid_capacity_and_stale_markers_are_compact() -> None:
 
     rendered = render_view(to_view(AllQuotas(providers=[pq], fetched_at=pq.last_output.fetched_at), now=_NOW).providers)
 
-    assert "A:⚡*" in rendered
+    assert "A:↻15m*" in rendered
+    assert "⚡" not in rendered
     assert "yellow" in rendered
 
 
@@ -142,3 +146,20 @@ def test_render_provider_error_only() -> None:
 
     assert "O:!" in rendered
     assert "red" in rendered
+
+
+@pytest.mark.parametrize("fixture_name", ["multi_window_reset_pending", "stale_paid_signals"])
+def test_uncertain_paid_signals_keep_pending_or_stale_markers(runfiles: Runfiles, fixture_name: str) -> None:
+    quotas = load_quota_fixture(runfiles.root() / f"ducktape/aiquota/testing/fixtures/{fixture_name}.yaml")
+    view = to_view(quotas, quotas.fetched_at)
+    rendered = render_view(view.providers)
+    assert "⚡" not in rendered
+    for prefix in ("A:", "O:"):
+        assert prefix in rendered
+    if fixture_name == "multi_window_reset_pending":
+        assert all(provider.summary_index == 1 for provider in view.providers)
+        assert "A:↻?" in rendered
+        assert "O:↻?" in rendered
+    else:
+        assert "A:↻1h45m*" in rendered
+        assert "O:↻1h45m*" in rendered
