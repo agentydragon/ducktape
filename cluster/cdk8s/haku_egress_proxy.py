@@ -12,7 +12,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s import cilium, egress_fences, node_scheduling
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -235,7 +234,6 @@ def _sandbox_fence(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
     _ca(chart)
     _mitmproxy(chart)
     _sandbox_fence(chart)
@@ -259,7 +257,6 @@ def haku_egress_proxy(
     artifact: ArtifactGeneratorSpecArtifacts,
     cert_manager: Kustomization,
     cert_manager_trust: Kustomization,
-    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -269,6 +266,6 @@ def haku_egress_proxy(
         wait=None,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust),
         decryption=SOPS_DECRYPTION,
     )
