@@ -95,6 +95,10 @@ Rules for the operations:
   suspended worker Sandbox. It is the Identity form of today's `wake_callers` broker role, limited
   to its targets. A cross-Identity send through Notification still needs `session_inbox_access` for
   the send; the wake it causes is the sender's, so it needs `wake` too.
+  TODO (operator, 2026-11-10): revisit this seam. `resume` names an explicit request to the
+  environment, and `wake` names a side effect of delivering Session work. These are different
+  layers, so the two may fold into one operation, or `wake` may move to Session authority. The
+  split stays for now.
 - **`rebind` needs the destination.** Rebinding a target from I to J makes whatever I left in its
   workspace run as J, so the caller also needs the right to run as J: J is its own Identity, or it
   holds `create_session` on `boundIdentity: J`. `SetEnvironmentIdentity`'s implemented refusal,
