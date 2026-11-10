@@ -257,3 +257,11 @@
     visible (5h):  30% used  ↻ 45m  leaves ~65% unused at reset
   '''
 # ---
+# name: test_renders_shared_fixture[zai_peak]
+  '''
+  z.ai
+    🔥 3x burn until 10:00 (2h) — GLM-5.3, GLM-5-Turbo
+    5h:  55% used  ↻ 2h  leaves ~8% unused at reset
+    7d:  40% used  ↻ 5d  exhausts ~2d before reset
+  '''
+# ---
