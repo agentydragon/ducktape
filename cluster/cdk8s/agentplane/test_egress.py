@@ -247,14 +247,14 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
 
     `basic` is the policy every launch is granted before the caller picks anything
     (`SandboxAccess`, agentplane/app/sandbox_access.py), which is what makes
-    Kubernetes access a property of a sandbox rather than a choice one. The credential description
-    tells the agent which API server to use and that the proxy substitutes the calling Sandbox's
-    own projected token; the SandboxTemplate does not materialize a kubeconfig.
+    Kubernetes access a property of a caller rather than a choice one. The credential description
+    tells the agent which API server to use and that the proxy substitutes the caller's own
+    projected token, which only a command box running as its caller carries.
 
     What makes it legitimate as an unconditional grant is what gets substituted. A default is the
-    one grant a caller cannot decline, so it may only ever substitute the sandbox's own identity;
+    one grant a caller cannot decline, so it may only ever substitute the caller's own identity;
     this credential is that Pod's ServiceAccount projected for the API server's audience, and a
-    `secretRef` source here would hand an operator's credential to every sandbox in the namespace.
+    `secretRef` source here would hand an operator's credential to every caller in the namespace.
     What a box may then do is the RBAC bound to its account, the only axis this narrows -- which
     is why the rule names neither methods nor paths.
     """
@@ -269,7 +269,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     description = credential["spec"]["description"]
     placeholder = f"agentplane-credential-{KUBERNETES_CREDENTIAL}"
     assert f"https://{KUBERNETES_HOST}" in description
-    assert "calling Sandbox's own ServiceAccount" in description
+    assert "caller's own ServiceAccount" in description
     assert f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder}" in description
     source = credential["spec"]["source"]
     assert "secretRef" not in source, "a default may substitute a sandbox's own credential, never an operator's"
