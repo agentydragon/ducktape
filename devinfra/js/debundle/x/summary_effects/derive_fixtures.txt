@@ -29,6 +29,7 @@ export function recolor() { TOUCHED.color = 'blue'; }
 var require_third = __commonJS((exports) => { exports.box = function (v) { return { v }; }; exports.peek = function (o) { return o.v; }; });
 const third = __toESM(require_third()); export const box = third.box; export const peek = third.peek; export const boxDefault = third.default.box;
 const before = 1, LISTED = '__listed__', after = 2; export { before, LISTED, after }; export let LOOSE = 'Set'; export function loosen() { LOOSE = 'Map'; } export var HOISTED = '__hoisted__'; export var CHANGED = 'Set'; export function change() { CHANGED = 'Map'; } export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
+export var __export = (target, all) => { for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); }; export var eager = (target, all) => { for (var name in all) __defProp(target, name, { value: all[name](), enumerable: true }); };
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -258,3 +259,33 @@ import { CHANGED } from './dep.js';
 globalThis[CHANGED] = class { constructor() { this.fake = true; } };
 const s = new Set();
 console.log(s.fake);
+### commutes same: the imported namespace-export helper across an impure statement
+-
+import { __export } from './dep.js'; const ns = {}; let state = 0;
+state = 1;
+__export(ns, { value: () => state, self: () => ns });
+console.log(ns.value, ns.self === ns);
+### commutes same: a local namespace-export helper across an impure statement
+-
+var __defProp = Object.defineProperty; var __export = (target, all) => { for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); }; const ns = {}; let state = 0;
+state = 1;
+__export(ns, { value: () => state });
+console.log(ns.value);
+### ordered differs: an imported helper of the same call shape that invokes the functions
+-
+import { eager } from './dep.js'; const ns = {}; let state = 0;
+state = 1;
+eager(ns, { value: () => state });
+console.log(ns.value);
+### ordered differs: an impure statement inspects the namespace the helper fills
+-
+import { __export } from './dep.js'; const ns = {}; let seen; function peek() { seen = 'value' in ns; }
+peek();
+__export(ns, { value: () => 1 });
+console.log(seen);
+### ordered differs: an impure statement makes Object.prototype enumerate a member
+-
+import { __export } from './dep.js'; const ns = {}; let failed = 0; function taint() { Object.prototype.extra = 1; } function fill() { try { __export(ns, { value: () => 1 }); } catch { failed = 1; } }
+taint();
+fill();
+console.log(failed);

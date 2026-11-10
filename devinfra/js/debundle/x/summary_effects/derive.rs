@@ -47,6 +47,13 @@ const TO_ESM: &str = "(mod, isNodeMode, target) => (
 /// `name(fn, "f")` gives a function its name and returns it.
 const NAMER: &str = "(target, value) => Object.defineProperty(target, 'name', { value: value, configurable: true })";
 
+/// `exporter(target, { name: () => value })` defines a getter on `target`
+/// for each property of its second argument and calls none.
+const EXPORTER: &str = "(target, all) => {
+  for (var name in all)
+    Object.defineProperty(target, name, { get: all[name], enumerable: true });
+}";
+
 /// A lazy module: the chunk and binding holding its thunk.
 pub type LazyKey = (usize, Id);
 
@@ -57,6 +64,7 @@ enum Role {
     CopyProps,
     ToEsm,
     Namer,
+    Exporter,
     /// A function; `facts` says whether it also touches private state.
     Allocator,
     /// A class whose construction only stores into the new object.
@@ -778,6 +786,28 @@ fn shape_statement(
             shape(&branch.test, names, outer)?,
             shape_statement(&branch.cons, names, outer)?
         ),
+        Stmt::ForIn(looped) => {
+            let ForHead::VarDecl(head) = &looped.left else {
+                return None;
+            };
+            let [
+                VarDeclarator {
+                    name: Pat::Ident(name),
+                    init: None,
+                    ..
+                },
+            ] = head.decls.as_slice()
+            else {
+                return None;
+            };
+            let iterated = shape(&looped.right, names, outer)?;
+            names.push(name.id.to_id());
+            format!(
+                "for(${} in {iterated}){}",
+                names.len() - 1,
+                shape_statement(&looped.body, names, outer)?
+            )
+        }
         Stmt::ForOf(looped) if !looped.is_await => {
             let ForHead::VarDecl(head) = &looped.left else {
                 return None;
@@ -845,6 +875,7 @@ struct Resolver<'a> {
     /// Those of the body being classified.
     current: Facts,
     namer: String,
+    exporter: String,
     common_js: String,
     copy_props: String,
     to_esm: String,
@@ -966,6 +997,9 @@ impl<'a> Resolver<'a> {
                     }
                     if found == self.namer {
                         return Role::Namer;
+                    }
+                    if found == self.exporter {
+                        return Role::Exporter;
                     }
                 }
             }
@@ -2027,6 +2061,9 @@ pub struct Derived {
     pub classes: Vec<(Id, Vec<Id>, Vec<&'static str>)>,
     /// Bindings holding the function-naming helper.
     pub namers: Vec<Id>,
+    /// Bindings holding the helper that defines getters on its first
+    /// argument from the functions of its second.
+    pub exporters: Vec<Id>,
     /// Imported bindings holding an object literal nothing in the program
     /// handles except to read a named member, with each key of the literal
     /// and whether its value is written as a primitive.
@@ -2064,6 +2101,7 @@ pub fn derive(
         primitive: FxHashMap::default(),
         current: Facts::default(),
         namer: canonical(NAMER),
+        exporter: canonical(EXPORTER),
         common_js: canonical(COMMON_JS),
         copy_props: canonical(COPY_PROPS),
         to_esm: canonical(TO_ESM),
@@ -2130,6 +2168,7 @@ pub fn derive(
                 }
             }
             Role::Namer => derived.namers.push(id),
+            Role::Exporter => derived.exporters.push(id),
             Role::CommonJs => derived.wrappers.push(id),
             Role::ToEsm => derived.interop.push(id),
             Role::Lazy(lazy) => {

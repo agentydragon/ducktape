@@ -468,6 +468,12 @@ and tier 0 accepts a swap Node observes. Without premises tier 0 refuses all 41.
   It needs the chunk off an import cycle, like primitive imports. Excalidraw
   has 22 such imports in `main` and 1 in `editor`; the stress numbers do not
   move.
+- **The namespace-export helper.** `exporter(target, { name: () => value })`
+  for esbuild's `__export`, recognized by shape in this chunk or in the chunk
+  that exports it: it defines one getter on `target` per property and calls
+  none. The statement is confined to `target`, a local binding; it needs
+  `Object.defineProperty` untouched and no chunk writing any member of
+  `Object.prototype` (the helper's `for…in` would enumerate an added one).
 - **Aliases of a lazy module's member.** `const alias = ns.member` (or
   `ns.default.member`), declared once and never assigned, in this chunk or
   exported by another, is an allocator when the member is: the module has
@@ -492,8 +498,8 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 38 two-chunk programs run under Node in both
-orders (19 admitted with Node agreeing, 19 refused with Node showing the
+`derive_fixtures.txt` holds 43 two-chunk programs run under Node in both
+orders (21 admitted with Node agreeing, 22 refused with Node showing the
 divergence); seven of them exercise the census across chunks, not derivation. `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition
@@ -605,6 +611,13 @@ Two more upgrades, each for one statement shape:
   call reads `f` and those bindings eagerly. Function declarations are not
   covered.
 
+An expression statement made only of reads that are pure-definition
+expressions (named members of literals under the rules above, bindings,
+literals; joined by sequences, `void` and parentheses) is a pure statement:
+it declares nothing, reads its bindings eagerly and leaks nothing. As an
+impure statement it had leaked every binding it mentions to later impure
+statements.
+
 Two rules ride on those upgrades and the first four:
 
 - A computed key, in a class or an object literal, converts without running
@@ -624,8 +637,8 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 57 programs run under Node in both orders (18
-admitted with Node agreeing, 39 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 63 programs run under Node in both orders (19
+admitted with Node agreeing, 44 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks, a guarded polyfill

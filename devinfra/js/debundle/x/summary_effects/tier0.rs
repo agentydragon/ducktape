@@ -746,6 +746,7 @@ pub struct DerivedCounts {
     pub contained: usize,
     pub allocator_classes: usize,
     pub function_namers: usize,
+    pub export_helpers: usize,
     pub namespace_members: usize,
     pub lazy_wrappers: usize,
     pub interop_helpers: usize,
@@ -773,6 +774,9 @@ pub struct ResolvedPremises {
     literal_params: FxHashMap<Binding, Vec<usize>>,
     /// Per derived allocator: the intrinsic collections it constructs.
     allocator_intrinsics: FxHashMap<Binding, Vec<&'static str>>,
+    /// Derived: bindings holding the helper that defines getters on its
+    /// first argument from the functions of its second.
+    exporters: FxHashSet<Binding>,
     pub given: usize,
     pub matched: usize,
 }
@@ -1478,7 +1482,77 @@ impl Classifier<'_> {
     /// `helper(decorators, Target.prototype, …)` or
     /// `Target = helper(decorators, Target)` under a decorator-helper
     /// premise.
+    /// `exporter(target, { name: () => value, … })` for the derived helper:
+    /// it defines one getter on `target` per property and calls nothing. An
+    /// enumerable member of `Object.prototype` would be enumerated too.
+    fn export_call(&mut self, expr: &Expr) -> bool {
+        let Expr::Call(CallExpr {
+            callee: Callee::Expr(callee),
+            args,
+            ..
+        }) = unparen(expr)
+        else {
+            return false;
+        };
+        let Expr::Ident(helper) = unparen(callee) else {
+            return false;
+        };
+        let Some(helper) = self.bindings.get(&helper.to_id()).copied() else {
+            return false;
+        };
+        let [
+            ExprOrSpread {
+                spread: None,
+                expr: target,
+            },
+            ExprOrSpread {
+                spread: None,
+                expr: getters,
+            },
+        ] = args.as_slice()
+        else {
+            return false;
+        };
+        let (Expr::Ident(target), Expr::Object(getters)) = (&**target, &**getters) else {
+            return false;
+        };
+        let Some(target) = self.bindings.get(&target.to_id()).copied() else {
+            return false;
+        };
+        let functions = getters.props.iter().all(|prop| {
+            matches!(prop, PropOrSpread::Prop(prop) if matches!(&**prop, Prop::KeyValue(pair)
+                if !matches!(pair.key, PropName::Computed(_))
+                    && matches!(unparen(&pair.value), Expr::Arrow(_) | Expr::Fn(_))))
+        });
+        if !self.premises.exporters.contains(&helper)
+            || self.imports.contains(&target)
+            || !functions
+            || !(self.native_site || self.census.prototype_unwritten("Object"))
+            || !self.untouched(vec![("Object", &["defineProperty"])], None, false)
+        {
+            return false;
+        }
+        self.targets.push(target);
+        self.eager.push(helper);
+        true
+    }
+
+    /// An expression statement of reads alone: named members of literals,
+    /// bindings, literals, joined by sequences, `void` and parentheses.
+    fn reads_only(&mut self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Paren(paren) => self.reads_only(&paren.expr),
+            Expr::Seq(seq) => seq.exprs.iter().all(|part| self.reads_only(part)),
+            Expr::Unary(unary) if unary.op == UnaryOp::Void => self.reads_only(&unary.arg),
+            Expr::Member(_) | Expr::Ident(_) | Expr::Lit(_) => self.pure(expr).is_ok(),
+            _ => false,
+        }
+    }
+
     fn confined(&mut self, expr: &Expr) -> bool {
+        if self.export_call(expr) {
+            return true;
+        }
         if let Some(binding) = enum_definition(expr)
             .and_then(|target| self.bindings.get(&target.to_id()))
             .filter(|binding| self.enums.contains(*binding))
@@ -1903,10 +1977,18 @@ impl Classifier<'_> {
             ModuleItem::Stmt(Stmt::Empty(_)) => Kind::Inert,
             ModuleItem::Stmt(Stmt::Expr(statement)) => {
                 if self.confined(&statement.expr) {
-                    Kind::Confined
-                } else {
-                    Kind::Impure(self.statement_cause(&statement.expr))
+                    return Kind::Confined;
                 }
+                // An expression that is a pure definition's initializer
+                // has no effect as a statement either: it only reads.
+                let before = (self.eager.len(), self.deep.len(), self.pristine.len());
+                if self.reads_only(&statement.expr) {
+                    return Kind::Pure;
+                }
+                self.eager.truncate(before.0);
+                self.deep.truncate(before.1);
+                self.pristine.truncate(before.2);
+                Kind::Impure(self.statement_cause(&statement.expr))
             }
             ModuleItem::Stmt(_) => Kind::Impure(ImpureCause::ControlFlow),
             ModuleItem::ModuleDecl(decl) => match decl {
@@ -2482,6 +2564,12 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 premises
                     .allocator_intrinsics
                     .insert(*class, intrinsics.clone());
+            }
+        }
+        for id in &found.exporters {
+            if let Some(binding) = binding(id) {
+                derived.export_helpers += 1;
+                premises.exporters.insert(binding);
             }
         }
         for id in &found.namers {

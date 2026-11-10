@@ -343,3 +343,39 @@ let n = 0; const run = (f) => `${f()}`; const bump = () => ++n;
 n = 5;
 const label = run(bump);
 console.log(label);
+### commutes same: a statement of named reads of literals across an impure statement
+-
+const first = { key: 1 }; const second = { key: 2 }; let state = 0;
+state = 1;
+first.key, void second.key, (first.key);
+console.log(state);
+### ordered differs: a statement reading a member that is a getter
+-
+let n = 0; const record = { get key() { return ++n; } };
+n = 5;
+record.key;
+console.log(n);
+### ordered differs: a statement reading a member an earlier statement made an accessor
+-
+let n = 0; const record = { key: 1 }; function arm() { Object.defineProperty(record, 'key', { get() { return ++n; } }); }
+arm();
+record.key;
+console.log(n);
+### ordered differs: a statement reading a member the literal lacks
+-
+let n = 0; const record = { key: 1 }; function arm() { Object.defineProperty(Object.prototype, 'missing', { get() { return ++n; }, configurable: true }); }
+arm();
+record.missing;
+console.log(n);
+### ordered differs: a statement reading a member of a proxy
+-
+let n = 0; const record = new Proxy({}, { get() { return ++n; } });
+n = 5;
+record.key;
+console.log(n);
+### ordered differs: a statement reading a literal before its declaration
+-
+let state = 0;
+record.key;
+const record = { key: 1 };
+console.log(state);

@@ -222,6 +222,18 @@ impl Census {
         self.refusal(global, props, prototype_members).is_none()
     }
 
+    /// Whether no chunk adds, replaces or removes any member of the
+    /// global's `prototype`, as far as the census can tell.
+    pub fn prototype_unwritten(&self, global: &str) -> bool {
+        let written = |writes: &Writes| writes.any || !writes.props.is_empty();
+        let named = self.prototype_written.iter().any(|(name, writes)| {
+            name.strip_suffix(ANY_GLOBAL)
+                .map_or(name == global, |prefix| global.starts_with(prefix))
+                && written(writes)
+        });
+        !self.all && !named && !(self.escaped(global) && written(&self.unfollowed_prototype_stores))
+    }
+
     /// Why a use of the global is not known to be untouched.
     pub fn refusal(
         &self,
