@@ -3129,18 +3129,19 @@ errors, or the tool namespace); nothing above depends on which host runs the cel
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the
-`WorkloadCredential` resolver resolves an Identity subject live with its UID (`resolver.Subject`);
-the proxy still refuses one.** The proxy accepts Identity subjects before any Sandbox presents one,
-together with `SERVICES_IDENTITY_PRINCIPAL`, proven on records naming an Identity, and
-`SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on staging. The proxy's decision keys on the
-identity the resolver yields, and decision history records it. The Kubernetes-audience projected
+**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the proxy
+decides an Identity caller by the bindings whose subject is that Identity, impersonates any account
+it holds a use rule for, and history records it by kind and name; the proxy test shows two
+Identities acting as one account, one losing its use rule without the other noticing, and the Rules
+API answers an Identity. Left: the exit in the egress harness once `SANDBOX_IDENTITY_SPEC` writes
+one.** `SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on
+staging. The Kubernetes-audience projected
 token is the only `projectedWorkloadToken` source; Sandboxes stop projecting it in
 `SANDBOX_IDENTITY_SPEC` and command boxes at `IDENTITY_CUTOVER`, and the source, the sidecar's
 `X-Agentplane-Workload-Token` forwarding, the proxy's second TokenReview per tunnel and the egress
 `TODO.md` entry on where that token is substituted go with the last of them. Impersonation on ServiceAccount subjects has landed
 ([egress SPEC](../egress/SPEC.md) § Decision), as have `policy/reader`'s Identity lookups, which
-egress, the Action Service and Notification watch but do not query yet. The k3s API server keeps no
+egress queries and the Action Service and Notification watch but do not query yet. The k3s API server keeps no
 audit log, so the audit entry naming both account and proxy is unverified there. **Exit:** the
 egress harness shows two identities acting as one account, one losing its use rule without the
 other noticing.

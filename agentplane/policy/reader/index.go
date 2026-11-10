@@ -226,9 +226,9 @@ type ServiceAccount policyapi.ServiceAccountRef
 // ownerReference to its Identity, which the app and Dispatcher must set, so garbage collection
 // deletes an agent's bindings with the Identity.
 //
-// No enforcing service looks up an Identity yet: the WorkloadCredential resolver yields Identity
-// subjects (agentplane/docs/workload_authentication.md, "How a verifier resolves a peer"), and
-// SERVICES_IDENTITY_PRINCIPAL and EGRESS_IDENTITY_RULES (agentplane/plans/task_dag.md) look them up.
+// The WorkloadCredential resolver yields Identity subjects (agentplane/docs/workload_authentication.md,
+// "How a verifier resolves a peer"). The egress proxy looks them up; the other services do in
+// SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md).
 type Identity struct {
 	Name string
 	UID  types.UID

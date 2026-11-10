@@ -204,7 +204,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, nil)
+	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, &resolver.Identities{PolicyNamespace: c.RulesNamespace})
 	if err != nil {
 		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
 	}

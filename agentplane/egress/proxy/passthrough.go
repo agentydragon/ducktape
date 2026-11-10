@@ -58,8 +58,7 @@ func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request,
 		return
 	}
 	securedCaller, err := p.authenticate(request.Context(), client, false, nil)
-	if err != nil || securedCaller.principal.Account != caller.principal.Account ||
-		securedCaller.principal.PodUID != caller.principal.PodUID {
+	if err != nil || securedCaller.subject != caller.subject {
 		refuse(decision.TokenRejected, caller)
 		return
 	}
