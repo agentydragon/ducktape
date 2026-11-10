@@ -339,7 +339,7 @@ spec:
       inputName: DS_MIMIR
     - datasourceName: Loki
       inputName: DS_LOKI
-  folder: CI
+  folder: Cluster & Platform
   instanceSelector:
     matchLabels:
       dashboards: grafana
