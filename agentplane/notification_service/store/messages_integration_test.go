@@ -237,3 +237,33 @@ func TestMessageSenderUIDFencesReceiptsAndUncertainRetries(t *testing.T) {
 		t.Fatalf("retained entries = %+v, %v", page.Entries, err)
 	}
 }
+
+func TestAnIdentitySendersMessageNamesItsIdentityToTheRecipientAndOnlyItFollows(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	identity := model.Identity{Name: "test-sender-identity", UID: "test-sender-identity-uid"}
+	sandbox := model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender-sandbox"}
+	message := f.message(newOwner(), "as-identity", "Sent as an Identity.")
+	message.Sender = IdentitySender{Identity: identity, Sandbox: sandbox}
+	sent := f.send(t, message)
+	page := f.read(t, f.recipientInbox(t).ID, 0)
+	if len(page.Entries) != 1 {
+		t.Fatalf("%d entries, want 1", len(page.Entries))
+	}
+	want := model.MessageEvent{MessageID: sent.ID, Sender: sandbox, SenderIdentity: &identity}
+	if got, ok := page.Entries[0].Event.(model.MessageEvent); !ok || got.MessageID != want.MessageID || got.Sender != want.Sender ||
+		got.SenderIdentity == nil || *got.SenderIdentity != identity {
+		t.Fatalf("entry event = %+v, want %+v", page.Entries[0].Event, want)
+	}
+	if _, err := f.SentMessage(t.Context(), message.Sender, sent.ID); err != nil {
+		t.Fatalf("the Identity follows its message: %v", err)
+	}
+	for name, sender := range map[string]Sender{
+		"another incarnation":   IdentitySender{Identity: model.Identity{Name: identity.Name, UID: "test-successor-uid"}, Sandbox: sandbox},
+		"the Sandbox's account": AccountSender{Account: sandbox, UID: "test-sender-uid"},
+	} {
+		if _, err := f.SentMessage(t.Context(), sender, sent.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
+		}
+	}
+}

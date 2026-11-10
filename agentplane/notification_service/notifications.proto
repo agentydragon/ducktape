@@ -693,8 +693,11 @@ message MessageEvent {
   // UUID.
   string message_id = 1;
   // Who sent it, as the service authenticated the caller: a Sandbox's own ServiceAccount, or the one an OAuth
-  // client acts as. Never taken from the message.
+  // client acts as. For an Identity sender, the Sandbox it sent from. Never taken from the message.
   agentplane.proto.ServiceAccount sender = 2;
+  // The Identity incarnation the sender acted as, when its workload credential named one; absent for a
+  // ServiceAccount sender. Sessions of this Identity may message each other without a grant.
+  agentplane.proto.Identity sender_identity = 3;
 }
 
 // A notice: the message sent to the Session's runner naming the entries that await the agent.
