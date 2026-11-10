@@ -60,7 +60,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # Eight GiB suffices for the one test CI gates on this pool. During test_firecracker (commit
 # 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy invocation f6ad2fda-409c-446f-8ade-8ac18f5da377, 2026-11-10)
 # guest memory in use, MemTotal less MemAvailable, peaked at 2.8 GiB on both workers, sampled over the VM console
-# and not retained; an idle worker uses 0.75 GiB. The action reserves 6 GiB (agentplane/system_tests/k3s/defs.bzl),
+# and not retained; an idle worker uses 0.75 GiB. test_firecracker reserves 6 GiB (its EstimatedMemory),
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
 # KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
