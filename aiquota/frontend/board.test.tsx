@@ -93,7 +93,7 @@ function sampleQuotas(): AllQuotasView {
           result: { kind: "error", error: "401 invalid_token returned from the provider" },
         },
         last_success: null,
-        currently_over_plan: true,
+        currently_over_plan: false,
         extra_status: "active",
         monthly_extra_spend: { is_enabled: true, used_usd: 25.5, monthly_limit_usd: 100, utilization: 25.5 },
         paid_credits_active: true,
