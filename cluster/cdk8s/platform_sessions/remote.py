@@ -587,9 +587,6 @@ def platform_sessions_remote(
         directory,
         description="Platform Sessions gateway and separate providers.",
         suspend=False,
-        # The legacy and remote inventories overlap on the Quest monitor. Keep pruning off
-        # through its later rename; restore it only after the stale remote entry is gone.
-        prune=False,
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(legacy, cert_manager_environment, image_automation, piraeus),
