@@ -10352,31 +10352,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .cloned()
             .collect();
 
-        match self
-            .inputs
-            .index
-            .class_values
-            .get(&class)
-            .and_then(|facts| facts.super_class.as_ref())
-        {
-            Some(ValueExpr::Binding(binding)) if !self.inputs.top_bindings.contains(binding) => {
-                values.extend(
-                    env.get(binding)
-                        .or_else(|| captures.get(binding))
-                        .into_iter()
-                        .flatten()
-                        .cloned(),
-                );
+        let facts = self.inputs.index.class_values.get(&class);
+        match facts.and_then(|facts| facts.super_class.as_ref()) {
+            Some(ValueExpr::Binding(binding))
+                if facts.is_some_and(|facts| facts.lexical_heritage.is_some()) =>
+            {
+                if !self.inputs.top_bindings.contains(binding) {
+                    values.extend(
+                        env.get(binding)
+                            .or_else(|| captures.get(binding))
+                            .into_iter()
+                            .flatten()
+                            .cloned(),
+                    );
+                }
             }
-            Some(ValueExpr::Binding(_)) | None => {}
+            None => {}
             Some(heritage) => {
                 // The eventual base retains none of this environment. Publish
                 // its inputs without evaluating the expression again: a
                 // heritage factory may have effects already accounted for by
                 // the flattened call pass.
-                let mut inputs = BTreeSet::new();
+                let mut inputs = facts
+                    .map(|facts| facts.super_class_inputs.clone())
+                    .unwrap_or_default();
                 heritage.bindings(&mut inputs);
-                let mut incomplete = heritage.bindings_may_be_incomplete();
+                let mut incomplete = heritage.bindings_may_be_incomplete()
+                    || facts.is_some_and(|facts| facts.super_class_inputs_incomplete);
                 for binding in inputs {
                     let possible = if self.inputs.top_bindings.contains(&binding) {
                         self.state.world.module.prefix_values.get(&binding)
