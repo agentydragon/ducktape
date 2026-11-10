@@ -31,8 +31,95 @@ pub struct Writes {
     pub props: FxHashSet<String>,
 }
 
+/// How a store came to count as a write of a whole global.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WholeWrite {
+    /// `Map = …`.
+    BindingAssigned,
+    /// `globalThis.Map = …`, or a store under one of several known names.
+    GlobalObjectMember,
+    /// A store on the global's value under a key the census cannot name.
+    UnnamedKey,
+    /// The same on its `prototype`.
+    UnnamedPrototypeKey,
+    /// A store on something read off the global's value or `prototype`.
+    DeeperStore,
+}
+
+/// Globals the language defines: naming one says nothing about the input.
+const STANDARD_GLOBALS: [&str; 36] = [
+    "Array",
+    "ArrayBuffer",
+    "BigInt",
+    "Boolean",
+    "DataView",
+    "Date",
+    "Error",
+    "EvalError",
+    "Float32Array",
+    "Float64Array",
+    "Function",
+    "Int16Array",
+    "Int32Array",
+    "Int8Array",
+    "JSON",
+    "Map",
+    "Math",
+    "Number",
+    "Object",
+    "Promise",
+    "Proxy",
+    "RangeError",
+    "ReferenceError",
+    "Reflect",
+    "RegExp",
+    "Set",
+    "String",
+    "Symbol",
+    "SyntaxError",
+    "TypeError",
+    "URIError",
+    "Uint16Array",
+    "Uint32Array",
+    "Uint8Array",
+    "WeakMap",
+    "WeakSet",
+];
+
+/// A store that counts as a write of a whole global.
+#[derive(Debug, Clone)]
+pub struct WholeWriteSite {
+    pub global: String,
+    /// The program chunk's index, `None` for the chunk the census was taken
+    /// of.
+    pub chunk: Option<usize>,
+    /// Byte offset of the store's target.
+    pub offset: u32,
+    pub kind: WholeWrite,
+    /// The function that modifies its first argument, for a store made by
+    /// calling one.
+    pub mutator: Option<&'static str>,
+    /// Byte offsets of the values that carried the global to the target,
+    /// from the store back: each is an initializer, assigned value, default
+    /// or argument that gave the next binding its alias.
+    pub chain: Vec<u32>,
+}
+
+impl WholeWriteSite {
+    /// The global's name, when the language defines it.
+    pub fn standard_global(&self) -> Option<&'static str> {
+        STANDARD_GLOBALS
+            .iter()
+            .copied()
+            .find(|name| *name == self.global)
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Census {
+    /// Each store behind a `Writes::any`.
+    pub whole_write_sites: Vec<WholeWriteSite>,
     pub written: FxHashMap<String, Writes>,
     /// A store on the global object under an unknown key.
     pub all: bool,
@@ -63,12 +150,16 @@ impl Census {
         for (chunk, _) in &mut self.all_sites {
             *chunk = Some(index);
         }
+        for site in &mut self.whole_write_sites {
+            site.chunk = Some(index);
+        }
     }
 
     /// Adds what another chunk writes.
     pub fn merge(&mut self, other: Census) {
         self.all |= other.all;
         self.all_sites.extend(other.all_sites);
+        self.whole_write_sites.extend(other.whole_write_sites);
         self.prefixes.extend(other.prefixes);
         self.escaped_all |= other.escaped_all;
         self.escaped.extend(other.escaped);
@@ -609,6 +700,9 @@ struct Flow {
     local_constructors: FxHashSet<Id>,
     keys: KeyBindings,
     taints: FxHashMap<Id, Taint>,
+    /// For a binding with an alias: the offset of the first value that gave
+    /// it one, and the binding that value took it from.
+    origins: FxHashMap<Id, (u32, Option<Id>)>,
     params: FxHashMap<Id, Vec<Option<Id>>>,
 }
 
@@ -661,6 +755,42 @@ impl Flow {
         taint
     }
 
+    /// The first binding in `expr` that carries an alias.
+    fn carrier(&self, expr: &Expr) -> Option<Id> {
+        let mut sources = Vec::new();
+        passed_through(expr, &mut sources);
+        sources.into_iter().find_map(|source| match source {
+            Expr::Ident(ident) => self
+                .taints
+                .contains_key(&ident.to_id())
+                .then(|| ident.to_id()),
+            Expr::Member(member) => self.carrier(&member.obj),
+            Expr::Assign(AssignExpr {
+                left: AssignTarget::Simple(SimpleAssignTarget::Member(member)),
+                ..
+            }) => self.carrier(&member.obj),
+            _ => None,
+        })
+    }
+
+    /// The values that carried an alias to `expr`, nearest first.
+    fn chain(&self, expr: &Expr) -> Vec<u32> {
+        let mut chain = Vec::new();
+        let mut seen = FxHashSet::default();
+        let mut next = self.carrier(expr);
+        while let Some(id) = next {
+            if !seen.insert(id.clone()) {
+                break;
+            }
+            let Some((offset, from)) = self.origins.get(&id) else {
+                break;
+            };
+            chain.push(*offset);
+            next = from.clone();
+        }
+        chain
+    }
+
     /// The parameter and the value flowing into it, for each argument the
     /// census follows into a local function: one called by name, or a
     /// function expression called where it is written.
@@ -693,6 +823,8 @@ impl FlowPass<'_> {
     fn bind(&mut self, id: Id, value: &Expr) {
         let taint = self.flow.taint(value);
         if !taint.is_empty() {
+            let origin = (value.span().lo.0, self.flow.carrier(value));
+            self.flow.origins.entry(id.clone()).or_insert(origin);
             self.changed |= join(self.flow.taints.entry(id).or_default(), taint);
         }
     }
@@ -740,6 +872,8 @@ struct Visitor<'a> {
     /// census follows.
     used: FxHashSet<(u32, u32)>,
     exported: Vec<Id>,
+    /// The mutator whose call is being recorded as a store.
+    mutator: Option<&'static str>,
 }
 
 fn span_key(span: Span) -> (u32, u32) {
@@ -805,6 +939,19 @@ impl Visitor<'_> {
         self.census.written.entry(global).or_default()
     }
 
+    /// Records a write of the whole of `global` through `target`.
+    fn whole(&mut self, global: &str, target: &Expr, kind: WholeWrite) {
+        self.writes(global.to_string()).any = true;
+        self.census.whole_write_sites.push(WholeWriteSite {
+            global: global.to_string(),
+            chunk: None,
+            offset: target.span().lo.0,
+            kind,
+            mutator: self.mutator,
+            chain: self.flow.chain(target),
+        });
+    }
+
     /// Records a write to the object `target` names, under `prop`.
     fn write(&mut self, target: &Expr, prop: Option<String>, prefix: Option<String>) {
         self.consume(target);
@@ -812,7 +959,9 @@ impl Visitor<'_> {
         for intrinsic in &taint {
             match (intrinsic, &prop) {
                 // `globalThis.Map = …` replaces the binding.
-                (Intrinsic::GlobalObject, Some(name)) => self.writes(name.clone()).any = true,
+                (Intrinsic::GlobalObject, Some(name)) => {
+                    self.whole(name, target, WholeWrite::GlobalObjectMember);
+                }
                 (Intrinsic::GlobalObject, None) => match &prefix {
                     Some(prefix) => self.census.prefixes.push(prefix.clone()),
                     None => self.unnamed_global_store(target),
@@ -820,8 +969,11 @@ impl Visitor<'_> {
                 (Intrinsic::Object(global) | Intrinsic::Prototype(global), Some(name)) => {
                     self.writes(global.clone()).props.insert(name.clone());
                 }
-                (Intrinsic::Object(global) | Intrinsic::Prototype(global), None) => {
-                    self.writes(global.clone()).any = true;
+                (Intrinsic::Object(global), None) => {
+                    self.whole(global, target, WholeWrite::UnnamedKey);
+                }
+                (Intrinsic::Prototype(global), None) => {
+                    self.whole(global, target, WholeWrite::UnnamedPrototypeKey);
                 }
             }
         }
@@ -872,12 +1024,12 @@ impl Visitor<'_> {
                 }
                 (Intrinsic::GlobalObject, Some(KeyValue::Names(names))) => {
                     for name in names {
-                        self.writes(name.clone()).any = true;
+                        self.whole(name, target, WholeWrite::GlobalObjectMember);
                     }
                 }
                 (Intrinsic::GlobalObject, _) => self.unnamed_global_store(target),
                 (Intrinsic::Object(global) | Intrinsic::Prototype(global), _) => {
-                    self.writes(global.clone()).any = true;
+                    self.whole(global, target, WholeWrite::DeeperStore);
                 }
             }
         }
@@ -978,7 +1130,8 @@ impl Visit for Visitor<'_> {
             }
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                 if binding.id.ctxt == self.flow.unresolved {
-                    self.writes(binding.id.sym.to_string()).any = true;
+                    let target = Expr::Ident(binding.id.clone());
+                    self.whole(&binding.id.sym, &target, WholeWrite::BindingAssigned);
                 } else {
                     self.consume(&assign.right);
                 }
@@ -1030,7 +1183,9 @@ impl Visit for Visitor<'_> {
                         .map(|names| KeyValue::Names(names.concat())),
                     _ => None,
                 };
+                self.mutator = Some(mutator);
                 self.write_key(&target.expr, keys);
+                self.mutator = None;
             }
         }
         for (_, value) in self.flow.arguments(call) {
@@ -1158,6 +1313,7 @@ pub fn census(
         local_constructors,
         keys,
         taints: FxHashMap::default(),
+        origins: FxHashMap::default(),
         params,
     };
     loop {
@@ -1177,6 +1333,7 @@ pub fn census(
         occurrences: Vec::new(),
         used: FxHashSet::default(),
         exported: Vec::new(),
+        mutator: None,
     };
     module.visit_with(&mut visitor);
     let unused = visitor

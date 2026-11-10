@@ -75,6 +75,20 @@ pub struct PairExample {
 }
 
 #[derive(Serialize)]
+pub struct WholeWriteSiteRow {
+    pub family: &'static str,
+    /// The program chunk's index in path order (`null` for this chunk).
+    pub chunk: Option<usize>,
+    /// Byte offset of the store's target.
+    pub offset: u32,
+    pub kind: crate::intrinsics::WholeWrite,
+    pub mutator: Option<&'static str>,
+    /// Byte offsets of the values that carried the global to the target,
+    /// nearest first.
+    pub alias_chain: Vec<u32>,
+}
+
+#[derive(Serialize)]
 pub struct WhatIf {
     /// The reasons assumed never to call into Escaped.
     pub resolved: Vec<Reason>,
@@ -668,6 +682,11 @@ pub struct Tier0Report {
     /// Where: the program chunk's index in path order (`null` for this
     /// chunk) and the byte offset of the store.
     pub global_object_unnamed_store_sites: Vec<(Option<usize>, u32)>,
+    /// Each store that counts as a write of a whole global the language
+    /// defines.
+    pub whole_write_sites: Vec<WholeWriteSiteRow>,
+    /// Such stores on other globals.
+    pub whole_write_sites_other_globals: usize,
     pub global_object_escaped: bool,
     pub unfollowed_prototype_store_names: usize,
     pub unfollowed_prototype_store_unnamed: bool,
@@ -935,6 +954,27 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .collect(),
         global_object_written_unnamed: analysis.census.all,
         global_object_unnamed_store_sites: analysis.census.all_sites.clone(),
+        whole_write_sites: analysis
+            .census
+            .whole_write_sites
+            .iter()
+            .filter_map(|site| {
+                Some(WholeWriteSiteRow {
+                    family: site.standard_global()?,
+                    chunk: site.chunk,
+                    offset: site.offset,
+                    kind: site.kind,
+                    mutator: site.mutator,
+                    alias_chain: site.chain.clone(),
+                })
+            })
+            .collect(),
+        whole_write_sites_other_globals: analysis
+            .census
+            .whole_write_sites
+            .iter()
+            .filter(|site| site.standard_global().is_none())
+            .count(),
         global_object_escaped: analysis.census.escaped_all,
         unfollowed_prototype_store_names: analysis.census.unfollowed_prototype_stores.props.len(),
         unfollowed_prototype_store_unnamed: analysis.census.unfollowed_prototype_stores.any,

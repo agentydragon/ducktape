@@ -3,6 +3,7 @@
 //! `state`. Both analyses must report a conflict for every one of them.
 
 use summary_effects::generate::FunctionHeap;
+use summary_effects::intrinsics::WholeWrite;
 use summary_effects::report::analyze;
 use summary_effects::tier0;
 
@@ -377,6 +378,29 @@ fn tier0(source: &str, exports_reachable: bool) -> tier0::Tier0 {
 
 /// Another chunk in an import cycle with this one can call this chunk's
 /// exports while this chunk initializes. Tier 0 sees that only when told.
+#[test]
+fn census_locates_whole_writes_with_their_alias_chain() {
+    js_ast::with_swc_globals(|| {
+        let source = "const O = Object; function patch(target, k, v) { target[k] = v; } patch(O, name, 1); Object.freeze(Map.prototype);";
+        let sites = tier0(source, false).census.whole_write_sites;
+        let [aliased, frozen] = sites.as_slice() else {
+            panic!("{sites:?}");
+        };
+        // `target[k]`, reached through the argument `O` and its initializer.
+        assert_eq!(
+            (aliased.standard_global(), aliased.kind, aliased.mutator),
+            (Some("Object"), WholeWrite::UnnamedKey, None)
+        );
+        let offset = |text: &str| u32::try_from(source.find(text).unwrap() + 1).unwrap();
+        assert_eq!(aliased.offset, offset("target[k]"));
+        assert_eq!(aliased.chain, [offset("O, name"), offset("Object;")]);
+        assert_eq!(
+            (frozen.standard_global(), frozen.kind, frozen.mutator),
+            (Some("Map"), WholeWrite::UnnamedPrototypeKey, Some("freeze"))
+        );
+    });
+}
+
 #[test]
 fn tier0_export_cycle_needs_the_precondition() {
     js_ast::with_swc_globals(|| {

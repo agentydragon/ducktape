@@ -151,6 +151,13 @@ assigned, or a parameter of a function that is only ever called by name with
 such a binding in that position. That the global object escaped refuses
 nothing by itself; it only makes every intrinsic count as escaped.
 
+The report lists each store that counts as a write of a whole global the
+language defines (`whole_write_sites`): the family, the chunk, the byte
+offset of the store's target, how it counted (the binding assigned, a member
+of the global object, an unnamed key on the value or on its `prototype`, a
+store deeper inside), the mutating function if the store is a call of one,
+and the byte offsets of the values that carried the global to the target.
+
 A read of a static member counts as independent of every prototype only for
 a name the namespace owns (`Object.defineProperty`, `Math.PI`; a fixed
 table). Any other name (`Math.toString`, a name that does not exist) is
