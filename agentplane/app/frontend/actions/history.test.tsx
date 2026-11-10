@@ -15,6 +15,8 @@ import {
   ExecutorKind,
   ListActionRequestHistoryResponseSchema,
   MatchedPolicySchema,
+  PolicyDecision_ReasonCode,
+  PolicyDecisionSchema,
   PolicyEvidenceSchema,
   PolicyKind,
   PolicySource,
@@ -234,20 +236,23 @@ describe("ActionHistory", () => {
     const row = clone(ActionRequestSchema, base);
     row.decision = create(DecisionSchema, {
       ...base.decision!,
-      provider: "action_policy_set",
-      operator: undefined,
-      decisionNote: undefined,
-      policyEvidence: create(PolicyEvidenceSchema, {
-        bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resourceVersion: "12345" }],
-        policySets: [{ namespace: "agentplane-visual", name: "fixture-auto-allow", generation: 1n }],
-        matched: create(MatchedPolicySchema, {
-          namespace: "agentplane-visual",
-          policySet: "fixture-auto-allow",
-          source: PolicySource.RULES,
-          index: 0,
-          type: PolicyKind.EXACT_ACTIONS,
+      decider: {
+        case: "policy",
+        value: create(PolicyDecisionSchema, {
+          reasonCode: PolicyDecision_ReasonCode.AUTO_APPROVE,
+          evidence: create(PolicyEvidenceSchema, {
+            bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resourceVersion: "12345" }],
+            policySets: [{ namespace: "agentplane-visual", name: "fixture-auto-allow", generation: 1n }],
+            matched: create(MatchedPolicySchema, {
+              namespace: "agentplane-visual",
+              policySet: "fixture-auto-allow",
+              source: PolicySource.RULES,
+              index: 0,
+              type: PolicyKind.EXACT_ACTIONS,
+            }),
+          }),
         }),
-      }),
+      },
     });
     const container = await renderHistory([row]);
     expect(container.textContent).toContain("Auto-approved via policy fixture-auto-allow · Completed");

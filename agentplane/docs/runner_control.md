@@ -302,11 +302,11 @@ cert-manager owns leaf renewal through the `agentplane-workload` ClusterIssuer, 
 the cluster internal CA. trust-manager distributes the workload CA alone, which every SVID peer
 verifies against. A Pod or KubeVirt runner's control listener verifies the Gateway's client SVID
 against it (`client_ca_file`), so a `cluster-internal-ca` leaf naming
-`spiffe://agentplane/runner-gateway` is refused. The Gateway's `runner_security` and the egress
-sidecar verify server SVIDs against it too, so the Gateway refuses a `cluster-internal-ca` leaf
-naming a runner's URI at that runner's address. **Gotcha:** a Firecracker runner reads one Workload
-API bundle per trust domain, the cluster bundle, so its control listener still accepts a
-cluster-root leaf.
+`spiffe://agentplane/runner-gateway` is refused. A Firecracker launcher serves the workload CA alone
+as the guest's Workload API bundle for the `agentplane` trust domain, so the guest's listener refuses
+that leaf too; the guest Runtime receives no cluster bundle. The Gateway's `runner_security` and the
+egress sidecar verify server SVIDs against the workload CA too, so the Gateway refuses a
+`cluster-internal-ca` leaf naming a runner's URI at that runner's address.
 Pods use projected credential files; KubeVirt guests use a mounted Secret filesystem. Firecracker
 launchers stream the same material through the host-initiated vsock Workload API to the root guest
 agent, which serves Runtime through its restricted Unix socket. Runtime retains pinned credential

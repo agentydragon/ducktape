@@ -654,6 +654,19 @@ fn apply_initializer_binding_effects(
 }
 
 impl ChunkFactAnalysis {
+    /// Every `host_behavior.reentry_free_operations` entry some statement's
+    /// execution consumed. The interpreter's only reader of these entries,
+    /// `host_call_does_not_reenter`, records each use it grants, so an entry
+    /// absent here changed no fact of this chunk.
+    pub fn consumed_reentry_free_operations(&self) -> BTreeSet<spec::ReentryFreeOperation> {
+        self.facts
+            .iter()
+            .filter_map(|fact| fact.synchronous_calls.as_ref())
+            .flat_map(|calls| &calls.author_host_contract_uses)
+            .map(|proof_use| proof_use.operation)
+            .collect()
+    }
+
     /// Apply author lexical-effect boundaries after raw source execution and
     /// receipt sealing. Source-owned coverage is never changed by this overlay.
     pub fn apply_initializer_binding_effects(&mut self, source_only_bindings: &BTreeSet<String>) {

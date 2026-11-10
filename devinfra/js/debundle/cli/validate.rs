@@ -134,21 +134,25 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
-    let keep_going = !args.transform.fail_fast;
-    let cli = args.transform.resolve()?;
-    let expected_chunks = expected_validation_chunks(&cli.spec_source)?;
+/// One dry-run keep-going pipeline pass with every per-chunk report forced
+/// into a private capture directory, as `spec validate` and `spec lint` run it.
+pub(crate) struct CapturedPass {
+    capture: tempfile::TempDir,
+    /// The pass's own failure. The keep-going pass writes the per-chunk
+    /// reports *and then* fails the pipeline with the collected findings —
+    /// that rejection is the contract for `debundle run`; callers emit the
+    /// reports before deciding their exit status.
+    pub error: Option<anyhow::Error>,
+    pub expected_chunks: BTreeSet<String>,
+}
 
-    // Force reports into a private capture dir: dry-run + a report dir makes
-    // the materialize pass emit `selector_diagnostics.json` per chunk on
-    // rejection, independent of how the spec configures `report_out_dir`.
-    let capture = tempfile::tempdir().context("creating selector-diagnostics capture dir")?;
-    // The keep-going pass writes the per-chunk reports *and then* fails the
-    // pipeline at the end with the collected findings — that rejection is the
-    // contract for `debundle run`. When reports exist, `validate` emits them
-    // before deciding its exit status in `run_validate_cmd`; only a pass that
-    // errored without producing a report fails here (bad spec path, parse
-    // error, …).
+pub(crate) fn run_captured_pass(transform: TransformArgs) -> Result<CapturedPass> {
+    let keep_going = !transform.fail_fast;
+    let cli = transform.resolve()?;
+    let expected_chunks = expected_validation_chunks(&cli.spec_source)?;
+    // Dry-run + a report dir makes the materialize pass emit per-chunk
+    // reports, independent of how the spec configures `report_out_dir`.
+    let capture = tempfile::tempdir().context("creating report capture dir")?;
     let pass = run_transform(
         &cli,
         TransformRunOptions {
@@ -165,22 +169,39 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
             full_report_chunks: Default::default(),
         },
     );
+    Ok(CapturedPass {
+        capture,
+        error: pass.err(),
+        expected_chunks,
+    })
+}
 
-    let mut chunks = Vec::<(String, SelectorOutcomeReport)>::new();
-    collect_chunk_reports(
-        capture.path(),
-        capture.path(),
-        SELECTOR_DIAGNOSTICS_REPORT,
-        &mut chunks,
-    )?;
-    let mut premise_diagnostics = Vec::<(String, Vec<CommutingStatementsDiagnostic>)>::new();
-    collect_chunk_reports(
-        capture.path(),
-        capture.path(),
-        COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-        &mut premise_diagnostics,
-    )?;
-    let mut pass_error = pass.err();
+impl CapturedPass {
+    /// Every per-chunk `filename` report, keyed by chunk.
+    pub(crate) fn chunk_reports<T: DeserializeOwned>(
+        &self,
+        filename: &str,
+    ) -> Result<Vec<(String, T)>> {
+        let mut reports = Vec::new();
+        collect_chunk_reports(
+            self.capture.path(),
+            self.capture.path(),
+            filename,
+            &mut reports,
+        )?;
+        Ok(reports)
+    }
+}
+
+fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
+    let keep_going = !args.transform.fail_fast;
+    let pass = run_captured_pass(args.transform)?;
+    let expected_chunks = &pass.expected_chunks;
+    let chunks: Vec<(String, SelectorOutcomeReport)> =
+        pass.chunk_reports(SELECTOR_DIAGNOSTICS_REPORT)?;
+    let premise_diagnostics: Vec<(String, Vec<CommutingStatementsDiagnostic>)> =
+        pass.chunk_reports(COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT)?;
+    let mut pass_error = pass.error;
     let present_chunks: BTreeSet<_> = chunks.iter().map(|(chunk, _)| chunk.clone()).collect();
     let missing_chunks: Vec<_> = expected_chunks
         .difference(&present_chunks)

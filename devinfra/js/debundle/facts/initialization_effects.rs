@@ -94,8 +94,8 @@ pub enum OwnerInitializationCoverageRefusalReason {
     /// initialized module record with a writable own data slot at its
     /// prefix: a global publication, a new property or an unproved alias.
     UnprovedFieldStore,
-    /// An admitted root statement executed normally, but one of its
-    /// operations has no closed effect receipt.
+    /// An admitted root statement's kernel attempt did not seal it, so the
+    /// flattened lane ran it instead.
     UnprovedStatementOperation,
     UnknownCall,
     PrecisionLoss,

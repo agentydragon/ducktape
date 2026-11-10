@@ -84,6 +84,9 @@ pub struct ChunkCodeGraph {
     /// obligations instead of consulting an optimistic Pure placeholder.
     purity_call_targets: BTreeMap<String, PurityFunctionKey>,
     purity_call_obligations: Option<Rc<RefCell<Vec<PurityCallObligation>>>>,
+    /// Cells of other chunks, and in export mode this chunk's own module
+    /// state, whose reads no consumer graph orders against their writers.
+    order_dependent_cells: OrderDependentCells,
 }
 
 /// Prepared static facts consumed while extracting canonical purity bodies.
@@ -104,6 +107,9 @@ pub(crate) struct PurityShapeInputs<'a> {
         &'a BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     pub(crate) plain_array_bindings: &'a BTreeSet<String>,
     pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
+    /// Named and default imports bound to a provider cell that is never
+    /// rebound (`AnalysisInputs::stable_imports`).
+    pub(crate) stable_imports: &'a BTreeSet<String>,
 }
 
 /// Source-module identity, policy, and inferred imported function targets for
@@ -197,6 +203,9 @@ impl ChunkCodeGraph {
         fluent_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
     ) -> Self {
+        // No program summary reaches this path: every import stays an
+        // order-dependent cell.
+        let stable_imports = BTreeSet::new();
         let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
             body,
             &heap::tracked_allocation_roots(body),
@@ -243,6 +252,7 @@ impl ChunkCodeGraph {
             &BTreeMap::new(),
             &plain_array_bindings,
             stable_var_number_candidates,
+            &stable_imports,
             None,
         )
     }
@@ -269,6 +279,7 @@ impl ChunkCodeGraph {
         >,
         plain_array_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
+        stable_imports: &BTreeSet<String>,
         locator: Option<SourceLocator<'_>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
@@ -285,6 +296,7 @@ impl ChunkCodeGraph {
             plain_data_inference_uses,
             plain_array_bindings,
             stable_var_number_candidates,
+            stable_imports,
         };
         let local_targets = BTreeMap::new();
         let call_context = PurityCallContext {
@@ -417,6 +429,21 @@ impl ChunkCodeGraph {
         );
         let primitive_element_arrays =
             heap::primitive_element_arrays(body, shape_inputs.plain_array_bindings, &binding_prims);
+        // An author's purity assertion about an imported binding (A9) covers
+        // reading that binding.
+        let is_stable_import = |name: &str| {
+            shape_inputs.stable_imports.contains(name)
+                || call_context.declared_pure.contains(name)
+                || shape_inputs.declared_pure_new.contains(name)
+                || shape_inputs.declared_pure_members.contains_key(name)
+                || shape_inputs.fluent_bindings.contains(name)
+        };
+        let order_dependent_cells = match call_context.mode {
+            PurityMode::Local => OrderDependentCells::imported(body, is_stable_import),
+            PurityMode::Export => {
+                OrderDependentCells::exported(body, is_stable_import, &binding_prims.kinds)
+            }
+        };
         let mut purity_call_targets = call_context.imported_targets.clone();
         purity_call_targets.extend(Self::inferred_function_keys(
             body,
@@ -447,6 +474,25 @@ impl ChunkCodeGraph {
             fluent_bindings: collect_fluent_const_bindings(body, shape_inputs.fluent_bindings),
             purity_call_targets,
             purity_call_obligations: Some(Rc::new(RefCell::new(Vec::new()))),
+            order_dependent_cells,
+        }
+    }
+
+    /// The effect of the first order-dependent read `visit` reaches, if any.
+    pub(crate) fn order_dependent_read_effects(
+        &self,
+        visit: impl FnOnce(&mut dyn Visit),
+    ) -> Effects {
+        match self.order_dependent_cells.first_read(visit) {
+            Some(read) => Effects::of_detail(
+                Effect::ObservesForeignCell,
+                read.span,
+                format!(
+                    "reads `{}`, which code outside this chunk's dependency graph can change",
+                    read.name
+                ),
+            ),
+            None => Effects::none(),
         }
     }
 
@@ -807,7 +853,9 @@ fn classify_function_body(
         graph,
     };
     function.visit_body_with(&mut collector);
-    param_purity.then(collector.effects)
+    param_purity
+        .then(collector.effects)
+        .then(graph.order_dependent_read_effects(|finder| function.visit_body_with(finder)))
 }
 
 fn classify_function_body_transfer(

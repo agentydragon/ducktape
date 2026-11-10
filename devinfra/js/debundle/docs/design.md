@@ -812,6 +812,34 @@ ordering"); acyclicity of the constraining subgraph `R ∪ S` guarantees one
 exists. The gate's I-graph (`ChunkConstrainingEdgeSet::i_successors`)
 therefore holds every non-rebind cross-module edge, `I` and `S` alike.
 
+#### Reads of another chunk's cells
+
+A `Pure` statement is left off the S-chain because the cells it reads are
+ordered by the graph's own binding and heap timelines. Those timelines hold
+the reading chunk's cells only: an importer's graph has no node for a
+provider's module state or for that state's writers. A read of such a cell is
+therefore an effect (`PurityRule::OrderDependentRead`,
+`purity/order_dependent_reads.rs`), which puts the reading statement on the
+S-chain with every other impure statement:
+
+- **In an exported function** (the cross-module purity oracle): a reference
+  to any binding its chunk declares outside a function body, unless that
+  binding is declared once, never written, and holds a function, a class or a
+  proved primitive; and a member read through any such binding, since a
+  function or class object has properties too. Reads in nested function
+  bodies do not count (creating a closure reads nothing), except an
+  immediately invoked function expression.
+- **Anywhere** (exported functions, local functions and top-level
+  statements): a reference to a named or default import, unless the import is
+  **stable**: it resolves, through local re-exports of imports, to a binding
+  of an analyzed chunk that is declared once and never written; it has a
+  proved imported primitive read; or an author purity assertion (A9) names
+  it. An import of a module outside the analyzed program is not stable.
+
+The rule is deliberately coarse: it does not model which writer a read
+conflicts with, so two readers of the same provider cell keep their source
+order as well.
+
 #### Emission modes
 
 `S` is materialised at source-unit level (`emit_s_chain` in `graph/build.rs`) and
@@ -3932,14 +3960,14 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module          | Owns                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ. |
-| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                              |
-| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                    |
-| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), driven by the strict provider query (`strict_provider.rs`).                         |
-| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                             |
-| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                      |
+| Module          | Owns                                                                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.           |
+| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                        |
+| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                              |
+| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary. |
+| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                                       |
+| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -3969,6 +3997,17 @@ behind an `Arc` with copy-on-write (`make_mut`), uses `imbl` maps and shares
 one lexical-cell id allocator, so a fork clones a handle rather than the
 contents. Callers name the owner (`world.surface`, `world.module`); there is
 no `Deref` to a store.
+
+**A provider body is run in one place, and replaced by its summary where
+one exists.** The provider adapter seals a body in a fresh `World` of the
+isolated provider scope. The scope gives its closures their own addresses and
+proves no literal writability, and the adapter keeps the ledger's heap cells
+private. An importer holds only the summary, so a call of a summarized import
+is a substitution: the application adapter covers the callee read and the call
+under the summary's premises and runs nothing. A summary whose body reads a
+private provider cell is substituted without that receipt, because the summary
+says nothing about the cell's writers. A provider body without a summary stays
+an unknown call in the importer.
 
 **An undecided test forks the body; the family is joined when it
 completes.** A conditional or a short-circuiting logical operator whose

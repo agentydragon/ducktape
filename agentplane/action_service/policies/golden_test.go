@@ -72,7 +72,7 @@ type matchedOutcome struct {
 
 type decisionOutcome struct {
 	Verdict           string                `json:"verdict"`
-	ReasonCode        string                `json:"reason_code"`
+	ReasonCode        *string               `json:"reason_code"`
 	ReasonDescription *string               `json:"reason_description"`
 	Evidence          *store.PolicyEvidence `json:"evidence"`
 }
@@ -151,20 +151,18 @@ func TestProviderDecidesAccordingToFixture(t *testing.T) {
 			var got decisionOutcome
 			switch decision := provider.Decide(t.Context(), bindings, vector.Action, arguments(t, vector.Arguments)).(type) {
 			case Allow:
-				if decision.Vote.Provider != ProviderName {
-					t.Errorf("provider %q", decision.Vote.Provider)
-				}
+				code := decision.Vote.Policy.ReasonCode.String()
 				got = decisionOutcome{
 					Verdict:           string(decision.Vote.Verdict),
-					ReasonCode:        decision.Vote.ReasonCode,
-					ReasonDescription: decision.Vote.ReasonDescription,
-					Evidence:          decision.Vote.Evidence,
+					ReasonCode:        &code,
+					ReasonDescription: decision.Vote.Policy.ReasonDescription,
+					Evidence:          decision.Vote.Policy.Evidence,
 				}
 				if err := decision.Vote.Validate(); err != nil {
 					t.Errorf("the store refuses the vote: %v", err)
 				}
 			case NoOpinion:
-				got = decisionOutcome{Verdict: "no_opinion", ReasonCode: NoMatchReason, ReasonDescription: &decision.ReasonDescription}
+				got = decisionOutcome{Verdict: "no_opinion", ReasonDescription: &decision.ReasonDescription}
 			}
 			if !reflect.DeepEqual(got, vector.Outcome) {
 				t.Errorf("fixture says\n%s\nGo got\n%s", asJSON(t, vector.Outcome), asJSON(t, got))

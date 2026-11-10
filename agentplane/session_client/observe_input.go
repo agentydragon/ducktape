@@ -12,6 +12,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -134,7 +135,7 @@ func ObserveInput(
 	if dispatch == nil {
 		return result, nil
 	}
-	if dispatch.GetOperation() != dispatcherpb.Operation_OPERATION_SUBMIT_INPUT {
+	if dispatch.GetOperation() != commandpb.Operation_OPERATION_SUBMIT_INPUT {
 		return result, status.Error(codes.InvalidArgument, "command_id does not identify submitted input")
 	}
 	startCursor, hasAdmission := admissionStart(dispatch)

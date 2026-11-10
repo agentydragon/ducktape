@@ -95,6 +95,7 @@ py_test(
         ":protojson",
         "//:conftest",
         "//agentplane/history_service:history_service_pb2",
+        "//agentplane/proto:command_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -216,7 +216,7 @@ func issue(t *testing.T, ca *transporttesting.CA, record *workloadapi.WorkloadCr
 func ensureIssued(t *testing.T, requests requester.Requester, request requester.Request) requester.Issued {
 	t.Helper()
 	var issued requester.Issued
-	eventually(t, "issuance for "+request.Owner.Reference.Name, func() (bool, string) {
+	eventually(t, "issuance for "+request.Owner.Name, func() (bool, string) {
 		credential, err := requests.Ensure(t.Context(), request)
 		if err != nil {
 			t.Fatal(err)

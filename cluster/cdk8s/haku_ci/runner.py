@@ -1,6 +1,7 @@
 """haku-ci: the operator-owned namespace running Haku's image builds, the KEDA ScaledJob of
 ephemeral Forgejo Actions runners it scales on the queue, their forgejo-runner config, and the
-egress fence forcing their external traffic through haku-egress-proxy. See README.md.
+egress fence forcing their external traffic through the haku-ci-egress relay to Agentplane egress
+(egress_gateway.py). See README.md.
 """
 
 from __future__ import annotations
@@ -43,9 +44,13 @@ from keda_triggerauthentication_crds.sh.keda import (
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
-from cluster.cdk8s.haku_ci import runner_config
+from cluster.cdk8s.haku_ci import egress_gateway, runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+
+# Staging egress's interception CA Bundle, named where it is defined.
+from cluster.cdk8s.public_coder import egress as public_coder_egress
+from cluster.cdk8s.service_ref import Pods
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -53,19 +58,24 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/haku-ci"
 
 _RUNNER = "haku-runner"
 _LABELS = {"app.kubernetes.io/name": _RUNNER}
+# The ScaledJob's Pods, which egress_gateway.py admits.
+RUNNER_PODS = Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
 _AUTH = "forgejo"
 # The hand-written SOPS Secret (haku/forgejo-tea) Reflector copies into NAMESPACE for KEDA.
 FORGEJO_TOKEN_SECRET = "haku-forgejo-tea"
 FORGEJO_TOKEN_KEY = "token"
 _FORGEJO_URL = "http://forgejo-http.forgejo:3000"
-_PROXY_URL = "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+_EGRESS = egress_gateway.service(NAMESPACE)
+# The fully qualified name: job containers resolve with dind's `svc.cluster.local` search list only.
+_PROXY_URL = f"http://{_EGRESS.fqdn}:{_EGRESS.port.number}"
+# Path kept from haku-egress-proxy: haku-state's CI scripts read the bundle here.
 _CA_DIR = "/egress-proxy-ca"
 _CA_FILE = f"{_CA_DIR}/ca-certificates.crt"
-# External egress goes through haku-egress-proxy, the sole external door (the force-proxy CCNP
-# below), for dind, the runner and every job container. NO_PROXY keeps in-cluster Forgejo (git +
+# External egress goes through the haku-ci-egress relay, the sole external door (the force-proxy
+# CCNP below and egress_gateway.py's policies), for dind, the runner and every job container. NO_PROXY keeps in-cluster Forgejo (git +
 # registry, long-poll), public cluster Gateway names (*.allegedly.works), and the dind socket
 # direct. The public names still land on Cilium Gateway nodes and stay bounded by the cluster-only
-# CNP; sending them through haku-egress-proxy creates a DNS-round-robin chance of proxy-pod ->
+# CNP; sending them through an egress proxy creates a DNS-round-robin chance of proxy-pod ->
 # own-node Gateway self-hairpin, which Cilium Gateway answers with Envoy "Access denied" for this
 # policy-constrained identity. Both wildcard and suffix forms, because NO_PROXY matching differs
 # by client.
@@ -79,9 +89,8 @@ _PROXY_ENV = {
     "NO_PROXY": "127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,"
     "forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8",
 }
-# Trust the haku-egress-proxy CA, in the runner and every job container.
-# TODO: dedupe with the same CA env-var lists in kyverno/proxy_injection.py,
-# agentplane/sandbox_pod.py and public_coder/app.py.
+# Trust Agentplane egress's interception CA, in the runner and every job container.
+# TODO: dedupe with the same CA env-var lists in agentplane/sandbox_pod.py and public_coder/app.py.
 # TODO(after 1st green): in job containers the `/etc/ssl/certs` mount makes the CA the system
 # default, so SSL_CERT_FILE/CURL_CA_BUNDLE/GIT_SSL_CAINFO are likely redundant there, and
 # REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS only matter to python-requests and node. Bazel's Java
@@ -193,19 +202,17 @@ def _config() -> runner_config.Config:
 
 
 def _add_egress_fence(chart: Chart) -> None:
-    """Force all external egress from the haku-ci runner (agent-controlled build compute) through
-    haku-egress-proxy -- the same chokepoint haku-sandbox uses. Allows: DNS, cluster-internal
-    traffic (the in-cluster Forgejo git + OCI registry it clones/pushes/long-polls), and
-    haku-egress-proxy port 8080. Blocks all direct external internet -- the base-image registries,
-    npm/pypi, Bazel/toolchain, and Forgejo-action hosts now flow through the proxy's allowlist
-    (cluster/cdk8s/egress_fences.py).
+    """Block all direct external egress from haku-ci (agent-controlled build compute). Allows: DNS,
+    cluster-internal traffic (the in-cluster Forgejo git + OCI registry it clones/pushes/long-polls),
+    and haku-egress-proxy port 8080, the retired path kept until that proxy is removed. External
+    traffic goes through the haku-ci-egress relay, which egress_gateway.py's policies admit, and
+    Agentplane egress decides each request by the haku-ci-build-fetch PolicySet.
 
     Deviation from haku-sandbox's force-egress: no kube-apiserver rule -- haku-ci runs with
     automountServiceAccountToken:false and has no RBAC, so it never calls the k8s API.
 
-    This is the SOLE egress policy for haku-ci: any Cilium egress rule flips the selected pods to
-    default-deny egress, so this replaces the old per-namespace CiliumNetworkPolicy (which listed
-    direct external FQDNs).
+    Any Cilium egress rule flips the selected pods to default-deny egress; egress_gateway.py's
+    policies add only the relay hops.
     """
     cilium.force_proxy_egress(
         chart,
@@ -286,10 +293,10 @@ def _dind() -> InitContainer:
             # (localhost-only inside the pod). This is the last piece that lets the runner connect
             # to the rootless daemon.
             InitEnv(name="DOCKER_TLS_CERTDIR", value=""),
-            # dockerd pulls base images through haku-egress-proxy: Docker >=23 reads the proxy vars
-            # from the daemon environment for registry pulls. dockerd is Go, so SSL_CERT_FILE
-            # points its registry-TLS trust at the haku-egress-proxy CA bundle (a full bundle incl.
-            # system + cluster roots), so it validates the intercepted registry TLS.
+            # dockerd pulls non-Docker-Hub images through the egress relay: Docker >=23 reads the proxy
+            # vars from the daemon environment for registry pulls. dockerd is Go, so SSL_CERT_FILE
+            # points its registry-TLS trust at the Agentplane egress CA bundle (public roots plus the
+            # interception root), so it validates the intercepted registry TLS.
             *(InitEnv(name=name, value=value) for name, value in {**_PROXY_ENV, "SSL_CERT_FILE": _CA_FILE}.items()),
         ],
         startup_probe=InitStartupProbe(
@@ -374,7 +381,7 @@ def _runner() -> Container:
         # task isn't dispatchable in that instant, which would fail the Job on a pure startup
         # race. Bounded by activeDeadlineSeconds.
         args=["one-job", "--wait", "--config", _CONFIG_PATH],
-        # The runner fetches `uses:` actions (data.forgejo.org, etc.) through haku-egress-proxy.
+        # The runner fetches `uses:` actions (data.forgejo.org, etc.) through the egress relay.
         env=[
             ContainerEnv(name=name, value=value)
             for name, value in {"DOCKER_HOST": f"tcp://localhost:{_DOCKER_PORT}", **_PROXY_ENV, **_CA_ENV}.items()
@@ -403,10 +410,10 @@ def _volumes(config: ConfigMap) -> list[Volume]:
         # single CI job (bazel-ci's `Test` step then `Build`), which is still most of the win. See
         # README for the cost and the follow-up.
         Volume(name="bazel-cache", empty_dir=EmptyDir()),
-        # haku-egress-proxy CA trust bundle, written into this namespace by the trust-manager
-        # Bundle (agents/haku-egress-proxy/trust-bundle.yaml). Mounted into both the runner and
-        # dind so intercepted external TLS validates.
-        Volume(name="egress-proxy-ca", config_map=VolumeConfigMap(name="haku-egress-proxy-ca-cert")),
+        # Agentplane egress's interception trust bundle, which trust-manager writes into this
+        # namespace (an external workload namespace of agentplane/staging.py). Mounted into both
+        # the runner and dind so intercepted external TLS validates.
+        Volume(name="egress-proxy-ca", config_map=VolumeConfigMap(name=public_coder_egress.CA_BUNDLE_NAME)),
     ]
 
 

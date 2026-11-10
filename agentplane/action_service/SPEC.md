@@ -150,6 +150,8 @@ auto-approves with an Execution; no match leaves the request on the human path; 
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
 bindings with their resource versions, the sets with their generations, and the matching policy.
+A Decision names exactly one decider: an operator, with the operator's note, or a policy, with its reason code,
+description and evidence. A reason code this release does not name reads as `REASON_CODE_UNKNOWN`.
 The request is persisted only once evaluation has finished, together with any auto-decision, so a
 request is observable as pending only while it waits for a human.
 
@@ -299,8 +301,19 @@ recovers it. Claimed work is never automatically replayed.
 
 Command/build PodTemplates may be offline, without an egress sidecar. Template admission requires
 `automountServiceAccountToken: false` and refuses projected ServiceAccount tokens mounted in workload
-containers; it checks those invariants at startup and again on creation. The deployed offline boxes
-retain their DNS-only network fence and receive no proxy settings or credentials.
+containers; it checks those invariants at startup and again on creation. It also refuses a template
+defining the `workload-svid` volume or a mount at `/run/agentplane/workload-svid`. The deployed
+offline boxes retain their DNS-only network fence and receive no proxy settings or credentials.
+
+Each box has a `WorkloadCredential` of the box Pod's name, subject the caller's ServiceAccount,
+bound to the box's Pod once it exists. Create waits for the record's unbound credential, starts the
+Pod with that credential's Secret mounted into its egress sidecar alone, and then binds the Pod,
+which accepts that credential ID. A box made from a template without a sidecar mounts nothing.
+The record is the box Pod's controller owner; the record's own owner is the caller account's
+controller (a Session Sandbox), else the account. Dispose deletes the record before the Pod, so the
+box's SVID stops resolving before the Pod has stopped; garbage collection of the Sandbox or account
+removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
+resolves against it.
 
 ## Orchestration Actions (v1)
 

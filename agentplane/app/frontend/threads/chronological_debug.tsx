@@ -9,6 +9,7 @@ import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure
 import { JsonView } from "../../../../util/frontend/json_view";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
+  EventKind,
   ReadSessionEventsRequestSchema,
   ReadSessionObservationsRequestSchema,
   type ReadSessionEventsResponse,
@@ -91,7 +92,8 @@ function Observation({
       onOpenChange={setExpanded}
       summary={
         <>
-          Observation {observation.cursor.toString()} · {observation.kind}
+          Observation {observation.cursor.toString()} ·{" "}
+          {EventKind[observation.kind]?.toLowerCase() ?? `kind ${observation.kind}`}
         </>
       }
     >

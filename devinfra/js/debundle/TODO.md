@@ -52,9 +52,13 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
-   bundled vendor singleton/importmap behavior. Node probes already run;
-   browser loading is the missing contract, not a missing vendor schema.
+3. **Public browser smoke.** The Excalidraw corpus and its accepted residual
+   baseline landed (<excalidraw/README.md>). Remaining per
+   <plans/excalidraw_live_smoke.md>: a realistic spec (vendor swap marks,
+   source-anchored modules, renames), the live-browser smoke covering bundled
+   vendor singleton/importmap behavior, and the public canonical-spec check.
+   Node probes already run; browser loading is the missing contract, not a
+   missing vendor schema.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
@@ -221,24 +225,20 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
-- **F5 — One report of annotations the engine could have inferred.** Today
-  each annotation kind answers "was this needed?" differently:
-  `purity: pure` hints get a `modules.json.redundant_purity_hints` probe,
-  `admission_overrides` get a redundancy notice, an unused
-  `commuting_statements` entry is a warning by authored identity, and the other
-  premises (`host_behavior` keys, `native_operation_inputs`,
-  `native_call_identity_inputs`, `initializer_call_effect_inputs`,
-  `trusted_dataflow_summaries`, `deferred_global_publications`,
-  `program_premises`, `chunk_export_purity`) record uses only, which SPEC.md
-  says is not an unused-contract verdict. Give every author annotation the
-  same check: rerun the decision it feeds with the annotation withheld, and
-  report it as inferable when the verdict and emitted order are unchanged.
-  Report by authored identity (module, member, YAML path, source location)
-  with a removal suggestion, as a warning in `run` and `spec validate` output
-  and one machine-readable list; removal stays an explicit, reviewed spec
-  edit. An unused or inferable annotation is a warning, never a failure; a
-  contradicted premise still fails. Bound the cost: probe per annotation
-  against cached analysis, not a full rerun each.
+- **F5 — Decide the remaining premise kinds from provenance.**
+  <docs/premise_provenance.md> lists where each premise is consumed and
+  whether every read records its use; `reentry_free_operations` is complete and
+  linted. Complete recording outside the interpreter's hot paths, one kind per
+  change, then lint it the same way (never consumed → `inferable`, consumed →
+  probe): `census_slots_intact`'s dropped dependencies and the `node_global`
+  alias, a per-statement record for `trusted_dataflow_summaries`, the
+  `heap_contents` / `at_init_fallback` native-input exits, the loader keys, and
+  a per-statement declared-purity use list written at each classifier arm
+  (never a `ProofDependencies` field). The hot-path kinds
+  (`reentry_free_builtin_modules` / `_bun_modules` static closure,
+  `initializer_call_effect_inputs`, `deferred_global_publications`,
+  `initializer_purity`, `no_reentry_*`) stay probe-only until the
+  `callback_values` performance work lands.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was

@@ -36,7 +36,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CommandSchema, type Command } from "../../../proto/command_pb";
+import { CommandSchema, Operation, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
@@ -1750,7 +1750,7 @@ it("moves a local control into chronological history once projected and retains 
   const projected = entity({
     case: "command",
     value: {
-      operation: "change_model",
+      operation: Operation.CHANGE_MODEL,
       outcome: ThreadCommandOutcome.EFFECTED,
       outcomeCursor: 2n,
       outcomeReason: undefined,
@@ -1828,7 +1828,7 @@ it.each([
         entity({
           case: "command",
           value: {
-            operation: "submit_input",
+            operation: Operation.SUBMIT_INPUT,
             outcome:
               outcome === "failed"
                 ? ThreadCommandOutcome.FAILED
@@ -1870,7 +1870,7 @@ it("keeps a still-pending sent message out of the pending-commands box, since it
         entity({
           case: "command",
           value: {
-            operation: "submit_input",
+            operation: Operation.SUBMIT_INPUT,
             outcome: ThreadCommandOutcome.PENDING,
             outcomeCursor: undefined,
             outcomeReason: undefined,
@@ -1931,7 +1931,7 @@ async function renderServerOnlyChangeModelSection(value: {
     [
       entity({
         case: "command",
-        value: { operation: "change_model", ...value },
+        value: { operation: Operation.CHANGE_MODEL, ...value },
       }),
     ],
     false
@@ -1943,7 +1943,7 @@ function pendingInput(id: string, cursor: string): ThreadEntity {
   const row = entity({
     case: "command",
     value: {
-      operation: "submit_input",
+      operation: Operation.SUBMIT_INPUT,
       outcome: ThreadCommandOutcome.PENDING,
       outcomeCursor: undefined,
       outcomeReason: undefined,

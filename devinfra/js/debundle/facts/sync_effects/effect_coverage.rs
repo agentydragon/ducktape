@@ -443,6 +443,28 @@ impl EffectCoverageFragment {
         fragment
     }
 
+    /// A provider body replaced by its derived foreign call summary. Under the
+    /// summary's premises the body runs no other code, reads only its
+    /// arguments and provider-private cells, and writes only its own
+    /// allocations, so it touches no domain and no importer lexical cell.
+    /// Callee and operand evaluation remain with the caller.
+    pub(super) fn provider_summary(dependencies: &ProofDependencies) -> Self {
+        let covered = || DomainCoverage::Covered(Box::new(dependencies.clone()));
+        Self {
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: covered(),
+                general_heap: covered(),
+                host_effects: covered(),
+            })),
+            lexical: Some(Box::new(LexicalEffectCoverage {
+                reads: covered(),
+                rebinds: covered(),
+                calls: BTreeMap::new(),
+            })),
+            completion: Completion::Normal(()),
+        }
+    }
+
     /// A top-level module-cell read has no global/heap/host effect, and its
     /// lexical read/rebind behavior is accounted for by the caller.
     pub(super) fn initialized_module_read() -> Self {

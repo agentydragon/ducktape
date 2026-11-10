@@ -114,6 +114,7 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [

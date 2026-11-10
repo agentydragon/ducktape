@@ -1122,7 +1122,7 @@ pub(super) struct ExecutionState {
 /// returned in its `RuntimeResult`, and drained into the owner's
 /// `SynchronousCalls` by `execute_owner`. The fields are private so a fact
 /// enters only through a named admission predicate.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Observations {
     native_integrity_checks: BTreeSet<NativeIntegrityCheck>,
     native_prototype_property_checks: BTreeMap<String, NativePrototypePropertyCheck>,
@@ -1327,6 +1327,124 @@ impl ExecutionState {
         self.fallback_local_owners = fallback_local_owners;
         self.fallback_local_deferred = fallback_local_deferred;
         (allocation_judgment, outcome)
+    }
+}
+
+/// Everything an abandoned root attempt may have changed besides identity
+/// allocators, so the owner can run on another lane as if it never ran.
+// CLEANUP(added 2026-11-09): delete with the flat-lane rerun in
+//   `roots::body::execute` at L4e, its only caller.
+pub(super) struct RootAttemptCheckpoint {
+    path: ExecutionPath,
+    prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
+    native_point_effects: NativePointEffects,
+    activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
+    author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+    proof_uses: Vec<CallbackFactoryUseFact>,
+    returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
+    statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
+    statement_invoked_callables: BTreeSet<u32>,
+    array_iteration_protected_objects: BTreeSet<u32>,
+    array_iteration_unsupported: bool,
+    invocation_count: usize,
+    observations: Observations,
+    evaluation_effects: EvaluationEffects,
+}
+
+impl Executor<'_, '_> {
+    /// The destructuring classifies every field, so a new one fails to
+    /// compile until it is placed.
+    pub(super) fn checkpoint_root_attempt(&self) -> RootAttemptCheckpoint {
+        let ExecutionState {
+            world: _,
+            callback_fallback: _,
+            fallback_callback_sizes: _,
+            fallback_outcome: _,
+            fallback_local_owners: _,
+            fallback_local_deferred: _,
+            prior_reachability_roots,
+            native_point_effects,
+            activated_native_effects,
+            author_host_contract_uses,
+            proof_uses,
+            returned_record_proof_uses,
+            statement_executed_owners,
+            statement_invoked_callables,
+            array_iteration_protected_objects,
+            array_iteration_unsupported,
+            invocation_count,
+            // Identity allocators stay live; the rewind moves the restored
+            // world past every cell id and revision the attempt minted.
+            capture_contexts: _,
+            callback_sets: _,
+            invocation_memos: _,
+            // A source function of the program alone.
+            class_member_effects: _,
+            // Control state: an owner's body leaves it as it found it.
+            active_class_member_promotions: _,
+            current_top_owner: _,
+            checking_record_factory_contract: _,
+            prior_effect_owners: _,
+            array_iteration_depth: _,
+            invocation_depth: _,
+            active: _,
+            assumption: _,
+        } = &*self.state;
+        RootAttemptCheckpoint {
+            path: self
+                .state
+                .path(&self.allocation_judgment, &Outcome::default()),
+            prior_reachability_roots: prior_reachability_roots.clone(),
+            native_point_effects: native_point_effects.clone(),
+            activated_native_effects: activated_native_effects.clone(),
+            author_host_contract_uses: author_host_contract_uses.clone(),
+            proof_uses: proof_uses.clone(),
+            returned_record_proof_uses: returned_record_proof_uses.clone(),
+            statement_executed_owners: statement_executed_owners.clone(),
+            statement_invoked_callables: statement_invoked_callables.clone(),
+            array_iteration_protected_objects: array_iteration_protected_objects.clone(),
+            array_iteration_unsupported: *array_iteration_unsupported,
+            invocation_count: *invocation_count,
+            observations: self.observations.clone(),
+            evaluation_effects: self.evaluation_effects.clone(),
+        }
+    }
+
+    pub(super) fn rewind_root_attempt(&mut self, checkpoint: RootAttemptCheckpoint) {
+        let RootAttemptCheckpoint {
+            path,
+            prior_reachability_roots,
+            native_point_effects,
+            activated_native_effects,
+            author_host_contract_uses,
+            proof_uses,
+            returned_record_proof_uses,
+            statement_executed_owners,
+            statement_invoked_callables,
+            array_iteration_protected_objects,
+            array_iteration_unsupported,
+            invocation_count,
+            observations,
+            evaluation_effects,
+        } = checkpoint;
+        let attempted = self.state.world.clone();
+        let (allocation_judgment, _) = self.state.enter(path);
+        super::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
+        self.allocation_judgment = allocation_judgment;
+        let state = &mut *self.state;
+        state.prior_reachability_roots = prior_reachability_roots;
+        state.native_point_effects = native_point_effects;
+        state.activated_native_effects = activated_native_effects;
+        state.author_host_contract_uses = author_host_contract_uses;
+        state.proof_uses = proof_uses;
+        state.returned_record_proof_uses = returned_record_proof_uses;
+        state.statement_executed_owners = statement_executed_owners;
+        state.statement_invoked_callables = statement_invoked_callables;
+        state.array_iteration_protected_objects = array_iteration_protected_objects;
+        state.array_iteration_unsupported = array_iteration_unsupported;
+        state.invocation_count = invocation_count;
+        self.observations = observations;
+        self.evaluation_effects = evaluation_effects;
     }
 }
 
@@ -1931,21 +2049,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Every slot census-intact, for a proof that records no inference use.
-    /// A failure records the mutated families like [`Self::native_guard_intact`].
+    /// Success records the census's proof dependencies (the program premises
+    /// that kept the slots intact); a failure records the mutated families
+    /// like [`Self::native_guard_intact`].
     fn census_slots_intact(
         &mut self,
         guard: NativeIntegrityGuard,
         slots: &[IntrinsicSlot],
     ) -> bool {
         self.observe_native_prefix(guard, None);
-        let intact = matches!(
-            self.inputs.index.integrity.require(slots, None),
-            Integrity::Intact(_)
-        );
-        if !intact {
-            self.record_failed_native_guard(guard, slots);
+        match self.inputs.index.integrity.require(slots, None) {
+            Integrity::Intact(dependencies) => {
+                self.record_proof_dependencies(guard, dependencies);
+                true
+            }
+            _ => {
+                self.record_failed_native_guard(guard, slots);
+                false
+            }
         }
-        intact
     }
 
     fn record_failed_native_guard(&mut self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {
@@ -10087,6 +10209,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
                             || self.inputs.imported_primitive_read(binding).is_some()
+                            || self.inputs.index.foreign_call_imports.contains_key(binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -10158,13 +10281,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         // CLEANUP(added 2026-11-09): the source-summary lane after this block
-        // is the flat lane for bodies that have an ordered plan. It stays until
-        // the kernel covers each gate that still routes such a body there:
-        // `requires_keyed_collection_new` (no application keyed-collection
-        // lane), captured writes to bindings without an active cell, free
-        // reads outside module, imported-primitive and intact-native bindings,
-        // and `established_writes` (member-write proofs the kernel's own-data
-        // store lacks). Remove each gate with the lane it protects.
+        // is the flat lane for bodies that have an ordered plan. Each gate
+        // below routes such a body there until the kernel has the rule named;
+        // remove the gate with that rule, and the lane with the last gate.
+        // - `requires_keyed_collection_new`: an application keyed-collection
+        //   lane.
+        // - captured writes to bindings without an active cell: a kernel
+        //   store to a module binding that records the rebind
+        //   (`Unproved::CaptureStore` summarizes the remainder today).
+        // - free reads outside module, summarized-import, imported-primitive
+        //   and intact-native bindings: global-object and callback-factory
+        //   import reads with their global-cell provenance.
+        // - `established_writes`: member-write proofs (fresh local records,
+        //   borrowed parameters, array iteration) in the kernel's own-data
+        //   store.
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = callable.body_facts.ordered_plan()
@@ -10180,6 +10310,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
                     || self.inputs.imported_primitive_read(binding).is_some()
+                    || self.inputs.index.foreign_call_imports.contains_key(binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(

@@ -132,6 +132,11 @@ pub enum PurityRule {
     /// parameter) — object patterns fire `[[Get]]`, array patterns
     /// fire the iterator protocol on the bound value.
     DestructuringPattern,
+    /// A read of another chunk's cell: an import whose provider binding can
+    /// be rebound, or, inside an exported function, module state of its own
+    /// chunk. The reader's dependency graph has no node for that cell's
+    /// writers, so the read is ordered with every impure statement.
+    OrderDependentRead,
     Other,
 }
 
@@ -402,6 +407,7 @@ fn rule(effect: Effect) -> PurityRule {
         Effect::Havoc(HavocCause::Debugger) => PurityRule::DebuggerStmt,
         Effect::Havoc(HavocCause::ControlFlow) => PurityRule::BareControlFlow,
         Effect::Havoc(HavocCause::CoverInitializedName) => PurityRule::ObjectAssignProp,
+        Effect::ObservesForeignCell => PurityRule::OrderDependentRead,
     }
 }
 

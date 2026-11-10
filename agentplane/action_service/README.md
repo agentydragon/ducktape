@@ -51,8 +51,8 @@ The executable contract is deliberately small:
 - caller-own and operator-all reads that return the same request view to every reader;
 - a human operator Decision route, with expected-version and idempotency protection and one
   `decision_note` (optional, at most 2000 characters), shared unchanged with caller and operator;
-  optional synchronous non-human `DecisionProvider`s run first and carry bounded
-  `reason_code`/`reason_description` outcome evidence, with `decision_note=None`;
+  Action policy evaluation runs first, and a policy Decision carries a `reason_code`, a bounded
+  `reason_description` and the policy evidence instead of an operator and note;
 - automatic dispatch after allow, exactly one `Execution`, and no retry after dispatch may begin;
 - owner-only cancellation before the atomic dispatch claim, with no expected-version requirement;
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
@@ -65,7 +65,7 @@ The executable contract is deliberately small:
   state, and every submit/Decision/dispatch/terminal/`execution_unknown` transition appends exactly
   one ordered event.
 
-Notes are not a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
+Notes are not a secret channel: do not put credentials in them.
 
 ## Consent transactions
 

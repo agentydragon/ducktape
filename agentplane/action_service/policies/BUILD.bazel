@@ -133,6 +133,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/policies",
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/observability",

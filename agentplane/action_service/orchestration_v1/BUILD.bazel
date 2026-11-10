@@ -61,6 +61,7 @@ go_test(
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:session_go_proto",

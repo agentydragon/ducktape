@@ -40,6 +40,16 @@ impl StatementPurityContext<'_> {
             &self.proofs,
             !fact.local_effects.is_empty(),
         );
+        // An author assertion about this statement covers its reads.
+        let author_asserted = !fact.local_effects.is_empty()
+            || (fact.kind == StatementKind::VarDecl
+                && has_trusted_initializer_purity(item, self.hints));
+        if fact.kind != StatementKind::Import && !author_asserted {
+            effects = effects.then(
+                self.graph
+                    .order_dependent_read_effects(|finder| item.visit_with(finder)),
+            );
+        }
         if !fact.var_initializers.is_disjoint(self.shared_vars) {
             effects = effects.then(Effects::of_detail(
                 Effect::Write,

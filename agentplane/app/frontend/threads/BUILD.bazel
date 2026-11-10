@@ -258,6 +258,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -392,6 +393,7 @@ ts_library(
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:shell_command_view",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
         "//util/frontend:code_block",
         "//util/frontend:disclosure",
@@ -420,6 +422,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
@@ -477,6 +480,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
@@ -571,6 +575,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/threads/testing:electric_entity",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
     ],
 )

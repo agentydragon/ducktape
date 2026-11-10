@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,11 +29,14 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 	if err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
-		Arguments: json.RawMessage(arguments), Caller: caller,
+	// A create waits for its box's credential.
+	return workloadidentitytesting.While(t, f.issuance, func() attempted {
+		outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
+			RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
+			Arguments: json.RawMessage(arguments), Caller: caller,
+		})
+		return attempted{t, outcome, err}
 	})
-	return attempted{t, outcome, err}
 }
 
 // resultOf is the result of an attempt that succeeded.

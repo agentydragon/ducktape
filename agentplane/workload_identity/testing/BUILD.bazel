@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "testing",
+    srcs = ["issuance.go"],
+    data = ["@cert_manager_certificate_crd//file"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_identity/testing",
+    visibility = ["//agentplane:__subpackages__"],
+    x_defs = {
+        "github.com/agentydragon/ducktape/agentplane/workload_identity/testing.certificateCRDRlocation": "$(rlocationpath @cert_manager_certificate_crd//file)",
+    },
+    deps = [
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "//agentplane/workload_identity/issuer",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/reconcile",
+    ],
+)

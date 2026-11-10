@@ -4,18 +4,17 @@
 //! writes only the execution state and the run-level observations it drains.
 
 use super::super::effect_coverage::BindingEffectCoverage;
-use super::super::execution_index::CallKind;
 use super::super::interpreter::{ExecutionInputs, ExecutionState, Observations, Outcome};
 use super::super::noninvoking_initialization::CompletedInitialization;
 use super::super::runtime_inference::RuntimeQueries;
 use super::super::value_model::AbstractValue;
 use super::assignment::RootAssignment;
+use super::body::expected_root_calls;
 use super::operands::RootOperands;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
-use std::collections::BTreeSet;
 
 pub(super) fn finalize(
     inputs: &ExecutionInputs<'_>,
@@ -189,13 +188,8 @@ pub(super) fn finalize(
             &outcome.effect_coverage,
         );
     }
-    if outcome.effects.completed_initialization.is_none()
-        && ordered_statement.is_some()
-        && outcome.complete
-        && !outcome.unknown_call
-        && outcome.effects.precision_losses.is_empty()
-        && outcome.effects.uninitialized_reads.is_empty()
-    {
+    // The body phase keeps an attempted statement only when it seals.
+    if outcome.effects.completed_initialization.is_none() && ordered_statement.is_some() {
         outcome.effects.completed_initialization =
             CompletedInitialization::from_root_statement_effects(owner, &outcome.effect_coverage);
     }
@@ -245,8 +239,6 @@ pub(super) fn finalize(
                 OwnerInitializationCoverageRefusalReason::UninitializedRead
             } else if !outcome.complete {
                 OwnerInitializationCoverageRefusalReason::IncompleteExecution
-            } else if ordered_statement.is_some() {
-                OwnerInitializationCoverageRefusalReason::UnprovedStatementOperation
             } else if initializer_result_unproved {
                 OwnerInitializationCoverageRefusalReason::InitializerResultUnproved
             } else {
@@ -256,11 +248,7 @@ pub(super) fn finalize(
         outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
     }
     if let Some(identity) = outcome.root_binding_effect_identity.take() {
-        let expected_root_calls: BTreeSet<_> = calls
-            .iter()
-            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
-            .map(|call| (call.span.lo.0, call.span.hi.0))
-            .collect();
+        let expected_root_calls = expected_root_calls(calls);
         let receipt = effect_initializer_source.and_then(|(source, binding, span)| {
             (identity.owner == owner
                 && identity.binding == *binding

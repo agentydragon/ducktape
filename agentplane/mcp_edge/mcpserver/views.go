@@ -64,17 +64,25 @@ type operator struct {
 	Subject string `json:"subject"`
 }
 
+// decision has exactly one of Operator and Policy.
 type decision struct {
-	ID                uuid.UUID       `json:"id"`
-	Verdict           string          `json:"verdict"`
-	Provider          string          `json:"provider"`
-	Operator          *operator       `json:"operator"`
-	DecisionNote      *string         `json:"decision_note"`
-	ReasonCode        *string         `json:"reason_code"`
+	ID             uuid.UUID         `json:"id"`
+	Verdict        string            `json:"verdict"`
+	Operator       *operatorDecision `json:"operator"`
+	Policy         *policyDecision   `json:"policy"`
+	IdempotencyKey string            `json:"idempotency_key"`
+	DecidedAt      time.Time         `json:"decided_at"`
+}
+
+type operatorDecision struct {
+	Operator     operator `json:"operator"`
+	DecisionNote *string  `json:"decision_note"`
+}
+
+type policyDecision struct {
+	ReasonCode        string          `json:"reason_code"`
 	ReasonDescription *string         `json:"reason_description"`
-	PolicyEvidence    *policyEvidence `json:"policy_evidence"`
-	IdempotencyKey    string          `json:"idempotency_key"`
-	DecidedAt         time.Time       `json:"decided_at"`
+	Evidence          *policyEvidence `json:"evidence"`
 }
 
 type policyEvidence struct {
@@ -288,22 +296,29 @@ func (d *viewDecoder) decisionView(from *pb.Decision) *decision {
 	if from == nil {
 		return nil
 	}
-	var by *operator
-	if from.GetOperator() != nil {
-		by = &operator{Issuer: from.GetOperator().GetIssuer(), Subject: from.GetOperator().GetSubject()}
+	view := &decision{
+		ID:             d.uuid(from.GetId()),
+		Verdict:        enum(d, from.GetVerdict(), "VERDICT_"),
+		IdempotencyKey: from.GetIdempotencyKey(),
+		DecidedAt:      d.time(from.GetDecidedAt()),
 	}
-	return &decision{
-		ID:                d.uuid(from.GetId()),
-		Verdict:           enum(d, from.GetVerdict(), "VERDICT_"),
-		Provider:          from.GetProvider(),
-		Operator:          by,
-		DecisionNote:      from.DecisionNote,
-		ReasonCode:        from.ReasonCode,
-		ReasonDescription: from.ReasonDescription,
-		PolicyEvidence:    d.evidenceView(from.GetPolicyEvidence()),
-		IdempotencyKey:    from.GetIdempotencyKey(),
-		DecidedAt:         d.time(from.GetDecidedAt()),
+	switch decider := from.GetDecider().(type) {
+	case *pb.Decision_Operator:
+		by := decider.Operator.GetOperator()
+		view.Operator = &operatorDecision{
+			Operator:     operator{Issuer: by.GetIssuer(), Subject: by.GetSubject()},
+			DecisionNote: decider.Operator.DecisionNote,
+		}
+	case *pb.Decision_Policy:
+		view.Policy = &policyDecision{
+			ReasonCode:        enum(d, decider.Policy.GetReasonCode(), "REASON_CODE_"),
+			ReasonDescription: decider.Policy.ReasonDescription,
+			Evidence:          d.evidenceView(decider.Policy.GetEvidence()),
+		}
+	default:
+		d.fail("core answered decision %s without a decider", from.GetId())
 	}
+	return view
 }
 
 func (d *viewDecoder) evidenceView(from *pb.PolicyEvidence) *policyEvidence {

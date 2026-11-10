@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -167,7 +168,7 @@ func (b *delegatedBackend) SubmitInput(ctx context.Context, request *dispatcherp
 	b.gotSubmit = proto.Clone(request).(*dispatcherpb.SubmitInputRequest)
 	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
 		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Sandbox: "sandbox-one",
-		SandboxUid: request.GetExpectedSandboxUid(), Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		SandboxUid: request.GetExpectedSandboxUid(), Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
@@ -191,7 +192,7 @@ func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatch
 	}
 	return &dispatcherpb.CancelDispatchResponse{Dispatch: &dispatcherpb.Dispatch{
 		CommandId: request.GetCommandId(), SessionId: testSessionID,
-		Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
 	}}, nil
 }
@@ -199,7 +200,7 @@ func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatch
 func (b *delegatedBackend) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.interruptCalls++
-	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Operation: dispatcherpb.Operation_OPERATION_INTERRUPT_TURN, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
+	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Operation: commandpb.Operation_OPERATION_INTERRUPT_TURN, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
 }
 
 type unavailableHistoryClient struct{ historypb.HistoryServiceClient }
@@ -742,7 +743,7 @@ func TestCancelRequiresTheDurableReceiptToMatchTheSuppliedSession(t *testing.T) 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			backend := &delegatedBackend{testing: t, lookup: &dispatcherpb.Dispatch{
-				CommandId: testCommandID, SessionId: testSessionID, Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+				CommandId: testCommandID, SessionId: testSessionID, Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 				State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 			}}
 			executor := newDelegatedExecutor(t, backend)
@@ -789,7 +790,7 @@ func TestObservePreservesTypedPartialSourceError(t *testing.T) {
 
 func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 	backend := &delegatedBackend{testing: t, lookup: &dispatcherpb.Dispatch{
-		CommandId: testCommandID, SessionId: testSessionID, Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		CommandId: testCommandID, SessionId: testSessionID, Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
 		Admission: &eventlogpb.EventEntry{Cursor: 2},
 	}}

@@ -24,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -31,6 +32,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -42,6 +45,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -305,8 +309,19 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	namespace := sandboxNamespace(t, kube, true)
 	service := start(t, kube.Config, sandboxGroups(t, namespace, "null"))
 	caller := store.ServiceAccount{Namespace: namespace, Name: "test-caller"}
-	request := service.run(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
+	id := service.allow(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
 		`{"name": "test-box", "template": "test-template"}`)
+	// The box waits for its credential, which the Policy Controller and cert-manager would issue.
+	issuance := workloadidentitytesting.Issuance{Objects: workloadCredentials(t), CA: transporttesting.NewCA(t), Namespace: namespace}
+	var request store.ActionRequest
+	if err := wait.PollUntilContextTimeout(t.Context(), 50*time.Millisecond, callDeadline, true, func(ctx context.Context) (bool, error) {
+		issuance.Settle(t)
+		var err error
+		request, err = service.store.Get(ctx, id, testOperator)
+		return request.State == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED || request.State == action_servicepb.ActionState_ACTION_STATE_FAILED, err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if request.State != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
@@ -314,6 +329,22 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	if err != nil || len(pods.Items) != 1 || pods.Items[0].Spec.ServiceAccountName != caller.Name {
 		t.Errorf("the namespace holds %v, %v; want one box running as the caller", pods, err)
 	}
+}
+
+// workloadCredentials reads and writes WorkloadCredentials and their Secrets on the test API server.
+func workloadCredentials(t *testing.T) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	objects, err := client.New(kube.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return objects
 }
 
 // awaitMCPHealth waits until the health of the MCP group key satisfies condition.

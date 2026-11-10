@@ -21,7 +21,7 @@ it("deletes the exact incarnation through the generated facade route", async () 
   });
 });
 
-it("names the bindings a refusal's PreconditionFailure lists", async () => {
+it("names the bindings and credentials a refusal's PreconditionFailure lists", async () => {
   answer(
     Response.json(
       {
@@ -33,7 +33,8 @@ it("names the bindings a refusal's PreconditionFailure lists", async () => {
             "@type": "type.googleapis.com/google.rpc.PreconditionFailure",
             violations: [
               { type: "PolicyBinding", subject: "standing-grant", description: "names it" },
-              { type: "Sandbox", subject: "not-a-binding" },
+              { type: "WorkloadCredential", subject: "fake-workloads/standing-agent", description: "acts as it" },
+              { type: "Sandbox", subject: "not-a-reference" },
             ],
           },
         ],
@@ -41,7 +42,13 @@ it("names the bindings a refusal's PreconditionFailure lists", async () => {
       { status: 400 }
     )
   );
-  expect(await deleteIdentity(identity)).toEqual({ case: "referenced", bindings: ["standing-grant"] });
+  expect(await deleteIdentity(identity)).toEqual({
+    case: "referenced",
+    references: [
+      { kind: "PolicyBinding", name: "standing-grant" },
+      { kind: "WorkloadCredential", name: "fake-workloads/standing-agent" },
+    ],
+  });
 });
 
 it.each([
