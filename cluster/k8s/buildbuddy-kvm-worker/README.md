@@ -20,10 +20,10 @@ VM through ACPI; the executor stops accepting work and drains active tasks for u
 pinned 24-hour task limit plus its 1-minute termination grace, then has 15 seconds for cleanup.
 BuildBuddy applies action timeouts after input download, so a task still preparing inputs at
 shutdown can be canceled before using its full action timeout. Docker, systemd and KubeVirt
-have longer outer deadlines. This covers normal pool scale-in, not node or host failure. Roll
-out this template update in a quiet window: existing VMs retain the old short stop deadlines
-until replaced, so the update can interrupt active work. Before enabling autoscaling, verify
-both VMs were replaced from the new template and re-registered.
+have longer outer deadlines. Graceful drain is bounded and does not guarantee that every action
+completes before shutdown. It covers normal pool scale-in, not node or host failure. When enabling
+autoscaling on a pool whose existing workers have shorter shutdown deadlines, first roll out this
+template in a quiet window and verify that all workers have been replaced and re-registered.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.
@@ -34,7 +34,8 @@ snapshotter has a supported backing filesystem.
 
 KEDA scales the pool from BuildBuddy's executor metrics in Mimir. Demand combines busy workers and
 queued reservations; BuildBuddy can place more than one reservation for a task, so this is a proxy for
-backlog rather than an exact task count. Scale-up requires a two-minute stabilized recommendation and
+backlog rather than an exact task count ([issue #15568](https://github.com/agentydragon/ducktape/issues/15568)).
+Scale-up requires a two-minute stabilized recommendation and
 adds at most one VM per 15 minutes. It holds the requested count while a VM is booting, unregistered,
 or missing metrics, and alerts if that persists. Scale-down uses a 15-minute stabilization window and
 removes at most one VM every five minutes. Missing pool metrics hold the current count. Newly provisioned
@@ -42,10 +43,6 @@ workers need time to install packages and warm their local cache.
 The pool manifest initializes `spec.replicas` to one because KubeVirt's scale subresource requires the
 field; the worker Flux Kustomization ignores subsequent changes to it so the HPA can scale the pool.
 
-Before enabling autoscaling, deploy the longer executor drain timeout and verify that both existing
-workers have rolled out and registered with it. The initial rollout can interrupt a busy worker still
-using the old short timeout; schedule it for a quiet window. Graceful drain is bounded and does not
-guarantee that every possible action completes before shutdown.
 The guest sets kubelet's kernel defaults at boot. The KVM fixture prepares its private
 Docker cgroup and network namespaces; guest-wide sysctls remain read-only in the action.
 K3s pulls its bundled images through Zot, with public registry fallback disabled, using
