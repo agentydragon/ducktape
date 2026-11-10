@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 	"time"
@@ -561,12 +562,15 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err != nil {
 			return err
 		}
-		if conversation.Pending != nil || unresolved || liveCell || liveProcess {
-			return &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect; explicit recovery is required"}
-		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
+		}
+		if conversation.Pending != nil || unresolved || liveCell || liveProcess {
+			slog.Warn("central sampler blocked Session on lost JavaScript host", "session_id", session.ID, "conversation_id", conversation.ID,
+				"generation", owner.Generation, "pending", conversation.Pending != nil, "unresolved_intent", unresolved, "live_cell", liveCell,
+				"live_process", liveProcess, "previous_instance", previous.String, "instance", instanceID)
+			return &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect; explicit recovery is required"}
 		}
 		calls, err := conversation.Archive.PendingCalls()
 		if err != nil {
@@ -3112,6 +3116,32 @@ func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionStat
 		return cellRows.Err()
 	})
 	return state, err
+}
+
+// LiveWork counts the handles and intents that a successor on another host would block on.
+type LiveWork struct {
+	LiveCells         int
+	LiveProcesses     int
+	UnresolvedIntents int
+	// Pending reports an unresolved provider, compaction or cell intent pointer.
+	Pending bool
+}
+
+func (s *Store) LiveWork(ctx context.Context, owner Owner) (LiveWork, error) {
+	var work LiveWork
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		work.Pending = conversation.Pending != nil
+		return tx.QueryRowContext(ctx, `SELECT
+			(SELECT count(*) FROM sampler_cell WHERE conversation_id=$1 AND status='live'),
+			(SELECT count(*) FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned')),
+			(SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL)`, conversation.ID).
+			Scan(&work.LiveCells, &work.LiveProcesses, &work.UnresolvedIntents)
+	})
+	return work, err
 }
 
 func (s *Store) CheckLiveCells(ctx context.Context, owner Owner, runtimeAvailable bool) error {

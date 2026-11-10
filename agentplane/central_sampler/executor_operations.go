@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"time"
 
@@ -175,6 +176,8 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, scope.GetDestination().GetTarget().GetUid(), scope.GetExpectedIncarnationUid(), fence.currentIncarnationUID, ""); err != nil {
 			return fmt.Errorf("record execution Sandbox incarnation change: %w", err)
 		}
+		slog.Info("central sampler executor incarnation replaced", "session_id", scope.GetSessionId(), "sandbox_uid", scope.GetDestination().GetTarget().GetUid(),
+			"previous_incarnation_uid", scope.GetExpectedIncarnationUid(), "incarnation_uid", fence.currentIncarnationUID, "retired_execution_session_id", e.sessionID)
 		scope.ExpectedIncarnationUid = fence.currentIncarnationUID
 		e.setScope(scope)
 		e.sessionID, e.shell = "", nil
@@ -317,7 +320,8 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		cancel()
 		return fmt.Errorf("record OpenSession native evidence: %w", frameErr)
 	}
-	if rebind, ok := incarnationRebindFromContext(ctx); ok {
+	rebind, rebound := incarnationRebindFromContext(ctx)
+	if rebound {
 		e.setReconnectRequired(true)
 		if err := e.stopCurrentSessionStream(ctx); err != nil {
 			cancel()
@@ -329,6 +333,8 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 			cancel()
 			return fmt.Errorf("record verified execution Sandbox incarnation change: %w", err)
 		}
+		slog.Info("central sampler executor incarnation replaced", "session_id", scope.GetSessionId(), "sandbox_uid", scope.GetDestination().GetTarget().GetUid(),
+			"previous_incarnation_uid", rebind.previousUID, "incarnation_uid", scope.GetExpectedIncarnationUid(), "retired_execution_session_id", e.sessionID)
 		e.setScope(scope)
 		e.workspacePrepared = false
 		e.lostSessionConfirmed = false
@@ -336,6 +342,8 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		cancel()
 		return err
 	}
+	slog.Info("central sampler executor session opened", "session_id", scope.GetSessionId(), "sandbox_uid", scope.GetDestination().GetTarget().GetUid(),
+		"incarnation_uid", scope.GetExpectedIncarnationUid(), "execution_session_id", opened.ExecutionSessionId, "resumed", resume != nil, "rebound", rebound)
 	done := make(chan struct{})
 	e.sessionID, e.sessionStream, e.sessionCancel, e.sessionDone, e.shell = opened.ExecutionSessionId, stream, cancel, done, shell
 	e.sessionStateMu.Lock()
@@ -745,6 +753,9 @@ func (e *Executor) reconnectLocked(ctx context.Context, notDispatchedProcessID s
 		if retireErr := e.store.RetireLostExecutorSession(ctx, e.owner, retainedSession, notDispatchedProcessID); retireErr != nil {
 			return fmt.Errorf("retire lost executor session after %v: %w", err, retireErr)
 		}
+		scope := e.scopeSnapshot()
+		slog.Warn("central sampler executor session lost", "session_id", scope.GetSessionId(), "sandbox_uid", scope.GetDestination().GetTarget().GetUid(),
+			"incarnation_uid", scope.GetExpectedIncarnationUid(), "execution_session_id", retainedSession, "not_dispatched_process_id", notDispatchedProcessID)
 		e.lostSessionConfirmed = true
 		e.shell = nil
 		if freshErr := e.openSession(ctx, nil); freshErr != nil {

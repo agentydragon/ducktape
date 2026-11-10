@@ -889,18 +889,31 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 func TestStoreCodeHostLossKeepsUnknownEffectBlocked(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
+	logged := captureLogs(t)
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
+	previous := uuid.NewString()
+	if err := store.StampCodeHostInstance(t.Context(), owner, previous); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
 		t.Fatal(err)
 	}
-	if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, uuid.NewString(), protocol.ExecEncodingFreeform); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
+	successor := uuid.NewString()
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, successor, protocol.ExecEncodingFreeform); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("unresolved executor effect was auto-settled: changed=%v err=%v", changed, err)
+	}
+	blocked := logged("central sampler blocked Session on lost JavaScript host")
+	if blocked["session_id"] != session.ID || blocked["generation"] != int64(owner.Generation) || blocked["unresolved_intent"] != true ||
+		blocked["pending"] != false || blocked["live_cell"] != false || blocked["live_process"] != false ||
+		blocked["previous_instance"] != previous || blocked["instance"] != successor {
+		t.Fatalf("block decision record=%v", blocked)
+	}
+	work, err := store.LiveWork(t.Context(), owner)
+	if err != nil || work != (LiveWork{UnresolvedIntents: 1}) {
+		t.Fatalf("live work=%+v err=%v", work, err)
 	}
 }
 

@@ -270,7 +270,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 	slog.Info("central sampler lease claimed", "session_id", sessionID, "conversation_id", owner.ConversationID,
 		"generation", owner.Generation, "owner_token", owner.Token, "pod_name", os.Getenv("HOSTNAME"))
 	if runtimeCtx.Err() != nil || r.isStopping() {
-		r.release(owner)
+		r.release(owner, sessionID, releaseStopping)
 		return
 	}
 	r.mu.Lock()
@@ -288,11 +288,19 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 	activeCommand, executionErr := r.execute(executionCtx, sessionID, owner, task)
 	cancelExecution()
 	heartbeatErr := <-heartbeatDone
-	if executionErr != nil && runtimeCtx.Err() == nil && heartbeatErr == nil {
+	reason := releaseSettled
+	switch {
+	case heartbeatErr != nil:
+		reason = releaseOwnershipLost
+	case runtimeCtx.Err() != nil:
+		reason = releaseShutdownDeadline
+	case executionErr != nil:
 		var known *protocol.KnownFailureError
 		if errors.As(executionErr, &known) {
+			reason = releaseRejected
 			slog.Warn("central sampler rejected execution", "session_id", sessionID, "reason", known.Error())
 		} else {
+			reason = releaseFailed
 			slog.Error("central sampler execution stopped", "session_id", sessionID, "error", executionErr)
 		}
 		failCtx, cancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -300,8 +308,37 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 			slog.Error("central sampler could not record execution failure", "session_id", sessionID, "error", err)
 		}
 		cancel()
+	case r.isDraining():
+		reason = releaseDrain
 	}
-	r.release(owner)
+	if r.isDraining() {
+		r.logDrainExit(sessionID, owner, activeCommand)
+	}
+	r.release(owner, sessionID, reason)
+}
+
+// logDrainExit records the Session state a driver leaves behind during shutdown drain, so a
+// successor that blocks on a lost host can be traced to the owner that released it.
+func (r *Runtime) logDrainExit(sessionID string, owner Owner, activeCommand *string) {
+	timeout := r.cleanupTimeout()
+	if timeout <= 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	command := ""
+	if activeCommand != nil {
+		command = *activeCommand
+	}
+	work, err := r.store.LiveWork(ctx, owner)
+	if err != nil {
+		slog.Error("central sampler could not read live work at drain exit", "session_id", sessionID, "conversation_id", owner.ConversationID,
+			"generation", owner.Generation, "active_command", command, "error", err)
+		return
+	}
+	slog.Info("central sampler drain releasing Session", "session_id", sessionID, "conversation_id", owner.ConversationID,
+		"generation", owner.Generation, "active_command", command, "live_cells", work.LiveCells, "live_processes", work.LiveProcesses,
+		"unresolved_intents", work.UnresolvedIntents, "pending", work.Pending, "pod_name", os.Getenv("HOSTNAME"))
 }
 
 func (r *Runtime) heartbeat(ctx context.Context, owner Owner) error {
@@ -327,26 +364,56 @@ func (r *Runtime) heartbeat(ctx context.Context, owner Owner) error {
 	}
 }
 
-func (r *Runtime) release(owner Owner) {
+// releaseReason names why a driver gave up its Session lease.
+type releaseReason string
+
+const (
+	// releaseStopping: the claim committed after shutdown began; the driver never served.
+	releaseStopping releaseReason = "stopping"
+	// releaseDrain: shutdown drain released an idle Session or one whose live work settled.
+	releaseDrain releaseReason = "drain"
+	// releaseShutdownDeadline: the drain deadline cancelled active work; unresolved intents remain.
+	releaseShutdownDeadline releaseReason = "shutdown_deadline"
+	releaseOwnershipLost    releaseReason = "ownership_lost"
+	releaseRejected         releaseReason = "rejected"
+	releaseFailed           releaseReason = "failed"
+	// releaseSettled: the driver stopped outside drain without an error (unserviceable Session,
+	// failed setup, or interrupt with unknown effects).
+	releaseSettled releaseReason = "settled"
+)
+
+// cleanupTimeout bounds a store call made while the driver winds down. Zero or less means the
+// shutdown budget is already spent.
+func (r *Runtime) cleanupTimeout() time.Duration {
 	timeout := time.Duration(r.settings.RPCTimeoutSeconds) * time.Second
 	r.mu.Lock()
 	shutdownDeadline := r.shutdownDeadline
 	r.mu.Unlock()
 	if !shutdownDeadline.IsZero() {
 		timeout = min(timeout, 5*time.Second, time.Until(shutdownDeadline))
-		if timeout <= 0 {
-			slog.Warn("central sampler cleanup budget expired before lease release", "conversation_id", owner.ConversationID)
-			return
-		}
+	}
+	return timeout
+}
+
+func (r *Runtime) release(owner Owner, sessionID string, reason releaseReason) {
+	timeout := r.cleanupTimeout()
+	if timeout <= 0 {
+		slog.Warn("central sampler cleanup budget expired before lease release", "session_id", sessionID, "conversation_id", owner.ConversationID,
+			"generation", owner.Generation, "reason", string(reason))
+		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := r.releaseLease(ctx, owner); err != nil {
 		var lost *LostOwnershipError
 		if !errors.As(err, &lost) {
-			slog.Error("central sampler lease release failed", "conversation_id", owner.ConversationID, "error", err)
+			slog.Error("central sampler lease release failed", "session_id", sessionID, "conversation_id", owner.ConversationID,
+				"generation", owner.Generation, "reason", string(reason), "error", err)
 		}
+		return
 	}
+	slog.Info("central sampler lease released", "session_id", sessionID, "conversation_id", owner.ConversationID,
+		"generation", owner.Generation, "reason", string(reason), "pod_name", os.Getenv("HOSTNAME"))
 }
 
 func (r *Runtime) isStopping() bool {
