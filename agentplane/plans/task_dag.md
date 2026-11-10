@@ -3223,8 +3223,7 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
 - The agent Kubernetes docs lose the kubeconfig and point at the rules endpoint.
 
 Dispatcher and Notification already serve a Sandbox that names an Identity and has no managed
-ServiceAccount: its Sessions are Identity-run and its inboxes the Identity's (identity-consumers
-`delivery-by-sandbox`), a precondition for deleting the per-Sandbox ServiceAccount here.
+ServiceAccount: its Sessions are Identity-run and its inboxes the Identity's (#15360), a precondition for deleting the per-Sandbox ServiceAccount here.
 
 Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
 a Session whose recorded execution identity differs), so the switch needs a step that either
