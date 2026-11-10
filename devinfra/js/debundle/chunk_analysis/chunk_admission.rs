@@ -14,11 +14,10 @@
 //!
 //! Notable residual gaps (documented, not checked):
 //!
-//! - **A1**: `eval` inside function bodies and other lazy positions.
-//!   A1's wording only bans module-top `eval`, but a lazy direct
-//!   `eval` can still read cross-module bindings dynamically when
-//!   the enclosing function is called after the split. Aliased eval
-//!   (`const e = eval; e(...)`) is also unchecked.
+//! - **A1**: a direct `eval` is refused at any depth, an indirect
+//!   `(0, eval)(...)` only at module top level: in a lazy body it runs in
+//!   global scope, where module bindings are invisible. Aliased eval
+//!   (`const e = eval; e(...)`) is unchecked.
 //! - **A3**: non-literal dynamic-import specifiers in lazy positions
 //!   (`(n) => import(n)`), which could resolve to an internal module
 //!   at runtime. Only `Lit::Str` specifiers count as literal — the
@@ -268,6 +267,20 @@ impl Visit for AdmissionScan<'_> {
         match &node.callee {
             Callee::Import(_) => self.check_dynamic_import(node),
             Callee::Expr(expr) if self.lazy_depth == 0 => self.check_eval_callee(expr),
+            // A direct `eval` in a lazy body runs code that can read and
+            // write any binding in scope by name (string code the analysis
+            // cannot see), so it is refused at any depth. An indirect eval
+            // there runs in global scope, where module bindings are not
+            // visible: an ordinary opaque call.
+            Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "eval") =>
+            {
+                self.record(
+                    AdmissionCheck::A1Eval,
+                    "direct `eval(...)` call in a lazy body — it can read and write any \
+                     binding in scope by name, which the analysis cannot see"
+                        .to_string(),
+                );
+            }
             _ => {}
         }
         node.visit_children_with(self);
@@ -464,23 +477,32 @@ mod tests {
         );
     }
 
-    /// `eval` inside a function body is a lazy position — A1 only
-    /// bans module-top eval (the body's eval is a documented residual
-    /// risk, not a violation).
+    /// A direct `eval` in a function body can read and write any binding
+    /// in scope; an indirect one there runs in global scope.
     #[test]
-    fn eval_in_function_body_is_not_flagged() {
-        assert_eq!(scan("function f() { return eval(\"1\"); }\n"), vec![]);
+    fn direct_eval_in_function_body_is_flagged_indirect_is_not() {
+        assert_eq!(
+            scan("function f() { return eval(\"1\"); }\n"),
+            vec![(AdmissionCheck::A1Eval, 0)]
+        );
+        assert_eq!(scan("function f() { return (0, eval)(\"1\"); }\n"), vec![]);
+        assert_eq!(scan("function f() { return Function(\"1\")(); }\n"), vec![]);
     }
 
     /// A class static block runs at class evaluation (eager), so an
-    /// eval there is module-top eval; an instance method body is lazy.
+    /// eval there is module-top eval; an instance method body is lazy,
+    /// where only a direct eval is flagged.
     #[test]
     fn class_static_block_is_eager_method_body_is_lazy() {
         assert_eq!(
             scan("class C { static { eval(\"1\"); } }\n"),
             vec![(AdmissionCheck::A1Eval, 0)]
         );
-        assert_eq!(scan("class C { m() { eval(\"1\"); } }\n"), vec![]);
+        assert_eq!(
+            scan("class C { m() { eval(\"1\"); } }\n"),
+            vec![(AdmissionCheck::A1Eval, 0)]
+        );
+        assert_eq!(scan("class C { m() { (0, eval)(\"1\"); } }\n"), vec![]);
     }
 
     /// Literal dynamic imports resolve through the caller-supplied

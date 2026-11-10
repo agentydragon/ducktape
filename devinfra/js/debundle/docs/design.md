@@ -2278,17 +2278,22 @@ production bundlers (esbuild, rollup, webpack with `output.module:
 true`) emit by default, so it covers the Svelte/SvelteKit
 output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 
-- **A1. No `eval` at module-top reading cross-module bindings
-  dynamically.** `eval` opens an arbitrary read into the lexical
-  scope at the call site; the static analyzer cannot see what it
-  references; `I` would be incomplete. **Enforced (partially)**: the
+- **A1. No direct `eval`, and no `eval` at module top level.** A
+  direct `eval` runs string code in the lexical scope at the call
+  site, where it can read and write any binding visible by name; the
+  static analyzer cannot see what it references, so `I` and every
+  effect summary would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
   `chunk_analysis::compute_chunk_facts` next to the A2 bail)
-  rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
-  at module top level (looking through parens and comma sequences to
-  the callee), with the offending statement ordinal in the
-  diagnostic. Function-body `eval` and aliased `eval`
-  (`const e = eval`) remain unchecked — see §"Coverage gaps".
+  rejects a direct `eval(...)` call at any depth, and a seq-indirect
+  `(0, eval)(...)` call at module top level (looking through parens
+  and comma sequences to the callee), with the offending statement
+  ordinal in the diagnostic. An indirect `eval`, `Function(...)` or
+  `new Function(...)` in a lazy body runs in global scope: every
+  input chunk is parsed and emitted as an ES module, so no module
+  binding is visible to it and it is an ordinary opaque call. Aliased
+  `eval` (`const e = eval`) remains unchecked — see §"Coverage
+  gaps".
 - **A2. No top-level `await` in any emitted module.** TLA changes
   the linker's evaluation algorithm to AsyncCycleRoot semantics
   (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
@@ -2776,16 +2781,11 @@ It does not establish:
 - **Dynamic eval / reflection bypassing the static graph (A1, A5
   violations).** The `I` graph is incomplete in this case;
   cycle-freeness in `I` doesn't imply cycle-freeness in the
-  actual evaluation graph. The admission scan rejects the
-  module-top shapes (direct / seq-indirect `eval` calls,
+  actual evaluation graph. The admission scan rejects direct `eval`
+  calls at any depth and the module-top shapes (seq-indirect `eval` calls,
   non-`url` `import.meta` use, eager non-literal `import()`),
   but cannot rule out the rest statically. The shapes that remain
   pure input-shape contracts on the bundler:
-  - `eval` in function bodies and other lazy positions — A1's
-    wording only bans module-top eval, but a lazy direct `eval`
-    still reads its lexical scope dynamically when the enclosing
-    function is called after the split, and the split may have
-    moved the bindings it names into other modules.
   - aliased eval (`const e = eval; e(...)`) and `eval` reached
     through any value flow.
   - non-literal dynamic-import specifiers in lazy positions,

@@ -13,7 +13,7 @@ use debundle_e2e_support::{
     run_fixture,
 };
 
-// --- A1: no `eval` at module top level -----------------------------------
+// --- A1: no direct `eval`, and no `eval` at module top level ---------------
 
 #[test]
 fn top_level_direct_eval_is_rejected() {
@@ -49,13 +49,32 @@ export { A };
 }
 
 #[test]
-fn eval_inside_function_body_is_allowed() {
-    // A1 only bans module-top eval. A lazy (function-body) eval is a
-    // documented residual risk, not an admission violation — see
-    // docs/design.md §"Coverage gaps".
+fn direct_eval_inside_function_body_is_rejected() {
+    // A direct `eval` in a lazy body runs string code that can read and
+    // write any binding in scope by name.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"function reader() {
+  return eval("1 + 1");
+}
+const A = "ok";
+console.log(A);
+export { A, reader };
+"#,
+            vec![logical_module("mod_x", &[Member::new("A")])],
+        ),
+        &["a1_eval", "#0", "admission_overrides"],
+    );
+}
+
+#[test]
+fn indirect_eval_and_function_inside_function_body_are_allowed() {
+    // In an ES module, a lazy indirect `eval` and `Function` run in
+    // global scope, where no module binding is visible: an ordinary
+    // opaque call.
     let fixture = run_fixture(FixtureOpts::new(
         r#"function reader() {
-  return eval("1 + 1");
+  return (0, eval)("1 + 1") + Function("return 1")() + new Function("return 1")();
 }
 const A = "ok";
 console.log(A);
