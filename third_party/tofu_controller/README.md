@@ -20,9 +20,12 @@ The controller and runner must use matching protocols. The upstream commit chang
 locks are reported, so the v0.16.5 runner cannot be paired safely with this controller. CI
 publishes both the controller and a runner built from the same upstream commit, but the live
 HelmRelease image pins stay on the old pair until both new images are available. Then update
-both pins together in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml` and
-verify a Terraform reconciliation and its runner after Flux applies the change. The pins are
-deliberately outside image automation while this pair is staged.
+both pins together in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml`. In the
+same change, add `--feature-gates=ExternalArtifact=true` to the controller Deployment through
+the HelmRelease post-renderer in `cluster/cdk8s/tofu_controller_release.py`. The pinned chart
+does not expose this flag, upstream defaults it to false, and the current fork does not accept
+it. Verify a Terraform reconciliation and its runner after Flux applies the change. The pins
+are deliberately outside image automation while this pair is staged.
 
 ## Source
 
