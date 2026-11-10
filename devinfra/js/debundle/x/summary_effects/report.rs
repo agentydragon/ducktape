@@ -1,0 +1,514 @@
+//! Runs the phases on one chunk and renders the measurement report.
+
+use std::collections::BTreeMap;
+use std::time::Instant;
+
+use anyhow::{Context, Result};
+use serde::Serialize;
+
+use crate::effects::{Cell, Effects, summarize};
+use crate::generate::{FunctionHeap, generate};
+use crate::model::{ANY, Model, ObjKind, REASONS, Reason, SolveStats};
+use crate::pairs::{ESCAPED, PairCheck, flag_names, positions};
+
+const EXAMPLE_LIMIT: usize = 3;
+
+#[derive(Serialize, Default)]
+pub struct Timings {
+    pub parse_ms: f64,
+    pub generate_ms: f64,
+    pub solve_ms: f64,
+    pub summarize_ms: f64,
+    pub pair_check_ms: f64,
+}
+
+#[derive(Serialize)]
+pub struct Sizes {
+    pub source_bytes: usize,
+    pub statements: usize,
+    pub units: usize,
+    pub nodes: usize,
+    pub objects: usize,
+    pub functions: usize,
+    pub constraints_generated: usize,
+    pub constraints_total: usize,
+    pub variables: usize,
+    pub cell_variables: usize,
+    pub cells: usize,
+    pub points_to_entries: usize,
+    pub solve: SolveStats,
+    pub effects: crate::effects::EffectStats,
+}
+
+#[derive(Serialize, Default)]
+pub struct PairCounts {
+    pub pairs: u64,
+    pub conflicting: u64,
+    pub proven_commuting: u64,
+    /// Conflicting pairs by the exact set of conflict classes.
+    pub by_classes: BTreeMap<String, u64>,
+    /// Conflicting pairs whose only class is a call into Escaped.
+    pub escaped_only: u64,
+}
+
+#[derive(Serialize)]
+pub struct Degrees {
+    pub min: usize,
+    pub median: usize,
+    pub p90: usize,
+    pub max: usize,
+    pub mean: f64,
+}
+
+#[derive(Serialize)]
+pub struct PairExample {
+    pub classes: String,
+    pub first: usize,
+    pub later: usize,
+    pub first_source: String,
+    pub later_source: String,
+    pub witness: Option<String>,
+    pub first_reasons: Vec<Reason>,
+    pub later_reasons: Vec<Reason>,
+}
+
+#[derive(Serialize)]
+pub struct WhatIf {
+    /// The reasons assumed never to call into Escaped.
+    pub resolved: Vec<Reason>,
+    pub opaque_statements: usize,
+    pub all_pairs_conflicting: u64,
+    pub swapped_pairs_conflicting: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct ReasonCount {
+    pub reason: Reason,
+    pub sites: u64,
+    /// Statements whose initialization reaches a site with this reason.
+    pub statements: usize,
+    /// Statements for which this is the only reason.
+    pub sole_reason_statements: usize,
+    pub examples: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct CurrentComparison {
+    pub current_conflict_pairs: u64,
+    pub current_modeled_pairs: u64,
+    pub current_havoc_only_pairs: u64,
+    pub both_conflict: u64,
+    pub current_only: u64,
+    pub prototype_only: u64,
+    /// Current modeled-cell conflicts the prototype does not report.
+    pub missed_modeled: Vec<MissedPair>,
+}
+
+#[derive(Serialize)]
+pub struct MissedPair {
+    pub first: usize,
+    pub later: usize,
+    pub first_source: String,
+    pub later_source: String,
+    pub current_cells: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct Report {
+    pub chunk: String,
+    pub function_heap: FunctionHeap,
+    pub timings: Timings,
+    pub peak_rss_kib: Option<u64>,
+    pub sizes: Sizes,
+    pub opaque_statements: usize,
+    /// Non-opaque statements touching a cell the Escaped summary conflicts on.
+    pub exposed_statements: usize,
+    pub havoc_statements: usize,
+    pub all_pairs: PairCounts,
+    pub conflict_degree: Degrees,
+    pub swapped_pairs: Option<PairCounts>,
+    pub reasons: Vec<ReasonCount>,
+    pub builtin_sites: Vec<(String, u64)>,
+    pub what_if: Vec<WhatIf>,
+    pub examples: Vec<PairExample>,
+    pub current: Option<CurrentComparison>,
+}
+
+pub struct Inputs<'a> {
+    pub chunk: &'a str,
+    pub source: String,
+    /// The emitted order, as source-unit ordinals.
+    pub order: Option<Vec<usize>>,
+    /// Rows of the current analysis's `--effect-conflicts-jsonl` export.
+    pub current_conflicts: Option<Vec<serde_json::Value>>,
+    pub function_heap: FunctionHeap,
+}
+
+pub struct Analysis {
+    pub model: Model,
+    pub effects: Effects,
+    pub check: PairCheck,
+    pub statement_spans: Vec<(u32, u32)>,
+    pub timings: Timings,
+    pub constraints_generated: usize,
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1000.0
+}
+
+pub fn analyze(chunk: &str, source: &str, function_heap: FunctionHeap) -> Result<Analysis> {
+    let mut timings = Timings::default();
+    let start = Instant::now();
+    let parsed = js_ast::parse_js_module(chunk, source)?;
+    timings.parse_ms = elapsed_ms(start);
+
+    let start = Instant::now();
+    let generated = generate(&parsed, function_heap);
+    timings.generate_ms = elapsed_ms(start);
+    let mut model = generated.model;
+    let constraints_generated = model.cxs.len();
+
+    let start = Instant::now();
+    model.solve();
+    timings.solve_ms = elapsed_ms(start);
+
+    let statement_count = generated.statement_spans.len();
+    let start = Instant::now();
+    let mut effects = summarize(&model, statement_count, generated.escaped_unit);
+    timings.summarize_ms = elapsed_ms(start);
+
+    let start = Instant::now();
+    let check = PairCheck::new(&model, &mut effects, statement_count);
+    timings.pair_check_ms = elapsed_ms(start);
+    Ok(Analysis {
+        model,
+        effects,
+        check,
+        statement_spans: generated.statement_spans,
+        timings,
+        constraints_generated,
+    })
+}
+
+fn snippet(source: &str, lo: u32, limit: usize) -> String {
+    // SWC byte positions start at 1.
+    let start = (lo as usize).saturating_sub(1).min(source.len());
+    let mut end = (start + limit).min(source.len());
+    while !source.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut start = start;
+    while !source.is_char_boundary(start) {
+        start -= 1;
+    }
+    source[start..end].replace('\n', " ")
+}
+
+fn reasons_of(mask: u16) -> Vec<Reason> {
+    REASONS
+        .into_iter()
+        .filter(|reason| mask & reason.bit() != 0)
+        .collect()
+}
+
+fn describe_cell(model: &Model, source: &str, cell: Cell) -> String {
+    let object = |obj: u32| {
+        let info = &model.objs[obj as usize];
+        let kind = match info.kind {
+            ObjKind::Function(_) => "function",
+            ObjKind::Array => "array",
+            ObjKind::Plain => "object",
+            ObjKind::Regex => "regex",
+            ObjKind::NativeResult => "native result",
+            _ => "unknown",
+        };
+        format!("{kind} `{}`", snippet(source, info.span_lo, 40))
+    };
+    match cell {
+        Cell::Var(var) => format!("binding `{}`", model.vars[var as usize].name),
+        Cell::Field(obj, prop) => {
+            format!("property `{}` of {}", model.props.name(prop), object(obj))
+        }
+        Cell::Star(obj) | Cell::AnyOf(obj) => format!("any property of {}", object(obj)),
+        Cell::Elems(obj) => format!("elements of {}", object(obj)),
+        Cell::UnknownHeap => "unmodeled heap".to_string(),
+        Cell::Intrinsic(prop) => format!("intrinsic property `{}`", model.props.name(prop)),
+        Cell::IntrinsicStar | Cell::AnyIntrinsic => "any intrinsic property".to_string(),
+    }
+}
+
+fn count_pairs(
+    check: &PairCheck,
+    resolved: u16,
+    swapped_only: Option<&[usize]>,
+    mut visit: impl FnMut(usize, usize, u8),
+) -> PairCounts {
+    let mut counts = PairCounts::default();
+    let mut by_flags: BTreeMap<u8, u64> = BTreeMap::new();
+    for low in 0..check.n {
+        for high in low + 1..check.n {
+            if let Some(positions) = swapped_only
+                && positions[low] < positions[high]
+            {
+                continue;
+            }
+            counts.pairs += 1;
+            let flags = check.flags(low, high, resolved);
+            if flags == 0 {
+                counts.proven_commuting += 1;
+                continue;
+            }
+            counts.conflicting += 1;
+            if flags == ESCAPED {
+                counts.escaped_only += 1;
+            }
+            *by_flags.entry(flags).or_default() += 1;
+            visit(low, high, flags);
+        }
+    }
+    counts.by_classes = by_flags
+        .into_iter()
+        .map(|(flags, count)| (flag_names(flags), count))
+        .collect();
+    counts
+}
+
+fn peak_rss_kib() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
+    line.split_whitespace().nth(1)?.parse().ok()
+}
+
+fn row_unit(row: &serde_json::Value, side: &str) -> Result<usize> {
+    row[side]["unit"]
+        .as_u64()
+        .map(|unit| unit as usize)
+        .with_context(|| format!("conflict row lacks `{side}.unit`"))
+}
+
+pub fn report(inputs: Inputs<'_>) -> Result<Report> {
+    let Inputs {
+        chunk,
+        source,
+        order,
+        current_conflicts,
+        function_heap,
+    } = inputs;
+    let Analysis {
+        model,
+        effects,
+        check,
+        statement_spans,
+        timings,
+        constraints_generated,
+    } = analyze(chunk, &source, function_heap)?;
+    let n = check.n;
+    let statement_source = |statement: usize| snippet(&source, statement_spans[statement].0, 100);
+    let positions = order.as_deref().map(|order| positions(order, n));
+
+    let mut degree = vec![0usize; n];
+    let mut examples: Vec<PairExample> = Vec::new();
+    let mut example_counts: BTreeMap<u8, usize> = BTreeMap::new();
+    let mut example = |low: usize, high: usize, flags: u8| {
+        let seen = example_counts.entry(flags).or_default();
+        if *seen >= EXAMPLE_LIMIT {
+            return;
+        }
+        *seen += 1;
+        examples.push(PairExample {
+            classes: flag_names(flags),
+            first: low,
+            later: high,
+            first_source: statement_source(low),
+            later_source: statement_source(high),
+            witness: check
+                .witness(low, high)
+                .map(|cell| describe_cell(&model, &source, cell)),
+            first_reasons: reasons_of(check.reasons[low]),
+            later_reasons: reasons_of(check.reasons[high]),
+        });
+    };
+    let swapped_pairs = positions
+        .as_deref()
+        .map(|positions| count_pairs(&check, 0, Some(positions), &mut example));
+    let all_pairs = count_pairs(&check, 0, None, |low, high, flags| {
+        degree[low] += 1;
+        degree[high] += 1;
+        if positions.is_none() {
+            example(low, high, flags);
+        }
+    });
+    let mut sorted_degree = degree.clone();
+    sorted_degree.sort_unstable();
+    let conflict_degree = Degrees {
+        min: sorted_degree.first().copied().unwrap_or(0),
+        median: sorted_degree.get(n / 2).copied().unwrap_or(0),
+        p90: sorted_degree.get(n * 9 / 10).copied().unwrap_or(0),
+        max: sorted_degree.last().copied().unwrap_or(0),
+        mean: degree.iter().sum::<usize>() as f64 / n.max(1) as f64,
+    };
+
+    let reasons = REASONS
+        .into_iter()
+        .map(|reason| ReasonCount {
+            reason,
+            sites: effects.opaque_sites.get(&reason).copied().unwrap_or(0),
+            statements: check
+                .reasons
+                .iter()
+                .filter(|mask| *mask & reason.bit() != 0)
+                .count(),
+            sole_reason_statements: check
+                .reasons
+                .iter()
+                .filter(|mask| **mask == reason.bit())
+                .count(),
+            examples: effects
+                .reason_examples
+                .get(&reason)
+                .into_iter()
+                .flatten()
+                .filter(|span_lo| **span_lo != 0)
+                .map(|span_lo| snippet(&source, *span_lo, 80))
+                .collect(),
+        })
+        .collect();
+    let mut builtin_sites: Vec<(String, u64)> = effects
+        .builtin_sites
+        .iter()
+        .map(|(name, count)| {
+            let name = if *name == ANY {
+                "<computed>"
+            } else {
+                model.props.name(*name)
+            };
+            (name.to_string(), *count)
+        })
+        .collect();
+    builtin_sites.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    builtin_sites.truncate(40);
+
+    let library = [Reason::Builtin, Reason::GlobalCall, Reason::GlobalMember];
+    let imports = [Reason::ImportCall, Reason::ImportMember];
+    let mut scenarios: Vec<Vec<Reason>> = REASONS.into_iter().map(|reason| vec![reason]).collect();
+    scenarios.push(library.to_vec());
+    scenarios.push(imports.to_vec());
+    scenarios.push([library.as_slice(), imports.as_slice()].concat());
+    scenarios.push(
+        [
+            library.as_slice(),
+            imports.as_slice(),
+            &[Reason::EscapedObject],
+        ]
+        .concat(),
+    );
+    scenarios.push(REASONS.to_vec());
+    let what_if = scenarios
+        .into_iter()
+        .map(|resolved| {
+            let mask = resolved.iter().fold(0, |mask, reason| mask | reason.bit());
+            WhatIf {
+                opaque_statements: (0..n).filter(|unit| check.opaque(*unit, mask)).count(),
+                all_pairs_conflicting: count_pairs(&check, mask, None, |_, _, _| {}).conflicting,
+                swapped_pairs_conflicting: positions.as_deref().map(|positions| {
+                    count_pairs(&check, mask, Some(positions), |_, _, _| {}).conflicting
+                }),
+                resolved,
+            }
+        })
+        .collect();
+
+    let current = match current_conflicts {
+        Some(rows) => {
+            let positions = positions
+                .as_deref()
+                .context("comparing with the current analysis needs the emitted order")?;
+            let mut comparison = CurrentComparison {
+                current_conflict_pairs: rows.len() as u64,
+                current_modeled_pairs: 0,
+                current_havoc_only_pairs: 0,
+                both_conflict: 0,
+                current_only: 0,
+                prototype_only: 0,
+                missed_modeled: Vec::new(),
+            };
+            for row in &rows {
+                let (first, later) = (row_unit(row, "runs_first")?, row_unit(row, "runs_later")?);
+                anyhow::ensure!(
+                    positions[first] < positions[later] && first > later,
+                    "conflict row {first}->{later} is not an inversion of the emitted order",
+                );
+                let cells = row["cells"]
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let conflict = check.flags(first, later, 0) != 0;
+                if conflict {
+                    comparison.both_conflict += 1;
+                } else {
+                    comparison.current_only += 1;
+                }
+                if cells.is_empty() {
+                    comparison.current_havoc_only_pairs += 1;
+                } else {
+                    comparison.current_modeled_pairs += 1;
+                    if !conflict {
+                        comparison.missed_modeled.push(MissedPair {
+                            first,
+                            later,
+                            first_source: statement_source(first),
+                            later_source: statement_source(later),
+                            current_cells: cells
+                                .iter()
+                                .map(|cell| cell["cell"].to_string())
+                                .collect(),
+                        });
+                    }
+                }
+            }
+            let swapped_conflicting = swapped_pairs
+                .as_ref()
+                .map_or(0, |counts| counts.conflicting);
+            comparison.prototype_only = swapped_conflicting - comparison.both_conflict;
+            Some(comparison)
+        }
+        None => None,
+    };
+
+    Ok(Report {
+        chunk: chunk.to_string(),
+        function_heap,
+        timings,
+        peak_rss_kib: peak_rss_kib(),
+        sizes: Sizes {
+            source_bytes: source.len(),
+            statements: n,
+            units: model.units.len(),
+            nodes: model.pts.len(),
+            objects: model.objs.len(),
+            functions: model.fns.len(),
+            constraints_generated,
+            constraints_total: model.cxs.len(),
+            variables: model.vars.len(),
+            cell_variables: effects.cell_vars.len(),
+            cells: check.cells.len(),
+            points_to_entries: model.pts.iter().map(|set| set.len()).sum(),
+            solve: model.stats.clone(),
+            effects: effects.stats.clone(),
+        },
+        opaque_statements: (0..n).filter(|unit| check.opaque(*unit, 0)).count(),
+        exposed_statements: (0..n)
+            .filter(|unit| !check.opaque(*unit, 0) && check.exposed[*unit] != 0)
+            .count(),
+        havoc_statements: check.havoc.iter().filter(|havoc| **havoc).count(),
+        all_pairs,
+        conflict_degree,
+        swapped_pairs,
+        reasons,
+        builtin_sites,
+        what_if,
+        examples,
+        current,
+    })
+}

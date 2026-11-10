@@ -1,0 +1,45 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+# Report-only prototype of a summary-based, flow-insensitive effect analysis.
+# Nothing depends on it; it reads a chunk and writes a measurement report.
+rust_library(
+    name = "summary_effects",
+    srcs = [
+        "bits.rs",
+        "effects.rs",
+        "generate.rs",
+        "helpers.rs",
+        "lib.rs",
+        "model.rs",
+        "pairs.rs",
+        "report.rs",
+    ],
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:rustc-hash",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_binary(
+    name = "summary_effects_bin",
+    srcs = ["main.rs"],
+    crate_name = "summary_effects_cli",
+    crate_root = "main.rs",
+    edition = "2024",
+    deps = [
+        ":summary_effects",
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde_json",
+    ],
+)
