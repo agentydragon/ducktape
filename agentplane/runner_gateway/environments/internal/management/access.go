@@ -475,7 +475,8 @@ type intentCaller struct {
 }
 
 func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
-	requestJSON, err := protojson.Marshal(request)
+	// Proto field names, as receipts have always spelled them and readers of the annotation expect.
+	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
 	if err != nil {
 		return "", err
 	}
