@@ -2094,6 +2094,7 @@ the runner's private gRPC listener; the two routes are independent. Contract:
 ```mermaid
 flowchart TD
     RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed]
+    HISTORY_INGRESS_OUTCOME_DESIGN[Unscheduled decision: item completion and command outcome conflicts at History ingress]
 ```
 
 ### `RUNNER_JOURNAL_TRIM` — runners stop keeping what the ingress committed
@@ -2104,6 +2105,34 @@ selectable; the freezer's
 [`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
 (the retained incarnation history).
+
+### `HISTORY_INGRESS_OUTCOME_DESIGN` — item completion and command outcome invariants at History ingress
+
+**Decision, unscheduled; operator direction, 2026-11-10.** The incident's
+`HarnessUserMessageConfirmed` and later `CommandFailed` name the same command: the
+[Thread fold](../history_service/threadfold/fold.go) settles origin commands as effected at
+confirmation, then errors when a later event settles an already-settled command. The
+[History append](../history_service/storage/store.go) accepts exact cursor replays and commits new
+entries without checking these semantic outcomes, leaving the raw event available while that
+Session's Thread projection stalls. Consider whether ingress should enforce one-time settlement
+invariants, and whether item completion and command outcome need different rules; rejection is an
+option to review, not a selected protocol policy.
+
+Alternatives include refusing a contradictory outcome before commit, retaining every raw event and
+folding the conflict into a visible anomaly while continuing the projection, or leaving ingress
+permissive and requiring explicit recovery for an unfoldable projection. Recommendation: design item
+and command rules separately, preserve raw evidence and per-Session availability, and require a
+runner recovery path before selecting ingress rejection. The journal is append-only and cursor
+ordered, so refusal can strand that cursor and prevent later entries, including later input
+confirmation, from reaching History.
+
+**Review question:** which repeated outcomes are exact replay versus contradiction, what item and
+command transitions are valid, and where should a conflict be handled? Design the check across one
+batch, earlier committed pages and concurrent Push calls; specify how existing malformed histories
+remain readable and how their projections recover. **Exit:** an operator-reviewed contract with
+concrete item and command examples, atomicity and concurrency boundaries, raw-history retention and
+projection recovery, and a bounded runner recovery path for any rejected record. Add an
+implementation node only if the decision selects a protocol change.
 
 ## 11. History reads and follows
 
