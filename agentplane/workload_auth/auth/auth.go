@@ -146,6 +146,12 @@ type PrincipalResolver interface {
 	Resolve(context.Context) (Principal, error)
 }
 
+// SubjectResolver resolves the subject admitted by an AnySubject rule, a ServiceAccount or an
+// Identity. Resolver implements it; a service-owned resolver may provide another verified source.
+type SubjectResolver interface {
+	ResolveSubject(context.Context) (Subject, error)
+}
+
 // Option tunes a Resolver.
 type Option func(*settings)
 

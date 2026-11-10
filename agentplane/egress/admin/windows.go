@@ -19,12 +19,6 @@ const windowSubscriberQueue = 16
 
 var errWindowOverflow = errors.New("decision window subscriber overflow")
 
-type watchedSubject struct {
-	namespace       string
-	name            string
-	unauthenticated bool
-}
-
 type windowUpdate struct {
 	delta     *egressadminpb.DecisionDelta
 	heartbeat bool
@@ -37,8 +31,8 @@ type windowSubscriber struct {
 }
 
 type subjectWindow struct {
-	key         watchedSubject
-	subject     *decision.Subject
+	// subject keys the window; nil is the refusals that never authenticated.
+	subject     decision.Subject
 	records     []decision.Record
 	ready       chan struct{}
 	initialized bool
@@ -54,7 +48,7 @@ type decisionWindows struct {
 	window    history.Window
 
 	mu        sync.Mutex
-	active    map[watchedSubject]*subjectWindow
+	active    map[decision.Subject]*subjectWindow
 	probeGate chan struct{}
 	lastProbe time.Time
 }
@@ -62,23 +56,22 @@ type decisionWindows struct {
 func newDecisionWindows(decisions Decisions, changes Changes) *decisionWindows {
 	windows := &decisionWindows{
 		decisions: decisions, changes: changes, window: decisions.Window(),
-		active: make(map[watchedSubject]*subjectWindow), probeGate: make(chan struct{}, 1),
+		active: make(map[decision.Subject]*subjectWindow), probeGate: make(chan struct{}, 1),
 	}
 	windows.probeGate <- struct{}{}
 	return windows
 }
 
-func (w *decisionWindows) subscribe(ctx context.Context, subject *decision.Subject) (*windowSubscriber, []*egressadminpb.Decision, error) {
-	key := windowKey(subject)
+func (w *decisionWindows) subscribe(ctx context.Context, subject decision.Subject) (*windowSubscriber, []*egressadminpb.Decision, error) {
 	w.mu.Lock()
-	state := w.active[key]
+	state := w.active[subject]
 	if state == nil {
 		feedCtx, cancel := context.WithCancel(context.Background())
 		state = &subjectWindow{
-			key: key, subject: copySubject(subject), ready: make(chan struct{}),
+			subject: subject, ready: make(chan struct{}),
 			subscribers: make(map[*windowSubscriber]struct{}), cancel: cancel,
 		}
-		w.active[key] = state
+		w.active[subject] = state
 		go w.follow(feedCtx, state)
 	}
 	state.waiters++
@@ -104,7 +97,7 @@ func (w *decisionWindows) subscribe(ctx context.Context, subject *decision.Subje
 		w.stopIfUnusedLocked(state)
 		return nil, nil, state.err
 	}
-	if w.active[key] != state {
+	if w.active[subject] != state {
 		state.waiters--
 		return nil, nil, errors.New("decision window ended while subscribing")
 	}
@@ -114,11 +107,10 @@ func (w *decisionWindows) subscribe(ctx context.Context, subject *decision.Subje
 	return subscriber, decisionsOf(state.records), nil
 }
 
-func (w *decisionWindows) unsubscribe(subject *decision.Subject, subscriber *windowSubscriber) {
-	key := windowKey(subject)
+func (w *decisionWindows) unsubscribe(subject decision.Subject, subscriber *windowSubscriber) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	state := w.active[key]
+	state := w.active[subject]
 	if state == nil {
 		return
 	}
@@ -132,7 +124,7 @@ func (w *decisionWindows) unsubscribe(subject *decision.Subject, subscriber *win
 func (w *decisionWindows) removeWaiter(state *subjectWindow) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.active[state.key] != state {
+	if w.active[state.subject] != state {
 		return
 	}
 	state.waiters--
@@ -140,8 +132,8 @@ func (w *decisionWindows) removeWaiter(state *subjectWindow) {
 }
 
 func (w *decisionWindows) stopIfUnusedLocked(state *subjectWindow) {
-	if state.waiters == 0 && len(state.subscribers) == 0 && w.active[state.key] == state {
-		delete(w.active, state.key)
+	if state.waiters == 0 && len(state.subscribers) == 0 && w.active[state.subject] == state {
+		delete(w.active, state.subject)
 		state.cancel()
 	}
 }
@@ -154,7 +146,7 @@ func (w *decisionWindows) follow(ctx context.Context, state *subjectWindow) {
 			if err != nil {
 				return err
 			}
-			if err := validateWindowRecords(state.key, records); err != nil {
+			if err := validateWindowRecords(state.subject, records); err != nil {
 				return err
 			}
 			w.initialize(state, records)
@@ -163,7 +155,7 @@ func (w *decisionWindows) follow(ctx context.Context, state *subjectWindow) {
 			if err != nil {
 				return err
 			}
-			if err := validateWindowRecords(state.key, records); err != nil {
+			if err := validateWindowRecords(state.subject, records); err != nil {
 				return err
 			}
 			w.apply(state, records, false)
@@ -206,7 +198,7 @@ func (w *decisionWindows) verifyReadable(ctx context.Context) error {
 func (w *decisionWindows) initialize(state *subjectWindow, records []decision.Record) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.active[state.key] != state || state.err != nil {
+	if w.active[state.subject] != state || state.err != nil {
 		return
 	}
 	state.records = boundedWindow(records, nil, w.window)
@@ -217,7 +209,7 @@ func (w *decisionWindows) initialize(state *subjectWindow, records []decision.Re
 func (w *decisionWindows) apply(state *subjectWindow, added []decision.Record, heartbeat bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.active[state.key] != state || !state.initialized || state.err != nil {
+	if w.active[state.subject] != state || !state.initialized || state.err != nil {
 		return
 	}
 	previous := state.records
@@ -249,11 +241,11 @@ func (w *decisionWindows) broadcastLocked(state *subjectWindow, update windowUpd
 func (w *decisionWindows) fail(state *subjectWindow, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.active[state.key] != state {
+	if w.active[state.subject] != state {
 		return
 	}
 	if err != nil && ctxIsCanceled(err) && len(state.subscribers) == 0 && state.waiters == 0 {
-		delete(w.active, state.key)
+		delete(w.active, state.subject)
 		return
 	}
 	state.err = err
@@ -265,7 +257,7 @@ func (w *decisionWindows) fail(state *subjectWindow, err error) {
 		subscriber.err = err
 		close(subscriber.done)
 	}
-	delete(w.active, state.key)
+	delete(w.active, state.subject)
 }
 
 func boundedWindow(previous, added []decision.Record, window history.Window) []decision.Record {
@@ -297,28 +289,13 @@ func boundedWindow(previous, added []decision.Record, window history.Window) []d
 	return current
 }
 
-func validateWindowRecords(key watchedSubject, records []decision.Record) error {
+func validateWindowRecords(subject decision.Subject, records []decision.Record) error {
 	for _, record := range records {
-		if windowKey(record.Subject) != key {
+		if record.Subject != subject {
 			return fmt.Errorf("decision feed returned an event for a different subject")
 		}
 	}
 	return nil
-}
-
-func windowKey(subject *decision.Subject) watchedSubject {
-	if subject == nil {
-		return watchedSubject{unauthenticated: true}
-	}
-	return watchedSubject{namespace: subject.Namespace, name: subject.Name}
-}
-
-func copySubject(subject *decision.Subject) *decision.Subject {
-	if subject == nil {
-		return nil
-	}
-	copy := *subject
-	return &copy
 }
 
 func ctxIsCanceled(err error) bool {

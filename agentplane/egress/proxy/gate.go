@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -15,9 +16,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const proxyAuthorization = "Proxy-Authorization"
@@ -25,10 +27,10 @@ const proxyAuthorization = "Proxy-Authorization"
 // deniedHeader carries the machine-readable reason of a refusal.
 const deniedHeader = "x-agentplane-egress"
 
-// authenticated is a hop bearer a connection proved, and what it may present for substitution.
+// authenticated is the caller a connection proved, and what it may present for substitution.
 type authenticated struct {
-	bearer    string
-	principal auth.Principal
+	bearer  string
+	subject auth.Subject
 	// projected holds the tokens the sidecar offered, by audience, that were reviewed as this Pod's.
 	projected map[string]string
 }
@@ -91,7 +93,7 @@ func (p *Proxy) decide(
 	if !p.options.Policy.Health.Available() {
 		return refused(decision.Unavailable)
 	}
-	caller := policyapi.ServiceAccountRef{Namespace: who.principal.Account.Namespace, Name: who.principal.Account.Name}
+	caller := policySubject(who.subject)
 	request := policy.Request{Method: req.Method, Host: host, Port: port, Headers: req.Header, Body: body}
 	if server := p.options.Policy.LocalAPIServer; server != nil {
 		// Both evaluations below must see one token, or a rotation between them would read as a
@@ -103,9 +105,7 @@ func (p *Proxy) decide(
 		// relay dials https with UpstreamRoots verification; nothing else is TLS to the upstream.
 		request.TLS = req.URL.Scheme == "https"
 	}
-	workload := &policy.WorkloadContext{
-		Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
-	}
+	workload := &policy.WorkloadContext{Caller: caller, PodUID: podUID(who.subject), Projected: who.projected}
 	first := p.options.Policy.Evaluate(caller, request, workload)
 	admitted, ok := first.(policy.Allowed)
 	if !ok {
@@ -156,7 +156,7 @@ func (p *Proxy) authenticate(
 	}
 	// An explicit bearer starts a new proof; an inherited tunnel credential must
 	// still identify the same Pod incarnation on every request.
-	if previous != nil && caller.Principal != previous.principal {
+	if previous != nil && caller.Subject != previous.subject {
 		client.auth = nil
 		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "authenticated tunnel identity changed"}
 	}
@@ -166,8 +166,46 @@ func (p *Proxy) authenticate(
 	} else if previous != nil {
 		projected = maps.Clone(previous.projected)
 	}
-	client.auth = &authenticated{bearer: caller.Bearer, principal: caller.Principal, projected: projected}
+	client.auth = &authenticated{bearer: caller.Bearer, subject: caller.Subject, projected: projected}
 	return client.auth, nil
+}
+
+// policySubject is whose bindings decide: an Identity's only while the live Identity of its name
+// still has the UID its credential named.
+func policySubject(subject auth.Subject) reader.Subject {
+	switch subject := subject.(type) {
+	case auth.Principal:
+		return reader.ServiceAccount{Namespace: subject.Account.Namespace, Name: subject.Account.Name}
+	case auth.IdentityPrincipal:
+		return reader.Identity{Name: subject.Identity.Name, UID: types.UID(subject.Identity.UID)}
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
+}
+
+// decisionSubject is the caller as history records it: by name, without an Identity's UID.
+func decisionSubject(subject auth.Subject) decision.Subject {
+	switch subject := subject.(type) {
+	case auth.Principal:
+		return decision.ServiceAccount{Namespace: subject.Account.Namespace, Name: subject.Account.Name}
+	case auth.IdentityPrincipal:
+		return decision.Identity{Name: subject.Identity.Name}
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
+}
+
+// podUID is the Pod the caller's credential was accepted for; empty for a standing workload, which
+// proves none.
+func podUID(subject auth.Subject) string {
+	switch subject := subject.(type) {
+	case auth.Principal:
+		return subject.PodUID
+	case auth.IdentityPrincipal:
+		return subject.PodUID
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
 }
 
 func (p *Proxy) record(req *http.Request, client *connection, host string, port int, result outcome) {
@@ -185,12 +223,10 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 		record.Phase = decision.Connect
 	}
 	if result.caller != nil {
-		record.Subject = &decision.Subject{
-			Namespace: result.caller.principal.Account.Namespace, Name: result.caller.principal.Account.Name,
-		}
+		record.Subject = decisionSubject(result.caller.subject)
 		// A standing workload's credential proves no Pod.
-		if result.caller.principal.PodUID != "" {
-			record.SourcePodUID = &result.caller.principal.PodUID
+		if pod := podUID(result.caller.subject); pod != "" {
+			record.SourcePodUID = &pod
 		}
 	}
 	switch d := result.decision.(type) {
@@ -199,7 +235,7 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 		record.Outcome, record.Binding, record.Policy, record.Rule = decision.Allow, &d.Binding, &d.Policy, &d.Rule
 		record.Substituted = len(d.Rewrites) > 0 || d.BodyRewrite != nil
 		if d.Impersonated != nil {
-			record.Impersonated = &decision.Subject{Namespace: d.Impersonated.Namespace, Name: d.Impersonated.Name}
+			record.Impersonated = &decision.ServiceAccount{Namespace: d.Impersonated.Namespace, Name: d.Impersonated.Name}
 		}
 		record.Address = &address
 	case policy.Denied:
