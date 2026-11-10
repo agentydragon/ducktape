@@ -213,18 +213,12 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         );
     }
 
-    pub(in crate::facts::sync_effects) fn fallback(
-        &mut self,
-        frame: &LocalFrame,
-        reached: Values,
-        reason: ExecutionPrecisionLossReason,
-        span: Span,
-    ) {
-        self.retain_global_fallback_accesses(frame, &reason, span);
-        // The summarized remainder may create and publish any function written
-        // after the truncation point (a descriptor's `value`, a stored
-        // callback) before it completes; none of them has a value yet.
-        let mut reached = reached;
+    /// The summarized remainder may create and publish any function written
+    /// after the truncation point (a descriptor's `value`, a stored
+    /// callback) before it completes; none of them has a value yet. Kept out
+    /// of line for the kernel's recursion depth.
+    #[inline(never)]
+    fn extend_with_remainder_functions(&self, span: Span, reached: &mut Values) {
         let index = self.executor.inputs.index;
         let enclosing = self
             .scope
@@ -246,6 +240,18 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                 })
                 .map(|(key, _)| AbstractValue::Value(Value::Alloc(Kind::Function, *key))),
         );
+    }
+
+    pub(in crate::facts::sync_effects) fn fallback(
+        &mut self,
+        frame: &LocalFrame,
+        reached: Values,
+        reason: ExecutionPrecisionLossReason,
+        span: Span,
+    ) {
+        self.retain_global_fallback_accesses(frame, &reason, span);
+        let mut reached = reached;
+        self.extend_with_remainder_functions(span, &mut reached);
         self.executor.local_operation_fallback(
             frame,
             reached,
