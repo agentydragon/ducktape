@@ -53,6 +53,7 @@ from devinfra.pr_visuals.publisher import (
     find_test_invocations,
     list_ci_failures,
     main,
+    parser,
     refresh_stale_pull_request_comment,
     target_slug,
     upload_bundle,
@@ -2104,6 +2105,63 @@ def test_success_comment_body_uses_more_of_the_comment_budget_for_previews() -> 
     assert "baseline/b.png" in body
     assert "diff/b.png" in body
     assert len(body) <= COMMENT_BUDGET
+
+
+def test_record_cache_rejects_public_review_bucket_before_s3_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "pr-visuals-publish",
+            "--ci-run-id",
+            "1",
+            "--ci-run-attempt",
+            "1",
+            "--work-dir",
+            "/tmp/fake-work",
+            "--sha",
+            "a" * 40,
+            "--repository",
+            "owner/repo",
+            "--endpoint",
+            "https://s3.example",
+            "--bucket",
+            "public-visuals",
+            "--public-base-url",
+            "https://s3.example/public-visuals",
+            "--record-cache-bucket",
+            "public-visuals",
+        ],
+    )
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.boto3.client", lambda *_args, **_kwargs: pytest.fail("S3 accessed")
+    )
+    with pytest.raises(ValueError, match="anonymously readable review bucket"):
+        main()
+
+
+def test_record_cache_bucket_environment_is_optional_for_pinned_wheel_rollout(monkeypatch: pytest.MonkeyPatch) -> None:
+    argv = [
+        "--ci-run-id",
+        "1",
+        "--ci-run-attempt",
+        "1",
+        "--work-dir",
+        "/tmp/fake-work",
+        "--sha",
+        "a" * 40,
+        "--repository",
+        "owner/repo",
+        "--endpoint",
+        "https://s3.example",
+        "--bucket",
+        "public-visuals",
+        "--public-base-url",
+        "https://s3.example/public-visuals",
+    ]
+    monkeypatch.delenv("PR_VISUALS_RECORD_CACHE_BUCKET", raising=False)
+    assert parser().parse_args(argv).record_cache_bucket is None
+    monkeypatch.setenv("PR_VISUALS_RECORD_CACHE_BUCKET", "private-records")
+    assert parser().parse_args(argv).record_cache_bucket == "private-records"
 
 
 if __name__ == "__main__":

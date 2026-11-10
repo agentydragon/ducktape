@@ -101,6 +101,10 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.PR_VISUALS_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
           AWS_REGION: us-east-1
+          # Old pinned wheels ignore this; the new wheel uses it after sync-pins.
+          PR_VISUALS_RECORD_CACHE_BUCKET: pr-visuals-record-cache
+          # Only push-to-devel runs are full sweeps and may refresh the cache.
+          PR_VISUALS_RECORD_CACHE_WRITE: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'devel' && '1' || '0' }}
           GITHUB_TOKEN: ${{ github.token }}
           # The commit this run actually tested, for both event kinds: the PR head the run
           # was triggered on (not a merge sha), which never moves.

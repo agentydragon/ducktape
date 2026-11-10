@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
+from devinfra.pr_visuals.record_cache import RecordCache
 from devinfra.testing.output_records import OutputRecord
 
 logger = logging.getLogger(__name__)
@@ -224,11 +225,14 @@ def collect_outputs(
     targets: Iterable[str] | None = None,
     bbapi: Path = Path("bbapi"),
     run: Runner = subprocess.run,
+    record_cache: RecordCache | None = None,
 ) -> CollectedOutputs:
     """List test artifacts once per invocation, then collect their output records."""
     logger.info("Listing test artifacts from %d invocation(s)", len(invocations))
     listed = list_ci_artifacts(invocations, bbapi=bbapi, run=run, require_all=True)
-    return collect_listed_outputs(listed, repository, destination, targets=targets, bbapi=bbapi, run=run)
+    return collect_listed_outputs(
+        listed, repository, destination, targets=targets, bbapi=bbapi, run=run, record_cache=record_cache
+    )
 
 
 def collect_listed_outputs(
@@ -239,6 +243,7 @@ def collect_listed_outputs(
     targets: Iterable[str] | None = None,
     bbapi: Path = Path("bbapi"),
     run: Runner = subprocess.run,
+    record_cache: RecordCache | None = None,
 ) -> CollectedOutputs:
     """Adapt a native BES listing into materialized, result-scoped records."""
     record_labels = {
@@ -262,10 +267,39 @@ def collect_listed_outputs(
                 staged = staging_root / hashlib.sha256(repr(key).encode()).hexdigest() / f"{index}.json"
                 staged.parent.mkdir(parents=True, exist_ok=True)
                 downloads.append((item, staged))
-    logger.info("Listed %d artifacts; downloading %d output records", len(listed), len(downloads))
-    download_error = _download_records(downloads, destination=destination, bbapi=bbapi, run=run)
+    if record_cache is not None and downloads:
+        record_cache.load()
+    contents: dict[int, bytes] = {}
+    misses: list[tuple[ListedArtifact, Path]] = []
+    # A CAS body can be listed under several result identities. Materialize it once;
+    # each result still receives its own fresh artifact, status and summary validation.
+    by_digest: dict[tuple[str, int], Path] = {}
+    for item, path in downloads:
+        cas = _cas_digest(item.artifact.file.uri)
+        cached = record_cache.get(*cas) if record_cache is not None and cas is not None else None
+        if cached is not None:
+            contents[id(item)] = cached
+        elif cas is not None and cas in by_digest:
+            pass
+        else:
+            misses.append((item, path))
+            if cas is not None:
+                by_digest[cas] = path
+    logger.info(
+        "Listed %d artifacts; %d output records cached, downloading %d distinct records",
+        len(listed),
+        len(contents),
+        len(misses),
+    )
+    download_error = _download_records(misses, destination=destination, bbapi=bbapi, run=run)
+    for item, path in downloads:
+        if id(item) in contents:
+            continue
+        cas = _cas_digest(item.artifact.file.uri)
+        source = by_digest.get(cas, path) if cas is not None else path
+        if source.is_file():
+            contents[id(item)] = source.read_bytes()
     logger.info("Selecting outputs from %d records", len(downloads))
-    contents = {id(item): path.read_bytes() for item, path in downloads if path.is_file()}
     sources: list[SourceResult] = []
     for key, items in by_result.items():
         statuses = {item.artifact.status for item in items}
@@ -275,7 +309,9 @@ def collect_listed_outputs(
             source_issues.append(f"conflicting statuses {sorted(str(s) for s in statuses)}")
         if len(summaries) != 1:
             source_issues.append("missing or inconsistent test summary")
-        if download_error is not None and any(item.artifact.file.name.startswith(_RECORDS) for item in items):
+        if download_error is not None and any(
+            item.artifact.file.name.startswith(_RECORDS) and id(item) not in contents for item in items
+        ):
             source_issues.append(download_error)
         summary = items[0].artifact.test_summary
         files = []
@@ -301,7 +337,15 @@ def collect_listed_outputs(
                 tuple(source_issues),
             )
         )
-    return collect_materialized_outputs(sources, repository, targets=targets)
+    collected = collect_materialized_outputs(sources, repository, targets=targets)
+    if record_cache is not None and record_cache.writable and collected.complete:
+        for item, _ in downloads:
+            cas = _cas_digest(item.artifact.file.uri)
+            body = contents.get(id(item))
+            if cas is not None and body is not None:
+                record_cache.remember(*cas, body)
+        record_cache.save()
+    return collected
 
 
 def local_output_result(root: Path, *, result: ResultKey, status: str | None, summary: SourceSummary) -> SourceResult:

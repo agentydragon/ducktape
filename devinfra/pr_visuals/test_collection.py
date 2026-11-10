@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import subprocess
 from dataclasses import replace
@@ -9,6 +10,7 @@ from typing import TypedDict, Unpack
 
 import pytest
 import pytest_bazel
+from botocore.exceptions import ClientError
 
 from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, Runner
 from devinfra.pr_visuals.collection import (
@@ -18,6 +20,7 @@ from devinfra.pr_visuals.collection import (
     collect_outputs,
     local_output_result,
 )
+from devinfra.pr_visuals.record_cache import RecordCache
 from devinfra.pr_visuals.testing.outputs import Blob, result_artifact
 from devinfra.testing.output_records import SCHEMA, OutputRecord
 
@@ -484,6 +487,132 @@ def test_local_results_share_retry_shard_and_failed_coverage_rules(tmp_path: Pat
     partial = collect_materialized_outputs([*failed_first, failed_other], "agentydragon/ducktape")
     assert not partial.complete
     assert [(item.result.shard, item.result.attempt) for item in partial.selected] == [(1, 2)]
+
+
+class _CacheS3:
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+        self.read_error: str | None = None
+
+    def get_object(self, **kwargs: str) -> dict[str, io.BytesIO]:
+        if self.read_error:
+            raise ClientError({"Error": {"Code": self.read_error}}, "GetObject")
+        try:
+            return {"Body": io.BytesIO(self.objects[kwargs["Bucket"], kwargs["Key"]])}
+        except KeyError:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject") from None
+
+    def put_object(self, **kwargs: object) -> None:
+        body = kwargs["Body"]
+        assert isinstance(body, bytes)
+        self.objects[str(kwargs["Bucket"]), str(kwargs["Key"])] = body
+
+
+def test_cache_reuse_keeps_fresh_result_status_and_payload_validation(tmp_path: Path) -> None:
+    artifacts, blobs = _pair("dialog", "same")
+    s3 = _CacheS3()
+    first_calls: list[list[str]] = []
+    first = collect_outputs(
+        ["old"],
+        "owner/repo",
+        tmp_path / "old",
+        run=_run(artifacts, blobs, first_calls),
+        record_cache=RecordCache(s3, "private-records", "owner/repo", writable=True),
+    )
+    assert first.complete
+    assert len([call for call in first_calls if "blob" in call]) == 1
+
+    fresh_calls: list[list[str]] = []
+    failed_artifacts = [
+        _artifact(item.file.name, item.file.uri, status="FAILED", overall_status="FAILED") for item in artifacts
+    ]
+    fresh = collect_outputs(
+        ["new"],
+        "owner/repo",
+        tmp_path / "new",
+        run=_run(failed_artifacts, blobs, fresh_calls),
+        record_cache=RecordCache(s3, "private-records", "owner/repo"),
+    )
+    assert not fresh.selected
+    assert fresh.results[0].result.invocation == "new"
+    assert fresh.results[0].status == "FAILED"
+    assert any("artifact" in call for call in fresh_calls)
+    assert not any("blob" in call for call in fresh_calls)
+
+    missing_payload = collect_outputs(
+        ["new"],
+        "owner/repo",
+        tmp_path / "missing",
+        run=_run(failed_artifacts[:1], blobs, []),
+        record_cache=RecordCache(s3, "private-records", "owner/repo"),
+    )
+    assert not missing_payload.complete
+    assert any("absent from this exact result" in issue.message for issue in missing_payload.issues)
+
+
+def test_duplicate_cas_record_downloaded_once_and_reused_for_distinct_results(tmp_path: Path) -> None:
+    first, first_blobs = _pair("shared", "a", path="files/shared.png", target="//ui:first")
+    second, second_blobs = _pair("shared", "b", path="files/shared.png", target="//ui:second")
+    manifests: list[list[dict[str, str]]] = []
+
+    def inspect(command: list[str | Path], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "blob" in words:
+            manifests.append(json.loads(Path(words[words.index("--manifest") + 1]).read_text()))
+        return _run(first + second, first_blobs | second_blobs, [])(command, **kwargs)
+
+    collected = collect_outputs(["invocation"], "owner/repo", tmp_path, run=inspect)
+    assert collected.complete
+    assert {item.key.target for item in collected.selected} == {"//ui:first", "//ui:second"}
+    assert len(manifests) == 1
+    assert len(manifests[0]) == 1
+
+
+def test_incomplete_devel_collection_does_not_replace_snapshot(tmp_path: Path) -> None:
+    artifacts, blobs = _pair("dialog", "a")
+    s3 = _CacheS3()
+    incomplete = collect_outputs(
+        ["invocation"],
+        "owner/repo",
+        tmp_path,
+        run=_run(artifacts[:1], blobs, []),
+        record_cache=RecordCache(s3, "private-records", "owner/repo", writable=True),
+    )
+    assert not incomplete.complete
+    assert not s3.objects
+
+
+def test_corrupt_private_cache_snapshot_redownloads_records(tmp_path: Path) -> None:
+    artifacts, blobs = _pair("dialog", "a")
+    s3 = _CacheS3()
+    cache = RecordCache(s3, "private-records", "owner/repo")
+    s3.objects[cache.bucket, cache.key] = b"invalid compressed cache"
+    calls: list[list[str]] = []
+    collected = collect_outputs(
+        ["invocation"], "owner/repo", tmp_path, run=_run(artifacts, blobs, calls), record_cache=cache
+    )
+    assert collected.complete
+    assert len([call for call in calls if "blob" in call]) == 1
+
+
+def test_missing_private_cache_bucket_falls_back_to_buildbuddy(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    artifacts, blobs = _pair("dialog", "a")
+    s3 = _CacheS3()
+    s3.read_error = "NoSuchBucket"
+    calls: list[list[str]] = []
+    collected = collect_outputs(
+        ["invocation"],
+        "owner/repo",
+        tmp_path,
+        run=_run(artifacts, blobs, calls),
+        record_cache=RecordCache(s3, "private-records", "owner/repo", writable=True),
+    )
+    assert collected.complete
+    assert len([call for call in calls if "blob" in call]) == 1
+    assert not s3.objects
+    assert "using BuildBuddy" in caplog.text
 
 
 if __name__ == "__main__":

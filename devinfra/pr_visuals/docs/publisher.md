@@ -21,6 +21,31 @@ selected screenshot payloads. Each call downloads up to eight blobs concurrently
 The publisher logs phase starts and workload counts; Actions timestamps on those
 lines show the time spent listing, downloading, building, and uploading.
 
+The publisher also reads one bounded snapshot of output record JSON from the
+private `pr-visuals-record-cache` bucket. Every run still lists BuildBuddy artifacts
+and validates result identities, statuses, summaries, retries, record schemas, and
+payload references. Only record bodies whose SHA-256 and size match a newly listed
+CAS URI are reused; misses are downloaded in the usual manifest call. The snapshot
+has limits on compressed size, expanded size, record count, and per-record size,
+and is parsed in memory without extracting paths. Corrupt entries, missing buckets,
+access failures, and failed writes log a warning and fall back to BuildBuddy.
+
+Only a complete devel record collection updates the snapshot, merging its records
+with older entries under a fixed size bound. The workflow sets
+`PR_VISUALS_RECORD_CACHE_WRITE=1` only for devel push full sweeps. PR publications
+read it without writing.
+Concurrent devel writers can replace each other's snapshot and reduce future hit
+rates; content verification and fresh result validation prevent a wrong output.
+The workflow sets `PR_VISUALS_RECORD_CACHE_BUCKET`; the old pinned wheel ignores this
+environment variable, while a new wheel reads it as the default for
+`--record-cache-bucket`. Cache errors are best effort while the bucket is being
+provisioned. The cache becomes active only after the private bucket is Ready and
+the updated publisher wheel pin reaches `devel`; confirm both in the corresponding
+rollout PRs. Record JSON may contain non-visual metadata. The publisher rejects configuring the
+cache to use the anonymously readable review bucket; the workflow uses the separate
+private bucket and never puts record bodies in an Actions cache shared with fork
+workflows.
+
 ## Which PR a run is for
 
 Never taken from the run's event: `pull_requests` is empty for forks and resolved at

@@ -51,6 +51,7 @@ from devinfra.pr_visuals.metadata import (
     ReviewVariant,
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
+from devinfra.pr_visuals.record_cache import RecordCache
 from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
 
@@ -414,9 +415,12 @@ def download_visual_tests(
     repository: str,
     bbapi: Path = Path("bbapi"),
     run: Runner = subprocess.run,
+    record_cache: RecordCache | None = None,
 ) -> list[DownloadedVisualTest]:
     """Materialize screenshot variants selected from exact test results by the collector."""
-    collected = collect_outputs(invocations, repository, destination / ".records", bbapi=bbapi, run=run)
+    collected = collect_outputs(
+        invocations, repository, destination / ".records", bbapi=bbapi, run=run, record_cache=record_cache
+    )
     by_target: dict[str, list[OutputObservation]] = defaultdict(list)
     for observation in collected.selected:
         if observation.key.role == "screenshot":
@@ -955,6 +959,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--bucket", required=True)
     result.add_argument("--public-base-url", required=True)
     result.add_argument(
+        "--record-cache-bucket",
+        default=os.environ.get("PR_VISUALS_RECORD_CACHE_BUCKET"),
+        help="Private bucket for verified CAS output record snapshots (defaults to PR_VISUALS_RECORD_CACHE_BUCKET)",
+    )
+    result.add_argument(
         "--pull-request-head",
         help="OWNER:BRANCH of the PR this run was built for, whose number and base commit are looked up; "
         "absent for a devel push",
@@ -976,6 +985,8 @@ def _invocations_for(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     args = parser().parse_args()
+    if args.record_cache_bucket == args.bucket:
+        raise ValueError("record cache bucket must differ from the anonymously readable review bucket")
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
@@ -1033,7 +1044,20 @@ def main() -> None:
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations, run=subprocess.run)
         tests = (
-            download_visual_tests(invocations, args.work_dir / "tests", repository=args.repository, run=subprocess.run)
+            download_visual_tests(
+                invocations,
+                args.work_dir / "tests",
+                repository=args.repository,
+                run=subprocess.run,
+                record_cache=RecordCache(
+                    boto3.client("s3", endpoint_url=args.endpoint),
+                    args.record_cache_bucket,
+                    args.repository,
+                    writable=os.environ.get("PR_VISUALS_RECORD_CACHE_WRITE") == "1",
+                )
+                if args.record_cache_bucket
+                else None,
+            )
             if readiness == "complete"
             else []
         )

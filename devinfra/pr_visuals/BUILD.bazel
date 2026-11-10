@@ -30,11 +30,21 @@ py_library(
 )
 
 py_library(
+    name = "record_cache",
+    srcs = ["record_cache.py"],
+    deps = [
+        "//devinfra/testing:output_records",
+        "@pypi//botocore",
+    ],
+)
+
+py_library(
     name = "collection",
     srcs = ["collection.py"],
     visibility = ["//devinfra/pr_visuals/testing:__pkg__"],
     deps = [
         ":artifacts",
+        ":record_cache",
         "//devinfra/testing:output_records",
     ],
 )
@@ -124,6 +134,7 @@ py_library(
         ":github_comment",
         ":metadata",
         ":pull_request",
+        ":record_cache",
         ":render_common",
         ":visual_diff",
         "//devinfra/buildbuddy/ci:invocation_ids",
@@ -329,14 +340,29 @@ py_test(
 )
 
 py_test(
+    name = "test_record_cache",
+    srcs = ["test_record_cache.py"],
+    deps = [
+        ":record_cache",
+        "//:conftest",
+        "//devinfra/testing:output_records",
+        "@pypi//botocore",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_collection",
     srcs = ["test_collection.py"],
     deps = [
         ":artifacts",
         ":collection",
+        ":record_cache",
         "//:conftest",
         "//devinfra/pr_visuals/testing:outputs",
         "//devinfra/testing:output_records",
+        "@pypi//botocore",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
