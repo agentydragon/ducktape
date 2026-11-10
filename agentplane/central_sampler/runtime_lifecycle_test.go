@@ -1,9 +1,9 @@
 package centralsampler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -43,6 +43,13 @@ func startRuntimeForTest(t *testing.T, runtime *Runtime) (context.CancelFunc, <-
 	}
 }
 
+// fakeCodeHost is a Code Mode host that never starts a real process.
+func fakeCodeHost(t *testing.T) *CodeModeHost {
+	t.Helper()
+	manager, _ := newFakeCodeModeManager(t)
+	return manager
+}
+
 func assertRuntimeWaitsForGate(t *testing.T, done <-chan error, description string) {
 	t.Helper()
 	select {
@@ -67,7 +74,7 @@ func waitRuntimeDone(t *testing.T, done <-chan error) {
 func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60})
+	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan Owner, 1)
 	allowClaimReturn := make(chan struct{})
 	runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (Owner, error) {
@@ -110,15 +117,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
-	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60})
-	claimCommitted := make(chan struct{}, 1)
-	runtime.claimLease = func(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
-		owner, err := store.Claim(ctx, conversationID, duration)
-		if err == nil {
-			claimCommitted <- struct{}{}
-		}
-		return owner, err
-	}
+	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	releaseCommitted := make(chan Owner, 1)
 	allowReleaseReturn := make(chan struct{})
 	runtime.releaseLease = func(ctx context.Context, owner Owner) error {
@@ -133,10 +132,25 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	cancel, done := startRuntimeForTest(t, runtime)
 	defer cancel()
 	runtime.Wake(session.ID)
-	select {
-	case <-claimCommitted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("runtime did not commit its lease claim")
+	// A committed claim can still return after shutdown begins, taking the stopping path.
+	// Wait until the driver accepts ownership so this test exercises drain release.
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		runtime.mu.Lock()
+		task := runtime.tasks[session.ID]
+		owned := task != nil && task.owner != nil
+		runtime.mu.Unlock()
+		if owned {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("runtime did not accept its lease claim")
+		case <-ticker.C:
+		}
 	}
 	cancel()
 
@@ -175,7 +189,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 }
 
 func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60})
+	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 2
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -198,7 +212,7 @@ func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) 
 }
 
 func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60})
+	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 1
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -314,10 +328,9 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 			ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""},
 		}},
 	}
-	f.runtime = NewRuntime(store, settings)
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
-	f.runtime.codeHost = manager
+	f.runtime = NewRuntime(store, settings, manager)
 	f.peers = peers
 	f.runtime.newExecutor = func(_ context.Context, store *Store, owner Owner, _ *Session, _ Settings) (*Executor, func() error, error) {
 		executor := newFakeExecutor(t, store, owner, client)
@@ -469,7 +482,7 @@ func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	}
 }
 
-func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorBlocks(t *testing.T) {
+func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.T) {
 	f := newDrainFixture(t, 1)
 	cancel, done := startRuntimeForTest(t, f.runtime)
 	defer cancel()
@@ -485,7 +498,30 @@ func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorBlocks(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed, err := f.store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingJSON); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
-		t.Fatalf("successor did not block on the lost cell: changed=%v err=%v", changed, err)
+	if changed, err := f.store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingJSON); err != nil || !changed {
+		t.Fatalf("successor did not settle the lost cell: changed=%v err=%v", changed, err)
+	}
+	assertNoUnresolvedNestedIntents(t, f.store, successor)
+	work, err := f.store.LiveWork(t.Context(), successor)
+	if err != nil || work != (LiveWork{}) {
+		t.Fatalf("live work after settlement=%+v err=%v", work, err)
+	}
+	conversation, err := f.store.Read(t.Context(), successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls, err := conversation.Archive.PendingCalls(); err != nil || len(calls) != 0 {
+		t.Fatalf("the model's wait call was left unanswered: calls=%v err=%v", calls, err)
+	}
+	contextWire, err := json.Marshal(conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(contextWire, []byte("exec_command")) {
+		t.Fatalf("continuation does not name the nested call with unknown outcome: %s", contextWire)
+	}
+	command, err := f.store.NextCommand(t.Context(), successor, f.session.ID)
+	if err != nil || command == nil || command.ID != "turn" {
+		t.Fatalf("successor cannot continue the turn: command=%+v err=%v", command, err)
 	}
 }

@@ -38,7 +38,8 @@ const (
 	sessionWork = `(ss.setup_state=$2
 		OR EXISTS(SELECT 1 FROM sampler_command cmd WHERE cmd.session_id=ss.id AND cmd.outcome=$3)
 		OR EXISTS(SELECT 1 FROM sampler_cell cell WHERE cell.conversation_id=c.id AND cell.status='live')
-		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned')))`
+		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned'))
+		OR EXISTS(SELECT 1 FROM sampler_intent intent WHERE intent.conversation_id=c.id AND intent.result IS NULL))`
 )
 
 type rowScanner interface {
@@ -530,9 +531,79 @@ const (
 	codeHostUndispatchedCall = "The JavaScript host was lost before this call was dispatched. No JavaScript cell or executor operation was started for this call. Prior store()/load() values are unavailable; recreate required state in a new exec cell."
 )
 
-// ReconcileCodeHostLoss runs before any next model step. It clears a stale host marker only
-// after recording the state loss under the current owner fence. Pending model calls are failed
-// with exact call IDs only when no admitted effect or live handle could have dispatched them.
+// lostIntent is an unresolved intent that no owner can finish any more.
+type lostIntent struct {
+	ID         string
+	Generation int
+	Kind       IntentKind
+	// Operation names what was dispatched: the nested tool name, the executor method, or the
+	// model call ID of a cell.
+	Operation string
+}
+
+func (intent lostIntent) describe() string {
+	if intent.Operation == "" {
+		return fmt.Sprintf("%s intent %s", intent.Kind, intent.ID)
+	}
+	return fmt.Sprintf("%s %s (intent %s)", intent.Kind, intent.Operation, intent.ID)
+}
+
+// lostIntents lists the unresolved intents, oldest first, with what each dispatched.
+func lostIntents(ctx context.Context, tx *sql.Tx, conversationID string) ([]lostIntent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id::text,generation,request,request->'tool_name'->>'name',request->>'method' FROM sampler_intent
+		WHERE conversation_id=$1 AND result IS NULL ORDER BY id FOR UPDATE`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var intents []lostIntent
+	for rows.Next() {
+		var intent lostIntent
+		var requestWire []byte
+		var toolName, method sql.NullString
+		if err := rows.Scan(&intent.ID, &intent.Generation, &requestWire, &toolName, &method); err != nil {
+			return nil, err
+		}
+		request, err := decodeIntentRequest(requestWire)
+		if err != nil {
+			return nil, err
+		}
+		intent.Kind = request.Kind
+		switch {
+		case toolName.Valid:
+			intent.Operation = toolName.String
+		case method.Valid:
+			intent.Operation = method.String
+		default:
+			intent.Operation = request.callID()
+		}
+		intents = append(intents, intent)
+	}
+	return intents, rows.Err()
+}
+
+func lostCellCallMessage(nested []lostIntent) string {
+	message := "The JavaScript host was lost while this cell was running. The cell did not finish and its handle is gone."
+	if len(nested) > 0 {
+		names := make([]string, 0, len(nested))
+		for _, intent := range nested {
+			names = append(names, intent.describe())
+		}
+		message += " Calls it dispatched whose outcome is unknown: " + strings.Join(names, ", ") + "."
+	}
+	return message + " Nothing was replayed; remote effects may have occurred. Prior store()/load() values and live-cell handles are unavailable; recreate required state in a new exec cell."
+}
+
+// ReconcileCodeHostLoss runs before any next model step. When the recorded JavaScript host is
+// not this runtime's, or an older owner generation left an intent or cell unresolved, it settles
+// that work under the current owner fence instead of blocking: every unresolved intent is
+// abandoned as an unknown remote outcome, live cells and process handles are abandoned with their
+// retained cursor and output, pending model tool calls get truthful outputs paired to their exact
+// call IDs, the JavaScript epoch advances and a model-visible notice is appended. Nothing is
+// replayed; the turn then continues so the model decides. A Session blocked on this state is
+// unblocked in the same transaction. With nothing lost, the stale host marker is cleared with the
+// notice as before; unrelated (non-model) tool calls stay with their ordinary dispatcher and the
+// notice follows once they settle.
 func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instanceID string, encoding protocol.ExecEncoding) (bool, error) {
 	if _, err := uuid.Parse(instanceID); err != nil {
 		return false, protocol.ErrInvalid
@@ -547,43 +618,126 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err := tx.QueryRowContext(ctx, `SELECT code_host_instance::text FROM sampler_conversation WHERE id=$1`, conversation.ID).Scan(&previous); err != nil {
 			return err
 		}
-		if !previous.Valid || previous.String == instanceID {
+		hostLost := previous.Valid && previous.String != instanceID
+		// An older generation is fenced out, so its unresolved intents and live cells can never
+		// settle on their own; a same-generation host failure likewise orphans them.
+		var staleWork bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL AND generation<$2)
+			OR EXISTS(SELECT 1 FROM sampler_cell WHERE conversation_id=$1 AND status='live' AND generation<$2)`, conversation.ID, owner.Generation).Scan(&staleWork); err != nil {
+			return err
+		}
+		if !hostLost && !staleWork {
 			return nil
-		}
-		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
-		if err != nil {
-			return err
-		}
-		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
-		if err != nil {
-			return err
-		}
-		liveProcess, err := hasLiveProcess(ctx, tx, conversation.ID)
-		if err != nil {
-			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		if conversation.Pending != nil || unresolved || liveCell || liveProcess {
-			slog.Warn("central sampler blocked Session on lost JavaScript host", "session_id", session.ID, "conversation_id", conversation.ID,
-				"generation", owner.Generation, "pending", conversation.Pending != nil, "unresolved_intent", unresolved, "live_cell", liveCell,
-				"live_process", liveProcess, "previous_instance", previous.String, "instance", instanceID)
-			return &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect; explicit recovery is required"}
+		// A block an owner recorded on the host that still serves the Session is a reviewed
+		// decision (an uncommitted provider stream, an interrupt with unconfirmed handles); only
+		// a lost host or lost owner settles it without an operator. See the
+		// TODO(SAMPLER_INTENT_LEASES) in settleFailure for the design that retires that block.
+		if !hostLost && session.Blocked {
+			return nil
 		}
+		intents, err := lostIntents(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var reconciliation *eventpb.Event
+		if conversation.Pending != nil && conversation.Pending.Kind == PendingIntentSampling {
+			reconciliation, err = samplingReconciliation(ctx, tx, session, conversation.Pending.ID)
+			if err != nil {
+				return err
+			}
+		}
+		abandonedIntents := make([]map[string]any, 0, len(intents))
+		var nested []lostIntent
+		lostCellCalls := map[string]bool{}
+		for _, intent := range intents {
+			var linked *eventpb.Event
+			if intent.Kind == IntentSampling && conversation.Pending != nil && intent.ID == conversation.Pending.ID {
+				linked = reconciliation
+			}
+			if err := s.abandonIntent(ctx, tx, owner, conversation, session, intent.ID, intent.Kind, linked); err != nil {
+				return err
+			}
+			switch intent.Kind {
+			case IntentTool, IntentExecutor:
+				nested = append(nested, intent)
+			case IntentCell:
+				lostCellCalls[intent.Operation] = true
+			}
+			abandonedIntents = append(abandonedIntents, map[string]any{"id": intent.ID, "kind": intent.Kind, "operation": intent.Operation, "generation": intent.Generation})
+		}
+		cellRows, err := tx.QueryContext(ctx, `UPDATE sampler_cell SET status='abandoned' WHERE conversation_id=$1 AND status='live' RETURNING id`, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var abandonedCells []string
+		for cellRows.Next() {
+			var id string
+			if err := cellRows.Scan(&id); err != nil {
+				cellRows.Close()
+				return err
+			}
+			abandonedCells = append(abandonedCells, id)
+		}
+		if err := cellRows.Err(); err != nil {
+			cellRows.Close()
+			return err
+		}
+		cellRows.Close()
+		for _, id := range abandonedCells {
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_CELL, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{}); err != nil {
+				return err
+			}
+		}
+		processRows, err := tx.QueryContext(ctx, `UPDATE sampler_process SET status='abandoned'
+			WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') RETURNING `+processColumns, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var abandonedProcesses []map[string]any
+		for processRows.Next() {
+			process, err := scanProcess(processRows)
+			if err != nil {
+				processRows.Close()
+				return err
+			}
+			abandonedProcesses = append(abandonedProcesses, map[string]any{
+				"process_id": process.ID, "after_seq": process.AfterSequence, "exit_code": process.ExitCode, "remote_outcome": NestedUnknown,
+				"automatic_replay": false, "buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,
+			})
+		}
+		if err := processRows.Err(); err != nil {
+			processRows.Close()
+			return err
+		}
+		processRows.Close()
+		for _, evidence := range abandonedProcesses {
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, evidence["process_id"].(string), eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, evidence); err != nil {
+				return err
+			}
+		}
+		settled := len(intents) > 0 || len(abandonedCells) > 0 || len(abandonedProcesses) > 0
+		conversation.Pending = nil
+
 		calls, err := conversation.Archive.PendingCalls()
 		if err != nil {
 			return err
 		}
-		// Leave unrelated tool calls to their normal dispatcher. Once they settle, the
-		// next iteration adds the notice before sampling. Failed volatile calls already
+		// Leave unrelated tool calls to their normal dispatcher. Failed volatile calls already
 		// carry the loss message in their exact paired output.
 		for _, call := range calls {
 			if !call.IsModelTool(encoding) {
 				break
 			}
-			output := []protocol.ContentPart{{Type: "input_text", Text: codeHostUndispatchedCall}}
+			text := codeHostUndispatchedCall
+			if lostCellCalls[call.CallID] {
+				text = lostCellCallMessage(nested)
+			}
+			output := []protocol.ContentPart{{Type: "input_text", Text: text}}
 			if err := conversation.appendToolResult(call, output); err != nil {
 				return err
 			}
@@ -602,9 +756,19 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err != nil {
 			return err
 		}
-		if len(remaining) == 0 {
+		// With nothing settled, the notice waits for unrelated calls so it precedes the next
+		// sample; settled work resets the JavaScript session now, so its notice cannot wait.
+		if len(remaining) == 0 || settled {
+			notice := codeHostLossNotice
+			if len(nested) > 0 {
+				names := make([]string, 0, len(nested))
+				for _, intent := range nested {
+					names = append(names, intent.describe())
+				}
+				notice += " Calls abandoned with unknown outcome: " + strings.Join(names, ", ") + "."
+			}
 			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: codeHostLossNotice}})
+				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
 			}); err != nil {
 				return err
 			}
@@ -612,11 +776,26 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				return err
 			}
 			if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_CODE_HOST_LOSS, eventpb.ExecutionProgress_PHASE_COMMITTED, map[string]any{
-				"previous_instance": previous.String, "next_instance": instanceID, "javascript_state_reset": true, "automatic_replay": false,
+				"previous_instance": previous.String, "next_instance": instanceID, "host_lost": hostLost, "stale_generation_work": staleWork,
+				"javascript_state_reset": true, "automatic_replay": false, "remote_outcome": NestedUnknown,
+				"abandoned_intents": abandonedIntents, "abandoned_cells": abandonedCells, "abandoned_processes": abandonedProcesses,
+				"unblocked": session.Blocked,
 			}); err != nil {
 				return err
 			}
 			changed = true
+		}
+		if session.Blocked {
+			session.Blocked, session.BlockedReason = false, nil
+			if err := persistSession(ctx, tx, session); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if settled {
+			slog.Info("central sampler settled lost JavaScript host work", "session_id", session.ID, "conversation_id", conversation.ID,
+				"generation", owner.Generation, "host_lost", hostLost, "stale_generation_work", staleWork, "abandoned_intents", len(intents),
+				"abandoned_cells", len(abandonedCells), "abandoned_processes", len(abandonedProcesses), "previous_instance", previous.String, "instance", instanceID)
 		}
 		if changed {
 			return updateConversation(ctx, tx, conversation)
@@ -624,6 +803,44 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		return nil
 	})
 	return changed, err
+}
+
+// abandonIntent settles one unresolved intent as an unknown remote outcome that is never replayed
+// and records the abandonment; a sampling reconciliation, when given, is appended linked to it.
+func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+	intentID string, kind IntentKind, reconciliation *eventpb.Event,
+) error {
+	abandoned := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
+	if kind == IntentSampling || kind == IntentCompaction {
+		abandoned["provider_completion_unknown"] = true
+		abandoned["output_committed"] = false
+	}
+	wire, err := marshal(abandoned)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1 AND result IS NULL`, intentID, wire)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return protocol.ErrPrecondition
+	}
+	sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
+	if err != nil {
+		return err
+	}
+	if reconciliation != nil {
+		reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
+		if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RecoverSession abandons one blocked runtime or sampling boundary after an operator has inspected
@@ -767,36 +984,8 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
-			abandonedIntent := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
-			if intent.kind == IntentSampling {
-				abandonedIntent["provider_completion_unknown"] = true
-				abandonedIntent["output_committed"] = false
-			}
-			wire, err := marshal(abandonedIntent)
-			if err != nil {
+			if err := s.abandonIntent(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation, session, intent.id, intent.kind, reconciliation); err != nil {
 				return err
-			}
-			result, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1 AND result IS NULL`, intent.id, wire)
-			if err != nil {
-				return err
-			}
-			updated, err := result.RowsAffected()
-			if err != nil {
-				return err
-			}
-			if updated != 1 {
-				return protocol.ErrPrecondition
-			}
-			sources, err := s.recordEvidenceWithSources(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
-				session, intent.id, intent.kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandonedIntent)
-			if err != nil {
-				return err
-			}
-			if reconciliation != nil {
-				reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
-				if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
-					return err
-				}
 			}
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
 		}
@@ -1180,18 +1369,26 @@ func (s *Store) PendingSessionIDs(ctx context.Context, target, after string, lim
 	return ids, rows.Err()
 }
 
-func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int) ([]string, error) {
+// RecoverableSessions lists unowned Sessions with pending work. A blocked Session is included
+// only when its recorded JavaScript host is not instanceID: the owner that claims it settles the
+// lost work in ReconcileCodeHostLoss and unblocks it, so a wedge never outlives the host that
+// caused it, while a block recorded on the host still serving the Session waits for its operator.
+func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int, instanceID string) ([]string, error) {
 	if limit <= 0 {
+		return nil, protocol.ErrInvalid
+	}
+	if _, err := uuid.Parse(instanceID); err != nil {
 		return nil, protocol.ErrInvalid
 	}
 	if exclude == nil {
 		exclude = []string{}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
-		WHERE ss.blocked=FALSE AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
+		WHERE (ss.blocked=FALSE OR c.code_host_instance IS NOT NULL AND c.code_host_instance<>$5::uuid)
+		AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
 		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(sessionpb.SetupState_SETUP_STATE_RUNNING),
-		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit)
+		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit, instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -2730,6 +2927,10 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	}
 	var knownFailure *protocol.KnownFailureError
 	known := errors.As(failure, &knownFailure) && knownFailure != nil
+	// TODO(SAMPLER_INTENT_LEASES): this terminal block (owner alive, provider failure or
+	// unconfirmed interrupt cleanup) goes away once sampling attempts are leased and a lapsed
+	// lease is reconciled with backoff (DAG section 5). Until then only a lost host or lost owner
+	// settles it automatically (ReconcileCodeHostLoss); otherwise RecoverSession.
 	session.Blocked = !known || conversation.Pending != nil || unresolved || liveCell || liveProcess
 	session.ActiveCommand = nil
 	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold

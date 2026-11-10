@@ -81,7 +81,7 @@ func run(ctx context.Context, settings centralsampler.Settings) error {
 		return err
 	}
 	defer unsubscribe()
-	runtime := centralsampler.NewRuntime(store, settings)
+	runtime := centralsampler.NewRuntime(store, settings, centralsampler.NewCodeModeHost(context.Background(), settings, store))
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(64*1024*1024), grpc.MaxSendMsgSize(64*1024*1024))
 	samplerpb.RegisterSamplerServer(server, &centralsampler.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
 	healthServer := health.NewServer()
