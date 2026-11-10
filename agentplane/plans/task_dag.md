@@ -3212,7 +3212,11 @@ derived them from acting-as and was closed unmerged: `resumePolicy.allowOwnIdent
 wake-on-send and its Dispatcher migration are rebuilt once an explicit environment rule type exists
 (its code is kept on branch `identity-consumers-environment-self-read-deferred`). The switch is one
 change, not a mode behind a setting or behind `Environment.identity_catalog` (operator,
-2026-11-09); draft #15239 holds the controller part and draft #15258 the template part:
+2026-11-09); draft #15239 holds the controller part. The template part landed early (#15258,
+operator, 2026-11-10): Sandbox, Firecracker and VM-relay Pods render no projected ServiceAccount
+token, unconditionally (undoing #15244's catalog gate), so Sandbox `kubectl` on staging has no path
+until this switch gives it Identity impersonation at egress; command boxes keep theirs while
+`identity_catalog` is off and they run as their caller's ServiceAccount. What remains:
 
 - The Sandbox Controller always acts as `spec.identity`, read live with its UID, as the
   `WorkloadCredential` subject. `ensureIdentity` and `ensureBinding` and `Sandbox.spec.policySets`
@@ -3231,9 +3235,6 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
   authenticates a virt-launcher through the ServiceAccount the Sandbox controls and injects that
   account. It authenticates through the VM's controller owner (`vmOwner`) instead and injects
   `default`, so every runner kind switches.
-- Sandbox templates project no Kubernetes-audience token, unconditionally (undoing #15244's
-  catalog gate): Sandbox Pods render no projected ServiceAccount token. Command boxes keep theirs
-  while they run as their caller's ServiceAccount.
 - `EnvironmentService` creation takes an identity and binds its launch sets with a `PolicyBinding`
   naming that Identity and owned by it, because the policy reader fences only the Identity's UID.
   It refuses an identity change while any non-terminal Session is placed on or attached to the
@@ -3258,8 +3259,7 @@ rewrites those Sessions' execution identity or retires them. On staging no Sandb
 switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity caller's wake-on-send
 needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delivery_wake.go`).
 
-**Exit:** controller tests for a Sandbox with and without a live identity; Sandbox Pods render no
-projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
+**Exit:** controller tests for a Sandbox with and without a live identity; and a Sandbox with no
 Kubernetes use rule has nothing in the accounts namespace.
 
 ### `SESSION_SA_PRINCIPAL_REMOVAL` — Sessions carry no ServiceAccount
