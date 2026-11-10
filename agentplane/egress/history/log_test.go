@@ -91,8 +91,11 @@ func TestADecisionIsLoggedByItsValues(t *testing.T) {
 
 	var line struct {
 		Decision struct {
-			Outcome, Reason, Host, Subject string
-			Port                           int
+			Outcome, Reason, Host string
+			SubjectKind           string `json:"subject_kind"`
+			SubjectNamespace      string `json:"subject_namespace"`
+			SubjectName           string `json:"subject_name"`
+			Port                  int
 		}
 	}
 	if err := json.NewDecoder(&logged).Decode(&line); err != nil {
@@ -100,7 +103,8 @@ func TestADecisionIsLoggedByItsValues(t *testing.T) {
 	}
 	if line.Decision.Outcome != string(decision.Deny) || line.Decision.Reason != string(reason) ||
 		line.Decision.Host != record.Host || line.Decision.Port != record.Port ||
-		line.Decision.Subject != "test-namespace/test-workload" {
+		line.Decision.SubjectKind != "ServiceAccount" || line.Decision.SubjectNamespace != "test-namespace" ||
+		line.Decision.SubjectName != "test-workload" {
 		t.Fatalf("logged %+v", line)
 	}
 }
