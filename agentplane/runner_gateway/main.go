@@ -32,6 +32,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -256,7 +257,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, nil)
+	var identities *resolver.Identities
+	if c.PolicyNamespace != "" {
+		identities = &resolver.Identities{PolicyNamespace: c.PolicyNamespace}
+	}
+	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, identities)
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
@@ -340,7 +345,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	dispatcherMethods := dispatcher.Methods(auth.ReviewedServiceAccount(dispatcherAuth))
+	dispatcherMethods := dispatcher.Methods(auth.ReviewedServiceAccountOrIdentity(dispatcherAuth))
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, environments.Methods(dispatcherAuth))

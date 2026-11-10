@@ -61,11 +61,13 @@ supplied MCP schemas and policy-authored argument schemas retain their own JSON 
 
 ## Caller admission and Connection authority
 
-Every caller is a Kubernetes ServiceAccount carrying the label
-`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace.
+A workload caller is a Kubernetes ServiceAccount carrying the label
+`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace, or,
+by SVID only, an `Identity` of the policy namespace.
 The shared TLS RPC listener on 8080 verifies an agentplane Runtime SVID with explicit
 clientAuth against the trust-manager roots. It resolves the exact live Sandbox UID and accepted
-credential to its controller-owned ServiceAccount and canonical UID. The sidecar originates TLS
+credential to the subject the credential names: a ServiceAccount and its canonical UID, or an
+Identity and its UID, read live and fenced on that UID. The sidecar originates TLS
 through the central proxy's opaque CONNECT; the proxy supplies no identity. Native gRPC runs
 the same Gate. Bearer headers cannot replace the certificate
 peer; deleted Sandboxes, stale credentials and invalid leaves fail before a handler runs.
@@ -103,8 +105,19 @@ admitting writer did not store a UID remain explicitly unknown, including writes
 during a roll. The service never looks up a same-name live account to fill it in, and a
 caller-delegating executor must refuse those requests.
 
+An Identity caller is admitted while a live `PolicyBinding` of the policy namespace names its
+Identity incarnation, whether or not the binding grants an Action rule; the index answers only
+while that Identity of that UID exists, and a watch rechecks it before every frame. No Identity is
+a service reader. It is recorded by name and UID on its requests and cancellation events, and owns,
+reads, cancels and spends idempotency keys by incarnation: a later Identity of the same name shares
+nothing with it, as it shares none of its bindings. Its policy is the bindings naming its Identity.
+Executors that act as the calling ServiceAccount (`orchestration_v1` launches,
+`session_delegation`) refuse an Identity's request with `caller_not_service_account`; MCP groups
+run it, and a `pod` group gives it boxes of its own. A request a newer release recorded for a caller kind this one does not know names no
+caller in its receipt, is no workload's, and the executors that act as the caller refuse it.
+
 Ownership reads, PolicySet subject matching, and submission idempotency remain scoped by the
-ServiceAccount namespace and name. A same-name replacement therefore shares the existing read and
+ServiceAccount namespace and name for a ServiceAccount caller. A same-name replacement therefore shares the existing read and
 idempotency scope: it can read the retained request and reusing its key is refused, while that
 request still carries its original UID and does not become a request from the replacement account.
 Connections acting as the same account share its receipt reads; different accounts remain isolated.
@@ -305,14 +318,19 @@ containers; it checks those invariants at startup and again on creation. It also
 defining the `workload-svid` volume or a mount at `/run/agentplane/workload-svid`. The deployed
 offline boxes retain their DNS-only network fence and receive no proxy settings or credentials.
 
-Each box has a `WorkloadCredential` of the box Pod's name, subject the caller's ServiceAccount,
-bound to the box's Pod once it exists. Create waits for the record's unbound credential, starts the
+Each box has a `WorkloadCredential` of the box Pod's name, subject the caller, bound to the box's Pod
+once it exists. Create waits for the record's unbound credential, starts the
 Pod with that credential's Secret mounted into its egress sidecar alone, and then binds the Pod,
 which accepts that credential ID. A box made from a template without a sidecar mounts nothing.
-The record is the box Pod's controller owner; the record's own owner is the caller account's
-controller (a Session Sandbox), else the account. Dispose deletes the record before the Pod, so the
-box's SVID stops resolving before the Pod has stopped; garbage collection of the Sandbox or account
-removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
+The record is the box Pod's controller owner. A ServiceAccount caller's box runs as it, and the
+record's own owner is the account's controller (a Session Sandbox), else the account. An Identity
+caller's box runs on the namespace's `default` ServiceAccount, and its record names and is owned by
+the Identity incarnation; since an owner reference cannot cross namespaces, only a group of the
+policy namespace serves an Identity, and any other refuses it with `caller_not_local`. Boxes are
+found by their caller's labels: a later Identity of the same name, or a same-named account, reaches
+none of them. Dispose deletes the record before the Pod, so the
+box's SVID stops resolving before the Pod has stopped; garbage collection of the Sandbox, account or
+Identity removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
 resolves against it.
 
 ## Orchestration Actions (v1)

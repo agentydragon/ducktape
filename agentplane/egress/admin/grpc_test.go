@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -62,7 +63,7 @@ type changingDecisions struct {
 	records []decision.Record
 }
 
-func (c *changingDecisions) Recent(context.Context, *decision.Subject) ([]decision.Record, error) {
+func (c *changingDecisions) Recent(context.Context, decision.Subject) ([]decision.Record, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.records, nil
@@ -95,7 +96,7 @@ func (c *changingDecisions) set(records ...decision.Record) {
 // followOnTicks follows as history.Changes does: it calls changed on subscribing and then once per
 // tick, and reports on settled after each call returns.
 func followOnTicks(ticks <-chan []uuid.UUID, settled chan<- struct{}) fakeChanges {
-	return func(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+	return func(ctx context.Context, _ decision.Subject, changed func(history.Change) error) error {
 		if err := changed(history.Initial{}); err != nil {
 			settled <- struct{}{}
 			return err
@@ -152,6 +153,12 @@ func ofSubject(namespace, name string) *egressadminpb.DecisionFilter {
 	}}
 }
 
+func ofIdentity(name string) *egressadminpb.DecisionFilter {
+	return &egressadminpb.DecisionFilter{Scope: &egressadminpb.DecisionFilter_Identity{
+		Identity: &egressrulespb.IdentitySubject{Name: name},
+	}}
+}
+
 var unauthenticated = &egressadminpb.DecisionFilter{Scope: &egressadminpb.DecisionFilter_Unauthenticated{
 	Unauthenticated: &egressadminpb.Unauthenticated{},
 }}
@@ -193,13 +200,13 @@ func TestEveryRPCAdmitsOnlyAllowedCallers(t *testing.T) {
 }
 
 func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
-	subject := decision.Subject{Namespace: "test-namespace", Name: "test-workload"}
+	subject := decision.ServiceAccount{Namespace: "test-namespace", Name: "test-workload"}
 	binding, policy, address, rule := "test-binding", "test-policy", "203.0.113.7", 2
 	refusal := decision.NoRule
-	admitted := record(&subject)
+	admitted := record(subject)
 	admitted.Binding, admitted.Policy, admitted.Rule, admitted.Address, admitted.Substituted = &binding, &policy, &rule, &address, true
-	admitted.Impersonated = &decision.Subject{Namespace: "test-accounts", Name: "test-account"}
-	refused := record(&subject)
+	admitted.Impersonated = &decision.ServiceAccount{Namespace: "test-accounts", Name: "test-account"}
+	refused := record(subject)
 	refused.Outcome, refused.Reason = decision.Deny, &refusal
 	store := &fakeDecisions{records: []decision.Record{admitted, refused}}
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: store})
@@ -229,10 +236,13 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 		}
 	}
 
-	if _, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: unauthenticated}); err != nil {
-		t.Fatal(err)
+	for _, filter := range []*egressadminpb.DecisionFilter{unauthenticated, ofIdentity("test-workload")} {
+		if _, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: filter}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if len(store.asked) != 2 || *store.asked[0] != subject || store.asked[1] != nil {
+	if len(store.asked) != 3 || store.asked[0] != subject || store.asked[1] != nil ||
+		store.asked[2] != (decision.Identity{Name: "test-workload"}) {
 		t.Fatalf("asked for %v", store.asked)
 	}
 }
@@ -247,6 +257,7 @@ func TestFilterMustSelectAWholeSubjectOrTheUnauthenticated(t *testing.T) {
 		"no name":      ofSubject("test-namespace", ""),
 		"no namespace": ofSubject("", "test-workload"),
 		"neither":      ofSubject("", ""),
+		"no identity":  ofIdentity(""),
 	} {
 		_, err := client.ListDecisions(bearing(readerToken), &egressadminpb.ListDecisionsRequest{Filter: filter})
 		if status.Code(err) != codes.InvalidArgument {
@@ -353,7 +364,7 @@ func TestWatchDecisionsEndsBlockedWriteOnDrainOrCancellation(t *testing.T) {
 		{name: "caller cancellation", end: "cancel", want: codes.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			changes := fakeChanges(func(_ context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+			changes := fakeChanges(func(_ context.Context, _ decision.Subject, changed func(history.Change) error) error {
 				return changed(history.Initial{})
 			})
 			_, service := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})
@@ -416,7 +427,7 @@ func (w *recordingDecisionsWatch) Send(frame *egressadminpb.WatchDecisionsRespon
 func TestWatchRevalidatesWhileFeedIsQuiet(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	changes := fakeChanges(func(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+	changes := fakeChanges(func(ctx context.Context, _ decision.Subject, changed func(history.Change) error) error {
 		if err := changed(history.Initial{}); err != nil {
 			return err
 		}
@@ -455,7 +466,7 @@ func TestWatchRevalidatesWhileFeedIsQuiet(t *testing.T) {
 }
 
 func TestWatchFailsWhenHistoryFeedEnds(t *testing.T) {
-	changes := fakeChanges(func(_ context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+	changes := fakeChanges(func(_ context.Context, _ decision.Subject, changed func(history.Change) error) error {
 		return changed(history.Initial{})
 	})
 	client, _ := serveGRPC(t, ServiceOptions{Decisions: &changingDecisions{}, Changes: changes})

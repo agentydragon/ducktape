@@ -9,7 +9,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
@@ -51,10 +50,11 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 	}, call)
 }
 
-func (r *ProxyRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
+func (r *ProxyRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution SessionExecution) error {
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{
-			SessionId: sessionID, Spec: spec, SetupScript: setupScript, ExecutionPrincipal: executionPrincipal,
+			SessionId: sessionID, Spec: spec, SetupScript: setupScript,
+			ExecutionPrincipal: execution.Principal, ExecutionIdentity: execution.Identity,
 		})
 		return err
 	})

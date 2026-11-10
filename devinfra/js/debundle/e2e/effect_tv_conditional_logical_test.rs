@@ -294,3 +294,43 @@ fn a_summarized_local_holds_every_value_any_read_can_see() {
         assert_reader_split_diverges(&format!("function flag() {{ {body} }}\n{run}"));
     }
 }
+
+/// Opposing control: a local only a closure assigns has no assignment the
+/// source-summary lane evaluates. It stays on the lane's fallback for an
+/// absent binding rather than becoming `undefined` alone, so the truthy arm
+/// that runs `second` is kept.
+#[test]
+fn a_summarized_local_only_a_closure_assigns_is_not_only_undefined() {
+    let source = "let counter = 0;\nfunction first() { return 0; }\nfunction second() { counter = 1; return 1; }\nfunction flag() { let r; const set = () => { r = {}; }; if (first()) {} set(); return r; }\nfunction run() { return flag() ? second() : first(); }\nconst observed = counter;\nvar result = run();\nconsole.log(observed, counter);\n";
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("reader", &[Member::new("observed")]),
+                logical_module(
+                    "run",
+                    &[
+                        Member::new("counter"),
+                        Member::new("first"),
+                        Member::new("second"),
+                        Member::new("flag"),
+                        Member::new("run"),
+                        Member::new("result"),
+                    ],
+                ),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let report = rejected.translation_validation();
+    assert_eq!(report["gate_accepts"], false, "{report:#}");
+    assert_eq!(report["accepts"], false, "{report:#}");
+    assert_node_output(
+        &rejected
+            .source_root
+            .join(format!("{}.js", rejected.chunk_id)),
+        "0 1\n",
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), "1 1\n", "");
+}

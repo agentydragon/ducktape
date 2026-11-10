@@ -3078,29 +3078,70 @@ purposes, and `CENTRAL_SESSION_NOTIFICATIONS` needs an environment-free Session 
 inbox. Drafting may proceed; implementation waits for `SERVICES_IDENTITY_PRINCIPAL`, which gives
 services an Identity `Principal` and `CreateSession` an Identity. Today nothing acts as a central
 Session's identity without an environment; with one attached, tools act through that Sandbox's SVID
-([plan](identity_and_kubernetes_accounts.md#central-sessions-with-no-environment)). Questions for the
-operator: whether the sampler asserts the Session's Identity to the Action Service, Notification and
-History under the [delegated authorization contract](../docs/delegated_authorization.md), proving
-itself as the actor with its own ServiceAccount token (it holds no agent key; operator,
-2026-11-10); which identities it may assert (recommendation: only
-those Dispatcher bound to its Sessions); how such calls originate from the V8 isolates; what each
-receiving service records; and whether LLM ingress attributes provider calls to the Identity rather
-than to the sampler plus a trusted `session_id` claim.
+([plan](identity_and_kubernetes_accounts.md#central-sessions-with-no-environment)).
+
+**Settled (operator, 2026-11-10): one design with the other delegating actors.** The sampler is a
+delegating actor under the [delegated authorization contract](../docs/delegated_authorization.md),
+as the Action Service already is toward Dispatcher, EnvironmentService and History and as the MCP
+edge will be toward the Action Service ([plan](identity_and_kubernetes_accounts.md#mcp-edge)). It
+authenticates as itself with its own ServiceAccount token and holds no agent key. The Action
+Service, Notification and History trust it per method and by namespace scope, not by a static list
+of names, so runtime-created Session-managed identities need no configuration. Each call's effective
+caller is the `Identity` Dispatcher bound to that Session, as Actions' is its admitted request
+record. Optional hardening, not planned: a receiver checks the asserted `Identity` against
+Dispatcher's live Session binding.
+
+**Call origin (operator, 2026-11-10).** Agentplane calls never leave a V8 isolate: a cell's nested
+tool call reaches the sampler as a code-mode `delegate/request` tagged with its logical Session
+([SPEC](../central_sampler/SPEC.md#runtime-and-effects)), and the sampler's Go handler makes the
+backend call. It names the `Identity` Dispatcher bound to that Session; neither JavaScript nor tool
+arguments can name or override it.
+
+**LLM attribution (operator, 2026-11-10).** Provider calls the sampler makes for a Session are
+attributed to the Session's `Identity`, including the spend-log JSON headers and W3C baggage LLM
+ingress stamps today from the verified Kubernetes principal
+([README](../llm_ingress/README.md)). The sampler reaches LLM ingress as the same delegating actor;
+the ingress gains `Identity`-sourced attribution fields and keeps stripping caller-supplied copies,
+so attribution stays server-stamped. A Sandbox's own provider calls are attributed by its SVID's
+`Identity` once it resolves to one.
+
+**Code-mode tools are Agentplane Actions (operator, 2026-11-10; target).** The JavaScript `tools`
+namespace a central Session's cells see corresponds about one to one to Agentplane Actions, generated
+from the same catalog the MCP edge lists (`list_actions`), with the same input schemas. The sampler's
+delegate handler submits a nested tool call as `request_action` on the Action Service, as the
+delegating actor for the Session's `Identity`; policy, auto-approval, operator decisions and receipts
+are those of any other caller with that `Identity`. Two front ends, one surface: the MCP edge for
+external MCP clients, code-mode tools for central Sessions. Consequences:
+
+- **What receivers record** is what the Action Service already records for a delegated request
+  (effective caller and actor), plus the Session ID as provenance.
+- **Executor tools** (`exec_command`, `apply_patch`, file reads) stay environment-bound through the
+  Gateway executor, not Actions: they are what needs an attached environment, so Actions work with
+  zero environments and executor tools need one.
+- **Waiting on an operator decision** leaves the cell's promise pending; the handler submits and
+  awaits terminal state asynchronously rather than blocking the cell.
+- **Results and errors** reach JavaScript in the shape the MCP edge returns them, including the typed
+  `ExecutionError` ProtoJSON, so one Action behaves the same through either front end.
+
+The sampler currently reuses Codex's pinned code-mode host. Writing an Agentplane-owned V8 wrapper
+instead is an option if it becomes worthwhile (for example, to own the delegate protocol, typed
+errors, or the tool namespace); nothing above depends on which host runs the cells.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
-**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the
-`WorkloadCredential` resolver resolves an Identity subject live with its UID (`resolver.Subject`);
-the proxy still refuses one.** The proxy accepts Identity subjects before any Sandbox presents one,
-together with `SERVICES_IDENTITY_PRINCIPAL`, proven on records naming an Identity, and
-`SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on staging. The proxy's decision keys on the
-identity the resolver yields, and decision history records it. The Kubernetes-audience projected
+**In progress (identity-consumers, 2026-11-10), consumers first (operator, 2026-11-09): the proxy
+decides an Identity caller by the bindings whose subject is that Identity, impersonates any account
+it holds a use rule for, and history records it by kind and name; the proxy test shows two
+Identities acting as one account, one losing its use rule without the other noticing, and the Rules
+API answers an Identity. Left: the exit in the egress harness once `SANDBOX_IDENTITY_SPEC` writes
+one.** `SANDBOX_IDENTITY_SPEC` switches Sandboxes only after this and the services are applied on
+staging. The Kubernetes-audience projected
 token is the only `projectedWorkloadToken` source; Sandboxes stop projecting it in
 `SANDBOX_IDENTITY_SPEC` and command boxes at `IDENTITY_CUTOVER`, and the source, the sidecar's
 `X-Agentplane-Workload-Token` forwarding, the proxy's second TokenReview per tunnel and the egress
 `TODO.md` entry on where that token is substituted go with the last of them. Impersonation on ServiceAccount subjects has landed
 ([egress SPEC](../egress/SPEC.md) § Decision), as have `policy/reader`'s Identity lookups, which
-egress, the Action Service and Notification watch but do not query yet. The k3s API server keeps no
+egress queries and the Action Service and Notification watch but do not query yet. The k3s API server keeps no
 audit log, so the audit entry naming both account and proxy is unverified there. **Exit:** the
 egress harness shows two identities acting as one account, one losing its use rule without the
 other noticing.
@@ -3108,13 +3149,20 @@ other noticing.
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
 **In progress (identity-consumers, 2026-11-10), consumers first, as `EGRESS_IDENTITY_RULES`: the
-resolver yields an Identity subject; `auth.SVIDResolver` still refuses one.** History's execution
+resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
+methods; LLM ingress serves and attributes Identity callers once given its `policy_namespace`. The
+Action Service's Gate admits an Identity SVID caller by the bindings naming it and records requests
+and cancellations by the Identity incarnation, and gives it Action boxes it owns on the default
+ServiceAccount; launches, Session delegation and the MCP edge's delegated path still need a
+ServiceAccount. Dispatcher records each Session's execution Identity from its Sandbox's
+`spec.identity`, places it on the wire and strands a Session whose Sandbox names another; its
+methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given its
+`policy_namespace`) for that Identity's Sessions. EnvironmentService, wake-on-send and History still
+need a ServiceAccount.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
-The seam is `workload_auth/auth`'s `Principal`: `SVIDResolver` currently returns the same
-ServiceAccount-shaped value a TokenReview does, from the credential's `WorkloadCredential` subject
-read uncached per request, so no handler can tell the two apart; the SVID path yields the identity
-reference and incarnation directly; `CreateSession` names an identity, Dispatcher is the authority
+The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves
+its workload-facing methods to `AnySubject` and authorizes and records by the union; `CreateSession` names an identity, Dispatcher is the authority
 for that association, and its delivery and wake path refuses a Session whose identity differs from
 its environment's current one, so a bypassed identity change strands Sessions rather than
 re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark the rest
@@ -3166,6 +3214,12 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
   launch sets binding an Identity) become unconditional here; the standing callers' binding subjects
   and the Kubernetes-rule-to-role-set move stay behind it until `IDENTITY_CUTOVER` flips it.
 - The agent Kubernetes docs lose the kubeconfig and point at the rules endpoint.
+
+Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
+a Session whose recorded execution identity differs), so the switch needs a step that either
+rewrites those Sessions' execution identity or retires them. On staging no Sandboxes run during the
+switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity caller's wake-on-send
+needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delivery_wake.go`).
 
 **Exit:** controller tests for a Sandbox with and without a live identity; Sandbox Pods render no
 projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
@@ -3224,6 +3278,9 @@ and proves the Identity by delegated authorization, decided by the operator on 2
 app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their remaining
 prerequisite: the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
 ServiceAccount-or-Identity union or is rewritten to an Identity.
+Once every service admits its workload callers through `auth.AnySubject`, a mechanical rename makes
+`auth.Principal`, today the ServiceAccount variant of `auth.Subject`, `AccountPrincipal` (team lead,
+2026-11-10).
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
 is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox
 Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section

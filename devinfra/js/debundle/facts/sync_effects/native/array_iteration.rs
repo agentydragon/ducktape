@@ -11,16 +11,14 @@
 
 use super::super::adapters::application::LocalExecutionContext;
 use super::super::allocation_transfer::AllocationValue;
-use super::super::alternatives::execution_state::{ExecutionPath, JoinedPath};
 use super::super::array_transfer::{ArrayIterationSelection, iteration_snapshot};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
 use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
-use super::super::kernel::branch::split_truthiness;
-use super::super::kernel::context::ControlContext;
 use super::super::kernel::frame::{
     LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue,
 };
+use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{AbstractValue, CallSite, CapturedContext, HeapAddress, Values};
 use super::operation::{self, IterationResultArray};
 use crate::analysis_inputs::NativeIntrinsic;
@@ -31,6 +29,7 @@ use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::IterationResult;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
+use std::collections::BTreeSet;
 use swc_common::Span;
 
 /// The callback a row may invoke: one local callable with no live captures.
@@ -78,17 +77,6 @@ pub(in crate::facts::sync_effects) fn admitted_callback(
     })
 }
 
-/// Whether an early-exit row stops on a truthy callback result (`some`,
-/// `find`, `findIndex`) or on a falsy one (`every`); `None` for rows that
-/// visit every element.
-fn stops_on_truthy(result: IterationResult, member: &str) -> Option<bool> {
-    match result {
-        IterationResult::Boolean => Some(member != "every"),
-        IterationResult::Element | IterationResult::Index => Some(true),
-        _ => None,
-    }
-}
-
 /// The iteration rows `iterate_array` executes, by result shape and
 /// argument count. Other rows refuse with a typed reason.
 pub(in crate::facts::sync_effects) fn supported_row(
@@ -98,12 +86,7 @@ pub(in crate::facts::sync_effects) fn supported_row(
     matches!(
         (result, arguments),
         (
-            IterationResult::Undefined
-                | IterationResult::Mapped
-                | IterationResult::Filtered
-                | IterationResult::Boolean
-                | IterationResult::Element
-                | IterationResult::Index,
+            IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered,
             1
         ) | (IterationResult::Accumulated, 2)
     )
@@ -200,14 +183,25 @@ impl LocalExecutionContext<'_, '_, '_> {
         }
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&dependencies);
+        // Element records the callback may read at the current prefix:
+        // settled, with a source record shape, checked before any callback.
+        let element_records: BTreeSet<u32> = slots
+            .iter()
+            .flatten()
+            .filter_map(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, record))
+                    if self.object_properties_are_settled(*record)
+                        && self.ordinary_record_shape(*record).is_some() =>
+                {
+                    Some(*record)
+                }
+                _ => None,
+            })
+            .collect();
         let mut accumulator =
             (row.result == IterationResult::Accumulated).then(|| arguments[1].values.clone());
         let mut mapped = Vec::with_capacity(slots.len());
         let mut kept = Values::new();
-        // An early-exit row's paths that stopped at an element, each with the
-        // fragment and result it had there; joined with the path that ran on.
-        let mut stopped: Vec<(ExecutionPath, EffectCoverageFragment, Values)> = Vec::new();
-        let mut stopped_definitely = None;
         for element in &slots {
             let mut operands = vec![
                 element.clone(),
@@ -218,9 +212,18 @@ impl LocalExecutionContext<'_, '_, '_> {
                 operands.insert(0, accumulator.clone());
             }
             let prerequisites = self.executor.boxed_settled_prefix_dependencies();
+            // Only the innermost row's records are answered for while its
+            // callback runs, on every path of it: `invoke` returns after the
+            // callback's family is joined, and nothing returns between the
+            // replacement and the restore.
+            let outer_records = std::mem::replace(
+                &mut self.executor.state.iteration_element_records,
+                element_records.clone(),
+            );
             let mut nested =
                 self.executor
                     .invoke(callback.key, operands, callback.captured.clone(), false);
+            self.executor.state.iteration_element_records = outer_records;
             let returned = nested.returns.clone();
             let complete = nested.complete
                 && !nested.unknown_call
@@ -284,32 +287,10 @@ impl LocalExecutionContext<'_, '_, '_> {
                 Err(refusal) => return self.refuse_iteration(frame, reached, refusal, span),
             }
             match row.result {
-                IterationResult::Mapped => mapped.push(returned.clone()),
+                IterationResult::Mapped => mapped.push(returned),
                 IterationResult::Filtered => kept.extend(element.iter().cloned()),
-                IterationResult::Accumulated => accumulator = Some(returned.clone()),
+                IterationResult::Accumulated => accumulator = Some(returned),
                 _ => {}
-            }
-            if let Some(stops_on_truthy) = stops_on_truthy(row.result, row.member) {
-                let (truthy, falsy) = split_truthiness(&returned);
-                let (stops, continues) = if stops_on_truthy {
-                    (truthy, falsy)
-                } else {
-                    (falsy, truthy)
-                };
-                if !stops.is_empty() {
-                    let value = match row.result {
-                        IterationResult::Element => element.clone(),
-                        IterationResult::Index => {
-                            Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))])
-                        }
-                        _ => Values::from([AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN))]),
-                    };
-                    if continues.is_empty() {
-                        stopped_definitely = Some(value);
-                        break;
-                    }
-                    stopped.push((self.branch(), effects.clone(), value));
-                }
             }
         }
         let fresh = match (row.result, result_allocation) {
@@ -339,54 +320,10 @@ impl LocalExecutionContext<'_, '_, '_> {
                 }
                 values
             }
-            None => match (accumulator, stopped_definitely) {
-                (Some(accumulator), _) => accumulator,
-                (None, Some(stopped)) => stopped,
-                // The early-exit rows that ran past every element.
-                (None, None) => match row.result {
-                    IterationResult::Boolean => {
-                        Values::from([AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN))])
-                    }
-                    IterationResult::Index => {
-                        Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))])
-                    }
-                    _ => Values::from([AbstractValue::UNDEFINED]),
-                },
+            None => match accumulator {
+                Some(accumulator) => accumulator,
+                None => Values::from([AbstractValue::UNDEFINED]),
             },
-        };
-        // Every path that stopped early joins the one that ran on, through
-        // the same path-state and fragment joins as the kernel's forks.
-        let (mut effects, values) = if stopped.is_empty() {
-            (effects, values)
-        } else {
-            let mut paths: Vec<_> = stopped.iter().map(|(path, _, _)| path.clone()).collect();
-            paths.push(self.branch());
-            let JoinedPath { path, refused } = ExecutionPath::join(paths);
-            self.enter(path);
-            if refused.is_some() {
-                self.fallback(
-                    frame,
-                    reached,
-                    ExecutionPrecisionLossReason::UnsupportedOperation {
-                        operation: ExecutionOperation::OpaqueExecution,
-                        ordered_field_read_refusal: None,
-                        ordered_call_admission_refusal: None,
-                    },
-                    span,
-                );
-                return Err(RemainderDisposition::AlreadySummarized);
-            }
-            let fragments: Vec<_> = stopped
-                .iter()
-                .map(|(_, fragment, _)| fragment)
-                .chain(std::iter::once(&effects))
-                .collect();
-            let joined = EffectCoverageFragment::join_alternatives(&fragments);
-            let mut joined_values = values;
-            for (_, _, value) in &stopped {
-                joined_values.extend(value.iter().cloned());
-            }
-            (joined, joined_values)
         };
         effects.depend_on(&dependencies);
         effects.selected_local_call(LocalCallReceipt {

@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,7 +27,7 @@ const (
 )
 
 var (
-	caller = policyapi.ServiceAccountRef{Namespace: namespace, Name: "sb"}
+	caller = reader.ServiceAccount{Namespace: namespace, Name: "sb"}
 	bearer = resources.SchemeToken{Header: authorization, Scheme: "Bearer"}
 
 	githubCredential = secretCredential("github-pat", "token", bearer, resources.BasicPassword{Header: authorization})
@@ -64,7 +65,7 @@ func binding(name string, sets ...string) *policyapi.PolicyBinding {
 	return bindingFor(caller, name, sets...)
 }
 
-func bindingFor(subject policyapi.ServiceAccountRef, name string, sets ...string) *policyapi.PolicyBinding {
+func bindingFor(subject reader.ServiceAccount, name string, sets ...string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Generation: 3},
 		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets},
@@ -187,7 +188,7 @@ func TestEvaluate(t *testing.T) {
 		"binding for another sandbox": {
 			standardIndex(
 				[]*policyapi.PolicySet{policySet("github", githubRule)},
-				bindingFor(policyapi.ServiceAccountRef{Namespace: namespace, Name: "other"}, "b", "github"),
+				bindingFor(reader.ServiceAccount{Namespace: namespace, Name: "other"}, "b", "github"),
 			),
 			outbound(),
 			Denied{decision.NoBinding},
@@ -260,7 +261,7 @@ func TestEvaluate(t *testing.T) {
 // namespace, so a binding that matched on the name alone would reach across them.
 func TestTheSameNameInAnotherNamespaceIsADifferentSubject(t *testing.T) {
 	bound := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
-	elsewhere := policyapi.ServiceAccountRef{Namespace: "somewhere-else", Name: caller.Name}
+	elsewhere := reader.ServiceAccount{Namespace: "somewhere-else", Name: caller.Name}
 
 	assertDecision(t, bound.Evaluate(caller, outbound(), nil), Allowed{Binding: "b", Policy: "github"})
 	assertDecision(t, bound.Evaluate(elsewhere, outbound(), nil), Denied{decision.NoBinding})
@@ -280,7 +281,7 @@ func TestProjectedWorkloadSource(t *testing.T) {
 	}
 	scoped := scopedIndex(projected)
 	request := outbound(header(authorization, "Bearer "+projected.Placeholder()))
-	context := func(subject policyapi.ServiceAccountRef, tokens map[string]string) *WorkloadContext {
+	context := func(subject reader.ServiceAccount, tokens map[string]string) *WorkloadContext {
 		return &WorkloadContext{Caller: subject, PodUID: "pod-a-uid", Projected: tokens}
 	}
 
@@ -303,7 +304,7 @@ func TestProjectedWorkloadSource(t *testing.T) {
 
 	// Context belongs to the caller it authenticated as: one subject's projected tokens are never
 	// substituted into another's request, however well-formed they are.
-	someoneElse := policyapi.ServiceAccountRef{Namespace: namespace, Name: "someone-else"}
+	someoneElse := reader.ServiceAccount{Namespace: namespace, Name: "someone-else"}
 	assertDecision(t, scoped.Evaluate(caller, request, context(someoneElse, map[string]string{audience: "pod-b-api-server-token"})),
 		Denied{decision.CredentialUnavailable})
 }
@@ -490,7 +491,7 @@ func TestAPolicyBindingWithoutEgressRulesForTheCallerIsNoBinding(t *testing.T) {
 		),
 		"another subject": standardIndex(
 			[]*policyapi.PolicySet{policySet("github", githubRule)},
-			bindingFor(policyapi.ServiceAccountRef{Namespace: namespace, Name: "another"}, "pb", "github"),
+			bindingFor(reader.ServiceAccount{Namespace: namespace, Name: "another"}, "pb", "github"),
 		),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -593,7 +594,7 @@ func toAPIServer(options ...func(*Request)) Request {
 func proxyToken() (string, error) { return "proxy-own-token", nil }
 
 // admit evaluates as the proxy does, with the API server token reader of this admission.
-func admit(index *Index, subject policyapi.ServiceAccountRef, request Request) Decision {
+func admit(index *Index, subject reader.ServiceAccount, request Request) Decision {
 	if index.LocalAPIServer != nil {
 		request.APIServerToken = index.LocalAPIServer.Token
 	}
@@ -667,7 +668,7 @@ func TestTheProxysBearerGoesOnlyToTheLocalAPIServerOverTLS(t *testing.T) {
 
 func TestLosingTheUseRuleStopsImpersonationOnTheNextRequest(t *testing.T) {
 	index := accountIndex(proxyToken)
-	other := policyapi.ServiceAccountRef{Namespace: namespace, Name: "other-sandbox"}
+	other := reader.ServiceAccount{Namespace: namespace, Name: "other-sandbox"}
 	index.Rules.PutBinding(bindingFor(other, "other", "account"))
 	if _, ok := admit(index, caller, toAPIServer()).(Allowed); !ok {
 		t.Fatal("the bound caller was refused")

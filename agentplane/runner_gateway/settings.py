@@ -45,6 +45,13 @@ class Settings(YamlFileSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
+    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+    # (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+    policy_namespace: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Namespace holding the Identities a workload SVID may name; absent refuses Identity callers.",
+    )
     dispatcher_database_url: SecretStr = Field(description="The Dispatcher queue's PostgreSQL URL.")
     pod_name: str | None = Field(
         default=None,

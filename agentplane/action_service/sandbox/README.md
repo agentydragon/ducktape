@@ -31,9 +31,11 @@ it, so a call lasting minutes is ordinary rather than an attempt the sweep recla
 
 ## One ServiceAccount per caller, not per sandbox
 
-Every sandbox this surface stamps runs as the caller's account. A Session Sandbox has its own
-owner-referenced account, and the difference is deliberate, with
-intended consequences.
+Every sandbox this surface stamps for a ServiceAccount caller runs as the caller's account. A Session
+Sandbox has its own owner-referenced account, and the difference is deliberate, with
+intended consequences. A caller whose SVID names an Identity has no account: its boxes run on the
+namespace's `default` ServiceAccount, and only a group of the policy namespace, where the Identity
+lives, serves it.
 
 **The workload must never read a ServiceAccount credential.** Every template sets
 `automountServiceAccountToken: false`. The inventory refuses projected tokens mounted in workload
@@ -49,7 +51,8 @@ fleet view, which then looks for a runner the box does not have.
 **Owned through its credential.** Each box's Pod is owned by its `WorkloadCredential`, and the
 record by its caller's Session Sandbox, the controller of the account an agent in it calls this
 surface as, so the boxes it creates are garbage-collected with the Sandbox. A static account's records
-are owned by the account, and its boxes last until `dispose`. The record precedes its Pod because
+are owned by the account, and its boxes last until `dispose`. An Identity's records name and are owned
+by the Identity incarnation, so its boxes go with the Identity. The record precedes its Pod because
 the Pod names the record's Secret when it is created, so the Pod cannot own the record.
 
 **Its own template set**: a caller names a template, but only one the group's reviewed

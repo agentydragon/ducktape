@@ -48,7 +48,9 @@ import (
 )
 
 const (
-	fixtureHost       = "upstream.test"
+	fixtureHost = "upstream.test"
+	// policyNamespace holds the lab's PolicySets, PolicyBindings and Identities.
+	policyNamespace   = "test-policy"
 	hopAudience       = "test-egress"
 	projectedAudience = "https://kubernetes.test.invalid"
 )
@@ -139,6 +141,7 @@ type lab struct {
 	address        string
 	roots          *x509.CertPool
 	proxyClientTLS *tls.Config
+	proxyCA        *transporttesting.CA
 	workload       workloadauthtesting.Workload
 	upstreamCA     tls.Certificate
 	// lookup answers the proxy's DNS lookups; replace it before sending traffic.
@@ -188,7 +191,7 @@ func newLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	proxyClientTLS.NextProtos = []string{"http/1.1"}
-	svids, err := resolver.New(workload.Objects, []string{runner.Namespace}, nil)
+	svids, err := resolver.New(workload.Objects, []string{runner.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,6 +200,7 @@ func newLab(t *testing.T) *lab {
 		records:        &records{},
 		roots:          interceptRoot,
 		proxyClientTLS: proxyClientTLS,
+		proxyCA:        proxyCA,
 		workload:       workload,
 		upstreamCA:     upstreamCA,
 		lookup:         func(string) []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} },
@@ -241,10 +245,10 @@ func newLab(t *testing.T) *lab {
 // allow grants runner exactly rules, replacing what it was granted.
 func (l *lab) allow(rules ...policyapi.Rule) {
 	l.index.Rules.PutPolicySet(&policyapi.PolicySet{
-		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: "rules"}, Spec: policyapi.PolicySetSpec{Rules: rules},
+		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: policyNamespace}, Spec: policyapi.PolicySetSpec{Rules: rules},
 	})
 	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "rules"},
+		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: policyNamespace},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject: policyapi.Subject{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
 		},
@@ -314,7 +318,13 @@ func (l *lab) tunnel(t *testing.T, port string, tlsEnabled bool) (net.Conn, *htt
 // tunnelPresenting opens a tunnel with the lab's SVID and, verbatim, extra untrusted hop headers.
 func (l *lab) tunnelPresenting(t *testing.T, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
 	t.Helper()
-	connection, response := l.connect(t, fixtureHost+":"+port, extra)
+	return l.tunnelWith(t, l.proxyClientTLS, port, tlsEnabled, extra)
+}
+
+// tunnelWith opens a tunnel presenting the client certificate of proxyTLS.
+func (l *lab) tunnelWith(t *testing.T, proxyTLS *tls.Config, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
+	t.Helper()
+	connection, response := l.connectWithTLS(t, proxyTLS, fixtureHost+":"+port, extra)
 	if response.StatusCode != 200 {
 		t.Fatalf("CONNECT: %s", response.Status)
 	}

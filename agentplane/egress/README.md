@@ -21,8 +21,9 @@ One Go package per concern:
 - `proxy`: CONNECT tunnels intercepted with a forged leaf, and plain HTTP proxying, on `net/http`.
   Every request passes identity, policy, credential and address checks before anything is dialed.
   One forward listener on port 8888 authenticates workload SVIDs.
-- `identity`: resolves each request's SVID to its live `WorkloadCredential` before using its
-  ServiceAccount as the policy subject, and reviews the projected tokens offered for substitution.
+- `identity`: resolves each request's SVID to its live `WorkloadCredential`, whose subject -- a
+  ServiceAccount or an Identity -- is the policy subject, and reviews the projected tokens offered
+  for substitution.
 - `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
   placeholder directs it to, and substitution. The bindings and their egress rules are a
   `../policy/reader` index. No I/O.
@@ -90,7 +91,8 @@ The deployment supplies proxy settings through its YAML file and `AGENTPLANE_EGR
 The `forward` listener requires serving TLS files and an `auth` list containing SPIFFE with its
 trust bundle. The proxy presents `spiffe://agentplane/egress-proxy` and requires a Runtime SVID
 with explicit clientAuth. Every request checks the live Sandbox UID, accepted credential and Pod
-binding before reading policy. The subject is always that Sandbox's own ServiceAccount. Clearing
+binding before reading policy. The subject is the record's: a ServiceAccount, or an Identity in
+`rules_namespace` fenced on its UID. Clearing
 or replacing acceptance, changing the binding, or removing the Sandbox revokes access; quiescence
 keeps the accepted credential available for final History sealing. Caller headers cannot select a
 subject, and bearer credentials cannot authenticate the hop.
@@ -249,6 +251,8 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 1,000) inside the retention window and returns them oldest first.
 
 The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
+TODO: a row names an Identity subject by name alone, as it does a ServiceAccount, so a recreated
+Identity of the same name shares its predecessor's history; a UID column is the additive fix.
 Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose; existing
 history rows and the inert `egress_alembic_version` table remain in place. The proxy migrates before starting its
 listeners or workers, so a failed migration keeps that Pod unready while previous proxies keep enforcing.

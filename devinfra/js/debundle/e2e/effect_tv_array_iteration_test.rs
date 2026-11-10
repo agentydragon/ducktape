@@ -234,30 +234,41 @@ fn a_hole_keeps_its_prototype_read() {
     );
 }
 
-/// A valid split the row refuses by typed reason today: call-effect
-/// coverage for a callback with live captures is Wave 3 row 12.
+/// Valid splits the rows refuse by typed reason today. Call-effect coverage
+/// for a callback with live captures is Wave 3 row 12; the early-exit rows
+/// need a fork per callback result.
 #[test]
-fn capturing_callbacks_are_pending_with_a_typed_refusal() {
-    let body = "const items = [1, 2, 3]; let total = 0; items.forEach((x) => { total += x; }); return [total];";
-    let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![logical_module(
-            "run",
-            &[Member::new("run"), Member::new("result")],
-        )],
-    ));
-    assert_preserved_entry_output(&fixture, "7 6\n");
-    assert_effect_coverage_pending(
-        &fixture,
-        "result",
-        "array_iteration",
-        "call-effect coverage for a callback with live captures",
-    );
-    assert_eq!(
-        array_iteration_refusals(&fixture, "result"),
-        vec![Value::from("array_iteration_capturing_callback")],
-    );
+fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
+    for (body, expected, refusal, capability) in [
+        (
+            "const items = [1, 2, 3]; let total = 0; items.forEach((x) => { total += x; }); return [total];",
+            "7 6\n",
+            "array_iteration_capturing_callback",
+            "call-effect coverage for a callback with live captures",
+        ),
+        (
+            "const items = [1, 2, 3]; return [items.some((x) => x > 1)];",
+            "7 true\n",
+            "array_iteration_row_unsupported",
+            "an early-exit row forking on each callback result",
+        ),
+    ] {
+        let source = format!("function run() {{ {body} }}\n{RELOCATION}");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "run",
+                &[Member::new("run"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_effect_coverage_pending(&fixture, "result", "array_iteration", capability);
+        assert_eq!(
+            array_iteration_refusals(&fixture, "result"),
+            vec![Value::from(refusal)],
+            "{body}"
+        );
+    }
 }
 
 /// A row nested in the callback of a legacy row stays legacy: the legacy row
@@ -393,12 +404,6 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
             &["items", "result"][..],
             format!("7 {}\n", (0..300).map(|index| index.to_string()).collect::<Vec<_>>().join(",")),
         ),
-        (
-            "let later = 0;\nconst items = [{ size: 1, executor: () => later }, { size: 2, executor: () => later }];".to_owned(),
-            "items.reduce((total, entry) => total + entry.size, 0)",
-            &["later", "items", "result"][..],
-            "7 3\n".to_owned(),
-        ),
     ] {
         let source = format!(
             "{declarations}\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, String(result));\n"
@@ -413,89 +418,155 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
     }
 }
 
-/// The early-exit rows: each callback result whose truthiness is undecided
-/// leaves both a path that stops at that element and one that runs on, and
-/// the row joins them like a kernel fork. The root's binding gets the row's
-/// receipt in a callable body and at top level.
+/// The same record roots beside a later bare assignment (`later = 42;`):
+/// the root seals, but the assignment's anonymous-statement owner is not
+/// covered yet (Wave 3 row 9 left), so the relocation stays pending.
 #[test]
-fn early_exit_rows_join_their_stopping_paths_across_an_independent_inversion() {
-    for (call, member, expected) in [
-        ("items.some((x) => x > 1)", "some", "7 true\n"),
-        ("items.every((x) => x > 1)", "every", "7 false\n"),
-        ("items.find((x) => x > 1)", "find", "7 2\n"),
-        ("items.findIndex((x) => x > 1)", "findIndex", "7 1\n"),
-        // A decided result stops at the first element.
-        ("items.some((x) => true)", "some", "7 true\n"),
+fn record_element_roots_beside_a_bare_assignment_stay_pending() {
+    for (initializer, member, expected) in [
+        (
+            "entries.reduce((total, entry) => total + entry.size, 0)",
+            "reduce",
+            "7 3\n",
+        ),
+        ("entries.map((entry) => entry.size * 2)", "map", "7 2,4\n"),
+        (
+            "entries.filter((entry) => entry.size > 1)",
+            "filter",
+            "7 [object Object]\n",
+        ),
+        // A conditional forks the callback; the active records hold on both
+        // paths and are restored after the joined callback returns.
+        (
+            "entries.map((entry) => (entry.size > 1 ? entry.size : 0))",
+            "map",
+            "7 0,2\n",
+        ),
     ] {
-        for source in [
-            format!(
-                "function run() {{ const items = [1, 2, 3]; return {call}; }}\nconst independent = 7;\nvar result = run();\nconsole.log(independent, String(result));\n"
-            ),
-            format!(
-                "const items = [1, 2, 3];\nconst independent = 7;\nvar result = {call};\nconsole.log(independent, String(result));\n"
-            ),
-        ] {
-            let members: &[&str] = if source.starts_with("function") {
-                &["run", "result"]
-            } else {
-                &["items", "result"]
-            };
-            let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-            let fixture = run_fixture(FixtureOpts::new(
-                &source,
-                vec![logical_module("run", &members)],
-            ));
-            assert_preserved_entry_output(&fixture, expected);
-            assert_iteration_receipt(&fixture, member, &source);
-            assert_commuting_relocation(&fixture, &source);
-        }
+        let source = format!(
+            "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst independent = 7;\nconst result = {initializer};\nlater = 42;\nconsole.log(independent, [result].flat().join(','));\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "run",
+                &[Member::new("entries"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_iteration_receipt(&fixture, member, initializer);
+        assert_effect_verdict_pending(&fixture, "incomplete", initializer);
     }
 }
 
-/// Opposing control: how many callbacks run depends on the results, so a
-/// callback's write is a possible effect of every element and a reader of
-/// it stays before the iteration.
+/// Opposing control: an element getter is not an own data slot, so the root
+/// is not admitted and the getter's write stays ordered before its reader.
 #[test]
-fn an_early_exit_callback_write_keeps_its_reader_before_the_iteration() {
+fn an_element_getter_field_keeps_its_root_on_the_flat_lane() {
     assert_rejected_split_diverges(
-        "const log = [];\nfunction check(x) { log.push(x); return x > 1; }\nconst items = [1, 2, 3];\nconst observed = log.length;\nvar result = items.some(check);\nconsole.log(observed, log.length);\n",
-        &["log", "check", "items", "result"],
-        "0 2\n",
-        "2 2\n",
+        "const log = [];\nconst entries = [{ get size() { log.push('get'); return 1; } }];\nconst observed = log.length;\nvar result = entries.reduce((total, entry) => total + entry.size, 0);\nconsole.log(observed, log.length);\n",
+        &["log", "entries", "result"],
+        "0 1\n",
+        "1 1\n",
     );
 }
 
-/// Opposing controls for the other early-exit rows: how many callbacks run
-/// depends on their results, so each callback's write is a possible effect
-/// of the whole row and its reader stays before the iteration.
+/// A root over records the callback reads seals once the read closes its
+/// domains: the row proves each record settled and source-shaped before the
+/// first callback, and the callback reads it at the current prefix. A field
+/// holding a closure is read like any data field; the closure is retained in
+/// the result, not invoked.
 #[test]
-fn every_early_exit_row_keeps_its_callback_reader_before_the_iteration() {
-    for (call, original, emitted) in [
-        ("items.every((x) => check(x) < 2)", "0 2\n", "2 2\n"),
-        ("items.find((x) => check(x) > 1)", "0 2\n", "2 2\n"),
-        ("items.findIndex((x) => check(x) > 1)", "0 2\n", "2 2\n"),
+fn record_element_roots_seal_across_an_independent_inversion() {
+    for (initializer, member, printed, expected) in [
+        (
+            "items.reduce((total, entry) => total + entry.size, 0)",
+            "reduce",
+            "String(result)",
+            "7 3\n",
+        ),
+        (
+            "items.map((entry) => entry.size * 2)",
+            "map",
+            "String(result)",
+            "7 2,4\n",
+        ),
+        (
+            "items.map((entry) => (entry.size > 1 ? entry.size : 0))",
+            "map",
+            "String(result)",
+            "7 0,2\n",
+        ),
+        (
+            "items.map((entry) => entry.executor)",
+            "map",
+            "result.map((executor) => executor()).join(',')",
+            "7 0,0\n",
+        ),
     ] {
         let source = format!(
-            "const log = [];\nfunction check(x) {{ log.push(x); return x; }}\nconst items = [1, 2, 3];\nconst observed = log.length;\nvar result = {call};\nconsole.log(observed, log.length);\n"
+            "let later = 0;\nconst items = [{{ size: 1, executor: () => later }}, {{ size: 2, executor: () => later }}];\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, {printed});\n"
         );
-        assert_rejected_split_diverges(
+        let fixture = run_fixture(FixtureOpts::new(
             &source,
-            &["log", "check", "items", "result"],
-            original,
-            emitted,
-        );
+            vec![logical_module(
+                "run",
+                &[
+                    Member::new("later"),
+                    Member::new("items"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_iteration_receipt(&fixture, member, initializer);
+        assert_commuting_relocation(&fixture, initializer);
     }
 }
 
-/// Opposing control: the element a row stops at depends on state the
-/// predicate reads, so a statement writing that state stays before the
-/// iteration. Moving the call before the write stops at another element.
+/// A store through another name (`item.size = 2` while reading
+/// `entry.size`) is not one the row can seal: the attempt rewinds and the
+/// split stays a legacy acceptance with Node parity.
 #[test]
-fn an_early_exit_row_keeps_the_writer_of_its_predicate_state_first() {
+fn a_record_root_with_an_aliased_store_rewinds() {
+    let source = "const item = { size: 1 };\nconst entries = [item];\nconst independent = 7;\nconst result = entries.map((entry) => { item.size = 2; return entry.size; });\nconsole.log(independent, result.join(','));\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "run",
+            &[
+                Member::new("item"),
+                Member::new("entries"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 2\n");
+    assert_effect_verdict_pending(&fixture, "incomplete", "aliased store");
+}
+
+/// Opposing control: a closure read from an element field keeps its
+/// identity, so invoking it later reads the state it closes over. Moving
+/// the invocation before that state's writer prints the old value.
+#[test]
+fn an_invoked_field_closure_stays_after_the_writer_of_its_state() {
     assert_rejected_split_diverges(
-        "const flags = { threshold: 5 };\nconst items = [1, 2, 3];\nflags.threshold = 1;\nvar result = items.findIndex((x) => x > flags.threshold);\nconst observed = result;\nconsole.log(observed);\n",
-        &["flags", "items", "result"],
-        "1\n",
-        "-1\n",
+        "const store = { value: 0 };\nconst items = [{ executor: () => store.value }];\nconst fns = items.map((entry) => entry.executor);\nstore.value = 1;\nconst observed = fns[0]();\nconsole.log(observed, store.value);\n",
+        &["store", "items", "fns"],
+        "1 1\n",
+        "0 1\n",
+    );
+}
+
+/// Opposing control: the row reads each element field at the current
+/// prefix and records its `OwnProperty` cell, so a store to that field
+/// stays before the iteration that reads it.
+#[test]
+fn a_store_to_a_read_field_stays_before_the_iteration() {
+    assert_rejected_split_diverges(
+        "const items = [{ executor: () => 'original' }];\nitems[0].executor = () => 'replaced';\nconst fns = items.map((entry) => entry.executor);\nconst observed = fns[0]();\nconsole.log(observed);\n",
+        &["items", "fns"],
+        "replaced\n",
+        "original\n",
     );
 }

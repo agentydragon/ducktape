@@ -77,6 +77,10 @@ message CreateSessionRequest {
   optional string setup_script = 3;  // selected only at creation
   // The Dispatcher's verified immutable execution principal. The Host retains it with the Session.
   agentplane.proto.ServiceAccountIdentity execution_principal = 4;
+  // The Identity the Dispatcher recorded from the Sandbox's `spec.identity` at creation, absent when
+  // it named none. A sibling of execution_principal, which stays set, so a runtime that predates it
+  // keeps the Session's ServiceAccount owner. The Host retains it with the Session.
+  agentplane.proto.Identity execution_identity = 5;
 }
 
 message CreateSessionResponse {

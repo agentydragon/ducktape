@@ -223,13 +223,13 @@ def _add_provider(chart: Chart, instance: str) -> None:
 
     k8s.KubePersistentVolumeClaim(
         chart,
-        f"{name}-claim",
+        f"{name}-piraeus",
         metadata=k8s.ObjectMeta(
-            name=name, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+            name=f"{name}-piraeus", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh-ssd",
+            storage_class_name="piraeus-ssd-2-autodiskful",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
         ),
     )
@@ -430,7 +430,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 k8s.VolumeMount(name="config", mount_path="/etc/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="provider-credentials", mount_path=_TOKEN_DIR, read_only=True),
                 k8s.VolumeMount(name="tls", mount_path="/var/run/provider-tls", read_only=True),
-                k8s.VolumeMount(name="data", mount_path="/data"),
+                k8s.VolumeMount(name="data", mount_path="/data", sub_path="state"),
                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                 *recorder_mounts,
             ],
@@ -439,7 +439,9 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             config_volume,
             provider_credentials,
             k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{name}-tls")),
-            k8s.Volume(name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=name)),
+            k8s.Volume(
+                name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=f"{name}-piraeus")
+            ),
             tmp,
             *recorder_volumes,
         ],

@@ -35,7 +35,7 @@ func (a *app) egressCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "rules",
 			Short: "Show the egress rules that apply to this account",
-			Long: `EgressRules.GetRules: the ServiceAccount the credential proves (subject), and the hosts, methods and paths its
+			Long: `EgressRules.GetRules: the ServiceAccount (subject) or Identity the credential proves, and the hosts, methods and paths its
 egress policies allow. A rule with a credential also says where to send its placeholder, which you must
 do yourself: the proxy swaps in the real value only where the placeholder is presented. Select a rule from
 the output, for example with jq; the proxy alone decides what matches a call.`,

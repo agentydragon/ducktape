@@ -53,7 +53,12 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         claims = [
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
         ]
-        assert claims == [name]
+        assert claims == [f"{name}-piraeus"]
+        claim = resource("PersistentVolumeClaim", f"{name}-piraeus")
+        assert claim["spec"]["storageClassName"] == "piraeus-ssd-2-autodiskful"
+        assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
+        mount = next(mount for mount in provider_pod["containers"][0]["volumeMounts"] if mount["name"] == "data")
+        assert mount["subPath"] == "state"
         assert json.loads(remote.CONFIG.data[f"{instance}-integration.json"])["integrations"][0]["id"] == instance
 
         host = urlsplit(connection["origin"]).hostname
@@ -86,7 +91,7 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         assert set(containers) == {"provider"}
         init = pod["initContainers"]
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
-        recorder = init[1]
+        recorder = init[-1]
         assert recorder["restartPolicy"] == "Always"
         assert "startupProbe" in recorder
         env = {item["name"]: item["value"] for item in containers["provider"]["env"]}

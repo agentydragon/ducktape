@@ -17,7 +17,7 @@ import (
 type queuedWork struct {
 	id, key         string
 	session         bool
-	attribution     *AdmissionAttribution
+	attribution     Attribution
 	wakeFrom        *string
 	wakeRequestedAt *time.Time
 	wakeAssessment  *environmentpb.WakeAssessment
@@ -265,7 +265,13 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return w.waitForRequestedWake(ctx, work, owner, sandbox, blocker)
 	}
 
-	if work.attribution == nil {
+	// Only a ServiceAccount caller's wake is authorized today; an Identity caller's waits like an
+	// unattributed one.
+	// TODO: authorize an Identity caller's wake by an Identity resume policy before the Sandbox switch
+	// (SANDBOX_IDENTITY_SPEC, agentplane/plans/task_dag.md); nothing sends to an Identity-run Session
+	// before it.
+	account, isAccount := work.attribution.(*AdmissionAttribution)
+	if !isAccount {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,
 			environmentpb.WakeState_WAKE_STATE_DENIED,
 			environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, nil)
@@ -294,7 +300,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if err != nil || !stillOwns {
 		return false, err
 	}
-	effectiveCaller := work.attribution.EffectiveCaller
+	effectiveCaller := account.EffectiveCaller
 	assessment, err := w.Wake.RequestWake(ctx, &lifecycle.Target{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
 	}, effectiveCaller)

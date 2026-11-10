@@ -13,6 +13,7 @@ import (
 	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -91,6 +92,26 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 	if caller.Pod != nil || caller.ServiceAccount.GetUid() != want.ServiceAccountUID ||
 		caller.ServiceAccount.GetAccount().GetName() != want.Account.Name {
 		t.Fatalf("reviewed caller = %#v, want the subject and no Pod", caller)
+	}
+}
+
+// An Identity subject resolves only for a verifier given the policy namespace, and only while the
+// Identity is the incarnation the record names.
+func TestSVIDResolvesAnIdentitySubject(t *testing.T) {
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox", testPolicyNamespace)
+	leaf := &x509.Certificate{URIs: []*url.URL{mustURL(t, workload.URI)}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); err != nil || got != workload.Subject {
+		t.Fatalf("subject = %#v, %v; want %#v", got, err, workload.Subject)
+	}
+	if err := workload.Objects.Delete(t.Context(), workload.Identity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); !errors.Is(err, auth.ErrInvalidBearer) {
+		t.Fatalf("a deleted Identity's credential resolved: %v", err)
 	}
 }
 

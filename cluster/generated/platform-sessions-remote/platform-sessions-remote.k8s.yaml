@@ -171,7 +171,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-openai
+  name: platform-sessions-openai-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -179,7 +179,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: seaweedfs-ovh-ssd
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -297,6 +297,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -410,7 +411,7 @@ spec:
             secretName: platform-sessions-openai-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-openai
+            claimName: platform-sessions-openai-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures
@@ -584,7 +585,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-anthropic
+  name: platform-sessions-anthropic-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -592,7 +593,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: seaweedfs-ovh-ssd
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -710,6 +711,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -823,7 +825,7 @@ spec:
             secretName: platform-sessions-anthropic-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-anthropic
+            claimName: platform-sessions-anthropic-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures
@@ -997,7 +999,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-chatgpt
+  name: platform-sessions-chatgpt-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -1005,7 +1007,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: seaweedfs-ovh-ssd
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -1123,6 +1125,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -1236,7 +1239,7 @@ spec:
             secretName: platform-sessions-chatgpt-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-chatgpt
+            claimName: platform-sessions-chatgpt-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures
@@ -1410,7 +1413,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-blueshield
+  name: platform-sessions-blueshield-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -1418,7 +1421,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: seaweedfs-ovh-ssd
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -1534,6 +1537,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -1647,7 +1651,7 @@ spec:
             secretName: platform-sessions-blueshield-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-blueshield
+            claimName: platform-sessions-blueshield-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures
@@ -1821,7 +1825,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-quest
+  name: platform-sessions-quest-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -1829,7 +1833,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: seaweedfs-ovh-ssd
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -1949,6 +1953,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -2062,7 +2067,7 @@ spec:
             secretName: platform-sessions-quest-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-quest
+            claimName: platform-sessions-quest-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures
@@ -2239,7 +2244,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-thrive
+  name: platform-sessions-thrive-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -2247,7 +2252,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: seaweedfs-ovh-ssd
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -2365,6 +2370,7 @@ spec:
               readOnly: true
             - mountPath: /data
               name: data
+              subPath: state
             - mountPath: /tmp
               name: tmp
             - mountPath: /var/run/session-recorder-ca
@@ -2478,7 +2484,7 @@ spec:
             secretName: platform-sessions-thrive-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-thrive
+            claimName: platform-sessions-thrive-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures

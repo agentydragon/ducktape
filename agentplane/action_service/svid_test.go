@@ -5,15 +5,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
@@ -22,7 +26,11 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
@@ -161,5 +169,103 @@ func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
 				t.Fatalf("invalid leaf failed after transport admission: %v", err)
 			}
 		})
+	}
+}
+
+// An Identity-subject SVID caller is admitted while a PolicyBinding names its Identity, is decided by those bindings,
+// and owns what it submits as that Identity.
+func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
+	bound := workloadauthtesting.NewIdentityWorkload(t, kube, policyNamespace, "identity-"+uuid.NewString(), policyNamespace)
+	unbound := workloadauthtesting.NewIdentityWorkload(t, kube, policyNamespace, "identity-"+uuid.NewString(), policyNamespace)
+	set := "test-identity-set-" + uuid.NewString()
+	for _, object := range []client.Object{
+		&policyapi.PolicySet{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: set},
+			Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: policies.RuleType, Policy: &policyapi.ActionPolicy{
+				Type: string(store.PolicyExactActions), Actions: map[string]policyapi.ActionNames{"test-mcp": {"test_echo"}},
+			}}}},
+		},
+		&policyapi.PolicyBinding{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-identity-binding-" + uuid.NewString()},
+			Spec: policyapi.PolicyBindingSpec{
+				Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: bound.Identity.Name}}, PolicySets: []string{set},
+			},
+		},
+	} {
+		if err := bound.Objects.Create(t.Context(), object); err != nil {
+			t.Fatal(err)
+		}
+	}
+	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, new(atomic.Bool)))+`}`)
+	ca := transporttesting.NewCA(t)
+	serving := ca.IssueWithUsage(t, environment_runtime_transport.ActionsURI, x509.ExtKeyUsageServerAuth)
+	service := startConfigured(t, kube.Config, groups, func(c *config, _ *deps) {
+		c.RPC = listener.Config{
+			ListenAddress: "127.0.0.1:0",
+			TLS:           &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
+			Auth: []listener.Authentication{
+				&listener.SPIFFEAuth{CAFile: serving.CAFile},
+				&listener.KubernetesBearerAuth{Audiences: []string{testAudience}},
+			},
+		}
+	})
+	waitReady(t, service)
+	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
+		return h.GetState() == action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE
+	})
+	// A ServiceAccount's request, which no Identity reads.
+	if _, err := service.store.Submit(t.Context(), store.CallerPrincipal{
+		Account: store.ServiceAccount{Namespace: policyNamespace, Name: "test-identity-neighbour"}, ServiceAccountUID: "test-neighbour-uid",
+	}, store.ActionRequestInput{
+		IdempotencyKey: "test-neighbour", Action: store.ActionIdentity{Group: "test-mcp", Name: "test_echo"},
+		Arguments: json.RawMessage(`{}`), Title: "test neighbour request",
+	}, store.Admission{RequestID: uuid.New()}); err != nil {
+		t.Fatal(err)
+	}
+	connect := func(workload workloadauthtesting.IdentityWorkload) action_servicepb.ActionServiceClient {
+		transportCredentials, err := ca.Issue(t, workload.URI).ClientCredentials(environment_runtime_transport.ActionsURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(transportCredentials))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { conn.Close() })
+		return action_servicepb.NewActionServiceClient(conn)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+
+	if _, err := connect(unbound).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("an Identity no binding names: %v, want UNAUTHENTICATED", err)
+	}
+
+	caller := connect(bound)
+	var submitted *action_servicepb.SubmitActionRequestResponse
+	// The index may not yet hold the binding the caller is admitted by.
+	if err := wait.PollUntilContextTimeout(ctx, 20*time.Millisecond, callDeadline, true, func(ctx context.Context) (bool, error) {
+		var err error
+		submitted, err = caller.SubmitActionRequest(ctx, &action_servicepb.SubmitActionRequestRequest{
+			IdempotencyKey: "test-identity-submit", Action: &action_servicepb.ActionIdentity{Group: "test-mcp", Name: "test_echo"},
+			Arguments: &structpb.Struct{}, Title: "test identity request",
+		})
+		return status.Code(err) != codes.Unauthenticated, err
+	}); err != nil {
+		t.Fatalf("the bound Identity's submission: %v", err)
+	}
+	receipt := submitted.GetActionRequest()
+	wantCaller := &identitypb.Identity{Name: bound.Subject.Identity.Name, Uid: bound.Subject.Identity.UID}
+	if !proto.Equal(receipt.GetCallerIdentity(), wantCaller) || receipt.GetCaller() != nil ||
+		receipt.GetDecision().GetPolicy() == nil || receipt.GetState() == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
+		t.Errorf("the receipt %v, want one an Identity binding allowed for %v", receipt, wantCaller)
+	}
+	listed, err := caller.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
+	if err != nil || len(listed.GetActionRequests()) != 1 || listed.GetActionRequests()[0].GetId() != receipt.GetId() {
+		t.Errorf("the Identity lists %v, %v; want its own request alone", listed, err)
+	}
+	policy, err := caller.GetActionPolicy(ctx, &action_servicepb.GetActionPolicyRequest{})
+	if err != nil || !proto.Equal(policy.GetActionPolicy().GetIdentity(), wantCaller) || len(policy.GetActionPolicy().GetAutoApproveIf()) != 1 {
+		t.Errorf("the Identity's own policy: %v, %v", policy, err)
 	}
 }

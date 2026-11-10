@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
@@ -25,6 +26,9 @@ const (
 	verifiedServiceAccount verifiedClaim = "service_account"
 	verifiedPodName        verifiedClaim = "pod_name"
 	verifiedPodUID         verifiedClaim = "pod_uid"
+	// An Identity caller has these instead of namespace and service_account.
+	verifiedIdentity    verifiedClaim = "identity"
+	verifiedIdentityUID verifiedClaim = "identity_uid"
 )
 
 type attributionField struct {
@@ -50,6 +54,8 @@ func defaultAttribution() attributionConfig {
 			{Key: "agentplane.service_account", Source: verifiedServiceAccount},
 			{Key: "agentplane.pod_name", Source: verifiedPodName},
 			{Key: "agentplane.pod_uid", Source: verifiedPodUID},
+			{Key: "agentplane.identity", Source: verifiedIdentity},
+			{Key: "agentplane.identity_uid", Source: verifiedIdentityUID},
 		},
 	}}}
 }
@@ -60,18 +66,22 @@ type modelConfig struct {
 }
 
 type config struct {
-	CentralSamplerAccounts          []string          `mapstructure:"central_sampler_accounts"`
-	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	TokenAudience                   string            `mapstructure:"token_audience"`
-	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`
-	Models                          []modelConfig     `mapstructure:"models"`
-	Attribution                     attributionConfig `mapstructure:"attribution"`
-	CodexModelCatalogFile           string            `mapstructure:"codex_model_catalog_file"`
-	LiteLLMURL                      string            `mapstructure:"litellm_url"`
-	LiteLLMKey                      string            `mapstructure:"litellm_key"`
-	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	RPC                             listener.Config   `mapstructure:"rpc"`
-	Kubeconfig                      string            `mapstructure:"kubeconfig"`
+	CentralSamplerAccounts          []string `mapstructure:"central_sampler_accounts"`
+	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
+	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity callers.
+	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+	//   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	PolicyNamespace       string            `mapstructure:"policy_namespace"`
+	TokenAudience         string            `mapstructure:"token_audience"`
+	LogLLMRequests        bool              `mapstructure:"log_llm_requests"`
+	Models                []modelConfig     `mapstructure:"models"`
+	Attribution           attributionConfig `mapstructure:"attribution"`
+	CodexModelCatalogFile string            `mapstructure:"codex_model_catalog_file"`
+	LiteLLMURL            string            `mapstructure:"litellm_url"`
+	LiteLLMKey            string            `mapstructure:"litellm_key"`
+	LogLevels             map[string]string `mapstructure:"log_levels"`
+	RPC                   listener.Config   `mapstructure:"rpc"`
+	Kubeconfig            string            `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
@@ -86,7 +96,7 @@ func loadConfig() (config, error) {
 	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
 	for _, key := range []string{
 		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key",
-		"kubeconfig",
+		"kubeconfig", "policy_namespace",
 	} {
 		settings.MustBindEnv(key)
 	}
@@ -134,6 +144,9 @@ func validateConfig(c *config) error {
 	}
 	if err := validateAttribution(c.Attribution); err != nil {
 		return err
+	}
+	if c.PolicyNamespace != "" && !attributesIdentity(c.Attribution) {
+		return errors.New("policy_namespace requires every attribution output to carry the identity claim")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err
@@ -199,7 +212,7 @@ func validateAttributionFields(fields []attributionField, isBaggage bool) error 
 			}
 		}
 		switch field.Source {
-		case verifiedNamespace, verifiedServiceAccount, verifiedPodName, verifiedPodUID:
+		case verifiedNamespace, verifiedServiceAccount, verifiedPodName, verifiedPodUID, verifiedIdentity, verifiedIdentityUID:
 		default:
 			return errors.New("attribution source is unsupported")
 		}
@@ -209,4 +222,16 @@ func validateAttributionFields(fields []attributionField, isBaggage bool) error 
 		seen[field.Key] = struct{}{}
 	}
 	return nil
+}
+
+// attributesIdentity reports whether every output names an Identity caller, which has no namespace
+// or service_account claim.
+func attributesIdentity(a attributionConfig) bool {
+	carriesIdentity := func(fields []attributionField) bool {
+		return slices.ContainsFunc(fields, func(field attributionField) bool { return field.Source == verifiedIdentity })
+	}
+	if len(a.Baggage) > 0 && !carriesIdentity(a.Baggage) {
+		return false
+	}
+	return !slices.ContainsFunc(a.JSONHeaders, func(header attributionJSONHeader) bool { return !carriesIdentity(header.Fields) })
 }

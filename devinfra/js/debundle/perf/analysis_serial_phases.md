@@ -422,18 +422,86 @@ Inlining roughjs matters because its classes and closures escape into this
 chunk's pool before the icons run. Splitting it out keeps the pool small at
 that point: the split editor chunk takes 14–16 s, against 260–390 s inlined.
 
+## Interop wrapper: not the cause
+
+Scratch builds of the inlined proxy with the editor chunk's source hand-edited,
+measured with the per-owner counters. Heavy owners are the 160 units in
+754–932 that take at least 0.2 s each (256 s of 276 s).
+
+| Variant                                                             | Remaining refusals                                                                                                                                                  | Heavy owners still pooling | Owner time |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------: | ---------: |
+| Original `var f=ca(u1())`                                           | `unknown_call_target` at `ca(` and `u1(` (the imported `__toESM`, `__commonJS`); in each icon, `member_read` at every `f.jsx` and `unknown_call_target` at the call |                        160 |      276 s |
+| v1: factory body inlined, `var f=(()=>{var Cr={}; …; return Cr})()` | `member_read` and `unknown_call_target` at both `Symbol.for(…)`; icons unchanged                                                                                    |                        160 |      282 s |
+| v2: v1 with `Symbol.for(…)` replaced by string constants            | `property_write` at `Cr.jsx=c1`; `member_read` at every `f.jsx`                                                                                                     |                        160 |      279 s |
+| v3: all 734 `(0,f.jsx[s])(` calls go to one top-level function      | inside the function: `implicit_coercion`, `member_read` (`t.key`, `a.ref`), `membership_protocol` (`"key" in t`), `property_write` (`a[i]=t[i]`)                    |                        160 |      589 s |
+
+- `Symbol.for` is modeled only through a `native_operation_inputs`
+  `symbol_for` premise on a top-level binding, never inside a function body.
+- v2's `property_write` is `promote_property_writes`: once
+  `reachability.unknown_call_seen` is set, which is sticky, every later write
+  takes the possible-setter path, even to a fresh `{}`.
+- v2's `f.jsx` reads take `promote_possible_getter`. The components in the
+  pool capture `f`, so every bounded pool pass unsettles `f`'s object.
+- In v3 the body now runs, and under the fallback the escaped components run
+  too (clsx and roughjs subclasses), so the time doubles.
+
+So the pools do not come from the wrapper. A statement enters a fallback the
+size of the whole pool on any single refusal while the escaped pool exceeds
+`MAX_SYNCHRONOUS_CALLBACK_POOL`: 200 callbacks by unit 404, 338 by 754. After
+the chunk's first opaque call, refusals are everywhere.
+
+## Delta ceilings (inlined editor chunk)
+
+Unsound upper bounds, in scratch builds only. Within a top owner, each level
+skips the named work when every input value was already processed in that
+owner. That over-skips, because it ignores writes that narrow state, so each
+row bounds what any sound monotone delta of the same scope can save. Times
+are owner-time sums from the counter build.
+
+| Skipped when no input is new                                                        | Owner time | Heavy owner |
+| ----------------------------------------------------------------------------------- | ---------: | ----------: |
+| Nothing (baseline)                                                                  |      276 s |       1.7 s |
+| Fallback callback walk and `unsettle`, and the pool tail (taint, walk, escape)      |      205 s |      1.37 s |
+| Also `promote_deferred_callbacks`, `promote_raw_callbacks`, `promote_class_members` |       92 s |       0.6 s |
+| Also a whole `invoke_possible_callbacks_transfer`                                   |       60 s |       0.4 s |
+
+- After the first level, the profile shows `promote_class_members` at 28%,
+  `promote_lazy_effects` at 16%, `export_surface_callback_values` at 12%,
+  `note_unknown_execution` at 10%, and the fallback at 17%. The
+  export-surface memo misses because each pool invocation changes the world.
+- After the last level, what remains is `promote_possible_getter` at 32%,
+  mostly its `unsettle` of the prefix values of every binding the statement
+  has read (27%). Then come `note_unknown_execution` at 15% and
+  `promote_lazy_effects` at 15%. The trigger is the `f.jsx` read on an object
+  that every pool pass unsettles.
+
+**Conclusion.** A sound delta on this engine is bounded at about 3–5× on the
+proxy (60–92 s against a 20 s target). Reaching the target needs fewer
+opaque events: what a bounded pool pass unsettles, and the sticky
+possible-setter path. Narrowing either turns refusals into acceptances, so it
+takes the output-changing review. Design: <../plans/analysis_performance.md>
+§ Fewer opaque events.
+
+With `program_premises.intrinsics_never_written: {families: [Object]}` added
+to the original and v2 configs (`all` is refuted by census writes on `Error`
+and `Array`), all 160 heavy owners still pool (287 s and 289 s). The
+possible-setter and possible-getter paths do not consult the premise today.
+
 ## Candidate optimizations, ranked
 
 From the cost model above:
 
-1. **Make interop calls analyzable.** The icons' `f.jsx` calls are opaque only
-   through esbuild's interop wrapper. If that is fixed, they stop invoking
-   the pool. A memo of the reentrant-pool fallback was measured at a ceiling
-   of about 1.5× (fallbacks are 34% of owner time), so it is not the lever.
-2. **Make callback promotion a per-owner worklist,** so each deferred callback
-   is promoted once per state change, not once per opaque call.
-3. **Make `unsettle` incremental** with the per-element frontier above. It is
-   now 7% inclusive, so this comes after 1 and 2.
+1. **One per-owner frontier over every opaque-call path:** the pool and its
+   fallback, callback promotion, the export-surface walk, and the
+   possible-getter `unsettle`. The ceiling is 4.6× (§ Delta ceilings); scoped
+   to the fallback alone it is 1.35×.
+2. **Fewer opaque events.** Even with the full delta, 60 s remains above the
+   20 s target. The events come from what a pool pass unsettles and from the
+   sticky possible-setter path (§ Interop wrapper: not the cause). Narrowing
+   either changes output, so it needs the output-changing review.
+
+Making the interop wrapper analyzable gains nothing alone (§ Interop wrapper:
+not the cause), but item 2 needs it to reach the icons.
 
 Earlier candidates, from the package build:
 

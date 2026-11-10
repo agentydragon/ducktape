@@ -42,7 +42,7 @@ func TestBaselineRejectsSchemaWithoutHistory(t *testing.T) {
 	if err := Up(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(t.Context(), "DELETE FROM "+gooseTable+" WHERE version_id=14"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM "+gooseTable+" WHERE version_id>=14"); err != nil {
 		t.Fatal(err)
 	}
 	err := Up(t.Context(), db)

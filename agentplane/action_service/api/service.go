@@ -167,9 +167,9 @@ func (s *Service) CancelActionRequest(ctx context.Context, request *action_servi
 	if err != nil {
 		return nil, err
 	}
-	var owner store.CallerPrincipal
+	var owner store.Owner
 	switch principal := admitted(ctx).principal.(type) {
-	case store.CallerPrincipal:
+	case store.Owner:
 		owner = principal
 	case store.OperatorPrincipal:
 		return nil, status.Error(codes.PermissionDenied, "an operator cannot cancel a request")

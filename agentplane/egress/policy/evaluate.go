@@ -36,7 +36,7 @@ func (r Request) isConnect() bool { return r.Method == http.MethodConnect }
 // WorkloadContext is credential material retained only after the proxy authenticated this
 // request or tunnel. Its tokens are never printed.
 type WorkloadContext struct {
-	Caller policyapi.ServiceAccountRef
+	Caller reader.Subject
 	PodUID string
 	// Projected maps an audience to the token the sidecar presented for it, each already reviewed as
 	// belonging to the Sandbox's bound Pod. An audience that did not review is absent rather
@@ -88,8 +88,8 @@ type match struct {
 // credential; one presenting none is decided by the first matching rule and is forwarded as it
 // came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
 // credential away from it.
-func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext) Decision {
-	grants := i.Rules.Grants(reader.ServiceAccount(caller))
+func (i *Index) Evaluate(caller reader.Subject, request Request, workload *WorkloadContext) Decision {
+	grants := i.Rules.Grants(caller)
 	if len(grants) == 0 {
 		return Denied{decision.NoBinding}
 	}
@@ -237,7 +237,7 @@ func resolves(rule resources.Rule, presented map[string]presentation.Presentatio
 // Secret is the proxy's and needs no such binding. The proxy's own API server bearer goes only to
 // that server, over verified TLS.
 func (i *Index) credentialValue(
-	credential resources.Credential, caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext,
+	credential resources.Credential, caller reader.Subject, request Request, workload *WorkloadContext,
 ) (string, bool) {
 	bound := workload != nil && workload.Caller == caller
 	switch source := credential.Source.(type) {

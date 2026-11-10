@@ -25,10 +25,12 @@ pub(in crate::facts::sync_effects) trait BindingContext {
         binding: &Id,
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition>;
-    /// Whether this exact evaluated receiver came from an initialized,
-    /// non-imported module binding at the current prefix. Strict provider
+    /// Whether this exact evaluated receiver is an object the current prefix
+    /// tracks for a covered own-data read: the value of an initialized,
+    /// non-imported module binding, or an element record an active iteration
+    /// row's snapshot checked before its first callback. Strict provider
     /// queries keep the default false and require fresh-local ownership.
-    fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
+    fn prefix_tracked_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
         false
     }
     /// Store to a module-level binding that this body does not declare and

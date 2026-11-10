@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 // golden.json holds fixed policy inputs and their workload/operator API projections.
@@ -52,7 +53,7 @@ func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 				if err := protojson.Unmarshal(written, want); err != nil {
 					t.Fatal(err)
 				}
-				got := View(index, v.Subject, viewer)
+				got := View(index, reader.ServiceAccount(v.Subject), viewer)
 				// A refusal's reason is its parser's own text: only that the set is refused is compared.
 				for _, view := range []*action_servicepb.CallerActionPolicy{got, want} {
 					for _, binding := range view.GetBindings() {

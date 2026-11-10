@@ -90,6 +90,37 @@ litellm_key: test-secret
 	}
 }
 
+func TestPolicyNamespaceRequiresEveryAttributionOutputToNameTheIdentity(t *testing.T) {
+	base := `allowed_service_account_namespaces: [test-namespace]
+policy_namespace: test-policy
+token_audience: test-audience
+rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
+litellm_url: http://127.0.0.1:8100
+litellm_key: test-secret
+`
+	for _, test := range []struct {
+		name  string
+		yaml  string
+		fails bool
+	}{
+		{name: "default"},
+		{name: "every output names the identity", yaml: "attribution:\n  json_headers:\n    - name: x-custom\n      fields:\n        - key: a\n          source: identity\n  baggage:\n    - key: b\n      source: identity\n"},
+		{name: "baggage without identity", yaml: "attribution:\n  json_headers:\n    - name: x-custom\n      fields:\n        - key: a\n          source: identity\n  baggage:\n    - key: b\n      source: namespace\n", fails: true},
+		{name: "header with identity UID alone", yaml: "attribution:\n  json_headers:\n    - name: x-custom\n      fields:\n        - key: a\n          source: identity_uid\n", fails: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, base+test.yaml)
+			c, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
+			if test.fails != (err != nil) {
+				t.Fatalf("load = %+v, %v; want failure %v", c.Attribution, err, test.fails)
+			}
+			if err == nil && c.PolicyNamespace != "test-policy" {
+				t.Fatalf("policy namespace = %q", c.PolicyNamespace)
+			}
+		})
+	}
+}
+
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {

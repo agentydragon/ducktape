@@ -46,7 +46,7 @@ def chart(app: App) -> Chart:
     # haku-ui's own Action caller (ui_egress.py). Haku-authored workloads run in this namespace, so
     # the account and its bindings are ours: Haku can create Pods as it but cannot create, label or
     # bind ServiceAccounts here (the haku-state-workload-deployer Role has none). No Kubernetes
-    # permissions; the Pod mounts only the projected token the egress sidecar presents.
+    # permissions; its egress sidecar presents a standing SVID, not a ServiceAccount token.
     k8s.KubeServiceAccount(
         chart,
         "haku-ui-service-account",

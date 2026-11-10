@@ -1085,6 +1085,16 @@ spec:
               pod: {}
           nodeSelector:
             topology.kubernetes.io/region: hil
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              httpHeaders:
+                - name: server-type
+                  value: buildbuddy-executor
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+            successThreshold: 1
           tolerations:
             - effect: NoSchedule
               key: node-role.kubernetes.io/control-plane
@@ -1251,9 +1261,9 @@ spec:
       rules:
         - alert: BuildBuddyKvmPoolEmpty
           annotations:
-            description: No BuildBuddy KVM worker has been scrapable for 5 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
-            summary: No KVM worker is reachable
+            description: No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
+            summary: No KVM worker is ready
           expr: absent(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics"} == 1)
-          for: 5m
+          for: 2m
           labels:
             severity: critical
