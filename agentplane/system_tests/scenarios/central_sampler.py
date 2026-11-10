@@ -36,7 +36,7 @@ from agentplane.system_tests.driver.sandbox import (
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
-from agentplane.testing.scripted_model import ModelRequest, Reasoning, ShellCall, Text
+from agentplane.testing.scripted_model import ModelRequest, Reasoning, ShellCall, Text, ToolOutput
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -445,6 +445,13 @@ async def _follow_code_mode_cell(
         pytest.fail(f"original code-mode cell still running after {timeout_s}s and {waits} waits: {output_blocks[-2:]}")
 
 
+def _code_mode_shell_stdout(output: ToolOutput) -> str:
+    """Separate the code-mode script status from the ShellCall's emitted stdout."""
+    assert output.blocks, output
+    assert output.blocks[0].startswith("Script completed\n"), output
+    return "".join(output.blocks[1:])
+
+
 async def _wait_for_failed_gateway_resume(
     deployed: CentralStack, session_id: str, after_cursor: int, read_call_id: str
 ) -> int:
@@ -722,8 +729,8 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await model.reply(request, ShellCall("verify-once", "cat gateway-roll-marker"))
         request = await asyncio.wait_for(model.request(), timeout=30)
         (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-once"]
-        marker_text = "\n".join(marker_output.blocks)
-        assert marker_text.strip() == "once", f"the executor mutation was replayed or lost: {marker_text}"
+        marker_text = _code_mode_shell_stdout(marker_output)
+        assert marker_text == "once\n", f"the executor mutation was replayed or lost: {marker_text}"
         await model.reply(request, Text("The running process finished after the Gateway recovered; marker: once."))
         await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
         await _wait_for_folded_turn(recovered, session_id, first_command)
@@ -878,8 +885,8 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         )
         request = await asyncio.wait_for(model.request(), timeout=30)
         (fresh_output,) = [output for output in request.tool_outputs if output.call_id == "continue-on-fresh-session"]
-        fresh_text = "\n".join(fresh_output.blocks)
-        assert fresh_text.splitlines() == ["once", "fresh"], fresh_text
+        fresh_text = _code_mode_shell_stdout(fresh_output)
+        assert fresh_text == "once\nfresh\n", fresh_text
         replacement_native_session_id = await _assert_replacement_native_session_started(
             recovered, session_id, cursor, original_native_session_id
         )
