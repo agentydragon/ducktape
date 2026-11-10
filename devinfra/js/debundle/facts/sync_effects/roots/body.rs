@@ -216,10 +216,21 @@ fn settle(
     let RootOperands {
         fact,
         ordered_initializer,
+        private_factory_result,
         ref mut settled_array_elements,
         ref mut global_object_aliases,
         ..
     } = *root;
+    if ordered_initializer.is_some()
+        && private_factory_result
+        && outcome.complete
+        && !outcome.unknown_call
+    {
+        // The kernel records the root as executed. This root ran only the
+        // substituted factory call, which retains the callback in its
+        // private result, so the owner exposes nothing by itself.
+        outcome.executed_owners.remove(&fact.ordinal);
+    }
     // Keep the selected result in this owner until publication.
     let ordered_initializer_result = ordered_initializer.map(|_| SelectedValue {
         values: std::mem::take(&mut outcome.returns),

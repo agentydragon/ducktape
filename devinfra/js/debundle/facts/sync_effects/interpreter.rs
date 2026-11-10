@@ -1138,9 +1138,19 @@ pub(super) struct Observations {
     inference_uses: BTreeSet<crate::analysis_provenance::InferenceUse>,
     /// Exact source-checked receivers whose prototype premises the author supplies.
     record_factory_prototype_premises: RecordFactoryPrototypePremises,
+    /// The typed reason an operation of this owner's execution withheld its
+    /// effect receipt. Report-only.
+    owner_coverage_refusal: Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
 }
 
 impl Observations {
+    pub(super) fn refuse_owner_coverage(
+        &mut self,
+        reason: crate::facts::OwnerInitializationCoverageRefusalReason,
+    ) {
+        self.owner_coverage_refusal.get_or_insert(reason);
+    }
+
     fn record_failed_native_guard(&mut self, check: NativeIntegrityCheck) {
         self.native_integrity_checks.insert(check);
     }
@@ -1239,6 +1249,7 @@ impl Observations {
         effects.inference_uses = std::mem::take(&mut self.inference_uses)
             .into_iter()
             .collect();
+        effects.initialization_coverage_refusal = self.owner_coverage_refusal.take();
     }
 }
 
@@ -6164,7 +6175,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         result
     }
 
-    fn record_foreign_call_use(&mut self, summary: &crate::analysis_inputs::ForeignCallSummary) {
+    pub(super) fn record_foreign_call_use(
+        &mut self,
+        summary: &crate::analysis_inputs::ForeignCallSummary,
+    ) {
         use crate::analysis_provenance::{InferenceRule, InferenceUse};
         let mut derivation_rules = BTreeSet::from([InferenceRule::ForeignCallSummary]);
         if !summary.native_constructions.is_empty() {
@@ -9389,50 +9403,52 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         calls
             .iter()
             .filter(|call| call.kind == CallKind::Call)
-            .all(|call| {
-                let (targets, member) = match &call.callee {
-                    ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
-                        Some(Values::from([AbstractValue::Value(Value::Alloc(
-                            Kind::Function,
-                            *key,
-                        ))])),
-                        false,
-                    ),
-                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
-                        self.state.world.module.prefix_values.get(binding).cloned(),
-                        false,
-                    ),
-                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
-                        let ValueExpr::Binding(receiver) = receiver.as_ref() else {
-                            return false;
-                        };
-                        if !self.initialized_local_binding(receiver) {
-                            return false;
-                        }
-                        let targets = self
-                            .state
-                            .world
-                            .module
-                            .prefix_values
-                            .get(receiver)
-                            .and_then(|values| {
-                                self.present_own_data_read(values, property)
-                                    .map(|read| read.values)
-                            });
-                        (targets, true)
-                    }
-                    _ => return false,
-                };
-                let Some(targets) = targets else {
+            .all(|call| self.ordered_root_call_is_local(call))
+    }
+
+    pub(super) fn ordered_root_call_is_local(&self, call: &Call) -> bool {
+        let (targets, member) = match &call.callee {
+            ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
+                Some(Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Function,
+                    *key,
+                ))])),
+                false,
+            ),
+            ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
+                self.state.world.module.prefix_values.get(binding).cloned(),
+                false,
+            ),
+            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
+                let ValueExpr::Binding(receiver) = receiver.as_ref() else {
                     return false;
                 };
-                let Some((key, callable)) = self.local_call_target(&targets) else {
+                if !self.initialized_local_binding(receiver) {
                     return false;
-                };
-                !callable.generator
-                    && !self.inputs.index.async_callables.contains(&key)
-                    && (!member || self.method_receiver_is_unused(&targets))
-            })
+                }
+                let targets = self
+                    .state
+                    .world
+                    .module
+                    .prefix_values
+                    .get(receiver)
+                    .and_then(|values| {
+                        self.present_own_data_read(values, property)
+                            .map(|read| read.values)
+                    });
+                (targets, true)
+            }
+            _ => return false,
+        };
+        let Some(targets) = targets else {
+            return false;
+        };
+        let Some((key, callable)) = self.local_call_target(&targets) else {
+            return false;
+        };
+        !callable.generator
+            && !self.inputs.index.async_callables.contains(&key)
+            && (!member || self.method_receiver_is_unused(&targets))
     }
 
     pub(super) fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
@@ -10200,6 +10216,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             || self.inputs.top_bindings.contains(binding)
                             || self.inputs.imported_primitive_read(binding).is_some()
                             || self.inputs.index.foreign_call_imports.contains_key(binding)
+                            || self
+                                .inputs
+                                .index
+                                .callback_factory_call_summaries
+                                .contains_key(binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -10301,6 +10322,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     || self.inputs.top_bindings.contains(binding)
                     || self.inputs.imported_primitive_read(binding).is_some()
                     || self.inputs.index.foreign_call_imports.contains_key(binding)
+                    || self
+                        .inputs
+                        .index
+                        .callback_factory_call_summaries
+                        .contains_key(binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(

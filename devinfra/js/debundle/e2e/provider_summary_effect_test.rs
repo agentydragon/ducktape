@@ -12,6 +12,18 @@ let count = 0;\n\
 export function next() { return ++count; }\n\
 export function peek() { return count; }\n";
 
+/// Stateless providers that take a callback. `defer` and `hold` retain it in
+/// their fresh result and `run` invokes it; `counted` also reads a provider
+/// cell.
+const CALLBACK_PEER: &str = "export function literal() { return 3; }\n\
+export function make(input) { return { input }; }\n\
+export function defer(callback) { return () => callback(); }\n\
+export function hold(callback) { return { run() { return callback(); } }; }\n\
+export function run(callback) { return callback(); }\n\
+let count = 0;\n\
+export function next() { return ++count; }\n\
+export function counted(callback) { const id = count; return () => id + callback(); }\n";
+
 /// `second` moves to a logical module and the rest stays in the entry, whose
 /// static imports run first: `second` is evaluated before every earlier
 /// statement of the source.
@@ -128,5 +140,242 @@ fn unsummarized_provider_bodies_and_constructors_stay_pending() {
         let fixture = run_fixture(second_first(source, &peers));
         assert_preserved_entry_output(&fixture, expected);
         assert_effect_verdict_pending(&fixture, "incomplete", case);
+    }
+}
+
+fn assert_relocations(peer: &str, cases: &[(&str, &str, &str)]) {
+    let peers = [("static/peer", peer)];
+    for (case, source, expected) in cases {
+        let fixture = run_fixture(second_first(source, &peers));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_effect_verdict_accepts(&fixture, case);
+    }
+}
+
+/// Both gates refuse the reordering, and the program emitted anyway prints
+/// `diverged` where the source prints `preserved`.
+fn assert_refused_divergence(opts: FixtureOpts<'_>, source: &str, preserved: &str, diverged: &str) {
+    let peers = [("static/peer", CALLBACK_PEER)];
+    let colocated = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&peers)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, preserved);
+
+    let reordered = run_emit_on_rejection_fixture(opts);
+    assert_node_output(&reordered.entry_path(), diverged, "");
+    let assessment = reordered.candidate_relocation_assessment();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+    assert_eq!(assessment["status"], "blocked_by_effect", "{assessment:#}");
+}
+
+/// A root that mixes local calls with summarized imported calls runs on the
+/// ordered kernel: each local call brings its own receipt and each summarized
+/// call its summary.
+#[test]
+fn roots_mixing_local_and_summarized_calls_relocate() {
+    assert_relocations(
+        CALLBACK_PEER,
+        &[
+            (
+                "local call as a summarized call's argument",
+                "import { literal, make } from './peer.js';\nfunction two() { return 2; }\nconst first = make(two());\nconst second = literal();\nconsole.log(first.input, second);\n",
+                "2 3\n",
+            ),
+            (
+                "local and summarized calls side by side",
+                "import { literal, make } from './peer.js';\nfunction two() { return 2; }\nconst first = [make(1), two()];\nconst second = literal();\nconsole.log(first[0].input, first[1], second);\n",
+                "1 2 3\n",
+            ),
+            (
+                "local call reading a module binding",
+                "import { literal, make } from './peer.js';\nlet n = 1;\nfunction get() { return n; }\nconst first = make(get());\nconst second = literal();\nconsole.log(first.input, second);\n",
+                "1 3\n",
+            ),
+            (
+                "two mixed roots",
+                "import { make } from './peer.js';\nfunction two() { return 2; }\nconst first = make(two());\nconst second = make(two());\nconsole.log(first.input, second.input);\n",
+                "2 2\n",
+            ),
+        ],
+    );
+}
+
+/// The local call of each mixed root writes the global property the other
+/// root's summarized call takes as its argument.
+#[test]
+fn mixed_root_whose_local_call_writes_the_other_roots_argument_is_refused_and_diverges() {
+    let peers = [("static/peer", CALLBACK_PEER)];
+    let source = "import { make } from './peer.js';\nfunction bump() { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; }\nconst first = make(bump());\nconst second = make(bump());\nconsole.log(first.input, second.input);\n";
+    assert_refused_divergence(second_first(source, &peers), source, "1 2\n", "2 1\n");
+}
+
+/// A summarized provider body invokes no argument, so a callback it receives
+/// is only created at the call: the callback's own reads and effects belong
+/// to whoever invokes it later.
+#[test]
+fn callbacks_passed_to_summarized_imports_relocate() {
+    assert_relocations(
+        CALLBACK_PEER,
+        &[
+            (
+                "inline closure",
+                "import { literal, make } from './peer.js';\nconst first = make(() => 1);\nconst second = literal();\nconsole.log(first.input(), second);\n",
+                "1 3\n",
+            ),
+            (
+                "closure reading a later module binding",
+                "import { literal, make } from './peer.js';\nconst first = make(() => later);\nconst second = literal();\nconst later = 5;\nconsole.log(first.input(), second);\n",
+                "5 3\n",
+            ),
+            (
+                "declared function",
+                "import { literal, make } from './peer.js';\nfunction one() { return 1; }\nconst first = make(one);\nconst second = literal();\nconsole.log(first.input(), second);\n",
+                "1 3\n",
+            ),
+            (
+                "retaining factory result as the argument",
+                "import { defer, literal, make } from './peer.js';\nconst first = make(defer(() => 1));\nconst second = literal();\nconsole.log(first.input(), second);\n",
+                "1 3\n",
+            ),
+        ],
+    );
+}
+
+/// `run` invokes its callback, so it has no summary: the callback's write to
+/// the global property the moved statement reads happens at the call.
+#[test]
+fn callback_invoked_by_the_provider_is_refused_and_diverges() {
+    let peers = [("static/peer", CALLBACK_PEER)];
+    let source = "import { run } from './peer.js';\nglobalThis.n = 1;\nconst first = run(() => { globalThis.n = 2; return 0; });\nconst second = globalThis.n;\nconsole.log(first, second);\n";
+    assert_refused_divergence(
+        second_first(source, &peers),
+        source,
+        "0 2\n",
+        "0 undefined\n",
+    );
+}
+
+/// An imported factory that retains its callback in a fresh result: the
+/// creating call is covered by the provider's summary and relocates, while the
+/// callback stays a deferred effect of every later use of the result.
+#[test]
+fn retaining_factory_calls_relocate() {
+    assert_relocations(
+        CALLBACK_PEER,
+        &[
+            (
+                "returned closure",
+                "import { defer, literal } from './peer.js';\nconst first = defer(() => 1);\nconst second = literal();\nconsole.log(first(), second);\n",
+                "1 3\n",
+            ),
+            (
+                "returned record",
+                "import { hold, literal } from './peer.js';\nconst first = hold(() => 1);\nconst second = literal();\nconsole.log(first.run(), second);\n",
+                "1 3\n",
+            ),
+            (
+                "callback with an effect of its own",
+                "import { defer, literal } from './peer.js';\nconst first = defer(() => { console.log('ran'); return 1; });\nconst second = literal();\nconsole.log(first(), second);\n",
+                "ran\n1 3\n",
+            ),
+            (
+                "two factory calls",
+                "import { defer } from './peer.js';\nconst first = defer(() => 1);\nconst second = defer(() => 2);\nconsole.log(first(), second());\n",
+                "1 2\n",
+            ),
+            (
+                "created before the native row its callback reads",
+                "import { defer } from './peer.js';\nconst first = Object.freeze({ a: 1 });\nconst second = defer(() => first.a);\nconsole.log(second());\n",
+                "1\n",
+            ),
+            (
+                "factory call in a local body",
+                "import { defer, literal } from './peer.js';\nfunction build() { return defer(() => 1); }\nconst first = build();\nconst second = literal();\nconsole.log(first(), second);\n",
+                "1 3\n",
+            ),
+            (
+                "factory call beside a local call",
+                "import { defer, literal } from './peer.js';\nfunction two() { return 2; }\nconst first = [defer(() => 1), two()];\nconst second = literal();\nconsole.log(first[0](), first[1], second);\n",
+                "1 2 3\n",
+            ),
+        ],
+    );
+}
+
+/// The factory call's receipt covers the creation only. Each invocation of
+/// the result runs the retained callback, so moving the second invocation
+/// (with the creation) ahead of the first hands out the counter values the
+/// other way round.
+#[test]
+fn retained_callback_invoked_after_the_swap_point_is_refused_and_diverges() {
+    let peers = [("static/peer", CALLBACK_PEER)];
+    let source = "import { defer } from './peer.js';\nconst bump = defer(() => { globalThis.n = (globalThis.n ?? 0) + 1; return globalThis.n; });\nconst first = bump();\nconst second = bump();\nconsole.log(first, second);\n";
+    assert_refused_divergence(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "second",
+                &[Member::new("bump"), Member::new("second")],
+            )],
+        )
+        .with_extra_chunks(&peers)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        source,
+        "1 2\n",
+        "2 1\n",
+    );
+}
+
+/// `counted` retains its callback but also reads the provider cell `next`
+/// writes, so its summary is no receipt: the effect verdict stays incomplete,
+/// and the emitted program reads the counter before the increment (the source
+/// prints `1 1`). The legacy gate accepts this split today
+/// (`debug/2026_11_09_l4c_discrepancy_audit.md` § Unsafe legacy acceptance).
+#[test]
+fn retaining_factory_reading_a_provider_cell_has_no_effect_receipt() {
+    let peers = [("static/peer", CALLBACK_PEER)];
+    let source = "import { counted, next } from './peer.js';\nconst first = next();\nconst second = counted(() => 0);\nconsole.log(first, second());\n";
+    let reordered = run_fixture(second_first(source, &peers));
+    assert_entry_output(&reordered, "1 0\n");
+    let assessment = candidate_relocation_assessment(&reordered);
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
+}
+
+/// Valid relocations waiting on call-effect coverage for callees with live
+/// captures: the callback captures a cell of the activation that creates it,
+/// so the call receiving it has no receipt and the owner names that reason.
+#[test]
+fn callbacks_capturing_a_caller_local_stay_pending() {
+    let peers = [("static/peer", CALLBACK_PEER)];
+    for (case, source, expected) in [
+        (
+            "summarized call",
+            "import { literal, make } from './peer.js';\nfunction build() { const out = []; return make((x) => out.push(x)); }\nconst first = build();\nconst second = literal();\nconsole.log(first.input(7), second);\n",
+            "1 3\n",
+        ),
+        (
+            "retaining factory",
+            "import { defer, literal } from './peer.js';\nfunction build() { const out = [1]; return defer(() => out.length); }\nconst first = build();\nconst second = literal();\nconsole.log(first(), second);\n",
+            "1 3\n",
+        ),
+    ] {
+        let fixture = run_fixture(second_first(source, &peers));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_effect_verdict_pending(&fixture, "incomplete", case);
+        let report = fixture.effect_translation_validation();
+        assert_eq!(
+            report["coverage"]["owner_coverage_refusals"]["callback_captures_live_cell"], 1,
+            "{case}: {report:#}"
+        );
     }
 }

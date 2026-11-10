@@ -6160,6 +6160,11 @@ pub(super) struct ExecutionIndex {
     /// callback. Lowered values cannot establish this source prerequisite.
     pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
     pub(super) foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
+    /// The derived summary of an import that also carries callback-factory
+    /// evidence. The evidence keeps the call's timing and result consumers;
+    /// the summary is the receipt for the provider body's effects.
+    pub(super) callback_factory_call_summaries:
+        BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
     pub(super) inline_callback_factory_imports: BTreeSet<Id>,
     pub(super) callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
@@ -6347,6 +6352,7 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             foreign_call_imports: BTreeMap::new(),
+            callback_factory_call_summaries: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
             callback_factory_summaries: BTreeMap::new(),
             direct_inline_callback_calls: BTreeMap::new(),
@@ -9580,7 +9586,6 @@ impl ExecutionIndex {
                     // only where nothing else describes the call.
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && let Some(call) = summary.foreign_call.as_ref()
-                        && !summary.supports_callback_factory()
                         && summary.returned_record.is_none()
                         && summary.namespace_wrapper.is_none()
                         && summary.descriptor_copy_factory.is_none()
@@ -9588,9 +9593,15 @@ impl ExecutionIndex {
                             .assumptions
                             .names_imported_callable(local.sym.as_ref())
                     {
-                        index
-                            .foreign_call_imports
-                            .insert(local.to_id(), call.clone());
+                        if summary.supports_callback_factory() {
+                            index
+                                .callback_factory_call_summaries
+                                .insert(local.to_id(), call.clone());
+                        } else {
+                            index
+                                .foreign_call_imports
+                                .insert(local.to_id(), call.clone());
+                        }
                     }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && summary.supports_callback_factory()

@@ -41,6 +41,10 @@ pub(super) struct RootOperands<'source> {
     /// Roots this owner added while no opaque call consumed them; a fully
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
+    /// The owner's result is a callback factory's private carrier: its
+    /// callback is reached only through the result binding, so the owner is
+    /// no reachability root of its own.
+    pub(super) private_factory_result: bool,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
     /// An initializer the body phase runs through the kernel and keeps as
     /// `ordered_initializer` only if that execution seals the owner; taken by
@@ -235,6 +239,7 @@ pub(super) fn prepare<'source>(
         &private_constructor_result_owners,
         closed_result.as_ref(),
     );
+    let private_factory_result = closed_result.is_some();
     if let Some(proof) = closed_result {
         executor.record_callback_factory_use_fact(proof.proof_use);
     }
@@ -313,21 +318,25 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
-    // Every call of the root is a direct call of an imported binding that
-    // carries a published foreign call summary. The ordered lane substitutes
-    // each summary, so it runs no provider or application code.
-    let provider_root_calls = {
+    // Every call of the root is a local call or a direct call of an import
+    // the ordered lane replaces by its derived summary, with at least one of
+    // the latter. A substituted call runs no provider or application code.
+    let summarized_root_calls = {
+        let summarized = |call: &Call| {
+            call.kind == CallKind::Call
+                && !call.has_spread
+                && (executor
+                    .foreign_call_summary(call.kind, &call.callee)
+                    .is_some()
+                    || executor.retaining_factory_summary(call).is_some())
+        };
         let mut calls = calls
             .iter()
-            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
-            .peekable();
-        calls.peek().is_some()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New));
+        calls.clone().any(summarized)
             && calls.all(|call| {
                 call.kind == CallKind::Call
-                    && !call.has_spread
-                    && executor
-                        .foreign_call_summary(call.kind, &call.callee)
-                        .is_some()
+                    && (summarized(call) || executor.ordered_root_call_is_local(call))
             })
     };
     let root_construction = index
@@ -366,7 +375,7 @@ pub(super) fn prepare<'source>(
         .filter(|body| {
             (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
-                || provider_root_calls
+                || summarized_root_calls
                 || selected_audited_initializer.is_some())
                 && (calls
                 .iter()
@@ -396,7 +405,7 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
-                || provider_root_calls
+                || summarized_root_calls
                 || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead
@@ -458,6 +467,7 @@ pub(super) fn prepare<'source>(
         prevalidated_metadata,
         certified_deferred_write,
         provisional_roots,
+        private_factory_result,
         ordered_initializer,
         attempted_initializer,
         effect_initializer_source,

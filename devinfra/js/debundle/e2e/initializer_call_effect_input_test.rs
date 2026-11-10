@@ -267,10 +267,15 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         .with_pure_exports(&["wrap"])
         .with_callback_factories(&["wrap"])
         .build()];
-    let no_input = run_rejection_fixture(opts(&purity, 0));
+    // The provider's derived summary is the receipt for the wrapper call, so
+    // the split needs no audited operation input.
+    let no_input = run_fixture(opts(&purity, 0));
+    assert_preserved_entry_output(&no_input, "initial later 2\n");
     assert!(
-        !no_input.cycles().is_empty(),
-        "callback timing and provider purity do not cover the initializer operation"
+        no_input.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .is_some_and(|pairs| pairs > 0),
+        "the split relocates the wrapper calls"
     );
 
     let source_inferred = [ChunkExportPurityBuilder::new("static/peer")
@@ -334,7 +339,9 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         logical_module("callbacks/first", &[Member::new("first")]),
         logical_module("callbacks/second", &[Member::new("second")]),
     ];
-    let without_initializer_purity = run_rejection_fixture(
+    // Without initializer purity the audited inputs are not consumed. The
+    // derived summary alone proves each wrapper call completes normally.
+    let without_initializer_purity = run_fixture(
         FixtureOpts::new(SOURCE, no_initializer_purity)
             .with_extra_chunks(EXTRA_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
@@ -344,10 +351,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
                 vec![input(SOURCE, "first"), input(SOURCE, "second")],
             ),
     );
-    assert!(
-        !without_initializer_purity.cycles().is_empty(),
-        "the factory carrier and operation input cannot certify a nonthrowing initializer"
-    );
+    assert_preserved_entry_output(&without_initializer_purity, "initial later 2\n");
     let without_purity_report = without_initializer_purity.effect_translation_validation();
     assert_eq!(
         without_purity_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -355,12 +359,10 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "missing initializer purity must not consume the operation inputs"
     );
 
-    let first_only = run_rejection_fixture(opts(&purity, 1));
-    assert_eq!(
-        first_only.cycles().len(),
-        1,
-        "only the unselected second wrapper should remain ordered with the neighbor"
-    );
+    // The selected first call is covered by its audited input, the second by
+    // the derived summary.
+    let first_only = run_fixture(opts(&purity, 1));
+    assert_preserved_entry_output(&first_only, "initial later 2\n");
     let first_report = first_only.effect_translation_validation();
     assert_eq!(
         first_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
