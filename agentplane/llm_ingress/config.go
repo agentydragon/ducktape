@@ -69,6 +69,8 @@ type config struct {
 	CentralSamplerAccounts          []string `mapstructure:"central_sampler_accounts"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
 	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity callers.
+	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+	//   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
 	PolicyNamespace       string            `mapstructure:"policy_namespace"`
 	TokenAudience         string            `mapstructure:"token_audience"`
 	LogLLMRequests        bool              `mapstructure:"log_llm_requests"`

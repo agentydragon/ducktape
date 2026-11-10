@@ -280,18 +280,20 @@ func requestLogAttrs(requestID string, incoming *http.Request, subject auth.Subj
 	return append([]any{"id", requestID, "method", incoming.Method, "path", incoming.URL.Path}, callerLogAttrs(subject)...)
 }
 
-// callerLogAttrs names the verified caller, by namespace or Identity, and its Pod when known.
+// callerLogAttrs names the verified caller by subject kind and name (a ServiceAccount also by
+// namespace), and its Pod when known, so an Identity caller never logs as an empty account.
 func callerLogAttrs(subject auth.Subject) []any {
 	var attrs []any
 	var podName, podUID string
 	switch subject := subject.(type) {
 	case auth.Principal:
+		attrs = append(attrs, "subject_kind", "service_account", "subject_name", subject.Account.Name)
 		if subject.Account.Namespace != "" {
 			attrs = append(attrs, "namespace", subject.Account.Namespace)
 		}
 		podName, podUID = subject.PodName, subject.PodUID
 	case auth.IdentityPrincipal:
-		attrs = append(attrs, "identity", subject.Identity.Name)
+		attrs = append(attrs, "subject_kind", "identity", "subject_name", subject.Identity.Name)
 		podName, podUID = subject.PodName, subject.PodUID
 	default:
 		panic(fmt.Sprintf("unknown subject %T", subject))

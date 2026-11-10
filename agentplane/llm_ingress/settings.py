@@ -23,6 +23,8 @@ class Settings(YamlFileSettings):
         min_length=1,
         description="Namespaces whose Sandbox SVIDs or backend ServiceAccount bearers may authenticate here.",
     )
+    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+    #   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
     policy_namespace: str | None = Field(
         default=None,
         min_length=1,
