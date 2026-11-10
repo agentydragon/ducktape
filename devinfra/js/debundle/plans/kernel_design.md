@@ -29,6 +29,36 @@ the family when every leaf has completed; the contract is in
   (`roots/operands.rs`, the `ordered_initializer` families). Admitting it
   needs a typed loss for an unproved member read at the root instead of the
   remainder summary, or legacy-accepted roots regress.
+
+  **Admission is only safe when the kernel can finish the root.** A refusal
+  after some callbacks have run cannot be handed back to the legacy row (that
+  would be a second evaluator or a retry), so it becomes a remainder summary
+  with global reach, strictly worse than what the flat lane produced for the
+  same root. Admitting every root whose one invocation is an iteration row
+  regressed three e2e targets: `intrinsic_array_iteration_test`
+  (`entries.reduce((t, e) => t + e.size, 0)` over records holding
+  `executor` closures: a Node-verified legacy acceptance became an atomic
+  group rejection), `at_init_unresolved_callee_test`
+  (`tools.map((tool) => ({ ...tool }))`: new promoted `EagerUse` edges) and
+  `retained_instance_class_publication_test` (four report assertions). In each,
+  the callback read a field of a borrowed element record or spread one, the
+  row refused, and the global summary invoked the elements' stored callbacks.
+  So admission must be decided before execution starts, from what the kernel
+  can prove it supports for the root's whole reachable body, not from the
+  root's surface shape. Today the iteration roots admit only receivers whose
+  elements are all primitive (`roots/operands.rs`,
+  `root_array_iteration`). A better predicate would classify each operation
+  of the callback's ordered plan by whether the kernel completes it for the
+  argument kinds the snapshot supplies. Nothing on `devel` gives that:
+  `CallableBodyFacts::ordered_plan` certifies syntactic coverage only, and the
+  provider's operation-support receipt does not exist yet.
+
+  Separately, an array literal inside a callback loses its writability
+  witness on the callback's second invocation (the allocation site is pooled),
+  so a row nested in a kernel row refuses from the second element on
+  (`effect_tv_array_iteration_test`, `a_row_inside_a_legacy_row_callback_stays_legacy`
+  keeps the outer root on the flat lane to stay a depth control).
+
 - **Field reads under a fork.** An own-data read leaves the initialization
   domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on
   a record field forks but its owner is not initialization-covered.
