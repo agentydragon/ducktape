@@ -56,7 +56,7 @@ type Service struct {
 
 type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
 
-// pusher is a Push caller: an accountPusher or an identityPusher.
+// pusher is a Push caller: an accountPusher, an identityPusher or a delegatingSamplerPusher.
 type pusher interface{ isPusher() }
 
 // accountPusher is a runner or central sampler authenticated as a ServiceAccount.
@@ -69,8 +69,28 @@ type identityPusher struct {
 	sandbox storage.Sandbox
 }
 
-func (accountPusher) isPusher()  {}
-func (identityPusher) isPusher() {}
+// delegatingSamplerPusher is a central sampler acting for the Identity a Session executes as. The
+// sampler stays the journal writer; the Identity, verified live by the middleware, is the Session's
+// retained execution Identity, and sessionID is the Session its envelope names.
+type delegatingSamplerPusher struct {
+	actor     storage.ServiceAccountWriter
+	identity  storage.Identity
+	sessionID string
+}
+
+func (accountPusher) isPusher()           {}
+func (identityPusher) isPusher()          {}
+func (delegatingSamplerPusher) isPusher() {}
+
+// AllowDelegatingSamplers grants each configured sampler account the delegated mode on the Push
+// rule: asserting the Identity a central Session executes as, resolved live by identities.
+func AllowDelegatingSamplers(push auth.Rule, samplers []auth.Account, identities auth.IdentityUIDReader) (auth.Rule, error) {
+	delegators := make([]auth.Delegator, 0, len(samplers))
+	for _, sampler := range samplers {
+		delegators = append(delegators, auth.Delegator{Account: sampler, IdentityCallers: true})
+	}
+	return push.AllowDelegationFrom(delegators, nil, identities)
+}
 
 func (s *Service) Push(stream pushStream) error {
 	ctx := stream.Context()
@@ -79,11 +99,24 @@ func (s *Service) Push(stream pushStream) error {
 		return err
 	}
 	var caller pusher
-	if identity, ok := admission.(auth.IdentityAdmission); ok {
-		if caller, err = newIdentityPusher(identity.Caller); err != nil {
+	switch admission := admission.(type) {
+	case auth.IdentityAdmission:
+		if caller, err = newIdentityPusher(admission.Caller); err != nil {
 			return err
 		}
-	} else {
+	case auth.DelegatedIdentityAdmission:
+		session := admission.Provenance.GetSession()
+		if session == nil {
+			return status.Error(codes.PermissionDenied, "a delegating sampler names the Session it pushes")
+		}
+		caller = delegatingSamplerPusher{
+			actor: storage.ServiceAccountWriter{
+				Namespace: admission.Actor.Account.Namespace, Name: admission.Actor.Account.Name, UID: admission.Actor.ServiceAccountUID,
+			},
+			identity:  storage.Identity{Name: admission.EffectiveCaller.Name, UID: admission.EffectiveCaller.UID},
+			sessionID: session.GetSessionId(),
+		}
+	default:
 		principal, err := auth.Caller(ctx)
 		if err != nil {
 			return err
@@ -96,6 +129,19 @@ func (s *Service) Push(stream pushStream) error {
 	defer frames.stop()
 	c := &pushCall{history: s.History, timing: s.Timing, stream: stream, frames: frames, log: slog.Default(), service: s}
 	return c.failure(c.run(ctx, caller))
+}
+
+// samplerWriter is the ServiceAccount a central sampler pushes as, whether as itself or acting for
+// an Identity; a runner is no sampler.
+func samplerWriter(caller pusher) (storage.ServiceAccountWriter, bool) {
+	switch caller := caller.(type) {
+	case accountPusher:
+		return caller.ServiceAccountWriter, true
+	case delegatingSamplerPusher:
+		return caller.actor, true
+	default:
+		return storage.ServiceAccountWriter{}, false
+	}
 }
 
 // newIdentityPusher pins an Identity runner to the Sandbox that controls its workload credential, as
@@ -136,7 +182,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	var executionPrincipal *storage.ExecutionPrincipal
 	var executionIdentity *storage.Identity
 	if sampler != nil {
-		account, ok := caller.(accountPusher)
+		account, ok := samplerWriter(caller)
 		if !ok || !slices.Contains(c.service.SamplerAccounts, auth.Account{Namespace: account.Namespace, Name: account.Name}) {
 			return status.Error(codes.PermissionDenied, "central sampler producer is not authorized")
 		}
@@ -161,6 +207,8 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
 		switch caller := caller.(type) {
+		case delegatingSamplerPusher:
+			return status.Error(codes.PermissionDenied, "a delegating sampler announces a central Session")
 		case accountPusher:
 			if c.service.SandboxUIDs != nil {
 				var err error
@@ -190,7 +238,8 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		}
 	}
 	// The Dispatcher records the Identity a Session executes as; only a writer that can vouch for it
-	// is retained: an Identity runner running as it, or a configured central sampler relaying it.
+	// is retained: an Identity runner running as it, a central sampler acting for it, or a
+	// configured central sampler relaying it.
 	if identity := announce.GetExecutionIdentity(); identity != nil {
 		if identity.GetName() == "" || identity.GetUid() == "" {
 			return status.Error(codes.InvalidArgument, "execution identity is incomplete")
@@ -202,11 +251,20 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 				return status.Error(codes.PermissionDenied, "session execution identity does not match the runner identity")
 			}
 			executionIdentity = &announced
+		case delegatingSamplerPusher:
+			if announced != caller.identity {
+				return status.Error(codes.PermissionDenied, "session execution identity does not match the delegated Identity")
+			}
+			executionIdentity = &announced
 		case accountPusher:
 			if sampler != nil {
 				executionIdentity = &announced
 			}
 		}
+	} else if _, delegating := caller.(delegatingSamplerPusher); delegating {
+		// A Session with no Identity is the sampler's own to push; acting for one it does not
+		// execute as would misattribute the journal.
+		return status.Error(codes.PermissionDenied, "the delegated Identity is not the session execution identity")
 	}
 	sessionID, err := uuid.Parse(announce.GetSessionId())
 	if err != nil {
@@ -215,6 +273,9 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	// The feed snapshot is stored under the canonical spelling, so only that one is accepted.
 	if sessionID.String() != announce.GetSessionId() {
 		return status.Error(codes.InvalidArgument, "the Session ID is not a canonical UUID")
+	}
+	if delegating, ok := caller.(delegatingSamplerPusher); ok && delegating.sessionID != announce.GetSessionId() {
+		return status.Error(codes.PermissionDenied, "the announced Session is not the one the delegation names")
 	}
 	c.log = c.log.With("session_id", sessionID)
 	var checkpoint storage.Checkpoint
@@ -233,6 +294,11 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		}
 	case identityPusher:
 		checkpoint, err = c.history.BindIdentityWriter(ctx, sessionID, caller.writer, caller.sandbox, executionPrincipal, executionIdentity)
+	case delegatingSamplerPusher:
+		executor := sampler.GetExecutor()
+		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.actor, storage.Sandbox{
+			Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
+		}, executionPrincipal, executionIdentity)
 	}
 	if err != nil {
 		return err

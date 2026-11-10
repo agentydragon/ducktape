@@ -18,13 +18,16 @@ UUID knowledge grants no authority.
 The Dispatcher also supplies `execution_identity`, the Identity the executor's Sandbox names, when it
 names one; it is retained with the configuration like the execution principal. The sampler acts for
 that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
-authenticates as itself with its own projected token and holds no agent key, and each LLM ingress
-call for the Session names the retained Identity as effective caller and the Session as
-provenance. Neither JavaScript nor tool arguments can name or override it, and the receiver
-refuses an Identity incarnation that no longer exists, as it refuses a Sandbox whose Identity is
-gone. A Session whose Sandbox named no Identity has none to act for: the sampler samples it as
-itself, exactly as before Identities existed. Direct Anthropic connections carry no attribution
-either way. History export, executor and Gateway calls stay the sampler's own.
+authenticates as itself with its own projected token and holds no agent key, and each History push
+and each LLM ingress call for the Session names the retained Identity as effective caller and the
+Session as provenance. Neither JavaScript nor tool arguments can name or override it; History
+refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
+receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose
+Identity is gone. A Session whose Sandbox named no Identity has none to act for: the sampler pushes
+and samples it as itself, exactly as before Identities existed, and a delegating call for such a
+Session is refused rather than attributed to the sampler. Direct Anthropic connections carry no
+attribution either way. Executor and Gateway calls stay the sampler's own: they are
+environment-bound, not caller-bound.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 

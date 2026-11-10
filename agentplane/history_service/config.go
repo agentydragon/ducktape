@@ -67,6 +67,11 @@ type ingressConfig struct {
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
 	// Only these service identities may announce centrally hosted Sessions. Empty disables the mode.
 	SamplerAccounts []auth.Account `mapstructure:"sampler_accounts"`
+	// SamplerIdentityCallers lets the sampler accounts push as delegating actors for the Identity a
+	// central Session executes as, which is then retained as verified rather than relayed. A grant
+	// of its own, separate from announcing central Sessions; it requires policy_namespace and the
+	// SPIFFE listener, the one on which Push admits Identity writers.
+	SamplerIdentityCallers bool `mapstructure:"sampler_identity_callers"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`
@@ -128,6 +133,9 @@ func (c *config) validate() error {
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
+	}
+	if c.Ingress.SamplerIdentityCallers && (c.PolicyNamespace == "" || len(c.Ingress.SamplerAccounts) == 0 || !c.RPC.Has(listener.SPIFFE)) {
+		return errors.New("ingress.sampler_identity_callers requires policy_namespace, ingress.sampler_accounts and a spiffe rpc listener")
 	}
 	for _, audience := range []string{c.TokenAudience, c.Ingress.TokenAudience} {
 		if !c.RPC.AllowsBearerAudience(audience) {

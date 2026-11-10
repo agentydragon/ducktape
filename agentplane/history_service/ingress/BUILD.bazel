@@ -32,6 +32,8 @@ go_test(
     size = "medium",
     srcs = [
         "bounds_test.go",
+        "delegated_export_test.go",
+        "delegated_sampler_test.go",
         "ingress_test.go",
         "integration_testmain_test.go",
         "sampler_export_test.go",
@@ -51,6 +53,7 @@ go_test(
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",

@@ -231,6 +231,12 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
 	historyMethods := api.Methods(readerAuth)
+	var identityReader auth.IdentityUIDReader
+	if c.PolicyNamespace != "" && (c.Delegation != nil || c.Ingress.SamplerIdentityCallers) {
+		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
+			return err
+		}
+	}
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
 			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
@@ -245,12 +251,6 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		var identityReader auth.IdentityUIDReader
-		if c.PolicyNamespace != "" {
-			if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
-				return err
-			}
-		}
 		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, identityReader, c.Delegation.Methods)
 		if err != nil {
 			return fmt.Errorf("configure History delegation: %w", err)
@@ -260,6 +260,11 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	pushRule := auth.AnyAccount(writerAuth)
 	if c.RPC.Has(listener.SPIFFE) {
 		pushRule = auth.SVIDOrAccounts(writerAuth, c.Ingress.SamplerAccounts)
+	}
+	if c.Ingress.SamplerIdentityCallers {
+		if pushRule, err = ingress.AllowDelegatingSamplers(pushRule, c.Ingress.SamplerAccounts, identityReader); err != nil {
+			return fmt.Errorf("configure sampler delegation: %w", err)
+		}
 	}
 	methods[session_ingresspb.SessionJournalIngress_Push_FullMethodName] = pushRule
 	options := append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption(),

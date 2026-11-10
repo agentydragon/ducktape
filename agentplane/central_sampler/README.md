@@ -119,7 +119,9 @@ container limits stop meeting the production resource contract.
 - Gateway `central_sampler` configures one gRPC target and rotating caller token file. Its separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner serves inside the Sandbox. Default
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
-  account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
+  account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity. With
+  `ingress.sampler_identity_callers`, History also admits the sampler pushing a Session's journal
+  as a delegating actor for the Identity the Session executes as ([SPEC.md](SPEC.md#identity-and-admission)).
 - The app's `HARNESS_CENTRAL_SAMPLER` offer maps to the `central_sampler_v1` placement and offers
   **Central sampler** alongside Codex and Claude. App and Actions callers do not supply service names
   or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
