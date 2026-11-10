@@ -5,9 +5,6 @@ tuple from the public Yahoo-SPY, Zillow, and FRED source data (paths are
 constants in `evidence_data`). Source-data errors propagate by default.
 Callers that intentionally want lower-fidelity FRED-only synthesised evidence
 must opt in with `fred_only=True`.
-
-`load_historical(...)` is a thin wrapper for the metric harness, which
-only needs `HistoricalSeries`.
 """
 
 from __future__ import annotations
@@ -50,10 +47,6 @@ def load_evidence_segments(*, fred_only: bool = False) -> tuple[DatedHistoricalS
     """
     evidence = _evidence_fred_only() if fred_only else load_exogenous_evidence()
     return _dated_history_from_evidence(evidence), evidence
-
-
-def load_historical(*, fred_only: bool = False) -> HistoricalSeries:
-    return load_evidence(fred_only=fred_only)[0]
 
 
 # ---------------------------------------------------------------------------
