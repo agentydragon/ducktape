@@ -95,6 +95,7 @@ py_library(
         ":git_manager",
         ":git_refs_watcher",
         ":github_watcher",
+        ":gitstatusd_listener",
         ":services",
         ":worktree_service",
         "//x/wt/shared:configuration",
@@ -107,8 +108,6 @@ py_library(
     name = "services",
     srcs = ["services.py"],
     deps = [
-        ":gitstatus_refresh",
-        ":gitstatusd_listener",
         ":types",
         ":worktree_ids",
         ":worktree_index",

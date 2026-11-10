@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, overload
 
 from pydantic import BaseModel, ValidationError
@@ -11,7 +12,8 @@ from pydantic import BaseModel, ValidationError
 from x.wt.server.git_manager import GitManager
 from x.wt.server.git_refs_watcher import GitRefsWatcher
 from x.wt.server.github_watcher import GitHubWatcher
-from x.wt.server.services import GitstatusdService, WorktreeCoordinator, WorktreeIndexService
+from x.wt.server.gitstatusd_listener import GitstatusdListener
+from x.wt.server.services import WorktreeCoordinator, WorktreeIndexService
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
@@ -43,7 +45,7 @@ class ServiceDependencies:
     config: Configuration
     git_manager: GitManager
     index: WorktreeIndexService
-    gitstatusd: GitstatusdService
+    gitstatusd_client: Callable[[Path], GitstatusdListener | None]
     github_watcher: GitHubWatcher | None
     git_refs_watcher: GitRefsWatcher
     discovery_scanning: Callable[[], bool]
