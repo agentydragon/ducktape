@@ -4477,7 +4477,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Stage the paused BuildBuddy secret before transferring ownership from Terraform.
+    description: Manage the BuildBuddy live-test secret with Crossplane.
   name: litellm-buildbuddy-crossplane
   namespace: ducktape-flux
 spec:
@@ -4502,7 +4502,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Forget Terraform's ownership of the BuildBuddy live-test secret without destroying it.
+    description: Keep the retired BuildBuddy Terraform sync suspended until its later removal.
   name: litellm-buildbuddy-sync
   namespace: ducktape-flux
 spec:

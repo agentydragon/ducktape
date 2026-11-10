@@ -4,7 +4,6 @@ metadata:
   name: litellm-buildbuddy-sync
   namespace: flux-system
 spec:
-  approvePlan: plan-latest-62a5ac5453
   backendConfig:
     customConfiguration: |
       backend "pg" {
@@ -32,3 +31,4 @@ spec:
     name: tf-gitops-litellm-buildbuddy-sync
     namespace: ducktape-flux
   storeReadablePlan: human
+  suspend: true

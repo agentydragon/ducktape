@@ -1,4 +1,4 @@
-"""Stage the BuildBuddy secret resource for the Terraform ownership handoff."""
+"""Manage the BuildBuddy live-test secret with Crossplane."""
 
 from buildbuddy_providerconfig_crds.works.allegedly.m.buildbuddy import (
     ProviderConfig,
@@ -73,7 +73,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(
             name="live-tests",
             namespace=buildbuddy_provider.NAMESPACE,
-            annotations={"crossplane.io/external-name": "OPENAI_API_KEY", "crossplane.io/paused": "true"},
+            annotations={"crossplane.io/external-name": "OPENAI_API_KEY"},
         ),
         spec=SecretSpec(
             for_provider=SecretSpecForProvider(
@@ -101,5 +101,5 @@ def resources(
         directory,
         wait=False,
         depends_on=flux_kustomization_depends_on_many(provider, crossplane_keys, keys_tf),
-        description="Stage the paused BuildBuddy secret before transferring ownership from Terraform.",
+        description="Manage the BuildBuddy live-test secret with Crossplane.",
     )
