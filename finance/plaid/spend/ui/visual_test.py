@@ -362,7 +362,12 @@ async def test_review_rule_configuration_render(
     await expect(page.get_by_text("Review", exact=True)).to_have_count(2)
     await expect(page.get_by_text('amount < 0 && (starts_with(name, "EXAMPLE") ||', exact=False)).to_have_count(1)
     await expect(page.get_by_text("One-off", exact=True)).to_have_count(2)
-    await page.get_by_text("example-funding-transfer", exact=True).wait_for()
+    one_off_id = page.get_by_text("example-funding-transfer", exact=True)
+    await one_off_id.wait_for()
+    # Long selectors need a readable column even when the badges wrap on mobile.
+    one_off_box = await one_off_id.bounding_box()
+    assert one_off_box is not None
+    assert one_off_box["width"] >= 160
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
     ).to_have_count(1)
