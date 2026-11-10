@@ -309,9 +309,7 @@ def collect_listed_outputs(
             source_issues.append(f"conflicting statuses {sorted(str(s) for s in statuses)}")
         if len(summaries) != 1:
             source_issues.append("missing or inconsistent test summary")
-        if download_error is not None and any(
-            item.artifact.file.name.startswith(_RECORDS) and id(item) not in contents for item in items
-        ):
+        if download_error is not None and any(item.artifact.file.name.startswith(_RECORDS) for item in items):
             source_issues.append(download_error)
         summary = items[0].artifact.test_summary
         files = []
