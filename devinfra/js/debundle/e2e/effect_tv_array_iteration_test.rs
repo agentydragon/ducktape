@@ -234,41 +234,30 @@ fn a_hole_keeps_its_prototype_read() {
     );
 }
 
-/// Valid splits the rows refuse by typed reason today. Call-effect coverage
-/// for a callback with live captures is Wave 3 row 12; the early-exit rows
-/// need a fork per callback result.
+/// A valid split the row refuses by typed reason today: call-effect
+/// coverage for a callback with live captures is Wave 3 row 12.
 #[test]
-fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
-    for (body, expected, refusal, capability) in [
-        (
-            "const items = [1, 2, 3]; let total = 0; items.forEach((x) => { total += x; }); return [total];",
-            "7 6\n",
-            "array_iteration_capturing_callback",
-            "call-effect coverage for a callback with live captures",
-        ),
-        (
-            "const items = [1, 2, 3]; return [items.some((x) => x > 1)];",
-            "7 true\n",
-            "array_iteration_row_unsupported",
-            "an early-exit row forking on each callback result",
-        ),
-    ] {
-        let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "run",
-                &[Member::new("run"), Member::new("result")],
-            )],
-        ));
-        assert_preserved_entry_output(&fixture, expected);
-        assert_effect_coverage_pending(&fixture, "result", "array_iteration", capability);
-        assert_eq!(
-            array_iteration_refusals(&fixture, "result"),
-            vec![Value::from(refusal)],
-            "{body}"
-        );
-    }
+fn capturing_callbacks_are_pending_with_a_typed_refusal() {
+    let body = "const items = [1, 2, 3]; let total = 0; items.forEach((x) => { total += x; }); return [total];";
+    let source = format!("function run() {{ {body} }}\n{RELOCATION}");
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module(
+            "run",
+            &[Member::new("run"), Member::new("result")],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 6\n");
+    assert_effect_coverage_pending(
+        &fixture,
+        "result",
+        "array_iteration",
+        "call-effect coverage for a callback with live captures",
+    );
+    assert_eq!(
+        array_iteration_refusals(&fixture, "result"),
+        vec![Value::from("array_iteration_capturing_callback")],
+    );
 }
 
 /// A row nested in the callback of a legacy row stays legacy: the legacy row
@@ -422,4 +411,56 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
         assert_preserved_entry_output(&fixture, &expected);
         assert_effect_verdict_pending(&fixture, "incomplete", initializer);
     }
+}
+
+/// The early-exit rows: each callback result whose truthiness is undecided
+/// leaves both a path that stops at that element and one that runs on, and
+/// the row joins them like a kernel fork. The root's binding gets the row's
+/// receipt in a callable body and at top level.
+#[test]
+fn early_exit_rows_join_their_stopping_paths_across_an_independent_inversion() {
+    for (call, member, expected) in [
+        ("items.some((x) => x > 1)", "some", "7 true\n"),
+        ("items.every((x) => x > 1)", "every", "7 false\n"),
+        ("items.find((x) => x > 1)", "find", "7 2\n"),
+        ("items.findIndex((x) => x > 1)", "findIndex", "7 1\n"),
+        // A decided result stops at the first element.
+        ("items.some((x) => true)", "some", "7 true\n"),
+    ] {
+        for source in [
+            format!(
+                "function run() {{ const items = [1, 2, 3]; return {call}; }}\nconst independent = 7;\nvar result = run();\nconsole.log(independent, String(result));\n"
+            ),
+            format!(
+                "const items = [1, 2, 3];\nconst independent = 7;\nvar result = {call};\nconsole.log(independent, String(result));\n"
+            ),
+        ] {
+            let members: &[&str] = if source.starts_with("function") {
+                &["run", "result"]
+            } else {
+                &["items", "result"]
+            };
+            let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
+            let fixture = run_fixture(FixtureOpts::new(
+                &source,
+                vec![logical_module("run", &members)],
+            ));
+            assert_preserved_entry_output(&fixture, expected);
+            assert_iteration_receipt(&fixture, member, &source);
+            assert_commuting_relocation(&fixture, &source);
+        }
+    }
+}
+
+/// Opposing control: how many callbacks run depends on the results, so a
+/// callback's write is a possible effect of every element and a reader of
+/// it stays before the iteration.
+#[test]
+fn an_early_exit_callback_write_keeps_its_reader_before_the_iteration() {
+    assert_rejected_split_diverges(
+        "const log = [];\nfunction check(x) { log.push(x); return x > 1; }\nconst items = [1, 2, 3];\nconst observed = log.length;\nvar result = items.some(check);\nconsole.log(observed, log.length);\n",
+        &["log", "check", "items", "result"],
+        "0 2\n",
+        "2 2\n",
+    );
 }
