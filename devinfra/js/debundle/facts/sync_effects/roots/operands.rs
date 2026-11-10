@@ -2,15 +2,18 @@
 //! selected ordered initializer an owner executes with. Preparatory
 //! classifier proofs that read the prefix run here, before the body.
 
+use super::super::array_transfer::{self, ArrayMethodSelection};
 use super::super::execution_index::{Call, CallKind, object_own_data_read_property};
 use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
 use super::super::local_operations::LocalBody;
+use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use super::super::value_model::{Context, ValueExpr};
+use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKind};
 use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
@@ -304,6 +307,7 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
+    let root_array_iteration = root_array_iteration(executor, calls);
     let root_construction = index
         .ordered_initializers
         .get(&owner)
@@ -332,6 +336,7 @@ pub(super) fn prepare<'source>(
             && body.captured_writes().is_empty()
             && (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
+                || root_array_iteration
                 || selected_audited_initializer.is_some())
             && (calls
                 .iter()
@@ -361,6 +366,7 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
+                || root_array_iteration
                 || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead
@@ -418,4 +424,81 @@ pub(super) fn prepare<'source>(
         ordered_initializer,
         effect_initializer_source,
     }
+}
+
+/// The root's one invocation is an `Array.prototype` iteration row the
+/// kernel executes (`native/array_iteration.rs`): the original method on a
+/// dense literal array of primitives in the current prefix, with a local
+/// callback that has no live captures. Nothing runs between this check and the method's
+/// GetValue, so the kernel selects the same row; the row still rechecks the
+/// receiver after the arguments and after every callback.
+fn root_array_iteration(executor: &mut Executor<'_, '_>, calls: &[Call]) -> bool {
+    let invocations: Vec<_> = calls
+        .iter()
+        .filter(|call| {
+            call.caller.is_none()
+                && !matches!(
+                    call.kind,
+                    CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
+                )
+        })
+        .collect();
+    let [call] = invocations.as_slice() else {
+        return false;
+    };
+    if call.kind != CallKind::Call || call.has_spread {
+        return false;
+    }
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = &call.callee else {
+        return false;
+    };
+    let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+        return false;
+    };
+    let index = executor.inputs.index;
+    let Some(proof) = index.array_iterations.get(&CallSite::from(call.span)) else {
+        return false;
+    };
+    if proof.row.member != property || !supported_row(proof.row.result, call.args.len()) {
+        return false;
+    }
+    let callback = match call.args.first() {
+        Some(ValueExpr::Alloc(Kind::Function, key)) => {
+            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))])
+        }
+        Some(ValueExpr::Binding(binding)) if executor.initialized_local_binding(binding) => {
+            match executor.state.world.module.prefix_values.get(binding) {
+                Some(values) => values.clone(),
+                None => return false,
+            }
+        }
+        _ => return false,
+    };
+    if admitted_callback(index, &callback).is_err() || !executor.initialized_local_binding(receiver)
+    {
+        return false;
+    }
+    let Some(receivers) = executor
+        .state
+        .world
+        .module
+        .prefix_values
+        .get(receiver)
+        .cloned()
+    else {
+        return false;
+    };
+    let Some((ArrayMethodSelection::Iteration(selection), _)) =
+        array_transfer::select_method(executor, &receivers, property)
+    else {
+        return false;
+    };
+    // A refused row summarizes the remainder with global reach. Admit only
+    // receivers whose elements are primitive, so a callback reaches no
+    // element's stored capabilities; object elements keep the flat lane.
+    array_transfer::iteration_snapshot(executor, &selection).is_ok_and(|(slots, _)| {
+        slots
+            .iter()
+            .all(|slot| !slot.is_empty() && slot.iter().all(AbstractValue::is_primitive))
+    })
 }

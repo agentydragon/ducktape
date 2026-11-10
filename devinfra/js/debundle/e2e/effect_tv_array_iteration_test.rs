@@ -105,6 +105,54 @@ fn iteration_rows_keep_receipts_across_an_independent_inversion() {
     }
 }
 
+/// A top-level initializer whose one invocation is a row is admitted to the
+/// ordered lane, so its own binding gets the row's receipt.
+#[test]
+fn top_level_iteration_roots_keep_receipts_across_an_independent_inversion() {
+    for (declarations, initializer, members, member, expected) in [
+        (
+            "",
+            "items.map((x) => x * 2)",
+            &["items", "result"][..],
+            "map",
+            "7 2,4,6\n",
+        ),
+        (
+            "function double(x) { return x * 2; }\n",
+            "items.map(double)",
+            &["double", "items", "result"][..],
+            "map",
+            "7 2,4,6\n",
+        ),
+        (
+            "",
+            "items.filter((x) => x > 1)",
+            &["items", "result"][..],
+            "filter",
+            "7 2,3\n",
+        ),
+        (
+            "",
+            "items.reduce((sum, x) => sum + x, 0)",
+            &["items", "result"][..],
+            "reduce",
+            "7 6\n",
+        ),
+    ] {
+        let source = format!(
+            "{declarations}const items = [1, 2, 3];\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, [result].flat().join(','));\n"
+        );
+        let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module("run", &members)],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_iteration_receipt(&fixture, member, initializer);
+        assert_commuting_relocation(&fixture, initializer);
+    }
+}
+
 /// Run a rejected split's original and emitted programs: the original prints
 /// `original`, the emitted layout `emitted`, so the refusal is required.
 fn assert_rejected_split_diverges(
@@ -225,11 +273,13 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
 
 /// A row nested in the callback of a legacy row stays legacy: the legacy row
 /// invokes its callback with `array_iteration_depth > 0`, and only a
-/// depth-zero invocation takes the kernel prologue. The split is valid;
-/// it becomes provable when the outer row runs in the kernel (L4e).
+/// depth-zero invocation takes the kernel prologue. The outer root has two
+/// calls, so it is not admitted to the ordered lane and its row is legacy.
+/// The split is valid; it becomes provable when the outer row runs in the
+/// kernel (L4e).
 #[test]
 fn a_row_inside_a_legacy_row_callback_stays_legacy() {
-    let source = "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];\nconst independent = 7;\nvar result = outer.map(wrap);\nconsole.log(independent, result.join(','));\n";
+    let source = "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];\nconst independent = 7;\nvar result = String(outer.map(wrap));\nconsole.log(independent, result);\n";
     let fixture = run_fixture(FixtureOpts::new(
         source,
         vec![logical_module(
