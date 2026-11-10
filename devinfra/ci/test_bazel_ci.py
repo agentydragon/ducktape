@@ -117,6 +117,18 @@ def test_pr_target_selection(
     build_args = (tmp_path / "build-args.log").read_text().splitlines()
     assert "--invocation_id=22222222-2222-2222-2222-222222222222" in build_args
     assert "--@io_bazel_rules_go//go/config:race" not in build_args
+    # Pull requests skip `postsubmit` targets, whether bazel-diff or a graph-wide change selected them.
+    assert "--config=pr" in test_args
+    assert "--config=pr" in build_args
+
+
+def test_push_runs_postsubmit_targets(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    result = run_ci({})
+    assert result.returncode == 0, result.stderr + result.stdout
+    for phase in ("test", "build"):
+        assert "--config=pr" not in (tmp_path / f"{phase}-args.log").read_text().splitlines()
 
 
 @pytest.mark.parametrize(

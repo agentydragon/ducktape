@@ -153,6 +153,12 @@ build:ci --remote_retries=1
 # Live targets remain part of CI builds so their remote lint/typecheck actions
 # stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual
+# Pull-request CI (`bazel_ci.py` adds it when PR_HEAD_SHA is set) skips targets
+# tagged `postsubmit`: too costly to rerun on every affected pull request, so only
+# the `//...` sweep on pushes to devel builds and tests them. Repeats the test
+# filters above because the later config replaces them.
+build:pr --build_tag_filters=-postsubmit
+test:pr --test_tag_filters=-live_openai_api,-manual,-postsubmit
 # Opt in to credentialed, real-model tests with `--config=ci --config=live-openai`.
 test:live-openai --test_tag_filters=live_openai_api,-manual,-ollama
 test:live-openai --test_env=OPENAI_BASE_URL=https://litellm.allegedly.works/v1
