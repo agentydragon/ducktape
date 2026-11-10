@@ -1,7 +1,6 @@
 """Chrome cookie decryption shared by local session exporters."""
 
 import hashlib
-import re
 import subprocess
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -9,18 +8,7 @@ from cryptography.hazmat.primitives.padding import PKCS7
 
 
 class ChromeCookieError(ValueError):
-    """A Chrome cookie or browser setting could not be read."""
-
-
-def chrome_user_agent(executable: str) -> str:
-    result = subprocess.run([executable, "--version"], check=True, capture_output=True, text=True)
-    match = re.search(r"\b(\d+)\.\d+\.\d+\.\d+\b", result.stdout)
-    if not match:
-        raise ChromeCookieError("Could not determine the Chrome version; supply --user-agent.")
-    return (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        f"(KHTML, like Gecko) Chrome/{match.group(1)}.0.0.0 Safari/537.36"
-    )
+    """A Chrome cookie could not be read."""
 
 
 def chrome_password() -> bytes:
