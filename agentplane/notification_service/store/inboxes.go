@@ -17,8 +17,10 @@ import (
 // Inbox is one Session's inbox: the entries of every source its subscriptions follow, in the order they were
 // committed. A cursor is an entry's position, from 1.
 type Inbox struct {
-	ID             uuid.UUID
-	OwnerUID       *string
+	ID       uuid.UUID
+	OwnerUID *string
+	// OwnerIdentity is the Identity incarnation established as an owner, nil while none is.
+	OwnerIdentity  *model.Identity
 	DestinationRef model.DestinationRef
 	SessionID      string
 	// LastCursor is the cursor of the newest committed entry, or 0.
@@ -66,7 +68,8 @@ type InboxPage struct {
 }
 
 const inboxColumns = `id, destination_namespace, destination_name, destination_uid,
-	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error, owner_uid`
+	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error, owner_uid,
+	owner_identity_name, owner_identity_uid`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -74,10 +77,10 @@ type rowScanner interface{ Scan(...any) error }
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
 	var namespace, name, uid sql.NullString
-	var deliveryError, ownerUID sql.NullString
+	var deliveryError, ownerUID, identityName, identityUID sql.NullString
 	if err := row.Scan(append([]any{
 		&inbox.ID, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
-		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError, &ownerUID,
+		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError, &ownerUID, &identityName, &identityUID,
 	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
@@ -88,6 +91,9 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	}
 	if ownerUID.Valid {
 		inbox.OwnerUID = &ownerUID.String
+	}
+	if identityUID.Valid {
+		inbox.OwnerIdentity = &model.Identity{Name: identityName.String, UID: identityUID.String}
 	}
 	if deliveryError.Valid {
 		inbox.DeliveryError = &deliveryError.String

@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -54,7 +55,7 @@ func NewNotifications(options Options) *Notifications {
 // Drain ends ongoing watches before graceful server shutdown.
 func (s *Notifications) Drain() { s.drain() }
 
-// caller is the workload Methods admitted. Its ServiceAccount is who it acts for.
+// caller is the ServiceAccount workload Methods admitted, who it acts for.
 func (s *Notifications) caller(ctx context.Context) (model.ServiceAccount, error) {
 	principal, err := auth.Caller(ctx)
 	if err != nil {
@@ -63,18 +64,64 @@ func (s *Notifications) caller(ctx context.Context) (model.ServiceAccount, error
 	return model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
 }
 
-// serve runs handle for the admitted account under the request timeout.
+// actor is an admitted workload as it acts on Sessions: an accountActor or an identityActor.
+type actor interface{ isActor() }
+
+// accountActor is a ServiceAccount incarnation.
+type accountActor struct {
+	account model.ServiceAccount
+	uid     string
+}
+
+// identityActor is an Identity incarnation, running in the Sandbox incarnation that controls its
+// workload credential.
+type identityActor struct {
+	identity model.Identity
+	sandbox  model.DestinationRef
+}
+
+func (accountActor) isActor()  {}
+func (identityActor) isActor() {}
+
+// admittedActor is the workload Methods admitted. An Identity caller whose credential no Sandbox
+// controls acts for no Sandbox and is refused with errSandboxMissing.
+func (s *Notifications) admittedActor(ctx context.Context) (actor, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, admissionRefused{err}
+	}
+	if identity, ok := admission.(auth.IdentityAdmission); ok {
+		owner, ok := identity.Caller.Workload.Owner.(auth.ControllerOwner)
+		if !ok || owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
+			return nil, errSandboxMissing
+		}
+		return identityActor{
+			identity: model.Identity{Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID},
+			sandbox:  model.DestinationRef{Namespace: identity.Caller.Workload.Namespace, Name: owner.Name, UID: owner.UID},
+		}, nil
+	}
+	principal, err := auth.Caller(ctx)
+	if err != nil {
+		return nil, admissionRefused{err}
+	}
+	return accountActor{
+		account: model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name},
+		uid:     principal.ServiceAccountUID,
+	}, nil
+}
+
+// serve runs handle for the admitted workload under the request timeout.
 func serve[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request,
-	handle func(context.Context, model.ServiceAccount, *Request) (*Response, error),
+	handle func(context.Context, actor, *Request) (*Response, error),
 ) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	owner, err := s.caller(ctx)
+	caller, err := s.admittedActor(ctx)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
-	response, err := handle(ctx, owner, request)
+	response, err := handle(ctx, caller, request)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -109,7 +156,7 @@ func (s *Notifications) CreateSubscription(ctx context.Context, request *notific
 	return serve(ctx, s, request, s.createSubscription)
 }
 
-func (s *Notifications) createSubscription(ctx context.Context, owner model.ServiceAccount, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
+func (s *Notifications) createSubscription(ctx context.Context, owner actor, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
 	body, err := subscribeBody(request)
 	if err != nil {
 		return nil, err

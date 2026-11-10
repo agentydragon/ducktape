@@ -42,9 +42,10 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	// The Action Service was asked, as the caller, whether it may follow the request.
 	source := request.GetSource().GetActions()
-	want := actionsCall{owner: model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
-	if got := server.actions.asked(); len(got) != 1 || got[0] != want {
-		t.Errorf("Action Service asked %v, want %v", got, want)
+	owner := model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}
+	if got := server.actions.asked(); len(got) != 1 || got[0].owner.(store.AccountOwner).Account != owner ||
+		got[0].requestID != uuid.MustParse(source.GetRequestId()) || got[0].afterSequence != 0 {
+		t.Errorf("Action Service asked %v, want %v's request %s", got, owner, source.GetRequestId())
 	}
 
 	inboxes, err := server.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})

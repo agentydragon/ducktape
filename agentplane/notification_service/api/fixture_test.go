@@ -118,7 +118,7 @@ func (r *fakeRunner) questions() []*sandboxreader.Identity {
 }
 
 type actionsCall struct {
-	owner         model.ServiceAccount
+	owner         store.Owner
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -130,7 +130,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64, _ string) ([]storagecodec.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
