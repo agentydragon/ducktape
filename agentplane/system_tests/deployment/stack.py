@@ -50,6 +50,14 @@ DEPLOY_TIMEOUT_SECONDS = 480
 HOSTS_MARKER = "# k3s-env"
 
 
+def _record_token_reviews(k3s: K3s, name: str) -> None:
+    """Keep the API server's TokenReview request counters and latency histogram. A retained node's
+    API server may have counted reviews before this stack, so readers subtract the ready snapshot."""
+    metrics = k3s.kubectl("get", "--raw", "/metrics", stdout_only=True)
+    lines = [line for line in metrics.splitlines() if 'resource="tokenreviews"' in line]
+    (undeclared_outputs_dir() / name).write_text("\n".join(lines) + "\n")
+
+
 @tracer.start_as_current_span("system_test.pki.fixture_ca")
 def _openssl_ca(work: Path) -> tuple[str, str]:
     key, cert = work / "ca.key", work / "ca.crt"
@@ -570,6 +578,7 @@ def running_stack(
                 "-n", fixture.namespace, "create", "token", AGENT_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
             ).strip()
             print("memory:", run("free", "-m"))
+            _record_token_reviews(k3s, "apiserver-tokenreviews-ready.prom")
             setup.add_event("stack ready")
             if virtualization is not None:
                 cleanup.enter_context(virtualization.capture(k3s, fixture.namespace, validate_vm_shutdown))
@@ -581,6 +590,7 @@ def running_stack(
             persistence_output.write_text(json.dumps(persistence_evidence))
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
+            _record_token_reviews(k3s, "apiserver-tokenreviews-final.prom")
             print(k3s.report(fixture.namespace))
             if virtualization is not None:
                 (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
