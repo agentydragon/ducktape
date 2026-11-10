@@ -205,6 +205,99 @@ func TestProjectBatchFoldsAPageAtATimeUntilCaughtUp(t *testing.T) {
 	}
 }
 
+func TestProjectBatchRecoversBlockedFailureAfterConfirmedInputFromFailedCheckpoint(t *testing.T) {
+	f := newProjectorFixture(t)
+	f.projector.PageSize = 4
+	const commandID = "test-input"
+	sessionID := uuid.New()
+	if _, err := f.history.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec("INSERT INTO thread_history_summary (thread_id) VALUES ($1)", sessionID); err != nil {
+		t.Fatal(err)
+	}
+	f.appendTo(
+		t, f.history, sessionID,
+		harnessStarted(1),
+		entry(2, &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{
+			Command: &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{
+				SubmitInput: &commandpb.SubmitInput{Text: "hello"},
+			}},
+		}}}),
+		entry(3, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
+			HarnessMessageId: "test-message", Text: "hello", OriginCommandIds: []string{commandID}, TurnId: commandID,
+		}}}),
+		entry(4, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: commandID}}}),
+		entry(5, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{
+			OperationId: sessionID.String(), Kind: eventpb.ExecutionProgress_KIND_SESSION, Phase: eventpb.ExecutionProgress_PHASE_BLOCKED,
+			Detail: &eventpb.ExecutionProgress_SessionStopped_{SessionStopped: &eventpb.ExecutionProgress_SessionStopped{Reason: "lost JavaScript host"}},
+		}}}),
+		entry(6, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+			TurnId: commandID, Status: eventpb.TurnStatus_TURN_STATUS_FAILED,
+		}}}),
+		entry(7, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{CommandFailed: &eventpb.CommandFailed{
+			CommandId: commandID, Reason: "session blocked by unresolved effects",
+		}}}),
+	)
+	lease := f.acquire(t, sessionID)
+	if got, want := f.fold(t, sessionID, lease), (Progress{ThroughCursor: 4, CommittedCursor: 7}); got != want {
+		t.Fatalf("page before the blocked failure = %+v, want %+v", got, want)
+	}
+	if _, through := checkpointOf(t, f.db, sessionID); through != 4 {
+		t.Fatalf("checkpoint before recovery = %d, want 4", through)
+	}
+
+	// Model the operational error and intact checkpoint a pre-fix projector left behind.
+	cause := &threadfold.ContractError{Cursor: 7, Message: "command already settled: " + commandID}
+	if err := f.projector.recordFailure(t.Context(), sessionID, lease, 4, cause); err != nil {
+		t.Fatalf("recording the prior projection failure: %v", err)
+	}
+	commandEvidence := func() []uint64 {
+		return cursorsOf(t, f.db, "SELECT observation_cursor FROM thread_evidence WHERE thread_id = $1 AND entity_cursor = 2 ORDER BY observation_cursor", sessionID)
+	}
+	if got, want := commandEvidence(), []uint64{2, 3}; !slices.Equal(got, want) {
+		t.Fatalf("evidence at the failed checkpoint = %v, want admission and confirmation %v", got, want)
+	}
+	failedView, _ := viewStateOf(t, f.db, sessionID)
+	if failedView.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || failedView.GetControls().GetActiveTurnId() != commandID {
+		t.Fatalf("view at the failed checkpoint = %+v, want FAILED with active turn %q", failedView, commandID)
+	}
+
+	if got, want := f.fold(t, sessionID, lease), (Progress{ThroughCursor: 7, CommittedCursor: 7}); got != want {
+		t.Fatalf("recovery page = %+v, want %+v", got, want)
+	}
+	if _, through := checkpointOf(t, f.db, sessionID); through != 7 {
+		t.Fatalf("recovered checkpoint = %d, want 7", through)
+	}
+	commandEntity := entities(t, f.db, sessionID)["command/"+commandID]
+	command := &historypb.ThreadCommand{}
+	if err := protojson.Unmarshal(commandEntity.state, command); err != nil {
+		t.Fatal(err)
+	}
+	if command.GetOutcome() != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED || command.GetOutcomeCursor() != 3 || command.OutcomeReason != nil {
+		t.Fatalf("recovered command = %+v, want the original effect at cursor 3", command)
+	}
+	turnEntity := entities(t, f.db, sessionID)["lifecycle/6"]
+	turn := &historypb.ThreadLifecycle{}
+	if err := protojson.Unmarshal(turnEntity.state, turn); err != nil {
+		t.Fatal(err)
+	}
+	if completed := turn.GetEvent().GetTurnCompleted(); completed == nil || completed.GetTurnId() != commandID || completed.GetStatus() != eventpb.TurnStatus_TURN_STATUS_FAILED {
+		t.Fatalf("failed turn lifecycle = %+v, want the retained failed turn", turn)
+	}
+	if got, want := commandEvidence(), []uint64{2, 3, 7}; !slices.Equal(got, want) {
+		t.Fatalf("recovered command evidence = %v, want admission, confirmation, and failure %v", got, want)
+	}
+	if got, want := cursorsOf(t, f.db, "SELECT observation_cursor FROM thread_evidence WHERE thread_id = $1 AND entity_cursor = 6 ORDER BY observation_cursor", sessionID), []uint64{6}; !slices.Equal(got, want) {
+		t.Fatalf("failed turn evidence = %v, want cursor 6", got)
+	}
+	view, _ := viewStateOf(t, f.db, sessionID)
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE || view.Operational.FeedError != nil ||
+		view.GetControls().GetActiveTurnId() != "" || view.Operational.GetLastVerifiedCursor() != 7 {
+		t.Fatalf("operational state after catch-up = %+v, want ACTIVE through 7 with no active turn", view)
+	}
+}
+
 func TestASessionIsIdleFromItsHarnessStartOrLastTurnEndUntilTheNextTurnOrStop(t *testing.T) {
 	f := newProjectorFixture(t)
 	sessionID := f.retained(t, f.history)

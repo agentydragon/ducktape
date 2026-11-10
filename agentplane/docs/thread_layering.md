@@ -171,6 +171,8 @@ history while a runner is unreachable and after its Sandbox has gone away.
 | Effect              | Causal `HarnessUserMessageConfirmed`, `ModelChanged`, interrupted `TurnCompleted`, or command-caused `HarnessExited` | The specifically evidenced operation took effect            |
 | Terminal non-effect | `CommandFailed` or `CommandNoop`, with reason                                                                        | The command will not subsequently take effect in that scope |
 
+For a submit-input command, a later `CommandFailed` with reason `session blocked by unresolved effects` does not reverse an earlier `HarnessUserMessageConfirmed`. The confirmed effect remains the command outcome, and both observations remain evidence; other contradictory outcomes remain errors.
+
 A network write, timeout, or disconnected attachment is not one of the terminal
 outcomes. Absence of an observed admission means “admission not observed,” not
 “definitely never reached the runner.”
