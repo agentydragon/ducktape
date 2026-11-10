@@ -712,11 +712,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         request = await asyncio.wait_for(model.request(), timeout=30)
         (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-once"]
         marker_text = "\n".join(marker_output.blocks)
-        _, marker_separator, marker_json = marker_text.partition("Output:\n")
-        assert marker_separator, marker_text
-        marker_result = json.loads(marker_json.strip())
-        assert marker_result["exit_code"] == 0, marker_result
-        assert marker_result["output"] == "once\n", f"the executor mutation was replayed or lost: {marker_result}"
+        assert marker_text.strip() == "once", f"the executor mutation was replayed or lost: {marker_text}"
         await model.reply(request, Text("The running process finished after the Gateway recovered; marker: once."))
         await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
         await _wait_for_folded_turn(recovered, session_id, first_command)
@@ -878,11 +874,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         request = await asyncio.wait_for(model.request(), timeout=30)
         (fresh_output,) = [output for output in request.tool_outputs if output.call_id == "continue-on-fresh-session"]
         fresh_text = "\n".join(fresh_output.blocks)
-        _, fresh_separator, fresh_json = fresh_text.partition("Output:\n")
-        assert fresh_separator, fresh_text
-        fresh_result = json.loads(fresh_json.strip())
-        assert fresh_result["exit_code"] == 0, fresh_result
-        assert fresh_result["output"] == "once\nfresh\n", fresh_result
+        assert fresh_text.splitlines() == ["once", "fresh"], fresh_text
         replacement_native_session_id = await _assert_replacement_native_session_started(
             recovered, session_id, cursor, original_native_session_id
         )
