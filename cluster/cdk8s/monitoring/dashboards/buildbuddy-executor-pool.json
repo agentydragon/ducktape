@@ -595,7 +595,7 @@
     {
       "id": 20,
       "title": "Root filesystem used and capacity",
-      "description": "Allocated bytes and total capacity of each guest root filesystem. This does not include the separate /boot or /buildbuddy filesystems.",
+      "description": "Allocated bytes and total capacity of each guest root filesystem. This does not include the separate /boot or /buildbuddy filesystems. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum.",
       "type": "timeseries",
       "gridPos": {
         "h": 11,
@@ -606,14 +606,14 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
           "refId": "A",
-          "legendFormat": "{{pod}} used"
+          "legendFormat": "{{worker}} used"
         },
         {
-          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"})",
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
           "refId": "B",
-          "legendFormat": "{{pod}} capacity"
+          "legendFormat": "{{worker}} capacity"
         }
       ],
       "fieldConfig": {
@@ -648,7 +648,7 @@
     {
       "id": 14,
       "title": "Work filesystem used and capacity",
-      "description": "Allocated bytes and total capacity inside each guest /buildbuddy filesystem. These are distinct from its backing PVC or physical thin pool.",
+      "description": "Allocated bytes and total capacity inside each guest /buildbuddy filesystem. These are distinct from its backing PVC or physical thin pool. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum.",
       "type": "timeseries",
       "gridPos": {
         "h": 11,
@@ -659,14 +659,14 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"})",
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
           "refId": "A",
-          "legendFormat": "{{pod}} used"
+          "legendFormat": "{{worker}} used"
         },
         {
-          "expr": "max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"})",
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
           "refId": "B",
-          "legendFormat": "{{pod}} capacity"
+          "legendFormat": "{{worker}} capacity"
         }
       ],
       "fieldConfig": {
@@ -701,7 +701,7 @@
     {
       "id": 21,
       "title": "Root filesystem unavailable %",
-      "description": "Percentage of root filesystem capacity not available to unprivileged processes, including reserved ext4 blocks.",
+      "description": "Percentage of root filesystem capacity not available to unprivileged processes, including reserved ext4 blocks. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum percentage.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -712,9 +712,9 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "100 * (1 - max by (pod) (node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}) / max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\"}))",
+          "expr": "max by (worker) (label_replace((100 * (1 - node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} / node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"})), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
           "refId": "A",
-          "legendFormat": "{{pod}}"
+          "legendFormat": "{{worker}}"
         }
       ],
       "fieldConfig": {
@@ -750,7 +750,7 @@
     {
       "id": 16,
       "title": "Work filesystem unavailable %",
-      "description": "Percentage of /buildbuddy capacity not available to unprivileged processes, including reserved ext4 blocks.",
+      "description": "Percentage of /buildbuddy capacity not available to unprivileged processes, including reserved ext4 blocks. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum percentage.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -761,9 +761,9 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "100 * (1 - max by (pod) (node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}) / max by (pod) (node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}))",
+          "expr": "max by (worker) (label_replace((100 * (1 - node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} / node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"})), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
           "refId": "A",
-          "legendFormat": "{{pod}}"
+          "legendFormat": "{{worker}}"
         }
       ],
       "fieldConfig": {

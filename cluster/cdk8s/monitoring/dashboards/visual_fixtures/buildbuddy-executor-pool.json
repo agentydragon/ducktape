@@ -980,10 +980,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-0 used"
+                    "worker": "buildbuddy-kvm-worker-0"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-0 used"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-0 used"
                   }
                 }
               ]
@@ -1035,10 +1035,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-1 used"
+                    "worker": "buildbuddy-kvm-worker-1"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-1 used"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-1 used"
                   }
                 }
               ]
@@ -1094,10 +1094,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-0 capacity"
+                    "worker": "buildbuddy-kvm-worker-0"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-0 capacity"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-0 capacity"
                   }
                 }
               ]
@@ -1149,10 +1149,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-1 capacity"
+                    "worker": "buildbuddy-kvm-worker-1"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-1 capacity"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-1 capacity"
                   }
                 }
               ]
@@ -1322,10 +1322,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-0"
+                    "worker": "buildbuddy-kvm-worker-0"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-0"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-0"
                   }
                 }
               ]
@@ -1375,10 +1375,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-1"
+                    "worker": "buildbuddy-kvm-worker-1"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-1"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-1"
                   }
                 }
               ]
@@ -1870,10 +1870,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-0 used"
+                    "worker": "buildbuddy-kvm-worker-0"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-0 used"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-0 used"
                   }
                 }
               ]
@@ -1925,10 +1925,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-1 used"
+                    "worker": "buildbuddy-kvm-worker-1"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-1 used"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-1 used"
                   }
                 }
               ]
@@ -1984,10 +1984,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-0 capacity"
+                    "worker": "buildbuddy-kvm-worker-0"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-0 capacity"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-0 capacity"
                   }
                 }
               ]
@@ -2039,10 +2039,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-1 capacity"
+                    "worker": "buildbuddy-kvm-worker-1"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-1 capacity"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-1 capacity"
                   }
                 }
               ]
@@ -2100,10 +2100,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-0"
+                    "worker": "buildbuddy-kvm-worker-0"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-0"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-0"
                   }
                 }
               ]
@@ -2153,10 +2153,10 @@
                     "frame": "float64"
                   },
                   "labels": {
-                    "pod": "worker-1"
+                    "worker": "buildbuddy-kvm-worker-1"
                   },
                   "config": {
-                    "displayNameFromDS": "worker-1"
+                    "displayNameFromDS": "buildbuddy-kvm-worker-1"
                   }
                 }
               ]
