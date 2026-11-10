@@ -18,17 +18,26 @@ import (
 type callbackWake struct {
 	store   *Store
 	calls   int
-	callers []*lifecycle.ServiceAccountIdentity
+	callers []lifecycle.Caller
 }
 
 func (w *callbackWake) RequestWake(
 	ctx context.Context,
 	target *lifecycle.Target,
-	caller *lifecycle.ServiceAccountIdentity,
+	caller lifecycle.Caller,
 ) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	w.callers = append(w.callers, caller)
-	wait, err := w.store.ReserveWakeAttempt(ctx, caller, target.GetUid(), 41)
+	var wait time.Duration
+	var err error
+	switch caller := caller.(type) {
+	case lifecycle.ServiceAccountCaller:
+		wait, err = w.store.ReserveWakeAttempt(ctx, caller.Account, target.GetUid(), 41)
+	case lifecycle.IdentityCaller:
+		wait, err = w.store.ReserveIdentityWakeAttempt(ctx, caller.Identity, target.GetUid(), 41)
+	default:
+		err = fmt.Errorf("unknown wake caller %T", caller)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +187,7 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		if effectiveRows != 1 || actorRows != 0 {
 			t.Fatalf("%s wake budget used effective=%d actor=%d rows", kind, effectiveRows, actorRows)
 		}
-		if got := wake.callers[i]; !sameServiceAccountIdentity(got, effective) {
+		if got := wakeAccount(wake.callers[i]); !sameServiceAccountIdentity(got, effective) {
 			t.Fatalf("%s lifecycle caller=%+v, want retained effective identity", kind, got)
 		}
 	}
@@ -308,5 +317,83 @@ func TestWakeBudgetRejectsMissingUID(t *testing.T) {
 	if _, err := store.ReserveWakeAttempt(context.Background(), serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "missing-uid"}, ""),
 		"00000000-0000-4000-8000-000000000093", 1); err == nil {
 		t.Fatal("wake reservation accepted an identity without a UID")
+	}
+}
+
+// A message an Identity sent wakes the Sandbox as that Identity incarnation, spending its own budget,
+// which another incarnation of the same name does not share.
+func TestIdentitySenderWakesAsItsIdentityIncarnation(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	sender := &identitypb.Identity{Name: "wake-sender", Uid: "00000000-0000-4000-8000-000000000094"}
+	sandboxName, sandboxUID := "identity-wake-sandbox", uuid.NewString()
+	sessionID := "identity-wake-session"
+	spec := &sessionpb.SessionSpec{}
+	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID,
+		testPlacement(spec, sandboxName, sandboxUID), spec, nil, nil,
+		SessionExecution{Identity: sender}, IdentityCaller{Identity: sender}); err != nil {
+		t.Fatal("open the Identity's Session:", err)
+	}
+	row, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input("identity-wake-command", "hello"), nil,
+		IdentityCaller{Identity: sender, Pod: &PodIdentity{Name: "sender-pod", UID: "sender-pod-uid"}})
+	if err != nil {
+		t.Fatal("enqueue the Identity's command:", err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "identity-wake-lease", 1, "replica", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("claim owner: owner=%+v error=%v", owner, err)
+	}
+	wake := &callbackWake{store: store}
+	worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
+	worker.init()
+	defer worker.queue.ShutDown()
+	ready, err := worker.prepareDispatch(ctx, row, SandboxSnapshot{
+		Name: sandboxName, Namespace: "agentplane", UID: sandboxUID,
+		Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
+	}, *owner)
+	if err != nil || ready {
+		t.Fatalf("prepare the Identity's command: ready=%v error=%v", ready, err)
+	}
+	if len(wake.callers) != 1 {
+		t.Fatalf("wake requests = %+v, want one", wake.callers)
+	}
+	if got, ok := wake.callers[0].(lifecycle.IdentityCaller); !ok || !proto.Equal(got.Identity, sender) {
+		t.Fatalf("lifecycle caller = %#v, want the sending Identity %v", wake.callers[0], sender)
+	}
+	var identityRows, accountRows int
+	if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM identity_wake_attempt
+		WHERE identity_name=$1 AND identity_uid=$2 AND sandbox_uid=$3`, sender.GetName(), sender.GetUid(), sandboxUID).Scan(&identityRows); err != nil {
+		t.Fatal("count Identity wake attempts:", err)
+	}
+	if err := store.DB.QueryRowContext(ctx, "SELECT count(*) FROM wake_attempt WHERE sandbox_uid=$1", sandboxUID).Scan(&accountRows); err != nil {
+		t.Fatal("count ServiceAccount wake attempts:", err)
+	}
+	if identityRows != 1 || accountRows != 0 {
+		t.Fatalf("wake budget rows: Identity=%d ServiceAccount=%d, want 1 and 0", identityRows, accountRows)
+	}
+}
+
+func TestIdentityWakeBudgetIsPerIdentityIncarnation(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	identity := &identitypb.Identity{Name: "budgeted", Uid: "00000000-0000-4000-8000-000000000095"}
+	successor := &identitypb.Identity{Name: identity.GetName(), Uid: "00000000-0000-4000-8000-000000000096"}
+	sandboxUID := uuid.NewString()
+	for generation := int64(1); generation <= WakeLimit; generation++ {
+		if wait, err := store.ReserveIdentityWakeAttempt(ctx, identity, sandboxUID, generation); err != nil || wait != 0 {
+			t.Fatalf("reservation %d: wait=%s error=%v", generation, wait, err)
+		}
+	}
+	if wait, err := store.ReserveIdentityWakeAttempt(ctx, identity, sandboxUID, 1); err != nil || wait != 0 {
+		t.Fatalf("a retried generation spent budget: wait=%s error=%v", wait, err)
+	}
+	if wait, err := store.ReserveIdentityWakeAttempt(ctx, identity, sandboxUID, WakeLimit+1); err != nil || wait == 0 {
+		t.Fatalf("an exhausted Identity budget reserved: wait=%s error=%v", wait, err)
+	}
+	if wait, err := store.ReserveIdentityWakeAttempt(ctx, successor, sandboxUID, WakeLimit+1); err != nil || wait != 0 {
+		t.Fatalf("another incarnation of the name shared the budget: wait=%s error=%v", wait, err)
+	}
+	if _, err := store.ReserveIdentityWakeAttempt(ctx, &identitypb.Identity{Name: identity.GetName()}, sandboxUID, 1); err == nil {
+		t.Fatal("wake reservation accepted an Identity without a UID")
 	}
 }

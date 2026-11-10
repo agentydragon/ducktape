@@ -47,7 +47,7 @@ type configTestTokenReviews struct{}
 
 type configTestWakeBudget struct{}
 
-func (configTestWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.Caller, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 

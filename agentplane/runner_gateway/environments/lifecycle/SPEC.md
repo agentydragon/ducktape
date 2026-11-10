@@ -7,15 +7,22 @@ existing Sandbox. It runs in the Runner Gateway. It is shared in-process by the 
 Dispatcher automatic-wake path, and EnvironmentService's read-only eligibility assessments. It does not own
 Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
 
-The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID,
-checks the original effective caller's live ServiceAccount UID, and reads the current controller-owned
-execution ServiceAccount. A replacement Sandbox or ServiceAccount cannot inherit old authority.
+The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID.
+For a ServiceAccount caller it checks the original effective caller's live ServiceAccount UID and
+reads the current controller-owned execution ServiceAccount; for an Identity caller it reads the
+Identity `spec.identity` names, live with its UID. A replacement Sandbox, ServiceAccount or Identity
+cannot inherit old authority.
 
 ## Authority
 
 - An ordinary direct or delegated caller may resume an idle-suspended Sandbox only when its effective
   ServiceAccount namespace, name and UID exactly match the current execution account and
   `spec.resumePolicy.allowOwnServiceAccount` is true.
+- A direct caller whose workload SVID names an Identity may resume an idle-suspended Sandbox only
+  when `spec.identity` names that Identity, the live Identity of that name has the UID the caller's
+  credential names, and `spec.resumePolicy.allowOwnIdentity` is true. An Identity is never an
+  operator or a wake broker. `spec.identity` holds only a name, so an Identity recreated under it
+  gains this authority.
 - Delegated admission retains the actor separately. The handler uses only `auth.EffectiveCaller` for
   ordinary policy; actor Pod proof and actor allowlist membership do not become the caller's grant.
 - A direct TokenReview-proven Pod-bound account listed in `operator_callers` may explicitly resume a
@@ -36,8 +43,8 @@ The manager rereads and reauthorizes on every resource-version conflict. A stale
 `STATE_CHANGED` with current eligibility and generation rather than retrying against a later
 suspension. It bounds conflict retries. A patch error may have uncertain effect, so the manager
 returns a typed `OUTCOME_UNKNOWN` status and does not replay the patch. The shared wake budget is
-reserved before patching and is keyed by effective caller namespace/name/UID, target Sandbox UID and
-next generation.
+reserved before patching and is keyed by the effective caller (ServiceAccount namespace/name/UID, or
+Identity name/UID), target Sandbox UID and next generation.
 
 `REQUESTED` means the desired running state and next wake generation were accepted. It does not mean
 the environment is ready. `ALREADY_RUNNING` means no wake mutation was needed. Quiescing and deleting

@@ -113,11 +113,18 @@ type lifecycleWakeBudget struct {
 
 func (b lifecycleWakeBudget) ReserveWakeAttempt(
 	ctx context.Context,
-	caller *lifecycle.ServiceAccountIdentity,
+	caller lifecycle.Caller,
 	sandboxUID string,
 	generation int64,
 ) (time.Duration, error) {
-	return b.store.ReserveWakeAttempt(ctx, caller, sandboxUID, generation)
+	switch caller := caller.(type) {
+	case lifecycle.ServiceAccountCaller:
+		return b.store.ReserveWakeAttempt(ctx, caller.Account, sandboxUID, generation)
+	case lifecycle.IdentityCaller:
+		return b.store.ReserveIdentityWakeAttempt(ctx, caller.Identity, sandboxUID, generation)
+	default:
+		return 0, fmt.Errorf("unknown wake caller %T", caller)
+	}
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {

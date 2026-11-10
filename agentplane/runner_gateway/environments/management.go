@@ -25,7 +25,7 @@ func (s *Service) manager(ctx context.Context) (*management.Access, error) {
 }
 
 func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.EnvironmentLaunchOrigin) (*management.Access, error) {
-	identity, err := caller(ctx)
+	identity, err := serviceAccountCaller(ctx)
 	if err != nil {
 		return nil, err
 	}

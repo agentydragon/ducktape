@@ -265,13 +265,16 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return w.waitForRequestedWake(ctx, work, owner, sandbox, blocker)
 	}
 
-	// Only a ServiceAccount caller's wake is authorized today; an Identity caller's waits like an
-	// unattributed one.
-	// TODO: authorize an Identity caller's wake by an Identity resume policy before the Sandbox switch
-	// (SANDBOX_IDENTITY_SPEC, agentplane/plans/task_dag.md); nothing sends to an Identity-run Session
-	// before it.
-	account, isAccount := work.attribution.(*AdmissionAttribution)
-	if !isAccount {
+	// The retained sender wakes as itself: its effective ServiceAccount, or the Identity incarnation
+	// its workload credential named. An unattributed row never wakes.
+	var caller lifecycle.Caller
+	switch attribution := work.attribution.(type) {
+	case *AdmissionAttribution:
+		caller = lifecycle.ServiceAccountCaller{Account: attribution.EffectiveCaller}
+	case *IdentityAttribution:
+		caller = lifecycle.IdentityCaller{Identity: attribution.Identity}
+	}
+	if caller == nil {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,
 			environmentpb.WakeState_WAKE_STATE_DENIED,
 			environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, nil)
@@ -300,10 +303,9 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if err != nil || !stillOwns {
 		return false, err
 	}
-	effectiveCaller := account.EffectiveCaller
 	assessment, err := w.Wake.RequestWake(ctx, &lifecycle.Target{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
-	}, effectiveCaller)
+	}, caller)
 	if err != nil {
 		assessment = assessmentFor(sandbox, nil, environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
 			environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN, status.Convert(err).Proto())

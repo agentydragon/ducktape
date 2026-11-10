@@ -10,6 +10,7 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
@@ -27,7 +28,7 @@ const watchWriteTimeout = 5 * time.Second
 
 func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentRequest, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentResponse]) error {
 	ctx := stream.Context()
-	identity, err := caller(ctx)
+	identity, err := lifecycle.AdmittedCaller(ctx)
 	if err != nil {
 		return err
 	}

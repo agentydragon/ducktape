@@ -8,7 +8,9 @@ current ServiceAccount UIDs, execution-account ownership and policy through an u
 client.
 
 Ordinary callers must be the exact live execution ServiceAccount and the Sandbox must opt in with
-`spec.resumePolicy.allowOwnServiceAccount`. Delegated calls use their effective caller's account
+`spec.resumePolicy.allowOwnServiceAccount`. A caller whose workload SVID names an Identity must be
+the live Identity `spec.identity` names, by UID, and the Sandbox must opt in with
+`spec.resumePolicy.allowOwnIdentity`. Delegated calls use their effective caller's account
 and UID; the Actions actor does not add authority. `spec.wakeOnSend` gates only automatic requests.
 The existing `wake_callers` broker grant remains automatic-only. A distinct `operator_callers` grant
 allows a direct Pod-bound operator to resume a requested stop; a delegated actor cannot exercise it.

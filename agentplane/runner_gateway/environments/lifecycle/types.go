@@ -18,10 +18,23 @@ type Target = identitypb.EnvironmentTarget
 // ServiceAccountIdentity pins the effective caller to its live Kubernetes account incarnation.
 type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 
+// Caller is the effective caller a lifecycle decision is made for: a ServiceAccountCaller or an
+// IdentityCaller.
+type Caller interface{ isCaller() }
+
+// ServiceAccountCaller is a direct or delegated ServiceAccount caller, pinned to its account UID.
+type ServiceAccountCaller struct{ Account *ServiceAccountIdentity }
+
+// IdentityCaller is a direct caller whose workload credential names an Identity incarnation.
+type IdentityCaller struct{ Identity *identitypb.Identity }
+
+func (ServiceAccountCaller) isCaller() {}
+func (IdentityCaller) isCaller()       {}
+
 // WakeBudget reserves a bounded wake attempt without depending on Dispatcher storage.
 // Implementations share reservations across replicas and explicit and automatic wake paths.
 type WakeBudget interface {
-	ReserveWakeAttempt(context.Context, *ServiceAccountIdentity, string, int64) (time.Duration, error)
+	ReserveWakeAttempt(context.Context, Caller, string, int64) (time.Duration, error)
 }
 
 // NewResumeToken creates the opaque precondition returned by Discovery for a particular target

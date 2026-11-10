@@ -3168,8 +3168,10 @@ are also owned by the Session's Dispatcher-recorded Identity, which reads and ma
 Identity caller subscribes its own Identity-run Sessions and sends and follows messages under bindings
 naming it. A Sandbox naming an Identity without a
 managed ServiceAccount runs Identity-run Sessions, which Dispatcher places and delivers and Notification's
-worker delivers to by the Identity alone. EnvironmentService and wake-on-send still
-need a ServiceAccount.** History's execution
+worker delivers to by the Identity alone. EnvironmentService serves an Identity caller its own
+Environments (those whose `spec.identity` names it, by live UID) and resumes them under
+`resumePolicy.allowOwnIdentity`, which also lets its messages wake them; management, launch and
+broad reads still need a ServiceAccount.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
 The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves

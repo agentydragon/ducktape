@@ -36,6 +36,12 @@ diagnostics while suspended.
 - The handler obtains the admitted effective caller from shared workload authentication and requires
   a complete ServiceAccount identity, including its UID. Direct calls retain their existing
   reviewed-account path.
+- `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment` and
+  `ResumeEnvironment` also admit a direct workload SVID naming an Identity, once the Gateway is given
+  its `policy_namespace`. Such a caller sees exactly the Sandboxes whose `spec.identity` names its
+  Identity while the live Identity of that name has its credential's UID
+  (`sandboxreader.Reader.ExecutionIdentity`); it lists them across the namespace, paged by Sandbox
+  name. An Identity never holds `environment_readers`, a manager or launcher grant, or delegation.
 - For ordinary callers, `sandboxreader.Reader.ExecutionAccount` rereads the exact live Sandbox UID and
   confirms its non-deleting ServiceAccount has the Sandbox's exact controlling owner reference.
 - An ordinary caller receives a result only if namespace, account name, and account UID all match the effective caller.

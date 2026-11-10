@@ -14,7 +14,8 @@ requests use the Gateway lifecycle manager, rereading current state on resourceV
 concurrent wake requests advance one `wakeGeneration`.
 
 `spec.resumePolicy.allowOwnServiceAccount` opts the exact live execution ServiceAccount UID into explicit
-resume of idle suspension. `spec.wakeOnSend` and the existing `wake_callers` setting continue to
+resume of idle suspension; `spec.resumePolicy.allowOwnIdentity` does the same for the live Identity
+`spec.identity` names. `spec.wakeOnSend` and the existing `wake_callers` setting continue to
 govern automatic delivery wake. A separate optional direct Pod-bound `operator_callers` grant lets
 an operator explicitly resume a requested stop; delegated callers cannot use that grant.
 

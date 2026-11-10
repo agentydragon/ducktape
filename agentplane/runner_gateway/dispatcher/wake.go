@@ -4,9 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 )
 
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
@@ -18,10 +22,40 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountId
 	}
 	account := caller.GetAccount()
 	namespace, name, uid := account.GetNamespace(), account.GetName(), caller.GetUid()
+	return s.reserveWake(ctx, wakeBudget{
+		lock: "dispatcher-wake:" + namespace + ":" + name, table: "wake_attempt",
+		columns: "caller_namespace,caller_name,caller_uid",
+		match:   "caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='')",
+		key:     []any{namespace, name, uid},
+	}, sandboxUID, generation)
+}
+
+// ReserveIdentityWakeAttempt is ReserveWakeAttempt for a caller whose workload credential names an
+// Identity: its budget is the Identity incarnation's, shared by every workload acting as it.
+func (s *Store) ReserveIdentityWakeAttempt(ctx context.Context, caller *identitypb.Identity, sandboxUID string, generation int64) (time.Duration, error) {
+	if caller.GetName() == "" || caller.GetUid() == "" {
+		return 0, errors.New("wake caller Identity name and UID are required")
+	}
+	return s.reserveWake(ctx, wakeBudget{
+		lock: "dispatcher-identity-wake:" + caller.GetName(), table: "identity_wake_attempt",
+		columns: "identity_name,identity_uid",
+		match:   "identity_name=$1 AND identity_uid=$2",
+		key:     []any{caller.GetName(), caller.GetUid()},
+	}, sandboxUID, generation)
+}
+
+// wakeBudget is one caller's rows in a wake attempt table: match selects them by key, bound to
+// $1..$len(key) in columns' order.
+type wakeBudget struct {
+	lock, table, columns, match string
+	key                         []any
+}
+
+func (s *Store) reserveWake(ctx context.Context, budget wakeBudget, sandboxUID string, generation int64) (time.Duration, error) {
+	n := len(budget.key)
 	var retryAfter time.Duration
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-			"dispatcher-wake:"+namespace+":"+name)
+		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, budget.lock)
 		if err != nil {
 			return err
 		}
@@ -30,14 +64,13 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountId
 			return err
 		}
 		windowStart := now.Add(-WakeWindow)
-		if _, err := tx.ExecContext(ctx, "DELETE FROM wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+budget.table+" WHERE attempted_at <= $1", windowStart); err != nil {
 			return err
 		}
 		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='')
-			AND sandbox_uid=$4 AND wake_generation=$5)`,
-			namespace, name, uid, sandboxUID, generation).Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s
+			WHERE %s AND sandbox_uid=$%d AND wake_generation=$%d)`, budget.table, budget.match, n+1, n+2),
+			append(slices.Clone(budget.key), sandboxUID, generation)...).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -45,9 +78,9 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountId
 		}
 		var count int
 		var oldest sql.NullTime
-		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='') AND attempted_at>$4`,
-			namespace, name, uid, windowStart).Scan(&count, &oldest); err != nil {
+		if err := tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*),min(attempted_at) FROM %s
+			WHERE %s AND attempted_at>$%d`, budget.table, budget.match, n+1),
+			append(slices.Clone(budget.key), windowStart)...).Scan(&count, &oldest); err != nil {
 			return err
 		}
 		if count >= WakeLimit {
@@ -60,12 +93,22 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountId
 			}
 			return nil
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
-			(caller_namespace,caller_name,caller_uid,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5,$6)`, namespace, name, uid, sandboxUID, generation, now)
+		_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s
+			(%s,sandbox_uid,wake_generation,attempted_at)
+			VALUES (%s$%d,$%d,$%d)`, budget.table, budget.columns, placeholders(n), n+1, n+2, n+3),
+			append(slices.Clone(budget.key), sandboxUID, generation, now)...)
 		return err
 	})
 	return retryAfter, err
+}
+
+// placeholders is "$1,...,$n," for an INSERT's leading key columns.
+func placeholders(n int) string {
+	var result strings.Builder
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&result, "$%d,", i)
+	}
+	return result.String()
 }
 
 // A null incarnation means no wake cycle; the empty string means a wake before

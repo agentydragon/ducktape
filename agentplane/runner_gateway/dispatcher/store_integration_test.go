@@ -1239,7 +1239,13 @@ func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}
 
-func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+// wakeAccount is a ServiceAccount wake caller's account, nil for an Identity caller.
+func wakeAccount(caller lifecycle.Caller) *ServiceAccountIdentity {
+	account, _ := caller.(lifecycle.ServiceAccountCaller)
+	return account.Account
+}
+
+func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ lifecycle.Caller) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(0),
@@ -1250,7 +1256,7 @@ type rateLimitedWake struct {
 	calls int
 }
 
-func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ lifecycle.Caller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
@@ -1266,8 +1272,8 @@ type scriptedWake struct {
 	targets     []*lifecycle.Target
 }
 
-func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
-	w.callers = append(w.callers, caller)
+func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller lifecycle.Caller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, wakeAccount(caller))
 	w.targets = append(w.targets, target)
 	if len(w.assessments) == 0 {
 		return nil, errors.New("unexpected lifecycle wake request")
@@ -2899,7 +2905,7 @@ type cancelDuringWake struct {
 	calls     int
 }
 
-func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ lifecycle.Caller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	if _, err := w.store.Cancel(ctx, w.commandID); err != nil {
 		return nil, err
@@ -2940,9 +2946,9 @@ type changingWakeGrant struct {
 	callers []*ServiceAccountIdentity
 }
 
-func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
-	w.callers = append(w.callers, caller)
-	if sameServiceAccountIdentity(caller, w.opener) {
+func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller lifecycle.Caller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, wakeAccount(caller))
+	if sameServiceAccountIdentity(wakeAccount(caller), w.opener) {
 		if w.allowed {
 			return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED}, nil
 		}
