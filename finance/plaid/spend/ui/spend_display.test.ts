@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import Decimal from "decimal.js";
-import currencyPolicyVectors from "../../../../personal_dashboard/shared/currency_policy_vectors.json";
+import currencyPolicyVectors from "../../../../util/presentation_vectors/currency_policy_vectors.json";
 
 import { money, time } from "./spend_display";
 

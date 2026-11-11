@@ -7,7 +7,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import currencyPolicyVectors from "../../personal_dashboard/shared/currency_policy_vectors.json";
+import currencyPolicyVectors from "../../util/presentation_vectors/currency_policy_vectors.json";
 
 import {
   formatDuration,

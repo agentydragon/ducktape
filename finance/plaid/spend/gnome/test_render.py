@@ -108,7 +108,7 @@ def fixture_json_dir(
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
-    vectors_path = runfiles_root / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    vectors_path = runfiles_root / "ducktape/util/presentation_vectors/currency_policy_vectors.json"
     for case in json.loads(vectors_path.read_text())["cases"]:
         if Decimal(case["minor_units"]) != Decimal(case["minor_units"]).to_integral_value():
             continue
@@ -460,7 +460,7 @@ def test_shared_currency_vectors_match_gnome_numeric_semantics(
     session: GnomeSession, fixture_json_dir: Path, runfiles: Runfiles
 ) -> None:
     assert fixture_json_dir.is_dir()
-    vectors_path = runfiles.root() / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    vectors_path = runfiles.root() / "ducktape/util/presentation_vectors/currency_policy_vectors.json"
     for case in json.loads(vectors_path.read_text())["cases"]:
         if Decimal(case["minor_units"]) != Decimal(case["minor_units"]).to_integral_value():
             continue

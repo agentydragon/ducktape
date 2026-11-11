@@ -66,7 +66,7 @@ py_test(
         ":aiquota_zip",
         ":fake_daemon",
         "//aiquota/testing:fixtures",
-        "//personal_dashboard/shared:currency_policy_vectors.json",
+        "//util/presentation_vectors:currency_policy_vectors.json",
     ],
     requires_docker = True,
     tags = ["visual"],

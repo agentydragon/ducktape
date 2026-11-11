@@ -136,7 +136,7 @@ def fixture_json_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactor
         src = runfiles_root / f"ducktape/aiquota/testing/fixtures/{fixture_name}.yaml"
         data = load_quota_view_fixture(src)
         (dest / f"{fixture_name}.json").write_text(json.dumps(data, indent=2) + "\n")
-    vectors_path = runfiles_root / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    vectors_path = runfiles_root / "ducktape/util/presentation_vectors/currency_policy_vectors.json"
     for case in json.loads(vectors_path.read_text())["cases"]:
         if case["currency"] != "USD" or float(case["major_amount"]) <= 0:
             continue
@@ -243,7 +243,7 @@ def test_shared_currency_vectors_match_gnome_numeric_semantics(
     session: GnomeSession, fixture_json_dir: Path, runfiles: Runfiles
 ) -> None:
     assert fixture_json_dir.is_dir()
-    vectors_path = runfiles.root() / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    vectors_path = runfiles.root() / "ducktape/util/presentation_vectors/currency_policy_vectors.json"
     for case in json.loads(vectors_path.read_text())["cases"]:
         if case["currency"] != "USD" or float(case["major_amount"]) <= 0:
             continue

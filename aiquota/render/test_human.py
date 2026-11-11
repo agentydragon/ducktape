@@ -304,7 +304,7 @@ def _assert_currency_vector(actual: str, case: dict[str, Any]) -> None:
 
 
 def test_shared_currency_vectors_cover_cli_numeric_semantics(runfiles: Runfiles) -> None:
-    path = runfiles.root() / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    path = runfiles.root() / "ducktape/util/presentation_vectors/currency_policy_vectors.json"
     vectors = json.loads(path.read_text())
     for case in vectors["cases"]:
         if case["currency"] == "USD":
