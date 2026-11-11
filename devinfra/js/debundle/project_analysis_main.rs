@@ -1,7 +1,7 @@
 //! Small Bazel entry point for the canonical analysis projection.
 
+use analysis_thread::run_analysis;
 use clap::{CommandFactory, FromArgMatches, Parser};
-use swc_common::{GLOBALS, Globals};
 use transform_command::{ProjectAnalysisArgs, validate_transform_arg_matches};
 
 #[derive(Parser)]
@@ -11,7 +11,7 @@ struct Args {
 }
 
 fn main() -> std::process::ExitCode {
-    GLOBALS.set(&Globals::default(), || {
+    run_analysis(|| {
         let matches = Args::command().get_matches();
         let result = (|| -> anyhow::Result<()> {
             validate_transform_arg_matches(&matches)?;
