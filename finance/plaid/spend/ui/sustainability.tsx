@@ -355,11 +355,13 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
                   {account.opening ? (
                     <div>
                       <Text size="sm" fw={600}>
-                        Approximate opening range: {account.opening.earliest} to {account.opening.latest}
+                        Approximate opening range: {calendarDate(account.opening.earliest)} to{" "}
+                        {calendarDate(account.opening.latest)}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        Evidence: {account.opening.source} · as of {account.opening.as_of}. Days before the earliest
-                        opening bound are treated as known zero spending; the earliest bound is conservative.
+                        Evidence: {account.opening.source} · as of {calendarDate(account.opening.as_of)}. Days before
+                        the earliest opening bound are treated as known zero spending; the earliest bound is
+                        conservative.
                       </Text>
                     </div>
                   ) : (
@@ -370,16 +372,17 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
                   {account.coverage ? (
                     <div>
                       <Text size="sm" fw={600}>
-                        Documented complete history from {account.coverage.complete_from}
+                        Documented complete history from {calendarDate(account.coverage.complete_from)}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        Evidence: {account.coverage.source} · as of {account.coverage.as_of}.
+                        Evidence: {account.coverage.source} · as of {calendarDate(account.coverage.as_of)}.
                       </Text>
                     </div>
                   ) : account.first_recorded_on ? (
                     <div>
                       <Text size="sm" fw={600}>
-                        Inferred history boundary from first recorded transaction: {account.first_recorded_on}
+                        Inferred history boundary from first recorded transaction:{" "}
+                        {calendarDate(account.first_recorded_on)}
                       </Text>
                       <Text size="xs" c="dimmed">
                         This is an inference; history before this date is not verified and unknown periods are not zero.
@@ -392,7 +395,7 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
                   )}
                   {account.coverage && account.first_recorded_on && (
                     <Text size="xs" c="dimmed">
-                      First recorded transaction: {account.first_recorded_on}.
+                      First recorded transaction: {calendarDate(account.first_recorded_on)}.
                     </Text>
                   )}
                   <Text size="sm">Unavailable history in requested window: {account.unknown_days_in_window} days.</Text>
@@ -863,7 +866,7 @@ export function SustainabilityPage() {
               {view.tax_assumption_note && (
                 <Text size="sm">
                   {view.tax_assumption_note}
-                  {view.tax_assumption_as_of && ` · Tax assumption as of ${view.tax_assumption_as_of}.`}
+                  {view.tax_assumption_as_of && ` · Tax assumption as of ${calendarDate(view.tax_assumption_as_of)}.`}
                 </Text>
               )}
               <Text size="sm" c="dimmed">
