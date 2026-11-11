@@ -233,18 +233,16 @@ go_deps.module_override(
     path = "mvdan.cc/garble",
 )
 
-# go-tree-sitter's generated cgo libraries reference its current allocator
-# symbols in a way LLD rejects. Keep this exception narrow while RBE links use
-# LLD globally. sed against gazelle's own generated BUILD files (patch_cmds
-# runs after gazelle, same as `patches`) rather than a line-numbered patch:
-# gazelle's exact output isn't pinned to a stable line layout, so a positional
-# diff silently breaks (CONTENT_DOES_NOT_MATCH_TARGET) the moment it changes.
+# Gazelle's Python plugin migrated from smacker/go-tree-sitter to the official
+# tree-sitter/go-tree-sitter module. Its generated cgo library still has
+# allocator references LLD rejects, so keep the linker workaround on the new
+# module path while RBE links use LLD globally. patch_cmds runs after Gazelle,
+# same as patches; sed avoids relying on generated BUILD line numbers.
 go_deps.module_override(
     patch_cmds = [
         """sed -i '/cgo = True,/a\\    clinkopts = ["-fuse-ld=gold"],' BUILD.bazel""",
-        """sed -i '/cgo = True,/a\\    clinkopts = ["-fuse-ld=gold"],' python/BUILD.bazel""",
     ],
-    path = "github.com/smacker/go-tree-sitter",
+    path = "github.com/tree-sitter/go-tree-sitter",
 )
 
 # ─ redress + GoReSym (reverse engineering tools) ─────────────────────────────
