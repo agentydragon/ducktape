@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, workspace_scan
-from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch, RetainedBranchReason
+from devinfra.gc.branch_gc import PrunableBranch, PrunableBranchReason, RetainedBranch, RetainedBranchReason
 from devinfra.gc.conftest import GitRepo, make_base
 from devinfra.gc.output_base_gc import Inspection, PrunableBase, RetainedBase, ReviewBase
 from devinfra.gc.scan_progress import NULL_PROGRESS
@@ -94,9 +94,9 @@ def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinf
     assert isinstance(worktrees[kept_wt], RetainedWorktree)
 
     branches = {item.branch.name: item for item in scan.branches}
-    # Held by a prunable worktree → eligible, with the worktree recorded for apply ordering.
+    # The worktree can be pruned while the redundant branch candidate is still reported.
     assert isinstance(branches["merged"], PrunableBranch)
-    assert branches["merged"].checkout == prunable_wt
+    assert branches["merged"].reason is PrunableBranchReason.CONTENT_IN_MAIN
     # Held by a retained worktree → not provably deletable.
     assert isinstance(branches["kept"], RetainedBranch)
     assert (branches["kept"].reason, branches["kept"].checkout) == (RetainedBranchReason.HELD_BY_WORKTREE, kept_wt)

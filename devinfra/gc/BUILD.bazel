@@ -53,7 +53,6 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
-        ":removal",
         ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",
@@ -100,8 +99,8 @@ py_library(
     ],
 )
 
-# Single tool: `workspace-gc {all,worktrees,bazel-bases}` reclaims stale git worktrees, merged
-# local branches, and orphaned Bazel output bases via one joint scan.
+# Single tool: `workspace-gc {all,worktrees,bazel-bases}` classifies Git worktrees and local
+# branches and reclaims orphaned Bazel output bases via one joint scan.
 py_binary(
     name = "workspace_gc_bin",
     main_module = "devinfra.gc.workspace_gc",
@@ -170,7 +169,6 @@ py_test(
         ":conftest",
         ":git_repo",
         ":pull_request",
-        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pygit2",
@@ -199,6 +197,7 @@ py_test(
     name = "test_workspace_gc",
     srcs = ["test_workspace_gc.py"],
     deps = [
+        ":branch_gc",
         ":conftest",
         ":pull_request",
         ":repo_contents_cache_gc",

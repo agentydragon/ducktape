@@ -136,23 +136,21 @@ genuine keep.
 The joint scan (`workspace-gc`, shown in the `# Branches` section) classifies each local
 branch; interpret it literally:
 
-- `PRUNE`: its work is provably in the default branch and it is not held by a kept worktree —
-  established by git (an ancestor, an empty branch, a squash/rebase-merge no-op, or every
-  commit having a patch-equivalent already on the default branch) **or** by
-  a merged PR whose merged head the branch has not advanced beyond. A branch checked out in a
-  _prunable_ worktree is eligible too; `all --prune` removes that worktree first, then the
-  branch. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges) **after
-  re-proving** the branch is still prunable — safe because the content is in the default
-  branch, but it removes the ref (recoverable only via reflog).
+- `PRUNE`: the scan has enough evidence that the branch has no unique retained work — an
+  ancestor, an empty branch, a squash/rebase-merge no-op, patch-equivalent commits, or a merged
+  or closed PR whose head the branch has not advanced beyond. `all --prune` reports these branch
+  candidates as `SKIPPED` and leaves their refs intact. A branch checked out in a _prunable_
+  worktree can still have that worktree removed first; its local branch remains.
 - `KEEP`: the default branch, a branch with an open PR, or a branch checked out in a retained
-  worktree (git won't delete a checked-out branch anyway).
-- `REVIEW`: commits not in the default branch and no merged PR, or a merged PR the branch has
+  worktree.
+- `REVIEW`: commits not in the default branch and no merged PR, or a merged or closed PR the branch has
   advanced beyond (unmerged local commits past the merge point). Judge these yourself —
   removal must not make any commit unreachable.
 
-Branch deletion requires an explicit `--prune` and is never implied by the dry scan. The PR
-cross-check uses `GITHUB_TOKEN` or `gh auth token`; `--no-prs` classifies on git signals
-alone (so squash-merges the API would have confirmed fall to REVIEW).
+Automatic branch deletion is disabled: `git update-ref -d <ref> <old-oid>` compares the tip,
+while `git branch -D` checks worktree use. Neither command combines both protections atomically.
+The PR cross-check uses `GITHUB_TOKEN` or `gh auth token`; pass `--no-prs` to classify on git
+signals alone (so squash-merges the API would have confirmed fall to REVIEW).
 
 ## Bazel Output Bases
 
@@ -212,10 +210,10 @@ Handle these manually per situation instead of expanding the tool's deletion sur
 - nondefault output-base layouts and additional output-user-roots; and
 - Bazel's shared repository (download), disk, and install caches.
 
-`workspace-gc` deletes only **local** branches it proves are merged; deleting remote branches
-is never implied — do that only when the user separately requests it and its safety is
-established.
+`workspace-gc` scans only **local** branches; it currently leaves every branch ref intact.
+Deleting remote branches is never implied — do that only when the user separately requests it
+and its safety is established.
 
-Finish with a concise ledger: worktrees removed and retained, branches deleted and retained,
-output bases and repo-cache entries deleted, space reclaimed, roots scanned, and every item
-still requiring review.
+Finish with a concise ledger: worktrees removed and retained, branch candidates skipped and
+branches retained, output bases and repo-cache entries deleted, space reclaimed, roots scanned,
+and every item still requiring review.

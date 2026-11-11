@@ -9,7 +9,8 @@ import pytest
 import pytest_bazel
 from rich.console import Console
 
-from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
+from devinfra.gc import branch_gc, repo_contents_cache_gc, workspace_gc, workspace_scan
+from devinfra.gc.branch_gc import PrunableBranch
 from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
 from devinfra.gc.pull_request import PrInfo
 
@@ -50,6 +51,29 @@ def _scan_numeric_looking_branches(
 def _cells(report: str, column: int) -> list[str]:
     """One column of a rendered table's rows: not its header line, nor its trailing summary line."""
     return sorted(line.split()[column] for line in report.splitlines()[1:-1])
+
+
+def _branch_candidate(repo: GitRepo, name: str = "feature") -> PrunableBranch:
+    repo.branch(name)
+    result = branch_gc.classify_branch(name, pg=repo.pg(), main="main", default_branch="main", pr=None, holder=None)
+    assert isinstance(result, PrunableBranch)
+    return result
+
+
+def _assert_branch_candidate_skipped(
+    candidate: PrunableBranch, *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def unexpected_git_call(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("branch pruning must not invoke a Git ref mutation")
+
+    monkeypatch.setattr(branch_gc.git_repo, "git", unexpected_git_call)
+    outcome = workspace_gc._skip_branch_deletions([candidate])
+    captured = capsys.readouterr()
+
+    assert outcome.ok
+    assert outcome.removed == frozenset()
+    assert "SKIPPED branch feature: automatic branch deletion disabled" in captured.err
+    assert "Branches: 0 deleted, 1 skipped, 0 failed" in captured.out
 
 
 def test_render_worktrees_prints_numeric_looking_branch_names_verbatim(
@@ -165,8 +189,38 @@ def test_prune_continues_past_missing_git_objects(
     assert checkout.has_branch("broken")
     assert foreign.path.is_dir()
     assert not good_worktree.path.exists()
-    assert not checkout.has_branch("landed")
+    assert checkout.has_branch("landed")
+    assert "SKIPPED branch landed: automatic branch deletion disabled" in captured.err
     assert not orphan.exists()
+
+
+def test_branch_prune_skips_a_candidate_whose_tip_advanced_after_scan(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidate = _branch_candidate(repo)
+    classified_tip = repo.rev("feature")
+    repo.commit("later", "1\n", "advance main after scan")
+    repo.run("branch", "--force", "feature", "main")
+    moved_tip = repo.rev("feature")
+    assert moved_tip != classified_tip
+
+    _assert_branch_candidate_skipped(candidate, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert repo.has_branch("feature")
+    assert repo.rev("feature") == moved_tip
+
+
+def test_branch_prune_skips_a_candidate_checked_out_after_scan(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidate = _branch_candidate(repo)
+    late_worktree = repo.path.parent / "late-checkout"
+    repo.run("worktree", "add", str(late_worktree), "feature")
+
+    _assert_branch_candidate_skipped(candidate, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert repo.has_branch("feature")
+    assert GitRepo(late_worktree).pg().head.shorthand == "feature"
 
 
 @pytest.mark.parametrize("error", [KeyError("missing object"), PermissionError("unreadable repository")])

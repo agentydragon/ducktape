@@ -1,15 +1,15 @@
 """`workspace-gc`: reclaim local development state — worktrees, branches, Bazel output bases,
 and Bazel's repo contents cache.
 
-The domains are coupled (a branch checked out in a live worktree can't be deleted; an output
-base orphans when its workspace worktree is removed, and a base for a workspace under `/tmp`
-can be reclaimed without removing its workspace; a repo-cache entry is unreferenced once the
-bases linking to it are gone), so one joint scan (`workspace_scan.scan_workspace`, then
+The domains are coupled (branch classification depends on worktree holders; an output base
+orphans when its workspace worktree is removed, and a base for a workspace under `/tmp` can
+be reclaimed without removing its workspace; a repo-cache entry is unreferenced once the bases
+linking to it are gone), so one joint scan (`workspace_scan.scan_workspace`, then
 `repo_contents_cache_gc.scan_repo_contents_cache` over its bases) classifies them together
 and the subcommands are views of that single result:
 
-  * `all`          — the default; every domain, and one `--prune` removes all prunable
-                     items in dependency order (worktrees → branches → bases → repo cache).
+  * `all`          — the default; `--prune` removes prunable worktrees, bases, and repo-cache
+                     entries; branch candidates are reported as skipped.
   * `worktrees`    — the worktree slice; `--prune` removes prunable worktrees.
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
   * `repo-cache`   — the repo-contents-cache slice; `--delete` removes unreferenced entries.
@@ -20,10 +20,11 @@ run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an 
 object store is a bigger blast radius than anything else this tool does); it additionally
 needs `--delete-foreign-clones`.
 
-Nothing is removed without an explicit flag. Each removal revalidates its candidate immediately
-beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
-still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
-Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
+Nothing is removed without an explicit flag. Worktrees are re-classified before removal, and
+bases and repo-cache entries are rechecked under their Bazel locks. Branch candidates are
+always skipped: Git does not expose one operation that both compares the classified tip and
+protects against a concurrent worktree checkout. Skipped items are reported but exit 0; failed
+removals exit 1.
 Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
 clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
 network-free.
@@ -418,17 +419,20 @@ async def _apply_worktree_removals(context: _RunContext, worktrees: list[Classif
     )
 
 
-def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> _RemovalOutcome[str]:
-    """Delete every prunable branch that has not moved since it was classified."""
+_BRANCH_DELETE_SKIP_REASON = (
+    "automatic branch deletion disabled: Git cannot atomically compare the tip and protect worktree checkouts"
+)
+
+
+def _skip_branch_deletions(branches: list[BranchClassification]) -> _RemovalOutcome[str]:
+    """Report branch candidates as skipped until Git can atomically guard both deletion conditions."""
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
         return _nothing_to_remove()
-    logger.info("Deleting %d branches", len(candidates))
-    results = []
-    for index, item in enumerate(candidates, start=1):
-        logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch.name)
-        results.append(branch_gc.delete_branch(repo, item.branch.name, expected_tip=item.tip))
-    return _report_removals(results, _BRANCH_LABELS)
+    logger.info("Skipping automatic deletion of %d branch candidates", len(candidates))
+    return _report_removals(
+        [Skipped(item.branch.name, _BRANCH_DELETE_SKIP_REASON) for item in candidates], _BRANCH_LABELS
+    )
 
 
 async def _apply_base_deletions(
@@ -555,7 +559,7 @@ _REPO_CACHE_COMMAND = _Command(
 )
 _ALL_COMMAND = _Command(
     frozenset(_Domain),
-    "Dry run only; pass --prune to remove all prunable worktrees, branches, bases, and repo-cache entries.",
+    "Dry run only; pass --prune to remove prunable worktrees, bases, and repo-cache entries; branch candidates are skipped.",
 )
 
 
@@ -730,7 +734,7 @@ async def _apply(
                 workers=context.workers,
                 progress=progress,
             )
-        oks.append(_apply_branch_deletions(context.repo, branches).ok)
+        oks.append(_skip_branch_deletions(branches).ok)
     bases_removed: frozenset[Path] = frozenset()
     if _Domain.BASES in domains:
         # Removing worktrees orphans bases the first scan kept, so only then are bases rescanned.
@@ -839,7 +843,10 @@ def _all_command(
     workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     prune: Annotated[
         bool,
-        typer.Option("--prune", help="remove all prunable worktrees, branches, output bases, and repo-cache entries"),
+        typer.Option(
+            "--prune",
+            help="remove prunable worktrees, output bases, and repo-cache entries; branch candidates are skipped",
+        ),
     ] = False,
     delete_foreign_clones: Annotated[
         bool,
