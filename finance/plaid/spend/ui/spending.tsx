@@ -17,7 +17,7 @@ import {
 import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
-import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
+import { linkedSyncDescription, Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
 import type { AllowancePeriodId, EstimatePeriodId } from "./types";
 
@@ -113,7 +113,7 @@ function PurchaseCheck({
                 {estimateLoading && after > 0 ? (
                   <Skeleton height={20} width={112} radius="xl" />
                 ) : (
-                  signal && <SignalLabel signal={signal} />
+                  signal && <SignalLabel signal={signal} remainingMinorUnits={after} />
                 )}
               </Group>
               <Text size="sm">
@@ -211,7 +211,7 @@ function AllowancePanel({
               {estimateLoading ? (
                 <Skeleton height={20} width={112} radius="xl" />
               ) : signal ? (
-                <SignalLabel signal={signal} />
+                <SignalLabel signal={signal} remainingMinorUnits={available} />
               ) : (
                 <Badge color="gray" variant="light">
                   Pace warming up
@@ -222,13 +222,16 @@ function AllowancePanel({
               {m(available)}
             </Text>
             <Text size="sm" c="teal.0">
-              {available <= 0 ? "You're past your available allowance." : "Includes posted and pending purchases."}
+              Includes posted and pending purchases.
             </Text>
             <Divider color="teal.6" />
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
-            <Text size="xs" c="teal.0">
-              Oldest account sync: {time(allowance.last_synced_at)}.
-            </Text>
+            <Group gap="xs">
+              <Text size="xs" c="teal.0">
+                Oldest linked sync: {time(allowance.last_synced_at)}.
+              </Text>
+              <HelpTooltip topic="Linked sync time" description={linkedSyncDescription} />
+            </Group>
           </Stack>
         </Paper>
         <Paper component="section" aria-label="Spending pace" withBorder radius="lg" p="xl">
@@ -398,8 +401,8 @@ function AllowancePanel({
                 })}
               </SimpleGrid>
               <Text size="sm" c="dimmed">
-                {m(allowance.unmatched_refunds_minor_units)} of unlinked refunds are excluded from the balance. Oldest
-                account sync: {time(allowance.last_synced_at)}. Plaid data can lag or be misclassified.
+                {m(allowance.unmatched_refunds_minor_units)} of unlinked refunds are excluded from the balance. Plaid
+                data can lag or be misclassified.
               </Text>
             </Stack>
           </Accordion.Panel>

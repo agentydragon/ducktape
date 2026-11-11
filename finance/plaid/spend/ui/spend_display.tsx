@@ -12,6 +12,9 @@ export const periodLabels = {
   rolling_30d: "Last 30 days",
 } satisfies Record<AllowancePeriodId, string>;
 
+export const linkedSyncDescription =
+  "The oldest successful sync of a Plaid Item (bank connection) used here. It may update transactions only; this tracks our local mirror, not when the bank last refreshed.";
+
 export function money(value: number | Decimal | null | undefined, currency: string | null, exact = false): string {
   if (value == null) return "Unavailable";
   const minorUnits = Decimal.isDecimal(value) ? value : new Decimal(value);
@@ -62,10 +65,17 @@ export function time(value: string | null | undefined, now = new Date()): string
 
 export type Signal = "normal" | "warning" | "exceeded";
 
-export function SignalLabel({ signal }: { signal: Signal }) {
+export function signalText(signal: Signal, remainingMinorUnits: number | null): string {
+  if (signal === "exceeded")
+    return remainingMinorUnits !== null && remainingMinorUnits < 0 ? "Over allowance" : "Allowance exhausted";
+  if (signal === "warning") return "Forecast or pace warning";
+  return "Below provisional leash";
+}
+
+export function SignalLabel({ signal, remainingMinorUnits }: { signal: Signal; remainingMinorUnits: number | null }) {
   return (
     <Badge color={signal === "exceeded" ? "red" : signal === "warning" ? "yellow" : "teal"} variant="light">
-      {signal === "exceeded" ? "Over allowance" : signal === "warning" ? "Pace warning" : "Below provisional leash"}
+      {signalText(signal, remainingMinorUnits)}
     </Badge>
   );
 }

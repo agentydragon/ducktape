@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { money, time } from "./spend_display";
+import { money, signalText, time } from "./spend_display";
 
 describe("summary money", () => {
   it.each([
@@ -56,5 +56,16 @@ describe("summary timestamps", () => {
     expect(time(distant.toISOString(), now)).toBe("Jan 3, 2027");
     expect(time(new Date(2026, 11, 19, 12).toISOString(), now)).toBe("Dec 19, 12:00");
     expect(time("not a date", now)).toBe("Unknown");
+  });
+});
+
+describe("allowance signal wording", () => {
+  it("distinguishes a zero balance from spending past the allowance", () => {
+    expect(signalText("exceeded", 0)).toBe("Allowance exhausted");
+    expect(signalText("exceeded", -1)).toBe("Over allowance");
+  });
+
+  it("names both causes of the overall warning", () => {
+    expect(signalText("warning", 1)).toBe("Forecast or pace warning");
   });
 });
