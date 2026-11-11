@@ -77,6 +77,7 @@ py_test(
 
 py_test(
     name = "test_routes",
+    size = "medium",
     srcs = ["test_routes.py"],
     requires_docker = True,
     deps = [

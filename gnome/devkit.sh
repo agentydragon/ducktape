@@ -18,7 +18,8 @@ daemon_runfile="$3"
 fixture_env="$4"
 default_fixture_runfile="$5"
 daemon_arg="$6"
-shift 6
+host_bus_env="$7"
+shift 7
 
 fixture="${!fixture_env:-}"
 mode=""
@@ -26,6 +27,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --live)
       mode=live
+      shift
+      ;;
+    --host-daemon)
+      if [[ "$host_bus_env" == - ]]; then
+        echo "ERROR: this extension does not support --host-daemon" >&2
+        exit 2
+      fi
+      mode=host
       shift
       ;;
     --fixture)
@@ -43,7 +52,18 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-if [[ "$mode" == live ]]; then
+if [[ "$host_bus_env" != - ]]; then
+  unset "$host_bus_env"
+fi
+if [[ "$mode" == host ]]; then
+  if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    echo "ERROR: --host-daemon requires the host session D-Bus address" >&2
+    exit 1
+  fi
+  printf -v "$host_bus_env" '%s' "$DBUS_SESSION_BUS_ADDRESS"
+  export "$host_bus_env"
+fi
+if [[ "$mode" == live || "$mode" == host ]]; then
   fixture=""
 elif [[ -z "$fixture" && "$default_fixture_runfile" != - ]]; then
   fixture="$(rlocation "$default_fixture_runfile")"
@@ -206,4 +226,4 @@ dbus-run-session -- bash -c '
 
   echo ">> nested Wayland display is $nested_wayland_name"
   wait "$shell_pid"
-' sh "['$uuid']" "$daemon_bin" "$([[ -n "$fixture" ]] && printf fixture || printf live)" "$daemon_arg"
+' sh "['$uuid']" "$daemon_bin" "$([[ -n "$fixture" ]] && printf fixture || printf '%s' "${mode:-live}")" "$daemon_arg"

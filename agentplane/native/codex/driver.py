@@ -19,10 +19,6 @@ def initialize(request_id: str, *, client_name: str, experimental_api: bool = Fa
     )
 
 
-def initialized() -> wire.InitializedNotification:
-    return wire.InitializedNotification()
-
-
 def thread_start(
     request_id: str,
     *,

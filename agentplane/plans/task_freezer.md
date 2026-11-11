@@ -328,6 +328,13 @@ On a selected model/effort capability gap. [Runtime control contract](../docs/ru
 
 ## Sampler reliability follow-ups
 
+### `SAMPLER_COSI_RECONCILIATION` — consider COSI for sampler lifecycle reconciliation
+
+Deferred by the operator on 2026-11-10. Revisit if sampler Session and executor observer ownership
+become difficult to maintain. Compare the existing event-driven Go lifecycle with COSI controllers,
+including on-demand PostgreSQL resources, bounded active work, lease fencing, shutdown and recovery.
+Keep the sampler journal authoritative and never replay uncertain executor effects.
+
 ### `CENTRAL_SAMPLER_RELIABILITY_FOLLOWUP` — investigate instability observed in normal use
 
 Deferred by the operator on 2026-10-31. Revisit only if normal use still exposes sampler or JS/exec

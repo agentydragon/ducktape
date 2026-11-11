@@ -25,7 +25,6 @@ py_library(
         "//x/wt:__pkg__",
         "//x/wt/client:__subpackages__",
     ],
-    deps = [":shell_utils"],
 )
 
 py_library(
@@ -41,11 +40,6 @@ py_library(
         "@pypi//more_itertools",
         "@pypi//psutil",
     ],
-)
-
-py_library(
-    name = "shell_utils",
-    srcs = ["shell_utils.py"],
 )
 
 py_library(

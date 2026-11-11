@@ -62,6 +62,7 @@ py_library(
 
 py_test(
     name = "test_async_proxy",
+    size = "medium",
     srcs = ["test_async_proxy.py"],
     requires_docker = True,
     deps = [

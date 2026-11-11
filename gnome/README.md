@@ -31,7 +31,8 @@ Both isolate dconf and the session D-Bus, and require `gnome-shell`, `unzip` and
 in `~/.local/share/gnome-shell/extensions/` would shadow the checkout. Close the
 nested window to stop the shell and daemon and remove the temporary files.
 
-Plaid starts with a synthetic two-card fixture and no daemon. Select another
+Plaid starts with a synthetic allowance and pace history and no daemon, so the
+panel settings can be previewed. Select another
 fixture JSON with `-- --fixture /path/to/fixture.json` (the files in
 `finance/plaid/spend/gnome/fixtures/` are examples). `-- --live` starts the
 checkout's desktop daemon instead. Sign in from its menu: its refresh token
@@ -41,6 +42,11 @@ loopback callback port as the installed client; concurrent login attempts cannot
 share it. The daemon uses its normal API and OIDC defaults unless the
 `PLAID_SPEND_API_URL`, `PLAID_SPEND_OIDC_ISSUER`, or
 `PLAID_SPEND_OIDC_CLIENT_ID` environment variables are set.
+
+Use `bazelisk run //finance/plaid/spend/gnome:devkit -- --host-daemon` to
+connect the nested extension to the daemon already running in the host session.
+It uses that daemon's current credentials and view; login from the preview also
+operates on that daemon. The nested shell's settings remain isolated.
 
 AIQuota starts its checkout daemon by default. To preview a view without real
 auth/HTTP, provide the normal `/v1/quotas` view JSON generated from a

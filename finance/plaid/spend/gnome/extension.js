@@ -248,7 +248,10 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._history = null;
       this._historyError = false;
       this._proxyHandlerIds = [];
+      this._daemonConnection = null;
+      this._daemonConnectCancellable = new Gio.Cancellable();
       const fixturePath = GLib.getenv("PLAID_SPEND_FIXTURE");
+      this._fixtureMode = Boolean(fixturePath);
       this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1" || Boolean(fixturePath);
       this._testIface = null;
       this._testBusOwnerId = 0;
@@ -289,48 +292,94 @@ const PlaidSpendIndicator = GObject.registerClass(
         return;
       }
 
-      Gio.DBusProxy.new_for_bus(
-        Gio.BusType.SESSION,
-        Gio.DBusProxyFlags.NONE,
-        INTERFACE_INFO,
-        BUS_NAME,
-        OBJECT_PATH,
-        INTERFACE_NAME,
-        null,
-        (source, result) => {
-          if (this._destroyed) return;
-          try {
-            this._proxy = Gio.DBusProxy.new_for_bus_finish(result);
-            this._proxyHandlerIds.push(
-              this._proxy.connect("g-signal", (proxy, sender, name, parameters) => {
-                if (name !== "ViewChanged") return;
-                if (sender !== proxy.g_name_owner) return;
-                const [rawView] = parameters.deep_unpack();
-                this._acceptView(rawView);
-              })
-            );
-            this._proxyHandlerIds.push(this._proxy.connect("g-properties-changed", () => this._readProperties()));
-            this._proxyHandlerIds.push(
-              this._proxy.connect("notify::g-name-owner", () => {
-                this._cancelViewRequest();
-                this._cancelHistoryRequest();
-                this._history = null;
-                this._readProperties();
-                if (this._proxy.g_name_owner) this._fetchView();
-              })
-            );
+      const hostBusAddress = GLib.getenv("PLAID_SPEND_DEVKIT_HOST_BUS_ADDRESS");
+      if (hostBusAddress) {
+        Gio.DBusConnection.new_for_address(
+          hostBusAddress,
+          Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,
+          null,
+          this._daemonConnectCancellable,
+          (_source, result) => {
+            try {
+              const connection = Gio.DBusConnection.new_for_address_finish(result);
+              if (this._destroyed) {
+                connection.close(null, null);
+                return;
+              }
+              connection.set_exit_on_close(false);
+              this._daemonConnection = connection;
+              connection.connect("closed", () => {
+                if (this._destroyed) return;
+                this._status = "error";
+                this._error = "Host session bus disconnected";
+                this._render();
+              });
+              Gio.DBusProxy.new(
+                connection,
+                Gio.DBusProxyFlags.NONE,
+                INTERFACE_INFO,
+                BUS_NAME,
+                OBJECT_PATH,
+                INTERFACE_NAME,
+                this._daemonConnectCancellable,
+                (_source, proxyResult) => this._proxyReady(proxyResult, false)
+              );
+            } catch (error) {
+              this._daemonConnectFailed(error);
+            }
+          }
+        );
+      } else {
+        Gio.DBusProxy.new_for_bus(
+          Gio.BusType.SESSION,
+          Gio.DBusProxyFlags.NONE,
+          INTERFACE_INFO,
+          BUS_NAME,
+          OBJECT_PATH,
+          INTERFACE_NAME,
+          this._daemonConnectCancellable,
+          (_source, result) => this._proxyReady(result, true)
+        );
+      }
+      this._render();
+    }
+
+    _daemonConnectFailed(error) {
+      if (this._destroyed) return;
+      this._error = error.message;
+      this._status = "error";
+      this._render();
+    }
+
+    _proxyReady(result, sessionBus) {
+      try {
+        const proxy = sessionBus ? Gio.DBusProxy.new_for_bus_finish(result) : Gio.DBusProxy.new_finish(result);
+        if (this._destroyed) return;
+        this._proxy = proxy;
+        this._proxyHandlerIds.push(
+          this._proxy.connect("g-signal", (proxy, sender, name, parameters) => {
+            if (name !== "ViewChanged") return;
+            if (sender !== proxy.g_name_owner) return;
+            const [rawView] = parameters.deep_unpack();
+            this._acceptView(rawView);
+          })
+        );
+        this._proxyHandlerIds.push(this._proxy.connect("g-properties-changed", () => this._readProperties()));
+        this._proxyHandlerIds.push(
+          this._proxy.connect("notify::g-name-owner", () => {
+            this._cancelViewRequest();
+            this._cancelHistoryRequest();
+            this._history = null;
             this._readProperties();
             if (this._proxy.g_name_owner) this._fetchView();
-            this._render();
-          } catch (error) {
-            this._error = error.message;
-            this._status = "error";
-            this._render();
-          }
-        }
-      );
-
-      this._render();
+          })
+        );
+        this._readProperties();
+        if (this._proxy.g_name_owner) this._fetchView();
+        this._render();
+      } catch (error) {
+        this._daemonConnectFailed(error);
+      }
     }
 
     _readProperties() {
@@ -420,6 +469,7 @@ const PlaidSpendIndicator = GObject.registerClass(
     }
 
     _fetchHistory() {
+      if (this._fixtureMode) return;
       this._cancelHistoryRequest();
       this._history = null;
       this._historyError = false;
@@ -851,9 +901,12 @@ const PlaidSpendIndicator = GObject.registerClass(
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
       this._cancelViewRequest();
       this._cancelHistoryRequest();
+      this._daemonConnectCancellable.cancel();
       this._settings.disconnect(this._settingsChangedId);
       for (const handlerId of this._proxyHandlerIds) this._proxy.disconnect(handlerId);
       this._proxyHandlerIds = [];
+      if (this._daemonConnection) this._daemonConnection.close(null, null);
+      this._daemonConnection = null;
       this._unexportTestInterface();
       this._proxy = null;
       super.destroy();

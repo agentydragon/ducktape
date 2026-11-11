@@ -16,7 +16,6 @@ from mako_utils.preprocessor import markdown_heading_preprocessor
 from props.agents.schema import describe_table
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.db.queries import get_agent_run
 from props.db.snapshot_io import fetch_snapshot_to_path
 
 logger = logging.getLogger(__name__)
@@ -45,7 +44,9 @@ def get_current_agent_run(session: Session) -> AgentRun:
     Raises ValueError if the run has already exited.
     """
     agent_run_id = get_current_agent_run_id(session)
-    agent_run = get_agent_run(session, agent_run_id)
+    agent_run = session.get(AgentRun, agent_run_id)
+    if agent_run is None:
+        raise ValueError(f"AgentRun not found: {agent_run_id}")
     if agent_run.status == AgentRunStatus.EXITED:
         raise ValueError(f"Agent run {agent_run.agent_run_id} already exited")
     return agent_run
