@@ -8,7 +8,6 @@ Decentralized reactive architecture:
 
 Store Key Types:
     gitstatusd: Path -> Signal[Collector[GitstatusdData]] (registered by GitstatusdListener)
-    worktree_paths: frozenset[Path] (set of discovered worktree paths, owned by store)
     active_branches: frozenset[str] (derived from gitstatusd branch, used by GitHubWatcher)
 
 PR data is managed by a single GitHubWatcher that:
@@ -17,7 +16,7 @@ PR data is managed by a single GitHubWatcher that:
 The join from (worktree → branch) + (branch → PR) happens at query time in status_handler.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 
 from reaktiv import Computed, Signal
@@ -36,9 +35,6 @@ class DaemonStore:
         # Registry of source-owned signals
         # Sources register/unregister their signals; store reads them via Computed
         self._gitstatusd_sources: Signal[dict[Path, Signal[Collector[GitstatusdData]]]] = Signal({})
-
-        # Discovered worktree paths (owned by store, updated by watcher)
-        self.worktree_paths: Signal[frozenset[Path]] = Signal(frozenset())
 
         # Daemon config
         self._gitstatusd_config: Signal[GitstatusdConfig] = Signal(GitstatusdUnavailable(error="not initialized"))
@@ -82,17 +78,3 @@ class DaemonStore:
     def set_gitstatusd_config(self, config: GitstatusdConfig) -> None:
         """Set gitstatusd configuration."""
         self._gitstatusd_config.set(config)
-
-    # Worktree path management (owned by store)
-
-    def add_worktree_path(self, path: Path) -> None:
-        """Add a worktree path to the set."""
-        self.worktree_paths.update(lambda s: s | {path})
-
-    def remove_worktree_path(self, path: Path) -> None:
-        """Remove a worktree path from the set."""
-        self.worktree_paths.update(lambda s: s - {path})
-
-    def set_worktree_paths(self, paths: Iterable[Path]) -> None:
-        """Set all worktree paths at once."""
-        self.worktree_paths.set(frozenset(paths))

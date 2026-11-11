@@ -1,14 +1,7 @@
 """Centralized GitHub PR watcher for all branches.
 
-Uses reaktiv Effect for automatic dependency tracking:
-- Effect subscribes to worktree_paths signal
-- When paths change, effect automatically re-runs and fetches branches
-- No manual trigger_refresh() needed for reactivity
-
-Replaces per-worktree PRService with a single watcher that:
-- Input: Signal[frozenset[Path]] of worktree paths + GitManager to get branches
-- Output: Signal[Collector[dict[str, PRData | None]]] batch response keyed by branch
-- Join from (worktree → branch) + (branch → PR) happens at API boundary in status_handler
+The watcher observes branches from gitstatusd through a reaktiv Effect and caches a batch of
+PR data keyed by branch. The worktree-to-branch and branch-to-PR join happens in the status handler.
 """
 
 from __future__ import annotations

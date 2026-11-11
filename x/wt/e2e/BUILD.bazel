@@ -58,8 +58,8 @@ py_test(
 )
 
 py_test(
-    name = "test_path_watcher_integration",
-    srcs = ["test_path_watcher_integration.py"],
+    name = "test_worktree_lifecycle",
+    srcs = ["test_worktree_lifecycle.py"],
     data = [
         "//third_party/gitstatusd",
         "//x/wt:wt_cli",
