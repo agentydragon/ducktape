@@ -36,6 +36,7 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
 | `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
 | `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
+| `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
 | `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
@@ -110,6 +111,12 @@ turn with a live JavaScript cell and running executor process, then checks aband
 retained history, one turn settlement, and a subsequent input projected by authenticated History.
 The Gateway Pod and executor incarnation stay fixed. This checks successful lost-host reconciliation;
 it does not inject the successor startup failure before the driver loads its durable active command.
+
+`test_history_outage` owns another stack. It confirms a central-sampler turn is active, scales only
+History down, verifies its ready endpoints disappear and an authenticated History read fails, then
+finishes the same model response while the other service Pods and Sandbox runner remain ready. It
+compares the sampler journal cursor across the outage with History's committed and folded cursors,
+checks ACTIVE projection and exactly-once command settlement, then completes another input.
 
 ## Dispatcher queue and replicas
 

@@ -63,6 +63,7 @@ py_library(
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/native/codex/testing:requests",
         "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
