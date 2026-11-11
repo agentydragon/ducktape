@@ -31,7 +31,8 @@ Both isolate dconf and the session D-Bus, and require `gnome-shell`, `unzip` and
 in `~/.local/share/gnome-shell/extensions/` would shadow the checkout. Close the
 nested window to stop the shell and daemon and remove the temporary files.
 
-Plaid starts with a synthetic two-card fixture and no daemon. Select another
+Plaid starts with a synthetic allowance and pace history and no daemon, so the
+panel settings can be previewed. Select another
 fixture JSON with `-- --fixture /path/to/fixture.json` (the files in
 `finance/plaid/spend/gnome/fixtures/` are examples). `-- --live` starts the
 checkout's desktop daemon instead. Sign in from its menu: its refresh token

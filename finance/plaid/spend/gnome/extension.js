@@ -249,6 +249,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._historyError = false;
       this._proxyHandlerIds = [];
       const fixturePath = GLib.getenv("PLAID_SPEND_FIXTURE");
+      this._fixtureMode = Boolean(fixturePath);
       this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1" || Boolean(fixturePath);
       this._testIface = null;
       this._testBusOwnerId = 0;
@@ -420,6 +421,7 @@ const PlaidSpendIndicator = GObject.registerClass(
     }
 
     _fetchHistory() {
+      if (this._fixtureMode) return;
       this._cancelHistoryRequest();
       this._history = null;
       this._historyError = false;

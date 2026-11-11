@@ -76,7 +76,7 @@ gnome_devkit(
     name = "devkit",
     daemon = "//finance/plaid/spend/desktop:daemon_bin",
     daemon_arg = "--ephemeral-credentials",
-    default_fixture = "fixtures/ready_two_cards.json",
+    default_fixture = "fixtures/ready_allowance.json",
     extension_zip = ":plaid_spend_extension",
     fixture_env = "PLAID_SPEND_FIXTURE",
     uuid = "plaid-spend@allegedly.works",
