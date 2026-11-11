@@ -185,16 +185,20 @@ runs only on an idle server, and never asks whether anything still links to an e
 `workspace-gc repo-cache` does; interpret it literally:
 
 - `PRUNE`: no output base the scan knows — the root's and the per-session ones — links to the
-  entry. Remove with `workspace-gc repo-cache --delete`: it takes Bazel's `gc_lock`
-  exclusively (every Bazel command holds it shared while it runs, so nothing can be fetching
-  or linking meanwhile; a busy lock skips the round), re-lists the bases and their links,
-  then removes the entry the way Bazel's GC does (recorded inputs first, directory via
-  `_trash/`).
+  entry, and every known base's reference inventory was complete. A missing `external/`
+  directory, a vanished entry, or a real non-symlink entry is harmless. Remove with
+  `workspace-gc repo-cache --delete`: it takes Bazel's `gc_lock` exclusively (every Bazel
+  command holds it shared while it runs, so nothing can be fetching or linking meanwhile; a
+  busy lock skips the round), re-lists the bases and their links, then removes the entry the
+  way Bazel's GC does (recorded inputs first, directory via `_trash/`). An incomplete fresh
+  reference inventory skips every candidate for that round.
 - `KEEP`: some base that itself stays (KEEP or REVIEW) links to it. An entry whose only
   referrers are **prunable bases** is KEEP in this view, annotated "only prunable bases
   reference it"; run `all --prune` to remove those bases and then the entry in one pass.
 - `REVIEW`: a malformed name, a directory without its `.recorded_inputs` (or the reverse), a
-  nested mount, or an unreadable entry. Never `rm -rf` one without proving what it is.
+  nested mount, an unreadable entry, or an entry with no known referrers when any base's
+  `external/` directory or a link could not be inspected. Never `rm -rf` one without proving
+  what it is.
 
 `LAST USED` is the recorded-inputs mtime, which Bazel touches on every cache hit. `--sizes`
 runs `du` per entry and is slow on thousands of entries. The scan derives the cache location
