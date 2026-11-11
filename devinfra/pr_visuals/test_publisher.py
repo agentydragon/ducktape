@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import Any, Literal, NoReturn
+from typing import Any, NoReturn
 
 import pytest
 import pytest_bazel
@@ -29,6 +29,8 @@ from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_r
 from devinfra.pr_visuals.github_comment import (
     COMMENT_BUDGET,
     COMMENT_MARKER,
+    CommentKind,
+    CommentState,
     error_comment_body,
     no_visual_comment_body,
     success_comment_body,
@@ -909,52 +911,49 @@ REPOSITORY = "agentydragon/ducktape"
 
 
 def _success_comment(commit_sha: str) -> str:
-    return success_comment_body(
-        repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/", review_tests=[]
-    )
+    return CommentUpdate(
+        body=success_comment_body(
+            repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/", review_tests=[]
+        ),
+        state=CommentState(commit_sha=commit_sha, kind="published", ci_conclusion="success"),
+    ).render()
 
 
-# Each existing body comes from the function that writes it, so this pins that the refresh
-# recognizes what the publisher actually posts, whatever its wording.
 @pytest.mark.parametrize(
-    ("existing_body", "mode", "expected_edit", "expected_create"),
+    ("existing_body", "kind", "ci_conclusion", "expected_edit", "expected_create"),
     [
+        pytest.param(_success_comment(HEAD_SHA), "no_visual", "success", True, False, id="same-head-review"),
+        pytest.param(_success_comment(OTHER_SHA), "no_visual", "success", True, False, id="older-review"),
         pytest.param(
-            error_comment_body(repository=REPOSITORY, commit_sha=HEAD_SHA, error=ValueError("boom")),
-            "refresh_stale",
+            "<!-- pr-visuals -->\n<!-- pr-visuals-state {malformed} -->\nOld output",
+            "no_visual",
+            "success",
             True,
             False,
-            id="failure-of-this-commit",
+            id="malformed-metadata",
         ),
-        pytest.param(_success_comment(OTHER_SHA), "refresh_stale", True, False, id="success-of-another-commit"),
-        pytest.param(_success_comment(HEAD_SHA), "refresh_stale", False, False, id="success-of-this-commit"),
         pytest.param(
             f"<!-- pr-visuals -->\n## Visual review for [`{HEAD_SHA[:8]}`]"
             f"(https://github.com/{REPOSITORY}/commit/{HEAD_SHA})\n"
             "[Open visual review](https://visuals/commits/sha/index.html)",
-            "refresh_stale",
-            False,
-            False,
-            id="previous-markdown-success-of-this-commit",
-        ),
-        pytest.param(
-            no_visual_comment_body(
-                repository=REPOSITORY, commit_sha=HEAD_SHA, ci_conclusion="failure", ci_failures=[], details_url=None
-            ),
-            "refresh_stale",
+            "no_visual",
+            "success",
             True,
             False,
-            id="no-artifacts-for-this-commit",
+            id="legacy-markdown-review",
         ),
-        pytest.param(None, "refresh_stale", False, False, id="no-comment"),
-        pytest.param(_success_comment(HEAD_SHA), "replace", True, False, id="replace-existing"),
-        pytest.param(None, "replace", False, True, id="create-missing"),
+        pytest.param(None, "no_visual", "success", False, False, id="no-comment-for-empty-success"),
+        pytest.param(None, "no_visual", "failure", False, True, id="failed-ci-empty-result"),
+        pytest.param(_success_comment(HEAD_SHA), "published", "success", True, False, id="replace-review"),
+        pytest.param(None, "published", "success", False, True, id="create-review"),
+        pytest.param(None, "failure", "success", False, True, id="processing-error"),
     ],
 )
 def test_publish_pull_request_comment(
     monkeypatch: pytest.MonkeyPatch,
     existing_body: str | None,
-    mode: Literal["replace", "refresh_stale"],
+    kind: CommentKind,
+    ci_conclusion: str,
     expected_edit: bool,
     expected_create: bool,
 ) -> None:
@@ -992,16 +991,22 @@ def test_publish_pull_request_comment(
             return FakeIssue()
 
     monkeypatch.setattr("devinfra.pr_visuals.comment_publishing.Github", FakeGithub)
-    publish_pull_request_comment(
-        repository=REPOSITORY,
-        pull_request=4594,
-        commit_sha=HEAD_SHA,
-        update=CommentUpdate(body="replacement", mode=mode),
-        token="token",
+    update = CommentUpdate(
+        body=f"{COMMENT_MARKER}\nreplacement",
+        state=CommentState(commit_sha=HEAD_SHA, kind=kind, ci_conclusion=ci_conclusion),
     )
+    publish_pull_request_comment(repository=REPOSITORY, pull_request=4594, update=update, token="token")
 
-    assert edits == (["replacement"] if expected_edit else [])
-    assert created == (["replacement"] if expected_create else [])
+    assert edits == ([update.render()] if expected_edit else [])
+    assert created == ([update.render()] if expected_create else [])
+    if expected_edit or expected_create:
+        marker = update.render().split("\n", 1)[0]
+        assert json.loads(marker.removeprefix("<!-- pr-visuals-state ").removesuffix(" -->")) == {
+            "version": 1,
+            "commit_sha": HEAD_SHA,
+            "kind": kind,
+            "ci_conclusion": ci_conclusion,
+        }
 
 
 PR_HEAD_REF = "pr-owner:topic"
@@ -1191,7 +1196,7 @@ def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
-def test_successful_pr_run_without_visuals_only_refreshes_a_stale_comment(
+def test_successful_pr_run_without_visuals_reports_no_visual_state(
     monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
     monkeypatch.setattr(
@@ -1205,7 +1210,7 @@ def test_successful_pr_run_without_visuals_only_refreshes_a_stale_comment(
     assert publisher_run.comments[0]["pull_request"] == 8733
     update = publisher_run.comments[0]["update"]
     assert isinstance(update, CommentUpdate)
-    assert update.mode == "refresh_stale"
+    assert update.state == CommentState(commit_sha=HEAD_SHA, kind="no_visual", ci_conclusion="success")
     assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
 

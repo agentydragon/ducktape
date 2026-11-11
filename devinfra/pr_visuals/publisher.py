@@ -32,6 +32,7 @@ from devinfra.pr_visuals.collection import CollectionIssue, OutputObservation, R
 from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
 from devinfra.pr_visuals.gallery import review_test_page_data, templates
 from devinfra.pr_visuals.github_comment import (
+    CommentState,
     ci_failure_summary,
     error_comment_body,
     no_visual_comment_body,
@@ -992,16 +993,15 @@ def _publish(
             output.write(f"found={'true' if tests else 'false'}\n")
     if not tests:
         result.summary += ci_failure_summary(args.ci_conclusion, result.ci_failures)
+        comment_state = CommentState(commit_sha=args.sha, kind="no_visual", ci_conclusion=args.ci_conclusion)
         no_visual_body = no_visual_comment_body(
             repository=args.repository,
-            commit_sha=args.sha,
-            ci_conclusion=args.ci_conclusion,
+            commit_sha=comment_state.commit_sha,
+            ci_conclusion=comment_state.ci_conclusion,
             ci_failures=result.ci_failures,
             details_url=args.ci_details_url or workflow_url,
         )
-        result.comment = CommentUpdate(
-            body=no_visual_body, mode="refresh_stale" if args.ci_conclusion == "success" else "replace"
-        )
+        result.comment = CommentUpdate(body=no_visual_body, state=comment_state)
         print(f"{result.summary} Skipping publication.")
         return
 
@@ -1037,18 +1037,19 @@ def _publish(
         )
     else:
         result.summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
+    comment_state = CommentState(commit_sha=args.sha, kind="published", ci_conclusion=args.ci_conclusion)
     result.comment = CommentUpdate(
         body=success_comment_body(
             repository=args.repository,
-            commit_sha=args.sha,
+            commit_sha=comment_state.commit_sha,
             url=public_url,
             review_tests=review_tests,
             base_sha=base_sha,
-            ci_conclusion=args.ci_conclusion,
+            ci_conclusion=comment_state.ci_conclusion,
             ci_failures=result.ci_failures,
             ci_details_url=args.ci_details_url or workflow_url,
         ),
-        mode="replace",
+        state=comment_state,
     )
     result.summary += ci_failure_summary(args.ci_conclusion, result.ci_failures)
     if incomplete := sum(1 for test in review_tests if test.issues):
@@ -1080,7 +1081,7 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
     comment_pr = result.pull_request
     if comment_pr is not None and result.comment is not None:
         # Rendering/uploading may outlast another push or PR closure. Recheck
-        # before replacing the singleton comment; immutable bundles stay useful.
+        # before updating the singleton comment; immutable bundles stay useful.
         try:
             current = find_reviewable_pull_request(
                 repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=token
@@ -1095,11 +1096,7 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
     if comment_pr is not None and result.comment is not None:
         try:
             publish_pull_request_comment(
-                repository=args.repository,
-                pull_request=comment_pr,
-                commit_sha=args.sha,
-                update=result.comment,
-                token=token,
+                repository=args.repository, pull_request=comment_pr, update=result.comment, token=token
             )
         except Exception as error:
             logger.exception("Could not update the pull request comment")
@@ -1158,16 +1155,17 @@ def main() -> None:
         result.conclusion = "failure"
         reporting_errors: list[Exception] = []
         try:
+            comment_state = CommentState(commit_sha=args.sha, kind="failure", ci_conclusion=args.ci_conclusion)
             result.comment = CommentUpdate(
                 body=error_comment_body(
                     repository=args.repository,
-                    commit_sha=args.sha,
+                    commit_sha=comment_state.commit_sha,
                     error=error,
-                    ci_conclusion=args.ci_conclusion,
+                    ci_conclusion=comment_state.ci_conclusion,
                     ci_failures=result.ci_failures,
                     ci_details_url=args.ci_details_url or workflow_url,
                 ),
-                mode="replace",
+                state=comment_state,
             )
         except Exception as rendering_error:
             logger.exception("Could not render the failure comment")

@@ -113,10 +113,14 @@ failed, its original error remains the command's error, with any reporting error
 attached as its cause. A stale or closed PR never receives a comment; a PR
 already stale at the initial lookup gets a `neutral` check.
 
-The singleton bot comment has two update modes. A published bundle or failure
-replaces the existing comment (creating one if needed). A successful run with no
-visual output only refreshes an existing stale comment; it preserves a successful
-review already linked to this exact SHA and creates no comment if none exists.
+The singleton bot comment reports the latest result. A published bundle, CI
+failure, or processing failure creates or updates it. A successful run with no
+visual output updates an existing comment to describe that run, but creates no
+comment when none exists. This can happen for the same PR head when the affected
+test set changes, so an earlier review is not preserved as the current result.
+Every newly written comment includes a versioned HTML metadata marker with its
+commit SHA, result kind, and CI conclusion. Older comments with only the
+singleton marker are found and replaced without parsing their display text.
 
 ## Storage
 

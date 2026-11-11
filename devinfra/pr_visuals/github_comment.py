@@ -1,9 +1,11 @@
 """Prepare data and render visual-review comments for GitHub."""
 
+import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, urljoin
 
 from jinja2 import Environment, FileSystemLoader
@@ -20,6 +22,24 @@ from devinfra.pr_visuals.render_common import (
 )
 
 COMMENT_MARKER = "<!-- pr-visuals -->"
+CommentKind = Literal["published", "no_visual", "failure"]
+
+
+@dataclass(frozen=True)
+class CommentState:
+    commit_sha: str
+    kind: CommentKind
+    ci_conclusion: str
+
+    def metadata(self) -> str:
+        payload = json.dumps(
+            {"version": 1, "commit_sha": self.commit_sha, "kind": self.kind, "ci_conclusion": self.ci_conclusion},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return f"<!-- pr-visuals-state {payload} -->"
+
+
 COMMENT_BUDGET = 55_000
 COMMENT_OPEN_TARGETS = 2
 INLINE_ASSET_LIMIT = 3

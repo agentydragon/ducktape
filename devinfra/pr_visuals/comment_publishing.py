@@ -3,26 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from github import Auth, Github
 
-from devinfra.pr_visuals.github_comment import COMMENT_MARKER
+from devinfra.pr_visuals.github_comment import COMMENT_MARKER, CommentState
 
 
 @dataclass(frozen=True)
 class CommentUpdate:
     body: str
-    mode: Literal["replace", "refresh_stale"]
+    state: CommentState
 
-
-def _is_current_success_comment(*, body: str, repository: str, commit_sha: str) -> bool:
-    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
-    html_heading = f'<h2>Visual review for <a href="{commit_url}"><code>{commit_sha[:8]}</code></a></h2>'
-    markdown_heading = f"## Visual review for [`{commit_sha[:8]}`]({commit_url})"
-    return (html_heading in body and ">Open visual review</a>" in body) or (
-        markdown_heading in body and "[Open visual review](" in body
-    )
+    def render(self) -> str:
+        return f"{self.state.metadata()}\n{self.body}"
 
 
 def _find_pull_request_comment(issue: Any) -> Any | None:
@@ -36,23 +30,14 @@ def _find_pull_request_comment(issue: Any) -> Any | None:
     )
 
 
-def publish_pull_request_comment(
-    *, repository: str, pull_request: int, commit_sha: str, update: CommentUpdate, token: str
-) -> None:
-    """Replace the singleton, or refresh it only if it is stale.
-
-    A successful no-artifact rerun has no manifest to republish. Preserve an
-    existing review for this SHA; with no singleton, leave the PR comment-free.
-    """
+def publish_pull_request_comment(*, repository: str, pull_request: int, update: CommentUpdate, token: str) -> None:
+    """Publish the current result, avoiding a new comment for a successful empty run."""
     with Github(auth=Auth.Token(token)) as github:
         issue = github.get_repo(repository).get_issue(pull_request)
         existing = _find_pull_request_comment(issue)
-        if update.mode == "refresh_stale":
-            if existing is not None and not _is_current_success_comment(
-                body=existing.body or "", repository=repository, commit_sha=commit_sha
-            ):
-                existing.edit(update.body)
-        elif existing is None:
-            issue.create_comment(update.body)
+        if existing is None and update.state.kind == "no_visual" and update.state.ci_conclusion == "success":
+            return
+        if existing is None:
+            issue.create_comment(update.render())
         else:
-            existing.edit(update.body)
+            existing.edit(update.render())
