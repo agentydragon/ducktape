@@ -513,6 +513,15 @@ def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture
         assert "Sparkline: last 30 days of 30d averages" in string_reply(session.call("GetMenuText"))
         zero_with_leash = sparkline_image()
         capture_menu.capture(geometry, label="sparkline at zero with leash", checkpoint="zero-leash", left_padding=160)
+        configure(leashColor="#00ffff")
+        custom_leash = sparkline_image()
+        assert ImageChops.difference(zero_with_leash, custom_leash).getbbox() is not None
+        pixels = cast(list[tuple[int, int, int]], list(custom_leash.get_flattened_data()))
+        assert any(g > r + 40 and b > r + 40 for r, g, b in pixels)
+        capture_menu.capture(
+            geometry, label="sparkline custom leash color", checkpoint="custom-leash", left_padding=160
+        )
+        configure(leashColor="")
         configure(anchorZero=False)
         fitted_with_leash = sparkline_image()
         assert ImageChops.difference(zero_with_leash, fitted_with_leash).getbbox() is not None
@@ -535,7 +544,9 @@ def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture
         session.close_menu()
         _assert_no_plaid_extension_error(session)
     finally:
-        configure(visible=["status", "balance"], window="7d", anchorZero=True, showLeash=True, historyDays=30)
+        configure(
+            visible=["status", "balance"], window="7d", anchorZero=True, showLeash=True, leashColor="", historyDays=30
+        )
 
 
 def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_json_dir: Path) -> None:
