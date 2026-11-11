@@ -14,6 +14,7 @@ from devinfra.gc import github_prs
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _ALIAS_RE = re.compile(r"\b(b\d+): pullRequests\(")
+_ALIAS_BRANCH_RE = re.compile(r'\b(b\d+): pullRequests\(headRefName: "([^"]+)"')
 
 
 @pytest.fixture
@@ -34,7 +35,13 @@ def github_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> path
 def _merged_nodes_for(request: httpx.Request) -> dict:
     """Answer every alias the query actually asked for, with one merged PR each."""
     aliases = _ALIAS_RE.findall(json.loads(request.content)["query"])
-    nodes = {alias: {"nodes": [{"number": 1, "state": "MERGED", "headRefOid": "deadbeef"}]} for alias in aliases}
+    nodes = {
+        alias: {
+            "nodes": [{"number": 1, "state": "MERGED", "headRefOid": "deadbeef"}],
+            "pageInfo": {"hasNextPage": False},
+        }
+        for alias in aliases
+    }
     return {"data": {"repository": nodes}}
 
 
@@ -92,9 +99,16 @@ _NOT_FOUND = {"data": None, "errors": [{"type": "NOT_FOUND"}]}
 # More branches than one request carries, so the sweep really does batch and the second
 # batch is a separate round trip that can fail on its own. Sorted, the first batch is
 # branch-000..049 and the second branch-050..059.
-_BRANCHES = {f"branch-{i:03d}" for i in range(github_prs._GRAPHQL_BATCH + 10)}
+_BRANCHES = {f"branch-{i:03d}" for i in range(github_prs.PR_BATCH_SIZE + 10)}
 _FIRST_BATCH = {branch for branch in _BRANCHES if branch < "branch-050"}
 _SECOND_BATCH = _BRANCHES - _FIRST_BATCH
+
+
+@respx.mock
+async def test_pr_states_accepts_an_iterable(github_repo: pathlib.Path) -> None:
+    respx.post(_GRAPHQL_URL).mock(side_effect=_always_merged)
+    lookup = await github_prs.pr_states(github_repo, iter(["topic", "topic"]))
+    assert lookup.states.keys() == {"topic"}
 
 
 @respx.mock
@@ -107,10 +121,14 @@ async def test_pr_states_keeps_batches_that_resolved_when_another_hits_a_rate_li
     independent of which one finished first.
     """
     respx.post(_GRAPHQL_URL).mock(side_effect=_refuse_batch_containing("branch-055", _RATE_LIMITED))
-    assert (await github_prs.pr_states(github_repo, _BRANCHES)).keys() == _FIRST_BATCH
+    first = await github_prs.pr_states(github_repo, _BRANCHES)
+    assert first.states.keys() == _FIRST_BATCH
+    assert first.unknown == _SECOND_BATCH
 
     respx.post(_GRAPHQL_URL).mock(side_effect=_refuse_batch_containing("branch-000", _RATE_LIMITED))
-    assert (await github_prs.pr_states(github_repo, _BRANCHES)).keys() == _SECOND_BATCH
+    second = await github_prs.pr_states(github_repo, _BRANCHES)
+    assert second.states.keys() == _SECOND_BATCH
+    assert second.unknown == _FIRST_BATCH
 
 
 @respx.mock
@@ -118,7 +136,9 @@ async def test_pr_states_still_reports_other_graphql_errors(github_repo: pathlib
     """A non-quota GraphQL failure is not the resilient case and must not be silently kept."""
     respx.post(_GRAPHQL_URL).mock(side_effect=_refuse_batch_containing("branch-055", _NOT_FOUND))
 
-    assert await github_prs.pr_states(github_repo, _BRANCHES) == {}
+    result = await github_prs.pr_states(github_repo, _BRANCHES)
+    assert result.states == {}
+    assert result.unknown == _BRANCHES
 
 
 @respx.mock
@@ -126,7 +146,55 @@ async def test_pr_states_resolves_every_branch_when_the_quota_holds(github_repo:
     """The happy path still sweeps every batch — the anchor for the two failure cases."""
     respx.post(_GRAPHQL_URL).mock(side_effect=_always_merged)
 
-    assert (await github_prs.pr_states(github_repo, _BRANCHES)).keys() == _BRANCHES
+    result = await github_prs.pr_states(github_repo, _BRANCHES)
+    assert result.states.keys() == _BRANCHES
+    assert not result.unknown
+
+
+@respx.mock
+async def test_open_pr_takes_precedence_over_merged_pr(github_repo: pathlib.Path) -> None:
+    def open_and_merged(request: httpx.Request) -> httpx.Response:
+        nodes = {
+            alias: {
+                "nodes": [
+                    {"number": 12, "state": "MERGED", "headRefOid": "deadbeef"},
+                    {"number": 34, "state": "OPEN", "headRefOid": "feedface"},
+                ],
+                "pageInfo": {"hasNextPage": False},
+            }
+            for alias in _ALIAS_RE.findall(json.loads(request.content)["query"])
+        }
+        return httpx.Response(200, json={"data": {"repository": nodes}})
+
+    respx.post(_GRAPHQL_URL).mock(side_effect=open_and_merged)
+
+    result = await github_prs.pr_states(github_repo, {"topic"})
+
+    assert result.states["topic"].state.value == "OPEN"
+    assert not result.unknown
+
+
+@respx.mock
+async def test_incomplete_pr_connection_is_unknown_unless_an_open_pr_is_visible(github_repo: pathlib.Path) -> None:
+    def incomplete_connections(request: httpx.Request) -> httpx.Response:
+        query = json.loads(request.content)["query"]
+        connections = {}
+        for alias, branch in _ALIAS_BRANCH_RE.findall(query):
+            visible = (
+                [{"number": 34, "state": "OPEN", "headRefOid": "feedface"}]
+                if branch == "visible-open"
+                else [{"number": 12, "state": "MERGED", "headRefOid": "deadbeef"}]
+            )
+            connections[alias] = {"nodes": visible, "pageInfo": {"hasNextPage": True}}
+        return httpx.Response(200, json={"data": {"repository": connections}})
+
+    respx.post(_GRAPHQL_URL).mock(side_effect=incomplete_connections)
+
+    result = await github_prs.pr_states(github_repo, {"incomplete-merged", "visible-open"})
+
+    assert result.states["visible-open"].state.value == "OPEN"
+    assert result.states.keys() == {"visible-open"}
+    assert result.unknown == {"incomplete-merged"}
 
 
 @respx.mock
@@ -140,7 +208,7 @@ async def test_pr_states_has_several_batches_in_flight_at_once(github_repo: path
 
     respx.post(_GRAPHQL_URL).mock(side_effect=handler)
 
-    assert (await github_prs.pr_states(github_repo, _BRANCHES)).keys() == _BRANCHES
+    assert (await github_prs.pr_states(github_repo, _BRANCHES)).states.keys() == _BRANCHES
 
 
 @respx.mock
@@ -157,10 +225,10 @@ async def test_pr_states_never_exceeds_the_concurrency_bound(github_repo: pathli
         return _always_merged(request)
 
     respx.post(_GRAPHQL_URL).mock(side_effect=handler)
-    many = {f"branch-{i:04d}" for i in range(github_prs._GRAPHQL_BATCH * 12)}
+    many = {f"branch-{i:04d}" for i in range(github_prs.PR_BATCH_SIZE * 12)}
 
-    assert (await github_prs.pr_states(github_repo, many)).keys() == many
-    assert peak <= github_prs._MAX_CONCURRENT_REQUESTS
+    assert (await github_prs.pr_states(github_repo, many)).states.keys() == many
+    assert peak <= github_prs.MAX_CONCURRENT_REQUESTS
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
+import asyncio
+import os
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pygit2
 import pytest
@@ -76,6 +79,62 @@ def test_main_ref_raises_git_error_when_origin_head_is_unset(repo: GitRepo) -> N
     `git remote set-head` on, not just a theoretical one — it must surface as `GitError`."""
     with pytest.raises(git_repo.GitError):
         git_repo.main_ref(repo.pg())
+
+
+@pytest.mark.parametrize("delay_creation", [False, True])
+async def test_cancel_reaps_read_but_waits_for_noninterruptible_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, delay_creation: bool
+) -> None:
+    fifo = tmp_path / "release"
+    os.mkfifo(fifo)
+    fake_git = tmp_path / "git"
+    fake_git.write_text('#!/bin/sh\nIFS= read -r value < "$WORKSPACE_GC_TEST_FIFO"\n')
+    fake_git.chmod(0o755)
+    monkeypatch.setenv("WORKSPACE_GC_TEST_FIFO", str(fifo))
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+    create = asyncio.create_subprocess_exec
+    creation_allowed = asyncio.Event()
+    if not delay_creation:
+        creation_allowed.set()
+    events = {name: asyncio.Event() for name in ("read", "mutate")}
+    processes: dict[str, asyncio.subprocess.Process] = {}
+
+    async def monitored(*args: str, **kwargs: Any) -> asyncio.subprocess.Process:
+        process = await create(*args, **kwargs)
+        name = args[-1]
+        processes[name] = process
+        events[name].set()
+        await creation_allowed.wait()
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", monitored)
+    pipe = fifo.open("r+b", buffering=0)
+    read = asyncio.create_task(git_repo.git(tmp_path, "read", check=False))
+    mutation = asyncio.create_task(git_repo.git(tmp_path, "mutate", check=False, interruptible=False))
+    try:
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in events.values())), 10)
+        read.cancel()
+        mutation.cancel()
+        await asyncio.sleep(0)
+        read.cancel()
+        mutation.cancel()
+        creation_allowed.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(read, 10)
+        with pytest.raises(ProcessLookupError):
+            os.kill(processes["read"].pid, 0)
+        assert not mutation.done()
+        pipe.write(b"release\n")
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(mutation, 10)
+        with pytest.raises(ProcessLookupError):
+            os.kill(processes["mutate"].pid, 0)
+    finally:
+        creation_allowed.set()
+        pipe.write(b"release\nrelease\n")
+        await asyncio.gather(read, mutation, return_exceptions=True)
+        pipe.close()
 
 
 if __name__ == "__main__":

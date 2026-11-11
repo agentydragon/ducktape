@@ -2,9 +2,11 @@ import errno
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import DEFAULT, patch
 
 import pytest
 import pytest_bazel
@@ -66,7 +68,9 @@ def cache(tmp_path: Path) -> FakeCache:
 
 
 def _bases(cache: FakeCache, proc: Path, mountinfo: Path) -> list[output_base_gc.Inspection]:
-    return output_base_gc.scan_output_user_root(cache.root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    return list(
+        output_base_gc.scan_output_user_root(cache.root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    )
 
 
 def _scan(cache: FakeCache, proc: Path, mountinfo: Path) -> dict[Path, gc.EntryInspection]:
@@ -157,20 +161,18 @@ def test_unlistable_external_marks_entries_without_known_referrers_for_review(
 
 
 def test_unreadable_external_link_marks_entries_without_known_referrers_for_review(
-    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+    cache: FakeCache, proc: Path, mountinfo: Path
 ) -> None:
     link = cache.kept_base / "external" / "unreadable_repo"
     link_external(cache.kept_base, link.name, cache.unreferenced)
-    real_readlink = Path.readlink
 
-    def read_link(path: Path) -> Path:
+    def read_link(path: Path) -> Any:
         if path == link:
             raise OSError(errno.EIO, "I/O error", str(path))
-        return real_readlink(path)
+        return DEFAULT
 
-    monkeypatch.setattr(Path, "readlink", read_link)
-
-    item = _scan(cache, proc, mountinfo)[cache.unreferenced]
+    with patch.object(Path, "readlink", autospec=True, wraps=Path.readlink, side_effect=read_link):
+        item = _scan(cache, proc, mountinfo)[cache.unreferenced]
 
     assert isinstance(item, gc.ReviewEntry)
     assert item.reason is gc.ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN
@@ -178,20 +180,18 @@ def test_unreadable_external_link_marks_entries_without_known_referrers_for_revi
 
 
 def test_vanished_external_link_does_not_make_the_reference_scan_incomplete(
-    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+    cache: FakeCache, proc: Path, mountinfo: Path
 ) -> None:
     link = cache.kept_base / "external" / "vanished_repo"
     link_external(cache.kept_base, link.name, cache.unreferenced)
-    real_readlink = Path.readlink
 
-    def read_link(path: Path) -> Path:
+    def read_link(path: Path) -> Any:
         if path == link:
             path.unlink()
-        return real_readlink(path)
+        return DEFAULT
 
-    monkeypatch.setattr(Path, "readlink", read_link)
-
-    item = _scan(cache, proc, mountinfo)[cache.unreferenced]
+    with patch.object(Path, "readlink", autospec=True, wraps=Path.readlink, side_effect=read_link):
+        item = _scan(cache, proc, mountinfo)[cache.unreferenced]
 
     assert isinstance(item, gc.PrunableEntry)
 
@@ -345,24 +345,85 @@ def test_delete_skips_an_entry_a_base_linked_to_since_the_scan(cache: FakeCache,
 
 
 def test_delete_skips_when_fresh_reference_inventory_is_incomplete(
-    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+    cache: FakeCache, proc: Path, mountinfo: Path
 ) -> None:
     candidates = _prunable(cache, proc, mountinfo)
     link = cache.kept_base / "external" / "late_unreadable_repo"
     link_external(cache.kept_base, link.name, cache.unreferenced)
-    real_readlink = Path.readlink
 
-    def read_link(path: Path) -> Path:
+    def read_link(path: Path) -> Any:
         if path == link:
             raise OSError(errno.EIO, "I/O error", str(path))
-        return real_readlink(path)
+        return DEFAULT
 
-    monkeypatch.setattr(Path, "readlink", read_link)
-
-    [result] = _delete(cache, candidates, mountinfo)
+    with patch.object(Path, "readlink", autospec=True, wraps=Path.readlink, side_effect=read_link):
+        [result] = _delete(cache, candidates, mountinfo)
 
     assert isinstance(result, Skipped)
     assert "reference inventory is incomplete" in result.reason
+    assert cache.unreferenced.is_dir()
+
+
+def test_cache_lock_excludes_another_thread_without_releasing_bazel_lock(cache: FakeCache, tmp_path: Path) -> None:
+    alias = tmp_path / "cache-alias"
+    alias.symlink_to(cache.contents, target_is_directory=True)
+
+    def acquire_again() -> None:
+        with gc._gc_lock(alias):
+            pass
+
+    with gc._gc_lock(cache.contents), ThreadPoolExecutor(max_workers=1) as executor:
+        with pytest.raises(gc.RepoCacheBusyError):
+            executor.submit(acquire_again).result(timeout=10)
+        # Closing a second descriptor for gc_lock would release the process's POSIX
+        # lock. Check the Bazel-facing lock from a separate process after the attempt.
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import fcntl, sys\n"
+                "with open(sys.argv[1], 'r+b') as f:\n"
+                " try: fcntl.lockf(f, fcntl.LOCK_SH | fcntl.LOCK_NB)\n"
+                " except BlockingIOError: sys.exit(0)\n"
+                " sys.exit(1)\n",
+                str(cache.contents / "gc_lock"),
+            ],
+            check=False,
+            timeout=5,
+        )
+        assert probe.returncode == 0
+
+
+def test_cache_directory_lock_excludes_another_process(cache: FakeCache) -> None:
+    with gc._gc_lock(cache.contents):
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import fcntl, os, sys\n"
+                "fd = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)\n"
+                "try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                "except BlockingIOError: sys.exit(0)\n"
+                "sys.exit(1)\n",
+                str(cache.contents),
+            ],
+            check=False,
+            timeout=5,
+        )
+        assert probe.returncode == 0
+
+
+def test_cache_delete_fails_closed_if_directory_lock_is_unavailable(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidates = _prunable(cache, proc, mountinfo)
+
+    def unsupported(*args: object) -> None:
+        raise OSError(errno.ENOTSUP, "directory locking unsupported")
+
+    monkeypatch.setattr(gc.fcntl, "flock", unsupported)
+    with pytest.raises(OSError, match="directory locking unsupported"):
+        _delete(cache, candidates, mountinfo)
     assert cache.unreferenced.is_dir()
 
 
@@ -373,6 +434,20 @@ def test_delete_sees_a_base_created_since_the_scan(
     new_workspace = tmp_path / "new-workspace"
     new_workspace.mkdir()
     link_external(make_base(cache.root, new_workspace), "late_repo", cache.unreferenced)
+
+    [result] = _delete(cache, candidates, mountinfo)
+
+    assert isinstance(result, Skipped)
+    assert cache.unreferenced.is_dir()
+
+
+def test_delete_sees_a_session_base_created_since_the_scan(
+    cache: FakeCache, proc: Path, mountinfo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidates = _prunable(cache, proc, mountinfo)
+    session = make_base(tmp_path / "new-session", tmp_path / "workspace", name="bazel-output-base")
+    link_external(session, "late_repo", cache.unreferenced)
+    monkeypatch.setattr(output_base_gc, "session_env_output_bases", lambda: [session])
 
     [result] = _delete(cache, candidates, mountinfo)
 
@@ -425,7 +500,13 @@ def test_report_summarizes_prunable_entries_and_retains_details_on_request(
 ) -> None:
     entries = list(_scan(cache, proc, mountinfo).values())
     name = f"{_hash('c')}/{_uuid('3')}"
-    compact = gc.render_report(entries, contents=cache.contents, include_kept=False, include_sizes=True)
+    compact = gc.render_report(
+        entries,
+        contents=cache.contents,
+        include_kept=False,
+        include_sizes=True,
+        measured_sizes={gc.entry_path(item): 1024 for item in entries},
+    )
     detailed = gc.render_report(
         entries, contents=cache.contents, include_kept=False, include_sizes=False, include_prunable=True
     )

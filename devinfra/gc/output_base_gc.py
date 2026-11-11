@@ -20,7 +20,6 @@ import pwd
 import re
 import shutil
 import stat
-import subprocess
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -426,6 +425,17 @@ def list_output_bases(root: Path, *, session_bases: Sequence[Path]) -> list[tupl
     return [*hashed, *((base, BaseLayout.SESSION_ENV) for base in session_bases)]
 
 
+def inspect_listed_base(
+    base: Path, *, layout: BaseLayout, uid: int, points: set[Path], proc_root: Path = Path("/proc")
+) -> Inspection:
+    if base.name.startswith(_QUARANTINE_PREFIX):
+        try:
+            return ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
+        except OSError as error:
+            return ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
+    return inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
+
+
 def scan_output_user_root(
     root: Path,
     *,
@@ -434,28 +444,19 @@ def scan_output_user_root(
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     progress: ProgressSink = NULL_PROGRESS,
-) -> list[Inspection]:
+) -> Iterator[Inspection]:
     uid = os.getuid() if uid is None else uid
     points = mount_points(mountinfo_path=mountinfo_path)
-    inspections: list[Inspection] = []
     candidates = list_output_bases(root, session_bases=session_bases)
     logger.info("Scanning %d output bases in %s and %d session-env bases", len(candidates), root, len(session_bases))
     if candidates:
         progress.start_phase("bases", len(candidates))
     for index, (base, layout) in enumerate(candidates, start=1):
         logger.info("Scanning output base %d/%d %s", index, len(candidates), base)
-        inspection: Inspection
-        if base.name.startswith(_QUARANTINE_PREFIX):
-            try:
-                inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
-            except OSError as error:
-                inspection = ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
-        else:
-            inspection = inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
-        inspections.append(inspection)
+        inspection = inspect_listed_base(base, layout=layout, uid=uid, points=points, proc_root=proc_root)
         progress.record("bases", verdict_of(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base)
-    return inspections
+        yield inspection
 
 
 @contextmanager
@@ -623,29 +624,21 @@ def _last_activity(inspection: Inspection) -> str:
     )
 
 
-def allocated_bytes(path: Path) -> int | None:
-    try:
-        result = subprocess.run(
-            ["du", "-sx", "--block-size=1", "--", os.fspath(path)],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        return int(result.stdout.split(maxsplit=1)[0])
-    except OSError, subprocess.CalledProcessError, ValueError, IndexError:
-        return None
-
-
-def render_report(inspections: Sequence[Inspection], *, include_kept: bool, include_sizes: bool) -> str:
+def render_report(
+    inspections: Sequence[Inspection],
+    *,
+    include_kept: bool,
+    include_sizes: bool,
+    measured_sizes: dict[Path, int | None] | None = None,
+) -> str:
     visible = (
         list(inspections) if include_kept else [item for item in inspections if not isinstance(item, RetainedBase)]
     )
     sizes: dict[Path, int | None] = {}
     if include_sizes:
-        for index, item in enumerate(visible, start=1):
-            logger.info("Measuring output-base size %d/%d %s", index, len(visible), item.path)
-            sizes[item.path] = allocated_bytes(item.path)
+        if measured_sizes is None:
+            raise ValueError("size measurements are required when sizes are shown")
+        sizes = {item.path: measured_sizes.get(item.path) for item in visible}
     headers = ["STATUS", "LAST ACTIVITY", "BASE", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")

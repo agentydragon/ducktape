@@ -14,11 +14,13 @@ import logging
 import os
 import re
 import subprocess
-import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
+
+from devinfra.gc.async_io import run_process
 
 logger = logging.getLogger(__name__)
 
@@ -42,38 +44,26 @@ def open_repo(path: Path) -> pygit2.Repository:
         raise GitError(f"cannot open {path} as a git repository: {error}") from error
 
 
-_running_git: set[subprocess.Popen[str]] = set()
-_running_git_lock = threading.Lock()
+async def git(
+    repo: Path,
+    *args: str | os.PathLike[str],
+    check: bool = True,
+    input_text: str | None = None,
+    env: Mapping[str, str] | None = None,
+    interruptible: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Run git asynchronously, reaping it on cancellation; admitted writes finish."""
+    command = ["git", "-C", os.fspath(repo), *(os.fspath(arg) for arg in args)]
+    result = await run_process(
+        *command, input_text=input_text, env=dict(env) if env is not None else None, interruptible=interruptible
+    )
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+    return result
 
 
-def interrupt_running_git() -> None:
-    """Kill every in-flight `git` child.
-
-    Worker threads blocked on a `git` child (often in uninterruptible disk reads) otherwise
-    delay process exit until the child finishes on its own — many seconds on a cold disk.
-    """
-    with _running_git_lock:
-        for process in _running_git:
-            process.kill()
-
-
-def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    command = ["git", "-C", os.fspath(repo), *args]
-    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
-        with _running_git_lock:
-            _running_git.add(process)
-        try:
-            stdout, stderr = process.communicate()
-        finally:
-            with _running_git_lock:
-                _running_git.discard(process)
-    if check and process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-
-
-def git_out(repo: Path, *args: str) -> str:
-    return git(repo, *args).stdout.strip()
+async def git_out(repo: Path, *args: str | os.PathLike[str]) -> str:
+    return (await git(repo, *args)).stdout.strip()
 
 
 def _normalize_remote_url(url: str) -> str:
@@ -115,12 +105,12 @@ class Worktree:
     branch: str | None  # None for a detached HEAD
 
 
-def list_worktrees(repo: Path) -> list[Worktree]:
+async def list_worktrees(repo: Path) -> list[Worktree]:
     """Every worktree of `repo` (main included), parsed from `git worktree list --porcelain`."""
     worktrees: list[Worktree] = []
     path: Path | None = None
     branch: str | None = None
-    for line in [*git_out(repo, "worktree", "list", "--porcelain").splitlines(), ""]:
+    for line in [*(await git_out(repo, "worktree", "list", "--porcelain")).splitlines(), ""]:
         if line.startswith("worktree "):
             path = Path(line.removeprefix("worktree "))
         elif line.startswith("branch "):
@@ -151,12 +141,12 @@ def default_branch_name(pg: pygit2.Repository) -> str:
     return branch or ref
 
 
-def main_worktree(repo: Path) -> Path:
+async def main_worktree(repo: Path) -> Path:
     """The main (non-linked) worktree — its `.git` is the common dir's parent."""
-    return Path(git_out(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).parent
+    return Path(await git_out(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).parent
 
 
-def patches_landed_in_main(repo: Path, head: str, main: str) -> bool:
+async def patches_landed_in_main(repo: Path, head: str, main: str) -> bool:
     """True when every commit `head` adds since the merge base has an equivalent on `main`.
 
     Complements [`content_in_main`], which asks whether merging `head` would change `main`
@@ -172,7 +162,7 @@ def patches_landed_in_main(repo: Path, head: str, main: str) -> bool:
     right bar — the branch contributes no patch `main` has not already seen — but it is only
     ever an additional reason to prune, never a reason to keep.
     """
-    outcome = git(repo, "cherry", main, head, check=False)
+    outcome = await git(repo, "cherry", main, head, check=False)
     if outcome.returncode != 0:
         return False
     lines = [line for line in outcome.stdout.splitlines() if line.strip()]
