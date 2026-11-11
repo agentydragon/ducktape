@@ -104,9 +104,10 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   must not taint the array merely because the primitive reaches opaque code.
   Retain the later own-index fact only with an interpreter proof, across every
   reachable callback execution, that the receiver does not escape, is not
-  written, and has no descriptor or prototype change. Otherwise keep the current
-  conservative taint and getter/callback fallback; a later read of that same
-  index must remain an ordinary own-data read without that fallback. Follow
+  written, and has no descriptor or prototype change. With that proof, a later
+  read of the same index must remain an ordinary own-data read without the
+  possible-getter/callback fallback; if any proof obligation is incomplete,
+  keep the current conservative taint and fallback. Follow
   <plans/abstract_interpreter.md> and <plans/synchronous_execution_fallback.md>.
   Close with a neutral positive CLI case for that shape and adversarial negatives
   for receiver escape, receiver writes, changed descriptors or prototype,
