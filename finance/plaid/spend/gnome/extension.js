@@ -112,6 +112,20 @@ function formatExactMoney(minorUnits, currency) {
   }
 }
 
+function needsExactMoneyDetail(minorUnits, currency) {
+  if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return false;
+  const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
+  try {
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
+    const scale = 10 ** (precision ?? 2);
+    const value = Number(minorUnits);
+    return Math.abs(value) >= 10 * scale && value % scale !== 0;
+  } catch (_error) {
+    return false;
+  }
+}
+
 function formatTimestamp(value, now = new Date()) {
   if (!value) return "Unknown";
   const date = new Date(value);
@@ -739,6 +753,8 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="SetPanelSettings"><arg type="s" direction="in" name="settings"/></method>' +
           '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetBalanceDetails"><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="OpenBalanceDetails"/>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           '<method name="GetSparklineGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
@@ -796,6 +812,19 @@ const PlaidSpendIndicator = GObject.registerClass(
               ._getMenuItems()
               .map((item) => item.label?.get_text() || "")
               .join("\n"),
+          GetBalanceDetails: () => {
+            const item = this.menu._getMenuItems().find((entry) => entry.label?.get_text() === "Balance details");
+            return (
+              item?.menu
+                ?._getMenuItems()
+                .map((entry) => entry.label?.get_text() || "")
+                .join("\n") ?? ""
+            );
+          },
+          OpenBalanceDetails: () => {
+            const item = this.menu._getMenuItems().find((entry) => entry.label?.get_text() === "Balance details");
+            item?.menu?.open(false);
+          },
           GetMenuGeometry: () => {
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
@@ -869,9 +898,19 @@ const PlaidSpendIndicator = GObject.registerClass(
           const signal = panelSignal(allowance, window);
           const label = signal.label.startsWith("Pace") ? `${window} ${signal.label.toLowerCase()}` : signal.label;
           this._addReadOnly(
-            `${formatExactMoney(allowance.available_minor_units, allowance.currency)} available · ${label}`,
+            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${label}`,
             `plaid-spend-${signal.level}`
           );
+          if (needsExactMoneyDetail(allowance.available_minor_units, allowance.currency)) {
+            const details = new PopupMenu.PopupSubMenuMenuItem("Balance details");
+            details.menu.addMenuItem(
+              new PopupMenu.PopupMenuItem(
+                `Exact available: ${formatExactMoney(allowance.available_minor_units, allowance.currency)}`,
+                { reactive: false, can_focus: false }
+              )
+            );
+            this.menu.addMenuItem(details);
+          }
           if (allowance.spending_signal === "warning") {
             const basis = allowance.forecast?.basis_period?.id === "rolling_30d" ? "30d" : "7d";
             this._addReadOnly(`Forecast or ${basis} pace: warning`, "plaid-spend-caution");

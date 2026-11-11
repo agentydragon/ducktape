@@ -92,6 +92,11 @@ def fixture_json_dir(
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
+    fractional_view = allowance_scenarios["allowance_paced"].model_dump(mode="json")
+    fractional_view["allowance"]["available_minor_units"] = 20025
+    (dest / "allowance_fractional.json").write_text(
+        json.dumps({"status": "ready", "error": "", "view": fractional_view})
+    )
     view_payload = allowance_scenarios["allowance_paced"].model_dump(mode="json")
     allowance = view_payload["allowance"]
     allowance["available_minor_units"] = 1234500
@@ -379,6 +384,8 @@ def test_allowance_paced(
     view = allowance_scenarios["allowance_paced"]
     with _menu(session, "allowance_paced", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
+        assert "$200 available" in menu_text
+        assert "Balance details" not in menu_text
         assert "7d pace at or below leash" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
@@ -388,6 +395,18 @@ def test_allowance_paced(
         assert "sustainability target" not in menu_text
         assert "past pace is not opening debt" not in menu_text
         capture_menu.capture(geometry, label="allowance paced")
+
+
+def test_rounded_balance_keeps_exact_amount_in_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    with _menu(session, "allowance_fractional", "$200"):
+        menu_text = string_reply(session.call("GetMenuText"))
+        assert "$200 available" in menu_text
+        assert "$200.25" not in menu_text
+        assert "Balance details" in menu_text
+        assert string_reply(session.call("GetBalanceDetails")) == "Exact available: $200.25"
+        session.call("OpenBalanceDetails")
+        session.wait_for_paint()
+        capture_menu.capture(session.open_menu(), label="exact balance details")
 
 
 def test_allowance_warning(
