@@ -23,6 +23,7 @@ py_test(
 
 py_test(
     name = "test_archive_usage_sql",
+    size = "medium",
     srcs = ["test_archive_usage_sql.py"],
     data = [
         "archive-partial-records.sql",
