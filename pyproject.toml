@@ -294,6 +294,7 @@ dependencies = [
     "types-unidiff",
     "types-protobuf",
     "types-grpcio",
+    "types-boto3-s3==1.40.61",
     "asyncpg-stubs",
     "pandas-stubs>=3.0.5.260914",
     "sqlalchemy>=2.0.32",

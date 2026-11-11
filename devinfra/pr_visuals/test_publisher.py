@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import pytest
 import pytest_bazel
@@ -49,8 +49,6 @@ from devinfra.pr_visuals.publisher import (
     DownloadedVariant,
     DownloadedVisualTest,
     _invocations_for,
-    GetObjectResponse,
-    HeadObjectResponse,
     _parse_cli,
     build_bundle,
     diff_check,
@@ -68,6 +66,14 @@ from devinfra.pr_visuals.publisher import (
 from devinfra.pr_visuals.pull_request import PullRequestRef
 from devinfra.pr_visuals.testing.outputs import Blob, output_observation, result_artifact
 from devinfra.testing.output_writer import BoundTestOutputs
+
+if TYPE_CHECKING:
+    from types_boto3_s3.client import S3Client
+
+
+def _s3_client(fake: object) -> S3Client:
+    """Treat a test fake implementing the exercised S3 calls as the service client."""
+    return cast("S3Client", fake)
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:
@@ -137,9 +143,7 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
 
 
 def test_devel_uses_this_runs_ids_without_searching_other_runs() -> None:
-    config, _ = _parse_cli(
-        _publisher_argv(Path("unused"), "--ci-run-id", "42975955001", "--ci-run-attempt", "2")[1:]
-    )
+    config, _ = _parse_cli(_publisher_argv(Path("unused"), "--ci-run-id", "42975955001", "--ci-run-attempt", "2")[1:])
 
     def unexpected_search(*_args: object, **_kwargs: object) -> NoReturn:
         pytest.fail("devel must use its own full-sweep invocation")
@@ -1135,8 +1139,8 @@ class EmptyBucket:
         pytest.fail(f"unexpected upload for {bucket}/{key}")
 
 
-def _run_test_main(*, run: Runner, client: Any) -> None:
-    publish_visual_review(_parse_cli()[0], run=run, client=client, token="token", workflow_url=None)
+def _run_test_main(*, run: Runner, client: object) -> None:
+    publish_visual_review(_parse_cli()[0], run=run, client=_s3_client(client), token="token", workflow_url=None)
 
 
 def _publish_one_visual_target(
@@ -1222,7 +1226,7 @@ def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch
         "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: comments.append(kwargs)
     )
 
-    publish_visual_review(config, run=fake_run, client=bucket, token="token", workflow_url=None)
+    publish_visual_review(config, run=fake_run, client=_s3_client(bucket), token="token", workflow_url=None)
 
     assert any("invocation" in command and "list" in command for command in commands)
     assert download_runners == [fake_run]
@@ -1405,12 +1409,12 @@ class PublishedObjects:
         self.puts: list[str] = []
         self.events: list[str] = []
 
-    def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+    def head_object(self, *, Bucket: str, Key: str) -> dict[str, int]:  # noqa: N803
         if Key not in self.objects:
             raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
         return {"ContentLength": len(self.objects[Key])}
 
-    def get_object(self, *, Bucket: str, Key: str) -> GetObjectResponse:  # noqa: N803
+    def get_object(self, *, Bucket: str, Key: str) -> dict[str, BytesIO]:  # noqa: N803
         if Key not in self.objects:
             raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return {"Body": BytesIO(self.objects[Key])}
@@ -1425,9 +1429,9 @@ class PublishedObjects:
         self.objects[key] = kwargs["Body"]
         self.events.append(key)
 
-    def upload_file(self, path: Path, bucket: str, key: str, **kwargs: dict[str, str]) -> None:
+    def upload_file(self, path: str, bucket: str, key: str, **kwargs: dict[str, str]) -> None:
         assert kwargs["ExtraArgs"]["CacheControl"].endswith("immutable")
-        self.objects[key] = path.read_bytes()
+        self.objects[key] = Path(path).read_bytes()
         self.events.append(key)
 
 
@@ -1437,7 +1441,7 @@ def test_upload_reuses_shared_images_and_publishes_indexes_last(tmp_path: Path) 
     for sha in ("a" * 40, "b" * 40):
         bundle = build_bundle([source], tmp_path / "site", commit_sha=sha, repository="r")
         client.events.clear()
-        upload_bundle(bundle, bucket="visuals", key=f"reviews-test-outputs/{sha}", client=client)
+        upload_bundle(bundle, bucket="visuals", key=f"reviews-test-outputs/{sha}", client=_s3_client(client))
         if sha == "a" * 40:
             assert client.events[0].startswith("assets/")
         first_index = next(index for index, key in enumerate(client.events) if key.endswith("index.html"))
@@ -1456,7 +1460,7 @@ def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path
     bundle = build_bundle([source], tmp_path / "site", commit_sha="a" * 40, repository="r")
 
     class RacingOrFailingS3(PublishedObjects):
-        def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+        def head_object(self, *, Bucket: str, Key: str) -> dict[str, int]:  # noqa: N803
             if stage == "head":
                 raise ClientError({"Error": {"Code": code}}, "HeadObject")
             return super().head_object(Bucket=Bucket, Key=Key)
@@ -1468,11 +1472,11 @@ def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path
 
     client = RacingOrFailingS3()
     if code == "PreconditionFailed":
-        upload_bundle(bundle, bucket="visuals", key="reviews-test-outputs/sha", client=client)
+        upload_bundle(bundle, bucket="visuals", key="reviews-test-outputs/sha", client=_s3_client(client))
         assert client.events[-1] == "reviews-test-outputs/sha/index.html"
     else:
         with pytest.raises(ClientError):
-            upload_bundle(bundle, bucket="visuals", key="reviews-test-outputs/sha", client=client)
+            upload_bundle(bundle, bucket="visuals", key="reviews-test-outputs/sha", client=_s3_client(client))
         assert not client.events
 
 
@@ -1663,7 +1667,7 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
             self.head_calls: list[str] = []
             self.review_uploads: list[str] = []
 
-        def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+        def head_object(self, *, Bucket: str, Key: str) -> dict[str, int]:  # noqa: N803
             key = Key
             with self.lock:
                 self.active += 1
@@ -1679,7 +1683,7 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
                     self.active -= 1
             raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
 
-        def upload_file(self, path: Path, bucket: str, key: str, **kwargs: dict[str, str]) -> None:
+        def upload_file(self, path: str, bucket: str, key: str, **kwargs: dict[str, str]) -> None:
             self.review_uploads.append(key)
             super().upload_file(path, bucket, key, **kwargs)
 
@@ -1688,7 +1692,7 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
 
     def publish() -> None:
         try:
-            upload_bundle(bundle, bucket="visuals", key="reviews/a", client=client)
+            upload_bundle(bundle, bucket="visuals", key="reviews/a", client=_s3_client(client))
         except Exception as error:
             failures.append(error)
 
@@ -1741,7 +1745,7 @@ def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp
             super().__init__()
             self.head_calls: list[str] = []
 
-        def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+        def head_object(self, *, Bucket: str, Key: str) -> dict[str, int]:  # noqa: N803
             key = Key
             self.head_calls.append(key)
             if key == failed_key:
@@ -1750,7 +1754,7 @@ def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp
 
     client = OneFailureS3()
     with pytest.raises(ClientError, match="HeadObject"):
-        upload_bundle(bundle, bucket="visuals", key="reviews/a", client=client)
+        upload_bundle(bundle, bucket="visuals", key="reviews/a", client=_s3_client(client))
 
     assert set(client.head_calls) == image_keys
     assert client.events == []
@@ -1908,7 +1912,7 @@ def test_write_baseline_pointers_puts_mutable_json() -> None:
 
     client = FakeS3()
     sha = "0123456789abcdef0123456789abcdef01234567"
-    write_baseline_pointers(["slug-a", "slug-b"], commit_sha=sha, bucket="visuals", client=client)
+    write_baseline_pointers(["slug-a", "slug-b"], commit_sha=sha, bucket="visuals", client=_s3_client(client))
 
     assert [put["Key"] for put in client.recorded_puts] == [
         "baselines/reviews-test-outputs/slug-a.json",

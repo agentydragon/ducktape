@@ -19,11 +19,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
-from typing import Any, Literal, Protocol, TypedDict, cast, overload
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
+from github.Issue import Issue
+from github.IssueComment import IssueComment
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
@@ -54,6 +56,9 @@ from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
 
+if TYPE_CHECKING:
+    from types_boto3_s3.client import S3Client
+
 logger = logging.getLogger(__name__)
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -73,51 +78,6 @@ class PublicationConfig:
     check_external_id: str | None
     ci_conclusion: str
     ci_details_url: str | None
-
-
-class S3Body(Protocol):
-    def read(self) -> bytes: ...
-
-
-class HeadObjectResponse(TypedDict):
-    ContentLength: int
-
-
-class GetObjectResponse(TypedDict):
-    Body: S3Body
-
-
-class S3Client(Protocol):
-    """S3 calls used to read baselines and publish visual-review objects."""
-
-    def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse: ...  # noqa: N803
-
-    def get_object(self, *, Bucket: str, Key: str) -> GetObjectResponse: ...  # noqa: N803
-
-    @overload
-    def put_object(
-        self,
-        *,
-        Bucket: str,  # noqa: N803
-        Key: str,  # noqa: N803
-        Body: bytes,  # noqa: N803
-        ContentType: str,  # noqa: N803
-        CacheControl: str,  # noqa: N803
-        IfNoneMatch: str,  # noqa: N803
-    ) -> object: ...
-
-    @overload
-    def put_object(
-        self,
-        *,
-        Bucket: str,  # noqa: N803
-        Key: str,  # noqa: N803
-        Body: bytes,  # noqa: N803
-        ContentType: str,  # noqa: N803
-        CacheControl: str,  # noqa: N803
-    ) -> object: ...
-
-    def upload_file(self, path: Path, bucket: str, key: str, *, ExtraArgs: dict[str, str]) -> object: ...  # noqa: N803
 
 
 @dataclass(frozen=True)
@@ -894,7 +854,10 @@ def upload_bundle(bundle: Path, *, bucket: str, key: str, client: S3Client) -> N
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         relative = path.relative_to(bundle).as_posix()
         client.upload_file(
-            path, bucket, f"{prefix}/{relative}", ExtraArgs={"CacheControl": cache_control, "ContentType": content_type}
+            str(path),
+            bucket,
+            f"{prefix}/{relative}",
+            ExtraArgs={"CacheControl": cache_control, "ContentType": content_type},
         )
 
 
@@ -925,7 +888,7 @@ def _is_current_success_comment(*, body: str, repository: str, commit_sha: str) 
     )
 
 
-def _find_pull_request_comment(issue: Any) -> Any | None:
+def _find_pull_request_comment(issue: Issue) -> IssueComment | None:
     return next(
         (
             comment
