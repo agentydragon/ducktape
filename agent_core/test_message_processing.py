@@ -45,8 +45,8 @@ async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
     )
     agent.process_message(UserMessage.text("start"))
 
-    await agent.step()
-    await agent.step()
+    assert await agent.step() is False
+    assert await agent.step() is False
 
     assert [request.phase_number for request in recorder.requests] == [0, 1]
 
@@ -107,7 +107,7 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
-        # Single response with reasoning + tool call + text - agent finishes immediately
+        # Text marks completion; the next step observes the handler's abort decision.
         yield [m.make_item_reasoning(), m.echo_call("hi"), m.assistant_text("done")]
 
     agent = Agent(
@@ -117,7 +117,9 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
         tool_policy=AllowAnyToolOrTextMessage(),
     )
     agent.process_message(UserMessage.text("start"))
-    await agent.run()
+    assert await agent.step() is False
+    assert await agent.step() is True
+    assert not agent.finished
 
     messages = agent.to_openai_messages()
     assert_items_include_instances(messages, ReasoningItem, FunctionCallItem, FunctionCallOutputItem, AssistantMessage)
