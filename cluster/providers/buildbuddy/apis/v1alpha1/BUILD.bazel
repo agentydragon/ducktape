@@ -1,6 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
 load("//cluster/providers/buildbuddy:codegen.bzl", "provider_codegen")
 load("//devinfra/go:controller_gen.bzl", "controller_crds")
+load("//devinfra/python:defs.bzl", "py_test")
 
 go_library(
     name = "inputs",
@@ -37,6 +38,22 @@ controller_crds(
     gopath = ":gopath",
     importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/apis/v1alpha1",
     visibility = ["//cluster:__subpackages__"],
+)
+
+py_test(
+    name = "test_crds",
+    srcs = ["test_crds.py"],
+    data = [":crds"],
+    deps = [
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 genrule(
