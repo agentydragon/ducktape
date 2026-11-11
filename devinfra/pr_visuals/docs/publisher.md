@@ -113,6 +113,11 @@ failed, its original error remains the command's error, with any reporting error
 attached as its cause. A stale or closed PR never receives a comment; a PR
 already stale at the initial lookup gets a `neutral` check.
 
+The singleton bot comment has two update modes. A published bundle or failure
+replaces the existing comment (creating one if needed). A successful run with no
+visual output only refreshes an existing stale comment; it preserves a successful
+review already linked to this exact SHA and creates no comment if none exists.
+
 ## Storage
 
 - Each distinct PNG is stored once at `assets/<sha256>.png`, shared across targets,
