@@ -23,18 +23,16 @@ from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
-from github import Auth, Github
-from github.Issue import Issue
-from github.IssueComment import IssueComment
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
 from devinfra.pr_visuals.collection import CollectionIssue, OutputObservation, ResultKey, collect_outputs
+from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
 from devinfra.pr_visuals.gallery import review_test_page_data, templates
 from devinfra.pr_visuals.github_comment import (
-    COMMENT_MARKER,
+    CommentState,
     ci_failure_summary,
     error_comment_body,
     no_visual_comment_body,
@@ -879,55 +877,6 @@ def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, c
         )
 
 
-def _is_current_success_comment(*, body: str, repository: str, commit_sha: str) -> bool:
-    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
-    html_heading = f'<h2>Visual review for <a href="{commit_url}"><code>{commit_sha[:8]}</code></a></h2>'
-    markdown_heading = f"## Visual review for [`{commit_sha[:8]}`]({commit_url})"
-    return (html_heading in body and ">Open visual review</a>" in body) or (
-        markdown_heading in body and "[Open visual review](" in body
-    )
-
-
-def _find_pull_request_comment(issue: Issue) -> IssueComment | None:
-    return next(
-        (
-            comment
-            for comment in issue.get_comments()
-            if comment.user is not None and comment.user.type == "Bot" and COMMENT_MARKER in (comment.body or "")
-        ),
-        None,
-    )
-
-
-def upsert_pull_request_comment(*, repository: str, pull_request: int, body: str, token: str) -> None:
-    with Github(auth=Auth.Token(token)) as github:
-        issue = github.get_repo(repository).get_issue(pull_request)
-        existing = _find_pull_request_comment(issue)
-        if existing is None:
-            issue.create_comment(body)
-        else:
-            existing.edit(body)
-
-
-def refresh_stale_pull_request_comment(
-    *, repository: str, pull_request: int, commit_sha: str, body: str, token: str
-) -> None:
-    """Refresh a singleton comment after a successful run exposed no visual artifacts.
-
-    A cache-hit rerun has no manifest to republish.  Preserve a useful successful
-    review already published for this exact SHA, but do not leave a failure or a
-    previous head's result attached to the PR.  With no existing singleton there
-    is nothing stale to correct, so the no-artifact run remains comment-free.
-    """
-    with Github(auth=Auth.Token(token)) as github:
-        issue = github.get_repo(repository).get_issue(pull_request)
-        existing = _find_pull_request_comment(issue)
-        if existing is not None and not _is_current_success_comment(
-            body=existing.body or "", repository=repository, commit_sha=commit_sha
-        ):
-            existing.edit(body)
-
-
 def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neutral"], str] | None:
     """Conclusion and summary for the `PR visual diffs` check-run.
 
@@ -1030,8 +979,7 @@ def _invocations_for(
 class PublicationResult:
     summary: str = "No tests executed by Bazel CI exposed screenshot output records."
     conclusion: Literal["success", "failure", "neutral"] = "neutral"
-    comment_body: str | None = None
-    refresh_stale_comment_body: str | None = None
+    comment: CommentUpdate | None = None
     details_url: str | None = None
     ci_failures: list[str] = field(default_factory=list)
     pull_request: int | None = None
@@ -1085,17 +1033,15 @@ def _publish(
             output.write(f"found={'true' if tests else 'false'}\n")
     if not tests:
         result.summary += ci_failure_summary(config.ci_conclusion, result.ci_failures)
+        comment_state = CommentState(commit_sha=config.sha, kind="no_visual", ci_conclusion=config.ci_conclusion)
         no_visual_body = no_visual_comment_body(
             repository=config.repository,
-            commit_sha=config.sha,
-            ci_conclusion=config.ci_conclusion,
+            commit_sha=comment_state.commit_sha,
+            ci_conclusion=comment_state.ci_conclusion,
             ci_failures=result.ci_failures,
             details_url=config.ci_details_url or workflow_url,
         )
-        if config.ci_conclusion == "success":
-            result.refresh_stale_comment_body = no_visual_body
-        else:
-            result.comment_body = no_visual_body
+        result.comment = CommentUpdate(body=no_visual_body, state=comment_state)
         print(f"{result.summary} Skipping publication.")
         return
 
@@ -1131,15 +1077,19 @@ def _publish(
         )
     else:
         result.summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
-    result.comment_body = success_comment_body(
-        repository=config.repository,
-        commit_sha=config.sha,
-        url=public_url,
-        review_tests=review_tests,
-        base_sha=base_sha,
-        ci_conclusion=config.ci_conclusion,
-        ci_failures=result.ci_failures,
-        ci_details_url=config.ci_details_url or workflow_url,
+    comment_state = CommentState(commit_sha=config.sha, kind="published", ci_conclusion=config.ci_conclusion)
+    result.comment = CommentUpdate(
+        body=success_comment_body(
+            repository=config.repository,
+            commit_sha=comment_state.commit_sha,
+            url=public_url,
+            review_tests=review_tests,
+            base_sha=base_sha,
+            ci_conclusion=comment_state.ci_conclusion,
+            ci_failures=result.ci_failures,
+            ci_details_url=config.ci_details_url or workflow_url,
+        ),
+        state=comment_state,
     )
     result.summary += ci_failure_summary(config.ci_conclusion, result.ci_failures)
     if incomplete := sum(1 for test in review_tests if test.issues):
@@ -1168,11 +1118,10 @@ def _report(config: PublicationConfig, *, token: str, result: PublicationResult)
         except Exception as error:
             logger.exception("Could not update the visual diff check")
             errors.append(error)
-    if result.pull_request is not None and (
-        result.comment_body is not None or result.refresh_stale_comment_body is not None
-    ):
+    comment_pr = result.pull_request
+    if comment_pr is not None and result.comment is not None:
         # Rendering/uploading may outlast another push or PR closure. Recheck
-        # before replacing the singleton comment; immutable bundles stay useful.
+        # before updating the singleton comment; immutable bundles stay useful.
         try:
             if config.pull_request_head is None:
                 raise ValueError("Cannot recheck a pull request without its head ref")
@@ -1182,27 +1131,15 @@ def _report(config: PublicationConfig, *, token: str, result: PublicationResult)
         except Exception as error:
             logger.exception("Could not recheck the pull request before commenting")
             errors.append(error)
-            result.pull_request = None
+            comment_pr = None
         else:
-            if current is None or current.number != result.pull_request:
-                result.pull_request = None
-    if result.pull_request is not None:
+            if current is None or current.number != comment_pr:
+                comment_pr = None
+    if comment_pr is not None and result.comment is not None:
         try:
-            if result.comment_body is not None:
-                upsert_pull_request_comment(
-                    repository=config.repository,
-                    pull_request=result.pull_request,
-                    body=result.comment_body,
-                    token=token,
-                )
-            elif result.refresh_stale_comment_body is not None:
-                refresh_stale_pull_request_comment(
-                    repository=config.repository,
-                    pull_request=result.pull_request,
-                    commit_sha=config.sha,
-                    body=result.refresh_stale_comment_body,
-                    token=token,
-                )
+            publish_pull_request_comment(
+                repository=config.repository, pull_request=comment_pr, update=result.comment, token=token
+            )
         except Exception as error:
             logger.exception("Could not update the pull request comment")
             errors.append(error)
@@ -1238,13 +1175,17 @@ def publish_visual_review(
         result.conclusion = "failure"
         reporting_errors: list[Exception] = []
         try:
-            result.comment_body = error_comment_body(
-                repository=config.repository,
-                commit_sha=config.sha,
-                error=error,
-                ci_conclusion=config.ci_conclusion,
-                ci_failures=result.ci_failures,
-                ci_details_url=config.ci_details_url or workflow_url,
+            comment_state = CommentState(commit_sha=config.sha, kind="failure", ci_conclusion=config.ci_conclusion)
+            result.comment = CommentUpdate(
+                body=error_comment_body(
+                    repository=config.repository,
+                    commit_sha=comment_state.commit_sha,
+                    error=error,
+                    ci_conclusion=comment_state.ci_conclusion,
+                    ci_failures=result.ci_failures,
+                    ci_details_url=config.ci_details_url or workflow_url,
+                ),
+                state=comment_state,
             )
         except Exception as rendering_error:
             logger.exception("Could not render the failure comment")

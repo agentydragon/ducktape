@@ -170,7 +170,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
     let include_host_loader_candidates = args.include_host_loader_candidates;
     let interop_census = args.interop_census;
     let max_interop_sites = args.max_interop_sites;
-    let cli = args.transform.resolve()?;
+    let cli = args.transform.context.resolve()?;
     // Load only the authored input locations. Selector claims, vendor plans,
     // realizability, and output roots are deliberately outside this query.
     let spec = load_transform_spec_source(&cli.spec_source)?;

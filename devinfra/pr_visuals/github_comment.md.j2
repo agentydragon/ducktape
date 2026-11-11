@@ -1,7 +1,6 @@
 {% import "issue_provenance.j2" as provenance %}
 
 {% macro header(repository, commit_sha, failed=false) -%}
-<!-- pr-visuals -->
 <h2>Visual review{% if failed %} failed{% endif %} for <a href="https://github.com/{{ repository }}/commit/{{ commit_sha }}"><code>{{ commit_sha[:8] }}</code></a></h2>
 {%- endmacro %}
 

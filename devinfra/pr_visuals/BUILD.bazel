@@ -108,6 +108,15 @@ filegroup(
 )
 
 py_library(
+    name = "comment_publishing",
+    srcs = ["comment_publishing.py"],
+    deps = [
+        ":github_comment",
+        "@pypi//pygithub",
+    ],
+)
+
+py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
@@ -120,6 +129,7 @@ py_library(
         ":artifacts",
         ":check_run",
         ":collection",
+        ":comment_publishing",
         ":gallery",
         ":github_comment",
         ":metadata",
@@ -130,7 +140,6 @@ py_library(
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//pillow",
-        "@pypi//pygithub",
         "@pypi//types_boto3_s3",
     ],
 )
@@ -186,6 +195,7 @@ py_test(
     deps = [
         ":artifacts",
         ":collection",
+        ":comment_publishing",
         ":github_comment",
         ":metadata",
         ":publisher",
