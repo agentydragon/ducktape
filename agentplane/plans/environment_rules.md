@@ -135,6 +135,8 @@ Rules for the operations:
   where the Session's Identity differs from the environment's. It would come in a separate task DAG
   node, with its own model of what each side may see and do; until then step 3 of
   [admitting a binding](#operations) holds without exception.
+- **Reading your own environments is implied** (question 2): an Identity reads the environments
+  bound to it without a rule, and `read` grants reading any other target.
 - **Settings stay with roles.** `SetEnvironmentWakeOnSend` and `SetEnvironmentIdleSuspend` change the
   target's own policy and stay with the configured managers; no operation grants them.
 - **`bind_session` grants a relation, not a Session.** A Session–environment binding is its own
@@ -198,7 +200,8 @@ privileged callers, Notification as a configured wake broker, the Action Service
 grant becomes an owned `PolicySet` whose `environment` rule names the new Sandbox by UID, with its
 `boundIdentity`, for `resume` and `bind_session`, replacing the `argument_schema` auto-approval.
 
-A refusal is `NotFound` where the caller holds no `read` on the target (EnvironmentService does not
+A refusal is `NotFound` where the caller can't read the target, by a `read` rule or because it is
+bound to the caller's Identity (EnvironmentService does not
 confirm existence), else `PermissionDenied`; an automatic wake records
 `WAKE_REASON_CALLER_NOT_AUTHORIZED` as today.
 
@@ -213,7 +216,7 @@ metadata: { name: own-environments }
 spec:
   rules:
     - type: environment
-      operations: [read, resume, bind_session]
+      operations: [resume, bind_session]
       environments:
         - boundIdentity: { self: true }
 ---
@@ -296,11 +299,10 @@ authority over S.
 
 1. **Session target.** Recommendation above: none; Identity-initiated Session deletion is decided
    under `SESSION_IDENTITY_AUTHZ`.
-2. **`read` here or implied.** Recommendation: reading environments bound to the caller's own
-   Identity is implied, since acting in them already reveals more than the descriptor (the deferred
-   branch's self-read); `read` stays in this rule for every other target, such as an orchestrator's
-   workers. The alternative keeps every read explicit, so an Identity with no rule cannot list the
-   Sandboxes it runs in.
+2. **Reading your own environments: settled, implied** (operator, 2026-11-11). An Identity may
+   read the environments bound to it without a rule, since acting in them already reveals more than
+   the descriptor (the deferred branch's self-read). `read` stays in this rule for every other
+   target, such as an orchestrator's workers.
 3. **`delete` only by name: settled yes** (operator, 2026-11-11). A `boundIdentity` target covers
    environments that do not exist yet, and deletion loses their workspace and state volumes; naming
    them, optionally by UID, makes each grant say what may be lost. The CEL rule in
