@@ -424,9 +424,12 @@ def test_binding_summary(session: GnomeSession) -> None:
 
 def test_peak_burn_identifies_affected_models_in_compact_menu(session: GnomeSession) -> None:
     _reload_fixture(session, "zai_peak")
-    burn = _ProviderPopup(session, "zai").burn
+    popup = _ProviderPopup(session, "zai")
+    burn = popup.burn
     assert "3x burn until" in burn
     assert "GLM-5.3, GLM-5-Turbo" in burn
+    assert "Thu 06:00-10:00" not in burn
+    assert "Thu 06:00-10:00" in popup.details
     geometry = session.open_menu()
     try:
         assert geometry[2] <= 480, f"peak scope widens popup: {geometry}"

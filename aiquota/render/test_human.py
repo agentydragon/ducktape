@@ -97,9 +97,12 @@ def test_tiny_nonzero_credit_formats_match_browser_threshold() -> None:
 
 def test_peak_burn_identifies_affected_models(quota_fixture: Callable[[str], AllQuotas]) -> None:
     quotas = quota_fixture("zai_peak")
-    rendered = human.render(quotas, now=quotas.fetched_at, tz=UTC)
-    assert "3x burn until" in rendered
-    assert "GLM-5.3, GLM-5-Turbo" in rendered
+    default = human.render(quotas, now=quotas.fetched_at, tz=UTC)
+    detailed = human.render(quotas, now=quotas.fetched_at, tz=UTC, details=True)
+    assert "3x burn until" in default
+    assert "GLM-5.3, GLM-5-Turbo" in default
+    assert "3x windows (local): Thu 06:00-10:00" not in default
+    assert "3x windows (local): Thu 06:00-10:00" in detailed
 
 
 def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_details(

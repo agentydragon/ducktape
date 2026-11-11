@@ -106,6 +106,11 @@ async def test_peak_burn_identifies_affected_models(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="z.ai quota"]')
     await expect(card.get_by_text("3x burn until", exact=False)).to_be_visible()
     await expect(card.get_by_text("GLM-5.3, GLM-5-Turbo", exact=False)).to_be_visible()
+    schedule = card.locator(".aiquota-strip details").filter(has_text="Peak schedule")
+    await schedule.get_by_text("Peak schedule", exact=True).click()
+    intervals = schedule.locator(".aiquota-strip-intervals")
+    await expect(intervals).to_contain_text("Thu 06:00-10:00")
+    await view.capture("peak-schedule", target=card)
 
 
 @pytest.mark.parametrize("scene", ["openai_platform_credits"])

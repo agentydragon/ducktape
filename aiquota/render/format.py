@@ -245,9 +245,8 @@ def format_burn(burn: BurnStatus, now: datetime, tz: tzinfo | None = None) -> st
 
 
 def format_peak_schedule(burn: BurnStatus, tz: tzinfo | None = None) -> str | None:
-    """Upcoming windows in local time, so the expensive hours can be planned around."""
-    ahead = burn.upcoming[1:] if burn.in_peak else burn.upcoming
-    if not ahead:
+    """Show the current peak and following windows in local time for planning."""
+    if not burn.upcoming:
         return None
-    windows = "  ".join(format_peak_interval(interval, tz) for interval in ahead)
+    windows = "  ".join(format_peak_interval(interval, tz) for interval in burn.upcoming)
     return f"{format_multiplier(burn.peak_multiplier)} windows (local): {windows}"
