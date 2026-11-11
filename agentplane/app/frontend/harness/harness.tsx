@@ -4168,9 +4168,7 @@ const visualHarness = {
       return rows;
     };
   },
-  rememberHistoryRowHeight(threadId: string, width: number, key: string, height: number): void {
-    rememberRowHeight(threadId, width, key, height);
-  },
+  rememberHistoryRowHeight: rememberRowHeight,
   lifecycleGroup(): void {
     threadEntityRows = lifecycleGroupRows;
   },
