@@ -308,58 +308,60 @@ extracts and follows them, failing on sandbox-internal targets. Fix:
 
 ## Firecracker VM boot sequence
 
-Source:
-`enterprise/server/remote_execution/containers/firecracker/firecracker.go`,
-`enterprise/server/cmd/goinit/main.go`, `enterprise/server/vmexec/vmexec.go`
+BuildBuddy Cloud selects action isolation with `workload-isolation-type`; its
+current [RBE platform documentation](https://www.buildbuddy.io/docs/rbe-platforms/)
+lists `oci` as the default and `firecracker` as an option.
 
-BuildBuddy isolates workloads in Firecracker microVMs. The container image is
-NOT run as a Docker container — it's converted to an ext4 filesystem and
-mounted as a block device. Both `bb remote` and `bb execute` boot this way
-when `workload-isolation-type=firecracker` is set; without that exec property,
-`bb execute` uses OCI containers instead (no VM, direct `runc`-style exec into
-the container rootfs).
+Two hosted actions on 2026-11-11 ([first](https://app.buildbuddy.io/invocation/98e6f327-4c37-43e4-9de0-ef2d953656ab),
+[second](https://app.buildbuddy.io/invocation/8d31c267-07dc-49cd-a960-47e95f89ba94))
+reported `/dev/vda` mounted at `/` and `/dev/vdb` mounted at `/workspace`, both
+`ext4`, in `peakFileSystemUsage`. Their boot logs show writable `rootfs` and
+`workspacefs` drives, with the workspace hot-swapped per action and no `/dev/vdc`
+or overlay setup. This is evidence for these hosted actions only; the service's
+BuildBuddy revision and overrides are not exposed. `peakFileSystemUsage` itself
+reports only `/` and `/workspace`, so it is not a complete guest mount table.
 
-**Host side (executor)**: converts the Docker/OCI image to an ext4 image
-(cached by content hash at
-`/tmp/${USER}_remote_build/executor/<sha>/containerfs.ext4`), then launches
-Firecracker with `goinit` as init and three block devices:
+### BuildBuddy v2.321.0 source behavior
 
-- `/dev/vda` — container rootfs ext4 (read-only)
-- `/dev/vdb` — scratch disk ext4 (read-write, overlay upper layer)
-- `/dev/vdc` — workspace ext4 (hot-swapped per action)
+The checked-in source reference is BuildBuddy v2.321.0, commit
+[`1d2cfd8`](https://github.com/buildbuddy-io/buildbuddy/commit/1d2cfd8b2b8e3c37342c68b972f1218247ff00d4).
+The hosted revision is unknown, so this version is a comparison, not a claim
+about the hosted service. Its [Firecracker configuration](https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L1841-L1884)
+supports two layouts:
 
-**Inside the VM**: `goinit` (PID 1, a custom init — it does NOT run the
-container's `/init`) mounts `/dev` and `/sys`, assembles an overlayfs
-(`lowerdir=/container` from vda, `upperdir=/scratch/bbvmroot` on vdb), pivots
-root into it, mounts pseudo-filesystems (`/proc`, `/dev/pts`, `/dev/shm`,
-cgroup2, …), creates `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf`, sets
-the hardcoded PATH
-`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`, then spawns
-`vmexec` (gRPC server on vsock port 11), `dockerd` (if `--init_dockerd`), and
-optionally a DNS server and VFS server.
+- With chunked snapshot sharing enabled, the host supplies a writable merged
+  `rootfs` on `/dev/vda` and the writable `workspacefs` on `/dev/vdb`.
+- Otherwise, it supplies read-only `containerfs` on `/dev/vda`, writable
+  `scratchfs` on `/dev/vdb`, and the writable `workspacefs` on `/dev/vdc`;
+  `goinit` overlays `scratchfs` over `containerfs` for the root filesystem.
 
-**Command execution (vmexec)**: the host talks to the VM over vsock (virtio
-socket, no TCP). An `Exec` gRPC makes vmexec run `os/exec.Command` with the
-requested args, env vars, working dir, and optional UID/GID switch. The
-workspace is hot-mounted per action: `MountWorkspace` RPC mounts `/dev/vdc` →
-`/workspace`; between actions: unmount, swap disk, remount.
+In a boot without `-defer_rootfs_mount`, the [v2.321.0 `goinit`](https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/cmd/goinit/main.go#L240-L282)
+is the VM's init process, not the image's `/init`. It mounts the selected root
+filesystem, sets `PATH` to
+`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`, and mounts the
+guest pseudo-filesystems. The [v2.321.0 `vmexec`](https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/vmexec/vmexec.go#L420-L450)
+service mounts and unmounts the workspace at `/workspace` for each action; the
+host communicates with it over vsock.
 
 ### Implications for container images
 
-- **goinit does NOT run the container's `/init` or systemd.** NixOS activation
-  scripts, envfs, and the `programs.nix-ld.enable` systemd unit never run.
-- **PATH is hardcoded** to FHS paths. NixOS tools at
-  `/run/current-system/sw/bin/` are not on PATH.
-- **envfs never starts** — `/bin/bash` must be a real file/symlink, not a FUSE
+These details follow from the v2.321.0 init path; the hosted service may use a
+different revision or configuration.
+
+- **`goinit` does NOT run the container's `/init` or `systemd`.** NixOS activation
+  scripts, `envfs`, and the `programs.nix-ld.enable` `systemd` unit never run.
+- **`PATH` is hardcoded** to FHS paths. NixOS tools at
+  `/run/current-system/sw/bin/` are not on `PATH`.
+- **`envfs` never starts** — `/bin/bash` must be a real file/symlink, not a FUSE
   resolution.
-- **`/etc/passwd` may be overwritten** — goinit creates its own
-  `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf` during boot.
-- **Container rootfs is ext4** — all symlinks into `/nix/store/` resolve
-  correctly (the whole store is in the ext4 image).
-- **NixOS glibc searches nix-store paths only** — not
+- `goinit` writes `/etc/hostname`, `/etc/hosts`, and `/etc/resolv.conf` during
+  boot.
+- **Container rootfs is `ext4`** — all symlinks into `/nix/store/` resolve
+  correctly (the whole store is in the `ext4` image).
+- **NixOS glibc searches `nix-store` paths only** — not
   `/lib/x86_64-linux-gnu/`, `/usr/lib/`, or `/etc/ld.so.cache`. A
-  dynamically-linked binary downloaded at runtime (like Bazel from bazelisk)
-  fails to find `libstdc++.so.6` unless `LD_LIBRARY_PATH` is set or nix-ld is
+  dynamically-linked binary downloaded at runtime (like Bazel from `bazelisk`)
+  fails to find `libstdc++.so.6` unless `LD_LIBRARY_PATH` is set or `nix-ld` is
   active.
 
 ## Limitations
