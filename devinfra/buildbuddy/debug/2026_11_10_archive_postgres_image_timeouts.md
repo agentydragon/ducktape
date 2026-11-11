@@ -2,8 +2,9 @@
 
 Inspected source: PR #15300 head `42e4d5046942e614e080a44f7a6574fc97b6dcc2` and
 current `devel` `5d7f024455f0ff84a43c382acac6930bf734e95f`. The archive test and
-fixture files below were identical at both revisions. No test timeout or size was
-changed, and no code fix is supported by this evidence.
+fixture files below were identical at both revisions. The original investigation
+changed no test timeout or size; its measurements alone did not establish a
+fixture or runtime fix. Later follow-ups are recorded in the conclusion.
 
 ## CI failure and exact-label history
 
@@ -92,7 +93,21 @@ The repeatable evidence is that cold RBE actions repeatedly import the same
 Postgres image, and some workers spend most of the 60-second test window in
 image loading or container startup. Grouping all three failing targets removes
 two image loads but then runs too many cases within the existing deadline. The
-observations do not justify a timeout/size increase, a different image loader,
-or changing the fixture lifecycle. A future code change needs a measured way to
-reduce the per-worker import/startup cost while retaining each case and its
-Postgres isolation. The VM and visual-shard timeouts need separate diagnoses.
+grouping probe did not establish that every cold start exceeds the deadline or
+that the test bodies themselves need more execution time. It also does not
+measure the effects of the later image-reuse change below.
+
+Since this investigation, the repository policy has been clarified: tests that
+start a PostgreSQL container must be at least `medium`. [PR #15602](https://github.com/agentydragon/ducktape/pull/15602)
+applied that policy to all 19 archive targets using the shared fixture. This is
+a policy requirement; it does not change the historical measurements or mean
+those measurements proved that every cold start needs a longer timeout.
+
+[PR #15572](https://github.com/agentydragon/ducktape/pull/15572) extended the
+archive's PostgreSQL/Ryuk image-reuse setup to all 19 targets using the shared
+fixture. Each test still gets a fresh PostgreSQL container and database, and
+cold image imports remain variable across workers. The follow-up does not
+establish that cold imports are solved, so the original timings and their
+limits above still apply.
+
+The VM and visual-shard timeouts need separate diagnoses.
