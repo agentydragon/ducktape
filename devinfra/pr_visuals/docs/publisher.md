@@ -3,15 +3,14 @@
 Read when changing `publisher.py`, `pull_request.py`, the publish workflow, or the
 bucket layout. Overview: <../README.md>.
 
-## Finding the invocation
+## Selecting the invocation
 
 The triggering CI run's test and build IDs are derived from its run ID and attempt
-(<../../buildbuddy/ci/invocation_ids.py>). Devel push CI runs a full sweep, so the
-publisher uses those IDs directly. For a PR, the publisher first asks BuildBuddy for
-CI test invocations at the **head commit**, preferring a `//...` sweep if present:
-a separate sweep may cover visuals absent from that PR's affected set. If no matching
-invocation exists, it falls back to the triggering run's derived IDs; PR CI normally
-records the synthetic merge SHA rather than the head SHA.
+(<../../buildbuddy/ci/invocation_ids.py>). The publisher uses the triggering run's
+test invocation for visual artifacts and both its test and build invocations for
+failure diagnostics. PR CI can select only affected tests, so its review covers those
+tests, even if a separate full sweep exists for the same commit. The ID is known
+before Bazel starts; it does not guarantee that the invocation was created.
 
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
