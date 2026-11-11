@@ -29,14 +29,13 @@ materialization enabled:
 ```text
 greedy_merge_to_convergence
 └── merge_preserves_invariants
-    └── check_merge_boolean
-        └── ladder_decision_for_merge
-            └── realizability_index::ladder_decision_after_moving_source_units_touching
-                ├── tier 0: delta-free → cached pre-state verdict
-                ├── tier 1: constraining CondensationOrder (DSU + cone DFS)
-                ├── tier 2: I-graph CondensationOrder (exact_multi_scc fallback
-                │           on removal-inside-SCC overlays)
-                └── tier 3: shared EsmEvaluationSimulator over the I-SCC
+    └── ladder_decision_for_merge
+        └── realizability_index::ladder_decision_after_moving_source_units_touching
+            ├── tier 0: delta-free → cached pre-state verdict
+            ├── tier 1: constraining CondensationOrder (DSU + cone DFS)
+            ├── tier 2: I-graph CondensationOrder (exact_multi_scc fallback
+            │           on removal-inside-SCC overlays)
+            └── tier 3: shared EsmEvaluationSimulator over the I-SCC
 
 contract / explicit diagnostic query
 └── would_be_cycles_after_contract
