@@ -31,7 +31,6 @@ ts_library(
         "//props/frontend/src/components:RunsBrowser",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:schema",
-        "//props/frontend/src/lib:types",
     ],
 )
 
