@@ -100,7 +100,8 @@ async def test_stop_does_not_start_queued_work(tasks: asyncio.TaskGroup) -> None
     assert result.value == "running"
     assert not queued_started.is_set()
     assert queue.phases["scan"].ready == 0
-    assert queue.phases["scan"].finished == 1
+    assert queue.phases["scan"].finished == 2
+    assert queue.phases["scan"].outcomes["cancelled"] == 1
 
 
 async def test_stop_drains_an_admitted_async_mutation(tasks: asyncio.TaskGroup) -> None:
@@ -135,10 +136,31 @@ async def test_stop_prevents_scheduled_threads_from_starting_work(tasks: asyncio
     assert len(drained) == 1
     assert isinstance(drained[0][1], Cancelled)
     assert not started.is_set()
-    assert queue.phases["scan"].finished == 0
+    assert queue.phases["scan"].finished == 1
+    assert queue.phases["scan"].outcomes["cancelled"] == 1
 
 
-async def test_job_failure_does_not_cancel_an_admitted_mutation(tasks: asyncio.TaskGroup) -> None:
+async def test_stop_before_async_mutation_starts_does_not_admit_it(tasks: asyncio.TaskGroup) -> None:
+    started = asyncio.Event()
+
+    class Mutation(AsyncMutation[str]):
+        phase = "remove"
+
+        async def run_async(self) -> Finished[str]:
+            started.set()
+            return Finished("removed", "done")
+
+    queue = WorkQueue[str](workers=1)
+    queue.submit(Mutation())
+    queue.start(tasks)
+    queue.stop()
+    [(_, result)] = await queue.drain()
+    assert isinstance(result, Cancelled)
+    assert not started.is_set()
+
+
+@pytest.mark.parametrize("error", [ValueError("scan failed"), KeyboardInterrupt("worker interrupted")])
+async def test_job_failure_does_not_cancel_an_admitted_mutation(tasks: asyncio.TaskGroup, error: BaseException) -> None:
     mutation_started, mutation_release, trigger_failure = threading.Event(), threading.Event(), threading.Event()
 
     class Fail:
@@ -146,7 +168,7 @@ async def test_job_failure_does_not_cancel_an_admitted_mutation(tasks: asyncio.T
 
         def run(self) -> Finished[str]:
             assert trigger_failure.wait(10)
-            raise ValueError("scan failed")
+            raise error
 
     queue = WorkQueue[str](workers=2)
     queue.submit(Job("mutation", "remove", mutation_started, mutation_release))

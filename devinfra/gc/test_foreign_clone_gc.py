@@ -7,7 +7,6 @@ import pytest_bazel
 from devinfra.gc import foreign_clone_gc as fcg, worktree_gc
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.removal import Removed
 
 _ORIGIN = "https://github.com/acme/widgets"
 _OTHER_ORIGIN = "https://github.com/acme/gadgets"
@@ -138,7 +137,7 @@ async def test_classify_foreign_clone_review_when_a_nested_worktree_has_unmerged
     assert str(nested_wt.path) in result.reason
 
 
-async def test_classify_foreign_clone_prunable_with_a_closed_pr_on_a_nested_worktree(repo: GitRepo) -> None:
+async def test_closed_pr_does_not_make_foreign_clone_prunable(repo: GitRepo) -> None:
     repo.set_origin(_ORIGIN)
     foreign = _foreign_clone(repo)
     nested_wt = foreign.worktree("nested", "spike")
@@ -146,22 +145,33 @@ async def test_classify_foreign_clone_prunable_with_a_closed_pr_on_a_nested_work
 
     result = await fcg.classify_foreign_clone(foreign.path, pr_states={"spike": PrInfo(11, PrState.CLOSED)})
 
-    assert isinstance(result, fcg.PrunableForeignClone)
+    assert isinstance(result, fcg.ReviewForeignClone)
+    assert "independent Git repository" in result.reason
 
 
-async def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRepo) -> None:
+async def test_unchecked_local_ref_keeps_foreign_clone_under_review(repo: GitRepo) -> None:
     repo.set_origin(_ORIGIN)
     foreign = _foreign_clone(repo)
-    nested_wt = foreign.worktree("nested", "spike")
+    parent = foreign.rev("HEAD")
+    tree = foreign.run("rev-parse", "HEAD^{tree}").stdout.strip()
+    hidden_commit = foreign.run(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit-tree",
+        tree,
+        "-p",
+        parent,
+        "-m",
+        "commit reachable only through a non-checked-out ref",
+    ).stdout.strip()
+    foreign.run("update-ref", "refs/heads/hidden", hidden_commit)
 
     result = await fcg.classify_foreign_clone(foreign.path, pr_states={})
-    assert isinstance(result, fcg.PrunableForeignClone)
-
-    outcome = await fcg.prune_foreign_clone(result.clone)
-
-    assert outcome == Removed(foreign.path)
-    assert not nested_wt.path.exists()
-    assert not foreign.path.exists()
+    assert isinstance(result, fcg.ReviewForeignClone)
+    assert "independent Git repository" in result.reason
+    assert foreign.rev("refs/heads/hidden") == hidden_commit
 
 
 if __name__ == "__main__":

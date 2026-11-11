@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections import Counter, deque
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import ClassVar, Protocol
 
@@ -63,7 +63,8 @@ class WorkQueue[T]:
 
     A bounded preference for follow-up work lets removals start promptly while discovery
     continues. Job results return to the owner, which can enqueue further work before the
-    next batch starts. No queued jobs start after `stop`.
+    next batch starts. A scheduled job is admitted when it passes the start check, not
+    when its task is created. No queued jobs are admitted after `stop`.
     """
 
     def __init__(self, workers: int) -> None:
@@ -71,8 +72,10 @@ class WorkQueue[T]:
             raise ValueError("workers must be positive")
         self.workers = workers
         self.phases: dict[str, Phase] = {}
-        self._ready: deque[WorkItem[T]] = deque()
-        self._followups: deque[WorkItem[T]] = deque()
+        # Only the coordinator feeds these queues. Workers return discoveries to it, so
+        # workers cannot all deadlock trying to enqueue children into a full queue.
+        self._ready: asyncio.Queue[WorkItem[T]] = asyncio.Queue()
+        self._followups: asyncio.Queue[WorkItem[T]] = asyncio.Queue()
         self._running: dict[asyncio.Task[Finished[T] | WorkFailure | Cancelled], WorkItem[T]] = {}
         self._followup_streak = 0
         self._stopped = False
@@ -82,19 +85,29 @@ class WorkQueue[T]:
         if self._stopped:
             raise RuntimeError("work queue has stopped")
         self.phases.setdefault(item.phase, Phase()).ready += 1
-        (self._followups if followup else self._ready).append(item)
+        (self._followups if followup else self._ready).put_nowait(item)
 
     def __bool__(self) -> bool:
-        return bool(self._ready or self._followups or self._running)
+        return not self._ready.empty() or not self._followups.empty() or bool(self._running)
+
+    @property
+    def stopped(self) -> bool:
+        return self._stopped
 
     def start(self, tasks: asyncio.TaskGroup) -> list[WorkItem[T]]:
         started: list[WorkItem[T]] = []
-        while len(self._running) < self.workers and (self._ready or self._followups):
-            if self._followups and (self._followup_streak < 3 or not self._ready):
-                item = self._followups.popleft()
+        while (
+            not self._stopped
+            and len(self._running) < self.workers
+            and (not self._ready.empty() or not self._followups.empty())
+        ):
+            if not self._followups.empty() and (self._followup_streak < 3 or self._ready.empty()):
+                item = self._followups.get_nowait()
+                self._followups.task_done()
                 self._followup_streak += 1
             else:
-                item = self._ready.popleft()
+                item = self._ready.get_nowait()
+                self._ready.task_done()
                 self._followup_streak = 0
             phase = self.phases[item.phase]
             phase.ready -= 1
@@ -122,8 +135,13 @@ class WorkQueue[T]:
             if isinstance(item, AsyncWorkItem):
                 return await self._run_async(item)
             return await asyncio.to_thread(self._run, item)
+        except asyncio.CancelledError:
+            raise
         except Exception as error:
             return WorkFailure(error)
+        except BaseException as error:
+            # A child task must not let TaskGroup tear down an admitted mutation.
+            return WorkFailure(RuntimeError(f"{type(error).__name__}: {error}"))
 
     async def next(self) -> tuple[WorkItem[T], Finished[T] | WorkFailure]:
         if not self._running:
@@ -149,11 +167,16 @@ class WorkQueue[T]:
         for task, item in self._running.items():
             if isinstance(item, AsyncWorkItem) and not isinstance(item, AsyncMutation):
                 task.cancel()
-        cancelled = [*self._ready, *self._followups]
+        cancelled: list[WorkItem[T]] = []
+        for ready in (self._ready, self._followups):
+            while not ready.empty():
+                cancelled.append(ready.get_nowait())
+                ready.task_done()
         for item in cancelled:
-            self.phases[item.phase].ready -= 1
-        self._ready.clear()
-        self._followups.clear()
+            phase = self.phases[item.phase]
+            phase.ready -= 1
+            phase.finished += 1
+            phase.outcomes["cancelled"] += 1
         return cancelled
 
     async def drain(self) -> list[tuple[WorkItem[T], Finished[T] | WorkFailure | Cancelled]]:
@@ -168,9 +191,13 @@ class WorkQueue[T]:
                 try:
                     result = task.result()
                 except asyncio.CancelledError:
+                    phase.finished += 1
+                    phase.outcomes["cancelled"] += 1
                     completed.append((item, Cancelled()))
                 else:
                     if isinstance(result, Cancelled):
+                        phase.finished += 1
+                        phase.outcomes["cancelled"] += 1
                         completed.append((item, result))
                         continue
                     phase.finished += 1

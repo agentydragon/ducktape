@@ -1,31 +1,33 @@
 """`workspace-gc`: reclaim local development state — worktrees, branches, Bazel output bases,
 and Bazel's repo contents cache.
 
-The domains are coupled (a branch checked out in a live worktree can't be deleted; an output
-base orphans when its workspace worktree is removed, and a base for a workspace under `/tmp`
-can be reclaimed without removing its workspace; a repo-cache entry is unreferenced once the
-bases linking to it are gone), so a shared work queue discovers and processes related items
-as their dependencies permit. The subcommands scope which domains are shown and removed:
+The domains are coupled (branch classification depends on worktree holders; an output base
+orphans when its workspace worktree is removed, and a base for a workspace under `/tmp` can be
+reclaimed without removing its workspace; a repo-cache entry is unreferenced once the bases
+linking to it are gone), so a shared work queue discovers and processes related items as their
+dependencies permit. The subcommands scope which domains are shown and removed:
 
-  * `all`          — the default; every domain, and one `--prune` removes prunable items
-                     as their dependencies permit.
-  * `worktrees`    — the worktree slice; `--prune` removes prunable worktrees.
+  * `all`          — the default; `--prune` removes eligible worktrees, branches, bases, and
+                     repo-cache entries as their dependencies permit.
+  * `worktrees`    — the worktree slice; `--prune` removes clean, attached worktrees without ignored files.
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
   * `repo-cache`   — the repo-contents-cache slice; `--delete` removes unreferenced entries.
 
 The `all` command also surfaces foreign clones (`foreign_clone_gc`) — other clones of the same
 project, found among Bazel output-base workspaces, that are invisible to `git worktree list`
-run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an independent git
-object store is a bigger blast radius than anything else this tool does); it additionally
-needs `--delete-foreign-clones`.
+run against this repo. Foreign clones are independent repositories and are never removed
+automatically; their refs and other data are outside the worktree scan's safety proof.
 
 Nothing is removed without an explicit flag. Each removal revalidates its candidate immediately
-beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
-still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
-Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
-Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
-clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
-network-free.
+beforehand: a worktree is re-classified, and a base or repo-cache entry is rechecked under its
+Bazel lock. Branch deletion checks worktree holders and uses Git's compare-and-delete operation
+to avoid deleting a branch whose tip changed; Git does not make those checks atomic with a
+concurrent checkout. Skipped items are reported but exit 0; failed removals exit 1.
+Gitignored files do not count as uncommitted work, so worktrees with detected ignored paths
+are kept; removal checks again immediately before `git worktree remove`. A concurrent ignored
+file or detached commit created after the final check can still be lost because Git does not
+make inspection and removal atomic. `github_prs` owns GitHub access (PR state); the scan itself
+is network-free.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ import asyncio
 import logging
 import os
 import shutil
+import signal
 import sys
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
@@ -60,10 +63,11 @@ from devinfra.gc import (
     workspace_queue,
     worktree_gc,
 )
+from devinfra.gc.async_io import run_blocking
 from devinfra.gc.branch_gc import BranchClassification, PrunableBranch, RetainedBranch
-from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, PrunableForeignClone, RetainedForeignClone
+from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, RetainedForeignClone
 from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
-from devinfra.gc.pull_request import PrInfo
+from devinfra.gc.pull_request import PrLookup
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.repo_contents_cache_gc import PrunableEntry
 from devinfra.gc.verdict import verdict_of
@@ -133,24 +137,20 @@ def render_foreign_clones(items: list[ForeignCloneClassification], *, include_ke
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedForeignClone)]
     rows = [[verdict_of(item), _short(item.clone.root), len(item.clone.members), item.reason] for item in visible]
     counts = {
-        "prunable": sum(isinstance(item, PrunableForeignClone) for item in items),
         "kept": sum(isinstance(item, RetainedForeignClone) for item in items),
         "review": sum(isinstance(item, foreign_clone_gc.ReviewForeignClone) for item in items),
     }
     headers = ["STATUS", "ROOT", "WORKTREES", "DETAIL"]
     parts = [tabulate(rows, headers=headers, tablefmt="plain")] if rows else []
-    parts.append(
-        f"Summary: {len(items)} foreign clones; {counts['prunable']} prunable, "
-        f"{counts['kept']} kept, {counts['review']} review"
-    )
+    parts.append(f"Summary: {len(items)} foreign clones; {counts['kept']} kept, {counts['review']} review")
     return "\n".join(parts)
 
 
-type _PrSource = Callable[[Path, set[str]], Awaitable[dict[str, PrInfo]]]
+type _PrSource = Callable[[Path, set[str]], Awaitable[PrLookup]]
 
 
-async def _without_prs(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
-    return {}
+async def _without_prs(repo: Path, branches: set[str]) -> PrLookup:
+    return PrLookup({}, disabled=True)
 
 
 def _pr_source(*, no_prs: bool) -> _PrSource:
@@ -194,7 +194,7 @@ class _QueueReporter:
             return table
         phases = self._queue.phases
         table.add_row(
-            "queue",
+            "draining" if self._queue.stopped else "queue",
             str(sum(p.ready for p in phases.values())),
             str(sum(p.running for p in phases.values())),
             str(sum(p.finished for p in phases.values())),
@@ -238,7 +238,6 @@ class _RemovalOutcome[S]:
 _WORKTREE_LABELS = _RemovalLabels("worktree", "worktrees", "Worktrees", "removed", _short)
 _BRANCH_LABELS = _RemovalLabels("branch", "branches", "Branches", "deleted", str)
 _BASE_LABELS = _RemovalLabels("base", "bases", "Bases", "deleted", _short, leftover="quarantine")
-_FOREIGN_CLONE_LABELS = _RemovalLabels("foreign clone", "foreign clones", "Foreign clones", "removed", _short)
 
 
 def _report_removals[S](
@@ -288,7 +287,8 @@ class _Command:
 
 
 _WORKTREES_COMMAND = _Command(
-    frozenset({workspace_queue.Domain.WORKTREES}), "Dry run only; pass --prune to remove the prunable worktrees."
+    frozenset({workspace_queue.Domain.WORKTREES}),
+    "Dry run only; pass --prune to remove clean, attached worktrees without ignored files.",
 )
 _BASES_COMMAND = _Command(
     frozenset({workspace_queue.Domain.BASES}), "Dry run only; pass --delete to remove the prunable bases."
@@ -298,7 +298,7 @@ _REPO_CACHE_COMMAND = _Command(
 )
 _ALL_COMMAND = _Command(
     frozenset(workspace_queue.Domain),
-    "Dry run only; pass --prune to remove all prunable worktrees, branches, bases, and repo-cache entries.",
+    "Dry run only; pass --prune to remove eligible worktrees, branches, bases, and repo-cache entries.",
 )
 
 
@@ -310,7 +310,6 @@ class _Options:
     verbose: bool
     workers: int
     apply: bool  # --prune / --delete
-    delete_foreign_clones: bool
 
 
 def _print_findings(command: _Command, options: _Options, findings: workspace_queue.Report) -> None:
@@ -375,21 +374,25 @@ def _any_prunable(command: _Command, findings: workspace_queue.Report) -> bool:
 
 
 def _report_queue_results(options: _Options, report: workspace_queue.Report) -> bool:
+    def space_change(path: Path, before: int | None) -> str:
+        if before is None:
+            return ""
+        try:
+            change = shutil.disk_usage(path).free - before
+        except OSError:
+            return ""
+        return f"; free-space change {humanize.naturalsize(change, binary=True)}"
+
     outcomes: list[bool] = []
     if report.worktree_removals:
         outcomes.append(_report_removals(report.worktree_removals, _WORKTREE_LABELS).ok)
     if report.branch_removals:
         outcomes.append(_report_removals(report.branch_removals, _BRANCH_LABELS).ok)
+    for branch, recovery_prefix in sorted(report.branch_recovery_refs.items()):
+        print(f"Recovery ref for branch {branch}: {recovery_prefix}/tip")
     if report.base_removals:
-        assert report.base_free_before is not None
-        change = shutil.disk_usage(options.output_user_root).free - report.base_free_before
-        outcomes.append(
-            _report_removals(
-                report.base_removals,
-                _BASE_LABELS,
-                summary_suffix=f"; free-space change {humanize.naturalsize(change, binary=True)}",
-            ).ok
-        )
+        suffix = space_change(options.output_user_root, report.base_free_before)
+        outcomes.append(_report_removals(report.base_removals, _BASE_LABELS, summary_suffix=suffix).ok)
     if report.cache_removals:
         contents = repo_contents_cache_gc.repo_contents_cache(options.output_user_root)
         labels: _RemovalLabels[Path] = _RemovalLabels(
@@ -400,27 +403,36 @@ def _report_queue_results(options: _Options, report: workspace_queue.Report) -> 
             lambda path: os.path.relpath(path, contents),
             leftover="trash",
         )
-        suffix = ""
-        if report.cache_free_before is not None:
-            change = shutil.disk_usage(contents).free - report.cache_free_before
-            suffix = f"; free-space change {humanize.naturalsize(change, binary=True)}"
+        suffix = space_change(contents, report.cache_free_before)
         outcomes.append(
             _report_removals(report.cache_removals, labels, itemize=options.verbose, summary_suffix=suffix).ok
         )
-    if report.foreign_removals:
-        outcomes.append(_report_removals(report.foreign_removals, _FOREIGN_CLONE_LABELS).ok)
     return all(outcomes)
 
 
 async def run(command: _Command, options: _Options, *, repo: Path | None, pr_source: _PrSource) -> None:
     domains = command.domains
-    session_bases = (
-        tuple(output_base_gc.session_env_output_bases())
-        if domains
-        & {workspace_queue.Domain.BASES, workspace_queue.Domain.REPO_CACHE, workspace_queue.Domain.FOREIGN_CLONES}
-        else ()
-    )
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    assert task is not None
+    stopping = False
+    gc_run: workspace_queue.Run | None = None
+
+    def stop() -> None:
+        nonlocal stopping
+        if not stopping:
+            stopping = True
+            task.cancel()
+
+    previous_handler = signal.getsignal(signal.SIGINT)
+    loop.add_signal_handler(signal.SIGINT, stop)
     try:
+        session_bases = (
+            tuple(await run_blocking(output_base_gc.session_env_output_bases))
+            if domains
+            & {workspace_queue.Domain.BASES, workspace_queue.Domain.REPO_CACHE, workspace_queue.Domain.FOREIGN_CLONES}
+            else ()
+        )
         queue_options = workspace_queue.Options(
             domains,
             options.output_user_root,
@@ -428,52 +440,44 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
             options.workers,
             options.apply,
             options.sizes,
-            options.delete_foreign_clones,
             repo,
             pr_source,
+            options.show_all,
         )
         with _QueueReporter() as reporter:
-            report = await workspace_queue.run(queue_options, reporter)
+            gc_run = workspace_queue.Run(queue_options, reporter)
+            report = await gc_run.run()
+
+        if options.apply and any(
+            (report.worktree_removals, report.branch_removals, report.base_removals, report.cache_removals)
+        ):
+            print("Findings reflect each item when scanned; removals may already have completed.")
+        await run_blocking(_print_findings, command, options, report)
+        multiple = len(domains) > 1
+        if not options.apply:
+            if _any_prunable(command, report):
+                print(f"{'\n' if multiple else ''}{command.dry_run_hint}")
+            return
+        if multiple:
+            print()
+        ok = await run_blocking(_report_queue_results, options, report)
+        if not ok:
+            raise SystemExit(1)
     except workspace_queue.QueueError as error:
-        _report_queue_results(options, error.report)
+        await run_blocking(_report_queue_results, options, error.report)
         print(error.error, file=sys.stderr)
         raise SystemExit(1) from error
-    except workspace_queue.QueueInterrupted as error:
-        _report_queue_results(options, error.report)
+    except asyncio.CancelledError as error:
+        if gc_run is not None:
+            await run_blocking(_report_queue_results, options, gc_run.report())
         print("Interrupted; queued work was cancelled.", file=sys.stderr)
         raise SystemExit(130) from error
     except (*git_repo.INSPECTION_ERRORS, RuntimeError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(1) from error
-
-    if options.apply and any(
-        (
-            report.worktree_removals,
-            report.branch_removals,
-            report.base_removals,
-            report.cache_removals,
-            report.foreign_removals,
-        )
-    ):
-        print("Findings reflect each item when scanned; removals may already have completed.")
-    _print_findings(command, options, report)
-    multiple = len(domains) > 1
-    foreign_prunable = workspace_queue.Domain.FOREIGN_CLONES in domains and any(
-        isinstance(i, PrunableForeignClone) for i in report.scan.foreign_clones
-    )
-    if not options.apply:
-        if _any_prunable(command, report):
-            print(f"{'\n' if multiple else ''}{command.dry_run_hint}")
-        if foreign_prunable:
-            print("Foreign clones are prunable too; pass --prune --delete-foreign-clones to remove them.")
-        return
-    if multiple:
-        print()
-    ok = _report_queue_results(options, report)
-    if foreign_prunable and not options.delete_foreign_clones:
-        print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
-    if not ok:
-        raise SystemExit(1)
+    finally:
+        loop.remove_signal_handler(signal.SIGINT)
+        signal.signal(signal.SIGINT, previous_handler)
 
 
 app = typer.Typer(help=__doc__, add_completion=False)
@@ -506,27 +510,13 @@ def _all_command(
     verbose: _VerboseOption = False,
     workers: _WorkersOption = DEFAULT_WORKERS,
     prune: Annotated[
-        bool,
-        typer.Option("--prune", help="remove all prunable worktrees, branches, output bases, and repo-cache entries"),
-    ] = False,
-    delete_foreign_clones: Annotated[
-        bool,
-        typer.Option(
-            "--delete-foreign-clones",
-            help="with --prune, also rmtree prunable foreign clones (bigger blast radius: an independent git object store, not a linked worktree)",
-        ),
+        bool, typer.Option("--prune", help="remove eligible worktrees, branches, output bases, and repo-cache entries")
     ] = False,
 ) -> None:
     """Classify worktrees, branches, and output bases together (the default command)."""
     _configure_logging(verbose=verbose)
     options = _Options(
-        output_user_root=output_user_root,
-        show_all=show_all,
-        sizes=sizes,
-        verbose=verbose,
-        workers=workers,
-        apply=prune,
-        delete_foreign_clones=delete_foreign_clones,
+        output_user_root=output_user_root, show_all=show_all, sizes=sizes, verbose=verbose, workers=workers, apply=prune
     )
     asyncio.run(run(_ALL_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -538,7 +528,9 @@ def _worktrees_command(
     no_prs: _NoPrsOption = False,
     verbose: _VerboseOption = False,
     workers: _WorkersOption = DEFAULT_WORKERS,
-    prune: Annotated[bool, typer.Option("--prune", help="remove prunable worktrees (revalidated first)")] = False,
+    prune: Annotated[
+        bool, typer.Option("--prune", help="remove clean, attached worktrees without ignored files (revalidated first)")
+    ] = False,
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)
@@ -549,7 +541,6 @@ def _worktrees_command(
         verbose=False,
         workers=workers,
         apply=prune,
-        delete_foreign_clones=False,
     )
     asyncio.run(run(_WORKTREES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -568,13 +559,7 @@ def _bases_command(
     """The Bazel output-base slice of the joint scan."""
     _configure_logging(verbose=verbose)
     options = _Options(
-        output_user_root=output_user_root,
-        show_all=show_all,
-        sizes=sizes,
-        verbose=False,
-        workers=workers,
-        apply=delete,
-        delete_foreign_clones=False,
+        output_user_root=output_user_root, show_all=show_all, sizes=sizes, verbose=False, workers=workers, apply=delete
     )
     asyncio.run(run(_BASES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -601,7 +586,6 @@ def _repo_cache_command(
         verbose=verbose,
         workers=workers,
         apply=delete,
-        delete_foreign_clones=False,
     )
     asyncio.run(run(_REPO_CACHE_COMMAND, options, repo=None, pr_source=_without_prs))
 
@@ -621,8 +605,16 @@ def _with_default_command(argv: list[str]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> None:
     """Run the CLI through its importable wheel entry point."""
+    arguments = sys.argv[1:] if argv is None else argv
+    if any(arg == "--delete-foreign-clones" or arg.startswith("--delete-foreign-clones=") for arg in arguments):
+        print(
+            "workspace-gc: --delete-foreign-clones is no longer supported: an independent Git repository may "
+            "contain refs and data outside the worktree scan; foreign clones are report-only.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     try:
-        app(args=_with_default_command(sys.argv[1:] if argv is None else argv))
+        app(args=_with_default_command(arguments))
     except git_repo.INSPECTION_ERRORS as error:
         print(f"workspace-gc: {type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(1) from error

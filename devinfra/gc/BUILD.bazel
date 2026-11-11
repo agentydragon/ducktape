@@ -7,6 +7,18 @@ py_library(
     srcs = ["async_io.py"],
 )
 
+py_test(
+    name = "test_async_io",
+    srcs = ["test_async_io.py"],
+    deps = [
+        ":async_io",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "scan_progress",
     srcs = ["scan_progress.py"],
@@ -34,7 +46,10 @@ py_library(
     name = "git_repo",
     srcs = ["git_repo.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pygit2"],
+    deps = [
+        ":async_io",
+        "@pypi//pygit2",
+    ],
 )
 
 py_library(
@@ -111,7 +126,9 @@ py_library(
     deps = [
         ":branch_gc",
         ":foreign_clone_gc",
+        ":github_prs",
         ":output_base_gc",
+        ":pull_request",
         ":removal",
         ":repo_contents_cache_gc",
         ":work_queue",
@@ -126,6 +143,7 @@ py_library(
     srcs = ["workspace_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":async_io",
         ":branch_gc",
         ":foreign_clone_gc",
         ":git_repo",
@@ -146,8 +164,8 @@ py_library(
     ],
 )
 
-# Single tool: `workspace-gc {all,worktrees,bazel-bases}` reclaims stale git worktrees, merged
-# local branches, and orphaned Bazel output bases via one joint scan.
+# Single tool: `workspace-gc {all,worktrees,bazel-bases}` reclaims stale git worktrees and
+# orphaned Bazel output bases via one joint scan, and reports merged local branch candidates.
 py_binary(
     name = "workspace_gc_bin",
     main_module = "devinfra.gc.workspace_gc",
@@ -216,7 +234,6 @@ py_test(
         ":conftest",
         ":git_repo",
         ":pull_request",
-        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pygit2",
@@ -232,6 +249,24 @@ py_test(
         ":conftest",
         ":output_base_gc",
         ":workspace_scan",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_workspace_pr_batches",
+    srcs = ["test_workspace_pr_batches.py"],
+    deps = [
+        ":branch_gc",
+        ":conftest",
+        ":git_repo",
+        ":output_base_gc",
+        ":pull_request",
+        ":workspace_jobs",
+        ":workspace_queue",
+        ":worktree_gc",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -298,7 +333,6 @@ py_library(
         ":async_io",
         ":git_repo",
         ":pull_request",
-        ":removal",
         ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",
@@ -312,7 +346,6 @@ py_test(
         ":conftest",
         ":foreign_clone_gc",
         ":pull_request",
-        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pygit2",
@@ -366,6 +399,7 @@ py_library(
     name = "github_prs",
     srcs = ["github_prs.py"],
     deps = [
+        ":async_io",
         ":git_repo",
         ":pull_request",
         "@pypi//httpx",

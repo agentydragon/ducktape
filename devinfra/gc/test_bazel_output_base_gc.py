@@ -327,12 +327,12 @@ def test_mount_points_unescapes_kernel_path_encoding(tmp_path: Path) -> None:
     assert gc.mount_points(mountinfo_path=mountinfo) == {Path("/tmp/mounted path")}
 
 
-def test_report_tolerates_size_failure(prunable_base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_report_tolerates_size_failure(prunable_base: Path) -> None:
     inspection = _inspect(prunable_base)
     assert isinstance(inspection, gc.PrunableBase)
-    monkeypatch.setattr(gc, "allocated_bytes", lambda _path: None)
-
-    report = gc.render_report([inspection], include_kept=False, include_sizes=True)
+    report = gc.render_report(
+        [inspection], include_kept=False, include_sizes=True, measured_sizes={prunable_base: None}
+    )
 
     assert "?" in report
     assert "prunable size unavailable" in report

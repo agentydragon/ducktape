@@ -20,7 +20,6 @@ import pwd
 import re
 import shutil
 import stat
-import subprocess
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -625,20 +624,6 @@ def _last_activity(inspection: Inspection) -> str:
     )
 
 
-def allocated_bytes(path: Path) -> int | None:
-    try:
-        result = subprocess.run(
-            ["du", "-sx", "--block-size=1", "--", os.fspath(path)],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        return int(result.stdout.split(maxsplit=1)[0])
-    except OSError, subprocess.CalledProcessError, ValueError, IndexError:
-        return None
-
-
 def render_report(
     inspections: Sequence[Inspection],
     *,
@@ -651,13 +636,9 @@ def render_report(
     )
     sizes: dict[Path, int | None] = {}
     if include_sizes:
-        for index, item in enumerate(visible, start=1):
-            logger.info("Measuring output-base size %d/%d %s", index, len(visible), item.path)
-            sizes[item.path] = (
-                measured_sizes[item.path]
-                if measured_sizes is not None and item.path in measured_sizes
-                else allocated_bytes(item.path)
-            )
+        if measured_sizes is None:
+            raise ValueError("size measurements are required when sizes are shown")
+        sizes = {item.path: measured_sizes.get(item.path) for item in visible}
     headers = ["STATUS", "LAST ACTIVITY", "BASE", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")

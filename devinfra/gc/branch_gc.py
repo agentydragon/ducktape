@@ -1,34 +1,21 @@
-"""Classify and safely remove local git branches whose work is already merged.
+"""Classify and safely remove local Git branches with recoverable history.
 
-Mirrors worktree_gc's PRUNE/KEEP/REVIEW model, one level up: a *branch* is prunable when
-deleting its ref loses nothing, established by either
-
-  * git — its tip adds nothing not already in the default branch (an ancestor, an empty
-    branch, or a squash/rebase-merge no-op), reusing `git_repo.content_in_main`;
-  * git again, by patch equivalence — every commit it adds has a twin already on the default
-    branch (`git_repo.patches_landed_in_main`). This catches the rebase-merged and
-    cherry-picked branches whose tree-equality check has decayed: the merge base is thousands
-    of commits back, so merging today conflicts even though the work landed long ago; or
-  * a merged GitHub PR whose merged tip the branch has not advanced beyond — the
-    squash-merge case that survives even when later default-branch divergence defeats the
-    git tree-equality check; or
-  * a closed-not-merged GitHub PR whose head the branch has not advanced beyond — closing a
-    PR is a human decision not to land the work, so once nothing has been added since, the
-    branch adds nothing a future PR couldn't recreate from scratch just as easily.
-
-A branch checked out in a worktree cannot be deleted while that worktree exists (git refuses
-even `-D`), so classification depends on the worktree scan: a branch held by a retained
-worktree is kept, one held by a prunable worktree is eligible but only deletable once that
-worktree is gone. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges) after
-re-proving the branch is still prunable — the same revalidate-then-act contract worktree and
-output-base removal use. The default branch is never a candidate.
+A PRUNE classification means the branch is a historical content candidate, not that its
+commits are disposable. Removal anchors the captured branch tip and available reflog commits
+under `refs/workspace-gc/recovery/` in the same compare-and-delete transaction. Tip changes
+are guarded atomically. Worktree checkouts cannot be included in that ref transaction, so
+holder checks before and after deletion reduce but do not eliminate a checkout race; the
+post-delete check restores the branch when a holder appears or cannot be inventoried.
 """
 
 from __future__ import annotations
 
 import enum
 import logging
+import os
+import re
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,7 +27,7 @@ from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
-from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
+from devinfra.gc.worktree_gc import Classification, RetainedWorktree, ReviewWorktree
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +60,7 @@ class RetainedBranchReason(enum.StrEnum):
 
 class ReviewBranchReason(enum.StrEnum):
     INSPECTION_FAILED = enum.auto()
+    PR_LOOKUP_UNAVAILABLE = enum.auto()
     PR_HEAD_EXCEEDED = enum.auto()  # commits beyond the head of the branch's merged or closed PR
     UNMERGED = enum.auto()
 
@@ -81,10 +69,15 @@ class ReviewBranchReason(enum.StrEnum):
 class PrunableBranch(Prunable):
     branch: Branch
     reason: PrunableBranchReason
-    checkout: Path | None  # the prunable worktree holding it, removed before the branch
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
-    tip: str  # the commit the verdict was judged on; deletion requires the branch still be here
+    tip: str  # the captured commit OID every proof and deletion is bound to
     pr: PrInfo | None  # set for PR_HEAD_REACHED; for CONTENT_IN_MAIN when the branch has a merged or closed PR
+
+
+@dataclass(frozen=True, slots=True)
+class BranchRemoval:
+    result: RemovalResult[str]
+    recovery_prefix: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +104,8 @@ def describe_reason(item: BranchClassification) -> str:
     match item:
         case ReviewBranch(reason=ReviewBranchReason.INSPECTION_FAILED, detail=str() as detail):
             return f"cannot inspect: {detail}"
+        case ReviewBranch(reason=ReviewBranchReason.PR_LOOKUP_UNAVAILABLE):
+            return "pull request state could not be determined"
         case PrunableBranch(reason=PrunableBranchReason.CONTENT_IN_MAIN, main=main, pr=pr):
             return f"changes already in {main}" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case PrunableBranch(reason=PrunableBranchReason.PR_HEAD_REACHED, pr=PrInfo() as pr):
@@ -186,44 +181,227 @@ async def _classify_branch(
     if pr is not None and pr.state is PrState.OPEN:
         return RetainedBranch(branch, RetainedBranchReason.OPEN_PR, pr=pr)
 
-    # holder is None or a PrunableWorktree (removed before the branch is deleted).
-    checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
+    # A prunable worktree does not block this content candidate; its branch ref is still kept.
     branch_oid = await run_blocking(lambda: pg.branches.local[name].peel(pygit2.Commit).id)
     if await run_blocking(content_in_main, pg, branch_oid, main):
-        return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, str(branch_oid), pr)
+        return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, main, str(branch_oid), pr)
     if (
         pr is not None
         and pr.state in (PrState.MERGED, PrState.CLOSED)
         and await run_blocking(_tip_within_pr_head, pg, branch_oid, pr)
     ):
-        return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, str(branch_oid), pr)
+        return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, main, str(branch_oid), pr)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
-    if await patches_landed_in_main(Path(pg.path), name, main):
-        return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, str(branch_oid), None)
+    if await patches_landed_in_main(Path(pg.path), str(branch_oid), main):
+        return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, main, str(branch_oid), None)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
         return ReviewBranch(branch, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
     return ReviewBranch(branch, ReviewBranchReason.UNMERGED, main)
 
 
-async def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
-    """Force-delete one branch with `git branch -D` (git's safe `-d` rejects squash-merges),
-    unless it no longer points at `expected_tip`, the commit proven to be in main.
+_OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
-    `git branch` refuses a branch still checked out in any worktree, so the caller must remove
-    a holding worktree first. The tip check and the delete are two git calls, so a commit
-    landing between them is still lost from the branch (it stays in the reflog).
-    """
+
+async def _reflog_oids(repo: Path, ref: str, tip: str) -> list[str] | None:
+    """Inventory all available reflog commit IDs, failing closed on unreadable evidence."""
+    env = {**os.environ, "LC_ALL": "C"}
+    shown = await git_repo.git(repo, "reflog", "show", "--format=%H", ref, check=False, env=env)
+    if shown.returncode != 0:
+        return None
+    shown_oids = [line.strip() for line in shown.stdout.splitlines() if line.strip()]
+    if any(_OID.fullmatch(oid) is None for oid in shown_oids):
+        return None
+
+    path_result = await git_repo.git(
+        repo, "rev-parse", "--path-format=absolute", "--git-path", f"logs/{ref}", check=False
+    )
+    if path_result.returncode != 0:
+        return None
+    log_path = Path(path_result.stdout.strip())
     try:
-        tip = await git_repo.git(repo, "rev-parse", "--verify", f"refs/heads/{name}", check=False)
-        if tip.returncode != 0:
-            return Skipped(name, "branch no longer exists")
-        if tip.stdout.strip() != expected_tip:
-            return Skipped(name, "branch moved since the scan")
-        outcome = await git_repo.git(repo, "branch", "-D", name, check=False, interruptible=False)
-    except (OSError, subprocess.SubprocessError) as error:
-        return Failed(name, str(error))
-    if outcome.returncode == 0:
-        return Removed(name)
-    return Failed(name, outcome.stderr.strip() or "git branch -D failed")
+        raw_log = await run_blocking(log_path.read_bytes)
+    except FileNotFoundError:
+        if shown_oids:
+            return None
+        entries: list[tuple[str, str]] = []
+    except OSError, UnicodeError:
+        return None
+    else:
+        entries = []
+        for line in raw_log.splitlines():
+            metadata, separator, _message = line.partition(b"\t")
+            fields = metadata.split()
+            if not separator or len(fields) < 2:
+                return None
+            try:
+                old_oid, new_oid = (field.decode("ascii") for field in fields[:2])
+            except UnicodeDecodeError:
+                return None
+            if _OID.fullmatch(old_oid) is None or _OID.fullmatch(new_oid) is None:
+                return None
+            entries.append((old_oid, new_oid))
+
+    if [new_oid for _, new_oid in reversed(entries)] != shown_oids:
+        return None
+
+    oids = {tip, *shown_oids}
+    # `reflog show` lists each entry's new OID, but not the predecessor before its oldest
+    # retained row. Reading the raw log above captures it; rev-parse independently verifies
+    # Git can resolve that boundary. A new branch's all-zero predecessor is the one normal
+    # case where @{N} has no resolvable object.
+    if entries:
+        oldest_old = entries[0][0]
+        boundary = await git_repo.git(repo, "rev-parse", "--verify", f"{ref}@{{{len(entries)}}}", check=False, env=env)
+        if boundary.returncode == 0:
+            boundary_oid = boundary.stdout.strip()
+            if _OID.fullmatch(boundary_oid) is None or boundary_oid != oldest_old:
+                return None
+            if int(boundary_oid, 16) != 0:
+                oids.add(boundary_oid)
+        elif int(oldest_old, 16) != 0 or f"only has {len(entries)} entries" not in boundary.stderr:
+            return None
+        if int(oldest_old, 16) != 0:
+            oids.add(oldest_old)
+        for old_oid, new_oid in entries:
+            if int(old_oid, 16) != 0:
+                oids.add(old_oid)
+            if int(new_oid, 16) != 0:
+                oids.add(new_oid)
+
+    candidates = sorted(oids)
+    checked = await git_repo.git(
+        repo,
+        "cat-file",
+        "--batch-check=%(objectname) %(objecttype)",
+        check=False,
+        input_text="".join(f"{oid}\n" for oid in candidates),
+    )
+    if checked.returncode != 0:
+        return None
+    rows = [line.split() for line in checked.stdout.splitlines()]
+    if len(rows) != len(candidates) or any(row != [oid, "commit"] for oid, row in zip(candidates, rows, strict=True)):
+        return None
+    return candidates
+
+
+async def _restore_branch(repo: Path, ref: str, tip: str) -> str | None:
+    zeros = "0" * len(tip)
+    restored = await git_repo.git(repo, "update-ref", "--no-deref", ref, tip, zeros, check=False, interruptible=False)
+    return None if restored.returncode == 0 else restored.stderr.strip() or "compare-and-restore failed"
+
+
+async def _recovery_tip_exists(repo: Path, prefix: str) -> bool:
+    result = await git_repo.git(repo, "show-ref", "--verify", "--hash", f"{prefix}/tip", check=False)
+    return result.returncode == 0
+
+
+async def remove_prunable_branch(
+    repo: Path, candidate: PrunableBranch, *, main: str, default_branch: str
+) -> BranchRemoval:
+    """Remove a classified branch only after fresh proof and recoverable CAS deletion."""
+    name = candidate.branch.name
+    ref = f"refs/heads/{name}"
+    prefix: str | None = None
+    transaction_committed = False
+    transaction_started = False
+    try:
+        holders = await branch_holders(repo)
+        if name in holders:
+            return BranchRemoval(Skipped(name, f"checked out in worktree {holders[name]}"))
+        pg = await run_blocking(git_repo.open_repo, repo)
+        current = await classify_branch(
+            name, pg=pg, main=main, default_branch=default_branch, pr=candidate.pr, holder=None
+        )
+        if not isinstance(current, PrunableBranch):
+            return BranchRemoval(Skipped(name, "branch no longer qualifies as a content candidate"))
+        if current.tip != candidate.tip:
+            return BranchRemoval(Skipped(name, "branch tip changed since classification"))
+        history = await _reflog_oids(repo, ref, candidate.tip)
+        if history is None:
+            return BranchRemoval(Failed(name, "could not safely inventory branch reflog"))
+        # Inventory can take time; repeat the holder check immediately before ref mutation.
+        holders = await branch_holders(repo)
+        if name in holders:
+            return BranchRemoval(Skipped(name, f"checked out in worktree {holders[name]}"))
+        # Keep the branch name in the ref so recovery remains discoverable even if the
+        # process dies before it can print its report. The attempt ID prevents collisions.
+        prefix = f"refs/workspace-gc/recovery/{uuid.uuid4().hex}/{name}"
+        commands = ["start", f"create {prefix}/tip {candidate.tip}"]
+        commands.extend(f"create {prefix}/history/{oid} {oid}" for oid in history if oid != candidate.tip)
+        commands.extend(["option no-deref", f"delete {ref} {candidate.tip}", "prepare", "commit", ""])
+        transaction_started = True
+        transaction = await git_repo.git(
+            repo, "update-ref", "--stdin", check=False, input_text="\n".join(commands), interruptible=False
+        )
+        if transaction.returncode != 0:
+            try:
+                recovery_exists = await _recovery_tip_exists(repo, prefix)
+            except Exception:
+                recovery_exists = True  # preserve the uncertain location in the report
+            actual = await git_repo.git(repo, "rev-parse", "--verify", ref, check=False)
+            if actual.returncode != 0 and recovery_exists:
+                transaction_committed = True
+            else:
+                prefix = prefix if recovery_exists else None
+                if actual.returncode == 0 and actual.stdout.strip() != candidate.tip:
+                    return BranchRemoval(Skipped(name, "branch tip changed before compare-and-delete"), prefix)
+                if actual.returncode != 0:
+                    return BranchRemoval(Skipped(name, "branch no longer exists"), prefix)
+                return BranchRemoval(
+                    Failed(name, transaction.stderr.strip() or "branch removal transaction failed"), prefix
+                )
+        transaction_committed = True
+
+        try:
+            holders = await branch_holders(repo)
+        except Exception as error:
+            try:
+                restore_error = await _restore_branch(repo, ref, candidate.tip)
+            except Exception as restore_exception:
+                return BranchRemoval(
+                    Failed(
+                        name,
+                        f"worktree inventory failed after deletion; branch restoration failed: {restore_exception}",
+                    ),
+                    prefix,
+                )
+            reason = f"worktree inventory failed after deletion: {type(error).__name__}: {error}"
+            if restore_error is not None:
+                return BranchRemoval(Failed(name, f"{reason}; branch restoration failed: {restore_error}"), prefix)
+            return BranchRemoval(Skipped(name, f"{reason}; branch restored"), prefix)
+        if name in holders:
+            try:
+                restore_error = await _restore_branch(repo, ref, candidate.tip)
+            except Exception as restore_exception:
+                return BranchRemoval(
+                    Failed(name, f"checkout appeared during deletion; branch restoration failed: {restore_exception}"),
+                    prefix,
+                )
+            reason = f"checkout appeared during deletion in worktree {holders[name]}"
+            if restore_error is not None:
+                return BranchRemoval(Failed(name, f"{reason}; branch restoration failed: {restore_error}"), prefix)
+            return BranchRemoval(Skipped(name, f"{reason}; branch restored"), prefix)
+        return BranchRemoval(Removed(name), prefix)
+    except (OSError, subprocess.SubprocessError, git_repo.GitError) as error:
+        recovery_prefix: str | None = prefix if transaction_committed else None
+        if transaction_started and prefix is not None and recovery_prefix is None:
+            try:
+                if await _recovery_tip_exists(repo, prefix):
+                    recovery_prefix = prefix
+            except Exception:
+                recovery_prefix = prefix
+        return BranchRemoval(Failed(name, f"{type(error).__name__}: {error}"), recovery_prefix)
+    except BaseException as error:
+        # If any post-transaction operation fails, surface the recovery refs in the partial
+        # report instead of losing their location behind an escaped worker exception.
+        if transaction_started and prefix is not None:
+            if transaction_committed:
+                return BranchRemoval(Failed(name, f"{type(error).__name__}: {error}"), prefix)
+            try:
+                if await _recovery_tip_exists(repo, prefix):
+                    return BranchRemoval(Failed(name, f"{type(error).__name__}: {error}"), prefix)
+            except Exception:
+                return BranchRemoval(Failed(name, f"{type(error).__name__}: {error}"), prefix)
+        raise

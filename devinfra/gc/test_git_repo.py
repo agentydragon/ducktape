@@ -116,6 +116,9 @@ async def test_cancel_reaps_read_but_waits_for_noninterruptible_git(
         await asyncio.wait_for(asyncio.gather(*(event.wait() for event in events.values())), 10)
         read.cancel()
         mutation.cancel()
+        await asyncio.sleep(0)
+        read.cancel()
+        mutation.cancel()
         creation_allowed.set()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(read, 10)

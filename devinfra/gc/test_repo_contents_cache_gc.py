@@ -2,6 +2,7 @@ import errno
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -106,6 +107,95 @@ def test_unreadable_hash_directory_does_not_abort_other_entries(
     assert result.reason is gc.ReviewEntryReason.CANNOT_LIST
     assert "permission denied" in gc.describe_reason(result)
     assert isinstance(by_path[cache.unreferenced], gc.PrunableEntry)
+
+
+def test_missing_external_directory_does_not_make_the_reference_scan_incomplete(
+    cache: FakeCache, proc: Path, mountinfo: Path, tmp_path: Path
+) -> None:
+    workspace = tmp_path / "workspace-without-an-external-directory"
+    workspace.mkdir()
+    make_base(cache.root, workspace)
+
+    item = _scan(cache, proc, mountinfo)[cache.unreferenced]
+
+    assert isinstance(item, gc.PrunableEntry)
+
+
+def test_broken_external_symlink_makes_the_reference_scan_incomplete(
+    cache: FakeCache, proc: Path, mountinfo: Path, tmp_path: Path
+) -> None:
+    workspace = tmp_path / "workspace-with-broken-external-directory"
+    workspace.mkdir()
+    base = make_base(cache.root, workspace)
+    (base / "external").symlink_to(tmp_path / "missing-external-target")
+
+    item = _scan(cache, proc, mountinfo)[cache.unreferenced]
+
+    assert isinstance(item, gc.ReviewEntry)
+    assert item.reason is gc.ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN
+
+
+def test_unlistable_external_marks_entries_without_known_referrers_for_review(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    link_external(cache.kept_base, "hidden_repo", cache.unreferenced)
+    external = cache.kept_base / "external"
+    real_iterdir = Path.iterdir
+
+    def list_directory(path: Path) -> Iterator[Path]:
+        if path == external:
+            raise PermissionError(errno.EACCES, "permission denied", str(path))
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", list_directory)
+
+    by_path = _scan(cache, proc, mountinfo)
+    item = by_path[cache.unreferenced]
+
+    assert isinstance(item, gc.ReviewEntry)
+    assert item.reason is gc.ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN
+    assert "permission denied" in gc.describe_reason(item)
+    assert isinstance(by_path[cache.prunable_only], gc.ReviewEntry)
+
+
+def test_unreadable_external_link_marks_entries_without_known_referrers_for_review(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    link = cache.kept_base / "external" / "unreadable_repo"
+    link_external(cache.kept_base, link.name, cache.unreferenced)
+    real_readlink = Path.readlink
+
+    def read_link(path: Path) -> Path:
+        if path == link:
+            raise OSError(errno.EIO, "I/O error", str(path))
+        return real_readlink(path)
+
+    monkeypatch.setattr(Path, "readlink", read_link)
+
+    item = _scan(cache, proc, mountinfo)[cache.unreferenced]
+
+    assert isinstance(item, gc.ReviewEntry)
+    assert item.reason is gc.ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN
+    assert "I/O error" in gc.describe_reason(item)
+
+
+def test_vanished_external_link_does_not_make_the_reference_scan_incomplete(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    link = cache.kept_base / "external" / "vanished_repo"
+    link_external(cache.kept_base, link.name, cache.unreferenced)
+    real_readlink = Path.readlink
+
+    def read_link(path: Path) -> Path:
+        if path == link:
+            path.unlink()
+        return real_readlink(path)
+
+    monkeypatch.setattr(Path, "readlink", read_link)
+
+    item = _scan(cache, proc, mountinfo)[cache.unreferenced]
+
+    assert isinstance(item, gc.PrunableEntry)
 
 
 def test_entries_are_classified_by_who_links_to_them(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
@@ -256,6 +346,41 @@ def test_delete_skips_an_entry_a_base_linked_to_since_the_scan(cache: FakeCache,
     assert cache.unreferenced.is_dir()
 
 
+def test_delete_skips_when_fresh_reference_inventory_is_incomplete(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidates = _prunable(cache, proc, mountinfo)
+    link = cache.kept_base / "external" / "late_unreadable_repo"
+    link_external(cache.kept_base, link.name, cache.unreferenced)
+    real_readlink = Path.readlink
+
+    def read_link(path: Path) -> Path:
+        if path == link:
+            raise OSError(errno.EIO, "I/O error", str(path))
+        return real_readlink(path)
+
+    monkeypatch.setattr(Path, "readlink", read_link)
+
+    [result] = _delete(cache, candidates, mountinfo)
+
+    assert isinstance(result, Skipped)
+    assert "reference inventory is incomplete" in result.reason
+    assert cache.unreferenced.is_dir()
+
+
+def test_cache_lock_excludes_another_thread_in_the_same_process(cache: FakeCache) -> None:
+    def acquire_again() -> None:
+        with gc._gc_lock(cache.contents):
+            pass
+
+    with (
+        gc._gc_lock(cache.contents),
+        ThreadPoolExecutor(max_workers=1) as executor,
+        pytest.raises(gc.RepoCacheBusyError),
+    ):
+        executor.submit(acquire_again).result(timeout=10)
+
+
 def test_delete_sees_a_base_created_since_the_scan(
     cache: FakeCache, proc: Path, mountinfo: Path, tmp_path: Path
 ) -> None:
@@ -329,7 +454,13 @@ def test_report_summarizes_prunable_entries_and_retains_details_on_request(
 ) -> None:
     entries = list(_scan(cache, proc, mountinfo).values())
     name = f"{_hash('c')}/{_uuid('3')}"
-    compact = gc.render_report(entries, contents=cache.contents, include_kept=False, include_sizes=True)
+    compact = gc.render_report(
+        entries,
+        contents=cache.contents,
+        include_kept=False,
+        include_sizes=True,
+        measured_sizes={gc.entry_path(item): 1024 for item in entries},
+    )
     detailed = gc.render_report(
         entries, contents=cache.contents, include_kept=False, include_sizes=False, include_prunable=True
     )

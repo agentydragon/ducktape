@@ -22,7 +22,16 @@ class PrState(enum.StrEnum):
 class PrInfo:
     number: int
     state: PrState
-    head_sha: str | None = None  # tip the PR merged; lets branch_gc prune squash-merges
+    head_sha: str | None = None  # tip the PR merged; lets branch_gc classify squash-merge candidates
+
+
+@dataclass(frozen=True, slots=True)
+class PrLookup:
+    """A missing state means no PR only when the branch is not unknown."""
+
+    states: dict[str, PrInfo]
+    unknown: frozenset[str] = frozenset()
+    disabled: bool = False
 
 
 def pr_phrase(pr: PrInfo) -> str:

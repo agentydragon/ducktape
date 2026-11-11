@@ -1,5 +1,6 @@
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import pygit2
 import pytest
@@ -9,7 +10,6 @@ from devinfra.gc import branch_gc as bg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.removal import Failed, Removed, Skipped
 from devinfra.gc.worktree_gc import RetainedWorktree, RetainedWorktreeReason
 
 
@@ -26,7 +26,6 @@ async def test_ancestor_branch_is_prunable(repo: GitRepo) -> None:
     result = await _classify(repo, "feature")
     assert isinstance(result, bg.PrunableBranch)
     assert (result.reason, result.main) == (bg.PrunableBranchReason.CONTENT_IN_MAIN, "main")
-    assert result.tip == repo.rev("feature")
 
 
 async def test_empty_branch_is_prunable(repo: GitRepo) -> None:
@@ -118,8 +117,8 @@ async def test_branch_advanced_past_merged_head_is_review(repo: GitRepo) -> None
 
 
 async def test_closed_pr_with_nothing_beyond_its_head_is_prunable(repo: GitRepo) -> None:
-    # The PR was closed unmerged; nothing was committed on the branch since. Removing it
-    # loses nothing a human hasn't already decided not to pursue.
+    # The PR was closed unmerged; nothing was committed on the branch since. This is only a
+    # historical-content candidate: deletion preserves its tip and available reflog history.
     wt = repo.worktree("wt", "feature")
     wt.commit("f", "A\n", "abandoned attempt")
     head = repo.rev("feature")
@@ -155,28 +154,6 @@ async def test_branch_in_retained_worktree_is_kept(repo: GitRepo) -> None:
     assert (result.reason, result.checkout) == (bg.RetainedBranchReason.HELD_BY_WORKTREE, worktree.path)
 
 
-async def test_delete_branch_removes_it(repo: GitRepo) -> None:
-    repo.branch("feature")
-    assert (await bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature"))) == Removed("feature")
-    assert not repo.has_branch("feature")
-
-
-async def test_delete_branch_skips_a_branch_that_moved_since_it_was_classified(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    classified_tip = repo.rev("feature")
-    wt.commit("f", "new work\n", "commit after the scan")
-
-    result = await bg.delete_branch(repo.path, "feature", expected_tip=classified_tip)
-
-    assert isinstance(result, Skipped)
-    assert repo.has_branch("feature")
-
-
-async def test_delete_branch_fails_when_checked_out(repo: GitRepo) -> None:
-    repo.worktree("wt", "feature")
-    assert isinstance((await bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature"))), Failed)
-
-
 async def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRepo) -> None:
     """A branch whose commit landed by cherry-pick, on a main that has since moved past it.
 
@@ -194,6 +171,159 @@ async def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRep
     result = await _classify(repo, "feature", pr=None)
     assert isinstance(result, bg.PrunableBranch)
     assert (result.reason, result.main) == (bg.PrunableBranchReason.PATCHES_IN_MAIN, "main")
+
+
+async def test_patch_equivalence_proof_uses_the_captured_branch_oid(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wt = repo.worktree("wt", "feature")
+    wt.commit("f", "A\n", "feature change")
+    repo.run("cherry-pick", repo.rev("feature"))
+    repo.commit("f", "B\n", "main advances past the cherry-pick")
+    captured: list[str] = []
+    original = bg.patches_landed_in_main
+
+    async def record_head(path: Path, head: str, main: str) -> bool:
+        captured.append(head)
+        return await original(path, head, main)
+
+    monkeypatch.setattr(bg, "patches_landed_in_main", record_head)
+
+    result = await _classify(repo, "feature")
+
+    assert isinstance(result, bg.PrunableBranch)
+    assert captured == [repo.rev("feature")]
+    assert result.tip == captured[0]
+
+
+async def test_removal_preserves_tip_and_unicode_reflog_history(repo: GitRepo) -> None:
+    repo.run("config", "user.name", "GC Test")
+    repo.run("config", "user.email", "gc-test@example.test")
+    name = "feature/topic"
+    repo.run("branch", name, "main")
+    old_tip = repo.rev(name)
+    repo.commit("later", "1\n", "advance main")
+    repo.run("update-ref", "-m", "unicode café history", f"refs/heads/{name}", repo.rev("main"), old_tip)
+    candidate = await _classify(repo, name)
+    assert isinstance(candidate, bg.PrunableBranch)
+
+    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+
+    assert isinstance(outcome.result, bg.Removed)
+    assert outcome.result.subject == name
+    assert outcome.recovery_prefix is not None
+    assert outcome.recovery_prefix.endswith(f"/{name}")
+    assert not repo.has_branch(name)
+    prefix = outcome.recovery_prefix
+    assert repo.run("rev-parse", f"{prefix}/tip").stdout.strip() == candidate.tip
+    assert repo.run("rev-parse", f"{prefix}/history/{old_tip}").stdout.strip() == old_tip
+
+
+async def test_removal_preserves_oldest_truncated_reflog_predecessor(repo: GitRepo) -> None:
+    worktree = repo.worktree("feature-worktree", "feature")
+    worktree.commit("unique", "work not in main\n", "unique abandoned commit")
+    old_tip = repo.rev("feature")
+    repo.commit("main-change", "main\n", "advance main")
+    new_tip = repo.rev("main")
+    repo.run("worktree", "remove", str(worktree.path))
+    repo.run("config", "user.name", "GC Test")
+    repo.run("config", "user.email", "gc-test@example.test")
+    repo.run("update-ref", "-m", "reset feature to main", "refs/heads/feature", new_tip, old_tip)
+    reflog = repo.path / ".git" / "logs" / "refs" / "heads" / "feature"
+    latest_entry = reflog.read_bytes().splitlines()[-1]
+    reflog.write_bytes(latest_entry + b"\n")
+    assert repo.run("rev-parse", "refs/heads/feature@{1}").stdout.strip() == old_tip
+    candidate = await _classify(repo, "feature")
+    assert isinstance(candidate, bg.PrunableBranch)
+    assert candidate.tip == new_tip
+
+    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+
+    assert isinstance(outcome.result, bg.Removed)
+    assert outcome.recovery_prefix is not None
+    assert repo.run("rev-parse", f"{outcome.recovery_prefix}/history/{old_tip}").stdout.strip() == old_tip
+
+
+async def test_failed_post_delete_worktree_inventory_restores_branch_and_reports_recovery(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo.run("branch", "feature", "main")
+    repo.commit("later", "1\n", "advance main")
+    candidate = await _classify(repo, "feature")
+    assert isinstance(candidate, bg.PrunableBranch)
+    original = bg.branch_holders
+    calls = 0
+
+    async def fail_after_transaction(path: Path) -> dict[str, Path]:
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise OSError("injected worktree inventory failure")
+        return await original(path)
+
+    monkeypatch.setattr(bg, "branch_holders", fail_after_transaction)
+
+    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+
+    assert isinstance(outcome.result, bg.Skipped)
+    assert "branch restored" in outcome.result.reason
+    assert repo.has_branch("feature")
+    assert outcome.recovery_prefix is not None
+    assert repo.run("rev-parse", f"{outcome.recovery_prefix}/tip").stdout.strip() == candidate.tip
+
+
+async def test_compare_and_delete_rejects_a_tip_changed_at_the_transaction(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo.branch("feature")
+    repo.commit("later", "1\n", "advance main")
+    candidate = await _classify(repo, "feature")
+    assert isinstance(candidate, bg.PrunableBranch)
+    new_tip = repo.rev("main")
+    original_git = bg.git_repo.git
+
+    async def move_before_transaction(path: Path, *args: str | Path, **kwargs: Any) -> Any:
+        if args[:2] == ("update-ref", "--stdin"):
+            repo.run("update-ref", "refs/heads/feature", new_tip, candidate.tip)
+        return await original_git(path, *args, **kwargs)
+
+    monkeypatch.setattr(bg.git_repo, "git", move_before_transaction)
+    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+
+    assert isinstance(outcome.result, bg.Skipped)
+    assert repo.rev("feature") == new_tip
+    assert outcome.recovery_prefix is None
+    assert not repo.run("for-each-ref", "--format=%(refname)", "refs/workspace-gc/recovery/").stdout.strip()
+
+
+async def test_failed_branch_restoration_still_reports_recovery_ref(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo.branch("feature")
+    repo.commit("later", "1\n", "advance main")
+    candidate = await _classify(repo, "feature")
+    assert isinstance(candidate, bg.PrunableBranch)
+    original_holders = bg.branch_holders
+    calls = 0
+
+    async def fail_after_transaction(path: Path) -> dict[str, Path]:
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise OSError("injected inventory failure")
+        return await original_holders(path)
+
+    async def fail_restore(_repo: Path, _ref: str, _tip: str) -> str:
+        return "injected restore failure"
+
+    monkeypatch.setattr(bg, "branch_holders", fail_after_transaction)
+    monkeypatch.setattr(bg, "_restore_branch", fail_restore)
+    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+
+    assert isinstance(outcome.result, bg.Failed)
+    assert "branch restoration failed" in outcome.result.error
+    assert outcome.recovery_prefix is not None
+    assert repo.run("rev-parse", f"{outcome.recovery_prefix}/tip").stdout.strip() == candidate.tip
 
 
 async def test_branch_with_an_unlanded_commit_stays_review(repo: GitRepo) -> None:
@@ -215,7 +345,7 @@ def _populated(reason: StrEnum) -> bg.BranchClassification:
     branch = bg.Branch("feature")
     match reason:
         case bg.PrunableBranchReason():
-            return bg.PrunableBranch(branch, reason, Path("/wt"), _MAIN, "0" * 40, _PR)
+            return bg.PrunableBranch(branch, reason, _MAIN, "a" * 40, _PR)
         case bg.RetainedBranchReason():
             return bg.RetainedBranch(branch, reason, Path("/wt"), _PR)
         case bg.ReviewBranchReason():

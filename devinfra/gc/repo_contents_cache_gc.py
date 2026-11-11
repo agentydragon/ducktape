@@ -9,8 +9,8 @@ them, and every Bazel command holds a shared lock on `gc_lock` for its whole dur
 GC takes it exclusively).
 
 Bazel's GC is age-based only (`--repo_contents_cache_gc_max_age`) and runs on an idle
-server; it never asks whether an entry is referenced. This scanner does: an entry no output
-base the joint scan knows about links to is prunable. Deletion takes `gc_lock` exclusively,
+server; it never asks whether an entry is referenced. This scanner does: an entry no known
+output base links to is prunable only if their reference inventory is complete. Deletion takes `gc_lock` exclusively,
 so no command can be fetching into the cache — or linking a base to an entry — while one
 goes, and removes an entry the way Bazel's GC does (recorded inputs first, then the
 directory into `_trash/`), so an interruption leaves nothing a later Bazel GC won't finish.
@@ -28,7 +28,9 @@ import os
 import re
 import shutil
 import stat
+import threading
 import uuid
+import weakref
 from collections.abc import Iterable, Iterator, Sequence, Set
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -43,7 +45,6 @@ from devinfra.gc.output_base_gc import (
     FileIdentity,
     Inspection,
     PrunableBase,
-    allocated_bytes,
     file_identity,
     list_output_bases,
     mount_points,
@@ -62,6 +63,8 @@ RECORDED_INPUTS_SUFFIX = ".recorded_inputs"
 # Bazel's own files under the cache root (LocalRepoContentsCache.TRASH_PATH and LOCK_PATH).
 _TRASH = "_trash"
 _GC_LOCK = "gc_lock"
+_local_locks_guard = threading.Lock()
+_local_locks: weakref.WeakValueDictionary[Path, threading.Lock] = weakref.WeakValueDictionary()
 
 
 class RepoCacheBusyError(RuntimeError):
@@ -99,6 +102,7 @@ class ReviewEntryReason(enum.StrEnum):
     NESTED_MOUNT = enum.auto()  # `detail` is the mount point
     CANNOT_STAT = enum.auto()  # `detail` is the OS error
     CANNOT_LIST = enum.auto()
+    INCOMPLETE_REFERENCE_SCAN = enum.auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +125,31 @@ class ReviewEntry(Review):
 
 
 type EntryInspection = PrunableEntry | RetainedEntry | ReviewEntry
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceScanFailure:
+    path: Path
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceInventory:
+    referrers: dict[Path, frozenset[Path]]
+    failures: tuple[ReferenceScanFailure, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not self.failures
+
+    @property
+    def failure_detail(self) -> str:
+        if not self.failures:
+            raise ValueError("complete reference inventory has no failure detail")
+        first = self.failures[0]
+        other_failures = len(self.failures) - 1
+        suffix = f" ({other_failures} other inspection failure(s))" if other_failures else ""
+        return f"reference inventory is incomplete at {first.path}: {first.detail}{suffix}"
 
 
 def entry_path(inspection: EntryInspection) -> Path:
@@ -196,11 +225,13 @@ def inspect_cache_candidate(candidate: Path | ReviewEntry, *, uid: int, points: 
 
 
 def classify_entry(
-    item: CacheEntry | ReviewEntry, referrers: dict[Path, set[Path]], prunable_bases: set[Path]
+    item: CacheEntry | ReviewEntry, inventory: ReferenceInventory, prunable_bases: set[Path]
 ) -> EntryInspection:
     if isinstance(item, ReviewEntry):
         return item
-    linked_from = frozenset(referrers.get(item.contents, ()))
+    if not inventory.complete:
+        return ReviewEntry(item.contents, ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN, inventory.failure_detail)
+    linked_from = inventory.referrers.get(item.contents, frozenset())
     if not linked_from:
         return PrunableEntry(item)
     if linked_from <= prunable_bases:
@@ -208,37 +239,67 @@ def classify_entry(
     return RetainedEntry(item, RetainedEntryReason.REFERENCED, linked_from)
 
 
-def references(bases: Iterable[Path], contents: Path) -> dict[Path, set[Path]]:
+def references(bases: Iterable[Path], contents: Path) -> ReferenceInventory:
     """Cache entry (its contents dir) -> the output bases whose `external/` links to it.
 
-    One `readlink` per link, never followed further: the link target *is* the reference, and
-    a dangling one simply matches nothing in the inventory. Bazel writes the target through
-    `--repo_contents_cache` as configured, which may reach `contents` (resolved) through a
-    symlinked prefix, so the target's hash directory is resolved before comparing. A base
-    whose `external/` cannot be listed contributes nothing and is logged — the module
-    docstring's blind spot.
+    Missing `external/` directories, vanished entries, and genuine non-symlink entries are
+    harmless. Every other listing, link, or path-resolution failure makes the inventory
+    incomplete: a caller must not call an entry unreferenced based on a partial scan. Bazel
+    writes targets through `--repo_contents_cache` as configured, which may reach `contents`
+    (resolved) through a symlinked prefix, so the target's hash directory is resolved before
+    comparing.
     """
     referrers: dict[Path, set[Path]] = {}
     resolved_hash_dirs: dict[Path, Path] = {}
+    failures: list[ReferenceScanFailure] = []
+
+    def record_failure(path: Path, detail: str) -> None:
+        logger.warning("Cannot inspect %s; repo-cache references are unknown: %s", path, detail)
+        failures.append(ReferenceScanFailure(path, detail))
+
     for base in bases:
         external = base / "external"
         try:
             children = list(external.iterdir())
-        except FileNotFoundError:
-            continue  # never fetched anything
+        except FileNotFoundError as error:
+            # A missing path has no links. If it still exists, however, it may be a broken
+            # symlink or a directory that disappeared while it was being scanned.
+            try:
+                external.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as stat_error:
+                record_failure(external, stat_error.strerror or str(stat_error))
+            else:
+                record_failure(external, error.strerror or str(error))
+            continue
         except OSError as error:
-            logger.warning("Cannot list %s; its repo-cache references are unknown: %s", external, error.strerror)
+            record_failure(external, error.strerror or str(error))
             continue
         for child in children:
             try:
                 target = child.readlink()
-            except OSError:
-                continue  # a repo fetched in place, a marker file, or a link that just vanished
+            except FileNotFoundError:
+                continue  # the entry vanished after the directory listing
+            except OSError as error:
+                if error.errno == errno.EINVAL:
+                    continue  # Linux readlink reports EINVAL for an existing non-symlink entry
+                record_failure(child, error.strerror or str(error))
+                continue
             target = external / target  # a no-op for an absolute target
-            hash_dir = resolved_hash_dirs.setdefault(target.parent, target.parent.resolve())
+            hash_dir = resolved_hash_dirs.get(target.parent)
+            if hash_dir is None:
+                try:
+                    hash_dir = target.parent.resolve()
+                except OSError as error:
+                    record_failure(child, error.strerror or str(error))
+                    continue
+                resolved_hash_dirs[target.parent] = hash_dir
             if hash_dir.parent == contents:
                 referrers.setdefault(hash_dir / target.name, set()).add(base)
-    return referrers
+    return ReferenceInventory(
+        referrers={path: frozenset(bases) for path, bases in referrers.items()}, failures=tuple(failures)
+    )
 
 
 def scan_repo_contents_cache(
@@ -289,17 +350,26 @@ def _gc_lock(contents: Path) -> Iterator[None]:
     holding it exclusively means no fetch is in flight and none starts until it is released —
     a command that then finds its entry gone re-fetches. Non-blocking: a busy cache skips
     this round rather than stalling a running build. Created if absent, as Bazel does."""
-    fd = os.open(contents / _GC_LOCK, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o644)
+    # POSIX record locks are per-process, so they do not exclude another GC thread in
+    # this process. Serialize by cache path before acquiring Bazel's cross-process lock.
+    with _local_locks_guard:
+        local_lock = _local_locks.setdefault(contents, threading.Lock())
+    if not local_lock.acquire(blocking=False):
+        raise RepoCacheBusyError("another workspace-gc run holds the repo contents cache")
     try:
+        fd = os.open(contents / _GC_LOCK, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o644)
         try:
-            fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as error:
-            if error.errno in (errno.EACCES, errno.EAGAIN):
-                raise RepoCacheBusyError("a Bazel command holds the repo contents cache") from error
-            raise
-        yield
+            try:
+                fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                if error.errno in (errno.EACCES, errno.EAGAIN):
+                    raise RepoCacheBusyError("a Bazel command holds the repo contents cache") from error
+                raise
+            yield
+        finally:
+            os.close(fd)
     finally:
-        os.close(fd)
+        local_lock.release()
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,7 +406,7 @@ def trash_prunable_entries(
         with _gc_lock(contents):
             sessions = sorted(set(session_bases) | set(output_base_gc.session_env_output_bases()))
             base_paths = [base for base, _ in list_output_bases(output_user_root, session_bases=sessions)]
-            referrers = references(base_paths, contents)
+            inventory = references(base_paths, contents)
             points = mount_points(mountinfo_path=mountinfo_path)
             for index, candidate in enumerate(candidates, start=1):
                 path = candidate.entry.contents
@@ -348,8 +418,11 @@ def trash_prunable_entries(
                 if fresh.identity != candidate.entry.identity:
                     results.append(Skipped(path, "entry was replaced since the scan"))
                     continue
-                if path in referrers:
-                    results.append(Skipped(path, f"now referenced by {len(referrers[path])} output base(s)"))
+                if path in inventory.referrers:
+                    results.append(Skipped(path, f"now referenced by {len(inventory.referrers[path])} output base(s)"))
+                    continue
+                if not inventory.complete:
+                    results.append(Skipped(path, inventory.failure_detail))
                     continue
                 trash = contents / _TRASH / uuid.uuid4().hex
                 try:
@@ -425,6 +498,8 @@ def describe_reason(inspection: RetainedEntry | ReviewEntry) -> str:
             return f"cannot stat entry: {detail}"
         case ReviewEntry(reason=ReviewEntryReason.CANNOT_LIST, detail=str() as detail):
             return f"cannot list cache directory: {detail}"
+        case ReviewEntry(reason=ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN, detail=str() as detail):
+            return detail
         case _:
             raise ValueError(f"{inspection=} lacks the detail its reason cites")
 
@@ -462,13 +537,10 @@ def render_report(
     ]
     sizes: dict[Path, int | None] = {}
     if include_sizes:
+        if measured_sizes is None:
+            raise ValueError("size measurements are required when sizes are shown")
         measured = [item for item in inspections if include_kept or not isinstance(item, RetainedEntry)]
-        for index, item in enumerate(measured, start=1):
-            logger.info("Measuring repo-cache entry size %d/%d %s", index, len(measured), entry_path(item))
-            path = entry_path(item)
-            sizes[path] = (
-                measured_sizes[path] if measured_sizes is not None and path in measured_sizes else allocated_bytes(path)
-            )
+        sizes = {entry_path(item): measured_sizes.get(entry_path(item)) for item in measured}
     headers = ["STATUS", "LAST USED", "ENTRY", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")

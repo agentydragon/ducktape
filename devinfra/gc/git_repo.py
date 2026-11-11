@@ -10,17 +10,17 @@ only linked-worktree names, not the main one or branches). Content queries use p
 
 from __future__ import annotations
 
-import asyncio
-import locale
 import logging
 import os
 import re
 import subprocess
-from contextlib import suppress
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
+
+from devinfra.gc.async_io import run_process
 
 logger = logging.getLogger(__name__)
 
@@ -45,41 +45,21 @@ def open_repo(path: Path) -> pygit2.Repository:
 
 
 async def git(
-    repo: Path, *args: str | os.PathLike[str], check: bool = True, interruptible: bool = True
+    repo: Path,
+    *args: str | os.PathLike[str],
+    check: bool = True,
+    input_text: str | None = None,
+    env: Mapping[str, str] | None = None,
+    interruptible: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run git asynchronously, reaping it on cancellation; admitted writes finish."""
     command = ["git", "-C", os.fspath(repo), *(os.fspath(arg) for arg in args)]
-    creation = asyncio.create_task(
-        asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    result = await run_process(
+        *command, input_text=input_text, env=dict(env) if env is not None else None, interruptible=interruptible
     )
-    try:
-        process = await asyncio.shield(creation)
-    except asyncio.CancelledError:
-        # Creation may already have forked; obtain and reap the child even if its
-        # asyncio transport was not ready when the caller was cancelled.
-        with suppress(Exception):
-            process = await creation
-            if interruptible:
-                with suppress(ProcessLookupError):
-                    process.kill()
-            await process.communicate()
-        raise
-    communication = asyncio.create_task(process.communicate())
-    try:
-        stdout_bytes, stderr_bytes = await asyncio.shield(communication)
-    except asyncio.CancelledError:
-        if interruptible:
-            with suppress(ProcessLookupError):
-                process.kill()
-        with suppress(Exception):
-            await communication
-        raise
-    encoding = locale.getpreferredencoding(False)
-    stdout, stderr = stdout_bytes.decode(encoding), stderr_bytes.decode(encoding)
-    assert process.returncode is not None
-    if check and process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+    return result
 
 
 async def git_out(repo: Path, *args: str | os.PathLike[str]) -> str:
