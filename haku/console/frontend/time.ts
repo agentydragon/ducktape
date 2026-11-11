@@ -7,18 +7,14 @@ export type TimestampDisplay = { text: string; title: string; isFresh: boolean }
 
 const FRESHNESS_WINDOW_MS = minutesToMilliseconds(1);
 
-export function parseTimestamp(value: string): Date {
-  return parseISO(value);
-}
-
 export function shortDate(value: string | null | undefined): string | null {
   if (!value) return null;
-  return format(parseTimestamp(value), "PPp");
+  return format(parseISO(value), "PPp");
 }
 
 /** A timestamp in a concise, human-readable form with the full date and time as `title`. */
 export function formatTimestamp(value: string, nowMs: number = Date.now()): TimestampDisplay {
-  const date = parseTimestamp(value);
+  const date = parseISO(value);
   const now = new Date(nowMs);
   return {
     text: formatDistanceStrict(date, now, { addSuffix: true, roundingMethod: "round" }),
