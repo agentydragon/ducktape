@@ -139,7 +139,8 @@ one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-service
   rules, saying who may resume, wake or manage which environments, are the mechanism; no such
   `PolicySet` rule type exists yet (`Rule.Type` has `kubernetes_role_binding`,
   `kubernetes_cluster_role_binding`, `egress`, `action_auto_approve`, `session_inbox_access`), an
-  open item tied to open question 11 and `SESSION_IDENTITY_AUTHZ`.
+  open item tied to open question 11 and `SESSION_IDENTITY_AUTHZ`. Its proposed shape, the
+  `environment` rule type, is [The `environment` rule type](environment_rules.md).
 - **Action boxes:** creating one is lifecycle. Today it is granted explicitly, through the Action
   Service's `action_auto_approve` policy on the effective caller. **Open consideration** (operator,
   not decided): an agent creating its own boxes with automatic approval is a deliberate path, so MCP
