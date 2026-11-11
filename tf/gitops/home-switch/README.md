@@ -62,6 +62,26 @@ the old one. cert-manager renews it 30 days before it expires, so approve the pl
 renewal within that window. The switch must hold only that one certificate for its address
 (`main.tf` says why); `bootstrap.sh` removes older ones.
 
+## Crossplane migration
+
+As of 2026-11-10, [provider-routeros v0.28.0](https://github.com/sindrip/provider-routeros/tree/v0.28.0)
+has CRDs for all 10 RouterOS resource kinds this module uses. Those CRDs passed a Kubernetes
+server-side dry run; the provider has not been tested against this switch. Before replacing
+tofu-controller:
+
+- Provide a Secret-backed certificate import. The provider's
+  [`keyFileContent` field](https://github.com/sindrip/provider-routeros/blob/v0.28.0/apis/namespaced/system/v1alpha1/zz_certificate_types.go)
+  is plain text in the managed resource, rather than a Secret reference.
+- Preserve plan review and approval, and coordinate certificate renewal so overlapping
+  certificates do not leave the switch's TLS broken.
+- Test adoption and recovery for logging rules and actions, SSH keys, and Netwatch probes,
+  which use RouterOS IDs that can change when objects are recreated. The two Netwatch probes
+  share a comment, so it cannot uniquely identify them. Keep one writer per resource.
+- Decide how to handle the provider's 508 managed resource definitions: the cluster's current
+  Crossplane activation policy activates all managed types.
+- Test the `apis://` TLS connection, cluster CA and home-LAN placement on a disposable
+  RouterOS instance before handing over the switch.
+
 ## Bootstrap (new switch, or after a factory reset)
 
 tofu-controller can't reach the switch until `api-ssl` serves a cluster-CA certificate and the
