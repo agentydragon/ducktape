@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import ClassVar, Protocol
@@ -79,7 +78,6 @@ class WorkQueue[T]:
         self._running: dict[asyncio.Task[Finished[T] | WorkFailure | Cancelled], WorkItem[T]] = {}
         self._followup_streak = 0
         self._stopped = False
-        self._start_lock = threading.Lock()
 
     def submit(self, item: WorkItem[T], *, followup: bool = False) -> None:
         if self._stopped:
@@ -117,24 +115,16 @@ class WorkQueue[T]:
             started.append(item)
         return started
 
-    def _run(self, item: ThreadWorkItem[T]) -> Finished[T] | Cancelled:
-        with self._start_lock:
-            if self._stopped:
-                return Cancelled()
-        return item.run()
-
-    async def _run_async(self, item: AsyncWorkItem[T]) -> Finished[T] | Cancelled:
-        with self._start_lock:
-            if self._stopped:
-                return Cancelled()
-        return await item.run_async()
-
     async def _execute(self, item: WorkItem[T]) -> Finished[T] | WorkFailure | Cancelled:
         # Keep job failures as results so TaskGroup does not cancel admitted mutations.
         try:
+            # Admission and stop are both owned by the event loop. There is no await
+            # between this check and submitting blocking work to the executor.
+            if self._stopped:
+                return Cancelled()
             if isinstance(item, AsyncWorkItem):
-                return await self._run_async(item)
-            return await asyncio.to_thread(self._run, item)
+                return await item.run_async()
+            return await asyncio.to_thread(item.run)
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -162,8 +152,7 @@ class WorkQueue[T]:
 
     def stop(self) -> list[WorkItem[T]]:
         """Cancel unstarted and asynchronous read-only jobs; admitted mutations finish."""
-        with self._start_lock:
-            self._stopped = True
+        self._stopped = True
         for task, item in self._running.items():
             if isinstance(item, AsyncWorkItem) and not isinstance(item, AsyncMutation):
                 task.cancel()

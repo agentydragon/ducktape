@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -138,6 +138,31 @@ async def test_stop_prevents_scheduled_threads_from_starting_work(tasks: asyncio
     assert not started.is_set()
     assert queue.phases["scan"].finished == 1
     assert queue.phases["scan"].outcomes["cancelled"] == 1
+
+
+async def test_stop_drains_thread_work_admitted_before_executor_starts(
+    tasks: asyncio.TaskGroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    submitted, allow_start = asyncio.Event(), asyncio.Event()
+    started, release = threading.Event(), threading.Event()
+    release.set()
+    to_thread = asyncio.to_thread
+
+    async def delayed_submission[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+        submitted.set()
+        await allow_start.wait()
+        return await to_thread(func, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", delayed_submission)
+    queue = WorkQueue[str](workers=1)
+    queue.submit(Job("admitted", "remove", started, release))
+    queue.start(tasks)
+    await asyncio.wait_for(submitted.wait(), 10)
+    queue.stop()
+    allow_start.set()
+    [(_, result)] = await asyncio.wait_for(queue.drain(), 10)
+    assert isinstance(result, Finished)
+    assert started.is_set()
 
 
 async def test_stop_before_async_mutation_starts_does_not_admit_it(tasks: asyncio.TaskGroup) -> None:

@@ -28,9 +28,7 @@ import os
 import re
 import shutil
 import stat
-import threading
 import uuid
-import weakref
 from collections.abc import Iterable, Iterator, Sequence, Set
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -63,8 +61,6 @@ RECORDED_INPUTS_SUFFIX = ".recorded_inputs"
 # Bazel's own files under the cache root (LocalRepoContentsCache.TRASH_PATH and LOCK_PATH).
 _TRASH = "_trash"
 _GC_LOCK = "gc_lock"
-_local_locks_guard = threading.Lock()
-_local_locks: weakref.WeakValueDictionary[Path, threading.Lock] = weakref.WeakValueDictionary()
 
 
 class RepoCacheBusyError(RuntimeError):
@@ -351,26 +347,28 @@ def _gc_lock(contents: Path) -> Iterator[None]:
     holding it exclusively means no fetch is in flight and none starts until it is released —
     a command that then finds its entry gone re-fetches. Non-blocking: a busy cache skips
     this round rather than stalling a running build. Created if absent, as Bazel does."""
-    # POSIX record locks are per-process, so they do not exclude another GC thread in
-    # this process. Serialize by cache path before acquiring Bazel's cross-process lock.
-    with _local_locks_guard:
-        local_lock = _local_locks.setdefault(contents, threading.Lock())
-    if not local_lock.acquire(blocking=False):
-        raise RepoCacheBusyError("another workspace-gc run holds the repo contents cache")
+    # POSIX record locks are per-process, and closing any fd for gc_lock drops this
+    # process's locks on it. Lock the directory before even opening gc_lock, so another
+    # GC thread cannot accidentally release our Bazel lock by closing its own fd.
+    directory_fd = os.open(contents, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
-        fd = os.open(contents / _GC_LOCK, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o644)
         try:
+            fcntl.flock(directory_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno in (errno.EACCES, errno.EAGAIN):
+                raise RepoCacheBusyError("another workspace-gc run holds the repo contents cache") from error
+            raise
+        fd = os.open(_GC_LOCK, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o644, dir_fd=directory_fd)
+        with os.fdopen(fd, "r+b", buffering=0) as lock_file:
             try:
-                fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as error:
                 if error.errno in (errno.EACCES, errno.EAGAIN):
                     raise RepoCacheBusyError("a Bazel command holds the repo contents cache") from error
                 raise
             yield
-        finally:
-            os.close(fd)
     finally:
-        local_lock.release()
+        os.close(directory_fd)
 
 
 @dataclass(frozen=True, slots=True)

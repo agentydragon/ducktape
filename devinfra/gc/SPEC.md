@@ -24,7 +24,10 @@ reinspected after its workspace disappears. A repository-cache entry is
 eligible only after the relevant output bases have been enumerated and their references
 examined; immediately before trashing, it and its references are checked again under Bazel's
 cache lock. Unknown references prevent deletion. Cache trashing batches are serialized within
-the process, and emptying trash may run concurrently.
+the process, and emptying trash may run concurrently. GC takes an exclusive advisory lock on
+the cache directory before opening Bazel's `gc_lock`, then takes Bazel's record lock. This also
+excludes other GC threads in this process, whose closing a second `gc_lock` descriptor would
+otherwise release the first thread's process-scoped record lock.
 
 An independent foreign clone is reported for review and is not automatically deleted: its Git
 repository may contain user data that checking worktrees alone cannot establish is disposable.
@@ -53,7 +56,9 @@ or untracked changes remains the final guard for those two classes of files.
 
 ## Interruption
 
-Stopping closes admission to new mutations. An admitted mutation finishes and records its
+Stopping closes admission to new mutations. Admission is decided on the event loop immediately
+before an operation starts or is submitted to the thread executor; an already submitted thread
+operation may start after the stop request. An admitted mutation finishes and records its
 outcome, even if the caller is cancelled again while shutdown drains. Queued work is discarded;
 running read-only async work is cancelled and its owned subprocesses are reaped. Blocking
 filesystem and libgit2 work is owned until its thread finishes; Python cannot forcibly cancel
