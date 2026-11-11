@@ -765,6 +765,7 @@ const QuotaIndicator = GObject.registerClass(
       item.menu.removeAll();
       item._detailRows = next.map((detail) => {
         const row = new PopupMenu.PopupMenuItem(detail, { reactive: false, can_focus: false });
+        row.add_style_class_name("quota-popup-read-only");
         row.label.clutter_text.line_wrap = true;
         row.label.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         row.label.clutter_text.ellipsize = 0;
@@ -776,7 +777,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeTextRow() {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-      item.remove_style_class_name("popup-inactive-menu-item");
+      item.add_style_class_name("quota-popup-read-only");
       item.add_style_class_name("quota-popup-bar-item");
       item._summaryLabel = new St.Label({ text: "", style_class: "quota-popup-row", x_expand: true });
       item._summaryLabel.clutter_text.line_wrap = true;
@@ -788,7 +789,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeQuotaRow(label) {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-      item.remove_style_class_name("popup-inactive-menu-item");
+      item.add_style_class_name("quota-popup-read-only");
       item.add_style_class_name("quota-popup-bar-item");
 
       const content = new St.BoxLayout({
