@@ -1,0 +1,28 @@
+{
+  "status": "error",
+  "error": "The network is unavailable.",
+  "has_view": true,
+  "last_attempt_seconds_ago": 75,
+  "view": {
+    "generated_at": "2026-10-15T11:00:00Z",
+    "cards": [
+      {
+        "label": "Synthetic card",
+        "currency": "USD",
+        "spend_minor_units": 12345,
+        "posted_minor_units": 12345,
+        "pending_minor_units": 0,
+        "limit_minor_units": null,
+        "alert_threshold_percent": null,
+        "spend_percent": null,
+        "alert_state": "normal",
+        "last_synced_at": "2026-10-15T11:00:00Z",
+        "statement_period": {
+          "kind": "statement",
+          "start": "2026-10-01",
+          "through": "2026-10-15"
+        }
+      }
+    ]
+  }
+}

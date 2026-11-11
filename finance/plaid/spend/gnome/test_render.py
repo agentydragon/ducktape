@@ -35,7 +35,15 @@ from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, g
 
 _EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_FIXTURE_NAMES = ("ready_allowance", "ready_two_cards", "authentication_required", "offline", "retrying")
+_FIXTURE_NAMES = (
+    "ready_allowance",
+    "ready_two_cards",
+    "authentication_required",
+    "offline",
+    "offline_cached_card",
+    "offline_no_detail",
+    "retrying",
+)
 _FIXTURE_DIR = "ducktape/finance/plaid/spend/gnome/fixtures"
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
@@ -367,14 +375,35 @@ def capture_menu(session: GnomeSession, test_outputs: BoundTestOutputs) -> Gnome
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
-    [("ready_two_cards", "$149"), ("authentication_required", "Sign in"), ("offline", "Offline")],
+    [
+        ("ready_two_cards", "$149"),
+        ("authentication_required", "Sign in"),
+        ("offline", "Offline"),
+        ("offline_cached_card", "Offline"),
+        ("offline_no_detail", "Offline"),
+    ],
 )
 def test_card_status(
     session: GnomeSession, fixture_name: str, expected_label: str, capture_menu: GnomeMenuCapture
 ) -> None:
     with _menu(session, fixture_name, expected_label) as geometry:
+        menu_text = string_reply(session.call("GetMenuText"))
         if fixture_name == "ready_two_cards":
             assert json.loads(string_reply(session.call("GetPanelState")))["level"] == "caution"
+        elif fixture_name == "offline":
+            assert "Connection problem" not in menu_text
+            assert "figures may be stale" not in menu_text
+            assert "No card data is available." in menu_text
+            assert "Details: The Plaid Spend service is unavailable." in menu_text
+        elif fixture_name == "offline_cached_card":
+            assert "Connection problem · figures may be stale" in menu_text
+            assert "Spend: $123 / no limit set" in menu_text
+            assert "Details: The network is unavailable." in menu_text
+        elif fixture_name == "offline_no_detail":
+            assert "Connection problem" in menu_text
+            assert "figures may be stale" not in menu_text
+            assert "No card data is available." in menu_text
+            assert "Details:" not in menu_text
         capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
 
 
@@ -415,7 +444,8 @@ def test_allowance_warning(
     view = allowance_scenarios["allowance_warning"]
     with _menu(session, "allowance_warning", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "Forecast or 30d pace: warning" in menu_text
+        assert "7d pace at or below leash" in menu_text
+        assert "Overall warning · 30d forecast or pace" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -469,8 +499,12 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
 def test_authentication_required_has_no_retry_countdown(session: GnomeSession) -> None:
     with _menu(session, "authentication_required", "Sign in"):
         menu_text = string_reply(session.call("GetMenuText"))
+        assert "Sign in to see flexible spending" in menu_text
+        assert "Sign in with Authentik" in menu_text
         assert "Last attempt 1m 15s ago" in menu_text
-        assert "Sign-in required" in menu_text
+        assert "Sign-in required" not in menu_text
+        assert "Your account is not connected." not in menu_text
+        assert "Details: Sign in to connect your Plaid account." in menu_text
         assert "Retry in" not in menu_text
 
 

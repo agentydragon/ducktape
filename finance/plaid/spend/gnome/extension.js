@@ -236,8 +236,7 @@ function desktopTimingLabel(status, lastAttemptAt, nextRetryAt) {
   const now = relativeNowMs() / 1000;
   const attempt = lastAttemptAt > 0 ? `Last attempt ${formatDuration(now - lastAttemptAt)} ago` : "No desktop attempt";
   if (nextRetryAt > 0) return `${attempt} · Retry in ${formatDuration(nextRetryAt - now)}`;
-  if (status === "authentication-required")
-    return lastAttemptAt > 0 ? `${attempt} · Sign-in required` : "Sign-in required · no automatic retry";
+  if (status === "authentication-required") return lastAttemptAt > 0 ? attempt : null;
   if (status === "authorizing")
     return lastAttemptAt > 0 ? `${attempt} · Signing in` : "Signing in · no automatic retry";
   if (lastAttemptAt <= 0) return null;
@@ -862,6 +861,7 @@ const PlaidSpendIndicator = GObject.registerClass(
 
     _addReadOnly(text, styleClass = null) {
       const item = new PopupMenu.PopupMenuItem(text, { reactive: false, can_focus: false });
+      item.add_style_class_name("plaid-spend-read-only");
       if (styleClass) item.label.add_style_class_name(styleClass);
       this.menu.addMenuItem(item);
       return item;
@@ -872,16 +872,21 @@ const PlaidSpendIndicator = GObject.registerClass(
       this.menu.removeAll();
       this._timingItem = null;
       const allowance = this._view?.allowance;
+      const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
+      const hasCachedCardSpend =
+        !allowance &&
+        cards.some((card) => card.spend_minor_units != null && Number.isFinite(Number(card.spend_minor_units)));
       const statusText =
         {
           starting: "Starting desktop client…",
           connecting: "Connecting to Plaid Spend…",
           authorizing: "Waiting for Authentik sign-in…",
           "authentication-required": "Sign in to see flexible spending",
-          error: "Connection problem · figures may be stale",
+          error: hasCachedCardSpend ? "Connection problem · figures may be stale" : "Connection problem",
           ready: allowance ? "Flexible spending" : "Statement-cycle spend",
         }[this._status] || "Plaid Spend";
-      if (!allowance || this._status !== "ready") this._addReadOnly(statusText, "plaid-spend-header");
+      if ((!allowance || this._status !== "ready") && (this._status !== "error" || hasCachedCardSpend || !this._error))
+        this._addReadOnly(statusText, "plaid-spend-header");
 
       if (this._status === "authentication-required") {
         const login = new PopupMenu.PopupMenuItem("Sign in with Authentik…");
@@ -913,7 +918,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           }
           if (allowance.spending_signal === "warning") {
             const basis = allowance.forecast?.basis_period?.id === "rolling_30d" ? "30d" : "7d";
-            this._addReadOnly(`Forecast or ${basis} pace: warning`, "plaid-spend-caution");
+            this._addReadOnly(`Overall warning · ${basis} forecast or pace`, "plaid-spend-caution");
           }
           this._addReadOnly(
             `7d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.observed_daily_minor_units, allowance.currency)} · ` +
@@ -959,11 +964,8 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(link);
       }
       if (!allowance) {
-        const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
         if (cards.length === 0) {
-          this._addReadOnly(
-            this._status === "authentication-required" ? "Your account is not connected." : "No card data is available."
-          );
+          if (this._status !== "authentication-required") this._addReadOnly("No card data is available.");
         }
         for (const card of cards) {
           this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));

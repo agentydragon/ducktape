@@ -1,0 +1,10 @@
+{
+  "status": "error",
+  "error": "",
+  "has_view": false,
+  "last_attempt_seconds_ago": 75,
+  "view": {
+    "generated_at": null,
+    "cards": []
+  }
+}
