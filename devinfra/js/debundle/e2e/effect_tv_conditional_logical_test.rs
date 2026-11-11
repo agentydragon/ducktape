@@ -1667,3 +1667,104 @@ fn accessor_iterator_installs(callee: &str) -> [(String, &'static [&'static str]
         ),
     ]
 }
+
+/// An install publishes the receiver of an accessor found on its prototype
+/// chain or on a class (instance or static), and of a setter run by a
+/// destructuring target; and a refused instance reaches what another
+/// statement stored on its class or prototype, through `new.target`, an
+/// alias of `K.prototype`, or `k.constructor`.
+#[test]
+fn an_iterator_installed_through_a_chain_or_class_surface_runs_where_the_protocol_finds_it() {
+    for (install, extra) in chain_iterator_installs("second") {
+        for flag in ITERATING_FLAGS {
+            assert_reader_split_diverges_with(&format!("{install}\n{flag}"), extra);
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same installs of a generator
+/// calling the effect-free `first` keep the split.
+#[test]
+fn an_iterator_installed_through_a_chain_or_class_surface_without_effects_keeps_the_split() {
+    for (install, extra) in chain_iterator_installs("first") {
+        let fixture = with_reader_split(
+            &format!("{install}\n{}", ITERATING_FLAGS[0]),
+            extra,
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+fn chain_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 10] {
+    let define = |value: &str| {
+        format!("Object.defineProperty(String.prototype, Symbol.iterator, {{ value: {value} }})")
+    };
+    let generator = format!("function* () {{ {callee}(); }}");
+    let named = format!("function* it() {{ {callee}(); }}");
+    let this_it = define("this.it");
+    let k_it = define("k.it");
+    [
+        (
+            format!(
+                "{named}\nclass K {{ constructor() {{ this.it = new.target.gen; }} }}\nconst s = (K.gen = it);\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["it", "K", "s", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "const proto = {{ get install() {{ return {this_it}; }} }};\nconst obj = {{ __proto__: proto, it: {generator} }};\nconst patched = obj.install;"
+            ),
+            &["proto", "obj", "patched"][..],
+        ),
+        (
+            format!(
+                "const proto = {{ set install(v) {{ {this_it}; }} }};\nconst obj = {{ __proto__: proto, it: {generator} }};\nconst patched = (obj.install = 1);"
+            ),
+            &["proto", "obj", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ it = {generator}; get install() {{ return {this_it}; }} }}\nconst k = new K();\nconst patched = k.install;"
+            ),
+            &["K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ it = {generator}; get install() {{ return {this_it}; }} }}\nconst patched = new K().install;"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ static it = {generator}; static get install() {{ return {this_it}; }} }}\nconst patched = K.install;"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ static it = {generator}; static set install(v) {{ {this_it}; }} }}\nconst patched = (K.install = 1);"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "const obj = {{ it: {generator}, set install(v) {{ {this_it}; }} }};\nconst patched = ([obj.install] = [1]);"
+            ),
+            &["obj", "patched"][..],
+        ),
+        (
+            format!(
+                "{named}\nclass K {{}}\nconst P = K.prototype;\nconst set = (P.it = it);\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["it", "K", "P", "set", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "{named}\nclass K {{}}\nconst set = (K.it = it);\nconst k = new K();\nconst patched = {};",
+                define("k.constructor.it")
+            ),
+            &["it", "K", "set", "k", "patched"][..],
+        ),
+    ]
+}

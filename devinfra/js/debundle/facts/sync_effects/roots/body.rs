@@ -245,6 +245,11 @@ fn execute_flat(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'_>) ->
         &BTreeSet::new(),
         certified_deferred_write,
     );
+    executor.publish_destructuring_target_receivers(
+        &index.top_destructuring_member_receivers[fact.ordinal.0],
+        top_env,
+        top_captures,
+    );
     if !certified_deferred_write {
         executor.promote_callback_result_writes(
             &index.top_callback_result_writes[fact.ordinal.0],

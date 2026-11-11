@@ -314,7 +314,20 @@ replay of the canonical inputs in gaffer-private.
   unknown value missed their effects. Fixes apply one rule at every such
   site: a value is dropped from a tracked set only after it has been escaped.
   The probes are the regression suite; see
-  <convergence_landing.md> § Replan for the landing order.
+  <convergence_landing.md> § Replan for the landing order. Still open after
+  the iterator-site and receiver series:
+  - `arguments`, `new.target` and a `super` home object read by a truncated
+    remainder (no accepted-divergent shape found yet); `super` does not mark
+    a method as reading `this`.
+  - Prototype chains built by `Object.create` or `Object.setPrototypeOf`; only
+    a literal `__proto__` makes an object's accessors unknown.
+  - The kernel lane's own `for`-`of` and destructuring over non-native values
+    are unaudited.
+  - Precision gaps, all refused: `({ ...gen() })`; an `Object.assign` copy of
+    an uncalled effect, including a config merge
+    `Object.assign({}, defaults, { a: 1 })`; a `this`-reading method or
+    accessor on an object holding an uncalled effect (`api.size()`), whose
+    receiver is published.
 - **Callback-effect provenance.** The unknown global-property dispatch defect
   is fixed; the separate dense-array callback-promotion route is still an
   unproven candidate. Canonical attribution needs per-call target/contributor
