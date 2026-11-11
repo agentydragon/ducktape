@@ -227,7 +227,7 @@ async def test_composer_autosuspend_countdown(view: VisualPage, app: AgentplaneF
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
     autosuspend = view.page.locator(
-        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+        ".agentplane-composer-autosuspend:visible, .agentplane-thread-tail-autosuspend:visible"
     )
     activity = view.page.locator(
         ".agentplane-composer-model-activity:visible, .agentplane-thread-tail-model-activity:visible"
@@ -246,7 +246,7 @@ async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixtur
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
     hint = view.page.locator(
-        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+        ".agentplane-composer-autosuspend:visible, .agentplane-thread-tail-autosuspend:visible"
     )
     await expect(hint).to_have_text("Sandbox in active use by Session running a turn · Details")
     await expect(hint.get_by_role("link", name="Session running a turn")).to_have_attribute(
@@ -268,7 +268,7 @@ async def test_composer_autosuspend_starting(view: VisualPage, app: AgentplaneFi
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
     hint = view.page.locator(
-        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+        ".agentplane-composer-autosuspend:visible, .agentplane-thread-tail-autosuspend:visible"
     )
     await expect(hint).to_have_text("Autosuspend waiting: Sandbox starting")
     await expect(view.page.get_by_text("Continue when the Sandbox is ready.", exact=True)).to_be_visible()
