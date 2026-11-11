@@ -4334,6 +4334,16 @@ a callback-pool record also gives the pool size. An `unsupported_construction`
 record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
+
+When a graph-level unresolved-call fallback expands a source-unit read closure,
+both its traversal and promoted effects use the indexed synchronous prefix for
+owners with complete callable coverage. A read only after a definite `await`
+cannot constrain module initialization through that callback. Closures created
+or published before suspension, callable getters, and paths that may skip an
+`await` retain their synchronous reads. Owners without complete coverage and
+dynamic lexical scope keep conservative lazy effects. The fallback still
+records its precision loss and all other reachable effect domains.
+
 `missing_call_result` identifies an ordered call whose synchronous-effect proof
 completed without supplying a return-value transfer. The body still truncates
 conservatively at that call. This does not report an unknown target or certify

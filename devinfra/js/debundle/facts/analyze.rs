@@ -873,6 +873,7 @@ fn assemble_statement_facts(
         calls,
         constructor,
         synchronous_calls: None,
+        synchronous_prefix_effects: None,
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,

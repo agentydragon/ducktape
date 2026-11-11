@@ -13324,6 +13324,10 @@ pub(crate) fn annotate_synchronous_calls(
             .map(|effects| effects.map(|effects| &effects.reads))
             .collect::<Vec<_>>(),
     );
+    for (fact, effects) in facts.iter_mut().zip(&prefix_effects) {
+        fact.synchronous_prefix_effects =
+            effects.map(|effects| (effects.reads.clone(), effects.rebinds.clone()));
+    }
     let mut declaration_counts = BTreeMap::<Id, usize>::new();
     for binding in facts.iter().flat_map(|fact| &fact.declared) {
         *declaration_counts.entry(binding.clone()).or_default() += 1;

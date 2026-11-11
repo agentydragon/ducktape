@@ -2346,7 +2346,8 @@ fn promote_at_init_calls(
         if fallback_roots.is_empty() {
             continue;
         }
-        let fallback = fallback.get_or_insert_with(|| SourceUnitReadClosure::new(facts));
+        let fallback =
+            fallback.get_or_insert_with(|| SourceUnitReadClosure::new_synchronous(facts));
         for root in fallback_roots {
             let (closure_reads, closure_rebinds) =
                 fallback.lazy_effects_for_source_unit(SourceUnitOrdinal(root.0));
