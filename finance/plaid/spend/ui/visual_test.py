@@ -249,7 +249,7 @@ async def test_spending_decision_render(
     await expect(page.get_by_text("$175 short before", exact=False)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
-    await expect(page.get_by_text("-<$1", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("-$0.01", exact=True)).to_have_count(1)
     await expect(page.locator('span[title="-$0.01"]')).to_have_count(1)
     exceeded = f"dashboard-{width}-purchase.png"
     await view.capture(

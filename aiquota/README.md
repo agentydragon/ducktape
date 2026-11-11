@@ -103,14 +103,20 @@ write.
 The CLI, GNOME popup and browser group subscription quotas separately from API balances.
 Provider headings stay short; labelled balance and grant rows preserve each pool's units,
 organization and product restrictions. Grant rows show remaining value and expiry; expanded
-details add the original amount. Banked resets are separate from monetary and paid-credit balances.
+details add the original amount when it differs from remaining, and exact remaining value
+when rounding hides a fraction. The optional `original_repeats_remaining` presentation hint
+suppresses repeated originals; older payloads without the hint still show the existing
+`original` string.
+Monetary balances use the shared `Available balance` label within their provider and organization;
+Claude's separate subscription prepaid pool is identified in details. Banked resets are separate
+from monetary and paid-credit balances.
 Known zero banked resets remain available in details. The default shows zero only when
 included quota is exhausted and no displayed window awaits updated usage after its reset.
 Positive counts stay visible; an unknown count is never shown as zero. Stale readings retain
 their stale warning.
 
-GNOME places a single ungrouped balance in the provider heading for both prepaid money and
-paid credits. Its popup wraps to a bounded width. Broad API promo scopes are shown in
+GNOME places a single ungrouped subscription balance in the provider heading and API balances
+in separate rows. Its popup wraps to a bounded width. Broad API promo scopes are shown in
 details; product or model restrictions remain visible in the default output on all surfaces.
 
 `aiquota --details` expands numeric pace, exact expiry times, all known reset-credit expiries,
@@ -119,9 +125,14 @@ forecasts and concise error summaries. `--verbose` remains provider-response deb
 The tmux segment shows one compact subscription summary per provider and omits API balances.
 GNOME's panel also reserves API balances for its popup.
 
-All surfaces use local 24-hour time with minute precision. Expiries within 14 days include
-the time and timezone; distant expiries show a date, with the year when different. Details
-show the full local timestamp. Forecasts extrapolate average usage since the window started.
+All surfaces use local 24-hour time with minute precision. Expiries within 14 days before or after now include
+the time without a zone label; more distant expiries show a date, with the year when different.
+Details show the full local timestamp and zone. USD summaries show cents for amounts below
+10 major units when needed, a signed less-than-one-cent threshold for smaller nonzero amounts,
+and whole units above 10. Other currencies retain their provider-reported minor-unit precision
+below 10. Exact details appear when rounding hides a difference at the currency's precision;
+provider precision remains in the underlying response. Forecasts extrapolate average usage
+since the window started.
 The meter fill shows quota used and its tick shows elapsed window time.
 
 Provider observations become stale after ten minutes (two default collector intervals),
@@ -137,6 +148,13 @@ spend-only observation replaces the previous snapshot; omitted quota windows rem
 rather than inheriting an older reading with the new timestamp. After a
 reset deadline passes, usage remains the last reported value and the surface says it is
 awaiting updated usage.
+
+Full views show exhaustion in each window and paid-credit availability in its balance row, so
+they do not repeat those facts in a status sentence. When a fresh exhausted window makes extra
+usage enabled, the monthly-spend row carries that state; a status fallback remains when no
+monthly-spend row is present. Monthly spend alone never establishes that the setting is enabled.
+The compact GNOME panel and tmux segment keep their `⚡` signal when current paid or extra usage
+applies.
 
 ## Historical collection
 

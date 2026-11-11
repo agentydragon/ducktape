@@ -55,9 +55,13 @@ palette scoped to `.aiquota-scope` and derived from the host Mantine theme; the 
   found" / "0m to renew"). New providers: same config, plus a test round-tripping a realistic
   response.
 - "Currently over plan" = an exhausted window with extra usage enabled; it does not prove
-  requests are happening or a charge was incurred. `ExtraSpend.is_enabled` only means the
-  feature is on; `used_usd` is month-cumulative. Surfaces consume this via
-  `currently_over_plan` / `extra_status` in <render/view_model.py>.
+  requests are happening or a charge was incurred. Full views already show exhausted windows
+  and paid balances, so their status omits a second exhaustion or paid-availability line. When
+  current extra usage is enabled, append that distinct state to the monthly-spend row; keep a
+  status fallback when there is no spend row. `ExtraSpend.is_enabled` only means the feature is
+  on; `used_usd` is month-cumulative. Surfaces consume this via `currently_over_plan` /
+  `extra_status` in <render/view_model.py>. Compact panel and tmux views keep their `⚡` signal
+  when current paid or extra usage applies.
   `monthly_extra_spend` selects positive month-cumulative spend even when extra usage is disabled
   or the latest refresh failed. Keep this history visible with its provider freshness/error state.
   Current paid/extra signals require a fresh reading and no displayed window awaiting updated

@@ -25,12 +25,17 @@ from aiquota.peak_windows import BurnStatus, status_for
 from aiquota.render.format import (
     display_used_percent,
     format_duration,
+    format_exact_usd,
     format_minor_currency,
     format_pace,
     format_pace_forecast,
     format_paid_credit_balance,
     format_prepaid_balance,
+    format_summary_minor_currency,
+    format_summary_usd,
     format_window_label,
+    same_at_precision,
+    summary_hides_fraction,
 )
 
 ExtraStatus = Literal["none", "informational", "active"]
@@ -62,6 +67,8 @@ class DisplaySelection(BaseModel):
 class BalanceView(BaseModel):
     label: str
     value: str
+    exact_value: str | None = None
+    pool_detail: str | None = None
     group: str | None = None
     stale_since: datetime | None = None
     error: str | None = None
@@ -70,7 +77,9 @@ class BalanceView(BaseModel):
 class GrantView(BaseModel):
     label: str
     remaining: str
+    exact_remaining: str | None = None
     original: str
+    original_repeats_remaining: bool = False
     expires_at: datetime | None
     scope: str | None = None
     scope_detail: str | None = None
@@ -253,12 +262,9 @@ def _provider_view(
     status = None
     if reset_pending:
         status = "Reset time passed · awaiting updated usage"
-    elif any(window.exhausted for window in display_windows):
-        status = "Included quota exhausted"
-        if over_plan:
-            status += " · extra usage enabled"
-        elif paid_active:
-            status += " · paid credits available"
+    elif over_plan and monthly_extra is None:
+        # Keep the setting visible when no monthly-spend row can carry it.
+        status = "Extra usage enabled"
     error = pq.last_output.result.error if not isinstance(pq.last_output.result, FetchSuccess) else None
     return ProviderView(
         provider=pq.provider,
@@ -367,7 +373,14 @@ def _reset_grant_rows(result: FetchSuccess | None, now: datetime) -> list[GrantV
         remaining, original = groups.get(key, (0, 0))
         groups[key] = (remaining + grant.remaining, original + grant.original)
     return [
-        GrantView(label=label, remaining=str(remaining), original=str(original), expires_at=expiry, status=status)
+        GrantView(
+            label=label,
+            remaining=str(remaining),
+            original=str(original),
+            original_repeats_remaining=original == remaining,
+            expires_at=expiry,
+            status=status,
+        )
         for (label, expiry, status), (remaining, original) in groups.items()
     ]
 
@@ -382,10 +395,26 @@ def _credit_rows(
     grants: list[GrantView] = []
     prepaid = selection.prepaid_balance
     if prepaid is not None:
+        exact = format_prepaid_balance(prepaid) if prepaid.kind == "available" else "unavailable"
+        summary = (
+            format_summary_minor_currency(prepaid.amount_minor, prepaid.exponent, prepaid.currency)
+            if prepaid.kind == "available"
+            else exact
+        )
         balances.append(
             BalanceView(
-                label="Prepaid balance",
-                value=format_prepaid_balance(prepaid) if prepaid.kind == "available" else "unavailable",
+                label="Available balance",
+                value=summary,
+                pool_detail="Claude prepaid credits",
+                exact_value=(
+                    exact
+                    if prepaid.kind == "available"
+                    and summary_hides_fraction(
+                        Decimal(prepaid.amount_minor).scaleb(-prepaid.exponent),
+                        2 if prepaid.currency == "USD" else prepaid.exponent,
+                    )
+                    else None
+                ),
                 stale_since=selection.prepaid_stale_since if selection.prepaid_stale_since != stale_since else None,
             )
         )
@@ -396,28 +425,67 @@ def _credit_rows(
             BalanceView(label="Paid credits", value=format_paid_credit_balance(credits.balance, credits.unlimited))
         )
     if openai is not None:
-        balances.append(BalanceView(label="Available balance", value=f"${openai.total_available_usd:,.2f}"))
-        grants.extend(
-            GrantView(
-                label="Grant",
-                remaining=f"${grant.granted_usd - grant.used_usd:,.2f}",
-                original=f"${grant.granted_usd:,.2f}",
-                expires_at=grant.expires_at,
-                status="scheduled" if grant.is_scheduled else "held" if grant.is_held_for_prepaid_transition else None,
+        exact = format_exact_usd(openai.total_available_usd)
+        summary = format_summary_usd(openai.total_available_usd)
+        balances.append(
+            BalanceView(
+                label="Available balance",
+                value=summary,
+                exact_value=exact if summary_hides_fraction(openai.total_available_usd) else None,
             )
-            for grant in openai.grants
         )
+        for grant in openai.grants:
+            remaining_amount = grant.granted_usd - grant.used_usd
+            remaining_label = format_summary_usd(remaining_amount)
+            exact_remaining = format_exact_usd(remaining_amount)
+            grants.append(
+                GrantView(
+                    label="Grant",
+                    remaining=remaining_label,
+                    exact_remaining=exact_remaining if summary_hides_fraction(remaining_amount) else None,
+                    original=format_exact_usd(grant.granted_usd),
+                    original_repeats_remaining=same_at_precision(grant.granted_usd, remaining_amount),
+                    expires_at=grant.expires_at,
+                    status="scheduled"
+                    if grant.is_scheduled
+                    else "held"
+                    if grant.is_held_for_prepaid_transition
+                    else None,
+                )
+            )
     if anthropic is not None:
         for org in anthropic.organizations:
             balance = org.balance.credits if org.balance is not None else None
             value = (
-                format_minor_currency(balance.amount_minor, balance.exponent, org.currency or "USD")
+                format_summary_minor_currency(balance.amount_minor, balance.exponent, org.currency or "USD")
                 if balance is not None
                 else "unavailable"
             )
+            exact = (
+                format_minor_currency(balance.amount_minor, balance.exponent, org.currency or "USD")
+                if balance is not None
+                else value
+            )
             if org.error is not None:
                 value = "lookup failed"
-            balances.append(BalanceView(label="Available balance", value=value, group=org.name, error=org.error))
+            balances.append(
+                BalanceView(
+                    label="Available balance",
+                    value=value,
+                    exact_value=(
+                        exact
+                        if balance is not None
+                        and org.error is None
+                        and summary_hides_fraction(
+                            Decimal(balance.amount_minor).scaleb(-balance.exponent),
+                            2 if (org.currency or "USD") == "USD" else balance.exponent,
+                        )
+                        else None
+                    ),
+                    group=org.name,
+                    error=org.error,
+                )
+            )
             for label, tranches in (("Grant", org.tranches), ("Promo grant", org.promo_tranches)):
                 for tranche in tranches:
                     remaining, original = tranche.remaining.credits, tranche.granted.credits
@@ -443,10 +511,23 @@ def _credit_rows(
                     grants.append(
                         GrantView(
                             label=label,
-                            remaining=format_minor_currency(
+                            remaining=format_summary_minor_currency(
                                 remaining.amount_minor, remaining.exponent, tranche.currency
                             ),
+                            exact_remaining=(
+                                format_minor_currency(remaining.amount_minor, remaining.exponent, tranche.currency)
+                                if summary_hides_fraction(
+                                    Decimal(remaining.amount_minor).scaleb(-remaining.exponent),
+                                    2 if tranche.currency == "USD" else remaining.exponent,
+                                )
+                                else None
+                            ),
                             original=format_minor_currency(original.amount_minor, original.exponent, tranche.currency),
+                            original_repeats_remaining=same_at_precision(
+                                Decimal(original.amount_minor).scaleb(-original.exponent),
+                                Decimal(remaining.amount_minor).scaleb(-remaining.exponent),
+                                2 if tranche.currency == "USD" else max(original.exponent, remaining.exponent),
+                            ),
                             expires_at=tranche.expires_at,
                             scope=None if broad_scope else scope,
                             scope_detail=scope if broad_scope else None,

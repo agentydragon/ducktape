@@ -35,7 +35,15 @@ from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, g
 
 _EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_FIXTURE_NAMES = ("ready_allowance", "ready_two_cards", "authentication_required", "offline", "retrying")
+_FIXTURE_NAMES = (
+    "ready_allowance",
+    "ready_two_cards",
+    "authentication_required",
+    "offline",
+    "offline_cached_card",
+    "offline_no_detail",
+    "retrying",
+)
 _FIXTURE_DIR = "ducktape/finance/plaid/spend/gnome/fixtures"
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
@@ -89,9 +97,21 @@ def fixture_json_dir(
     for fixture_name in _FIXTURE_NAMES:
         source = runfiles_root / f"{_FIXTURE_DIR}/{fixture_name}.json"
         (dest / f"{fixture_name}.json").write_bytes(source.read_bytes())
+    auth_fixture = json.loads((dest / "authentication_required.json").read_text())
+    for name, error in (
+        ("auth_generic", "Sign in to connect this computer"),
+        ("auth_error", "The refresh token was revoked"),
+    ):
+        auth_fixture["error"] = error
+        (dest / f"{name}.json").write_text(json.dumps(auth_fixture))
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
+    fractional_view = allowance_scenarios["allowance_paced"].model_dump(mode="json")
+    fractional_view["allowance"]["available_minor_units"] = 20025
+    (dest / "allowance_fractional.json").write_text(
+        json.dumps({"status": "ready", "error": "", "view": fractional_view})
+    )
     view_payload = allowance_scenarios["allowance_paced"].model_dump(mode="json")
     allowance = view_payload["allowance"]
     allowance["available_minor_units"] = 1234500
@@ -362,14 +382,35 @@ def capture_menu(session: GnomeSession, test_outputs: BoundTestOutputs) -> Gnome
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
-    [("ready_two_cards", "$149"), ("authentication_required", "Sign in"), ("offline", "Offline")],
+    [
+        ("ready_two_cards", "$149"),
+        ("authentication_required", "Sign in"),
+        ("offline", "Offline"),
+        ("offline_cached_card", "Offline"),
+        ("offline_no_detail", "Offline"),
+    ],
 )
 def test_card_status(
     session: GnomeSession, fixture_name: str, expected_label: str, capture_menu: GnomeMenuCapture
 ) -> None:
     with _menu(session, fixture_name, expected_label) as geometry:
+        menu_text = string_reply(session.call("GetMenuText"))
         if fixture_name == "ready_two_cards":
             assert json.loads(string_reply(session.call("GetPanelState")))["level"] == "caution"
+        elif fixture_name == "offline":
+            assert "Connection problem" not in menu_text
+            assert "figures may be stale" not in menu_text
+            assert "No card data is available." in menu_text
+            assert "Details: The Plaid Spend service is unavailable." in menu_text
+        elif fixture_name == "offline_cached_card":
+            assert "Connection problem · figures may be stale" in menu_text
+            assert "Spend: $123 / no limit set" in menu_text
+            assert "Details: The network is unavailable." in menu_text
+        elif fixture_name == "offline_no_detail":
+            assert "Connection problem" in menu_text
+            assert "figures may be stale" not in menu_text
+            assert "No card data is available." in menu_text
+            assert "Details:" not in menu_text
         capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
 
 
@@ -379,7 +420,9 @@ def test_allowance_paced(
     view = allowance_scenarios["allowance_paced"]
     with _menu(session, "allowance_paced", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "7d pace at or below leash" in menu_text
+        assert "$200 available" in menu_text
+        assert "Balance details" not in menu_text
+        assert "7d pace ≤ leash" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -390,13 +433,26 @@ def test_allowance_paced(
         capture_menu.capture(geometry, label="allowance paced")
 
 
+def test_rounded_balance_keeps_exact_amount_in_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    with _menu(session, "allowance_fractional", "$200"):
+        menu_text = string_reply(session.call("GetMenuText"))
+        assert "$200 available" in menu_text
+        assert "$200.25" not in menu_text
+        assert "Balance details" in menu_text
+        assert string_reply(session.call("GetBalanceDetails")) == "Exact available: $200.25"
+        session.call("OpenBalanceDetails")
+        session.wait_for_paint()
+        capture_menu.capture(session.open_menu(), label="exact balance details")
+
+
 def test_allowance_warning(
     session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
 ) -> None:
     view = allowance_scenarios["allowance_warning"]
     with _menu(session, "allowance_warning", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "Forecast or 30d pace: warning" in menu_text
+        assert "7d pace ≤ leash" in menu_text
+        assert "Overall warning · 30d forecast or pace" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -425,7 +481,7 @@ def test_allowance_warming(
 def test_allowance_exhausted(
     session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
 ) -> None:
-    with _menu(session, "allowance_exhausted", "-<$1") as geometry:
+    with _menu(session, "allowance_exhausted", "-$0.01") as geometry:
         view = allowance_scenarios["allowance_exhausted"]
         assert "Allowance exhausted" in _allowance_menu_text(session, view)
         capture_menu.capture(geometry, label="allowance exhausted")
@@ -450,9 +506,26 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
 def test_authentication_required_has_no_retry_countdown(session: GnomeSession) -> None:
     with _menu(session, "authentication_required", "Sign in"):
         menu_text = string_reply(session.call("GetMenuText"))
+        assert "Sign in to see flexible spending" not in menu_text
+        assert "Sign in with Authentik" in menu_text
         assert "Last attempt 1m 15s ago" in menu_text
-        assert "Sign-in required" in menu_text
+        assert "Sign-in required" not in menu_text
+        assert "Your account is not connected." not in menu_text
+        assert "Details: Sign in to connect your Plaid account." not in menu_text
         assert "Retry in" not in menu_text
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "detail"), [("auth_generic", ""), ("auth_error", "Details: The refresh token was revoked")]
+)
+def test_sign_in_keeps_distinct_errors(session: GnomeSession, fixture_name: str, detail: str) -> None:
+    with _menu(session, fixture_name, "Sign in"):
+        menu_text = string_reply(session.call("GetMenuText"))
+        assert "Sign in with Authentik" in menu_text
+        if detail:
+            assert detail in menu_text
+        else:
+            assert "Details:" not in menu_text
 
 
 def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
@@ -471,7 +544,7 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         )
         with _menu(session, "panel_composition", "7d 110% $12.3k") as geometry:
             assert state() == {"items": ["pace", "sparkline", "status", "balance"], "level": "caution", "window": "7d"}
-            assert "$12,345.00 available" in string_reply(session.call("GetMenuText"))
+            assert "$12,345 available" in string_reply(session.call("GetMenuText"))
             assert "Customize panel" in string_reply(session.call("GetMenuText"))
             assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))
             capture_menu.capture(geometry, label="custom panel 7d with sparkline", checkpoint="7d", left_padding=160)

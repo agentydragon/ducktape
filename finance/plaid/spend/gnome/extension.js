@@ -64,19 +64,22 @@ function formatMoney(minorUnits, currency) {
   try {
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
+    const amount = value / 10 ** (precision ?? 2);
+    const digits = amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount) ? (precision ?? 2) : 0;
     const formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
-      maximumFractionDigits: 0,
-      minimumFractionDigits: 0,
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
     });
-    const amount = value / 10 ** (precision ?? 2);
-    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
+    if (amount !== 0 && Math.abs(amount) < 0.5 / 10 ** (precision ?? 2)) {
+      return `${amount < 0 ? "-" : ""}<${formatter.format(1 / 10 ** (precision ?? 2))}`;
+    }
     return formatter.format(amount);
   } catch (_error) {
     const amount = value / 100;
-    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
-    return `${code} ${amount.toFixed(0)}`;
+    if (amount !== 0 && Math.abs(amount) < 0.005) return `${amount < 0 ? "-" : ""}<${code} 0.01`;
+    return `${code} ${amount.toFixed(amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount) ? 2 : 0)}`;
   }
 }
 
@@ -87,7 +90,7 @@ function formatCompactMoney(minorUnits, currency) {
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const amount = Number(minorUnits) / 10 ** (precision ?? 2);
-    if (amount !== 0 && Math.abs(amount) < 0.5) return formatMoney(minorUnits, currency);
+    if (Math.abs(amount) < 1000) return formatMoney(minorUnits, currency);
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
@@ -113,11 +116,31 @@ function formatExactMoney(minorUnits, currency) {
   }
 }
 
-function formatTimestamp(value) {
+function needsExactMoneyDetail(minorUnits, currency) {
+  if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return false;
+  const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
+  try {
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
+    const scale = 10 ** (precision ?? 2);
+    const value = Number(minorUnits);
+    return Math.abs(value) >= 10 * scale && value % scale !== 0;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function formatTimestamp(value, now = new Date()) {
   if (!value) return "Unknown";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const label = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
+  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return Math.abs(date.getTime() - now.getTime()) <= 14 * 86400_000 ? `${label}, ${clock}` : label;
 }
 
 function cardTitle(card) {
@@ -184,7 +207,7 @@ function panelSignal(allowance, window) {
   if (!pace) return { level: "unknown", label: "Pace unavailable" };
   if (pace.ratio > 1.2) return { level: "danger", label: "Pace over 120% of leash" };
   if (pace.ratio > 1) return { level: "caution", label: "Pace above leash" };
-  return { level: "good", label: "Pace at or below leash" };
+  return { level: "good", label: "Pace ≤ leash" };
 }
 
 const PANEL_ITEMS = ["status", "balance", "pace", "sparkline"];
@@ -217,8 +240,7 @@ function desktopTimingLabel(status, lastAttemptAt, nextRetryAt) {
   const now = relativeNowMs() / 1000;
   const attempt = lastAttemptAt > 0 ? `Last attempt ${formatDuration(now - lastAttemptAt)} ago` : "No desktop attempt";
   if (nextRetryAt > 0) return `${attempt} · Retry in ${formatDuration(nextRetryAt - now)}`;
-  if (status === "authentication-required")
-    return lastAttemptAt > 0 ? `${attempt} · Sign-in required` : "Sign-in required · no automatic retry";
+  if (status === "authentication-required") return lastAttemptAt > 0 ? attempt : null;
   if (status === "authorizing")
     return lastAttemptAt > 0 ? `${attempt} · Signing in` : "Signing in · no automatic retry";
   if (lastAttemptAt <= 0) return null;
@@ -734,6 +756,8 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="SetPanelSettings"><arg type="s" direction="in" name="settings"/></method>' +
           '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetBalanceDetails"><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="OpenBalanceDetails"/>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           '<method name="GetSparklineGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
@@ -791,6 +815,19 @@ const PlaidSpendIndicator = GObject.registerClass(
               ._getMenuItems()
               .map((item) => item.label?.get_text() || "")
               .join("\n"),
+          GetBalanceDetails: () => {
+            const item = this.menu._getMenuItems().find((entry) => entry.label?.get_text() === "Balance details");
+            return (
+              item?.menu
+                ?._getMenuItems()
+                .map((entry) => entry.label?.get_text() || "")
+                .join("\n") ?? ""
+            );
+          },
+          OpenBalanceDetails: () => {
+            const item = this.menu._getMenuItems().find((entry) => entry.label?.get_text() === "Balance details");
+            item?.menu?.open(false);
+          },
           GetMenuGeometry: () => {
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
@@ -828,6 +865,7 @@ const PlaidSpendIndicator = GObject.registerClass(
 
     _addReadOnly(text, styleClass = null) {
       const item = new PopupMenu.PopupMenuItem(text, { reactive: false, can_focus: false });
+      item.add_style_class_name("plaid-spend-read-only");
       if (styleClass) item.label.add_style_class_name(styleClass);
       this.menu.addMenuItem(item);
       return item;
@@ -838,16 +876,24 @@ const PlaidSpendIndicator = GObject.registerClass(
       this.menu.removeAll();
       this._timingItem = null;
       const allowance = this._view?.allowance;
+      const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
+      const hasCachedCardSpend =
+        !allowance &&
+        cards.some((card) => card.spend_minor_units != null && Number.isFinite(Number(card.spend_minor_units)));
       const statusText =
         {
           starting: "Starting desktop client…",
           connecting: "Connecting to Plaid Spend…",
           authorizing: "Waiting for Authentik sign-in…",
-          "authentication-required": "Sign in to see flexible spending",
-          error: "Connection problem · figures may be stale",
+          error: hasCachedCardSpend ? "Connection problem · figures may be stale" : "Connection problem",
           ready: allowance ? "Flexible spending" : "Statement-cycle spend",
         }[this._status] || "Plaid Spend";
-      if (!allowance || this._status !== "ready") this._addReadOnly(statusText, "plaid-spend-header");
+      if (
+        this._status !== "authentication-required" &&
+        (!allowance || this._status !== "ready") &&
+        (this._status !== "error" || hasCachedCardSpend || !this._error)
+      )
+        this._addReadOnly(statusText, "plaid-spend-header");
 
       if (this._status === "authentication-required") {
         const login = new PopupMenu.PopupMenuItem("Sign in with Authentik…");
@@ -864,12 +910,22 @@ const PlaidSpendIndicator = GObject.registerClass(
           const signal = panelSignal(allowance, window);
           const label = signal.label.startsWith("Pace") ? `${window} ${signal.label.toLowerCase()}` : signal.label;
           this._addReadOnly(
-            `${formatExactMoney(allowance.available_minor_units, allowance.currency)} available · ${label}`,
+            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${label}`,
             `plaid-spend-${signal.level}`
           );
+          if (needsExactMoneyDetail(allowance.available_minor_units, allowance.currency)) {
+            const details = new PopupMenu.PopupSubMenuMenuItem("Balance details");
+            const exact = new PopupMenu.PopupMenuItem(
+              `Exact available: ${formatExactMoney(allowance.available_minor_units, allowance.currency)}`,
+              { reactive: false, can_focus: false }
+            );
+            exact.add_style_class_name("plaid-spend-read-only");
+            details.menu.addMenuItem(exact);
+            this.menu.addMenuItem(details);
+          }
           if (allowance.spending_signal === "warning") {
             const basis = allowance.forecast?.basis_period?.id === "rolling_30d" ? "30d" : "7d";
-            this._addReadOnly(`Forecast or ${basis} pace: warning`, "plaid-spend-caution");
+            this._addReadOnly(`Overall warning · ${basis} forecast or pace`, "plaid-spend-caution");
           }
           this._addReadOnly(
             `7d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.observed_daily_minor_units, allowance.currency)} · ` +
@@ -915,11 +971,8 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(link);
       }
       if (!allowance) {
-        const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
         if (cards.length === 0) {
-          this._addReadOnly(
-            this._status === "authentication-required" ? "Your account is not connected." : "No card data is available."
-          );
+          if (this._status !== "authentication-required") this._addReadOnly("No card data is available.");
         }
         for (const card of cards) {
           this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));
@@ -948,7 +1001,10 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._addReadOnly(`View updated ${formatTimestamp(this._view.generated_at)}`);
       }
-      if (this._error) this._addReadOnly(`Details: ${this._error.slice(0, 120)}`);
+      const genericSignIn =
+        this._status === "authentication-required" &&
+        ["Sign in to connect this computer", "Sign in to connect your Plaid account."].includes(this._error);
+      if (this._error && !genericSignIn) this._addReadOnly(`Details: ${this._error.slice(0, 120)}`);
       const preferences = new PopupMenu.PopupMenuItem("Customize panel…");
       preferences.connect("activate", () => this._openPreferences());
       this.menu.addMenuItem(preferences);

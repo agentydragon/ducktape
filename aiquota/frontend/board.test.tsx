@@ -63,7 +63,8 @@ function sampleQuotas(): AllQuotasView {
         grants: [
           {
             label: "Promo grant",
-            remaining: "$25.75",
+            remaining: "$26",
+            exact_remaining: "$25.75",
             original: "$100.00",
             expires_at: "2026-02-01T10:30:00Z",
             scope: "Codex API",
@@ -142,22 +143,53 @@ function sampleQuotas(): AllQuotasView {
 }
 
 describe("QuotaBoard", () => {
-  it("puts fresh exhaustion above readings and styles it as urgent; pending resets are warnings", () => {
+  it("keeps exhaustion visible without repeating it in status; pending resets remain warnings", () => {
     const quotas = sampleQuotas();
-    quotas.providers[0]!.display_windows[0]!.exhausted = true;
+    const exhausted = quotas.providers[0]!.display_windows[0]!;
+    exhausted.exhausted = true;
+    exhausted.used_percent = 100;
+    exhausted.used = 100;
     render(quotas);
     let card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
-    let status = card.querySelector(".aiquota-status-row")!;
-    expect(status.classList.contains("aiquota-status-urgent")).toBe(true);
-    expect(status.compareDocumentPosition(card.querySelector(".aiquota-readings")!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
+    expect(card.querySelector(".aiquota-status-row")).toBeNull();
+    expect(card.textContent).toContain("100%");
+    expect(card.textContent).toContain("exhausted");
 
     render(quotas, Date.parse("2026-01-15T14:31:00Z"));
     card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
-    status = card.querySelector(".aiquota-status-row")!;
+    const status = card.querySelector(".aiquota-status-row")!;
     expect(status.textContent).toContain("awaiting updated usage");
     expect(status.classList.contains("aiquota-status-urgent")).toBe(false);
+  });
+
+  it("puts current extra enablement on the monthly row instead of duplicating exhausted status", () => {
+    const quotas = sampleQuotas();
+    const codex = quotas.providers[0]!;
+    codex.display_windows[0]!.exhausted = true;
+    codex.display_windows[0]!.used = 100;
+    codex.display_windows[0]!.used_percent = 100;
+    codex.currently_over_plan = true;
+    codex.extra_status = "active";
+    render(quotas);
+
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    expect(card.querySelector(".aiquota-status-row")).toBeNull();
+    expect(card.textContent).toContain("Extra spend this month: $26 of $100 limit · extra usage enabled");
+    expect(card.textContent).toContain("exhausted");
+    expect(card.textContent).not.toContain("Included quota exhausted");
+  });
+
+  it("keeps a status fallback when active extra usage has no monthly-spend row", () => {
+    const quotas = sampleQuotas();
+    const codex = quotas.providers[0]!;
+    codex.display_windows[0]!.exhausted = true;
+    codex.currently_over_plan = true;
+    codex.monthly_extra_spend = null;
+    render(quotas);
+
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    expect(card.querySelector(".aiquota-status-row")?.textContent).toBe("Extra usage enabled");
+    expect(card.textContent).not.toContain("Extra spend this month");
   });
 
   it.each([
@@ -198,22 +230,47 @@ describe("QuotaBoard", () => {
     expect(container.textContent).toContain("5h");
     expect(container.textContent).toContain("On pace");
     expect(container.textContent).toContain("Numeric pace: +10 pp");
-    expect(container.textContent).toContain("$25.75 remaining");
+    expect(container.textContent).toContain("$26 remaining");
     expect(container.textContent).toContain("Scope: Codex API");
     expect(container.textContent).toContain("scheduled");
-    expect(container.textContent).toContain("Extra spend this month: $25.50 of $100 limit");
+    expect(container.textContent).toContain("Extra spend this month: $26 of $100 limit");
     expect(container.textContent).toContain("Research org");
 
     const grantDetails = container.querySelector(".aiquota-reading-row .aiquota-details");
     expect(grantDetails?.hasAttribute("open")).toBe(false);
     expect(grantDetails?.textContent).toContain("Original amount");
     expect(grantDetails?.textContent).toContain("$100.00");
+    expect(grantDetails?.textContent).toContain("Exact remaining$25.75");
     expect(container.querySelector(".aiquota-source-error .aiquota-error-details pre")?.textContent).toBe(
       "quota transport timed out"
     );
     expect(container.querySelector(".aiquota-card .aiquota-error-details pre")?.textContent).toBe(
       "401 invalid_token returned from the provider"
     );
+  });
+
+  it("uses the optional grant hint while keeping older payloads compatible", () => {
+    const quotas = sampleQuotas();
+    const grant = quotas.providers[0]!.grants![0]!;
+    grant.remaining = "$100";
+    grant.original = "$100.00";
+    render(quotas);
+    expect(container.querySelector(".aiquota-reading-row .aiquota-details")?.textContent).toContain("Original amount");
+
+    grant.original_repeats_remaining = true;
+    render(quotas);
+    expect(container.querySelector(".aiquota-reading-row .aiquota-details")?.textContent).not.toContain(
+      "Original amount"
+    );
+  });
+
+  it("does not add exact spend details when whole-dollar values are already exact", () => {
+    const quotas = sampleQuotas();
+    quotas.providers[0]!.monthly_extra_spend!.used_usd = 20;
+    quotas.providers[0]!.monthly_extra_spend!.monthly_limit_usd = 100;
+    render(quotas);
+    expect(container.textContent).toContain("Extra spend this month: $20 of $100 limit");
+    expect(container.textContent).not.toContain("Extra spend details");
   });
 
   it("updates only reset countdown and pending state as time advances without a new payload", () => {
@@ -250,7 +307,10 @@ describe("QuotaBoard", () => {
       result: { kind: "success", windows: [], reset_credit_expiry_lookup_failed: false },
     };
     render(quotas);
-    expect(container.textContent).toContain("Included quota exhausted · paid credits available");
+    expect(container.textContent).not.toContain("Included quota exhausted");
+    expect(container.textContent).not.toContain("paid credits available");
+    expect(container.textContent).toContain("Paid credits");
+    expect(container.textContent).toContain("exhausted");
     render(quotas, Date.parse("2026-01-15T12:11:00Z"));
 
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-badge-stale')?.textContent).toBe(
@@ -260,7 +320,7 @@ describe("QuotaBoard", () => {
     expect(card?.querySelector(".aiquota-error-details")).toBeNull();
     expect(card?.textContent).not.toContain("paid credits available");
     expect(card?.textContent).not.toContain("extra usage enabled");
-    expect(card?.textContent).toContain("Extra spend this month: $25.50");
+    expect(card?.textContent).toContain("Extra spend this month: $26");
     expect(card?.textContent).not.toContain("On pace");
     expect(card?.textContent).not.toContain("Numeric pace");
   });

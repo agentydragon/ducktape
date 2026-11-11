@@ -10,6 +10,8 @@ import type { AllQuotasView, BalanceView, BurnStatus, GrantView, ProviderView, W
 import {
   formatAge,
   formatExtraSpend,
+  formatExtraSpendExact,
+  extraSpendHasHiddenFraction,
   refreshWindowTiming,
   showResetCredits,
   quotaActivity,
@@ -92,11 +94,12 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   const staleSince = providerStaleSince(provider, quota, now);
   const isStale = staleSince !== null;
   const windows = quota.windows.map((window) => presentWindow(window, now, isStale));
-  const { resetPending, status } = quotaActivity(
+  const { resetPending, overPlan, status } = quotaActivity(
     windows.map(({ window, resetPending }) => ({ exhausted: window.exhausted, resetPending })),
     isStale,
     provider.currently_over_plan,
-    provider.paid_credits_active
+    provider.paid_credits_active,
+    quota.extraSpend !== null
   );
   const hasReadings =
     quota.windows.length > 0 ||
@@ -147,9 +150,17 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       )}
       {provider.burn && hasReadings && <BurnSummary burn={provider.burn} now={now} />}
       {quota.extraSpend && (
-        <p className="aiquota-extra-usage">
-          {formatExtraSpend(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd)}
-        </p>
+        <>
+          <p className="aiquota-extra-usage">
+            {formatExtraSpend(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd, overPlan)}
+          </p>
+          {extraSpendHasHiddenFraction(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd) && (
+            <details className="aiquota-details">
+              <summary>Extra spend details</summary>
+              <p>Exact: {formatExtraSpendExact(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd)}</p>
+            </details>
+          )}
+        </>
       )}
 
       {windows.length > 0
@@ -225,12 +236,33 @@ function BalanceRow({ balance, now }: { balance: BalanceView; now: number }): JS
         </span>
       )}
       {balance.error && <ErrorDetails summary="Balance lookup failed" detail={balance.error} />}
+      {(balance.exact_value || balance.pool_detail) && (
+        <details className="aiquota-details">
+          <summary>Balance details</summary>
+          <dl className="aiquota-detail-list">
+            {balance.pool_detail && (
+              <>
+                <dt>Pool</dt>
+                <dd>{balance.pool_detail}</dd>
+              </>
+            )}
+            {balance.exact_value && (
+              <>
+                <dt>Exact balance</dt>
+                <dd>{balance.exact_value}</dd>
+              </>
+            )}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }
 
 function GrantRow({ grant, now }: { grant: GrantView; now: number }): JSX.Element {
   const expiry = grant.expires_at ? formatDeadline(grant.expires_at, new Date(now)) : null;
+  const hasDetails =
+    !grant.original_repeats_remaining || grant.exact_remaining || grant.scope_detail || grant.expires_at;
   const notes = [
     grant.status ?? null,
     grant.scope ? `Scope: ${grant.scope}` : null,
@@ -241,25 +273,37 @@ function GrantRow({ grant, now }: { grant: GrantView; now: number }): JSX.Elemen
       <dt>{grant.label}</dt>
       <dd>{grant.remaining} remaining</dd>
       <span className="aiquota-reading-note">{notes.join(" · ")}</span>
-      <details className="aiquota-details">
-        <summary>Grant details</summary>
-        <dl className="aiquota-detail-list">
-          <dt>Original amount</dt>
-          <dd>{grant.original}</dd>
-          {grant.scope_detail && (
-            <>
-              <dt>Scope</dt>
-              <dd>{grant.scope_detail}</dd>
-            </>
-          )}
-          {grant.expires_at && (
-            <>
-              <dt>Expiry time</dt>
-              <dd>{formatDeadline(grant.expires_at, new Date(now), true)}</dd>
-            </>
-          )}
-        </dl>
-      </details>
+      {hasDetails && (
+        <details className="aiquota-details">
+          <summary>Grant details</summary>
+          <dl className="aiquota-detail-list">
+            {!grant.original_repeats_remaining && (
+              <>
+                <dt>Original amount</dt>
+                <dd>{grant.original}</dd>
+              </>
+            )}
+            {grant.exact_remaining && (
+              <>
+                <dt>Exact remaining</dt>
+                <dd>{grant.exact_remaining}</dd>
+              </>
+            )}
+            {grant.scope_detail && (
+              <>
+                <dt>Scope</dt>
+                <dd>{grant.scope_detail}</dd>
+              </>
+            )}
+            {grant.expires_at && (
+              <>
+                <dt>Expiry time</dt>
+                <dd>{formatDeadline(grant.expires_at, new Date(now), true)}</dd>
+              </>
+            )}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }

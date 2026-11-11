@@ -25,13 +25,89 @@ from aiquota.models import (
     QuotaWindow,
     SuccessfulProviderFetch,
 )
-from aiquota.render.view_model import currently_over_plan, refresh_view, to_view
+from aiquota.render.view_model import GrantView, currently_over_plan, refresh_view, to_view
 
 if __name__ == "__main__":
     pytest_bazel.main()
 
 
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+
+
+def test_old_grant_payload_keeps_original_string_visible() -> None:
+    grant = GrantView.model_validate({"label": "Grant", "remaining": "$5", "original": "$5.00", "expires_at": None})
+    assert grant.original == "$5.00"
+    assert not grant.original_repeats_remaining
+
+
+def test_credit_display_ignores_subcent_artifacts_without_changing_source_values() -> None:
+    granted = Decimal("100.000000000000001")
+    used = Decimal("0.000000000000001")
+    credits = OpenAIPlatformCredits(
+        total_available_usd=granted,
+        total_paid_available_usd=granted,
+        grants=[
+            OpenAIPlatformCreditGrant(
+                granted_usd=granted,
+                used_usd=used,
+                effective_at=_NOW - timedelta(days=1),
+                expires_at=_NOW + timedelta(days=1),
+                is_scheduled=False,
+                is_held_for_prepaid_transition=False,
+            )
+        ],
+    )
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="openai_platform",
+                last_output=ProviderFetch(fetched_at=_NOW, result=FetchSuccess(openai_platform_credits=credits)),
+            )
+        ],
+    )
+    view = to_view(quota, _NOW).providers[0]
+    assert view.balances[0].value == "$100"
+    assert view.balances[0].exact_value is None
+    assert view.grants[0].remaining == "$100"
+    assert view.grants[0].exact_remaining is None
+    assert view.grants[0].original_repeats_remaining
+    assert view.display_openai_platform_credits == credits
+
+
+def test_non_usd_credit_display_keeps_provider_minor_unit_precision() -> None:
+    original = AnthropicPlatformCreditValue(credits=AnthropicPlatformCreditAmount(amount_minor=10002, exponent=3))
+    remaining = AnthropicPlatformCreditValue(credits=AnthropicPlatformCreditAmount(amount_minor=10001, exponent=3))
+    tranche = AnthropicPlatformTranche(
+        id="kwd-grant",
+        currency="KWD",
+        granted_at=_NOW,
+        granted=original,
+        remaining=remaining,
+        scope=AnthropicPlatformScope(kind="restricted"),
+    )
+    credits = AnthropicPlatformCredits(
+        organizations=[
+            AnthropicPlatformOrganization(
+                uuid="kwd-org", name="KWD org", currency="KWD", balance=original, tranches=[tranche]
+            )
+        ]
+    )
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="anthropic_platform",
+                last_output=ProviderFetch(fetched_at=_NOW, result=FetchSuccess(anthropic_platform_credits=credits)),
+            )
+        ],
+    )
+    view = to_view(quota, _NOW).providers[0]
+    assert view.balances[0].value == "10 KWD"
+    assert view.balances[0].exact_value == "10.002 KWD"
+    assert view.grants[0].remaining == "10 KWD"
+    assert view.grants[0].exact_remaining == "10.001 KWD"
+    assert not view.grants[0].original_repeats_remaining
 
 
 def test_claude_reset_rows_group_counts_keep_scope_and_hide_expired() -> None:
@@ -144,6 +220,43 @@ def test_paid_credits_active_only_with_balance_and_exhausted_window() -> None:
         for view in to_view(AllQuotas(providers=providers, fetched_at=_NOW), _NOW).providers
     }
     assert statuses == {"positive": True, "empty": False, "no_credits": False}
+
+
+def test_status_keeps_only_distinct_current_extra_enablement() -> None:
+    exhausted = QuotaWindow(used_percent=100, reset_seconds=1200, window_seconds=18000)
+    quotas = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="extra",
+                last_output=_fetch(
+                    short_window=exhausted,
+                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25, utilization=25),
+                ),
+            ),
+            ProviderQuota(
+                provider="extra_without_spend_row",
+                last_output=_fetch(
+                    short_window=exhausted,
+                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
+                ),
+            ),
+            ProviderQuota(
+                provider="paid", last_output=_fetch(short_window=exhausted, paid_credits=PaidCredits(balance="500"))
+            ),
+            ProviderQuota(provider="plain", last_output=_fetch(short_window=exhausted)),
+        ],
+    )
+
+    views = {view.provider: view for view in to_view(quotas, _NOW).providers}
+
+    assert views["extra"].status is None
+    assert views["extra"].currently_over_plan
+    assert views["extra"].monthly_extra_spend is not None
+    assert views["extra_without_spend_row"].status == "Extra usage enabled"
+    assert views["paid"].status is None
+    assert any(balance.label == "Paid credits" for balance in views["paid"].balances)
+    assert views["plain"].status is None
 
 
 def test_window_presentation_updates_from_one_snapshot() -> None:
@@ -365,21 +478,27 @@ def test_normalized_credit_rows_keep_pools_organizations_and_restrictions_separa
     provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
     view = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0]
     assert [(row.label, row.value, row.group) for row in view.balances] == [
-        ("Prepaid balance", "$25.75", None),
+        ("Available balance", "$26", None),
         ("Paid credits", "2,746 credits", None),
-        ("Available balance", "$123.45", "Main org"),
+        ("Available balance", "$123", "Main org"),
     ]
     assert [(row.label, row.remaining, row.scope, row.group) for row in view.grants] == [
-        ("Promo grant", "$123.45", "restricted", "Main org")
+        ("Promo grant", "$123", "restricted", "Main org")
     ]
+    assert view.balances[0].pool_detail == "Claude prepaid credits"
+    assert view.balances[0].exact_value == "$25.75"
+    assert view.grants[0].original == "$123.45"
+    assert view.grants[0].original_repeats_remaining
 
 
 def test_normalized_prepaid_balances_preserve_exact_minor_units_and_currency() -> None:
-    for minor, exponent, currency, expected in (
-        (123, 0, "USD", "$123"),
-        (1234567, 3, "EUR", "1,234.567 EUR"),
-        (-123, 2, "USD", "-$1.23"),
-        (0, 2, "USD", "$0.00"),
+    for minor, exponent, currency, expected, exact in (
+        (123, 0, "USD", "$123", None),
+        (1234567, 3, "EUR", "1,235 EUR", "1,234.567 EUR"),
+        (20000, 2, "USD", "$200", None),
+        (525, 2, "USD", "$5.25", None),
+        (-123, 2, "USD", "-$1.23", None),
+        (0, 2, "USD", "$0", None),
     ):
         result = FetchSuccess(
             prepaid_balance=PrepaidBalanceAvailable(amount_minor=minor, exponent=exponent, currency=currency)
@@ -387,6 +506,7 @@ def test_normalized_prepaid_balances_preserve_exact_minor_units_and_currency() -
         provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
         row = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0].balances[0]
         assert row.value == expected
+        assert row.exact_value == exact
 
 
 def test_broad_api_promo_scope_is_detail_while_model_and_product_restrictions_remain_visible() -> None:
@@ -477,14 +597,19 @@ def test_current_paid_signals_expire_without_losing_monthly_spend() -> None:
     fresh = original.providers[0]
     assert fresh.currently_over_plan
     assert fresh.paid_credits_active
-    for refreshed in (
+    refreshed_views = (
         refresh_view(original, _NOW + timedelta(minutes=10)),
         refresh_view(original, _NOW, connection_error="offline"),
         refresh_view(original, _NOW + timedelta(hours=2)),
-    ):
+    )
+    for refreshed in refreshed_views:
         provider = refreshed.providers[0]
         assert not provider.currently_over_plan
         assert not provider.paid_credits_active
         assert provider.monthly_extra_spend == fresh.monthly_extra_spend
         assert provider.extra_status == "informational"
-        assert provider.status in {"Included quota exhausted", "Reset time passed · awaiting updated usage"}
+    assert [view.providers[0].status for view in refreshed_views] == [
+        None,
+        None,
+        "Reset time passed · awaiting updated usage",
+    ]
