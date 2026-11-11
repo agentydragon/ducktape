@@ -27,6 +27,29 @@ def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch)
     assert calls == [["all", "--no-prs"]]
 
 
+@pytest.mark.parametrize("flag", ["--delete-foreign-clones", "--delete-foreign-clones=true"])
+def test_removed_foreign_clone_delete_flag_fails_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flag: str
+) -> None:
+    dispatched = False
+
+    def fake_app(*, args: list[str]) -> None:
+        nonlocal dispatched
+        dispatched = True
+
+    monkeypatch.setattr(workspace_gc, "app", fake_app)
+
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(["--prune", flag])
+
+    assert exit_info.value.code == 2
+    assert not dispatched
+    error = capsys.readouterr().err
+    assert "--delete-foreign-clones is no longer supported" in error
+    assert "independent Git repository" in error
+    assert "report-only" in error
+
+
 # Branch names that look like numbers: `tabulate` rewrites a column whose every cell does.
 _NUMERIC_LOOKING_BRANCHES = ["1e5", "2.10", "1.0", "007"]
 
@@ -148,7 +171,6 @@ def test_prune_continues_past_missing_git_objects(
                 str(root),
                 "--no-prs",
                 "--prune",
-                "--delete-foreign-clones",
                 "--workers",
                 str(workers),
             ]
