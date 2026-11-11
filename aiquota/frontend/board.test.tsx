@@ -251,7 +251,7 @@ describe("QuotaBoard", () => {
 
   it("uses the optional grant hint while keeping older payloads compatible", () => {
     const quotas = sampleQuotas();
-    const grant = quotas.providers[0]!.grants[0]!;
+    const grant = quotas.providers[0]!.grants![0]!;
     grant.remaining = "$100";
     grant.original = "$100.00";
     render(quotas);
