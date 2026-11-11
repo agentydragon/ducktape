@@ -34,10 +34,6 @@ class PrLookup:
     unknown: Collection[str] = ()
     disabled: bool = False
 
-    def __post_init__(self) -> None:
-        # A lookup is a snapshot even when the caller passes a mutable collection.
-        object.__setattr__(self, "unknown", frozenset(self.unknown))
-
 
 def pr_phrase(pr: PrInfo) -> str:
     match pr.state:

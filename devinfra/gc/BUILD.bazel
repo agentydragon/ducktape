@@ -384,7 +384,6 @@ py_test(
     deps = [
         ":conftest",
         ":github_prs",
-        ":pull_request",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
