@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from github import Auth, Github
+from github import Github
 from github.Issue import Issue
 from github.IssueComment import IssueComment
 
@@ -33,14 +33,13 @@ def _find_pull_request_comment(issue: Issue) -> IssueComment | None:
     )
 
 
-def publish_pull_request_comment(*, repository: str, pull_request: int, update: CommentUpdate, token: str) -> None:
+def publish_pull_request_comment(*, github: Github, repository: str, pull_request: int, update: CommentUpdate) -> None:
     """Publish the current result, avoiding a new comment for a successful empty run."""
-    with Github(auth=Auth.Token(token)) as github:
-        issue = github.get_repo(repository).get_issue(pull_request)
-        existing = _find_pull_request_comment(issue)
-        if existing is None and update.state.kind == "no_visual" and update.state.ci_conclusion == "success":
-            return
-        if existing is None:
-            issue.create_comment(update.render())
-        else:
-            existing.edit(update.render())
+    issue = github.get_repo(repository).get_issue(pull_request)
+    existing = _find_pull_request_comment(issue)
+    if existing is None and update.state.kind == "no_visual" and update.state.ci_conclusion == "success":
+        return
+    if existing is None:
+        issue.create_comment(update.render())
+    else:
+        existing.edit(update.render())

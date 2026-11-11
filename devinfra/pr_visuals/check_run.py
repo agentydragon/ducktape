@@ -7,6 +7,7 @@ import os
 from typing import Any, Literal
 
 from github import Auth, Github
+from github.CheckRun import CheckRun
 from pydantic import BaseModel
 
 CheckConclusion = Literal[
@@ -36,11 +37,11 @@ class CheckRunOutput(BaseModel):
 
 def upsert_check_run(
     *,
+    github: Github,
     repository: str,
     commit_sha: str,
     status: CheckStatus,
     summary: str,
-    token: str,
     conclusion: CheckConclusion | None = None,
     details_url: str | None = None,
     external_id: str | None = None,
@@ -49,30 +50,29 @@ def upsert_check_run(
     if (status == "completed") != (conclusion is not None):
         raise ValueError("completed checks require a conclusion; in-progress checks must not have one")
 
-    with Github(auth=Auth.Token(token)) as github:
-        repo = github.get_repo(repository)
-        existing = []
-        if external_id is not None:
-            existing = [
-                check
-                for check in repo.get_commit(commit_sha).get_check_runs(check_name=name)
-                if check.external_id == external_id
-            ]
-        if len(existing) > 1:
-            raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
-        if status == "in_progress" and existing and existing[0].status == "completed":
-            return
+    repo = github.get_repo(repository)
+    existing: list[CheckRun] = []
+    if external_id is not None:
+        existing = [
+            check
+            for check in repo.get_commit(commit_sha).get_check_runs(check_name=name)
+            if check.external_id == external_id
+        ]
+    if len(existing) > 1:
+        raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
+    if status == "in_progress" and existing and existing[0].status == "completed":
+        return
 
-        output = CheckRunOutput(title=name, summary=summary[:65000]).api_payload()
-        optional: dict[str, Any] = {
-            **({"conclusion": conclusion} if conclusion is not None else {}),
-            **({"details_url": details_url} if details_url is not None else {}),
-            **({"external_id": external_id} if external_id is not None else {}),
-        }
-        if existing:
-            existing[0].edit(name=name, status=status, output=output, **optional)
-        else:
-            repo.create_check_run(name=name, head_sha=commit_sha, status=status, output=output, **optional)
+    output = CheckRunOutput(title=name, summary=summary[:65000]).api_payload()
+    optional: dict[str, Any] = {
+        **({"conclusion": conclusion} if conclusion is not None else {}),
+        **({"details_url": details_url} if details_url is not None else {}),
+        **({"external_id": external_id} if external_id is not None else {}),
+    }
+    if existing:
+        existing[0].edit(name=name, status=status, output=output, **optional)
+    else:
+        repo.create_check_run(name=name, head_sha=commit_sha, status=status, output=output, **optional)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -93,17 +93,18 @@ def main() -> None:
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         raise ValueError("GITHUB_TOKEN is required to publish a check run")
-    upsert_check_run(
-        repository=args.repository,
-        commit_sha=args.sha,
-        status=args.status,
-        conclusion=args.conclusion,
-        summary=args.summary,
-        details_url=args.details_url,
-        external_id=args.external_id,
-        name=args.name,
-        token=token,
-    )
+    with Github(auth=Auth.Token(token)) as github:
+        upsert_check_run(
+            github=github,
+            repository=args.repository,
+            commit_sha=args.sha,
+            status=args.status,
+            conclusion=args.conclusion,
+            summary=args.summary,
+            details_url=args.details_url,
+            external_id=args.external_id,
+            name=args.name,
+        )
 
 
 if __name__ == "__main__":
