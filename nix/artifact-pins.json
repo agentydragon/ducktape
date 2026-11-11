@@ -37,8 +37,8 @@
       "sha256": "vrOsi8MiTTukG2VZNXgqzAfIB4eNA3gIDe3APkRo+Cw="
     },
     "workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-66112fba6f61/workspace_gc-0.1.0-py3-none-any.whl",
-      "sha256": "ZhEvum9h6xYwaqxyrpiKAgjuNN56S+WN0Cw14FzQRVU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/workspace-gc-e22611cb2318/workspace_gc-0.1.0-py3-none-any.whl",
+      "sha256": "4iYRyyMYDf0mE4kL9pvEIRZn34c4lKpY85RYe2H8XoM="
     },
     "ws": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ws-1510ae409720/ducktape_ws-0.1.0-py3-none-any.whl",
@@ -253,8 +253,8 @@
       "sha256": "kQ7nsd4IYIZuxaleFo2BBLHQ/vstp/spkd82dXqtuiw="
     },
     "pr-visuals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-24ca92dd0730/pr_visuals-0.1.0-py3-none-any.whl",
-      "sha256": "JMqS3QcwPvuS/akLk0IS9DHUjq8wSr52nyhyco6+Cqw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-87fbc3ecc79e/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "h/vD7Meee1gdnrtihyNpG7B0hGLDCZBWAkUzMGlC4Jk="
     },
     "skill-ci_reliability": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-42b07dbc5e45/ci_reliability.skill",
