@@ -122,13 +122,13 @@ spend_vitest_test(
     srcs = ["spend_display.test.ts"],
     deps = [
         ":spend_display",
-        "//personal_dashboard/shared:currency_policy_vectors",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/node",
         "//:node_modules/decimal.js",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//personal_dashboard/shared:currency_policy_vectors",
     ],
 )
 

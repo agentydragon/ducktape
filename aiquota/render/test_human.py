@@ -312,9 +312,7 @@ def test_shared_currency_vectors_cover_cli_numeric_semantics(runfiles: Runfiles)
 
         minor_units = Decimal(case["minor_units"])
         if minor_units == minor_units.to_integral_value():
-            rendered = format_summary_minor_currency(
-                int(minor_units), case["currency_exponent"], case["currency"]
-            )
+            rendered = format_summary_minor_currency(int(minor_units), case["currency_exponent"], case["currency"])
             _assert_currency_vector(rendered, case)
 
 
