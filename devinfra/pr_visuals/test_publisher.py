@@ -1212,9 +1212,7 @@ def test_publish_visual_review_uses_injected_runner_and_clients(
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
         commands.append(words)
-        if "invocation" in words and words[words.index("invocation") + 1] == "list":
-            output = '{"invocation": []}'
-        elif "status" in words:
+        if "status" in words:
             output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
         else:
             raise AssertionError(f"unexpected command {words}")
@@ -1248,7 +1246,7 @@ def test_publish_visual_review_uses_injected_runner_and_clients(
     github = cast(Github, FakePublisherGithub())
     publish_visual_review(config, run=fake_run, client=_s3_client(bucket), github=github, workflow_url=None)
 
-    assert any("invocation" in command and "list" in command for command in commands)
+    assert any("invocation" in command and "status" in command for command in commands)
     assert download_runners == [fake_run]
     assert bucket.requested[0] == f"reviews-test-outputs/{'c' * 40}/tests/{candidate.slug}/metadata.json"
     assert upload_clients == [bucket]
