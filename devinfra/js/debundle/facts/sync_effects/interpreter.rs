@@ -7689,15 +7689,36 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         chain
     }
 
-    /// What constructing `class`, or creating it, can store on an instance
-    /// or on the class: every function its constructors, field initializers
-    /// and static blocks create, and every value of the bindings they read,
-    /// along its class chain. Methods are not included: they run as the
-    /// class's own members, and their stores are their own.
+    /// What holding an instance of `class`, or the class, exposes along its
+    /// class chain: its methods, accessors and static methods, which unknown
+    /// code can call or read as values (with an unknown receiver), and what
+    /// constructing or creating it can store on an instance or the class:
+    /// every function its constructors, field initializers and static blocks
+    /// create, and every value of the bindings they read. Constructors stay
+    /// out: they run only as constructions, and a free call of one would
+    /// make its `super()` an unknown call.
     fn class_reach(&self, class: u32) -> Values {
         let index = self.inputs.index;
         let mut reached = Values::new();
         for class in self.class_chain(class) {
+            if let Some(span) = index.class_spans.get(&class) {
+                let heritage = index.class_heritage_spans.get(&class);
+                reached.extend(
+                    index
+                        .callable_spans
+                        .range(span.lo.0..span.hi.0)
+                        .filter(|(callable, _)| {
+                            index.class_member_callables.contains(*callable)
+                                && !index.class_constructors.contains(*callable)
+                                && heritage.is_none_or(|heritage| {
+                                    !(heritage.lo.0 <= **callable && **callable < heritage.hi.0)
+                                })
+                        })
+                        .map(|(callable, _)| {
+                            AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
+                        }),
+                );
+            }
             for region in index.class_store_regions.get(&class).into_iter().flatten() {
                 let (lo, hi) = (region.lo.0, region.hi.0);
                 reached.extend(
@@ -11567,6 +11588,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
+    /// Whether an object literal, or a prototype its `__proto__` names, has an
+    /// accessor that reads `this`. A prototype that is not a known literal
+    /// may have one.
+    fn literal_chain_may_read_this(&self, object: u32) -> bool {
+        let index = self.inputs.index;
+        let mut pending = vec![object];
+        let mut visited = BTreeSet::new();
+        while let Some(object) = pending.pop() {
+            if !visited.insert(object) {
+                continue;
+            }
+            if index.this_reading_accessor_objects.contains(&object) {
+                return true;
+            }
+            let Some(prototype) = index.literal_prototypes.get(&object) else {
+                continue;
+            };
+            let values = match prototype {
+                ValueExpr::ObjectLiteral(literal, _) => vec![Value::Alloc(Kind::Object, *literal)],
+                ValueExpr::Binding(binding) if self.inputs.flow.is_declared(binding) => self
+                    .inputs
+                    .flow
+                    .values_of_binding(binding)
+                    .into_iter()
+                    .collect(),
+                _ => return true,
+            };
+            for value in values {
+                match value {
+                    Value::Alloc(Kind::Object, prototype) => pending.push(prototype),
+                    Value::Prim(_) => {}
+                    _ => return true,
+                }
+            }
+        }
+        false
+    }
+
     /// A destructuring assignment to a member target is a [[Set]]: it may run
     /// a setter reading `this`.
     pub(super) fn publish_destructuring_target_receivers(
@@ -11602,7 +11661,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     _ => return false,
                 };
-                index.this_reading_accessor_objects.contains(object)
+                self.literal_chain_may_read_this(*object)
                     || self
                         .state
                         .world
