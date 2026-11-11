@@ -3596,7 +3596,8 @@ Sandbox through the implied same-Identity path (`identityWakeAssessment`) or a c
 role (`wake_callers`), gated by `spec.wakeOnSend` and wake budgets. Direction: the sender's right to
 deliver is already a grant, so whether delivery starts the Sandbox is the recipient's choice, a
 property of the Sandbox or of the Session living in a harness inside it, rather than a sender-side
-"X may wake S" rule. Decide which carries it (a Sandbox default with a per-Session override is one
+"X may wake S" rule. A per-sender wake rule is not planned (YAGNI, operator 2026-11-11); add it
+only if a use appears. Decide which carries it (a Sandbox default with a per-Session override is one
 option), how budgets bound a permitted sender, and what replaces the broker role. **Exit:** a
 decided design and the PRs it implies.
 
