@@ -42,6 +42,11 @@ share it. The daemon uses its normal API and OIDC defaults unless the
 `PLAID_SPEND_API_URL`, `PLAID_SPEND_OIDC_ISSUER`, or
 `PLAID_SPEND_OIDC_CLIENT_ID` environment variables are set.
 
+Use `bazelisk run //finance/plaid/spend/gnome:devkit -- --host-daemon` to
+connect the nested extension to the daemon already running in the host session.
+It uses that daemon's current credentials and view; login from the preview also
+operates on that daemon. The nested shell's settings remain isolated.
+
 AIQuota starts its checkout daemon by default. To preview a view without real
 auth/HTTP, provide the normal `/v1/quotas` view JSON generated from a
 `aiquota/testing/fixtures/*.yaml` scenario using

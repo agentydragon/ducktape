@@ -79,5 +79,6 @@ gnome_devkit(
     default_fixture = "fixtures/ready_two_cards.json",
     extension_zip = ":plaid_spend_extension",
     fixture_env = "PLAID_SPEND_FIXTURE",
+    host_bus_env = "PLAID_SPEND_DEVKIT_HOST_BUS_ADDRESS",
     uuid = "plaid-spend@allegedly.works",
 )
