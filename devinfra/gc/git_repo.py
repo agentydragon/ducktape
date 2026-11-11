@@ -15,6 +15,8 @@ import os
 import re
 import subprocess
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,18 +59,25 @@ def interrupt_running_git() -> None:
             process.kill()
 
 
+@contextmanager
+def _track_interruptible_git(process: subprocess.Popen[str]) -> Iterator[None]:
+    """Register a child for interruption for the duration of its communication."""
+    with _running_git_lock:
+        _running_git.add(process)
+    try:
+        yield
+    finally:
+        with _running_git_lock:
+            _running_git.discard(process)
+
+
 def git(repo: Path, *args: str, check: bool = True, interruptible: bool = True) -> subprocess.CompletedProcess[str]:
     command = ["git", "-C", os.fspath(repo), *args]
-    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
-        if interruptible:
-            with _running_git_lock:
-                _running_git.add(process)
-        try:
-            stdout, stderr = process.communicate()
-        finally:
-            if interruptible:
-                with _running_git_lock:
-                    _running_git.discard(process)
+    with (
+        subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process,
+        _track_interruptible_git(process) if interruptible else nullcontext(),
+    ):
+        stdout, stderr = process.communicate()
     if check and process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
