@@ -318,7 +318,12 @@ Identity only (`IDENTITY_CUTOVER`).
     delete, the app checks whether anything else still uses the Identity and offers to delete it as
     well; the check is advisory, and the Identity delete guard
     (`IDENTITY_CLEANUP_REFERENCE_DECISION`) is authoritative, refusing while a Sandbox, Session,
-    credential or Connection still uses it. Accepted consequences: a launch failing after step 1
+    credential or Connection still uses it. A Sandbox's `WorkloadCredential`s carry a controller owner
+    reference to the Sandbox (`requester.Controller`), so they go with it and exist only while a
+    Sandbox names the Identity; the guard counts them through the Sandbox. Only owner-less
+    credentials (`requester.Unowned`: standing workloads such as `haku-ui` and the `haku-ci` relay)
+    count on their own. The Identity is never a credential's owner: the UID pin already revokes on
+    delete, and an owner reference would not block the delete anyway. Accepted consequences: a launch failing after step 1
     leaves an Identity and its grants, which the app's unreferenced filter shows; if that becomes a
     problem, the server-side launch action rolls back what it created on failure. Also Identities left by `LaunchSandbox` or the system-test driver remain until
     deleted; a cleanup job can come later if they accumulate. Central Sessions keep naming their
