@@ -14,12 +14,6 @@ go_cross_binary(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "management_html",
-    actual = "@cli_proxy_webui//:management_html",
-    visibility = ["//visibility:public"],
-)
-
 sh_test(
     name = "frontend_unit_tests",
     size = "medium",
@@ -68,7 +62,7 @@ pkg_files(
 
 pkg_files(
     name = "webui_files",
-    srcs = [":management_html"],
+    srcs = ["@cli_proxy_webui//:management_html"],
     prefix = "/CLIProxyAPI/static",
     strip_prefix = strip_prefix.files_only(),
 )
