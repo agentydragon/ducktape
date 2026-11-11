@@ -107,8 +107,6 @@ class TaskClaude:
         self._seed_task = seed_task
         self._docker_client = docker.from_env()
         self._container: Container | None = None
-        self._message_queue: asyncio.Queue[Any] = asyncio.Queue()
-        self._query_task = None
         self._docker_image: str | None = seed_task.docker_image
         self._git_volume_name = "claude_shared_git"
         self._logger = logger
@@ -492,15 +490,13 @@ class TaskClaude:
     async def _remount_git_readonly(self):
         """Remount git volume as read-only for security.
 
-        Restarts container with RO git mount. Wrapper script recreated with new container ID.
+        Restarts the container with a read-only git mount.
 
         NOTE: This is only needed when git volume is enabled. Currently skipped in production.
         """
         if not self.use_git_volume:
             # Git volume disabled - no remounting needed
             self._logger.info("Git volume disabled - skipping remount")
-            # Still need to setup the wrapper after container start
-            await self._setup_wrapper()
             return
 
         # Stop current container
@@ -559,17 +555,8 @@ class TaskClaude:
 
         self._logger.info("Remounted container running", container_id=c.id, status=c.status)
 
-    async def _setup_wrapper(self) -> None:
-        """Set up or refresh any container-dependent wrapper state.
-
-        Currently a no-op: we use a committed host-side wrapper script that only
-        needs the container ID and docker binary provided via environment in
-        receive_messages(). This hook is kept for future extensibility.
-        """
-        return
-
     async def _cleanup(self):
-        """Clean up container and wrapper."""
+        """Remove the container."""
 
         if self._container:
             try:
@@ -584,21 +571,13 @@ class TaskClaude:
                 self._container = None
 
     async def __aenter__(self) -> TaskClaude:
-        """Context manager entry - setup container and wrapper."""
-        # Start container (includes wrapper setup after remounting)
+        """Context manager entry - start the container."""
         await self._start_container()
 
         return self
 
     async def __aexit__(self, _exc_type, _exc_val, _exc_tb):
-        """Context manager exit - cleanup container and wrapper."""
-        # Stop query task if running
-        if self._query_task and not self._query_task.done():
-            self._query_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._query_task
-
-        # Cleanup container and wrapper
+        """Context manager exit - remove the container."""
         try:
             await self._cleanup()
         except Exception as e:
