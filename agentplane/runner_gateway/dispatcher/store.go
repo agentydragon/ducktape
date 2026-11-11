@@ -1584,7 +1584,7 @@ func (s *Store) Settle(ctx context.Context, id string, owner Owner, from []strin
 		}
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN $3='FAILED' AND state='QUEUED_IN_DISPATCHER' AND delivery_attempted THEN 'UNKNOWN' ELSE $3 END, reason=$4, admission=$5, updated_at=now()
 			WHERE command_id=$1 AND sandbox_uid=$2 AND state = ANY($6) RETURNING `+dispatchColumns,
-			id, owner.SandboxUID, to, nullIfEmpty(reason), payload, pqStringArray(from)))
+			id, owner.SandboxUID, to, nullIfEmpty(reason), payload, pq.Array(from)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -1605,7 +1605,6 @@ func nullIfEmpty(s string) any {
 	}
 	return s
 }
-func pqStringArray(values []string) any { return pq.Array(values) }
 
 func (s *Store) SettleSession(ctx context.Context, id string, owner Owner, from []string, to, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, to, reason, false)
@@ -1631,7 +1630,7 @@ func (s *Store) settleSession(ctx context.Context, id string, owner Owner, from 
 		}
 		result, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state=$3,reason=$4,updated_at=now()
 			WHERE session_id=$1 AND sandbox_uid=$2 AND state = ANY($5) RETURNING `+sessionColumns,
-			id, owner.SandboxUID, to, nullIfEmpty(reason), pqStringArray(from)))
+			id, owner.SandboxUID, to, nullIfEmpty(reason), pq.Array(from)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
