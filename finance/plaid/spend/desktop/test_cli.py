@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
-from personal_dashboard.date_format import format_calendar_date
 from python.runfiles import Runfiles
 
 from finance.plaid.spend.allowance import (
@@ -27,6 +26,7 @@ from finance.plaid.spend.desktop import cli
 from finance.plaid.spend.desktop.cli import _format_money, _format_summary, _format_timestamp, _format_view, _sparkline
 from finance.plaid.spend.models import AlertState, CardView, SpendView, StatementCycle
 from finance.plaid.spend.pace_history_models import PaceHistory, PaceHistoryPoint, PaceHistoryWindow
+from util.date_presentation import format_calendar_date
 
 NOW = datetime(2026, 1, 31, 16, tzinfo=UTC)
 
@@ -382,7 +382,7 @@ def test_timestamp_cutoff_is_elapsed_time_across_dst() -> None:
 
 
 def test_shared_date_vectors_match_aiquota_and_javascript(runfiles: Runfiles) -> None:
-    vectors = json.loads((runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text())
+    vectors = json.loads((runfiles.root() / "ducktape/util/presentation_vectors/date_policy_vectors.json").read_text())
     zone = ZoneInfo(vectors["timeZone"])
     for vector in vectors["instants"]:
         now = datetime.fromisoformat(vector["now"])

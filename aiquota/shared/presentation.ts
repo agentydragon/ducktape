@@ -2,7 +2,7 @@ import {
   formatLocalClock,
   formatLocalTimestamp,
   formatPeakInterval as sharedFormatPeakInterval,
-} from "../../personal_dashboard/presentation.js";
+} from "../../util/date_presentation.js";
 
 export type Tint = "cool" | "ok" | "warn" | "hot" | "unknown" | "stale";
 

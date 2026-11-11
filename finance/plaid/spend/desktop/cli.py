@@ -21,7 +21,7 @@ from sparklines import sparklines
 from finance.plaid.spend.allowance import AllowanceView, Status
 from finance.plaid.spend.models import CardView, SpendView
 from finance.plaid.spend.pace_history_models import PaceHistory
-from personal_dashboard.date_format import format_calendar_date, format_instant
+from util.date_presentation import format_calendar_date, format_instant
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"

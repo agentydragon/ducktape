@@ -1,7 +1,28 @@
 """Shared utility libraries."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files(
+    ["date_presentation.js"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "date_presentation_js",
+    srcs = [
+        "date_presentation.d.ts",
+        "date_presentation.js",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "date_presentation_py",
+    srcs = ["date_presentation.py"],
+    visibility = ["//visibility:public"],
+)
 
 py_library(
     name = "otel",
@@ -76,6 +97,7 @@ py_package(
         "util.exec",
     ],
     deps = [
+        ":date_presentation_py",
         ":net",
         ":otel",
         ":typer",

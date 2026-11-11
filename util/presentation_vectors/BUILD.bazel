@@ -1,0 +1,12 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+exports_files(
+    ["date_policy_vectors.json"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "date_policy_vectors",
+    srcs = ["date_policy_vectors.json"],
+    visibility = ["//visibility:public"],
+)

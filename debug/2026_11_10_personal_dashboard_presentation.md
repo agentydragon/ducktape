@@ -43,7 +43,7 @@ The shared target policy is [personal dashboard presentation](../docs/personal_d
 
 ## Implementation boundaries
 
-AIQuota already shares JS date formatting between GNOME and web and has a separate Python formatter. Plaid Spend has
-separate JS and Python formatting paths. A shared implementation may help where runtimes permit it; otherwise use the
-same example vectors and edge-case tests rather than claiming a single cross-language helper exists. These recommendations
-do not change application rendering; screenshot fixtures and cross-surface behavior need validation with each follow-up.
+The date-formatting follow-up shares a platform-neutral JavaScript helper between both GNOME extensions and both web
+surfaces. Python consumers use the corresponding formatter from the existing `ducktape-util` wheel, so neither app wheel
+owns a copy of shared Python files. Both implementations consume the same date vectors under `util/presentation_vectors/`.
+Other visual recommendations above remain separate follow-ups and need their own screenshot and behavior validation.

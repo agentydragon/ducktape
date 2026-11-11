@@ -6,7 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from aiquota.models import PaceResult, PrepaidBalanceAvailable, QuotaWindow
 from aiquota.pace import is_exhausted
 from aiquota.peak_windows import BurnStatus, PeakInterval
-from personal_dashboard.date_format import (
+from util.date_presentation import (
     format_clock as _shared_format_clock,
     format_instant,
     format_peak_interval as _shared_format_peak_interval,

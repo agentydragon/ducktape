@@ -245,7 +245,7 @@ def test_deadline_uses_local_time_and_date_only_after_two_weeks(when: datetime, 
 
 
 def test_shared_date_vectors_match_browser_formatters(runfiles: Runfiles) -> None:
-    vectors = json.loads((runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text())
+    vectors = json.loads((runfiles.root() / "ducktape/util/presentation_vectors/date_policy_vectors.json").read_text())
     zone = ZoneInfo(vectors["timeZone"])
     for vector in vectors["instants"]:
         now = datetime.fromisoformat(vector["now"])

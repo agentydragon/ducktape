@@ -1,7 +1,7 @@
 import { Badge, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import Decimal from "decimal.js";
-import { formatCalendarDate, formatLocalTimestamp } from "../../../../personal_dashboard/presentation.js";
+import { formatCalendarDate, formatLocalTimestamp } from "../../../../util/date_presentation.js";
 
 import type { AllowancePeriodId } from "./types";
 

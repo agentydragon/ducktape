@@ -8,7 +8,7 @@ import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
-import { formatCalendarDate, formatLocalTimestamp } from "./personal_dashboard/presentation.js";
+import { formatCalendarDate, formatLocalTimestamp } from "./util/date_presentation.js";
 
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import dateVectors from "../../../../personal_dashboard/date_presentation_vectors.json";
+import dateVectors from "../../../../util/presentation_vectors/date_policy_vectors.json";
 import { calendarDate, money, signalText, time } from "./spend_display";
 
 describe("summary money", () => {

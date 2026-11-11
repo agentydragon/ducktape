@@ -29,7 +29,7 @@ import {
   formatLocalClock as formatClock,
   formatLocalTimestamp as formatDeadline,
   formatPeakInterval,
-} from "./personal_dashboard/presentation.js";
+} from "./util/date_presentation.js";
 
 let fixtureNowMs = null;
 

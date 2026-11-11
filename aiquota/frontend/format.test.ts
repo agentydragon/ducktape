@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import dateVectors from "../../personal_dashboard/date_presentation_vectors.json";
+import dateVectors from "../../util/presentation_vectors/date_policy_vectors.json";
 import {
   formatDuration,
   formatExtraSpend,
