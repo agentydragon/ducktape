@@ -11,6 +11,31 @@ from x.wt.server.worktree_ids import make_worktree_id
 from x.wt.server.wt_server import WtDaemon
 
 
+async def test_discovery_reconciles_added_removed_and_existing_worktrees(real_config, monkeypatch):
+    daemon = WtDaemon(real_config)
+    removed = DiscoveredWorktree(real_config.worktrees_dir / "removed", "removed", make_worktree_id("removed"))
+    retained = DiscoveredWorktree(real_config.worktrees_dir / "retained", "retained", make_worktree_id("retained"))
+    refreshed = DiscoveredWorktree(retained.path, "refreshed", retained.wtid)
+    added = DiscoveredWorktree(real_config.worktrees_dir / "added", "added", make_worktree_id("added"))
+    scan = AsyncMock(side_effect=[{removed, retained}, {refreshed, added}])
+    start = AsyncMock()
+    stop = AsyncMock()
+    monkeypatch.setattr(wt_server, "scan_worktrees", scan)
+    monkeypatch.setattr(daemon, "_start_gitstatusd_for_worktree", start)
+    monkeypatch.setattr(daemon, "_stop_gitstatusd_for_worktree", stop)
+
+    await daemon._run_discovery_once()
+    start.reset_mock()
+    await daemon._run_discovery_once()
+
+    start.assert_awaited_once_with(added)
+    stop.assert_awaited_once_with(removed)
+    assert daemon.store.worktree_paths() == {refreshed.path, added.path}
+    assert daemon.worktree_index is not None
+    assert daemon.worktree_index.by_name["refreshed"] == refreshed
+    assert "removed" not in daemon.worktree_index.by_name
+
+
 async def test_registration_survives_discovery_scan_that_predates_it(real_config, monkeypatch):
     daemon = WtDaemon(real_config)
     scan_started = asyncio.Event()
