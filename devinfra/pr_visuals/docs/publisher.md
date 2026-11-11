@@ -105,6 +105,13 @@ after the review bundle and shared images upload successfully.
 - **PR visual diffs**: only when a baseline comparison ran; `success` if nothing was
   modified, removed, unstable or incomplete, else `neutral` — deliberately not a merge gate.
 
+After publication, the publisher rechecks the PR before changing its singleton
+comment. A failed recheck or comment update marks the final visual-review check
+`failure`; the publisher still attempts that check update. If publication itself
+failed, its original error remains the command's error, with any reporting errors
+attached as its cause. A stale or closed PR never receives a comment; a PR
+already stale at the initial lookup gets a `neutral` check.
+
 ## Storage
 
 - Each distinct PNG is stored once at `assets/<sha256>.png`, shared across targets,

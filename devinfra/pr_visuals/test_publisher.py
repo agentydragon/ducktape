@@ -1205,6 +1205,112 @@ def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
     assert publisher_run.comments == [], "with no PR identified there is nowhere to comment"
 
 
+def test_pr_recheck_failure_preserves_processing_error_and_completes_check(
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
+) -> None:
+    lookups = 0
+
+    def find(**_kwargs: str) -> PullRequestRef:
+        nonlocal lookups
+        lookups += 1
+        if lookups == 2:
+            raise LookupError("PR recheck failed")
+        return PullRequestRef(number=8733, base_sha="c" * 40)
+
+    def fail_download(*_args: object, **_kwargs: object) -> NoReturn:
+        raise RuntimeError("visual collection failed")
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", find)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", fail_download)
+
+    with pytest.raises(RuntimeError, match="visual collection failed") as raised:
+        main()
+
+    assert lookups == 2
+    assert isinstance(raised.value.__cause__, ExceptionGroup)
+    assert [type(error) for error in raised.value.__cause__.exceptions] == [LookupError]
+    assert publisher_run.comments == []
+    assert [check["conclusion"] for check in publisher_run.checks] == ["failure"]
+
+
+def test_comment_failure_marks_final_check_failed_and_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    _publish_one_visual_target(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
+        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
+    )
+
+    def fail_comment(**_kwargs: object) -> NoReturn:
+        raise OSError("comment write failed")
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_pull_request_comment", fail_comment)
+
+    with pytest.raises(ExceptionGroup) as raised:
+        main()
+
+    assert [type(error) for error in raised.value.exceptions] == [OSError]
+    assert [check["conclusion"] for check in publisher_run.checks] == ["success", "failure"]
+    assert "reporting failed" in str(publisher_run.checks[-1]["summary"])
+
+
+def test_diff_check_failure_still_comments_and_completes_final_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    _publish_one_visual_target(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
+        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
+    )
+
+    def update_check(**kwargs: object) -> None:
+        if kwargs.get("name") == "PR visual diffs":
+            raise ConnectionError("diff check write failed")
+        publisher_run.checks.append(kwargs)
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", update_check)
+
+    with pytest.raises(ExceptionGroup) as raised:
+        main()
+
+    assert [type(error) for error in raised.value.exceptions] == [ConnectionError]
+    assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
+    assert [check["conclusion"] for check in publisher_run.checks] == ["failure"]
+
+
+def test_processing_error_survives_comment_and_check_failures(
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
+) -> None:
+    attempts: list[str] = []
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
+        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
+    )
+
+    def fail_download(*_args: object, **_kwargs: object) -> NoReturn:
+        raise RuntimeError("visual collection failed")
+
+    def fail_comment(**_kwargs: object) -> NoReturn:
+        attempts.append("comment")
+        raise OSError("comment write failed")
+
+    def fail_check(**_kwargs: object) -> NoReturn:
+        attempts.append("check")
+        raise ConnectionError("check write failed")
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", fail_download)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_pull_request_comment", fail_comment)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", fail_check)
+
+    with pytest.raises(RuntimeError, match="visual collection failed") as raised:
+        main()
+
+    assert attempts == ["comment", "check"]
+    assert isinstance(raised.value.__cause__, ExceptionGroup)
+    assert [type(error) for error in raised.value.__cause__.exceptions] == [OSError, ConnectionError]
+
+
 class PublishedObjects:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
