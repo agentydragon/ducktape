@@ -9,6 +9,8 @@ popup. No Plaid credentials, accounts, or live service are used.
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -164,6 +166,76 @@ def test_fixture_preview_starts_without_daemon(
         session.open_menu()
         assert "Everyday" in string_reply(session.call("GetMenuText"))
         assert "Travel" in string_reply(session.call("GetMenuText"))
+        _assert_no_plaid_extension_error(session)
+
+
+def test_host_daemon_uses_separate_session_bus(
+    runfiles: Runfiles,
+    gnome_shell_test_image: str,
+    extension_dir: Path,
+    fixture_json_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    host_bus = "unix:path=/tmp/plaid-host-bus"
+
+    def host_command(session: GnomeSession, command: str) -> bytes:
+        result = session.exec(f"DBUS_SESSION_BUS_ADDRESS={host_bus} {command}")
+        stdout, stderr = exec_output(result)
+        assert result.exit_code == 0, (stdout, stderr)
+        return stdout
+
+    def host_call(session: GnomeSession, method: str, *args: str) -> bytes:
+        return host_command(
+            session,
+            f"gdbus call --session --dest {_FAKE_DBUS_DEST} --object-path {_FAKE_DBUS_PATH} "
+            f"--method {_FAKE_DBUS_DEST}.{method} " + " ".join(shlex.quote(arg) for arg in args),
+        )
+
+    def start_host(session: GnomeSession) -> None:
+        result = session.exec(f"dbus-daemon --session --fork --address={host_bus}")
+        assert result.exit_code == 0, exec_output(result)
+        host_command(session, "gjs -m /fake-daemon.js >/tmp/host-fake-daemon.log 2>&1 &")
+        wait_until(
+            lambda: (
+                session.exec(
+                    f"DBUS_SESSION_BUS_ADDRESS={host_bus} gdbus introspect --session "
+                    f"--dest {_FAKE_DBUS_DEST} --object-path {_FAKE_DBUS_PATH}"
+                ).exit_code
+                == 0
+            ),
+            "host fake daemon did not start",
+        )
+
+    with gnome_session(
+        gnome_shell_test_image,
+        extension_dir=extension_dir,
+        extension=_EXTENSION_UUID,
+        fixture_dir=fixture_json_dir,
+        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
+        screenshot_dir=tmp_path_factory.mktemp("gnome-host-daemon"),
+        destination=_TEST_DBUS_DEST,
+        object_path=_TEST_DBUS_PATH,
+        environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_DEVKIT_HOST_BUS_ADDRESS": host_bus},
+        compile_extension_schemas=True,
+        before_start=start_host,
+    ) as session:
+
+        def pending_view() -> bool:
+            return bool(re.search(rb"\(uint32 \d+, uint32 \d+, uint32 [1-9]\d*\)", host_call(session, "GetCounters")))
+
+        wait_until(lambda: bool(string_reply(session.call("GetDaemonOwner"))), "host daemon was not connected")
+        wait_until(pending_view, "host view was not requested")
+        host_call(session, "ReleaseGetView")
+        wait_until(lambda: string_reply(session.call("GetPanelLabel")) == "$10", "host view was not loaded")
+        host_call(session, "SetView", _card_view(2000))
+        wait_until(lambda: string_reply(session.call("GetPanelLabel")) == "$20", "host update was not received")
+        host_call(session, "ReleaseName")
+        wait_until(lambda: not string_reply(session.call("GetDaemonOwner")), "host daemon loss was not observed")
+        host_call(session, "AcquireName")
+        wait_until(lambda: bool(string_reply(session.call("GetDaemonOwner"))), "host daemon did not reconnect")
+        wait_until(pending_view, "host view was not requested after reconnect")
+        host_call(session, "ReleaseGetView")
+        wait_until(lambda: string_reply(session.call("GetPanelLabel")) == "$20", "host view was not reloaded")
         _assert_no_plaid_extension_error(session)
 
 
