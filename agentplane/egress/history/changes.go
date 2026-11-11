@@ -251,7 +251,7 @@ func (c *Changes) listen(state *listenerState) {
 				return
 			}
 			if len(state.notifications) == cap(state.notifications) {
-				c.overflowListener(state, errors.New("decision notification queue overflow"))
+				c.failListener(state, errors.New("decision notification queue overflow"))
 				return
 			}
 			payload, err := decodeNotification(notification.Extra)
@@ -295,12 +295,6 @@ func (c *Changes) listen(state *listenerState) {
 	}
 }
 
-// overflowListener fails every active watch, closes the connection, and drains the driver channel
-// until pq can observe the close. The queue itself never drops notifications or grows without bound.
-func (c *Changes) overflowListener(state *listenerState, err error) {
-	c.failListener(state, err)
-}
-
 func (c *Changes) broadcast(state *listenerState, event changeEvent, changes map[subjectKey][]uuid.UUID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -336,6 +330,8 @@ func (c *Changes) removeSubscriberLocked(state *listenerState, subscription *cha
 	close(subscription.done)
 }
 
+// failListener fails active watches, closes the connection, and drains the driver channel
+// until pq can observe the close. The queue never drops notifications or grows without bound.
 func (c *Changes) failListener(state *listenerState, err error) {
 	c.mu.Lock()
 	if c.listener == state && !state.stopping {
