@@ -116,13 +116,6 @@ class BaseExecResult(BaseModel):
     duration_ms: int = Field(description="Execution duration in milliseconds")
     model_config = ConfigDict(extra="forbid")
 
-    @classmethod
-    def from_rendered_streams(
-        cls, exit_status: ExitStatus, stdout: ExecStream, stderr: ExecStream, duration_ms: int, **extras
-    ) -> BaseExecResult:
-        """Create from already-rendered streams (no None handling needed)."""
-        return cls(exit=exit_status, stdout=stdout, stderr=stderr, duration_ms=duration_ms, **extras)
-
 
 def render_stream(data: bytes, limit: int) -> ExecStream:
     """Render raw bytes under a byte limit, producing either text or TruncatedStream."""
@@ -139,7 +132,9 @@ def render_streams(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[ExecSt
 
 def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecResult:
     stdout_render, stderr_render = render_streams(outcome.output.stdout, outcome.output.stderr, max_bytes)
-    return BaseExecResult.from_rendered_streams(outcome.exit, stdout_render, stderr_render, outcome.duration_ms)
+    return BaseExecResult(
+        exit=outcome.exit, stdout=stdout_render, stderr=stderr_render, duration_ms=outcome.duration_ms
+    )
 
 
 def render_raw_to_result(
@@ -150,4 +145,4 @@ def render_raw_to_result(
     # exit_code should be int when not timed out, but handle None defensively
     exit_status = TimedOut() if timed_out else Exited(exit_code=exit_code if exit_code is not None else 0)
 
-    return BaseExecResult.from_rendered_streams(exit_status, stdout_render, stderr_render, duration_ms)
+    return BaseExecResult(exit=exit_status, stdout=stdout_render, stderr=stderr_render, duration_ms=duration_ms)
