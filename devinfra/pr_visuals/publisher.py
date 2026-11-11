@@ -1056,10 +1056,9 @@ def _publish(
         print(f"{result.summary} Skipping publication.")
         return
 
-    s3 = client
     baseline_source: BaselineSource | None = None
     if base_sha:
-        baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
+        baseline_source = S3BaselineSource(client=client, bucket=args.bucket)
     logger.info("Building review for %d targets; baseline comparison: %s", len(tests), bool(base_sha))
     bundle = build_bundle(
         tests,
@@ -1069,7 +1068,7 @@ def _publish(
         base_sha=base_sha,
         baseline_source=baseline_source,
     )
-    upload_bundle(bundle, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
+    upload_bundle(bundle, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=client)
     review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
     if not base_sha:
         # Devel push: advance the mutable per-target fallback pointers now
@@ -1077,7 +1076,7 @@ def _publish(
         # invocation is confirmed complete.
         slugs = [test.slug for test in review_tests if test.baseline_eligible]
         logger.info("Updating %d baseline pointers", len(slugs))
-        write_baseline_pointers(slugs, commit_sha=args.sha, bucket=args.bucket, client=s3)
+        write_baseline_pointers(slugs, commit_sha=args.sha, bucket=args.bucket, client=client)
     public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
     if base_sha:
         totals = classification_totals(review_tests)
