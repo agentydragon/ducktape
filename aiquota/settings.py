@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     clickhouse_password: SecretStr | None = None
     clickhouse_database: str = "aiquota"
     clickhouse_raw_table: str = "raw_http_observations"
-    clickhouse_windows_table: str = "aiquota_windows"
     poll_interval_seconds: int = Field(default=300, gt=0)
     history_interval_seconds: int = Field(default=3600, gt=0)
     public_base_url: str = "https://aiquota.allegedly.works"
