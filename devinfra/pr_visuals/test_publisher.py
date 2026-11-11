@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, Runner, list_ci_artifacts
 from devinfra.pr_visuals.collection import (
     CollectedOutputs,
     CollectionIssue,
@@ -1072,6 +1072,7 @@ PR_CHECK_ID = "pr-visual-review:33060467222:1"
 class PublisherRun:
     checks: list[dict[str, object]] = field(default_factory=list)
     comments: list[dict[str, object]] = field(default_factory=list)
+    runner: Runner | None = None
 
 
 @pytest.fixture
@@ -1101,6 +1102,7 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
             raise AssertionError(f"unexpected command {words}")
         return subprocess.CompletedProcess(command, 0, output, "")
 
+    run.runner = fake_run
     monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", fake_run)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
@@ -1158,6 +1160,23 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
         f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json",
         f"baselines/reviews-test-outputs/{candidate.slug}.json",
     ]
+    assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
+
+
+def test_main_uses_injected_runner_and_s3_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    candidate, bucket = _publish_one_visual_target(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
+        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
+    )
+    assert publisher_run.runner is not None
+    _forbid(monkeypatch, "subprocess.run", "boto3.client")
+
+    main(run=publisher_run.runner, client=bucket)
+
+    assert bucket.requested[0] == f"reviews-test-outputs/{'c' * 40}/tests/{candidate.slug}/metadata.json"
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 

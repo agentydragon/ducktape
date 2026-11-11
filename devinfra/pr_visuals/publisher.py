@@ -1003,7 +1003,7 @@ def _publish(
     workflow_url: str | None,
     result: PublicationResult,
     run: Runner,
-    s3_client: Callable[..., Any],
+    client: Any | None,
 ) -> None:
     base_sha: str | None = None
     if args.pull_request_head:
@@ -1057,7 +1057,7 @@ def _publish(
         print(f"{result.summary} Skipping publication.")
         return
 
-    s3 = s3_client("s3", endpoint_url=args.endpoint)
+    s3 = client if client is not None else boto3.client("s3", endpoint_url=args.endpoint)
     baseline_source: BaselineSource | None = None
     if base_sha:
         baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
@@ -1180,7 +1180,7 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
     return errors
 
 
-def main() -> None:
+def main(*, run: Runner | None = None, client: Any | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     args = parser().parse_args()
     token = os.environ.get("GITHUB_TOKEN")
@@ -1204,10 +1204,10 @@ def main() -> None:
         )
         return
 
+    if run is None:
+        run = subprocess.run
     try:
-        _publish(
-            args, token=token, workflow_url=workflow_url, result=result, run=subprocess.run, s3_client=boto3.client
-        )
+        _publish(args, token=token, workflow_url=workflow_url, result=result, run=run, client=client)
     except Exception as error:
         result.summary = str(error) + ci_failure_summary(args.ci_conclusion, result.ci_failures)
         result.conclusion = "failure"
