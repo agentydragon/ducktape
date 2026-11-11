@@ -260,7 +260,7 @@ export function transcriptRows(records: readonly EventRecord[]): TranscriptRow[]
   }
 
   return rows.map((row): TranscriptRow => {
-    const sorted = sortRecords(row.records);
+    const sorted = uniqueRecords(row.records);
     const key = row.kind + ":" + sorted.at(-1)!.ordinal;
     return row.kind === "activity"
       ? { key, kind: "activity", records: sorted, steps: activitySteps(row.stepRecords, sorted, pairs) }
@@ -590,10 +590,6 @@ function uniqueRecords(records: readonly EventRecord[]): EventRecord[] {
   const byOrdinal = new Map<number, EventRecord>();
   for (const record of records) byOrdinal.set(record.ordinal, record);
   return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
-}
-
-function sortRecords(records: readonly EventRecord[]): EventRecord[] {
-  return uniqueRecords(records);
 }
 
 /** Counts semantic steps without presenting an unmatched result as a known tool call. */
