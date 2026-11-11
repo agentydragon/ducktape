@@ -59,3 +59,66 @@ guarantee that an arbitrary placement will be warm. It neither establishes a
 fleet hit rate nor fixes the cold-start timeout. The long cold imports and
 remaining startup/test work need their own diagnosis if cold actions are to
 meet the existing deadline reliably.
+
+## Expanded archive targets
+
+[PR #15572](https://github.com/agentydragon/ducktape/pull/15572) extended the
+same family to 15 more archive targets, at head `446e196a`. Its first
+[CI attempt](https://app.buildbuddy.io/invocation/112bb2da-c650-5e52-bbb2-776284445523)
+tested synthetic merge commit `34b52f52`: nine of those 15 targets passed and
+six timed out at 60 seconds. All 15 TestRunner actions started on distinct cold
+VMs. Four were on hosts named `gke-*`; all passed, with PostgreSQL imports
+lasting 8.3–11.1 seconds. Eleven were on `sjc-*` hosts; six timed out. Ten
+completed PostgreSQL import in 18.5–32.6 seconds, while one had not logged
+completion by its deadline. Hostname groups are observations, not proof of
+different pools or of the cause of the timing difference.
+
+Five of the six timed-out actions completed image import. Some also reached
+PostgreSQL readiness and started pytest cases: `test_codex_title_candidates`
+completed six of nine cases before its deadline. A slow import therefore does
+not establish what each test was doing at timeout.
+
+The [retry](https://app.buildbuddy.io/invocation/b21b45ad-b87a-5b71-bb11-896b63ddafd9)
+reused nine passing cached results and physically reran the six failures. Four
+timed out again on fresh `sjc-*` VMs: three had not logged PostgreSQL import
+completion, and one finished import in 40.4 seconds and had not reported
+PostgreSQL readiness. Of the other two, `test_codex_title_conflict` passed on a
+cold `gke-*` VM after a 12.9-second import. `test_codex_titles` passed after
+restoring a VM last used by the earlier #15560 CI invocation
+`8df85c24-4172-5e04-8502-9ef72438a011`; its log contained no image import.
+This demonstrates reuse across targets, but neither attempt establishes a
+fleet-wide hit rate or reliable cold-start behavior.
+
+## Cold import profiles
+
+As a diagnostic, `test_database_migrate` ran with a temporary `--run_under`
+wrapper collecting system-wide `perf` samples at 49 Hz for the first 35
+seconds. It used the same RBE image and the actual test, but altered the action
+and recycling configuration to obtain cold VMs. Two `gke-*` runs imported
+PostgreSQL in [8.2](https://app.buildbuddy.io/invocation/3e15c7a3-a540-4ce5-9dd2-e1a481a61ad9)
+and [8.4](https://app.buildbuddy.io/invocation/b92b865e-6e19-4bc5-9b24-a7cdfa89fdea)
+seconds; two `sjc-*` runs took
+[27.2](https://app.buildbuddy.io/invocation/74f8c1bf-56da-4b1a-89d2-6c893b6b22dd)
+and [23.2](https://app.buildbuddy.io/invocation/3daa8ed5-4967-43f4-9e54-5a02a6b35686)
+seconds. All four tests passed. The `sjc-*` probes used a distinct local-only
+recycling key; they did not enable remote snapshots.
+
+A further [diagnostic invocation](https://app.buildbuddy.io/invocation/442f578b-f08b-45ee-9852-be7d7bad3278)
+ran the four repeat failures with the profiler, a separate local-only family,
+and a temporary 180-second test limit. All passed; `test_json_storage` took
+61.6 seconds on a cold `sjc-*` VM, including the profiling wrapper, with
+pytest reporting three cases passed in 42.3 seconds and a 20.7-second image
+import. This instrumented pass is not a measurement of an unmodified action
+crossing its usual deadline and does not justify raising the committed limit.
+
+In the kernel-inclusive `sjc-*` profile, a sampled stack for Docker included
+buffered ext4 writes and `copy_user_enhanced_fast_string`; user-mode samples
+also observed `unpigz`. In the 17.8-second sampled window containing `unpigz`,
+1,340 non-idle samples included 992 in Docker and 323 in `unpigz`. Samples are
+not wall-time attribution, and the window does not cover the entire import.
+These profiles show image unpacking and filesystem writes, but do not identify
+why the observed host groups differed or whether the timed-out imports were
+making progress at their deadlines. Provider-side CPU and I/O visibility during
+a failing action would be needed to investigate that boundary. The earlier
+[loader comparison](../../debug/2026_10_27_oci_loader_comparison.md) did not
+establish a faster replacement for the existing loader.
