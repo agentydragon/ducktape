@@ -3357,11 +3357,15 @@ another Identity stops matching.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
-**Blocked on open question 11 only, who creates a launched Sandbox's `Identity`
-([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).** The
+**Unblocked: question 11 is settled (operator, 2026-11-11)**: a launch is three separate
+operations, create the Identity, bind the launch's PolicySets to it, then `CreateEnvironment` naming it
+in `spec.identity`; no environment operation creates or deletes an Identity
+([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The launch paths (the
+app's launch form, `LaunchSandbox`, the system-test driver) switch to that sequence with the
+controller. The
 consumers-first hold is discharged: the services and proxy accept Identity subjects on staging since
-2026-11-10 (#15391 and the images before it). Draft #15239 holds the controller part and must be
-rebuilt on the answer to question 11 rather than rebased.
+2026-11-10 (#15391 and the images before it). Draft #15239 holds the controller part and is rebuilt on
+that answer rather than rebased.
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
 only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
 Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes

@@ -304,17 +304,25 @@ Identity only (`IDENTITY_CUTOVER`).
    whichever direction is chosen.
 10. **Accounts per preset or per role set** (operator, 2026-11-09: per preset for now; reconsider).
     Per role set is finer-grained, but an agent then needs a different token per command.
-11. **Who creates the Identity a launched Sandbox runs as.** Blocks `SANDBOX_IDENTITY_SPEC`'s switch,
-    which deletes `Sandbox.spec.policySets`: today every launch path names PolicySets and the Sandbox
-    Controller binds the Sandbox's own ServiceAccount to them, and nothing creates an `Identity`. The
-    paths are the app's launch form (`CreateEnvironment`), the Action Service's `LaunchSandbox`
-    (also `CreateEnvironment`) and the system-test driver. One option: `CreateEnvironment` mints an
-    Identity per environment unless the request names one, and binds the launch sets to it. It keeps
-    Sandbox-first launches working, but the Identity is never owned by the environment, so deleting
-    the environment leaks it until someone deletes it (the app's unreferenced filter shows it).
-    The operator wants to settle how this looks for central-sampler Sessions, which name an Identity
-    at `CreateSession`, versus Sessions inside Sandboxes, whose environment holds the identity; it
-    meets question 7.
+11. **Who creates the Identity a launched Sandbox runs as: settled, separate operations**
+    (operator, 2026-11-11). A launch is three operations, and no environment operation creates or
+    deletes an Identity:
+    1. Create the `Identity` (the Identity API the app's identity pages use).
+    2. Grant it the launch's PolicySets: ordinary `PolicyBinding`s naming it as subject. Who may
+       create those is `AGENT_LAUNCH_POLICY_DESIGN`'s.
+    3. `CreateEnvironment` with `spec.identity` naming it, or bind an existing stopped environment to
+       it, as admission already allows. `CreateEnvironment` takes no PolicySets.
+
+    The app's launch form and `LaunchSandbox` may run the three for the caller as one action; they
+    stay separate operations underneath. Deleting an environment never deletes its Identity. On
+    delete, the app checks whether anything else still uses the Identity and offers to delete it as
+    well; the check is advisory, and the Identity delete guard
+    (`IDENTITY_CLEANUP_REFERENCE_DECISION`) is authoritative, refusing while a Sandbox, Session,
+    credential or Connection still uses it. Accepted consequences: a launch failing after step 1
+    leaves an Identity and its grants, which the app's unreferenced filter shows (the form offers
+    cleanup on failure), and Identities left by `LaunchSandbox` or the system-test driver remain until
+    deleted; a cleanup job can come later if they accumulate. Central Sessions keep naming their
+    Identity at `CreateSession`; question 7 is independent of this.
 
 ## Exit
 
