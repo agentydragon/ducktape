@@ -35,7 +35,7 @@ import pygit2
 from devinfra.gc import git_repo, worktree_gc
 from devinfra.gc.git_repo import GitError, Worktree
 from devinfra.gc.pull_request import PrInfo
-from devinfra.gc.removal import Failed, RemovalResult, Removed
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
@@ -197,6 +197,8 @@ def prune_foreign_clone(clone: ForeignClone) -> RemovalResult[Path]:
         if member.path == clone.root:
             continue
         result = worktree_gc.remove_worktree(clone.root, member.path)
+        if isinstance(result, Skipped):
+            return Skipped(clone.root, f"removing {member.path}: {result.reason}")
         if isinstance(result, Failed):
             return Failed(clone.root, f"removing {member.path}: {result.error}")
     try:

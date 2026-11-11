@@ -1,20 +1,19 @@
 """Classify and safely remove local git worktrees whose work is already merged.
 
 Mirrors output_base_gc's PRUNE/KEEP/REVIEW model. A worktree is prunable only when it is
-clean (no tracked *or* untracked changes), idle (not the main checkout, not the invoking
-worktree, no process cwd'd inside), and its work is already in the main branch —
+clean (no tracked, untracked, or ignored files), idle (not the main checkout, not the
+invoking worktree, no process cwd'd inside), and its work is already in the main branch —
 established by git (HEAD is an ancestor of main; merging HEAD into main is a no-op, which
 catches squash/rebase-merges; or the branch is empty) or by a merged or closed GitHub PR
-for its branch — a closed-not-merged PR means a human already decided not to land this
-work, and removing the worktree loses nothing since its branch (and any commits on it, even
-past the PR's head) stays reachable through the branch ref. Everything else is kept
-(dirty/active/live/open-PR) or reported for manual review (clean but unique unmerged work,
-detached HEAD with unique commits, undeterminable main).
+for its branch. Everything else is kept (dirty/ignored/active/live/open-PR) or reported for
+manual review (clean but unique unmerged work, a detached HEAD, undeterminable main).
 
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
-GitHub. `git worktree remove` refuses a dirty tree and deletes the working directory
-including read-only files (pygit2's `Worktree.prune()` does neither by default).
+GitHub. `git worktree remove` refuses tracked or untracked changes, but deletes ignored files
+too. Git inventories ignored paths with directory collapsing before classification and
+immediately before removal. The check and removal are separate operations, so a concurrent
+file creation after the check can still be deleted.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
+from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, open_repo, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
@@ -50,6 +49,7 @@ class RetainedWorktreeReason(enum.StrEnum):
     INVOKING_WORKTREE = enum.auto()
     LIVE_PROCESS = enum.auto()
     UNCOMMITTED_CHANGES = enum.auto()
+    IGNORED_FILES = enum.auto()
     OPEN_PR = enum.auto()
 
 
@@ -109,10 +109,12 @@ def describe_reason(item: Classification) -> str:
             return f"a process is working in it (pid {pid})"
         case RetainedWorktree(reason=RetainedWorktreeReason.UNCOMMITTED_CHANGES, pr=pr):
             return "uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else "")
+        case RetainedWorktree(reason=RetainedWorktreeReason.IGNORED_FILES, pr=pr):
+            return "ignored files or directories would be deleted" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case RetainedWorktree(reason=RetainedWorktreeReason.OPEN_PR, pr=PrInfo() as pr):
             return pr_phrase(pr)
-        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD, main=main):
-            return f"detached HEAD with commits not in {main}"
+        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD):
+            return "detached HEAD commit reachability is not proven safe for removal"
         case ReviewWorktree(reason=ReviewWorktreeReason.UNMERGED, main=main):
             return f"commits not in {main} and no merged PR"
         case _:
@@ -145,6 +147,12 @@ def _status(path: Path) -> list[str]:
         if paths:
             return paths
     return []
+
+
+def _ignored_paths(path: Path) -> list[str]:
+    """Ignored untracked paths, with Git collapsing fully ignored directories to one entry."""
+    outcome = git(path, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
+    return [entry for entry in outcome.stdout.split("\0") if entry]
 
 
 def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> datetime | None:
@@ -222,12 +230,18 @@ def _classify_worktree(
     try:
         path.lstat()
     except FileNotFoundError:
+        if worktree.branch is None:
+            return ReviewWorktree(worktree, ReviewWorktreeReason.DETACHED_HEAD, None, main)
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
     pg = pygit2.Repository(os.fspath(path))
+    worktree = Worktree(path, None if pg.head_is_detached else pg.head.shorthand)
     logger.info("Scanning worktree %s: reading Git status", path)
     status = _status(path)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
-    activity = _last_activity(pg, path, status)
+    ignored = [] if status else _ignored_paths(path)
+    if not status:
+        logger.info("Scanning worktree %s: ignored-path inventory complete (%d entries)", path, len(ignored))
+    activity = _last_activity(pg, path, [*status, *ignored])
 
     def keep(reason: RetainedWorktreeReason, *, pr: PrInfo | None = None, pid: int | None = None) -> RetainedWorktree:
         return RetainedWorktree(worktree, reason, activity, pr=pr, pid=pid)
@@ -249,6 +263,8 @@ def _classify_worktree(
         # Uncommitted work is never auto-pruned, but surface the branch's PR so a dirty
         # tree whose PR already merged reads as stale scratch, not live work.
         return keep(RetainedWorktreeReason.UNCOMMITTED_CHANGES, pr=pr)
+    if ignored:
+        return keep(RetainedWorktreeReason.IGNORED_FILES, pr=pr)
     if pr is not None and pr.state is PrState.OPEN:
         return keep(RetainedWorktreeReason.OPEN_PR, pr=pr)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
@@ -257,25 +273,35 @@ def _classify_worktree(
         # caught separately by branch_gc, which does have to care (deleting a branch ref
         # is destructive).
         return prune(PrunableWorktreeReason.PR_LANDED, pr=pr)
+    # A detached HEAD has no branch ref that survives worktree removal. Its tree or patch
+    # being equivalent to main does not preserve this particular commit object.
+    if worktree.branch is None:
+        return review(ReviewWorktreeReason.DETACHED_HEAD)
     if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
         return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
     # As in `branch_gc`: the shell-out only runs once the in-process test has already failed.
     if patches_landed_in_main(path, "HEAD", main):
         return prune(PrunableWorktreeReason.PATCHES_IN_MAIN)
-    if worktree.branch is None:
-        return review(ReviewWorktreeReason.DETACHED_HEAD)
     return review(ReviewWorktreeReason.UNMERGED)
 
 
 def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     """Remove one worktree with `git worktree remove` (never `--force`).
 
-    git refuses a tree with tracked changes or untracked files, so a tree that turned dirty
-    since the scan fails rather than losing work. It does not refuse ignored files: those are
-    deleted with the tree. The branch is left intact — its work stays reachable through it
-    (branch GC is a separate step). Use `remove_if_still_prunable` unless the caller has just
-    classified `path` itself.
+    Git refuses tracked or untracked changes. This entry point also checks ignored paths and
+    the current HEAD so direct callers cannot bypass those protections. An attached branch is
+    left intact — its work stays reachable through it (branch GC is a separate step). Use
+    `remove_if_still_prunable` unless the caller has just classified `path` itself. A file or
+    detached commit created after inspection but before Git removes the directory remains a
+    race this interface cannot make atomic.
     """
+    try:
+        if _ignored_paths(path):
+            return Skipped(path, "ignored files or directories would be deleted")
+        if open_repo(path).head_is_detached:
+            return Skipped(path, "detached HEAD commit reachability is not proven safe for removal")
+    except INSPECTION_ERRORS as error:
+        return Failed(path, f"cannot inspect worktree safety before removal: {error}")
     try:
         outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
     except (OSError, subprocess.SubprocessError) as error:
@@ -297,8 +323,10 @@ def remove_if_still_prunable(
 ) -> RemovalResult[Path]:
     """Re-classify `worktree` now and remove it only if it is still prunable.
 
-    The scan that found it may be seconds old: a process may have entered the tree, or a
-    commit landed on a detached HEAD, which `git worktree remove` alone would not catch.
+    The scan that found it may be seconds old: a process may have entered the tree, a commit
+    landed on a detached HEAD, or ignored data may have appeared. The direct removal helper
+    checks ignored paths and the current HEAD again immediately before invoking Git, though
+    those checks are not atomic with the removal.
     """
     fresh = classify_worktree(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids

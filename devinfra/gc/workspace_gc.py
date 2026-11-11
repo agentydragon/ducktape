@@ -24,9 +24,10 @@ Nothing is removed without an explicit flag. Each removal revalidates its candid
 beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
 still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
 Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
-Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
-clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
-network-free.
+Ignored files do not count in `git status`; worktrees with detected ignored paths are kept,
+and the removal entry point checks again just before `git worktree remove`. A concurrent file
+creation after that check can still be deleted because Git does not make inventory and removal
+atomic. `github_prs` owns GitHub access (PR state); the scan itself is network-free.
 """
 
 from __future__ import annotations
@@ -547,7 +548,7 @@ class _Command:
 
 
 _WORKTREES_COMMAND = _Command(
-    frozenset({_Domain.WORKTREES}), "Dry run only; pass --prune to remove the prunable worktrees."
+    frozenset({_Domain.WORKTREES}), "Dry run only; pass --prune to remove eligible worktrees."
 )
 _BASES_COMMAND = _Command(frozenset({_Domain.BASES}), "Dry run only; pass --delete to remove the prunable bases.")
 _REPO_CACHE_COMMAND = _Command(
@@ -555,7 +556,7 @@ _REPO_CACHE_COMMAND = _Command(
 )
 _ALL_COMMAND = _Command(
     frozenset(_Domain),
-    "Dry run only; pass --prune to remove all prunable worktrees, branches, bases, and repo-cache entries.",
+    "Dry run only; pass --prune to remove all eligible worktrees, branches, bases, and repo-cache entries.",
 )
 
 
@@ -838,8 +839,7 @@ def _all_command(
     verbose: _VerboseOption = False,
     workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     prune: Annotated[
-        bool,
-        typer.Option("--prune", help="remove all prunable worktrees, branches, output bases, and repo-cache entries"),
+        bool, typer.Option("--prune", help="remove eligible worktrees, branches, output bases, and repo-cache entries")
     ] = False,
     delete_foreign_clones: Annotated[
         bool,
@@ -870,7 +870,9 @@ def _worktrees_command(
     no_prs: _NoPrsOption = False,
     verbose: _VerboseOption = False,
     workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
-    prune: Annotated[bool, typer.Option("--prune", help="remove prunable worktrees (revalidated first)")] = False,
+    prune: Annotated[
+        bool, typer.Option("--prune", help="remove clean, attached worktrees without ignored files (revalidated first)")
+    ] = False,
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)

@@ -7,7 +7,7 @@ import pytest_bazel
 from devinfra.gc import foreign_clone_gc as fcg, worktree_gc
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.removal import Removed
+from devinfra.gc.removal import Removed, Skipped
 
 _ORIGIN = "https://github.com/acme/widgets"
 _OTHER_ORIGIN = "https://github.com/acme/gadgets"
@@ -160,6 +160,22 @@ def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRep
     assert outcome == Removed(foreign.path)
     assert not nested_wt.path.exists()
     assert not foreign.path.exists()
+
+
+def test_prune_foreign_clone_does_not_delete_root_when_nested_remove_is_skipped(repo: GitRepo) -> None:
+    repo.set_origin(_ORIGIN)
+    foreign = _foreign_clone(repo)
+    nested_wt = foreign.worktree("nested", "spike")
+    (foreign.path / ".git" / "info" / "exclude").write_text(".env\n")
+    local_env = nested_wt.path / ".env"
+    local_env.write_text("local data\n")
+    clone = fcg.ForeignClone(foreign.path, fcg.git_repo.list_worktrees(foreign.path))
+
+    outcome = fcg.prune_foreign_clone(clone)
+
+    assert isinstance(outcome, Skipped)
+    assert foreign.path.exists()
+    assert local_env.read_text() == "local data\n"
 
 
 if __name__ == "__main__":
