@@ -14,6 +14,7 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.desktop import daemon as daemon_module
+from finance.plaid.spend.desktop.credentials import EphemeralTokenStore, SecretServiceTokenStore
 from finance.plaid.spend.desktop.daemon import PlaidSpendBusInterface, PlaidSpendDaemon
 from finance.plaid.spend.desktop.oauth import AuthenticationRequiredError
 
@@ -31,6 +32,26 @@ class _EventStream(httpx.AsyncByteStream):
 
 def _event(view: Mapping[str, object]) -> str:
     return f"event: view\ndata: {json.dumps(view)}\n\n"
+
+
+async def test_ephemeral_credentials_are_session_local() -> None:
+    daemon = PlaidSpendDaemon(ephemeral_credentials=True)
+    other_daemon = PlaidSpendDaemon(ephemeral_credentials=True)
+    default_daemon = PlaidSpendDaemon()
+    try:
+        assert isinstance(daemon.token_store, EphemeralTokenStore)
+        assert type(default_daemon.token_store) is SecretServiceTokenStore
+        assert await daemon.token_store.load_refresh_token() is None
+        await daemon.token_store.save_refresh_token("first")
+        await daemon.token_store.save_refresh_token("rotated")
+        assert await daemon.token_store.load_refresh_token() == "rotated"
+        assert await other_daemon.token_store.load_refresh_token() is None
+        await daemon.token_store.clear()
+        assert await daemon.token_store.load_refresh_token() is None
+    finally:
+        await daemon.close()
+        await other_daemon.close()
+        await default_daemon.close()
 
 
 async def test_stream_views_are_emitted_through_the_dbus_interface() -> None:

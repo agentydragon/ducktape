@@ -3,6 +3,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_test")
+load("//gnome:devkit.bzl", "gnome_devkit")
 
 pkg_files(
     name = "extension_files",
@@ -69,4 +70,14 @@ py_test(
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
+)
+
+gnome_devkit(
+    name = "devkit",
+    daemon = "//finance/plaid/spend/desktop:daemon_bin",
+    daemon_arg = "--ephemeral-credentials",
+    default_fixture = "fixtures/ready_two_cards.json",
+    extension_zip = ":plaid_spend_extension",
+    fixture_env = "PLAID_SPEND_FIXTURE",
+    uuid = "plaid-spend@allegedly.works",
 )

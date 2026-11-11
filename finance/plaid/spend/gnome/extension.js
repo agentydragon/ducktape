@@ -248,7 +248,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._history = null;
       this._historyError = false;
       this._proxyHandlerIds = [];
-      this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1";
+      const fixturePath = GLib.getenv("PLAID_SPEND_FIXTURE");
+      this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1" || Boolean(fixturePath);
       this._testIface = null;
       this._testBusOwnerId = 0;
       this._timingItem = null;
@@ -283,6 +284,10 @@ const PlaidSpendIndicator = GObject.registerClass(
       });
 
       if (this._testMode) this._exportTestInterface();
+      if (fixturePath) {
+        this._loadFixtureFile(fixturePath);
+        return;
+      }
 
       Gio.DBusProxy.new_for_bus(
         Gio.BusType.SESSION,
