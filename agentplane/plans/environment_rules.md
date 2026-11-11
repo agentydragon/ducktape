@@ -154,8 +154,9 @@ Rules for the operations:
      mismatch, and the [session model](session_environment_model.md) requires it of attachments. No
      grant overrides it. Rules allowing a binding across Identities may come later
      ([`CROSS_IDENTITY_SESSION_BINDING`](task_dag.md#cross_identity_session_binding--binding-a-session-to-another-identitys-environment)); this rule type does not express them.
-  4. E's own state allows it: no operator stop or pending delete, the incarnation is current, and
-     E has room for another binding.
+  4. E's own state allows it: no operator stop or pending delete, and the incarnation is current.
+     There is no limit on how many Sessions bind to one environment (operator, 2026-11-11): a
+     binding costs nothing, and the runtime bounds the work it runs when it starts it.
 - **A Session's Identity never changes.** No operation rebinds a Session to another Identity: its
   history was produced as that Identity, and later turns would run as the new one with the old
   one's context. The way across is a new Session as the other Identity. Moving a central Session to
