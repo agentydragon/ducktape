@@ -73,9 +73,7 @@ def read_money(rows: list[dict[str, Any]]) -> dict[str, list[MoneyPoll]]:
     return {provider: sorted(polls, key=lambda poll: poll.at) for provider, polls in result.items()}
 
 
-@dataclass(frozen=True)
-class MonotonicRun:
-    polls: tuple[Poll, ...]
+type MonotonicRun = tuple[Poll, ...]
 
 
 @dataclass(frozen=True)
@@ -96,7 +94,7 @@ def join_poll_pairs(pairs: Iterable[tuple[Poll, Poll]]) -> list[MonotonicRun]:
             runs[-1].append(after)
         else:
             runs.append([before, after])
-    return [MonotonicRun(tuple(polls)) for polls in runs]
+    return [tuple(polls) for polls in runs]
 
 
 def split_monotonic_runs(polls: list[Poll]) -> tuple[list[MonotonicRun], dict[str, int]]:
@@ -142,12 +140,12 @@ def select_monotonic_runs(
 ) -> tuple[list[MonotonicRun], dict[str, int]]:
     runs, rejected = split_monotonic_runs(polls)
     companion_ranges = [
-        [TimeRange(run.polls[0].at, run.polls[-1].at) for run in split_monotonic_runs(other)[0]] for other in companions
+        [TimeRange(run[0].at, run[-1].at) for run in split_monotonic_runs(other)[0]] for other in companions
     ]
     money_ranges = stable_money_ranges(money)
     accepted = []
     for run in runs:
-        for before, after in pairwise(run.polls):
+        for before, after in pairwise(run):
             reason = None
             if before.at < usage_start or after.at > usage_end:
                 reason = "outside_usage_window"
@@ -167,12 +165,11 @@ def calibration_intervals(runs: list[MonotonicRun], *, chunk_minutes: int | None
     result = []
     for run in runs:
         first = 0
-        for last in range(1, len(run.polls)):
-            if last == len(run.polls) - 1 or (
-                chunk_minutes is not None
-                and run.polls[last].at - run.polls[first].at >= timedelta(minutes=chunk_minutes)
+        for last in range(1, len(run)):
+            if last == len(run) - 1 or (
+                chunk_minutes is not None and run[last].at - run[first].at >= timedelta(minutes=chunk_minutes)
             ):
-                before, after = run.polls[first], run.polls[last]
+                before, after = run[first], run[last]
                 result.append(QuotaInterval(before.at, after.at, after.used - before.used, before.reset))
                 first = last
     return result
@@ -184,7 +181,7 @@ def weekly_cost_estimates(
     """Fit calendar weeks independently, excluding poll pairs crossing a week boundary."""
     pairs_by_week: dict[datetime, list[tuple[Poll, Poll]]] = defaultdict(list)
     for run in runs:
-        for before, after in pairwise(run.polls):
+        for before, after in pairwise(run):
             week = before.at.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=before.at.weekday())
             if after.at <= week + timedelta(days=7):
                 pairs_by_week[week].append((before, after))
@@ -735,10 +732,10 @@ def build_estimates(
                 "rejected_poll_pairs": rejected,
                 "monotonic_runs": [
                     {
-                        "start": run.polls[0].at.isoformat(),
-                        "end": run.polls[-1].at.isoformat(),
-                        "poll_pairs": len(run.polls) - 1,
-                        "points": run.polls[-1].used - run.polls[0].used,
+                        "start": run[0].at.isoformat(),
+                        "end": run[-1].at.isoformat(),
+                        "poll_pairs": len(run) - 1,
+                        "points": run[-1].used - run[0].used,
                     }
                     for run in runs
                 ],

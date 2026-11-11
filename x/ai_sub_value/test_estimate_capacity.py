@@ -44,7 +44,7 @@ def test_reset_only_discards_the_crossing_poll_pair_and_keeps_both_sides() -> No
     reset = START + timedelta(days=7)
     polls = [Poll(START + timedelta(minutes=5 * i), i if i < 5 else i - 5, reset) for i in range(13)]
     runs, rejected = split_monotonic_runs(polls)
-    assert [(run.polls[0].at, run.polls[-1].at) for run in runs] == [
+    assert [(run[0].at, run[-1].at) for run in runs] == [
         (START, START + timedelta(minutes=20)),
         (START + timedelta(minutes=25), START + timedelta(hours=1)),
     ]
@@ -121,7 +121,7 @@ def test_companion_reset_splits_only_affected_poll_spans() -> None:
     runs, rejected = select_monotonic_runs(
         polls, companions=[other], money=money, usage_start=START, usage_end=START + timedelta(hours=1)
     )
-    assert [len(run.polls) - 1 for run in runs] == [5, 6]
+    assert [len(run) - 1 for run in runs] == [5, 6]
     assert rejected == {"other_window_missing_unclean_or_saturated": 1}
 
 
@@ -130,7 +130,7 @@ def test_gaps_saturation_and_changed_reset_metadata_break_runs() -> None:
     polls[3] = Poll(polls[3].at, 100, polls[3].reset)
     polls[5:] = [Poll(p.at + timedelta(hours=1), p.used, START + timedelta(days=8)) for p in polls[5:]]
     runs, rejected = split_monotonic_runs(polls)
-    assert [len(run.polls) - 1 for run in runs] == [2, 2]
+    assert [len(run) - 1 for run in runs] == [2, 2]
     assert rejected == {"saturated": 1, "reset_or_discontinuity": 1, "poll_gap": 1}
     moved_reset = [
         Poll(START, 1, START + timedelta(days=7)),
