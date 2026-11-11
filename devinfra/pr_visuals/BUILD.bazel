@@ -108,6 +108,15 @@ filegroup(
 )
 
 py_library(
+    name = "comment_publishing",
+    srcs = ["comment_publishing.py"],
+    deps = [
+        ":github_comment",
+        "@pypi//pygithub",
+    ],
+)
+
+py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
@@ -120,6 +129,7 @@ py_library(
         ":artifacts",
         ":check_run",
         ":collection",
+        ":comment_publishing",
         ":gallery",
         ":github_comment",
         ":metadata",
@@ -185,6 +195,7 @@ py_test(
     deps = [
         ":artifacts",
         ":collection",
+        ":comment_publishing",
         ":github_comment",
         ":metadata",
         ":publisher",

@@ -122,6 +122,16 @@ failed, its original error remains the command's error, with any reporting error
 attached as its cause. A stale or closed PR never receives a comment; a PR
 already stale at the initial lookup gets a `neutral` check.
 
+The singleton bot comment reports the latest result. A published bundle, CI
+failure, or processing failure creates or updates it. A successful run with no
+visual output updates an existing comment to describe that run, but creates no
+comment when none exists. This can happen for the same PR head when the affected
+test set changes, so an earlier review is not preserved as the current result.
+Every newly written comment starts with one versioned HTML marker,
+`<!-- pr-visuals {"version":1,...} -->`, containing its commit SHA, result
+kind, and CI conclusion. Older comments using `<!-- pr-visuals -->` remain
+discoverable and are replaced without parsing their display text.
+
 ## Storage
 
 - Each distinct PNG is stored once at `assets/<sha256>.png`, shared across targets,

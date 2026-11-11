@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
@@ -117,22 +118,22 @@ class FakeGithub:
         return self.repo
 
 
-def _install_github(monkeypatch: pytest.MonkeyPatch, repo: FakeRepo) -> None:
-    monkeypatch.setattr(check_run, "Github", lambda **_kwargs: FakeGithub(repo))
+def _github(repo: FakeRepo) -> FakeGithub:
+    return FakeGithub(repo)
 
 
-def test_upsert_creates_in_progress_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_creates_in_progress_check() -> None:
     repo = FakeRepo([])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="in_progress",
         summary="Bazel CI is running.",
         details_url="https://example.test/ci",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == [
@@ -147,19 +148,19 @@ def test_upsert_creates_in_progress_check(monkeypatch: pytest.MonkeyPatch) -> No
     ]
 
 
-def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_completes_matching_check() -> None:
     existing = FakeCheckRun("pr-visual-review:123:1")
     repo = FakeRepo([FakeCheckRun("different"), existing])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="success",
         summary="Published.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -174,20 +175,20 @@ def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> Non
     ]
 
 
-def test_upsert_does_not_complete_another_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_does_not_complete_another_attempt() -> None:
     first_attempt = FakeCheckRun("pr-visual-review:123:1")
     second_attempt = FakeCheckRun("pr-visual-review:123:2")
     repo = FakeRepo([first_attempt, second_attempt])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="cancelled",
         summary="First CI attempt was cancelled.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -203,37 +204,37 @@ def test_upsert_does_not_complete_another_attempt(monkeypatch: pytest.MonkeyPatc
     ]
 
 
-def test_late_announcement_does_not_reopen_completed_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_late_announcement_does_not_reopen_completed_attempt() -> None:
     cancelled = FakeCheckRun("pr-visual-review:123:1", status="completed")
     repo = FakeRepo([cancelled])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="in_progress",
         summary="Bazel CI is running.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
     assert cancelled.edits == []
 
 
-def test_late_announcement_postflight_renames_newly_superseded_completed_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_late_announcement_postflight_renames_newly_superseded_completed_check() -> None:
     completed = FakeCheckRun("pr-visual-review:123:1", status="completed", conclusion="success")
     repo = FakeRepo([completed], [FakeWorkflowRun(123)])
     repo.workflow_run_snapshots = [[FakeWorkflowRun(123)], [FakeWorkflowRun(123), FakeWorkflowRun(124, run_number=2)]]
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="in_progress",
         summary="A late announcement.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -241,20 +242,20 @@ def test_late_announcement_postflight_renames_newly_superseded_completed_check(m
     assert completed.edits == [{"name": "PR visual review (CI run 123 attempt 1)"}]
 
 
-def test_late_attempt_completion_updates_its_check_without_reordering_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_late_attempt_completion_updates_its_check_without_reordering_retry() -> None:
     first_attempt = FakeCheckRun("pr-visual-review:123:1")
     second_attempt = FakeCheckRun("pr-visual-review:123:2", status="completed")
     repo = FakeRepo([first_attempt, second_attempt], [FakeWorkflowRun(123, run_attempt=2)])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="failure",
         summary="Attempt 1 publication failed.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -270,21 +271,21 @@ def test_late_attempt_completion_updates_its_check_without_reordering_retry(monk
     assert second_attempt.edits == []
 
 
-def test_duplicate_attempt_checks_keep_failure_and_close_orphaned_announcement(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duplicate_attempt_checks_keep_failure_and_close_orphaned_announcement() -> None:
     orphaned_announcement = FakeCheckRun("pr-visual-review:123:1", id=130204254354)
     late_failure = FakeCheckRun("pr-visual-review:123:1", id=130209709770, status="completed", conclusion="failure")
     retry = FakeCheckRun("pr-visual-review:123:2", id=130208076211, status="completed", conclusion="neutral")
     repo = FakeRepo([orphaned_announcement, retry, late_failure], [FakeWorkflowRun(123, run_attempt=2)])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="failure",
         summary="Attempt 1 publication failed.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert late_failure.conclusion == "failure"
@@ -306,7 +307,7 @@ def test_duplicate_attempt_checks_keep_failure_and_close_orphaned_announcement(m
     assert retry.edits == []
 
 
-def test_duplicate_name_text_does_not_hide_a_custom_canonical_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duplicate_name_text_does_not_hide_a_custom_canonical_check() -> None:
     name = "PR visual review (duplicate CI run is part of the configured name)"
     canonical = FakeCheckRun(
         "pr-visual-review:123:1",
@@ -324,16 +325,16 @@ def test_duplicate_name_text_does_not_hide_a_custom_canonical_check(monkeypatch:
     )
     repo = FakeRepo([duplicate, canonical], [FakeWorkflowRun(123)])
     repo.workflow_run_snapshots = [[FakeWorkflowRun(123)], [FakeWorkflowRun(123), FakeWorkflowRun(124, run_number=2)]]
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="in_progress",
         summary="A late announcement.",
         external_id="pr-visual-review:123:1",
         name=name,
-        token="token",
     )
 
     assert canonical.conclusion == "failure"
@@ -344,55 +345,55 @@ def test_duplicate_name_text_does_not_hide_a_custom_canonical_check(monkeypatch:
     assert duplicate.edits == []
 
 
-def test_duplicate_non_visual_external_ids_still_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duplicate_non_visual_external_ids_still_raise() -> None:
     repo = FakeRepo([FakeCheckRun("other-id"), FakeCheckRun("other-id")])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     with pytest.raises(ValueError, match="multiple 'PR visual review' checks"):
         check_run.upsert_check_run(
+            github=github,
             repository="owner/repo",
             commit_sha="a" * 40,
             status="completed",
             conclusion="failure",
             summary="Publication failed.",
             external_id="other-id",
-            token="token",
         )
 
 
-def test_independent_newer_run_supersedes_old_run_on_the_same_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_independent_newer_run_supersedes_old_run_on_the_same_commit() -> None:
     old_run_check = FakeCheckRun("pr-visual-review:123:1")
     repo = FakeRepo([old_run_check], [FakeWorkflowRun(123, run_number=1), FakeWorkflowRun(124, run_number=2)])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="failure",
         summary="The older CI run failed.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert old_run_check.name == "PR visual review (CI run 123 attempt 1)"
     assert old_run_check.edits[0]["conclusion"] == "failure"
 
 
-def test_attempt_starting_during_write_is_renamed_after_postflight_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_attempt_starting_during_write_is_renamed_after_postflight_check() -> None:
     first_attempt = FakeCheckRun("pr-visual-review:123:1")
     repo = FakeRepo([first_attempt], [FakeWorkflowRun(123)])
     repo.workflow_run_snapshots = [[FakeWorkflowRun(123)], [FakeWorkflowRun(123), FakeWorkflowRun(124, run_number=2)]]
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="failure",
         summary="The earlier run failed.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert first_attempt.name == "PR visual review (CI run 123 attempt 1)"
@@ -404,13 +405,56 @@ def test_attempt_starting_during_write_is_renamed_after_postflight_check(monkeyp
 def test_upsert_rejects_invalid_status_conclusion_pair(status: Any, conclusion: Any) -> None:
     with pytest.raises(ValueError, match="completed checks require"):
         check_run.upsert_check_run(
+            github=FakeGithub(FakeRepo([])),
             repository="owner/repo",
             commit_sha="a" * 40,
             status=status,
             conclusion=conclusion,
             summary="summary",
-            token="token",
         )
+
+
+def test_standalone_cli_constructs_a_client_and_passes_it_to_the_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeRepo([])
+    github = FakeGithub(repo)
+    constructed: list[dict[str, Any]] = []
+
+    def build_github(**kwargs: Any) -> FakeGithub:
+        constructed.append(kwargs)
+        return github
+
+    monkeypatch.setattr(check_run, "Github", build_github)
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "pr-visuals-announce",
+            "--repository",
+            "owner/repo",
+            "--sha",
+            "a" * 40,
+            "--status",
+            "completed",
+            "--conclusion",
+            "success",
+            "--summary",
+            "Published.",
+        ],
+    )
+
+    check_run.main()
+
+    assert len(constructed) == 1
+    assert repo.created == [
+        {
+            "name": "PR visual review",
+            "head_sha": "a" * 40,
+            "status": "completed",
+            "output": {"title": "PR visual review", "summary": "Published."},
+            "conclusion": "success",
+        }
+    ]
 
 
 if __name__ == "__main__":

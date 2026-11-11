@@ -40,16 +40,7 @@ from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration, load_config
-from x.wt.shared.protocol import (
-    ErrorCodes,
-    ErrorResponse,
-    GitstatusdAvailable,
-    GitstatusdUnavailable,
-    Response,
-    WorktreeID,
-    create_error_response,
-    parse_request,
-)
+from x.wt.shared.protocol import ErrorCodes, ErrorResponse, Response, WorktreeID, create_error_response, parse_request
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +144,6 @@ class WtDaemon:
         self.discovery_task: asyncio.Task | None = None
         self.discovery_scanning: bool = False
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
-        self._startup_tasks: list[asyncio.Task] = []
 
         # Ensure daemon directory exists
         self.config.wt_dir.mkdir(exist_ok=True)
@@ -360,10 +350,8 @@ class WtDaemon:
         gitstatusd_path, gitstatusd_error = find_gitstatusd(self.config)
         if gitstatusd_error:
             startup_errors.append(gitstatusd_error)
-            self.store.set_gitstatusd_config(GitstatusdUnavailable(error=gitstatusd_error))
         elif gitstatusd_path:
             logger.info("Using gitstatusd at: %s", gitstatusd_path)
-            self.store.set_gitstatusd_config(GitstatusdAvailable(path=gitstatusd_path))
 
         # If there are critical errors, write error handshake and return
         if startup_errors:

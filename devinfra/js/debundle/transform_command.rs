@@ -23,7 +23,7 @@ impl ProjectAnalysisArgs {
     /// Resolve the shared transform arguments and write the canonical
     /// analysis projection.
     pub fn run(self) -> Result<()> {
-        project_analysis(&self.transform.resolve()?, &self.out)
+        project_analysis(&self.transform.context.resolve()?, &self.out)
     }
 }
 
@@ -143,11 +143,6 @@ impl TransformArgs {
             (false, true) => Ok(RunOutput::EmitOnRejection),
             (true, true) => bail!("--dry-run and --emit-on-rejection are mutually exclusive"),
         }
-    }
-
-    /// Collapse `--package-root` pairs into a `HashMap` and validate spec source.
-    pub fn resolve(self) -> Result<TransformRequest> {
-        self.context.resolve()
     }
 }
 

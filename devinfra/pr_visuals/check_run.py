@@ -109,11 +109,11 @@ def _rename_if_superseded(
 
 def upsert_check_run(
     *,
+    github: Github,
     repository: str,
     commit_sha: str,
     status: CheckStatus,
     summary: str,
-    token: str,
     conclusion: CheckConclusion | None = None,
     details_url: str | None = None,
     external_id: str | None = None,
@@ -122,74 +122,46 @@ def upsert_check_run(
     if (status == "completed") != (conclusion is not None):
         raise ValueError("completed checks require a conclusion; in-progress checks must not have one")
 
-    with Github(auth=Auth.Token(token)) as github:
-        repo = github.get_repo(repository)
-        attempt_identity: tuple[int, int] | None = None
-        is_superseded = False
-        if external_id is not None and external_id.startswith("pr-visual-review:"):
-            match = _VISUAL_REVIEW_EXTERNAL_ID.fullmatch(external_id)
-            if match is None:
-                raise ValueError(f"invalid visual review external ID {external_id!r}")
-            run_id, attempt = (int(value) for value in match.groups())
-            attempt_identity = (run_id, attempt)
-            is_superseded = _is_superseded_attempt(repo=repo, commit_sha=commit_sha, external_id=external_id)
-        check_name = (
-            _superseded_check_name(name, *attempt_identity) if is_superseded and attempt_identity is not None else name
+    repo = github.get_repo(repository)
+    attempt_identity: tuple[int, int] | None = None
+    is_superseded = False
+    if external_id is not None and external_id.startswith("pr-visual-review:"):
+        match = _VISUAL_REVIEW_EXTERNAL_ID.fullmatch(external_id)
+        if match is None:
+            raise ValueError(f"invalid visual review external ID {external_id!r}")
+        run_id, attempt = (int(value) for value in match.groups())
+        attempt_identity = (run_id, attempt)
+        is_superseded = _is_superseded_attempt(repo=repo, commit_sha=commit_sha, external_id=external_id)
+    check_name = (
+        _superseded_check_name(name, *attempt_identity) if is_superseded and attempt_identity is not None else name
+    )
+
+    existing: list[CheckRun] = []
+    if external_id is not None:
+        existing = [
+            check
+            for check in repo.get_commit(commit_sha).get_check_runs(filter="all")
+            if check.external_id == external_id
+        ]
+    if len(existing) > 1 and attempt_identity is None:
+        raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
+    canonical = (
+        _canonical_check(existing, name=name, preferred_name=check_name, attempt_identity=attempt_identity)
+        if existing
+        else None
+    )
+    if len(existing) > 1 and attempt_identity is not None and canonical is not None:
+        _retire_duplicate_checks(
+            existing=existing,
+            canonical=canonical,
+            name=name,
+            run_id=attempt_identity[0],
+            attempt=attempt_identity[1],
+            canonical_name=check_name,
         )
-
-        existing: list[CheckRun] = []
-        if external_id is not None:
-            existing = [
-                check
-                for check in repo.get_commit(commit_sha).get_check_runs(filter="all")
-                if check.external_id == external_id
-            ]
-        if len(existing) > 1 and attempt_identity is None:
-            raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
-        canonical = (
-            _canonical_check(existing, name=name, preferred_name=check_name, attempt_identity=attempt_identity)
-            if existing
-            else None
-        )
-        if len(existing) > 1 and attempt_identity is not None and canonical is not None:
-            _retire_duplicate_checks(
-                existing=existing,
-                canonical=canonical,
-                name=name,
-                run_id=attempt_identity[0],
-                attempt=attempt_identity[1],
-                canonical_name=check_name,
-            )
-        if status == "in_progress" and canonical is not None and canonical.status == "completed":
-            if canonical.name != check_name:
-                canonical.edit(name=check_name)
-            if not is_superseded:
-                _rename_if_superseded(
-                    repo=repo,
-                    commit_sha=commit_sha,
-                    external_id=external_id,
-                    attempt_identity=attempt_identity,
-                    name=name,
-                    check=canonical,
-                )
-            return
-
-        output = CheckRunOutput(title=check_name, summary=summary[:65000]).api_payload()
-        optional: dict[str, Any] = {
-            **({"conclusion": conclusion} if conclusion is not None else {}),
-            **({"details_url": details_url} if details_url is not None else {}),
-            **({"external_id": external_id} if external_id is not None else {}),
-        }
-        if canonical is not None:
-            canonical.edit(name=check_name, status=status, output=output, **optional)
-        else:
-            canonical = repo.create_check_run(
-                name=check_name, head_sha=commit_sha, status=status, output=output, **optional
-            )
-
-        # A newer retry can start while this update is in flight. Recheck after the
-        # write so a late older attempt keeps its real result without becoming the
-        # latest same-name check run.
+    if status == "in_progress" and canonical is not None and canonical.status == "completed":
+        if canonical.name != check_name:
+            canonical.edit(name=check_name)
         if not is_superseded:
             _rename_if_superseded(
                 repo=repo,
@@ -199,6 +171,33 @@ def upsert_check_run(
                 name=name,
                 check=canonical,
             )
+        return
+
+    output = CheckRunOutput(title=check_name, summary=summary[:65000]).api_payload()
+    optional: dict[str, Any] = {
+        **({"conclusion": conclusion} if conclusion is not None else {}),
+        **({"details_url": details_url} if details_url is not None else {}),
+        **({"external_id": external_id} if external_id is not None else {}),
+    }
+    if canonical is not None:
+        canonical.edit(name=check_name, status=status, output=output, **optional)
+    else:
+        canonical = repo.create_check_run(
+            name=check_name, head_sha=commit_sha, status=status, output=output, **optional
+        )
+
+    # A newer retry can start while this update is in flight. Recheck after the
+    # write so a late older attempt keeps its real result without becoming the
+    # latest same-name check run.
+    if not is_superseded:
+        _rename_if_superseded(
+            repo=repo,
+            commit_sha=commit_sha,
+            external_id=external_id,
+            attempt_identity=attempt_identity,
+            name=name,
+            check=canonical,
+        )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -219,17 +218,18 @@ def main() -> None:
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         raise ValueError("GITHUB_TOKEN is required to publish a check run")
-    upsert_check_run(
-        repository=args.repository,
-        commit_sha=args.sha,
-        status=args.status,
-        conclusion=args.conclusion,
-        summary=args.summary,
-        details_url=args.details_url,
-        external_id=args.external_id,
-        name=args.name,
-        token=token,
-    )
+    with Github(auth=Auth.Token(token)) as github:
+        upsert_check_run(
+            github=github,
+            repository=args.repository,
+            commit_sha=args.sha,
+            status=args.status,
+            conclusion=args.conclusion,
+            summary=args.summary,
+            details_url=args.details_url,
+            external_id=args.external_id,
+            name=args.name,
+        )
 
 
 if __name__ == "__main__":

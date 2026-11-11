@@ -56,21 +56,10 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class AgentResult:
-    text: str
-    # Event access belongs to handlers; AgentResult contains only assembled text.
-
-
-@dataclass
 class StepResult:
     """`done` reflects handler completion; output remains with handlers."""
 
     done: bool
-
-
-@dataclass
-class CompactionResult:
-    compacted: bool
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
@@ -299,25 +288,23 @@ class Agent:
             return await self._dynamic_instructions()
         return None
 
-    async def compact_transcript(
-        self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None
-    ) -> CompactionResult:
+    async def compact_transcript(self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None) -> bool:
         """Summarize the transcript prefix before the last `keep_recent_turns` items.
 
         The prefix needs at least three items; it becomes one summary `UserMessage`.
-        If no prompt is supplied, load `compaction_prompt.md`.
+        If no prompt is supplied, load `compaction_prompt.md`. Return whether compaction occurred.
         """
 
         boundary_index = max(0, len(self._transcript) - keep_recent_turns)
 
         if boundary_index < 1:
-            return CompactionResult(compacted=False)
+            return False
 
         all_to_compact = self._transcript[:boundary_index]
         recent_region = self._transcript[boundary_index:]
 
         if len(all_to_compact) < 3:
-            return CompactionResult(compacted=False)
+            return False
 
         summary_text = await self._generate_summary(all_to_compact, summarization_prompt)
 
@@ -328,7 +315,7 @@ class Agent:
             *recent_region,  # Keep recent transcript items unchanged.
         ]
 
-        return CompactionResult(compacted=True)
+        return True
 
     async def _generate_summary(self, items: list[TranscriptItem], custom_prompt: str | None) -> str:
         """Serialize messages, reasoning items, function calls, and outputs for the summarizer."""
@@ -364,8 +351,8 @@ class Agent:
         self.finished = False  # Reset so step() can be called again
         return StepResult(done=done)
 
-    async def run(self) -> AgentResult:
-        """Clear text, pending calls, and completion state, then step until a handler finishes."""
+    async def run(self) -> str:
+        """Clear state, then step until a handler finishes and return the assembled text."""
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -374,7 +361,7 @@ class Agent:
                 result = await self.step()
                 if result.done:
                     break
-            return AgentResult(text="\n".join(self.assistant_text_chunks))
+            return "\n".join(self.assistant_text_chunks)
         except Exception as exc:
             for h in self._handlers:
                 h.on_error(exc)
@@ -483,8 +470,8 @@ class Agent:
                     "Cannot compact transcript when last item is a ReasoningItem. "
                     "Handlers must not return Compact() after receiving reasoning output."
                 )
-            result = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
-            if result.compacted:
+            compacted = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
+            if compacted:
                 logger.info(
                     "Transcript compacted (kept %d recent turns, compacted %d items)",
                     decision.keep_recent_turns,
@@ -494,7 +481,7 @@ class Agent:
                 logger.info("Compaction skipped (not enough items to compact)")
 
             for h in self._handlers:
-                h.on_compaction_complete(compacted=result.compacted)
+                h.on_compaction_complete(compacted=compacted)
 
             return  # Continue to next iteration after compaction
 

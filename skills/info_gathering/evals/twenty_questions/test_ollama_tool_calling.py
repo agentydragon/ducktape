@@ -41,8 +41,8 @@ async def test_text_completion(mock_or_live, recording_handler) -> None:
 
     res = await agent.run()
 
-    assert res.text, "Agent produced no text response"
-    print(f"Response: {res.text}")
+    assert res, "Agent produced no text response"
+    print(f"Response: {res}")
 
 
 async def test_tool_calling(mock_or_live, recording_handler) -> None:
@@ -71,8 +71,8 @@ async def test_tool_calling(mock_or_live, recording_handler) -> None:
 
     res = await agent.run()
 
-    assert res.text, "Agent produced no text response"
-    print(f"Response: {res.text}")
+    assert res, "Agent produced no text response"
+    print(f"Response: {res}")
 
 
 if __name__ == "__main__":

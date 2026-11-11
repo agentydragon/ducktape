@@ -155,7 +155,6 @@ type Runtime struct {
 	idleSince              *timestamppb.Timestamp
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor
-	workspaceSupervisor    *supervision.Supervisor
 	executionSupervisor    *supervision.Supervisor
 	harnessProcesses       *supervision.Host
 	sessionWorkers         sync.WaitGroup

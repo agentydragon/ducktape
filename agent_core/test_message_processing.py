@@ -189,7 +189,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
     agent.process_message(UserMessage.text("say hi"))
 
     res = await agent.run()
-    assert res.text.strip() == "done"
+    assert res.strip() == "done"
 
 
 if __name__ == "__main__":
