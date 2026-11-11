@@ -265,10 +265,6 @@ pub(super) fn run(args: ExplainIntegrityArgs, roots: CurrentRoots) -> Result<()>
     )
 }
 
-fn read_graph_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
-    report_io::read_json_gzip(path)
-}
-
 fn explain(
     args: &ExplainIntegrityArgs,
     limit: Option<usize>,
@@ -280,15 +276,14 @@ fn explain(
             (None, header.program_graph, Vec::new())
         }
         None => {
-            let graph: GraphView = read_graph_json(&args.graph)?;
+            let graph: GraphView = report_io::read_json_gzip(&args.graph)?;
             let selected = select_source_units(args, graph.nodes)?;
             (Some(graph.chunk_id), graph.program_graph, selected)
         }
     };
-    let program: ProgramGraphReport = read_graph_json(&graph_provenance::program_graph_path(
-        &args.graph,
-        &program_graph_path,
-    ))?;
+    let program: ProgramGraphReport = report_io::read_json_gzip(
+        &graph_provenance::program_graph_path(&args.graph, &program_graph_path),
+    )?;
     let mut sources = Sources::new(program.provenance.as_ref(), roots);
     let dynamic_scope: Vec<_> = program
         .native_prototype_mutations
