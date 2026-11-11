@@ -217,7 +217,12 @@ async def test_spending_decision_render(
     await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional leash ~$23 / day.", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Pace ≤ provisional leash", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Oldest linked sync", exact=False)).to_have_count(1)
+    sync_help = page.get_by_role("button", name="About Linked sync time")
+    await sync_help.click()
+    await expect(page.get_by_text("The oldest successful sync of a Plaid Item", exact=False)).to_be_visible()
+    await sync_help.click()
     await expect(page.get_by_text("Unmatched in selected window: 1 ($15)", exact=False)).to_have_count(1)
     await expect(page.get_by_text("$75", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional card total since", exact=False)).to_have_count(1)
@@ -310,7 +315,7 @@ async def test_spending_decision_dark_theme(
         initial.removesuffix(".png"), label=f"{width}px dark theme", full_page=True, animations="disabled"
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("100")
-    await page.get_by_text("Pace warning", exact=True).last.wait_for()
+    await page.get_by_text("Forecast or pace warning", exact=True).last.wait_for()
     view.errors.assert_none(context="Spend")
     warning = f"dashboard-dark-{width}-warning.png"
     await view.capture(
@@ -343,6 +348,18 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, view: VisualPage,
     await view.capture(
         image.removesuffix(".png"), label="New allowance warming up", full_page=True, animations="disabled"
     )
+
+
+@pytest.mark.asyncio
+async def test_purchase_check_distinguishes_exhausted_and_over_allowance(page: Page, dashboard_url: str) -> None:
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_text("$200", exact=True).wait_for()
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("200")
+    await expect(page.get_by_text("Allowance exhausted", exact=True)).to_have_count(1)
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
+    await expect(page.get_by_text("Over allowance", exact=True)).to_have_count(1)
 
 
 @pytest.mark.asyncio

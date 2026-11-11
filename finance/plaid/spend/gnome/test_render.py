@@ -426,7 +426,7 @@ def test_allowance_paced(
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
-        assert "Sync 1h ago" in menu_text
+        assert "Oldest linked sync 1h ago" in menu_text
         assert "View updated" not in menu_text
         assert "sustainability target" not in menu_text
         assert "past pace is not opening debt" not in menu_text
@@ -458,7 +458,7 @@ def test_allowance_warning(
         assert "Leash ~$23/day" in menu_text
         assert "7d unmatched 1 ($15)" in menu_text
         assert "30d unmatched 1 ($15)" in menu_text
-        assert "Sync 1h ago" in menu_text
+        assert "Oldest linked sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="allowance warning")
 
 
@@ -474,7 +474,7 @@ def test_allowance_warming(
         assert "7d n/a" in menu_text
         assert "30d n/a" in menu_text
         assert "Leash ~$23/day" in menu_text
-        assert "Sync 1h ago" in menu_text
+        assert "Oldest linked sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="allowance warming")
 
 
@@ -494,12 +494,12 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
         menu_text = string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Retry in 20s" in menu_text
-        assert "Sync 1h ago" in menu_text
+        assert "Oldest linked sync 1h ago" in menu_text
         session.call("AdvanceClock", "5")
         menu_text = string_reply(session.call("GetMenuText"))
         assert "Last attempt 1m 20s ago" in menu_text
         assert "Retry in 15s" in menu_text
-        assert "Sync 1h ago" in menu_text
+        assert "Oldest linked sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="retrying")
 
 

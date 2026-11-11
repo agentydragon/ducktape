@@ -21,7 +21,7 @@ import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRigh
 
 import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
-import { Metric, Money, money, periodLabels, time } from "./spend_display";
+import { linkedSyncDescription, Metric, Money, money, periodLabels, time } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay } from "./rule_display";
 import type { AllowancePeriodId, RuleKind, TransactionPeriodId } from "./types";
 
@@ -691,9 +691,12 @@ export function TransactionsPage({
             <Text size="sm" c="dimmed">
               Showing {shown.length} of {rows.length}
             </Text>
-            <Text size="xs" c="dimmed">
-              View updated {time(transactions.generated_at)} · oldest allowance sync {time(allowance?.last_synced_at)}
-            </Text>
+            <Group gap="xs">
+              <Text size="xs" c="dimmed">
+                View updated {time(transactions.generated_at)} · oldest linked sync {time(allowance?.last_synced_at)}
+              </Text>
+              <HelpTooltip topic="Linked sync time" description={linkedSyncDescription} />
+            </Group>
           </Group>
           {shown.length === 0 && (
             <Text size="sm" c="dimmed">
