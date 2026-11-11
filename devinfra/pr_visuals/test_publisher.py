@@ -1209,6 +1209,67 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
+def test_publish_visual_review_uses_injected_runner_and_clients(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
+    bucket = EmptyBucket()
+    commands: list[list[str]] = []
+    download_runners: list[Callable[..., subprocess.CompletedProcess[str]]] = []
+    upload_clients: list[object] = []
+    checks: list[dict[str, object]] = []
+    comments: list[dict[str, object]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        commands.append(words)
+        if "status" in words:
+            output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+        else:
+            raise AssertionError(f"unexpected command {words}")
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    def fake_download(
+        _invocations: list[str],
+        _destination: Path,
+        *,
+        repository: str,
+        run: Callable[..., subprocess.CompletedProcess[str]],
+    ) -> list[CollectedVisualTest]:
+        assert repository == "agentydragon/ducktape"
+        download_runners.append(run)
+        return [candidate]
+
+    def fake_upload(_bundle: Path, **kwargs: object) -> None:
+        upload_clients.append(kwargs["client"])
+
+    config, _ = _parse_cli(
+        _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID)[1:]
+    )
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.collect_visual_tests", fake_download)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", fake_upload)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
+        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
+    )
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: comments.append(kwargs)
+    )
+
+    github = cast("Github", FakePublisherGithub())
+    publish_visual_review(config, run=fake_run, client=cast("S3Client", bucket), github=github, workflow_url=None)
+
+    assert any("invocation" in command and "status" in command for command in commands)
+    assert download_runners == [fake_run]
+    assert bucket.requested[0] == f"reviews-test-outputs/{'c' * 40}/tests/{candidate.slug}/metadata.json"
+    assert upload_clients == [bucket]
+    assert [comment["pull_request"] for comment in comments] == [8733]
+    assert [check["conclusion"] for check in checks] == ["success", "success"]
+    assert all(item["github"] is github for item in [*checks, *comments])
+
+
 @pytest.mark.parametrize("current", [None, PullRequestRef(number=9999, base_sha="c" * 40)])
 def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun, current: PullRequestRef | None
