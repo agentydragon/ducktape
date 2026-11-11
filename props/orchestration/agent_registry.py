@@ -13,7 +13,6 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime
 from types import TracebackType
 from uuid import UUID, uuid4
 
@@ -143,27 +142,6 @@ class GraderPodInfo:
     snapshot_slug: SnapshotSlug
     image_ref: str
     phase: PodPhase
-
-
-@dataclass
-class AgentRunView:
-    """Unified view of an agent run from DB."""
-
-    agent_run_id: UUID
-    image_digest: str
-    model: str
-    status: AgentRunStatus
-    created_at: datetime
-
-    @classmethod
-    def from_orm(cls, run: AgentRun) -> AgentRunView:
-        return cls(
-            agent_run_id=run.agent_run_id,
-            image_digest=run.image_digest,
-            model=run.model,
-            status=run.status,
-            created_at=run.created_at,
-        )
 
 
 class AgentRegistry:
@@ -689,13 +667,6 @@ class AgentRegistry:
         self._create_run(prepared)
         self._spawn_background_run(prepared, timeout_seconds=timeout_seconds)
         return prepared.agent_run_id
-
-    def get(self, run_id: UUID) -> AgentRunView | None:
-        with self._db.session() as session:
-            db_run = session.get(AgentRun, run_id)
-            if not db_run:
-                return None
-            return AgentRunView.from_orm(db_run)
 
     async def start_snapshot_grader(
         self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
