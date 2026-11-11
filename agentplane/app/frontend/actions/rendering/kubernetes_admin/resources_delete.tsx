@@ -49,7 +49,7 @@ export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDele
 export const resourcesDeleteCall: CallPreview = defineCallPreview(
   resourcesDeleteArguments,
   resourcesDeleteResult,
-  ({ args }) => <Delete args={args} />
+  Delete
 );
 export const resourcesDeleteResultPreview: ResultPreview = {
   schema: resourcesDeleteResult,
