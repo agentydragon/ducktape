@@ -70,6 +70,45 @@ k3s_suite(
     ],
 )
 
+# Each disruptive Gateway case owns a stack so an aborted central turn cannot send an
+# unanswered model request into the following case's scripted upstream.
+k3s_suite(
+    name = "test_gateway_crash",
+    srcs = ["test_gateway_crash.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+k3s_suite(
+    name = "test_gateway_budget",
+    srcs = ["test_gateway_budget.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Replacing the central sampler Pod must not affect the services suite's other cases.
 k3s_suite(
     name = "test_sampler_roll",

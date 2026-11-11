@@ -517,6 +517,83 @@ async def _wait_for_active_history_through(deployed: CentralStack, session_id: s
             await asyncio.sleep(0.1)
 
 
+async def _wait_for_cell_result_in_history(
+    deployed: CentralStack, session_id: str, after_cursor: int, call_id: str
+) -> int:
+    """Wait for the failed cell to settle while the Gateway is still unavailable."""
+    cursor = after_cursor
+    async with asyncio.timeout(180):
+        while True:
+            page = await deployed.history.read_session_events(session_id, after_cursor=cursor, limit=1000)
+            for entry in page.entries:
+                cursor = entry.cursor
+                event = entry.event
+                if not event.HasField("boundary_record"):
+                    continue
+                boundary = event.boundary_record
+                if boundary.boundary != "cell" or boundary.direction != "result" or boundary.fragment_count != 1:
+                    continue
+                payload = json.loads(boundary.payload)
+                if not str(payload.get("call_id", "")).startswith(call_id):
+                    continue
+                if any("Script failed" in item.get("text", "") for item in payload.get("output", [])):
+                    return entry.cursor
+            await asyncio.sleep(0.1)
+
+
+async def _kill_gateway_process(cluster: Cluster, pod: dict[str, object], crictl_command: tuple[str, ...]) -> None:
+    """SIGKILL the exact Gateway container, bypassing its orderly Lease release."""
+    metadata = pod["metadata"]
+    assert isinstance(metadata, dict)
+    current = json.loads(await cluster.kubectl("get", "pod", metadata["name"], "-o", "json"))
+    assert current["metadata"]["uid"] == metadata["uid"], current["metadata"]
+    (container,) = [status for status in current["status"]["containerStatuses"] if status["name"] == "runner-gateway"]
+    container_id = container["containerID"].removeprefix("containerd://")
+    assert container_id, container
+    assert container_id != container["containerID"], container
+    process = await asyncio.create_subprocess_exec(
+        *crictl_command,
+        "--runtime-endpoint",
+        "unix:///run/k3s/containerd/containerd.sock",
+        "inspect",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+    if process.returncode:
+        raise RuntimeError(f"crictl inspect exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+    inspected = json.loads(stdout)
+    assert inspected["status"]["id"] == container_id, inspected["status"]
+    pid = inspected["info"]["pid"]
+    assert isinstance(pid, int), pid
+    assert pid > 1, pid
+    ctr_command = (crictl_command[0], "ctr", "--address", "/run/k3s/containerd/containerd.sock", "-n", "k8s.io")
+    tasks = await asyncio.create_subprocess_exec(
+        *ctr_command, "tasks", "ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await asyncio.wait_for(tasks.communicate(), timeout=15)
+    if tasks.returncode:
+        raise RuntimeError(f"ctr tasks ls exited {tasks.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+    matching = [line.split() for line in stdout.decode().splitlines()[1:] if line.split()[:1] == [container_id]]
+    assert matching == [[container_id, str(pid), "RUNNING"]], matching
+    executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
+    assert executable.name == "runner-gateway", executable
+    kill = await asyncio.create_subprocess_exec(
+        *ctr_command,
+        "tasks",
+        "kill",
+        "--signal",
+        "SIGKILL",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await asyncio.wait_for(kill.communicate(), timeout=15)
+    if kill.returncode:
+        raise RuntimeError(f"ctr tasks kill exited {kill.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+
+
 async def _roll_gateway_for_central_session(
     cluster: Cluster,
     deployed: CentralStack,
@@ -524,17 +601,42 @@ async def _roll_gateway_for_central_session(
     failed_resume_after: tuple[str, int, str] | None = None,
     hold_down_seconds: float = 0,
     kill_native_server: bool = False,
-) -> tuple[CentralStack, float, str, str, tuple[str, str, str] | None]:
-    """Roll only the disposable k3s Gateway, proving an actual service outage."""
+    abrupt: bool = False,
+    crictl_command: tuple[str, ...] | None = None,
+    wait_for_read_failure: CodexModel | None = None,
+) -> tuple[
+    CentralStack, float, str, str, tuple[str, str, str] | None, tuple[ModelRequest[ResponsesRequest], str, str] | None
+]:
+    """Replace only the disposable k3s Gateway, proving an actual service outage."""
     old_pods = json.loads(
         await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
     )["items"]
     (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
     old_uid = old_pod["metadata"]["uid"]
     killed_native: tuple[str, str, str] | None = None
+    read_failure = None
+    old_lease = None
+    if abrupt:
+        old_lease = json.loads(
+            await cluster.kubectl("get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json")
+        )
+        assert old_lease["spec"]["holderIdentity"] == old_pod["metadata"]["name"], old_lease
+        assert crictl_command is not None
     try:
+        if abrupt:
+            assert crictl_command is not None
+            await _kill_gateway_process(cluster, old_pod, crictl_command)
         await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
+        if old_lease is not None:
+            lease = json.loads(
+                await cluster.kubectl(
+                    "get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"
+                )
+            )
+            assert lease["metadata"]["uid"] == old_lease["metadata"]["uid"], lease
+            assert lease["spec"]["holderIdentity"] == old_lease["spec"]["holderIdentity"], lease
+            assert lease["spec"]["leaseTransitions"] == old_lease["spec"]["leaseTransitions"], lease
         gateway_slices = json.loads(
             await cluster.kubectl(
                 "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
@@ -566,6 +668,14 @@ async def _roll_gateway_for_central_session(
             executor_pod, executor_pod_uid = await _sandbox_executor_pod(cluster, deployed.sandbox)
             old_process = await _exec_server_process(cluster, executor_pod, "kill")
             killed_native = (executor_pod, executor_pod_uid, old_process)
+        if wait_for_read_failure is not None:
+            assert failed_resume_after is not None
+            session_id, initial_cursor, read_call_id = failed_resume_after
+            request = await asyncio.wait_for(wait_for_read_failure.request(), timeout=45)
+            read_failure = await _follow_code_mode_cell(wait_for_read_failure, request, read_call_id, timeout_s=180)
+            assert "Script failed" in read_failure[1], read_failure[1]
+            result_cursor = await _wait_for_cell_result_in_history(deployed, session_id, initial_cursor, read_call_id)
+            await _wait_for_active_history_through(deployed, session_id, result_cursor)
         if hold_down_seconds:
             await asyncio.sleep(hold_down_seconds)
     finally:
@@ -598,19 +708,37 @@ async def _roll_gateway_for_central_session(
                 outage_seconds = asyncio.get_running_loop().time() - unavailable_started
                 break
             await asyncio.sleep(0.2)
-    return (await sampler_caller_after_gateway_roll(cluster, deployed), outage_seconds, old_uid, new_uid, killed_native)
+    if old_lease is not None:
+        lease = json.loads(
+            await cluster.kubectl("get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json")
+        )
+        assert lease["spec"]["leaseTransitions"] > old_lease["spec"]["leaseTransitions"], lease
+    return (
+        await sampler_caller_after_gateway_roll(cluster, deployed),
+        outage_seconds,
+        old_uid,
+        new_uid,
+        killed_native,
+        read_failure,
+    )
 
 
 async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
     """Require the user-facing History projection to include a completed sampler turn."""
     stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
     )
     terminal = None
-    async for frame in stream:
-        event = frame.entry.event
-        if event.HasField("turn_completed") and event.turn_completed.turn_id == command_id:
-            terminal = frame.entry
+    try:
+        async for frame in stream:
+            event = frame.entry.event
+            if event.HasField("turn_completed") and event.turn_completed.turn_id == command_id:
+                terminal = frame.entry
+                break
+    finally:
+        stream.cancel()
     assert terminal is not None, f"sampler has no terminal event for {command_id}"
     assert terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED, terminal.event.turn_completed
     async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
@@ -626,6 +754,30 @@ async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command
                 assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
                 return
     raise TimeoutError(f"History did not fold completed turn {command_id} through cursor {terminal.cursor}")
+
+
+async def _assert_single_command_settlement(deployed: CentralStack, session_id: str, *command_ids: str) -> None:
+    counts = dict.fromkeys(command_ids, 0)
+    cursor = 0
+    while True:
+        page = await deployed.history.read_session_events(session_id, after_cursor=cursor, limit=1000)
+        for entry in page.entries:
+            event = entry.event
+            if event.HasField("harness_user_message_confirmed"):
+                for command_id in event.harness_user_message_confirmed.origin_command_ids:
+                    if command_id in counts:
+                        counts[command_id] += 1
+            elif event.HasField("command_failed") and event.command_failed.command_id in counts:
+                counts[event.command_failed.command_id] += 1
+            elif event.HasField("command_noop") and event.command_noop.command_id in counts:
+                counts[event.command_noop.command_id] += 1
+        if not page.entries:
+            break
+        assert page.entries[-1].cursor > cursor, page
+        cursor = page.entries[-1].cursor
+        if cursor >= page.last_cursor:
+            break
+    assert counts == dict.fromkeys(command_ids, 1), counts
 
 
 async def _assert_projected_ready_for_input(deployed: CentralStack, session_id: str) -> None:
@@ -715,10 +867,12 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             old_gateway_uid,
             new_gateway_uid,
             killed_native,
+            read_failure,
         ) = await _roll_gateway_for_central_session(
             cluster, deployed, failed_resume_after=(session_id, cursor, "read-live-process")
         )
         assert killed_native is None
+        assert read_failure is None
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
         request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=140)
@@ -784,6 +938,253 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             )
             + "\n"
         )
+
+
+async def gateway_crash_settles_live_central_read_and_accepts_next_input(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, crictl_command: tuple[str, ...]
+) -> None:
+    """A killed Gateway leaves its Lease held; the active read still settles truthfully."""
+    session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(
+                session_id=session_id,
+                spec=session_pb2.SessionSpec(
+                    placement=session_pb2.SessionPlacement(
+                        central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                            executor_environment=session_pb2.ExactEnvironment(
+                                name=deployed.sandbox, uid=deployed.sandbox_uid
+                            )
+                        )
+                    ),
+                    cwd=executor.cwd,
+                    model=MODEL,
+                ),
+                setup_script=":\n",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command,
+                text="Keep one process running across an abrupt Gateway crash.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        start_cell = (
+            "const started = await tools.exec_command({cmd: "
+            + json.dumps("printf 'once\\n' >> gateway-crash-marker; sleep 90")
+            + ", yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            'store("gateway-crash-handle", started.session_id);\n'
+            "text(JSON.stringify(started));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("start-crash-process", "exec", start_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any(
+            output.call_id == "start-crash-process" and "session_id" in "\n".join(output.blocks)
+            for output in request.tool_outputs
+        )
+        cursor, process_id, native_session_id = await _started_gateway_roll_process(
+            deployed, session_id, "gateway-crash-marker"
+        )
+        read_cell = (
+            'const handle = load("gateway-crash-handle");\n'
+            "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
+            "text(JSON.stringify({handle, result}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("read-crash-process", "exec", read_cell)], model=MODEL
+                ).events
+            )
+        await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-crash-process")
+        recovered, _, _, _, killed_native, read_failure = await _roll_gateway_for_central_session(
+            cluster,
+            deployed,
+            failed_resume_after=(session_id, cursor, "read-crash-process"),
+            abrupt=True,
+            crictl_command=crictl_command,
+        )
+        assert killed_native is None
+        assert read_failure is None
+        request = await asyncio.wait_for(model.request(), timeout=45)
+        request, read_text, visible = await _follow_code_mode_cell(model, request, "read-crash-process", timeout_s=140)
+        if "retained exec-server session was definitively lost" in visible:
+            assert "no mutation was replayed" in visible, visible
+            await _assert_replacement_native_session_started(recovered, session_id, cursor, native_session_id)
+        else:
+            assert "Script completed" in read_text, read_text
+            await _assert_original_native_session_resumed(recovered, session_id, cursor, native_session_id)
+        await model.reply(request, ShellCall("verify-crash-once", "cat gateway-crash-marker"))
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-crash-once"]
+        assert _code_mode_shell_stdout(marker_output) == "once\n", marker_output
+        await model.reply(request, Text("The Gateway crash did not repeat the process mutation."))
+        await _wait_for_folded_turn(recovered, session_id, first_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await recovered.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=recovered.sandbox_uid,
+                command_id=second_command,
+                text="Confirm this Session accepts input after the Gateway crash.",
+            ),
+            metadata=recovered.metadata,
+            timeout=15,
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any("after the Gateway crash" in text for text in request.user_texts)
+        await model.reply(request, Text("The next input completed after the Gateway crash."))
+        await _wait_for_folded_turn(recovered, session_id, second_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await _assert_single_command_settlement(recovered, session_id, first_command, second_command)
+
+
+async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """An outage beyond the resume budget settles the read without blocking History or input."""
+    session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(
+                session_id=session_id,
+                spec=session_pb2.SessionSpec(
+                    placement=session_pb2.SessionPlacement(
+                        central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                            executor_environment=session_pb2.ExactEnvironment(
+                                name=deployed.sandbox, uid=deployed.sandbox_uid
+                            )
+                        )
+                    ),
+                    cwd=executor.cwd,
+                    model=MODEL,
+                ),
+                setup_script=":\n",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command,
+                text="Wait for one process through a sustained Gateway outage and report any uncertain outcome.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        start_cell = (
+            "const started = await tools.exec_command({cmd: "
+            + json.dumps("printf 'once\\n' >> gateway-budget-marker; sleep 300")
+            + ", yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            'store("gateway-budget-handle", started.session_id);\n'
+            "text(JSON.stringify(started));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("start-budget-process", "exec", start_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any(
+            output.call_id == "start-budget-process" and "session_id" in "\n".join(output.blocks)
+            for output in request.tool_outputs
+        )
+        cursor, process_id, native_session_id = await _started_gateway_roll_process(
+            deployed, session_id, "gateway-budget-marker"
+        )
+        read_cell = (
+            'const handle = load("gateway-budget-handle");\n'
+            "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
+            "text(JSON.stringify({handle, result}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("read-budget-process", "exec", read_cell)], model=MODEL
+                ).events
+            )
+        await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-budget-process")
+        recovered, _, _, _, killed_native, read_failure = await _roll_gateway_for_central_session(
+            cluster,
+            deployed,
+            failed_resume_after=(session_id, cursor, "read-budget-process"),
+            wait_for_read_failure=model,
+        )
+        assert killed_native is None
+        assert read_failure is not None
+        request, read_text, visible = read_failure
+        assert "Script failed" in read_text, read_text
+        assert "executor session resume retry budget exhausted" in visible, visible
+        assert "remote effect outcome is unknown" in visible, visible
+        assert "mutation was not replayed" in visible, visible
+        await model.reply(request, ShellCall("probe-budget-session", "cat gateway-budget-marker"))
+        request = await asyncio.wait_for(model.request(), timeout=45)
+        probe_outputs = [output for output in request.tool_outputs if output.call_id == "probe-budget-session"]
+        assert probe_outputs, probe_outputs
+        assert probe_outputs[0].blocks, probe_outputs
+        probe_output = probe_outputs[0]
+        probe_text = "\n".join(probe_output.blocks)
+        if "was definitively lost" in probe_text:
+            assert len(probe_outputs) == 2, probe_outputs
+            assert probe_text.startswith("Script failed\n"), probe_text
+            assert f'retained exec-server session "{native_session_id}" was definitively lost' in probe_text, probe_text
+            assert "was not dispatched" in probe_text, probe_text
+            assert "no mutation was replayed" in probe_text, probe_text
+            notice_text = "\n".join(probe_outputs[1].blocks)
+            assert notice_text.startswith("The retained exec-server session was definitively lost."), notice_text
+            assert "no mutation was replayed" in notice_text, notice_text
+            await _assert_replacement_native_session_started(recovered, session_id, cursor, native_session_id)
+            await model.reply(request, ShellCall("verify-budget-once", "cat gateway-budget-marker"))
+            request = await asyncio.wait_for(model.request(), timeout=30)
+            (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-budget-once"]
+        else:
+            assert len(probe_outputs) == 1, probe_outputs
+            await _assert_original_native_session_resumed(recovered, session_id, cursor, native_session_id)
+            marker_output = probe_output
+        assert _code_mode_shell_stdout(marker_output) == "once\n", marker_output
+        await model.reply(request, Text("The uncertain read did not replay the process mutation."))
+        await _wait_for_folded_turn(recovered, session_id, first_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await recovered.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=recovered.sandbox_uid,
+                command_id=second_command,
+                text="Confirm this Session accepts input after retry exhaustion.",
+            ),
+            metadata=recovered.metadata,
+            timeout=15,
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any("after retry exhaustion" in text for text in request.user_texts)
+        await model.reply(request, Text("The next input completed after retry exhaustion."))
+        await _wait_for_folded_turn(recovered, session_id, second_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await _assert_single_command_settlement(recovered, session_id, first_command, second_command)
 
 
 async def gateway_outage_restarts_exec_server_then_notifies_model(
@@ -865,6 +1266,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             old_gateway_uid,
             new_gateway_uid,
             killed_native,
+            read_failure,
         ) = await _roll_gateway_for_central_session(
             cluster,
             deployed,
@@ -872,6 +1274,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             kill_native_server=True,
         )
         assert killed_native is not None
+        assert read_failure is None
         executor_pod, executor_pod_uid, old_exec_server = killed_native
         request = await asyncio.wait_for(model.request(), timeout=45)
         request, read_text, visible = await _follow_code_mode_cell(
