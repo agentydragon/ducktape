@@ -6,4 +6,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/tana-firebase-resigner
     newTag: devel-20261106045354-c86ac23 # {"$imagepolicy": "flux-system:tana-firebase-resigner:tag"}
   - name: git.allegedly.works/ducktape-ci/mcp-oauth-facade
-    newTag: devel-20261106050624-c86ac23 # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}
+    newTag: devel-20261111024046-2a3e599 # {"$imagepolicy": "flux-system:mcp-oauth-facade:tag"}

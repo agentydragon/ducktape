@@ -4,6 +4,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/homeassistant-component-installer
     newTag: devel-20261106045812-c86ac23 # {"$imagepolicy": "flux-system:homeassistant-component-installer:tag"}
   - name: git.allegedly.works/ducktape-ci/homeassistant-onboarding
-    newTag: devel-20261106045644-c86ac23 # {"$imagepolicy": "flux-system:homeassistant-onboarding:tag"}
+    newTag: devel-20261111024049-2a3e599 # {"$imagepolicy": "flux-system:homeassistant-onboarding:tag"}
   - name: git.allegedly.works/ducktape-ci/homeassistant-token-provisioner
-    newTag: devel-20261106045908-c86ac23 # {"$imagepolicy": "flux-system:homeassistant-token-provisioner:tag"}
+    newTag: devel-20261111024109-2a3e599 # {"$imagepolicy": "flux-system:homeassistant-token-provisioner:tag"}
