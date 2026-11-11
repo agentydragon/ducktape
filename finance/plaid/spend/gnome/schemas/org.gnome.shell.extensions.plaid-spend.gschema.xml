@@ -25,6 +25,10 @@
       <default>true</default>
       <summary>Show the daily leash on the sparkline</summary>
     </key>
+    <key name="sparkline-leash-color" type="s">
+      <default>''</default>
+      <summary>Leash line color, or empty to use the panel foreground</summary>
+    </key>
     <key name="sparkline-history-days" type="s">
       <choices>
         <choice value="7"/>
