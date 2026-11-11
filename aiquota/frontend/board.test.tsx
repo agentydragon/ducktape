@@ -63,7 +63,8 @@ function sampleQuotas(): AllQuotasView {
         grants: [
           {
             label: "Promo grant",
-            remaining: "$25.75",
+            remaining: "$26",
+            exact_remaining: "$25.75",
             original: "$100.00",
             expires_at: "2026-02-01T10:30:00Z",
             scope: "Codex API",
@@ -198,22 +199,47 @@ describe("QuotaBoard", () => {
     expect(container.textContent).toContain("5h");
     expect(container.textContent).toContain("On pace");
     expect(container.textContent).toContain("Numeric pace: +10 pp");
-    expect(container.textContent).toContain("$25.75 remaining");
+    expect(container.textContent).toContain("$26 remaining");
     expect(container.textContent).toContain("Scope: Codex API");
     expect(container.textContent).toContain("scheduled");
-    expect(container.textContent).toContain("Extra spend this month: $25.50 of $100 limit");
+    expect(container.textContent).toContain("Extra spend this month: $26 of $100 limit");
     expect(container.textContent).toContain("Research org");
 
     const grantDetails = container.querySelector(".aiquota-reading-row .aiquota-details");
     expect(grantDetails?.hasAttribute("open")).toBe(false);
     expect(grantDetails?.textContent).toContain("Original amount");
     expect(grantDetails?.textContent).toContain("$100.00");
+    expect(grantDetails?.textContent).toContain("Exact remaining$25.75");
     expect(container.querySelector(".aiquota-source-error .aiquota-error-details pre")?.textContent).toBe(
       "quota transport timed out"
     );
     expect(container.querySelector(".aiquota-card .aiquota-error-details pre")?.textContent).toBe(
       "401 invalid_token returned from the provider"
     );
+  });
+
+  it("uses the optional grant hint while keeping older payloads compatible", () => {
+    const quotas = sampleQuotas();
+    const grant = quotas.providers[0]!.grants[0]!;
+    grant.remaining = "$100";
+    grant.original = "$100.00";
+    render(quotas);
+    expect(container.querySelector(".aiquota-reading-row .aiquota-details")?.textContent).toContain("Original amount");
+
+    grant.original_repeats_remaining = true;
+    render(quotas);
+    expect(container.querySelector(".aiquota-reading-row .aiquota-details")?.textContent).not.toContain(
+      "Original amount"
+    );
+  });
+
+  it("does not add exact spend details when whole-dollar values are already exact", () => {
+    const quotas = sampleQuotas();
+    quotas.providers[0]!.monthly_extra_spend!.used_usd = 20;
+    quotas.providers[0]!.monthly_extra_spend!.monthly_limit_usd = 100;
+    render(quotas);
+    expect(container.textContent).toContain("Extra spend this month: $20 of $100 limit");
+    expect(container.textContent).not.toContain("Extra spend details");
   });
 
   it("updates only reset countdown and pending state as time advances without a new payload", () => {
@@ -260,7 +286,7 @@ describe("QuotaBoard", () => {
     expect(card?.querySelector(".aiquota-error-details")).toBeNull();
     expect(card?.textContent).not.toContain("paid credits available");
     expect(card?.textContent).not.toContain("extra usage enabled");
-    expect(card?.textContent).toContain("Extra spend this month: $25.50");
+    expect(card?.textContent).toContain("Extra spend this month: $26");
     expect(card?.textContent).not.toContain("On pace");
     expect(card?.textContent).not.toContain("Numeric pace");
   });

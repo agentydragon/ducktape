@@ -49,12 +49,12 @@ const DEADLINE_DATE_ONLY_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 export function formatDeadline(expiry: string | Date, now: Date, details = false): string | null {
   const date = expiry instanceof Date ? expiry : new Date(expiry);
   if (Number.isNaN(date.getTime())) return null;
-  const zone =
-    new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
-      .formatToParts(date)
-      .find((part) => part.type === "timeZoneName")?.value ?? "";
   const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   if (details) {
+    const zone =
+      new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+        .formatToParts(date)
+        .find((part) => part.type === "timeZoneName")?.value ?? "";
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
@@ -65,7 +65,7 @@ export function formatDeadline(expiry: string | Date, now: Date, details = false
     day: "numeric",
     ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
   });
-  return date.getTime() - now.getTime() > DEADLINE_DATE_ONLY_AFTER_MS ? label : `${label}, ${clock} ${zone}`;
+  return Math.abs(date.getTime() - now.getTime()) > DEADLINE_DATE_ONLY_AFTER_MS ? label : `${label}, ${clock}`;
 }
 
 // Keep the default visibility rule in sync with render/view_model.py.
@@ -113,16 +113,51 @@ export function formatMultiplier(value: number): string {
   return `${value}x`;
 }
 
+function currencyPrecision(amount: number): number {
+  const [mantissa, exponent] = Math.abs(amount).toString().split("e-");
+  const fraction = (mantissa.split(".")[1] ?? "").length;
+  return Math.max(2, Math.min(20, fraction + (exponent ? Number(exponent) : 0)));
+}
+
 export function formatUsd(amount: number): string {
-  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (amount !== 0 && Math.abs(amount) < 1e-20) return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toExponential()}`;
+  const precision = currencyPrecision(amount);
+  return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toLocaleString("en-US", { minimumFractionDigits: precision, maximumFractionDigits: precision })}`;
 }
 
 export function formatUsdWhole(amount: number): string {
-  return `$${roundHalfToEven(amount).toLocaleString("en-US")}`;
+  return `${amount < 0 ? "-" : ""}$${Math.round(Math.abs(amount)).toLocaleString("en-US")}`;
 }
 
 export function formatExtraSpend(usedUsd: number, limitUsd: number): string {
-  return `Extra spend this month: ${formatUsd(usedUsd)} of ${formatUsdWhole(limitUsd)} limit`;
+  let used = formatSummaryUsd(usedUsd);
+  let limit = formatSummaryUsd(limitUsd);
+  if (usedUsd !== limitUsd && used === limit) {
+    used = formatUsd(usedUsd);
+    limit = formatUsd(limitUsd);
+  }
+  return `Extra spend this month: ${used} of ${limit} limit`;
+}
+
+export function formatExtraSpendExact(usedUsd: number, limitUsd: number): string {
+  return `${formatUsd(usedUsd)} of ${formatUsd(limitUsd)} limit`;
+}
+
+export function extraSpendHasHiddenFraction(usedUsd: number, limitUsd: number): boolean {
+  const used = formatSummaryUsd(usedUsd);
+  const limit = formatSummaryUsd(limitUsd);
+  if (usedUsd !== limitUsd && used === limit) return false; // The summary already expands this collision.
+  return [usedUsd, limitUsd].some((amount) => Math.abs(amount) >= 10 && !Number.isInteger(amount));
+}
+
+export function formatSummaryUsd(amount: number): string {
+  if (amount === 0) return "$0";
+  if (Math.abs(amount) < 1e-20) return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toExponential()}`;
+  if (Math.abs(amount) < 10) {
+    const precision = currencyPrecision(amount);
+    return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toLocaleString("en-US", { minimumFractionDigits: precision, maximumFractionDigits: precision })}`;
+  }
+  return `${amount < 0 ? "-" : ""}${formatUsdWhole(Math.abs(amount))}`;
 }
 
 export function staleObservationAt(

@@ -66,6 +66,59 @@ def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> st
     return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
 
 
+def format_summary_minor_currency(amount_minor: int, exponent: int, currency: str) -> str:
+    """Keep small nonzero balances exact; round larger summaries to major units."""
+    if amount_minor == 0:
+        return "$0" if currency == "USD" else f"0 {currency}"
+    if abs(amount_minor) < 10 * 10**exponent:
+        return format_minor_currency(amount_minor, exponent, currency)
+    whole = Decimal(abs(amount_minor)).scaleb(-exponent).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    value = f"{whole:,}"
+    sign = "-" if amount_minor < 0 else ""
+    return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
+
+
+def format_summary_usd(amount: Decimal | float) -> str:
+    value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+    if value == 0:
+        return "$0"
+    if abs(value) < Decimal("1e-20"):
+        return f"{'-' if value < 0 else ''}${str(abs(value).normalize()).lower()}"
+    if abs(value) < 10:
+        # A provider may report sub-cent credits. Preserve the nonzero amount.
+        places = max(2, -value.as_tuple().exponent)
+        digits = f"{abs(value):,.{places}f}"
+    else:
+        digits = f"{abs(value).quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
+    return f"{'-' if value < 0 else ''}${digits}"
+
+
+def format_exact_usd(amount: Decimal) -> str:
+    if amount != 0 and abs(amount) < Decimal("1e-20"):
+        return f"{'-' if amount < 0 else ''}${str(abs(amount).normalize()).lower()}"
+    places = max(2, -amount.as_tuple().exponent)
+    return f"{'-' if amount < 0 else ''}${abs(amount):,.{places}f}"
+
+
+def format_extra_spend(used_usd: float, limit_usd: float) -> str:
+    used, limit = Decimal(str(used_usd)), Decimal(str(limit_usd))
+    used_label, limit_label = format_summary_usd(used), format_summary_usd(limit)
+    if used != limit and used_label == limit_label:
+        used_label, limit_label = format_exact_usd(used), format_exact_usd(limit)
+    return f"Extra spend this month: {used_label} of {limit_label} limit"
+
+
+def format_extra_spend_exact(used_usd: float, limit_usd: float) -> str:
+    return f"{format_exact_usd(Decimal(str(used_usd)))} of {format_exact_usd(Decimal(str(limit_usd)))} limit"
+
+
+def extra_spend_has_hidden_fraction(used_usd: float, limit_usd: float) -> bool:
+    used, limit = Decimal(str(used_usd)), Decimal(str(limit_usd))
+    if used != limit and format_summary_usd(used) == format_summary_usd(limit):
+        return False  # The summary expands values that would otherwise collide.
+    return any(abs(value) >= 10 and value != value.to_integral_value() for value in (used, limit))
+
+
 _DEADLINE_DATE_ONLY_AFTER = timedelta(days=14)
 
 
@@ -76,8 +129,8 @@ def format_deadline(when: datetime, now: datetime, tz: tzinfo | None = None, *, 
     label = local.strftime("%b %-d")
     if local.year != now.astimezone(tz).year:
         label += local.strftime(", %Y")
-    if when.astimezone(UTC) - now.astimezone(UTC) <= _DEADLINE_DATE_ONLY_AFTER:
-        label += local.strftime(", %H:%M %Z")
+    if abs(when.astimezone(UTC) - now.astimezone(UTC)) <= _DEADLINE_DATE_ONLY_AFTER:
+        label += local.strftime(", %H:%M")
     return label
 
 

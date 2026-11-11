@@ -25,13 +25,19 @@ from aiquota.models import (
     QuotaWindow,
     SuccessfulProviderFetch,
 )
-from aiquota.render.view_model import currently_over_plan, refresh_view, to_view
+from aiquota.render.view_model import GrantView, currently_over_plan, refresh_view, to_view
 
 if __name__ == "__main__":
     pytest_bazel.main()
 
 
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+
+
+def test_old_grant_payload_keeps_original_string_visible() -> None:
+    grant = GrantView.model_validate({"label": "Grant", "remaining": "$5", "original": "$5.00", "expires_at": None})
+    assert grant.original == "$5.00"
+    assert not grant.original_repeats_remaining
 
 
 def test_claude_reset_rows_group_counts_keep_scope_and_hide_expired() -> None:
@@ -365,21 +371,27 @@ def test_normalized_credit_rows_keep_pools_organizations_and_restrictions_separa
     provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
     view = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0]
     assert [(row.label, row.value, row.group) for row in view.balances] == [
-        ("Prepaid balance", "$25.75", None),
+        ("Available balance", "$26", None),
         ("Paid credits", "2,746 credits", None),
-        ("Available balance", "$123.45", "Main org"),
+        ("Available balance", "$123", "Main org"),
     ]
     assert [(row.label, row.remaining, row.scope, row.group) for row in view.grants] == [
-        ("Promo grant", "$123.45", "restricted", "Main org")
+        ("Promo grant", "$123", "restricted", "Main org")
     ]
+    assert view.balances[0].pool_detail == "Claude prepaid credits"
+    assert view.balances[0].exact_value == "$25.75"
+    assert view.grants[0].original == "$123.45"
+    assert view.grants[0].original_repeats_remaining
 
 
 def test_normalized_prepaid_balances_preserve_exact_minor_units_and_currency() -> None:
-    for minor, exponent, currency, expected in (
-        (123, 0, "USD", "$123"),
-        (1234567, 3, "EUR", "1,234.567 EUR"),
-        (-123, 2, "USD", "-$1.23"),
-        (0, 2, "USD", "$0.00"),
+    for minor, exponent, currency, expected, exact in (
+        (123, 0, "USD", "$123", None),
+        (1234567, 3, "EUR", "1,235 EUR", "1,234.567 EUR"),
+        (20000, 2, "USD", "$200", None),
+        (525, 2, "USD", "$5.25", None),
+        (-123, 2, "USD", "-$1.23", None),
+        (0, 2, "USD", "$0", None),
     ):
         result = FetchSuccess(
             prepaid_balance=PrepaidBalanceAvailable(amount_minor=minor, exponent=exponent, currency=currency)
@@ -387,6 +399,7 @@ def test_normalized_prepaid_balances_preserve_exact_minor_units_and_currency() -
         provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
         row = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0].balances[0]
         assert row.value == expected
+        assert row.exact_value == exact
 
 
 def test_broad_api_promo_scope_is_detail_while_model_and_product_restrictions_remain_visible() -> None:

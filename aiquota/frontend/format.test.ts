@@ -11,12 +11,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   formatDuration,
   formatExtraSpend,
+  extraSpendHasHiddenFraction,
   refreshWindowTiming,
   quotaActivity,
   staleObservationAt,
   formatDeadline,
   formatResetCreditSummary,
   formatPrepaidBalance,
+  formatSummaryUsd,
   roundHalfToEven,
 } from "../shared/presentation.js";
 
@@ -57,7 +59,7 @@ describe("formatResetCreditSummary", () => {
 
   it("keeps the main summary short and puts the complete known list in details", () => {
     expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false, now)).toBe(
-      "2 · next known expiry Jan 1, 15:20 UTC"
+      "2 · next known expiry Jan 1, 15:20"
     );
     expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false, now, true)).toBe(
       "2 · known expiries 2026-01-01 15:20 UTC, 2026-02-02 12:34 UTC"
@@ -66,9 +68,9 @@ describe("formatResetCreditSummary", () => {
 
   it("shows the difference between the count and a successful partial expiry lookup", () => {
     expect(formatResetCreditSummary(2, [firstExpiry], false, now)).toBe(
-      "2 · next known expiry Jan 1, 15:20 UTC · 1 expiry unknown"
+      "2 · next known expiry Jan 1, 15:20 · 1 expiry unknown"
     );
-    expect(formatResetCreditSummary(1, [firstExpiry], false, now)).toBe("1 · next known expiry Jan 1, 15:20 UTC");
+    expect(formatResetCreditSummary(1, [firstExpiry], false, now)).toBe("1 · next known expiry Jan 1, 15:20");
     expect(formatResetCreditSummary(2, [], false, now)).toBe("2 · 2 expiries unknown");
   });
 
@@ -88,18 +90,55 @@ describe("formatDeadline", () => {
   it("uses a local date, includes the year when needed, and keeps nearby minute precision", () => {
     expect(formatDeadline("2026-02-02T12:34:00Z", now)).toBe("Feb 2");
     expect(formatDeadline("2027-02-02T12:34:00Z", now)).toBe("Feb 2, 2027");
-    expect(formatDeadline("2026-01-15T12:34:00Z", now)).toBe("Jan 15, 12:34 UTC");
+    expect(formatDeadline("2026-01-15T12:34:00Z", now)).toBe("Jan 15, 12:34");
   });
 
   it("uses the 14-day cutoff and gives grant details the full local timestamp", () => {
-    expect(formatDeadline("2026-01-29T11:59:59Z", now)).toBe("Jan 29, 11:59 UTC");
-    expect(formatDeadline("2026-01-29T12:00:00Z", now)).toBe("Jan 29, 12:00 UTC");
+    expect(formatDeadline("2026-01-29T11:59:59Z", now)).toBe("Jan 29, 11:59");
+    expect(formatDeadline("2026-01-29T12:00:00Z", now)).toBe("Jan 29, 12:00");
     expect(formatDeadline("2026-01-29T12:00:01Z", now)).toBe("Jan 29");
+    expect(formatDeadline("2026-01-01T12:00:00Z", now)).toBe("Jan 1, 12:00");
+    expect(formatDeadline("2026-01-01T11:59:59Z", now)).toBe("Jan 1");
     expect(formatDeadline("2026-02-02T12:34:00Z", now, true)).toBe("2026-02-02 12:34 UTC");
   });
 
   it("returns null for an invalid deadline", () => {
     expect(formatDeadline("not a timestamp", now)).toBeNull();
+  });
+
+  it("uses the viewer zone across a daylight-saving transition", () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    try {
+      expect(formatDeadline("2026-03-08T09:30:00Z", new Date("2026-03-08T08:00:00Z"))).toBe("Mar 8, 01:30");
+      expect(formatDeadline("2026-03-08T10:30:00Z", new Date("2026-03-08T08:00:00Z"))).toBe("Mar 8, 03:30");
+    } finally {
+      vi.stubEnv("TZ", "UTC");
+    }
+  });
+});
+
+describe("summary currency", () => {
+  it.each([
+    [0, "$0"],
+    [0.001, "$0.001"],
+    [0.00000001, "$0.00000001"],
+    [1e-21, "$1e-21"],
+    [-1e-21, "-$1e-21"],
+    [-0.01, "-$0.01"],
+    [9.99, "$9.99"],
+    [10.49, "$10"],
+    [10.5, "$11"],
+    [-10.5, "-$11"],
+    [11.5, "$12"],
+  ])("formats %s as %s", (amount, expected) => {
+    expect(formatSummaryUsd(amount)).toBe(expected);
+  });
+
+  it("shows exact values when rounding would hide a difference from the limit", () => {
+    expect(formatExtraSpend(10.4, 10.49)).toBe("Extra spend this month: $10.40 of $10.49 limit");
+    expect(extraSpendHasHiddenFraction(10.4, 10.49)).toBe(false);
+    expect(extraSpendHasHiddenFraction(20, 100)).toBe(false);
+    expect(extraSpendHasHiddenFraction(20.4, 100)).toBe(true);
   });
 });
 
@@ -138,7 +177,7 @@ describe("shared live presentation", () => {
   });
 
   it("renders monthly spend identically for browser and GNOME", () => {
-    expect(formatExtraSpend(2324.85, 4600)).toBe("Extra spend this month: $2,324.85 of $4,600 limit");
+    expect(formatExtraSpend(2324.85, 4600)).toBe("Extra spend this month: $2,325 of $4,600 limit");
   });
 });
 

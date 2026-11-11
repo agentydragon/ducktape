@@ -13,6 +13,8 @@ import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import {
   formatAge as sharedFormatAge,
   formatExtraSpend as sharedFormatExtraSpend,
+  formatExtraSpendExact,
+  extraSpendHasHiddenFraction,
   refreshWindowTiming,
   showResetCredits,
   quotaActivity,
@@ -123,13 +125,22 @@ function formatExpiry(expiry, details = false) {
 
 function formatGrant(grant, details = false, includeGroup = false) {
   const parts = [];
-  if (includeGroup && grant.group) parts.push(grant.group);
-  parts.push(`${grant.label}: ${grant.remaining} left`);
-  parts.push(formatExpiry(grant.expires_at, details));
-  if (details) parts.push(`original ${grant.original}`);
-  const scope = details ? (grant.scope_detail ?? grant.scope) : grant.scope;
-  if (scope) parts.push(`scope: ${scope}`);
-  if (grant.status) parts.push(grant.status);
+  if (details) {
+    const facts = [];
+    if (!grant.original_repeats_remaining) facts.push(`original ${grant.original}`);
+    if (grant.exact_remaining) facts.push(`exact remaining ${grant.exact_remaining}`);
+    if (grant.expires_at) facts.push(formatExpiry(grant.expires_at, true));
+    if (grant.scope_detail && grant.scope_detail !== grant.scope) facts.push(`scope: ${grant.scope_detail}`);
+    if (facts.length === 0) return "";
+    if (includeGroup && grant.group) parts.push(grant.group);
+    parts.push(`${grant.label}: ${facts.join(" · ")}`);
+  } else {
+    if (includeGroup && grant.group) parts.push(grant.group);
+    parts.push(`${grant.label}: ${grant.remaining} left`);
+    parts.push(formatExpiry(grant.expires_at));
+    if (grant.scope) parts.push(`scope: ${grant.scope}`);
+    if (grant.status) parts.push(grant.status);
+  }
   return parts.join(" · ");
 }
 
@@ -764,6 +775,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeTextRow() {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+      item.remove_style_class_name("popup-inactive-menu-item");
       item.add_style_class_name("quota-popup-bar-item");
       item._summaryLabel = new St.Label({ text: "", style_class: "quota-popup-row", x_expand: true });
       item._summaryLabel.clutter_text.line_wrap = true;
@@ -775,6 +787,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeQuotaRow(label) {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+      item.remove_style_class_name("popup-inactive-menu-item");
       item.add_style_class_name("quota-popup-bar-item");
 
       const content = new St.BoxLayout({
@@ -1049,11 +1062,22 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         const groups = readingGroups(p.state);
         const single = groups.length === 1;
-        this._renderProviderHeader(p.header, p.state.label || p.label, single ? groups[0] : null, single);
+        this._renderProviderHeader(
+          p.header,
+          p.state.label || p.label,
+          single ? groups[0] : null,
+          single,
+          !isApiProvider(p.id)
+        );
         p.readingSections.forEach((section, index) => {
           const group = groups[index];
-          if (section.header) this._renderProviderHeader(section.header, group.name, group, false);
-          this._renderBalanceRow(section.balanceRow, group, single || section.header !== null);
+          if (section.header)
+            this._renderProviderHeader(section.header, group.name, group, false, !isApiProvider(p.id));
+          this._renderBalanceRow(
+            section.balanceRow,
+            group,
+            !isApiProvider(p.id) && (single || section.header !== null)
+          );
           this._renderGrantRow(section.grantRow, group);
         });
         this._renderResetRow(p.resetRow, p.state);
@@ -1067,11 +1091,11 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
-    _renderProviderHeader(item, title, group, includeGroup) {
+    _renderProviderHeader(item, title, group, includeGroup, inlineBalance) {
       const parts = [title];
       if (includeGroup && group?.name) parts.push(group.name);
       const balance = group && headerBalance(group);
-      if (balance) parts.push(`${balance.label}: ${balance.value}`);
+      if (balance && inlineBalance) parts.push(`${balance.label}: ${balance.value}`);
       item.label.set_text(parts.join(" — "));
     }
 
@@ -1153,12 +1177,25 @@ const QuotaIndicator = GObject.registerClass(
       if (state.errorDetail) details.push(`${state.errorSummary ?? "Refresh failed"}: ${state.errorDetail}`);
       const includeGroup = readingGroups(state).length > 1;
       for (const balance of state.balances) {
+        if (balance.pool_detail)
+          details.push(
+            `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.pool_detail}`
+          );
+        if (balance.exact_value)
+          details.push(
+            `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: exact ${balance.exact_value}`
+          );
         if (balance.error)
           details.push(
             `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.error}`
           );
       }
-      details.push(...state.grants.map((grant) => formatGrant(grant, true, includeGroup)));
+      details.push(...state.grants.map((grant) => formatGrant(grant, true, includeGroup)).filter(Boolean));
+      if (state.monthlyExtraSpend) {
+        const { used_usd: used, monthly_limit_usd: limit } = state.monthlyExtraSpend;
+        const exact = formatExtraSpendExact(used, limit);
+        if (extraSpendHasHiddenFraction(used, limit)) details.push(`Exact extra spend: ${exact}`);
+      }
       const { staleAge } = effectiveState(state);
       for (const window of state.windows.map((window) => withLiveReset(window))) {
         if (staleAge == null && window.pace) details.push(`${window.label} pace: ${window.pace}`);

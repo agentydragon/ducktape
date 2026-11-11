@@ -114,15 +114,15 @@ async def test_openai_platform_credits(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
     await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
-    await expect(card.get_by_text("$125.75", exact=True)).to_be_visible()
-    await expect(card.get_by_text("$100.00 remaining", exact=True)).to_be_visible()
-    await expect(card.get_by_text("$25.75 remaining", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$126", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$100 remaining", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$26 remaining", exact=True)).to_be_visible()
 
 
 @pytest.mark.parametrize(
     ("scene", "expected_balance"),
     [
-        pytest.param("claude_prepaid_balance", "$123.45", id="available"),
+        pytest.param("claude_prepaid_balance", "$123", id="available"),
         pytest.param("claude_prepaid_balance_unavailable", "unavailable", id="unavailable"),
     ],
 )
@@ -130,7 +130,7 @@ async def test_openai_platform_credits(view: VisualPage) -> None:
 async def test_claude_prepaid_balance_states(view: VisualPage, expected_balance: str) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
     await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-    await expect(card.get_by_text("Prepaid balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
     await expect(card.get_by_text(expected_balance, exact=True)).to_be_visible()
 
 
@@ -155,7 +155,7 @@ async def test_stale_fallback(view: VisualPage) -> None:
 @pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
 async def test_monthly_spend_is_history(view: VisualPage, scene: str) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
-    await expect(card.get_by_text("Extra spend this month: $25.50 of $100 limit", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Extra spend this month: $26 of $100 limit", exact=True)).to_be_visible()
     await expect(card.get_by_text("extra usage enabled", exact=False)).to_have_count(0)
     if scene == "extra_spend_fallback":
         await expect(card.locator(".aiquota-badge-stale")).to_be_visible()
@@ -182,9 +182,9 @@ async def test_anthropic_platform_credits(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
     await expect(card.get_by_role("heading", name="Anthropic API")).to_be_visible()
     await expect(card.get_by_text("Main org", exact=True)).to_be_visible()
-    await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$123", exact=True)).to_be_visible()
     await expect(card.get_by_text("Promo grant", exact=True).first).to_be_visible()
-    await expect(card.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
+    await expect(card.get_by_text("$25 remaining", exact=True)).to_be_visible()
 
 
 @pytest.mark.parametrize("scene", ["platform_credits_with_subscription_resets"])
@@ -192,7 +192,7 @@ async def test_anthropic_platform_credits(view: VisualPage) -> None:
 async def test_platform_credits_with_subscription_resets(view: VisualPage) -> None:
     claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
     await expect(claude.get_by_role("heading")).to_have_text("Claude")
-    await expect(claude.get_by_text("$25.75", exact=True)).to_be_visible()
+    await expect(claude.get_by_text("$26", exact=True)).to_be_visible()
     await expect(claude.locator(".aiquota-window")).to_have_count(2)
     codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
     await expect(codex.get_by_role("heading")).to_contain_text("Codex")
@@ -202,11 +202,11 @@ async def test_platform_credits_with_subscription_resets(view: VisualPage) -> No
     await expect(codex.locator(".aiquota-window")).to_have_count(2)
     openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(openai.get_by_role("heading", name="OpenAI API")).to_be_visible()
-    await expect(openai.get_by_text("$60.00", exact=True)).to_be_visible()
+    await expect(openai.get_by_text("$60", exact=True)).to_be_visible()
     anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
     await expect(anthropic.get_by_text("Shared org", exact=True)).to_be_visible()
-    await expect(anthropic.get_by_text("$75.00", exact=True)).to_be_visible()
-    await expect(anthropic.get_by_text("$25.00 remaining", exact=True)).to_be_visible()
+    await expect(anthropic.get_by_text("$75", exact=True)).to_be_visible()
+    await expect(anthropic.get_by_text("$25 remaining", exact=True)).to_be_visible()
 
 
 @pytest.mark.parametrize("scene", ["reset_pending"])
@@ -230,7 +230,7 @@ async def test_stale_observation(view: VisualPage) -> None:
 @pytest.mark.parametrize(("color_scheme", "viewport"), _OBSERVED_ACCOUNT_THEME_VIEWPORTS)
 async def test_observed_account_expiries_and_promo_details(view: VisualPage) -> None:
     await expect(view.page.locator(".aiquota-window")).to_have_count(2)
-    await expect(view.page.locator(".aiquota-reading-row .aiquota-details")).to_have_count(5)
+    await expect(view.page.get_by_text("Grant details", exact=True)).to_have_count(5)
     card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
     await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
     await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
