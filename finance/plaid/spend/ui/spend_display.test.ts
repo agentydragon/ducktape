@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { money, time } from "./spend_display";
 
@@ -25,6 +25,25 @@ describe("summary money", () => {
     expect(money(0.1, "USD")).toBe("<$0.01");
     expect(money(-0.1, "USD")).toBe("-<$0.01");
     expect(money(0.1, "USD", true)).toBe("<$0.01");
+  });
+
+  it("uses the same currency presentation as the CLI when the host locale differs", () => {
+    const nativeNumberFormat = Intl.NumberFormat;
+    const germanDefault = new Proxy(nativeNumberFormat, {
+      construct(target, args, newTarget) {
+        return Reflect.construct(target, [args[0] ?? "de-DE", args[1]], newTarget);
+      },
+    });
+    vi.stubGlobal("Intl", Object.create(Intl, { NumberFormat: { value: germanDefault } }));
+    try {
+      expect(new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(1234.56)).toBe(
+        "1.234,56 $"
+      );
+      expect(money(123456, "USD")).toBe("$1,235");
+      expect(money(123456, "USD", true)).toBe("$1,234.56");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

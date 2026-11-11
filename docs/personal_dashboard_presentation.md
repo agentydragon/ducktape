@@ -36,6 +36,8 @@ targets for future changes; existing surfaces may not yet follow every rule.
   amounts and other values where the fraction affects a decision retain their full precision in
   the relevant detail view. Rounding must not turn a nonzero amount into zero or obscure a sign,
   threshold crossing or material difference between values.
+- Use US English number separators for currency amounts across these surfaces, independently of
+  the viewer's time zone. Apply the same currency precision and rounding rules in each runtime.
 - Share formatters where practical, and test the same examples and boundaries across languages
   and surfaces: year changes, the 14-day cutoff, daylight-saving transitions, small and negative
   amounts, zero, and currencies with different minor-unit precision.

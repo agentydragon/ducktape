@@ -62,11 +62,11 @@ function formatMoney(minorUnits, currency) {
   const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
   const value = Number(minorUnits);
   try {
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+    const precision = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const amount = value / 10 ** (precision ?? 2);
     const digits = amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount) ? (precision ?? 2) : 0;
-    const formatter = new Intl.NumberFormat(undefined, {
+    const formatter = new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: code,
       maximumFractionDigits: digits,
@@ -87,11 +87,11 @@ function formatCompactMoney(minorUnits, currency) {
   if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return "—";
   try {
     const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+    const precision = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const amount = Number(minorUnits) / 10 ** (precision ?? 2);
     if (Math.abs(amount) < 1000) return formatMoney(minorUnits, currency);
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: code,
       notation: "compact",
@@ -109,7 +109,7 @@ function formatExactMoney(minorUnits, currency) {
   if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return "Unavailable";
   try {
     const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
-    const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
+    const formatter = new Intl.NumberFormat("en-US", { style: "currency", currency: code });
     return formatter.format(Number(minorUnits) / 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2));
   } catch (_error) {
     return formatMoney(minorUnits, currency);
@@ -120,7 +120,7 @@ function needsExactMoneyDetail(minorUnits, currency) {
   if (minorUnits == null || !Number.isFinite(Number(minorUnits))) return false;
   const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
   try {
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+    const precision = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const scale = 10 ** (precision ?? 2);
     const value = Number(minorUnits);
