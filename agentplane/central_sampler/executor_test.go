@@ -1022,11 +1022,17 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 }
 
 func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
-	for _, operation := range []string{"setup", "command", "reconcile"} {
+	const (
+		setupOperation     = "setup"
+		commandOperation   = "command"
+		reconcileOperation = "reconcile"
+	)
+	for _, operation := range []string{setupOperation, commandOperation, reconcileOperation} {
 		t.Run(operation, func(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			reads := 0
 			client := &fakeExecutionClient{}
+			var e *Executor
 			client.start = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 				return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
 			}
@@ -1037,6 +1043,10 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 				page := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, ExitCode: ptrInt32(23), NextSeq: uint64(reads + 2)}
 				switch reads {
 				case 0: // Exit arrived before stdout readers published their final bytes.
+					if operation != reconcileOperation {
+						// A notification can arrive while the read response is in flight.
+						e.signalProcessChange()
+					}
 				case 1:
 					page.Chunks = []*executorpb.ExecutionOutputChunk{{Seq: 2, Stream: "stdout", Data: []byte("late stdout\n")}}
 					page.Closed = true
@@ -1048,11 +1058,11 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 				reads++
 				return page, nil
 			}
-			e := newFakeExecutor(t, store, owner, client)
+			e = newFakeExecutor(t, store, owner, client)
 			var output string
 			var code int
 			var err error
-			if operation == "setup" {
+			if operation == setupOperation {
 				code, err = e.Setup(t.Context(), "printf 'late stdout\\n'; exit 23", func(stream string, value []byte) error {
 					if stream != "stdout" {
 						t.Fatalf("unexpected stream %s", stream)
@@ -1067,7 +1077,7 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 				if err := store.ProcessResult(t.Context(), owner, "late-output", nil, "running", nil, false); err != nil {
 					t.Fatal(err)
 				}
-				if operation == "reconcile" {
+				if operation == reconcileOperation {
 					for range 3 {
 						if _, err := e.ReconcileProcesses(t.Context(), time.Second); err != nil {
 							t.Fatal(err)
@@ -1084,6 +1094,133 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 				t.Fatalf("exit=%d output=%q reads=%d error=%v", code, output, reads, err)
 			}
 		})
+	}
+}
+
+func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	const processID = "exited-open"
+	const modelID = 4242
+	if err := store.RegisterModelProcess(t.Context(), owner, processID, modelID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, processID, nil, protocol.ProcessRunning, nil, false); err != nil {
+		t.Fatal(err)
+	}
+
+	var late atomic.Bool
+	var reads, writes atomic.Int32
+	client := &fakeExecutionClient{}
+	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		reads.Add(1)
+		page := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Exited: true, ExitCode: ptrInt32(0), NextSeq: 2}
+		if late.Load() {
+			page.Closed = true
+			page.NextSeq = 4
+			if request.AfterSeq != nil && *request.AfterSeq == 1 {
+				page.Chunks = []*executorpb.ExecutionOutputChunk{{Seq: 2, Stream: "stdout", Data: []byte("late output")}}
+			}
+		}
+		return page, nil
+	}
+	client.write = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+		writes.Add(1)
+		return &executorpb.WriteProcessResponse{Status: completedExecutionStatus(), WriteStatus: "accepted"}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+
+	observed, err := e.readProcess(t.Context(), processID, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := observed.unifiedExecResult(ptrInt(modelID), nil, "chunk")
+	if result.ExitCode == nil || *result.ExitCode != 0 || result.SessionID == nil || *result.SessionID != modelID {
+		t.Fatalf("exited but open result=%+v, want exit code and an output handle", result)
+	}
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("empty exited process read %d times before the yield, want one", got)
+	}
+	for range 2 {
+		progressed, err := e.ReconcileProcesses(t.Context(), time.Second)
+		if err != nil || progressed {
+			t.Fatalf("unchanged exited process progressed=%v err=%v", progressed, err)
+		}
+	}
+	if _, err := e.writeStdin(t.Context(), json.RawMessage(`{"session_id":4242,"chars":"must not be sent","yield_time_ms":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	if writes.Load() != 0 {
+		t.Fatal("sent input after the process exited")
+	}
+
+	streamCtx, cancel := context.WithCancel(t.Context())
+	stream := &notificationExecutorStream{ctx: streamCtx, responses: make(chan *executorpb.OpenSessionResponse, 1)}
+	e.sessionGeneration = 1
+	done := make(chan struct{})
+	go e.watchSession(streamCtx, stream, "notification", "retained-executor", 1, cancel, done)
+	defer func() { cancel(); <-done }()
+	changed := e.processChanges()
+	late.Store(true)
+	stream.responses <- &executorpb.OpenSessionResponse{ExecutionSessionId: "retained-executor", NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: []byte(`{"method":"process/output","params":{"processId":"exited-open","seq":2}}`)}}}
+	select {
+	case <-changed:
+	case <-time.After(time.Second):
+		t.Fatal("notification did not wake process reconciliation")
+	}
+	for range 2 {
+		progressed, err := e.ReconcileProcesses(t.Context(), time.Second)
+		if err != nil || !progressed {
+			t.Fatalf("late output reconciliation progressed=%v err=%v", progressed, err)
+		}
+	}
+	retained, err := e.writeStdin(t.Context(), json.RawMessage(`{"session_id":4242,"yield_time_ms":1}`))
+	if err != nil || retained.Output != "late output" || retained.ExitCode == nil || *retained.ExitCode != 0 || retained.SessionID != nil {
+		t.Fatalf("retained late output=%+v err=%v", retained, err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestCompletedReadIsJournaledAfterCallerCancellation(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &fakeExecutionClient{}
+	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		cancel()
+		return &executorpb.ReadProcessResponse{
+			Status:       completedExecutionStatus(),
+			NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "response", Payload: []byte(`{"result":{}}`)}},
+		}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+	if _, err := executorRPC[executorReadResult](ctx, e, executorMethodProcessRead, executorRead{ProcessID: "known-result"}); err != nil {
+		t.Fatalf("completed read lost to caller cancellation: %v", err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+	var completed int
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read' AND result->>'outcome'='completed'`, owner.ConversationID).Scan(&completed); err != nil {
+		t.Fatal(err)
+	}
+	if completed != 1 {
+		t.Fatalf("completed read intents=%d, want one", completed)
+	}
+	session, err := store.GetSessionForConversation(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.Events(t.Context(), session.ID, 0, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var responseFrames int
+	encodedFrame := base64.StdEncoding.EncodeToString([]byte(`{"result":{}}`))
+	for _, entry := range events {
+		boundary := entry.GetEvent().GetBoundaryRecord()
+		if boundary != nil && boundary.GetBoundary() == "executor" && boundary.GetDirection() == "response" && bytes.Contains(boundary.GetPayload(), []byte(encodedFrame)) {
+			responseFrames++
+		}
+	}
+	if responseFrames != 1 {
+		t.Fatalf("durable native response frames=%d, want one", responseFrames)
 	}
 }
 
@@ -1856,6 +1993,20 @@ type fakeExecutionStream struct {
 	ctx     context.Context
 	initial *executorpb.OpenSessionResponse
 	once    sync.Once
+}
+
+type notificationExecutorStream struct {
+	ctx       context.Context
+	responses chan *executorpb.OpenSessionResponse
+}
+
+func (s *notificationExecutorStream) Recv() (*executorpb.OpenSessionResponse, error) {
+	select {
+	case response := <-s.responses:
+		return response, nil
+	case <-s.ctx.Done():
+		return nil, s.ctx.Err()
+	}
 }
 
 type lateSuccessExecutorStream struct {
