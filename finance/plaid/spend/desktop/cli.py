@@ -268,40 +268,40 @@ def _sparkline(history: dict[str, Any], window: str, days: int, scale: str, colo
     return f"{window} pace · last {len(values)} days: {''.join(chars)}  ({range_label}{gaps})"
 
 
+def _allowance_summary(allowance: AllowanceView, window: str, history_line: str | None) -> list[str]:
+    if allowance.status != Status.ACTIVE:
+        return [f"Allowance: {allowance.status}", *([allowance.note] if allowance.note else [])]
+
+    lines = [f"Available: {_format_money(allowance.available_minor_units, allowance.currency)} · advisory allowance"]
+    report = next((p for p in allowance.recorded_pace_periods if p.period.id == f"rolling_{window}"), None)
+    observed = report.observed_daily_minor_units if report else None
+    reference = allowance.daily_reference_minor_units
+    pace = f"{_format_money(observed, allowance.currency)}/day" if observed is not None else "unavailable"
+    ratio = (
+        f" · {round(observed * 100 / reference)}% of leash"
+        if observed is not None and reference and reference > 0
+        else ""
+    )
+    lines.append(f"{window} pace: {pace}{ratio} · leash ~{_format_money(reference, allowance.currency)}/day")
+    if observed is not None and reference is not None and reference > 0:
+        if observed * 5 > reference * 6:
+            lines.append("Pace over 120% of leash")
+        elif observed > reference:
+            lines.append("Pace above leash")
+    if report and report.unmatched_charges and report.unmatched_charges.count:
+        unmatched = report.unmatched_charges
+        lines.append(
+            f"Unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, allowance.currency)})"
+        )
+    if history_line:
+        lines.append(history_line)
+    return lines
+
+
 def _format_summary(view: SpendView, status: str, last_error: str, window: str, history_line: str | None) -> str:
     lines = ["Plaid Spend"]
-    allowance = view.allowance
-    if allowance:
-        if allowance.status == Status.ACTIVE:
-            lines.append(
-                f"Available: {_format_money(allowance.available_minor_units, allowance.currency)} · advisory allowance"
-            )
-            report = next((p for p in allowance.recorded_pace_periods if p.period.id == f"rolling_{window}"), None)
-            observed = report.observed_daily_minor_units if report else None
-            reference = allowance.daily_reference_minor_units
-            pace = f"{_format_money(observed, allowance.currency)}/day" if observed is not None else "unavailable"
-            ratio = (
-                f" · {round(observed * 100 / reference)}% of leash"
-                if observed is not None and reference and reference > 0
-                else ""
-            )
-            lines.append(f"{window} pace: {pace}{ratio} · leash ~{_format_money(reference, allowance.currency)}/day")
-            if observed is not None and reference is not None and reference > 0:
-                if observed * 5 > reference * 6:
-                    lines.append("Pace over 120% of leash")
-                elif observed > reference:
-                    lines.append("Pace above leash")
-            if report and report.unmatched_charges and report.unmatched_charges.count:
-                unmatched = report.unmatched_charges
-                lines.append(
-                    f"Unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, allowance.currency)})"
-                )
-            if history_line:
-                lines.append(history_line)
-        else:
-            lines.append(f"Allowance: {allowance.status}")
-            if allowance.note:
-                lines.append(allowance.note)
+    if view.allowance:
+        lines.extend(_allowance_summary(view.allowance, window, history_line))
     for card in view.cards:
         spend = _format_money(card.spend_minor_units, card.currency)
         if card.statement_period.kind == "statement":
@@ -326,6 +326,19 @@ def _format_summary(view: SpendView, status: str, last_error: str, window: str, 
         if last_error:
             lines.append(last_error)
     return "\n".join(lines)
+
+
+async def _history_line(bus: MessageBus, window: str, days: int, scale: str, color: bool) -> str:
+    try:
+        result = await _call(bus, "GetPaceHistory")
+        if not result or not isinstance(result[0], str):
+            raise ValueError("invalid history reply")
+        history = json.loads(result[0])
+        if not isinstance(history, dict):
+            raise ValueError("invalid history")
+        return _sparkline(history, window, days, scale, color)
+    except RuntimeError, ValueError, DBusError:
+        return "Pace history unavailable"
 
 
 async def _run(
@@ -362,34 +375,21 @@ async def _run(
             raise RuntimeError("Plaid Spend returned an invalid view; expected an object with a cards array")
         if json_output:
             print(json.dumps(view, indent=2, ensure_ascii=False))
-        elif view.get("generated_at") is None:
+            return
+        if view.get("generated_at") is None:
             print("No card data is available.")
             print(f"Desktop client: {status}.")
             if last_error:
                 print(last_error)
-        else:
-            parsed = SpendView.model_validate(view)
-            if details:
-                print(_format_view(parsed, status, last_error))
-            else:
-                history_line = None
-                if (
-                    show_sparkline
-                    and status == "ready"
-                    and parsed.allowance
-                    and parsed.allowance.status == Status.ACTIVE
-                ):
-                    try:
-                        history_result = await _call(bus, "GetPaceHistory")
-                        if not history_result or not isinstance(history_result[0], str):
-                            raise ValueError("invalid history reply")
-                        history = json.loads(history_result[0])
-                        if not isinstance(history, dict):
-                            raise ValueError("invalid history")
-                        history_line = _sparkline(history, window, history_days, scale, color)
-                    except RuntimeError, ValueError, DBusError:
-                        history_line = "Pace history unavailable"
-                print(_format_summary(parsed, status, last_error, window, history_line))
+            return
+        parsed = SpendView.model_validate(view)
+        if details:
+            print(_format_view(parsed, status, last_error))
+            return
+        history_line = None
+        if show_sparkline and status == "ready" and parsed.allowance and parsed.allowance.status == Status.ACTIVE:
+            history_line = await _history_line(bus, window, history_days, scale, color)
+        print(_format_summary(parsed, status, last_error, window, history_line))
     finally:
         bus.disconnect()
 
