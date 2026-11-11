@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_bazel
-from syrupy.assertion import SnapshotAssertion
 from python.runfiles import Runfiles
+from syrupy.assertion import SnapshotAssertion
 
 from finance.plaid.spend.allowance import (
     AllowanceSpendPeriod,

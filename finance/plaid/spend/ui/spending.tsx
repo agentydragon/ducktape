@@ -17,7 +17,16 @@ import {
 import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
-import { calendarDate, linkedSyncDescription, Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
+import {
+  calendarDate,
+  linkedSyncDescription,
+  Metric,
+  Money,
+  SignalLabel,
+  time,
+  periodLabels,
+  type Signal,
+} from "./spend_display";
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
 import type { AllowancePeriodId, EstimatePeriodId } from "./types";
 
