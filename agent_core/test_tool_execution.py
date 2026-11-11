@@ -152,7 +152,7 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
     assert second_output.result.is_error is False
     assert_function_call_output_structured([second_output], has_entries(ok=True))
 
-    assert_that(result.text, contains_string("Successfully sent message"))
+    assert_that(result, contains_string("Successfully sent message"))
 
 
 # --- Parallel tool call tests ---
@@ -222,7 +222,7 @@ async def _run_malformed_json_test(
 
     res = await agent.run()
     events = recording_handler.records
-    return res.text, events
+    return res, events
 
 
 @pytest.mark.parametrize(

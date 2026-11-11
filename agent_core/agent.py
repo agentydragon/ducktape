@@ -56,12 +56,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class AgentResult:
-    text: str
-    # Event access belongs to handlers; AgentResult contains only assembled text.
-
-
-@dataclass
 class StepResult:
     """`done` reflects handler completion; output remains with handlers."""
 
@@ -357,8 +351,8 @@ class Agent:
         self.finished = False  # Reset so step() can be called again
         return StepResult(done=done)
 
-    async def run(self) -> AgentResult:
-        """Clear text, pending calls, and completion state, then step until a handler finishes."""
+    async def run(self) -> str:
+        """Clear state, then step until a handler finishes and return the assembled text."""
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -367,7 +361,7 @@ class Agent:
                 result = await self.step()
                 if result.done:
                     break
-            return AgentResult(text="\n".join(self.assistant_text_chunks))
+            return "\n".join(self.assistant_text_chunks)
         except Exception as exc:
             for h in self._handlers:
                 h.on_error(exc)
