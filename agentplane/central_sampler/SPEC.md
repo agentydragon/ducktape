@@ -444,9 +444,9 @@ After an ordinary connection failure, a later explicit executor tool call may re
 current Sandbox incarnation fence and resume the same retained exec-server session, or follow the
 authenticated incarnation-change initialization described above. The failed
 call itself is never replayed. Only cursor-based `process/read` may be retried within its original
-call, because it does not consume remote output. If idle process reconciliation encounters a
-transport failure while reading a handle, it marks that process abandoned with its last observed
-cursor and buffered output, then lets the scheduler continue. Failures to persist operation results,
+call, because it does not consume remote output. If idle process reconciliation exhausts its
+reconnect window or its retried read also fails, it marks that process abandoned with its last
+observed cursor and buffered output, then lets the scheduler continue. Failures to persist operation results,
 native frames, or ownership state remain operational failures rather than catchable remote tool
 errors.
 Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
@@ -469,11 +469,27 @@ that operation does not by itself block continuation. An abandoned process keeps
 cursor and buffered output for inspection, but retains no runtime slot. Truly running processes and
 live JS cells retain a runtime slot.
 
-A transport failure during cursor-based `process/read` permits one reconnect and retry within the
+A transport failure during cursor-based `process/read` permits one read retry within the
 call's deadline. The sampler resumes the retained exec-server session under the same Sandbox
 incarnation fence and reuses the read intent, process ID and cursor. The read does not consume remote
 output; only its durable result advances the sampler's cursor. An expired session, changed session
 ID, failed reconnect or second transport failure settles the affected intent and process as unknown.
+For a retained session, a reconnect retries `OpenSession` on `Unavailable` or an attempt deadline
+until the separate `executor_reconnect_timeout_seconds` budget (120 seconds by default) or the
+caller's earlier deadline. The first-open `executor_initialize_timeout_seconds` remains 30 seconds
+by default. Each attempt
+has a five-second handshake limit and a separate durable initialization intent. The old stream ends
+before another attempt starts. A temporary Gateway outage therefore leaves the native session ID,
+process handles and read cursor intact while reconnection is in progress, including during idle
+process reconciliation. Once the retry budget expires, the failed read is settled as unknown and its
+handle is abandoned with the last observed output. A read can occupy its driver for the initial RPC,
+the reconnect window, and a final read or fresh-session handshake, plus five seconds for
+outcome journaling (up to 185 seconds with the default 30-second RPC and initialization limits);
+caller cancellation and shutdown drain stop the wait. Other
+typed operations keep their ordinary RPC deadline and are never replayed.
+The original and retried read RPCs keep their prior per-page deadline (the requested wait plus
+five seconds for foreground reads, or the reconciliation page timeout); only the enclosing read
+operation can wait through the reconnect window.
 The exact native rejection `unknown session id <retained-id>` with JSON-RPC code `-32600` is definitive
 session loss only when both its native response frames and semantic rejection result are durably
 recorded. The sampler then abandons live process handles while retaining observed output, clears the

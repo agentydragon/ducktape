@@ -24,6 +24,7 @@ import (
 
 const (
 	defaultExecutorInitializeTimeoutSeconds = 30
+	defaultExecutorReconnectTimeoutSeconds  = 120
 	defaultShutdownDrainSeconds             = 40
 	defaultShutdownBudgetSeconds            = 55
 	maxExecutorInitializeTimeoutSeconds     = int64((1<<63 - 1) / int64(time.Second))
@@ -218,6 +219,7 @@ type Settings struct {
 	TurnTimeoutSeconds               int                                      `json:"turn_timeout_seconds"`
 	RPCTimeoutSeconds                int                                      `json:"rpc_timeout_seconds"`
 	ExecutorInitializeTimeoutSeconds *int                                     `json:"executor_initialize_timeout_seconds,omitempty"`
+	ExecutorReconnectTimeoutSeconds  *int                                     `json:"executor_reconnect_timeout_seconds,omitempty"`
 	ShutdownDrainSeconds             *int                                     `json:"shutdown_drain_seconds,omitempty"`
 	ShutdownBudgetSeconds            *int                                     `json:"shutdown_budget_seconds,omitempty"`
 	LeaseSeconds                     int                                      `json:"lease_seconds"`
@@ -351,6 +353,12 @@ func (s Settings) Validate() error {
 			return errors.New("executor_initialize_timeout_seconds must be positive and fit in time.Duration")
 		}
 	}
+	if s.ExecutorReconnectTimeoutSeconds != nil {
+		seconds := int64(*s.ExecutorReconnectTimeoutSeconds)
+		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
+			return errors.New("executor_reconnect_timeout_seconds must be positive and fit in time.Duration")
+		}
+	}
 	for name, seconds := range map[string]*int{"shutdown_drain_seconds": s.ShutdownDrainSeconds, "shutdown_budget_seconds": s.ShutdownBudgetSeconds} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
 			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
@@ -381,6 +389,14 @@ func (s Settings) ExecutorInitializeTimeout() time.Duration {
 	seconds := defaultExecutorInitializeTimeoutSeconds
 	if s.ExecutorInitializeTimeoutSeconds != nil {
 		seconds = *s.ExecutorInitializeTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (s Settings) ExecutorReconnectTimeout() time.Duration {
+	seconds := defaultExecutorReconnectTimeoutSeconds
+	if s.ExecutorReconnectTimeoutSeconds != nil {
+		seconds = *s.ExecutorReconnectTimeoutSeconds
 	}
 	return time.Duration(seconds) * time.Second
 }

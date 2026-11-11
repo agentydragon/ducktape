@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from contextlib import aclosing
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +16,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
+from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.driver.central_sampler import (
@@ -22,6 +24,7 @@ from agentplane.system_tests.driver.central_sampler import (
     CentralStack,
     capture_sampler_diagnostics,
     central_stack,
+    sampler_caller_after_gateway_roll,
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -33,7 +36,7 @@ from agentplane.system_tests.driver.sandbox import (
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
-from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
+from agentplane.testing.scripted_model import ModelRequest, Reasoning, ShellCall, Text, ToolOutput
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -208,6 +211,739 @@ async def _wait_for_turn_status(
             raise TimeoutError(f"History ended before turn {turn_id} completed")
         finally:
             events.cancel()
+
+
+async def _started_gateway_roll_process(
+    deployed: CentralStack, session_id: str, marker: str = "gateway-roll-marker"
+) -> tuple[int, str, str]:
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+    )
+    cursor = 0
+    process_ids = []
+    initialize_intents: set[str] = set()
+    native_session_ids = []
+    async for frame in stream:
+        cursor = frame.entry.cursor
+        event = frame.entry.event
+        if not event.HasField("boundary_record"):
+            continue
+        boundary = event.boundary_record
+        if boundary.boundary != "executor" or boundary.fragment_count != 1:
+            continue
+        payload = json.loads(boundary.payload)
+        if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+            initialize_intents.add(boundary.correlation_id)
+        elif (
+            boundary.direction == "result"
+            and boundary.correlation_id in initialize_intents
+            and payload.get("outcome") == "completed"
+        ):
+            native_session_ids.append(payload["execution_session_id"])
+        elif (
+            boundary.direction == "dispatch"
+            and payload.get("method") == "process/start"
+            and marker in json.dumps(payload.get("params"))
+        ):
+            process_ids.append(payload["params"]["processId"])
+    (process_id,) = process_ids
+    assert native_session_ids, "the original native executor session was not journaled"
+    return cursor, process_id, native_session_ids[-1]
+
+
+async def _assert_original_native_session_resumed(
+    deployed: CentralStack, session_id: str, after_cursor: int, native_session_id: str
+) -> None:
+    """Require a successful resume of the original native session after Gateway recovery."""
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
+    )
+    resumed_intents: set[str] = set()
+    async for frame in stream:
+        event = frame.entry.event
+        if not event.HasField("boundary_record"):
+            continue
+        boundary = event.boundary_record
+        if boundary.boundary != "executor" or boundary.fragment_count != 1:
+            continue
+        payload = json.loads(boundary.payload)
+        if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+            if payload.get("resume_session_id") == native_session_id:
+                resumed_intents.add(boundary.correlation_id)
+        elif (
+            boundary.direction == "result"
+            and boundary.correlation_id in resumed_intents
+            and payload.get("outcome") == "completed"
+            and payload.get("execution_session_id") == native_session_id
+        ):
+            return
+    pytest.fail(f"original native executor session {native_session_id} was not successfully resumed")
+
+
+async def _assert_replacement_native_session_started(
+    deployed: CentralStack, session_id: str, after_cursor: int, original_session_id: str
+) -> str:
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
+    )
+    initialize_intents: set[str] = set()
+    async for frame in stream:
+        event = frame.entry.event
+        if not event.HasField("boundary_record"):
+            continue
+        boundary = event.boundary_record
+        if boundary.boundary != "executor" or boundary.fragment_count != 1:
+            continue
+        payload = json.loads(boundary.payload)
+        new_session_id = payload.get("execution_session_id")
+        if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+            initialize_intents.add(boundary.correlation_id)
+        elif (
+            boundary.direction == "result"
+            and boundary.correlation_id in initialize_intents
+            and payload.get("outcome") == "completed"
+            and isinstance(new_session_id, str)
+            and new_session_id
+            and new_session_id != original_session_id
+        ):
+            return new_session_id
+    pytest.fail(f"no replacement native executor session followed {original_session_id}")
+
+
+async def _sandbox_executor_pod(cluster: Cluster, sandbox: str) -> tuple[str, str]:
+    pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", f"agentplane.allegedly.works/sandbox={sandbox}", "-o", "json")
+    )["items"]
+    (pod,) = [item for item in pods if not item["metadata"].get("deletionTimestamp")]
+    return pod["metadata"]["name"], pod["metadata"]["uid"]
+
+
+_EXEC_SERVER_PROCESS_SCRIPT = """
+mode="$1"
+for process in /proc/[0-9]*; do
+  args=$(tr '\\000' ' ' < "$process/cmdline" 2>/dev/null) || continue
+  case "$args" in
+    "/bin/codex exec-server --listen "*)
+      pid="${process##*/}"
+      set -- $(cat "$process/stat")
+      shift 21
+      started="$1"
+      if [ "$mode" = kill ]; then kill -KILL "$pid"; fi
+      printf '%s:%s\\n' "$pid" "$started"
+      exit 0
+      ;;
+  esac
+done
+exit 1
+"""
+
+
+async def _exec_server_process(cluster: Cluster, pod: str, mode: str) -> str:
+    return await cluster.kubectl(
+        "exec",
+        pod,
+        "-c",
+        "codex-executor",
+        "--",
+        "/bin/sh",
+        "-c",
+        _EXEC_SERVER_PROCESS_SCRIPT,
+        "--",
+        mode,
+        timeout_s=10,
+    )
+
+
+async def _wait_for_executor_dispatch_after(
+    deployed: CentralStack, session_id: str, cursor: int, process_id: str, call_id: str = "read-live-process"
+) -> str:
+    """Follow the model cell into its delegated write_stdin and blocking process read."""
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=30,
+    )
+    model_cell_sent = False
+    delegated_read = False
+    try:
+        async for frame in stream:
+            event = frame.entry.event
+            if not event.HasField("boundary_record"):
+                continue
+            boundary = event.boundary_record
+            if boundary.fragment_count != 1:
+                continue
+            payload = json.loads(boundary.payload)
+            if boundary.boundary == "javascript" and boundary.direction == "send":
+                model_cell_sent |= f'"tool_call_id":"{call_id}"' in json.dumps(payload, separators=(",", ":"))
+            elif boundary.boundary == "tool" and boundary.direction == "dispatch" and model_cell_sent:
+                delegated_read |= payload.get("tool_name", {}).get("name") == "write_stdin" and bool(
+                    payload.get("cell_id")
+                )
+            elif (
+                boundary.boundary == "executor"
+                and boundary.direction == "dispatch"
+                and delegated_read
+                and payload.get("method") == "process/read"
+                and payload.get("params", {}).get("processId") == process_id
+                and payload.get("params", {}).get("waitMs", 0) > 0
+            ):
+                correlation_id = boundary.correlation_id
+                assert isinstance(correlation_id, str)
+                return correlation_id
+        raise TimeoutError("the live process read never reached the executor")
+    finally:
+        stream.cancel()
+
+
+async def _follow_code_mode_cell(
+    model: CodexModel, request: ModelRequest[ResponsesRequest], call_id: str, *, timeout_s: float
+) -> tuple[ModelRequest[ResponsesRequest], str, str]:
+    """Wait for the same running code-mode cell; never reissue its executor operation."""
+    output_blocks: list[str] = []
+    visible_blocks: list[str] = []
+    waits = 0
+    try:
+        async with asyncio.timeout(timeout_s):
+            while True:
+                matching_outputs = [output for output in request.tool_outputs if output.call_id == call_id]
+                code_outputs = [
+                    output
+                    for output in matching_outputs
+                    if output.blocks
+                    and output.blocks[0].startswith(("Script running", "Script completed", "Script failed"))
+                ]
+                assert code_outputs, f"no code-mode result for {call_id}: {matching_outputs}"
+                output = code_outputs[-1]
+                output_blocks.extend(output.blocks)
+                visible_blocks.extend(
+                    [*request.user_texts, *(block for item in matching_outputs for block in item.blocks)]
+                )
+                running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
+                if running is None:
+                    return request, "\n".join(output_blocks), "\n".join(visible_blocks)
+                waits += 1
+                wait_call_id = f"{call_id}-wait-{waits}"
+                async with request._exchange as exchange:
+                    await exchange.send(
+                        *responses_sse.response_stream(
+                            [
+                                responses_sse.FunctionCall(
+                                    wait_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 10000}
+                                )
+                            ],
+                            model=MODEL,
+                        ).events
+                    )
+                request = await model.request()
+                call_id = wait_call_id
+    except TimeoutError:
+        pytest.fail(f"original code-mode cell still running after {timeout_s}s and {waits} waits: {output_blocks[-2:]}")
+
+
+def _code_mode_shell_stdout(output: ToolOutput) -> str:
+    """Separate the code-mode script status from the ShellCall's emitted stdout."""
+    assert output.blocks, output
+    assert output.blocks[0].startswith("Script completed\n"), output
+    return "".join(output.blocks[1:])
+
+
+async def _wait_for_failed_gateway_resume(
+    deployed: CentralStack, session_id: str, after_cursor: int, read_call_id: str
+) -> int:
+    """A failed resume in retained History proves its preceding event prefix is complete."""
+    resume_intents: set[str] = set()
+    read_cell_result = None
+    cursor = after_cursor
+    async with asyncio.timeout(15):
+        while True:
+            page = await deployed.history.read_session_events(session_id, after_cursor=cursor, limit=1000)
+            for entry in page.entries:
+                cursor = entry.cursor
+                event = entry.event
+                if not event.HasField("boundary_record"):
+                    continue
+                boundary = event.boundary_record
+                if boundary.fragment_count != 1:
+                    continue
+                payload = json.loads(boundary.payload)
+                if boundary.boundary == "cell" and boundary.direction == "result":
+                    if payload.get("call_id") == read_call_id:
+                        read_cell_result = payload
+                    continue
+                if boundary.boundary != "executor":
+                    continue
+                if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+                    if payload.get("resume_session_id"):
+                        resume_intents.add(boundary.correlation_id)
+                elif (
+                    boundary.direction == "result"
+                    and boundary.correlation_id in resume_intents
+                    and payload.get("method") == "initialize"
+                    and payload.get("transport_error")
+                ):
+                    assert read_cell_result is None, (
+                        "the model-facing process read returned before the verified failed Gateway resume: "
+                        + json.dumps(read_cell_result)
+                    )
+                    return entry.cursor
+            await asyncio.sleep(0.1)
+
+
+async def _wait_for_active_history_through(deployed: CentralStack, session_id: str, cursor: int) -> int:
+    """Require user-facing History to project the failed resume before Gateway returns."""
+    async with asyncio.timeout(10):
+        while True:
+            try:
+                summary = await deployed.history.get_session_summary(session_id)
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+            else:
+                if summary.folded_through >= cursor:
+                    assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
+                    entities = await deployed.history.read_thread_entities(
+                        history_service_pb2.ReadThreadEntitiesRequest(
+                            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+                        )
+                    )
+                    (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
+                    assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
+                    return summary.folded_through
+            await asyncio.sleep(0.1)
+
+
+async def _roll_gateway_for_central_session(
+    cluster: Cluster,
+    deployed: CentralStack,
+    *,
+    failed_resume_after: tuple[str, int, str] | None = None,
+    hold_down_seconds: float = 0,
+    kill_native_server: bool = False,
+) -> tuple[CentralStack, float, str, str, tuple[str, str, str] | None]:
+    """Roll only the disposable k3s Gateway, proving an actual service outage."""
+    old_pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+    )["items"]
+    (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
+    old_uid = old_pod["metadata"]["uid"]
+    killed_native: tuple[str, str, str] | None = None
+    try:
+        await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
+        await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
+        gateway_slices = json.loads(
+            await cluster.kubectl(
+                "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
+            )
+        )["items"]
+        assert not any(
+            endpoint.get("conditions", {}).get("ready", True)
+            for item in gateway_slices
+            for endpoint in item.get("endpoints") or []
+        ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
+        unavailable_started = asyncio.get_running_loop().time()
+        if failed_resume_after is not None:
+            session_id, _, read_call_id = failed_resume_after
+            failed_resume_cursor = await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
+            folded_through = await _wait_for_active_history_through(deployed, session_id, failed_resume_cursor)
+            (undeclared_outputs_dir() / f"central-sampler-gateway-outage-{read_call_id}.json").write_text(
+                json.dumps(
+                    {
+                        "session_id": session_id,
+                        "failed_resume_cursor": failed_resume_cursor,
+                        "history_folded_through_while_gateway_down": folded_through,
+                        "gateway_ready_endpoints": 0,
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+        if kill_native_server:
+            executor_pod, executor_pod_uid = await _sandbox_executor_pod(cluster, deployed.sandbox)
+            old_process = await _exec_server_process(cluster, executor_pod, "kill")
+            killed_native = (executor_pod, executor_pod_uid, old_process)
+        if hold_down_seconds:
+            await asyncio.sleep(hold_down_seconds)
+    finally:
+        await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=1")
+        await cluster.kubectl("rollout", "status", "deployment/runner-gateway", "--timeout=120s")
+    new_pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+    )["items"]
+    (new_pod,) = [pod for pod in new_pods if not pod["metadata"].get("deletionTimestamp")]
+    new_uid = new_pod["metadata"]["uid"]
+    assert new_uid != old_uid
+    async with asyncio.timeout(45):
+        while True:
+            slices = json.loads(
+                await cluster.kubectl(
+                    "get",
+                    "endpointslices",
+                    "-l",
+                    f"kubernetes.io/service-name={deployed.sandbox}-control",
+                    "-o",
+                    "json",
+                )
+            )["items"]
+            if any(
+                endpoint.get("conditions", {}).get("ready")
+                and new_pod["status"]["podIP"] in endpoint.get("addresses", [])
+                for item in slices
+                for endpoint in item.get("endpoints", [])
+            ):
+                outage_seconds = asyncio.get_running_loop().time() - unavailable_started
+                break
+            await asyncio.sleep(0.2)
+    return (await sampler_caller_after_gateway_roll(cluster, deployed), outage_seconds, old_uid, new_uid, killed_native)
+
+
+async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
+    """Require the user-facing History projection to include a completed sampler turn."""
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+    )
+    terminal = None
+    async for frame in stream:
+        event = frame.entry.event
+        if event.HasField("turn_completed") and event.turn_completed.turn_id == command_id:
+            terminal = frame.entry
+    assert terminal is not None, f"sampler has no terminal event for {command_id}"
+    assert terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED, terminal.event.turn_completed
+    async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
+        async for _ in changes:
+            try:
+                summary = await deployed.history.get_session_summary(session_id)
+            except ServiceError as error:
+                if error.code == grpc.StatusCode.NOT_FOUND:
+                    continue
+                raise
+            if summary.folded_through >= terminal.cursor:
+                assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
+                assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
+                return
+    raise TimeoutError(f"History did not fold completed turn {command_id} through cursor {terminal.cursor}")
+
+
+async def _assert_projected_ready_for_input(deployed: CentralStack, session_id: str) -> None:
+    entities = await deployed.history.read_thread_entities(
+        history_service_pb2.ReadThreadEntitiesRequest(
+            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+        )
+    )
+    (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
+    assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
+    assert not view.controls.HasField("active_turn_id"), view
+
+
+async def gateway_roll_keeps_live_central_read_and_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """A real Gateway outage interrupts process/read, then the same call and turn finish."""
+    session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        spec = session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
+            ),
+            cwd=executor.cwd,
+            model=MODEL,
+        )
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec, setup_script=":\n"),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command,
+                text="Start a process, wait for its result, and report the single side effect.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        command = "printf 'once\\n' >> gateway-roll-marker; sleep 20; printf 'finished\\n'"
+        start_cell = (
+            "const started = await tools.exec_command({cmd: " + json.dumps(command) + ", yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            'store("gateway-roll-handle", started.session_id);\n'
+            "text(JSON.stringify({session_id: started.session_id, output: started.output}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("start-live-process", "exec", start_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        assert any(
+            output.call_id == "start-live-process" and "session_id" in "\n".join(output.blocks)
+            for output in request.tool_outputs
+        )
+        await _wait_for_execution_progress(
+            deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
+        )
+        cursor, process_id, native_session_id = await _started_gateway_roll_process(deployed, session_id)
+        read_cell = (
+            'const handle = load("gateway-roll-handle");\n'
+            "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
+            "text(JSON.stringify({handle, result}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("read-live-process", "exec", read_cell)], model=MODEL
+                ).events
+            )
+        read_intent = await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id)
+        (
+            recovered,
+            outage_seconds,
+            old_gateway_uid,
+            new_gateway_uid,
+            killed_native,
+        ) = await _roll_gateway_for_central_session(
+            cluster, deployed, failed_resume_after=(session_id, cursor, "read-live-process")
+        )
+        assert killed_native is None
+        request = await asyncio.wait_for(model.request(), timeout=45)
+        assert request.native.client_metadata.session_id == session_id
+        request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=140)
+        assert "Script completed" in read_text, read_text
+        assert "finished\\n" in read_text, "the original in-flight read did not return process output: " + read_text
+        assert '"exit_code":0' in read_text, "the original process did not exit successfully: " + read_text
+        await _assert_original_native_session_resumed(recovered, session_id, cursor, native_session_id)
+        await model.reply(request, ShellCall("verify-once", "cat gateway-roll-marker"))
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-once"]
+        marker_text = _code_mode_shell_stdout(marker_output)
+        assert marker_text == "once\n", f"the executor mutation was replayed or lost: {marker_text}"
+        await model.reply(request, Text("The running process finished after the Gateway recovered; marker: once."))
+        await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, first_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await recovered.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=recovered.sandbox_uid,
+                command_id=second_command,
+                text="Confirm the Session still accepts another input.",
+            ),
+            metadata=recovered.metadata,
+            timeout=15,
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any("Confirm the Session still accepts" in text for text in request.user_texts)
+        await model.reply(request, Text("The same Session accepted the next input."))
+        await _wait_for_turn_status(recovered, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, second_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        snapshot = await recovered.sampler.GetSession(
+            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=recovered.sampler_metadata, timeout=10
+        )
+        assert not snapshot.blocked
+        entities = await recovered.history.read_thread_entities(
+            history_service_pb2.ReadThreadEntitiesRequest(
+                session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+            )
+        )
+        for command_id in (first_command, second_command):
+            assert any(
+                entity.HasField("confirmed_input") and command_id in entity.confirmed_input.origin_command_ids
+                for entity in entities.entities
+            ), f"History did not project input {command_id}"
+        (undeclared_outputs_dir() / "central-sampler-gateway-roll.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "first_command_id": first_command,
+                    "second_command_id": second_command,
+                    "old_gateway_uid": old_gateway_uid,
+                    "new_gateway_uid": new_gateway_uid,
+                    "original_process_id": process_id,
+                    "original_native_session_id": native_session_id,
+                    "in_flight_read_intent": read_intent,
+                    "outage_seconds": outage_seconds,
+                    "read_output": read_text,
+                    "marker_output": marker_text,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+
+
+async def gateway_outage_restarts_exec_server_then_notifies_model(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """An in-flight read loses its native server during Gateway outage and the model sees the loss."""
+    session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        spec = session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
+            ),
+            cwd=executor.cwd,
+            model=MODEL,
+        )
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec, setup_script=":\n"),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command,
+                text="Start one long-running process and continue this turn after any executor disruption.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        start_cell = (
+            "const started = await tools.exec_command({cmd: "
+            + json.dumps("printf 'once\\n' >> gateway-loss-marker; sleep 120")
+            + ", yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            'store("gateway-loss-handle", started.session_id);\n'
+            "text(JSON.stringify(started));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("start-expiring-process", "exec", start_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any(
+            output.call_id == "start-expiring-process" and "session_id" in "\n".join(output.blocks)
+            for output in request.tool_outputs
+        )
+        await _wait_for_execution_progress(
+            deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
+        )
+        cursor, process_id, original_native_session_id = await _started_gateway_roll_process(
+            deployed, session_id, "gateway-loss-marker"
+        )
+        read_cell = (
+            'const handle = load("gateway-loss-handle");\n'
+            "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
+            "text(JSON.stringify({handle, result}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("read-expiring-process", "exec", read_cell)], model=MODEL
+                ).events
+            )
+        read_intent = await _wait_for_executor_dispatch_after(
+            deployed, session_id, cursor, process_id, "read-expiring-process"
+        )
+        (
+            recovered,
+            outage_seconds,
+            old_gateway_uid,
+            new_gateway_uid,
+            killed_native,
+        ) = await _roll_gateway_for_central_session(
+            cluster,
+            deployed,
+            failed_resume_after=(session_id, cursor, "read-expiring-process"),
+            kill_native_server=True,
+        )
+        assert killed_native is not None
+        executor_pod, executor_pod_uid, old_exec_server = killed_native
+        request = await asyncio.wait_for(model.request(), timeout=45)
+        request, read_text, visible = await _follow_code_mode_cell(
+            model, request, "read-expiring-process", timeout_s=140
+        )
+        assert "retained exec-server session was definitively lost" in visible, visible
+        assert "no mutation was replayed" in visible, visible
+        await model.reply(
+            request,
+            ShellCall("continue-on-fresh-session", "printf 'fresh\\n' >> gateway-loss-marker; cat gateway-loss-marker"),
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        (fresh_output,) = [output for output in request.tool_outputs if output.call_id == "continue-on-fresh-session"]
+        fresh_text = _code_mode_shell_stdout(fresh_output)
+        assert fresh_text == "once\nfresh\n", fresh_text
+        replacement_native_session_id = await _assert_replacement_native_session_started(
+            recovered, session_id, cursor, original_native_session_id
+        )
+        current_executor_pod, current_executor_pod_uid = await _sandbox_executor_pod(cluster, recovered.sandbox)
+        assert (current_executor_pod, current_executor_pod_uid) == (executor_pod, executor_pod_uid)
+        async with asyncio.timeout(15):
+            while True:
+                try:
+                    replacement_exec_server = await _exec_server_process(cluster, executor_pod, "inspect")
+                except RuntimeError:
+                    await asyncio.sleep(0.1)
+                    continue
+                if replacement_exec_server != old_exec_server:
+                    break
+                await asyncio.sleep(0.1)
+        await model.reply(request, Text("The new executor continued without replaying the old operation."))
+        await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, first_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await recovered.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=recovered.sandbox_uid,
+                command_id=second_command,
+                text="Confirm the replacement executor left this Session able to accept another input.",
+            ),
+            metadata=recovered.metadata,
+            timeout=15,
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any("Confirm the replacement executor" in text for text in request.user_texts)
+        await model.reply(request, Text("The replacement executor Session accepted the next input."))
+        await _wait_for_turn_status(recovered, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, second_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        (undeclared_outputs_dir() / "central-sampler-gateway-native-loss.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "old_gateway_uid": old_gateway_uid,
+                    "new_gateway_uid": new_gateway_uid,
+                    "outage_seconds": outage_seconds,
+                    "executor_pod_uid": executor_pod_uid,
+                    "original_process_id": process_id,
+                    "original_native_session_id": original_native_session_id,
+                    "replacement_native_session_id": replacement_native_session_id,
+                    "old_exec_server_process": old_exec_server,
+                    "replacement_exec_server_process": replacement_exec_server,
+                    "in_flight_read_intent": read_intent,
+                    "in_flight_read_output": read_text,
+                    "model_visible_notice": visible,
+                    "fresh_output": fresh_text,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
 
 
 async def dispatcher_central_setup_tool_and_retained_answer(

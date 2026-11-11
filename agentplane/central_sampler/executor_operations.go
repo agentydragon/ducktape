@@ -160,7 +160,11 @@ func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.Op
 // openSession follows a verified incarnation change only at the session-open boundary. Process
 // mutations are never replayed; old handles are retired before opening a fresh native session.
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
-	err := e.openSessionAtScope(ctx, resume)
+	return e.openSessionWithHandshake(ctx, resume, e.initializeTimeout)
+}
+
+func (e *Executor) openSessionWithHandshake(ctx context.Context, resume *string, handshakeTimeout time.Duration) error {
+	err := e.openSessionAtScopeWithHandshake(ctx, resume, handshakeTimeout)
 	if err == nil {
 		return nil
 	}
@@ -193,8 +197,12 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 }
 
 func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error {
+	return e.openSessionAtScopeWithHandshake(ctx, resume, e.initializeTimeout)
+}
+
+func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *string, handshakeTimeout time.Duration) error {
 	scope := executionScopeFromContext(ctx, e.scopeSnapshot())
-	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
+	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancelHandshake()
 	intentRequest := map[string]any{"method": executorMethodInitialize, "resume_session_id": resume}
 	if scope.GetDestination().GetTarget().GetUid() != "" {
@@ -210,9 +218,17 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		return err
 	}
 	streamCtx, cancel := context.WithCancel(e.lifetime)
+	// The live stream outlives the handshake, but its creation must still obey
+	// the caller's deadline. Detach the cancellation only after a valid first
+	// response has been durably bound below.
+	stopHandshakeCancel := context.AfterFunc(handshakeCtx, cancel)
+	defer stopHandshakeCancel()
 	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: intent, ResumeSessionId: resume})
 	if err != nil {
 		cancel()
+		if handshakeCtx.Err() != nil && (errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled) {
+			err = handshakeCtx.Err()
+		}
 		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
 			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
 				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
@@ -249,15 +265,21 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		opened, err = result.response, result.err
 	case <-handshakeCtx.Done():
 		cancel()
+		// Never accept a response from a stream after its handshake deadline.
+		// The receive must end before another resume may be attempted, so two
+		// OpenSession streams cannot overlap on the retained native session.
 		select {
-		case result := <-first:
-			opened, err = result.response, result.err
-		default:
+		case <-first:
 			err = handshakeCtx.Err()
+		case <-time.After(time.Second):
+			err = errors.New("executor OpenSession receive did not stop after handshake cancellation")
 		}
 	}
 	if err != nil {
 		cancel()
+		if handshakeCtx.Err() != nil && (errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled) {
+			err = handshakeCtx.Err()
+		}
 		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
 			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
 				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
@@ -282,6 +304,22 @@ func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor OpenSession returned an empty response")}
 		if err := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); err != nil {
 			return fmt.Errorf("record empty OpenSession response: %w", err)
+		}
+		return transport
+	}
+	stoppedHandshakeCancel := stopHandshakeCancel()
+	if !stoppedHandshakeCancel || handshakeCtx.Err() != nil {
+		// The deadline callback may already be canceling this stream even when
+		// Recv won the select above. A first frame from that stream cannot be
+		// installed as a healthy long-lived binding.
+		cancel()
+		cause := handshakeCtx.Err()
+		if cause == nil {
+			cause = errors.New("executor OpenSession handshake cancellation raced its first response")
+		}
+		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: cause}
+		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+			return fmt.Errorf("record OpenSession canceled first response after %v: %w", transport, finishErr)
 		}
 		return transport
 	}
@@ -527,7 +565,11 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	if e.rpcTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, e.rpcTimeout)
+		timeout := e.rpcTimeout
+		if method == executorMethodProcessRead {
+			timeout = e.readBudget(timeout)
+		}
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 	requestJSON, err := protocolObject(map[string]any{"method": method, "params": params})
@@ -543,7 +585,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
 		return nil, errors.Join(err, finishErr)
 	}
-	response, err := e.call(ctx, method, request)
+	response, err := e.callWithReadDeadline(ctx, method, request)
 	readRetried := false
 	if err != nil {
 		remoteOutcome := NestedNotDispatched
@@ -571,7 +613,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		if method == executorMethodProcessRead && ctx.Err() == nil {
 			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
-				response, err = e.call(ctx, method, request)
+				response, err = e.callWithReadDeadline(ctx, method, request)
 			} else if !isExecutorConnectionFailure(reconnectErr) {
 				finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID))
 				return nil, fmt.Errorf("resume executor state after %v: %w", transport, errors.Join(reconnectErr, finishErr))
@@ -625,7 +667,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			e.setReconnectRequired(true)
 			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
-				response, err = e.call(ctx, method, request)
+				response, err = e.callWithReadDeadline(ctx, method, request)
 				if err == nil {
 					statusValue = executionStatus(response)
 					frames = executionFrames(response)
@@ -716,6 +758,43 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	return encoded, nil
 }
 
+type executorReadAttemptTimeoutKey struct{}
+
+func (e *Executor) callWithReadDeadline(ctx context.Context, method executionMethod, request proto.Message) (proto.Message, error) {
+	if method != executorMethodProcessRead {
+		return e.call(ctx, method, request)
+	}
+	attemptTimeout := e.rpcTimeout
+	if pageTimeout, ok := ctx.Value(executorReadAttemptTimeoutKey{}).(time.Duration); ok {
+		if attemptTimeout <= 0 || pageTimeout < attemptTimeout {
+			attemptTimeout = pageTimeout
+		}
+	}
+	if attemptTimeout <= 0 {
+		return e.call(ctx, method, request)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	defer cancel()
+	return e.call(readCtx, method, request)
+}
+
+func addTimeout(base, extra time.Duration) time.Duration {
+	const maxDuration = time.Duration(1<<63 - 1)
+	if extra > 0 && base > maxDuration-extra {
+		return maxDuration
+	}
+	return base + extra
+}
+
+func (e *Executor) readBudget(normal time.Duration) time.Duration {
+	if normal <= 0 {
+		return normal
+	}
+	// Leave room for the original read, a retained-session reconnect, and
+	// either a retried read or a fresh open after definitive native loss.
+	return addTimeout(addTimeout(max(normal, e.rpcTimeout), e.reconnectTimeout), addTimeout(max(e.rpcTimeout, e.initializeTimeout), 5*time.Second))
+}
+
 func (e *Executor) reconnectLocked(ctx context.Context, notDispatchedProcessID string) error {
 	e.setReconnectRequired(true)
 	conversation, err := e.store.Read(ctx, e.owner)
@@ -745,25 +824,70 @@ func (e *Executor) reconnectLocked(ctx context.Context, notDispatchedProcessID s
 		return &executorSessionReplacedError{previousSession: previousSession}
 	}
 	retainedSession := *conversation.ExecutorSession
-	if err := e.openSession(ctx, &retainedSession); err != nil {
+	// A resume has no tool effect. Keep trying the same native session across a short
+	// Gateway outage, but bound both the whole reconnect and each handshake. In
+	// particular, an unavailable Gateway is not evidence that the exec-server or
+	// its session has disappeared.
+	deadline := time.Now().Add(e.reconnectTimeout)
+	backoff := 100 * time.Millisecond
+	var lastTransport error
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return fmt.Errorf("executor session resume retry budget exhausted: %w", lastTransport)
+		}
+		attemptTimeout := min(remaining, min(5*time.Second, max(100*time.Millisecond, e.reconnectTimeout/4)))
+		err := e.openSessionWithHandshake(ctx, &retainedSession, attemptTimeout)
+		if err == nil {
+			return nil
+		}
 		var rejected *executorRejectedError
-		if !errors.As(err, &rejected) || !isDefinitiveLostExecutorSession(rejected, retainedSession) {
+		if errors.As(err, &rejected) && isDefinitiveLostExecutorSession(rejected, retainedSession) {
+			if retireErr := e.store.RetireLostExecutorSession(ctx, e.owner, retainedSession, notDispatchedProcessID); retireErr != nil {
+				return fmt.Errorf("retire lost executor session after %v: %w", err, retireErr)
+			}
+			scope := e.scopeSnapshot()
+			slog.Warn("central sampler executor session lost", "session_id", scope.GetSessionId(), "sandbox_uid", scope.GetDestination().GetTarget().GetUid(),
+				"incarnation_uid", scope.GetExpectedIncarnationUid(), "execution_session_id", retainedSession, "not_dispatched_process_id", notDispatchedProcessID)
+			e.lostSessionConfirmed = true
+			e.shell = nil
+			if freshErr := e.openSession(ctx, nil); freshErr != nil {
+				return fmt.Errorf("open fresh executor session after definitive session loss (%v): %w", err, freshErr)
+			}
+			return &executorSessionReplacedError{previousSession: retainedSession}
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !retryableExecutorResumeFailure(err) {
 			return err
 		}
-		if retireErr := e.store.RetireLostExecutorSession(ctx, e.owner, retainedSession, notDispatchedProcessID); retireErr != nil {
-			return fmt.Errorf("retire lost executor session after %v: %w", err, retireErr)
+		lastTransport = err
+		wait := min(backoff, time.Until(deadline))
+		if wait <= 0 {
+			continue
 		}
-		scope := e.scopeSnapshot()
-		slog.Warn("central sampler executor session lost", "session_id", scope.GetSessionId(), "sandbox_uid", scope.GetDestination().GetTarget().GetUid(),
-			"incarnation_uid", scope.GetExpectedIncarnationUid(), "execution_session_id", retainedSession, "not_dispatched_process_id", notDispatchedProcessID)
-		e.lostSessionConfirmed = true
-		e.shell = nil
-		if freshErr := e.openSession(ctx, nil); freshErr != nil {
-			return fmt.Errorf("open fresh executor session after definitive session loss (%v): %w", err, freshErr)
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
 		}
-		return &executorSessionReplacedError{previousSession: retainedSession}
+		backoff = min(backoff*2, time.Second)
 	}
-	return nil
+}
+
+func retryableExecutorResumeFailure(err error) bool {
+	var transport *executorTransportError
+	if !errors.As(err, &transport) || transport.phase != "open" && transport.phase != "receive" {
+		return false
+	}
+	code := status.Code(transport.cause)
+	return code == codes.Unavailable || code == codes.DeadlineExceeded || errors.Is(transport.cause, context.DeadlineExceeded)
 }
 
 func (e *Executor) close() error {
@@ -992,12 +1116,12 @@ func (e *Executor) retainedSessionID(ctx context.Context) string {
 }
 
 func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evidence any) error {
-	if ctx.Err() != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-	return e.store.FinishNested(ctx, e.owner, intent, evidence)
+	// A handshake deadline may expire while this write is in flight. Always
+	// give the outcome journal its own bounded cleanup window, including on
+	// caller cancellation, so no retry can leave an unresolved intent behind.
+	journalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return e.store.FinishNested(journalCtx, e.owner, intent, evidence)
 }
 
 func (e *Executor) typedRequest(ctx context.Context, method executionMethod, params any, id string) (proto.Message, error) {
