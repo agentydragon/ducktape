@@ -128,6 +128,12 @@ def test_compact_summary_preserves_pace_and_actionable_information() -> None:
     assert "Forecast basis" not in output
 
 
+def test_compact_summary_does_not_hide_unknown_source_sync() -> None:
+    card = sample_card().model_copy(update={"last_synced_at": None})
+    view = SpendView(generated_at=NOW, cards=[card], allowance=sample_allowance())
+    assert "Oldest source sync: unknown" in _format_summary(view, "ready", "", "7d", None)
+
+
 def test_sparkline_scale_thresholds_gaps_and_history_span() -> None:
     values = [0, 100, 120, 121, None, 40, 50, 60]
     history = PaceHistory(

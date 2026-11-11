@@ -314,6 +314,13 @@ def _format_summary(view: SpendView, status: str, last_error: str, window: str, 
     if not view.cards:
         lines.append("No card data is available.")
     lines.append(f"View updated: {_format_timestamp(view.generated_at)}")
+    sync_times = [card.last_synced_at for card in view.cards]
+    if view.allowance:
+        sync_times.append(view.allowance.last_synced_at)
+    if sync_times:
+        present_syncs = [value for value in sync_times if value is not None]
+        oldest = min(present_syncs) if len(present_syncs) == len(sync_times) else None
+        lines.append(f"Oldest source sync: {_format_timestamp(oldest)}")
     if status != "ready":
         lines.append(f"Desktop client: {status}.")
         if status == "authentication-required":
