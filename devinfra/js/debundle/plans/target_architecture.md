@@ -324,9 +324,10 @@ replay of the canonical inputs in gaffer-private.
   - The kernel lane's own `for`-`of` and destructuring over non-native values
     are unaudited.
   - Precision gaps, all refused: `({ ...gen() })`; an `Object.assign` copy of
-    an uncalled effect, including a config merge `Object.assign({}, defaults,
-{ a: 1 })`; a `this`-reading method or accessor on an object holding an
-    uncalled effect (`api.size()`), whose receiver is published.
+    an uncalled effect, including a config merge
+    `Object.assign({}, defaults, { a: 1 })`; a `this`-reading method or
+    accessor on an object holding an uncalled effect (`api.size()`), whose
+    receiver is published.
 - **Callback-effect provenance.** The unknown global-property dispatch defect
   is fixed; the separate dense-array callback-promotion route is still an
   unproven candidate. Canonical attribution needs per-call target/contributor
