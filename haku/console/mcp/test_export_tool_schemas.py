@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
+from fastmcp import Client
 from jsonschema import Draft202012Validator
 from mcp_types import Tool
 
@@ -72,6 +73,15 @@ async def test_builds_both_catalogs_from_one_server_reflection(monkeypatch: pyte
         "type": "array",
         "items": {"type": "string"},
     }
+
+
+async def test_grocy_schema_server_rejects_tool_execution() -> None:
+    server = export_tool_schemas.build_schema_servers()[export_tool_schemas.GROCY_SF_SERVER_ID]
+    async with Client(server) as client:
+        assert any(tool.name == "locations_list" for tool in await client.list_tools())
+        result = await client.call_tool_mcp("locations_list", {})
+
+    assert result.is_error is True
 
 
 async def test_every_exported_tool_schema_is_a_closed_valid_object() -> None:

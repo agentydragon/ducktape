@@ -11,8 +11,8 @@ import json
 
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
-from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 
 async def _main() -> None:
