@@ -54,6 +54,7 @@ py_library(
         "//finance/plaid/spend:models",
         "@pypi//babel",
         "@pypi//dbus_next",
+        "@pypi//sparklines",
     ],
 )
 
@@ -142,6 +143,7 @@ py_wheel(
         "httpx2>=2.13.0",
         "Authlib>=1.8.0",
         "pydantic>=2.0",
+        "sparklines>=1.0.0",
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],

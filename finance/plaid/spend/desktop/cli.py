@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
@@ -15,6 +16,7 @@ from dbus_next import Message
 from dbus_next.aio import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.errors import DBusError
+from sparklines import sparklines
 
 from finance.plaid.spend.allowance import AllowanceView, Status
 from finance.plaid.spend.models import CardView, SpendView
@@ -35,6 +37,16 @@ def _parser() -> argparse.ArgumentParser:
         help="show the current view (default), check the desktop client, or start sign-in",
     )
     parser.add_argument("--json", action="store_true", help="print the view as JSON")
+    parser.add_argument("--details", action="store_true", help="show the full allowance and card details")
+    parser.add_argument("--pace-window", choices=("7d", "30d"), default="7d", help="rolling average (default: 7d)")
+    parser.add_argument(
+        "--history-days", type=int, choices=(7, 14, 30), default=30, help="sparkline span (default: 30)"
+    )
+    parser.add_argument(
+        "--scale", choices=("zero", "auto"), default="zero", help="sparkline lower bound (default: zero)"
+    )
+    parser.add_argument("--no-sparkline", action="store_true", help="omit the pace history")
+    parser.add_argument("--color", choices=("auto", "always", "never"), default="auto", help="sparkline color")
     return parser
 
 
@@ -221,7 +233,112 @@ def _format_view(view: SpendView, status: str, last_error: str) -> str:
     return "\n".join(lines)
 
 
-async def _run(command: str, json_output: bool) -> None:
+def _sparkline(history: dict[str, Any], window: str, days: int, scale: str, color: bool) -> str:
+    windows = history.get("windows")
+    if not isinstance(windows, list):
+        raise ValueError("invalid history windows")
+    selected = next(
+        (item for item in windows if isinstance(item, dict) and item.get("period_id") == f"rolling_{window}"), None
+    )
+    if not selected or not isinstance(selected.get("points"), list):
+        raise ValueError("history window unavailable")
+    points = selected["points"][-days:]
+    values = [point.get("observed_daily_minor_units") if isinstance(point, dict) else None for point in points]
+    values = [value if type(value) is int and value >= 0 else None for value in values]
+    present = [value for value in values if value is not None]
+    if len(present) < 2:
+        return "Pace history lacks coverage"
+    lower = 0 if scale == "zero" else min(present)
+    upper = max(present)
+    reference = history.get("daily_reference_minor_units")
+    chars = []
+    graph = sparklines(values, minimum=lower, maximum=upper)[0]
+    for value, char in zip(values, graph, strict=True):
+        if value is None:
+            chars.append("·")
+            continue
+        if color and isinstance(reference, int) and not isinstance(reference, bool) and reference > 0:
+            code = 31 if value * 5 > reference * 6 else 33 if value > reference else 32
+            chars.append(f"\x1b[{code}m{char}\x1b[0m")
+        else:
+            chars.append(char)
+    currency = history.get("currency")
+    range_label = f"{_format_money(lower, currency)} to {_format_money(upper, currency)}/day"
+    gaps = " · gaps: unknown" if len(present) != len(values) else ""
+    return f"{window} pace · last {len(values)} days: {''.join(chars)}  ({range_label}{gaps})"
+
+
+def _format_summary(view: SpendView, status: str, last_error: str, window: str, history_line: str | None) -> str:
+    lines = ["Plaid Spend"]
+    allowance = view.allowance
+    if allowance:
+        if allowance.status == Status.ACTIVE:
+            lines.append(
+                f"Available: {_format_money(allowance.available_minor_units, allowance.currency)} · advisory allowance"
+            )
+            report = next((p for p in allowance.recorded_pace_periods if p.period.id == f"rolling_{window}"), None)
+            observed = report.observed_daily_minor_units if report else None
+            reference = allowance.daily_reference_minor_units
+            pace = f"{_format_money(observed, allowance.currency)}/day" if observed is not None else "unavailable"
+            ratio = (
+                f" · {round(observed * 100 / reference)}% of leash"
+                if observed is not None and reference and reference > 0
+                else ""
+            )
+            lines.append(f"{window} pace: {pace}{ratio} · leash ~{_format_money(reference, allowance.currency)}/day")
+            if observed is not None and reference is not None and reference > 0:
+                if observed * 5 > reference * 6:
+                    lines.append("Pace over 120% of leash")
+                elif observed > reference:
+                    lines.append("Pace above leash")
+            if report and report.unmatched_charges and report.unmatched_charges.count:
+                unmatched = report.unmatched_charges
+                lines.append(
+                    f"Unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, allowance.currency)})"
+                )
+            if history_line:
+                lines.append(history_line)
+        else:
+            lines.append(f"Allowance: {allowance.status}")
+            if allowance.note:
+                lines.append(allowance.note)
+    for card in view.cards:
+        spend = _format_money(card.spend_minor_units, card.currency)
+        if card.statement_period.kind == "statement":
+            limit = (
+                _format_money(card.limit_minor_units, card.currency)
+                if card.limit_minor_units is not None
+                else "no limit"
+            )
+            percent = f" · {card.spend_percent:.1f}%" if card.spend_percent is not None else ""
+            lines.append(f"{_card_title(card)}: {spend} / {limit}{percent}")
+        else:
+            lines.append(f"{_card_title(card)}: recorded {spend} · statement cycle unavailable")
+        if card.alert_state and card.alert_state not in ("normal", "unavailable"):
+            lines.append(f"  Alert: {str(card.alert_state).replace('_', ' ')}")
+    if not view.cards:
+        lines.append("No card data is available.")
+    lines.append(f"View updated: {_format_timestamp(view.generated_at)}")
+    if status != "ready":
+        lines.append(f"Desktop client: {status}.")
+        if status == "authentication-required":
+            lines.append("Sign in with `plaid-spend login`.")
+        if last_error:
+            lines.append(last_error)
+    return "\n".join(lines)
+
+
+async def _run(
+    command: str,
+    json_output: bool,
+    *,
+    details: bool = False,
+    window: str = "7d",
+    history_days: int = 30,
+    scale: str = "zero",
+    show_sparkline: bool = True,
+    color: bool = False,
+) -> None:
     bus = await MessageBus().connect()
     try:
         if command == "login":
@@ -251,7 +368,28 @@ async def _run(command: str, json_output: bool) -> None:
             if last_error:
                 print(last_error)
         else:
-            print(_format_view(SpendView.model_validate(view), status, last_error))
+            parsed = SpendView.model_validate(view)
+            if details:
+                print(_format_view(parsed, status, last_error))
+            else:
+                history_line = None
+                if (
+                    show_sparkline
+                    and status == "ready"
+                    and parsed.allowance
+                    and parsed.allowance.status == Status.ACTIVE
+                ):
+                    try:
+                        history_result = await _call(bus, "GetPaceHistory")
+                        if not history_result or not isinstance(history_result[0], str):
+                            raise ValueError("invalid history reply")
+                        history = json.loads(history_result[0])
+                        if not isinstance(history, dict):
+                            raise ValueError("invalid history")
+                        history_line = _sparkline(history, window, history_days, scale, color)
+                    except RuntimeError, ValueError, DBusError:
+                        history_line = "Pace history unavailable"
+                print(_format_summary(parsed, status, last_error, window, history_line))
     finally:
         bus.disconnect()
 
@@ -259,7 +397,21 @@ async def _run(command: str, json_output: bool) -> None:
 def main() -> None:
     args = _parser().parse_args()
     try:
-        asyncio.run(_run(args.command, args.json))
+        color = args.color == "always" or (
+            args.color == "auto" and sys.stdout.isatty() and "NO_COLOR" not in os.environ
+        )
+        asyncio.run(
+            _run(
+                args.command,
+                args.json,
+                details=args.details,
+                window=args.pace_window,
+                history_days=args.history_days,
+                scale=args.scale,
+                show_sparkline=not args.no_sparkline,
+                color=color,
+            )
+        )
     except (DBusError, OSError, RuntimeError, ValueError) as exc:
         print(f"plaid-spend: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
