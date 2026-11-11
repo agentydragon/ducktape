@@ -464,10 +464,10 @@ ts_library(
     deps = [
         ":code_block",
         ":field",
+        ":mcp_result",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
-        "//haku/console/frontend/tool_rendering:result_entry",
         "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )

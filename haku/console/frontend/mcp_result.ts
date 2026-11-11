@@ -18,8 +18,9 @@ export function mcpToolError(resultJson: unknown): string | null {
   return messages.join("\n") || "MCP tool returned an error";
 }
 
-/** Select the tool's own return value from a CallToolResult. FastMCP wraps non-object returns in
- * `{result: ...}` and marks that exact envelope in `_meta`; object returns stay untouched. */
+/** Select a tool's return value from a CallToolResult. FastMCP wraps non-object returns in
+ * `{result: ...}` and marks that envelope in `_meta`; object returns stay untouched. Otherwise,
+ * parse a single JSON text block. Invalid or error results return `null`. */
 export function unwrapMcpToolResult(resultJson: unknown): unknown {
   const parsed = zCallToolResult.safeParse(resultJson);
   if (!parsed.success || parsed.data.isError) return null;

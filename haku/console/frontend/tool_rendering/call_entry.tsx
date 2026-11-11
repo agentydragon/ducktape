@@ -2,13 +2,13 @@
 // and finished states are one evolving view rather than two independent widgets (entry.tsx's
 // args-only registry paired with result_entry.tsx's result-only one). The registry (index.tsx)
 // safeParses args once and, when a result is present, tries the result schema too. It unwraps the
-// CallToolResult envelope through result_entry.tsx, so a pending call, an error result, and a
+// CallToolResult envelope through mcp_result.ts, so a pending call, an error result, and a
 // schema mismatch all resolve to `result: undefined` — the widget's own "pending" branch — rather
 // than losing the valid args rendering.
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import { unwrapToolResult } from "./result_entry";
+import { unwrapMcpToolResult } from "../mcp_result";
 import type { PreviewVariant } from "./vocabulary";
 
 export type ToolCallPreview<
@@ -60,7 +60,7 @@ export function renderCallPreview(
 ): ReactNode | null {
   const parsedArgs = preview.argsSchema.safeParse(args);
   if (!parsedArgs.success) return null;
-  const unwrapped = rawResult == null ? null : unwrapToolResult(rawResult);
+  const unwrapped = rawResult == null ? null : unwrapMcpToolResult(rawResult);
   const parsedResult = unwrapped == null ? undefined : preview.resultSchema.safeParse(unwrapped);
   const result = parsedResult?.success ? parsedResult.data : undefined;
   return preview.render(parsedArgs.data as never, result as never, variant);
