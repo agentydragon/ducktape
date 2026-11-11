@@ -663,10 +663,77 @@ pub(super) struct ClassValueFacts {
     pub(super) super_class_inputs: BTreeSet<Id>,
     /// Inline callables and classes need the enclosing-environment fallback.
     pub(super) super_class_inputs_incomplete: bool,
+    /// A discarded direct call followed by a lexical superclass read. Its
+    /// argument inputs can be dropped only after proving the callee inert.
+    pub(super) discarded_heritage_call: Option<DiscardedHeritageCall>,
     pub(super) lexical_heritage: Option<LexicalClassHeritage>,
     pub(super) opaque_instance: bool,
     pub(super) opaque_static: bool,
     pub(super) allocation_without_user_code: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct DiscardedHeritageCall {
+    pub(super) callee: Id,
+    pub(super) base: Id,
+    pub(super) argument_reads: BTreeSet<Id>,
+    pub(super) remaining_inputs: BTreeSet<Id>,
+}
+
+impl DiscardedHeritageCall {
+    pub(super) fn collect(expression: &Expr) -> Option<Self> {
+        let Expr::Seq(sequence) = expression.unwrap_parens() else {
+            return None;
+        };
+        let [discarded, base] = sequence.exprs.as_slice() else {
+            return None;
+        };
+        let Expr::Call(call) = discarded.unwrap_parens() else {
+            return None;
+        };
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let (Expr::Ident(callee), Expr::Ident(base)) =
+            (callee.unwrap_parens(), base.unwrap_parens())
+        else {
+            return None;
+        };
+        // Argument evaluation remains on the ordinary timing path. Limit the
+        // projection to bare reads and literals, with no spread or nested
+        // user code that could retain a value or change the selected base.
+        if call.type_args.is_some()
+            || call.args.iter().any(|argument| {
+                argument.spread.is_some()
+                    || !matches!(
+                        argument.expr.unwrap_parens(),
+                        Expr::Ident(_)
+                            | Expr::Lit(
+                                Lit::Str(_)
+                                    | Lit::Bool(_)
+                                    | Lit::Null(_)
+                                    | Lit::Num(_)
+                                    | Lit::BigInt(_)
+                            )
+                    )
+            })
+        {
+            return None;
+        }
+        Some(Self {
+            callee: callee.to_id(),
+            base: base.to_id(),
+            argument_reads: call
+                .args
+                .iter()
+                .filter_map(|argument| match argument.expr.unwrap_parens() {
+                    Expr::Ident(binding) => Some(binding.to_id()),
+                    _ => None,
+                })
+                .collect(),
+            remaining_inputs: [callee.to_id(), base.to_id()].into_iter().collect(),
+        })
+    }
 }
 
 /// The complete canonical heritage expression is one lexical read. Lowered
