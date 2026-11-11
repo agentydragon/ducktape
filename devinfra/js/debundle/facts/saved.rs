@@ -316,6 +316,8 @@ struct SavedStatementFacts<'a> {
     calls: PositionBucketed<BTreeSet<SavedBinding>>,
     constructor: Option<SavedConstructorFacts>,
     synchronous_calls: Option<SavedSynchronousCalls<'a>>,
+    #[serde(default)]
+    synchronous_prefix_effects: Option<(BTreeSet<SavedBinding>, BTreeSet<SavedBinding>)>,
     at_init_unresolved_sources: BTreeSet<SavedBinding>,
     at_init_unresolved_inline_fn: bool,
     first_order_unresolved_sources: BTreeSet<SavedBinding>,
@@ -363,6 +365,16 @@ impl<'a> SavedStatementFacts<'a> {
                 .synchronous_calls
                 .as_ref()
                 .map(|calls| SavedSynchronousCalls::snapshot(calls, ordinals, purities))
+                .transpose()?,
+            synchronous_prefix_effects: fact
+                .synchronous_prefix_effects
+                .as_ref()
+                .map(|(reads, rebinds)| -> Result<_> {
+                    Ok((
+                        snapshot_bindings(reads, ordinals)?,
+                        snapshot_bindings(rebinds, ordinals)?,
+                    ))
+                })
                 .transpose()?,
             at_init_unresolved_sources: snapshot_bindings(
                 &fact.at_init_unresolved_sources,
@@ -423,6 +435,15 @@ impl<'a> SavedStatementFacts<'a> {
             synchronous_calls: self
                 .synchronous_calls
                 .map(|calls| calls.restore(ordinals, purities))
+                .transpose()?,
+            synchronous_prefix_effects: self
+                .synchronous_prefix_effects
+                .map(|(reads, rebinds)| -> Result<_> {
+                    Ok((
+                        restore_bindings(reads, ordinals)?,
+                        restore_bindings(rebinds, ordinals)?,
+                    ))
+                })
                 .transpose()?,
             at_init_unresolved_sources: restore_bindings(
                 self.at_init_unresolved_sources,
