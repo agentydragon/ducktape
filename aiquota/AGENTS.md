@@ -1,4 +1,8 @@
+@README.md
+
 # aiquota — agent notes
+
+Follow the shared [personal dashboard presentation expectations](../docs/personal_dashboard_presentation.md).
 
 Three surfaces render one data model (<models.py>):
 
@@ -9,8 +13,8 @@ Three surfaces render one data model (<models.py>):
 ## Surfaces in lockstep
 
 Any presentation change to one surface is mirrored in the other two (the user reads them side
-by side and reports drift as a bug): the single "currently over plan" / "extra spend active"
-signal, window rows (label, used %, reset, forecast; numeric pace in details), labelled balance and
+by side and reports drift as a bug): current paid/extra state when it adds information,
+window rows (label, used %, reset, forecast; numeric pace in details), labelled balance and
 grant rows, and explicit stale/error/reset-pending states. Keep window rows present in paid mode.
 The tmux segment is intentionally a concise summary using the selected window and status,
 with API billing providers omitted. The GNOME panel likewise keeps API billing in the popup. Shared
