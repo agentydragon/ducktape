@@ -263,6 +263,44 @@
       }
     }
   },
+  "post_cutoff_update": {
+    "recorded_at_utc": "2026-11-11T01:01:35Z",
+    "historical_sample_unchanged": true,
+    "pr_15493": {
+      "merged_at_utc": "2026-11-11T00:09:59Z",
+      "merge_commit": "506b5dc8e5f23f34c6eafc3849da7945c260b7a7",
+      "attempt_5": {
+        "github_job": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130219235738",
+        "job_conclusion": "SUCCESS",
+        "buildbuddy_child": "https://app.buildbuddy.io/invocation/37e78259-3dd8-571f-a79d-fe40b46c558f",
+        "tested_synthetic_merge_sha": "31568ce99bd545d962e7212c9d43101227e662e8",
+        "vm_target": "//agentplane/system_tests/suites:test_vm",
+        "vm_test_summary": {
+          "overall_status": "PASSED",
+          "total_run_count": 1,
+          "cached_runs": 1,
+          "strategy": "remote cache hit"
+        },
+        "matching_fresh_warm_result": {
+          "invocation": "https://app.buildbuddy.io/invocation/ada176c7-0a2f-5535-a3d5-678316d0467a",
+          "tested_source_sha": "b8f712744fc47b461078cfa4c241e5d120750e2f",
+          "vm_result": "PASSED with remote execution strategy",
+          "persistence_outcome": "warm",
+          "matching_test_log_cas": "3ecf1f106aa95bb6bed848262cd65c517c4aa0ccddd067bc90833042320bce33/4760",
+          "matching_persistence_receipt_cas": "5beb95665284269d6854e834c323f1fc3fca855893e0b774c1ad14bdfbdb4a88/1683"
+        },
+        "interpretation": "The fifth job passed, but its VM result was cached. Matching artifacts identify a separate fresh warm pass; they do not make attempt 5 a fresh execution or prove that the earlier failure paths were fixed."
+      }
+    },
+    "additional_snapshot_tsc_failure": {
+      "observed_at_utc": "2026-11-10T23:26:50Z",
+      "pr": "https://github.com/agentydragon/ducktape/pull/15564",
+      "buildbuddy_child": "https://app.buildbuddy.io/invocation/c6e943d6-8bc8-50a7-98d5-9799c97fcb3e",
+      "failed_execution_id": "/uploads/58f989e9-eed7-40aa-aadf-abe0b167d963/blobs/0f40a07f199804f798b7aa21d732d0e3e5385b89eff7c9eabed61ba994a9c168/1216",
+      "issue": "https://github.com/agentydragon/ducktape/issues/15581",
+      "limit": "The failed snapshot's creator, CPU model and saved/current TSC frequencies remain unknown."
+    }
+  },
   "prior_snapshot": {
     "branch_commit": "4aa6b2d2148fc8365a04985680295b39c2542d29",
     "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
@@ -286,7 +324,7 @@
     "This is a focused VM and #15493 snapshot, not a repository-wide failure-rate census. No complete GitHub PR job or merged-PR population was collected for this new window.",
     "GetTargetStats 98 and target-history 917 use different API definitions; neither is a verified count of fresh physical executions. Complete cache status was not retrieved.",
     "The target history lacks a per-row branch field; selected invocation metadata confirms devel, and the #15493 PR child IDs are absent. The report does not claim every indexed row is independently branch-verified.",
-    "The four #15493 failed jobs are a selected PR run, not a full PR-attempt census; three fresh failed VM TestResults and one RBE pre-verdict failure must remain separate. Attempt 4 used a different test-action digest.",
+    "The first four #15493 jobs failed before the 10 November 23:13 UTC cutoff; they are a selected PR run, not a full PR-attempt census. Three fresh failed VM TestResults and one RBE pre-verdict failure must remain separate. Attempt 4 used a different test-action digest.",
     "The devel-filtered stats and branch-unverified target history sample ended at 23:04 UTC; selected PR observations ended at 23:13 UTC. The separate populations and cutoffs are not combined into one rate.",
     "No guest kernel trace after the VM2 console cutoff, snapshot creator metadata, or timestamp at entry to the final systemd proof read was retained.",
     "Full API payloads, logs and profiles remain in local scratch; only reviewed measurements and identifiers are published."
