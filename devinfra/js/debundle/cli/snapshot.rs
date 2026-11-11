@@ -299,7 +299,7 @@ fn snapshot_run(provenance: &GraphProvenance) -> Result<SnapshotRun> {
     args.context.auxiliary.tree_source_root = Some(provenance.roots.source.clone());
     args.context.auxiliary.out_root = Some(PathBuf::from("output"));
     let fail_fast = args.fail_fast;
-    let cli = args.resolve()?;
+    let cli = args.context.resolve()?;
     let TransformSpecSource::Tree(options) = cli.spec_source else {
         bail!("snapshot creation currently requires a tree-shaped spec");
     };

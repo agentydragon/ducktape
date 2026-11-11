@@ -148,7 +148,7 @@ pub(crate) struct CapturedPass {
 
 pub(crate) fn run_captured_pass(transform: TransformArgs) -> Result<CapturedPass> {
     let keep_going = !transform.fail_fast;
-    let cli = transform.resolve()?;
+    let cli = transform.context.resolve()?;
     let expected_chunks = expected_validation_chunks(&cli.spec_source)?;
     // Dry-run + a report dir makes the materialize pass emit per-chunk
     // reports, independent of how the spec configures `report_out_dir`.
