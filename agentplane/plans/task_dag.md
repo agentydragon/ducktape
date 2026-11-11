@@ -3672,10 +3672,6 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   `history_service/migrations/history/00012_thread_command_operation_enum.sql`): the gate is met,
   since migration 00013 is on staging (section 14), so no History replica older than 00012 runs.
   Drop both in a new migration. Source: tombstone of 2026-11-09.
-- **`pythonJSON`** in `runner_gateway/environments/internal/management/access.go`, a Python-emulating
-  intent encoding left by the Go port: replace it with deterministic encoding and semantic
-  caller/request comparison. No gate; Python-byte interoperability is not a requirement. Source:
-  [EnvironmentService TODO](../runner_gateway/environments/TODO.md).
 - **The OAuth MCP fixture image** (`action_service/testing/oauth_mcp_server.py` and its deployment
   wiring): check whether an existing MCP image (the Everything image) can serve the tool surface with
   Dex, then delete the custom fixture. Source: `TODO` at the fixture.
