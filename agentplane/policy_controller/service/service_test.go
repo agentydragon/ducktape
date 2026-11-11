@@ -782,3 +782,69 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 		t.Fatalf("refused deletes removed identities: %v", identities.Items)
 	}
 }
+
+func TestCreateIdentityCreatesAnUnownedIdentityOnce(t *testing.T) {
+	api, kube, _ := fixture(t)
+	created, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "Agent of launch a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.GetIdentity().GetIdentity().GetName() != "launch-a" || created.GetIdentity().GetSpec().GetDescription() != "Agent of launch a" {
+		t.Fatalf("created = %v", created)
+	}
+	var stored policyapi.Identity
+	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: "launch-a"}, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.OwnerReferences) != 0 {
+		t.Fatalf("Identity owners = %v, want none", stored.OwnerReferences)
+	}
+	if _, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "again"}); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("second create: %v", err)
+	}
+	if _, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-b"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("create without description: %v", err)
+	}
+	if _, err := api.CreateIdentity(tokenContext(t, "alice"), &policypb.CreateIdentityRequest{Name: "launch-c", Description: "x"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("non-writer create: %v", err)
+	}
+}
+
+func TestGrantIdentityPolicyBindingIsOwnedByTheExactIdentity(t *testing.T) {
+	identity := testIdentity("launch-a", nil)
+	api, kube, _ := fixture(t, identity, policySet("base"))
+	granted, err := api.GrantIdentityPolicyBinding(tokenContext(t, "app"), &policypb.GrantIdentityPolicyBindingRequest{
+		IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"base"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored policyapi.PolicyBinding
+	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: granted.GetBinding().GetIdentity().GetName()}, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Spec.Subject.Identity == nil || stored.Spec.Subject.Identity.Name != "launch-a" || stored.Spec.Subject.Namespace != "" {
+		t.Fatalf("subject = %+v", stored.Spec.Subject)
+	}
+	if !ownedBy(stored.OwnerReferences, identity.UID) {
+		t.Fatalf("owners = %+v, want the Identity", stored.OwnerReferences)
+	}
+	// Owned, so it does not hold the Identity against deletion.
+	if _, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "launch-a", Uid: "uid-launch-a"}); err != nil {
+		t.Fatalf("delete with only owned grants: %v", err)
+	}
+}
+
+func TestGrantIdentityPolicyBindingRefusesAnotherIncarnationAndUnknownSets(t *testing.T) {
+	api, _, _ := fixture(t, testIdentity("launch-a", nil), policySet("base"))
+	for name, request := range map[string]*policypb.GrantIdentityPolicyBindingRequest{
+		"stale UID":   {IdentityName: "launch-a", IdentityUid: "uid-previous", PolicySets: []string{"base"}},
+		"missing":     {IdentityName: "launch-z", IdentityUid: "uid-launch-z", PolicySets: []string{"base"}},
+		"unknown set": {IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"nope"}},
+		"no sets":     {IdentityName: "launch-a", IdentityUid: "uid-launch-a"},
+	} {
+		if _, err := api.GrantIdentityPolicyBinding(tokenContext(t, "app"), request); err == nil {
+			t.Errorf("%s: granted", name)
+		}
+	}
+}

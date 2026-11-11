@@ -47,7 +47,38 @@ service PolicyService {
   rpc DeleteIdentity(DeleteIdentityRequest) returns (DeleteIdentityResponse) {
     option (google.api.http) = {delete: "/v1/identities/{namespace}/{name}"};
   }
+  // Creates an Identity in the policy namespace. Nothing owns it: its creator deletes it, through
+  // DeleteIdentity. A launch creates the Identity, grants it PolicySets, then creates the
+  // environment naming it, as three operations.
+  rpc CreateIdentity(CreateIdentityRequest) returns (CreateIdentityResponse) {
+    option (google.api.http) = {
+      post: "/v1/identities"
+      body: "*"
+    };
+  }
+  // Binds PolicySets to one exact Identity incarnation. The binding is owned by the Identity, so
+  // deleting the Identity deletes its grants and a later Identity of the same name inherits none.
+  rpc GrantIdentityPolicyBinding(GrantIdentityPolicyBindingRequest) returns (GrantIdentityPolicyBindingResponse) {
+    option (google.api.http) = {
+      post: "/v1/identities/{identity_name}/policy-bindings"
+      body: "*"
+    };
+  }
 }
+
+message CreateIdentityRequest {
+  string name = 1;
+  // Who this agent is, for the operator. Required.
+  string description = 2;
+}
+message CreateIdentityResponse { Identity identity = 1; }
+message GrantIdentityPolicyBindingRequest {
+  string identity_name = 1;
+  string identity_uid = 2;
+  repeated string policy_sets = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+message GrantIdentityPolicyBindingResponse { PolicyBinding binding = 1; }
 
 message GrantSandboxPolicyBindingRequest {
   string sandbox_namespace = 1;

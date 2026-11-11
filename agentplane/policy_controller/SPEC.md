@@ -59,6 +59,19 @@ UID in a non-controller owner reference. Revoke requires the caller's Sandbox UI
 PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
 UID and resourceVersion preconditions.
 
+`PolicyService.CreateIdentity`, behind the same writer allowlist, creates an Identity of the
+requested name and description in the policy namespace, with no owner: its creator deletes it.
+`ALREADY_EXISTS` if the name is taken. A launch creates the Identity, grants it PolicySets, then
+creates the environment naming it, as three operations
+([identity plan](../plans/identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits),
+question 11).
+
+`PolicyService.GrantIdentityPolicyBinding`, behind the same allowlist, binds known PolicySets to one
+exact Identity incarnation (name and UID, `NOT_FOUND` for another or a deleting one). The binding's
+subject is the Identity and it carries a non-controller owner reference to the Identity's UID, so
+`DeleteIdentity` does not count it and garbage collection removes it with the Identity; a later
+Identity of the same name inherits none of its grants.
+
 `PolicyService.DeleteIdentity`, behind the same writer allowlist, deletes one Identity by name and
 observed UID with UID and resourceVersion preconditions; garbage collection then removes what the
 Identity owns. It refuses an Identity carrying Flux's `kustomize.toolkit.fluxcd.io/name` label,

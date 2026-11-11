@@ -10504,6 +10504,7 @@ rules:
       - list
       - watch
       - delete
+      - create
   - apiGroups:
       - agentplane.allegedly.works
     resources:
