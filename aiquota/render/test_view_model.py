@@ -152,6 +152,43 @@ def test_paid_credits_active_only_with_balance_and_exhausted_window() -> None:
     assert statuses == {"positive": True, "empty": False, "no_credits": False}
 
 
+def test_status_keeps_only_distinct_current_extra_enablement() -> None:
+    exhausted = QuotaWindow(used_percent=100, reset_seconds=1200, window_seconds=18000)
+    quotas = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="extra",
+                last_output=_fetch(
+                    short_window=exhausted,
+                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25, utilization=25),
+                ),
+            ),
+            ProviderQuota(
+                provider="extra_without_spend_row",
+                last_output=_fetch(
+                    short_window=exhausted,
+                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
+                ),
+            ),
+            ProviderQuota(
+                provider="paid", last_output=_fetch(short_window=exhausted, paid_credits=PaidCredits(balance="500"))
+            ),
+            ProviderQuota(provider="plain", last_output=_fetch(short_window=exhausted)),
+        ],
+    )
+
+    views = {view.provider: view for view in to_view(quotas, _NOW).providers}
+
+    assert views["extra"].status is None
+    assert views["extra"].currently_over_plan
+    assert views["extra"].monthly_extra_spend is not None
+    assert views["extra_without_spend_row"].status == "Extra usage enabled"
+    assert views["paid"].status is None
+    assert any(balance.label == "Paid credits" for balance in views["paid"].balances)
+    assert views["plain"].status is None
+
+
 def test_window_presentation_updates_from_one_snapshot() -> None:
     window = QuotaWindow(
         used_percent=60, reset_seconds=9000, window_seconds=18000, reset_at=_NOW + timedelta(hours=2, minutes=30)
@@ -490,14 +527,19 @@ def test_current_paid_signals_expire_without_losing_monthly_spend() -> None:
     fresh = original.providers[0]
     assert fresh.currently_over_plan
     assert fresh.paid_credits_active
-    for refreshed in (
+    refreshed_views = (
         refresh_view(original, _NOW + timedelta(minutes=10)),
         refresh_view(original, _NOW, connection_error="offline"),
         refresh_view(original, _NOW + timedelta(hours=2)),
-    ):
+    )
+    for refreshed in refreshed_views:
         provider = refreshed.providers[0]
         assert not provider.currently_over_plan
         assert not provider.paid_credits_active
         assert provider.monthly_extra_spend == fresh.monthly_extra_spend
         assert provider.extra_status == "informational"
-        assert provider.status in {"Included quota exhausted", "Reset time passed · awaiting updated usage"}
+    assert [view.providers[0].status for view in refreshed_views] == [
+        None,
+        None,
+        "Reset time passed · awaiting updated usage",
+    ]

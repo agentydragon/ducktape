@@ -143,22 +143,53 @@ function sampleQuotas(): AllQuotasView {
 }
 
 describe("QuotaBoard", () => {
-  it("puts fresh exhaustion above readings and styles it as urgent; pending resets are warnings", () => {
+  it("keeps exhaustion visible without repeating it in status; pending resets remain warnings", () => {
     const quotas = sampleQuotas();
-    quotas.providers[0]!.display_windows[0]!.exhausted = true;
+    const exhausted = quotas.providers[0]!.display_windows[0]!;
+    exhausted.exhausted = true;
+    exhausted.used_percent = 100;
+    exhausted.used = 100;
     render(quotas);
     let card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
-    let status = card.querySelector(".aiquota-status-row")!;
-    expect(status.classList.contains("aiquota-status-urgent")).toBe(true);
-    expect(status.compareDocumentPosition(card.querySelector(".aiquota-readings")!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
+    expect(card.querySelector(".aiquota-status-row")).toBeNull();
+    expect(card.textContent).toContain("100%");
+    expect(card.textContent).toContain("exhausted");
 
     render(quotas, Date.parse("2026-01-15T14:31:00Z"));
     card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
-    status = card.querySelector(".aiquota-status-row")!;
+    const status = card.querySelector(".aiquota-status-row")!;
     expect(status.textContent).toContain("awaiting updated usage");
     expect(status.classList.contains("aiquota-status-urgent")).toBe(false);
+  });
+
+  it("puts current extra enablement on the monthly row instead of duplicating exhausted status", () => {
+    const quotas = sampleQuotas();
+    const codex = quotas.providers[0]!;
+    codex.display_windows[0]!.exhausted = true;
+    codex.display_windows[0]!.used = 100;
+    codex.display_windows[0]!.used_percent = 100;
+    codex.currently_over_plan = true;
+    codex.extra_status = "active";
+    render(quotas);
+
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    expect(card.querySelector(".aiquota-status-row")).toBeNull();
+    expect(card.textContent).toContain("Extra spend this month: $26 of $100 limit · extra usage enabled");
+    expect(card.textContent).toContain("exhausted");
+    expect(card.textContent).not.toContain("Included quota exhausted");
+  });
+
+  it("keeps a status fallback when active extra usage has no monthly-spend row", () => {
+    const quotas = sampleQuotas();
+    const codex = quotas.providers[0]!;
+    codex.display_windows[0]!.exhausted = true;
+    codex.currently_over_plan = true;
+    codex.monthly_extra_spend = null;
+    render(quotas);
+
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    expect(card.querySelector(".aiquota-status-row")?.textContent).toBe("Extra usage enabled");
+    expect(card.textContent).not.toContain("Extra spend this month");
   });
 
   it.each([
@@ -276,7 +307,10 @@ describe("QuotaBoard", () => {
       result: { kind: "success", windows: [], reset_credit_expiry_lookup_failed: false },
     };
     render(quotas);
-    expect(container.textContent).toContain("Included quota exhausted · paid credits available");
+    expect(container.textContent).not.toContain("Included quota exhausted");
+    expect(container.textContent).not.toContain("paid credits available");
+    expect(container.textContent).toContain("Paid credits");
+    expect(container.textContent).toContain("exhausted");
     render(quotas, Date.parse("2026-01-15T12:11:00Z"));
 
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-badge-stale')?.textContent).toBe(

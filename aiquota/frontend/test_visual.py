@@ -162,6 +162,28 @@ async def test_monthly_spend_is_history(view: VisualPage, scene: str) -> None:
         await expect(card.locator(".aiquota-badge-error")).to_be_visible()
 
 
+@pytest.mark.parametrize("scene", ["hot"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_active_extra_usage_is_inline_with_monthly_spend(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
+    await expect(
+        card.get_by_text("Extra spend this month: $3,142 of $5,000 limit · extra usage enabled", exact=True)
+    ).to_be_visible()
+    await expect(card.locator(".aiquota-status-row")).to_have_count(0)
+    await expect(card.get_by_text("exhausted", exact=False)).to_be_visible()
+
+
+@pytest.mark.parametrize("scene", ["paid_credits"])
+@pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
+async def test_paid_credits_status_is_not_repeated(view: VisualPage) -> None:
+    card = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
+    await expect(card.get_by_text("Paid credits", exact=True)).to_be_visible()
+    await expect(card.locator(".aiquota-window")).to_have_count(2)
+    await expect(card.locator(".aiquota-status-row")).to_have_count(0)
+    await expect(card.get_by_text("paid credits available", exact=False)).to_have_count(0)
+    await expect(card.get_by_text("exhausted", exact=False)).to_be_visible()
+
+
 @pytest.mark.parametrize("scene", ["multi_window_reset_pending", "stale_paid_signals"])
 @pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
 async def test_uncertain_paid_signals(view: VisualPage, scene: str) -> None:

@@ -14,6 +14,7 @@ import {
   formatAge as sharedFormatAge,
   formatExtraSpend as sharedFormatExtraSpend,
   formatExtraSpendExact,
+  formatSummaryUsd,
   extraSpendHasHiddenFraction,
   refreshWindowTiming,
   showResetCredits,
@@ -99,14 +100,14 @@ function effectiveState(state) {
 function formatCompactDollars(usd) {
   if (usd >= 1000) {
     const k = usd / 1000;
-    return `$${k >= 10 ? roundHalfToEven(k) : roundHalfToEven(k * 10) / 10}k`;
+    return `$${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`;
   }
-  return `$${roundHalfToEven(usd)}`;
+  return formatSummaryUsd(usd);
 }
 
-function formatExtraSpend(extra) {
+function formatExtraSpend(extra, enabled = false) {
   if (!extra) return null;
-  return sharedFormatExtraSpend(extra.used_usd, extra.monthly_limit_usd);
+  return sharedFormatExtraSpend(extra.used_usd, extra.monthly_limit_usd, enabled);
 }
 
 function formatBankedResets(count, expiries, expiryLookupFailed, now, details = false) {
@@ -1144,7 +1145,8 @@ const QuotaIndicator = GObject.registerClass(
         state.windows.map((window) => withLiveReset(window)),
         staleAge != null,
         state.currentlyOverPlan,
-        state.paidCreditsActive
+        state.paidCreditsActive,
+        state.monthlyExtraSpend != null
       );
       if (status) parts.push(status);
       if (state.errorSummary) parts.push(state.errorSummary);
@@ -1160,7 +1162,15 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderSpendRow(item, state) {
-      const spend = formatExtraSpend(state.monthlyExtraSpend);
+      const { windows, staleAge } = effectiveState(state);
+      const { overPlan } = quotaActivity(
+        windows.map((window) => withLiveReset(window)),
+        staleAge != null,
+        state.currentlyOverPlan,
+        state.paidCreditsActive,
+        state.monthlyExtraSpend != null
+      );
+      const spend = formatExtraSpend(state.monthlyExtraSpend, overPlan);
       item.visible = spend != null;
       item._summaryLabel.set_text(spend ?? "");
     }

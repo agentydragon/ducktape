@@ -260,12 +260,9 @@ def _provider_view(
     status = None
     if reset_pending:
         status = "Reset time passed · awaiting updated usage"
-    elif any(window.exhausted for window in display_windows):
-        status = "Included quota exhausted"
-        if over_plan:
-            status += " · extra usage enabled"
-        elif paid_active:
-            status += " · paid credits available"
+    elif over_plan and monthly_extra is None:
+        # Keep the setting visible when no monthly-spend row can carry it.
+        status = "Extra usage enabled"
     error = pq.last_output.result.error if not isinstance(pq.last_output.result, FetchSuccess) else None
     return ProviderView(
         provider=pq.provider,

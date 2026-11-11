@@ -289,6 +289,13 @@ def test_warnings_precede_readings_and_spend_precedes_windows(session: GnomeSess
     finally:
         session.close_menu()
 
+    _reload_fixture(session, "hot")
+    popup = _ProviderPopup(session, "claude")
+    assert "Extra usage enabled" not in popup.status
+    assert "Extra spend this month: $3,142 of $5,000 limit · extra usage enabled" in popup.text("GetSpendText")
+    assert any("100%" in window for window in popup.windows)
+    assert "⚡" in popup.panel
+
     _reload_fixture(session, "extra_enabled_not_burning")
     session.open_menu()
     try:
@@ -471,7 +478,25 @@ def test_paid_credits(session: GnomeSession) -> None:
     assert len(windows) == 2
     assert "Codex — Paid credits:" in codex.header
     assert "Banked resets: 0" in codex.reset
+    assert "Included quota exhausted" not in codex.status
+    assert "paid credits available" not in codex.status
+    assert any("100%" in window for window in windows)
     assert "⚡" in codex.panel
+
+
+def test_active_extra_usage_falls_back_to_status_without_monthly_spend_row(
+    session: GnomeSession, fixture_json_dir: Path
+) -> None:
+    _reload_fixture(session, "hot")
+    data = json.loads((fixture_json_dir / "hot.json").read_text())
+    claude = next(provider for provider in data["providers"] if provider["provider"] == "claude")
+    claude["monthly_extra_spend"] = None
+    session.call("SetViewForTest", json.dumps(data))
+
+    popup = _ProviderPopup(session, "claude")
+    assert "Extra usage enabled" in popup.status
+    assert "Extra spend" not in popup.text("GetSpendText")
+    assert "100%" in " ".join(popup.windows)
 
 
 def test_observed_account_2026_11_04(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:

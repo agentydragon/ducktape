@@ -178,21 +178,35 @@ describe("shared live presentation", () => {
 
   it("renders monthly spend identically for browser and GNOME", () => {
     expect(formatExtraSpend(2324.85, 4600)).toBe("Extra spend this month: $2,325 of $4,600 limit");
+    expect(formatExtraSpend(2324.85, 4600, true)).toBe(
+      "Extra spend this month: $2,325 of $4,600 limit · extra usage enabled"
+    );
   });
 });
 
 describe("current paid signals", () => {
-  it("requires all displayed reset readings and provider freshness while preserving included exhaustion", () => {
+  it("keeps the distinct enabled signal and suppresses duplicate status across stale and pending readings", () => {
     const windows = [
       { exhausted: true, resetPending: false },
       { exhausted: true, resetPending: false },
     ];
-    expect(quotaActivity(windows, false, true, true)).toMatchObject({ overPlan: true, paidCredits: true });
+    expect(quotaActivity(windows, false, true, true)).toEqual({
+      resetPending: false,
+      overPlan: true,
+      paidCredits: true,
+      status: "Extra usage enabled",
+    });
+    expect(quotaActivity(windows, false, true, true, true)).toEqual({
+      resetPending: false,
+      overPlan: true,
+      paidCredits: true,
+      status: null,
+    });
     expect(quotaActivity(windows, true, true, true)).toEqual({
       resetPending: false,
       overPlan: false,
       paidCredits: false,
-      status: "Included quota exhausted",
+      status: null,
     });
     windows[0]!.resetPending = true;
     expect(quotaActivity(windows, false, true, true)).toEqual({

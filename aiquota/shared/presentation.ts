@@ -129,14 +129,14 @@ export function formatUsdWhole(amount: number): string {
   return `${amount < 0 ? "-" : ""}$${Math.round(Math.abs(amount)).toLocaleString("en-US")}`;
 }
 
-export function formatExtraSpend(usedUsd: number, limitUsd: number): string {
+export function formatExtraSpend(usedUsd: number, limitUsd: number, enabled = false): string {
   let used = formatSummaryUsd(usedUsd);
   let limit = formatSummaryUsd(limitUsd);
   if (usedUsd !== limitUsd && used === limit) {
     used = formatUsd(usedUsd);
     limit = formatUsd(limitUsd);
   }
-  return `Extra spend this month: ${used} of ${limit} limit`;
+  return `Extra spend this month: ${used} of ${limit} limit${enabled ? " · extra usage enabled" : ""}`;
 }
 
 export function formatExtraSpendExact(usedUsd: number, limitUsd: number): string {
@@ -203,15 +203,17 @@ export function quotaActivity(
   windows: { exhausted: boolean; resetPending: boolean }[],
   stale: boolean,
   overPlan: boolean,
-  paidCredits: boolean
+  paidCredits: boolean,
+  hasMonthlySpendRow = false
 ): { resetPending: boolean; overPlan: boolean; paidCredits: boolean; status: string | null } {
   const resetPending = windows.some((window) => window.resetPending);
   const current = !stale && !resetPending;
   const activity = { resetPending, overPlan: current && overPlan, paidCredits: current && paidCredits };
+  const exhausted = windows.some((window) => window.exhausted);
   const status = resetPending
     ? "Reset time passed · awaiting updated usage"
-    : windows.some((window) => window.exhausted)
-      ? `Included quota exhausted${activity.overPlan ? " · extra usage enabled" : activity.paidCredits ? " · paid credits available" : ""}`
+    : exhausted && activity.overPlan && !hasMonthlySpendRow
+      ? "Extra usage enabled"
       : null;
   return { ...activity, status };
 }

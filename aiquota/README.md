@@ -146,6 +146,13 @@ rather than inheriting an older reading with the new timestamp. After a
 reset deadline passes, usage remains the last reported value and the surface says it is
 awaiting updated usage.
 
+Full views show exhaustion in each window and paid-credit availability in its balance row, so
+they do not repeat those facts in a status sentence. When a fresh exhausted window makes extra
+usage enabled, the monthly-spend row carries that state; a status fallback remains when no
+monthly-spend row is present. Monthly spend alone never establishes that the setting is enabled.
+The compact GNOME panel and tmux segment keep their `⚡` signal when current paid or extra usage
+applies.
+
 ## Historical collection
 
 The in-cluster Deployment refreshes Claude and Codex every five minutes even

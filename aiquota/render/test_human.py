@@ -8,7 +8,7 @@ import pytest_bazel
 from python.runfiles import Runfiles
 from syrupy.assertion import SnapshotAssertion
 
-from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render import human
 from aiquota.render.format import (
     extra_spend_has_hidden_fraction,
@@ -115,11 +115,14 @@ def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_det
         assert any(line.endswith(f"expires {date}") for line in default.splitlines())
 
 
-def test_paid_mode_keeps_each_window_row_and_marks_actionable_state(quota_fixture: Callable[[str], AllQuotas]) -> None:
+def test_paid_mode_keeps_each_window_without_repeating_visible_status(
+    quota_fixture: Callable[[str], AllQuotas],
+) -> None:
     rendered = human.render(quota_fixture("paid_credits"), now=_NOW, tz=UTC)
 
-    assert "Included quota exhausted · paid credits available" in rendered
-    assert rendered.index("Included quota exhausted") < rendered.index("Paid credits: 2,746 credits")
+    assert "Included quota exhausted" not in rendered
+    assert "paid credits available" not in rendered
+    assert rendered.index("Paid credits: 2,746 credits") < rendered.index("5h: 100% used")
     assert "5h: 100% used  ↻ 1h 30m" in rendered
     assert "7d:  38% used  ↻ 3d 14h" in rendered
 
@@ -305,6 +308,29 @@ def test_monthly_spend_history_uses_selected_snapshot(
     if fixture_name == "extra_spend_fallback":
         assert "Stale data" in rendered
         assert "Refresh failed" in rendered
+
+
+def test_active_extra_usage_is_inline_with_monthly_spend(quota_fixture: Callable[[str], AllQuotas]) -> None:
+    rendered = human.render(quota_fixture("hot"), now=_NOW, tz=UTC)
+
+    assert "Extra spend this month: $3,142 of $5,000 limit · extra usage enabled" in rendered
+    assert "Included quota exhausted" not in rendered
+    assert any("exhausted" in line for line in rendered.splitlines())
+
+
+def test_active_extra_usage_falls_back_to_status_without_monthly_spend_row() -> None:
+    quotas = _quota(
+        FetchSuccess(
+            windows=[QuotaWindow(used_percent=100, reset_seconds=1800, window_seconds=18000)],
+            extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
+        )
+    )
+
+    rendered = human.render(quotas, now=_NOW, tz=UTC)
+
+    assert "Extra usage enabled" in rendered
+    assert "Extra spend this month" not in rendered
+    assert "Included quota exhausted" not in rendered
 
 
 def test_terminal_window_keeps_shared_tint() -> None:

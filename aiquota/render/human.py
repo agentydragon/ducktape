@@ -144,7 +144,8 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
     extra = pv.monthly_extra_spend
     if extra is not None:
         summary = format_extra_spend(extra.used_usd, extra.monthly_limit_usd)
-        lines.append(Text(f"  {summary}"))
+        enabled = " · extra usage enabled" if pv.currently_over_plan else ""
+        lines.append(Text(f"  {summary}{enabled}"))
         exact = format_extra_spend_exact(extra.used_usd, extra.monthly_limit_usd)
         if details and extra_spend_has_hidden_fraction(extra.used_usd, extra.monthly_limit_usd):
             lines.append(Text(f"    exact spend: {exact}"))
