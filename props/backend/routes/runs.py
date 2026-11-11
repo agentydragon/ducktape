@@ -98,16 +98,6 @@ class ActiveRunInfo(BaseModel):
     status: AgentRunStatus
     created_at: datetime
 
-    @classmethod
-    def from_db(cls, run: AgentRun) -> ActiveRunInfo:
-        return cls(
-            agent_run_id=run.agent_run_id,
-            image_digest=run.image_digest,
-            model=run.model,
-            status=run.status,
-            created_at=run.created_at,
-        )
-
 
 class ActiveRunsResponse(BaseModel):
     runs: list[ActiveRunInfo]
@@ -422,7 +412,7 @@ def list_active_runs(request: Request, caller_db: CallerDb) -> ActiveRunsRespons
             .all()
         )
 
-        result = [ActiveRunInfo.from_db(db_run) for db_run in db_runs]
+        result = [ActiveRunInfo.model_validate(db_run, from_attributes=True) for db_run in db_runs]
 
     return ActiveRunsResponse(runs=result)
 
