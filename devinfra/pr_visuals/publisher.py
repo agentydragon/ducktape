@@ -174,11 +174,9 @@ class S3BaselineSource:
 def _baseline_pointer_key(slug: str) -> str:
     """Mutable per-target pointer to the last devel commit that published it.
 
-    Devel-push publishes only contain targets Bazel actually re-executed
-    (cache hits re-expose nothing), so a PR's base commit bundle routinely
-    lacks untouched targets. The pointer bridges those gaps: it names the
-    newest devel commit whose immutable review bundle carries
-    the target, and PR runs fall back to it when the base bundle misses.
+    A PR's base commit bundle may lack targets that its CI run did not cover.
+    The pointer names the newest devel commit whose immutable review bundle
+    carries the target, and PR runs use it when the base bundle misses.
     """
     return f"baselines/{REVIEW_PREFIX}/{slug}.json"
 
@@ -973,20 +971,210 @@ def _invocations_for(
     )
 
 
+@dataclass
+class PublicationResult:
+    summary: str = "No tests executed by Bazel CI exposed screenshot output records."
+    conclusion: Literal["success", "failure", "neutral"] = "neutral"
+    comment_body: str | None = None
+    refresh_stale_comment_body: str | None = None
+    details_url: str | None = None
+    ci_failures: list[str] = field(default_factory=list)
+    pull_request: int | None = None
+    diff: tuple[Literal["success", "neutral"], str] | None = None
+
+
+def _publish(
+    args: argparse.Namespace,
+    *,
+    token: str,
+    workflow_url: str | None,
+    result: PublicationResult,
+    run: Runner,
+    s3_client: Callable[..., Any],
+) -> None:
+    base_sha: str | None = None
+    if args.pull_request_head:
+        logger.info("Resolving pull request")
+        found = find_reviewable_pull_request(
+            repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=token
+        )
+        if found is None:
+            result.summary = "No open or merged pull request has this head commit; nothing to review."
+            print(result.summary)
+            return
+        result.pull_request, base_sha = found.number, found.base_sha
+    logger.info("Finding test invocations")
+    invocations = _invocations_for(args, run=run)
+    test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
+    logger.info("Waiting for %d test invocation(s)", 1 if test_id in invocations else len(invocations))
+    readiness = wait_for_test_invocations(
+        [test_id] if test_id in invocations else invocations,
+        workflow_succeeded=args.ci_conclusion == "success" and test_id in invocations,
+        allow_build_only=args.ci_conclusion in ("success", "failure") and test_id in invocations,
+        build_invocation_id=str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build")),
+        run=run,
+    )
+    logger.info("Test invocation readiness: %s", readiness)
+    if readiness == "incomplete":
+        raise RuntimeError("Bazel test invocation did not complete before visual publication")
+    if args.ci_conclusion != "success":
+        result.ci_failures = list_ci_failures(invocations, run=run)
+    tests = (
+        download_visual_tests(invocations, args.work_dir / "tests", repository=args.repository, run=run)
+        if readiness == "complete"
+        else []
+    )
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with Path(github_output).open("a") as output:
+            output.write(f"found={'true' if tests else 'false'}\n")
+    if not tests:
+        result.summary += ci_failure_summary(args.ci_conclusion, result.ci_failures)
+        no_visual_body = no_visual_comment_body(
+            repository=args.repository,
+            commit_sha=args.sha,
+            ci_conclusion=args.ci_conclusion,
+            ci_failures=result.ci_failures,
+            details_url=args.ci_details_url or workflow_url,
+        )
+        if args.ci_conclusion == "success":
+            result.refresh_stale_comment_body = no_visual_body
+        else:
+            result.comment_body = no_visual_body
+        print(f"{result.summary} Skipping publication.")
+        return
+
+    s3 = s3_client("s3", endpoint_url=args.endpoint)
+    baseline_source: BaselineSource | None = None
+    if base_sha:
+        baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
+    logger.info("Building review for %d targets; baseline comparison: %s", len(tests), bool(base_sha))
+    bundle = build_bundle(
+        tests,
+        args.work_dir / "site",
+        commit_sha=args.sha,
+        repository=args.repository,
+        base_sha=base_sha,
+        baseline_source=baseline_source,
+    )
+    upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
+    review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
+    if not base_sha:
+        # Devel push: advance the mutable per-target fallback pointers now
+        # that this commit's immutable bundle is fully uploaded and the
+        # invocation is confirmed complete.
+        slugs = [test.slug for test in review_tests if test.baseline_eligible]
+        logger.info("Updating %d baseline pointers", len(slugs))
+        write_baseline_pointers(slugs, commit_sha=args.sha, bucket=args.bucket, client=s3)
+    public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
+    if base_sha:
+        totals = classification_totals(review_tests)
+        result.summary = (
+            f"{len(tests)} target{'s' if len(tests) != 1 else ''} · {totals.modified} modified, "
+            f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged, "
+            f"{totals.unstable} unstable."
+        )
+    else:
+        result.summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
+    result.comment_body = success_comment_body(
+        repository=args.repository,
+        commit_sha=args.sha,
+        url=public_url,
+        review_tests=review_tests,
+        base_sha=base_sha,
+        ci_conclusion=args.ci_conclusion,
+        ci_failures=result.ci_failures,
+        ci_details_url=args.ci_details_url or workflow_url,
+    )
+    result.summary += ci_failure_summary(args.ci_conclusion, result.ci_failures)
+    if incomplete := sum(1 for test in review_tests if test.issues):
+        result.summary += f" {incomplete} target(s) have incomplete or non-comparable results."
+    result.conclusion = "neutral" if any(test.issues for test in review_tests) else "success"
+    result.details_url = f"{public_url}index.html"
+    result.diff = diff_check(review_tests)
+
+
+def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) -> list[Exception]:
+    errors: list[Exception] = []
+    logger.info("Updating review comment and check")
+    if result.diff is not None:
+        diff_conclusion, diff_summary = result.diff
+        try:
+            upsert_check_run(
+                repository=args.repository,
+                commit_sha=args.sha,
+                status="completed",
+                conclusion=diff_conclusion,
+                summary=diff_summary,
+                details_url=result.details_url,
+                token=token,
+                name="PR visual diffs",
+            )
+        except Exception as error:
+            logger.exception("Could not update the visual diff check")
+            errors.append(error)
+    if result.pull_request is not None and (
+        result.comment_body is not None or result.refresh_stale_comment_body is not None
+    ):
+        # Rendering/uploading may outlast another push or PR closure. Recheck
+        # before replacing the singleton comment; immutable bundles stay useful.
+        try:
+            current = find_reviewable_pull_request(
+                repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=token
+            )
+        except Exception as error:
+            logger.exception("Could not recheck the pull request before commenting")
+            errors.append(error)
+            result.pull_request = None
+        else:
+            if current is None or current.number != result.pull_request:
+                result.pull_request = None
+    if result.pull_request is not None:
+        try:
+            if result.comment_body is not None:
+                upsert_pull_request_comment(
+                    repository=args.repository, pull_request=result.pull_request, body=result.comment_body, token=token
+                )
+            elif result.refresh_stale_comment_body is not None:
+                refresh_stale_pull_request_comment(
+                    repository=args.repository,
+                    pull_request=result.pull_request,
+                    commit_sha=args.sha,
+                    body=result.refresh_stale_comment_body,
+                    token=token,
+                )
+        except Exception as error:
+            logger.exception("Could not update the pull request comment")
+            errors.append(error)
+    if errors:
+        result.conclusion = "failure"
+        result.summary += " Pull request review reporting failed."
+    try:
+        upsert_check_run(
+            repository=args.repository,
+            commit_sha=args.sha,
+            status="completed",
+            conclusion=result.conclusion,
+            summary=result.summary,
+            details_url=result.details_url,
+            external_id=args.check_external_id,
+            token=token,
+        )
+    except Exception as error:
+        logger.exception("Could not complete the visual review check")
+        errors.append(error)
+    logger.info("Visual publication finished: %s", result.conclusion)
+    return errors
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     args = parser().parse_args()
-    github_token = os.environ.get("GITHUB_TOKEN")
-    if not github_token:
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
     workflow_url = current_workflow_url()
-
-    conclusion: Literal["success", "failure", "neutral"] = "neutral"
-    summary = "No tests executed by Bazel CI exposed screenshot output records."
-    comment_body: str | None = None
-    refresh_stale_comment_body: str | None = None
-    details_url: str | None = args.ci_details_url or workflow_url
-    ci_failures: list[str] = []
+    result = PublicationResult(details_url=args.ci_details_url or workflow_url)
 
     if args.ci_conclusion == "cancelled":
         # A direct CLI invocation must follow the workflow's cancelled-run policy too.
@@ -997,170 +1185,39 @@ def main() -> None:
             status="completed",
             conclusion="cancelled",
             summary="Bazel CI was cancelled; visual publication stopped.",
-            details_url=details_url,
+            details_url=result.details_url,
             external_id=args.check_external_id,
-            token=github_token,
+            token=token,
         )
         return
 
-    pull_request: int | None = None
-    base_sha: str | None = None
     try:
-        if args.pull_request_head:
-            logger.info("Resolving pull request")
-            found = find_reviewable_pull_request(
-                repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=github_token
-            )
-            if found is None:
-                summary = "No open or merged pull request has this head commit; nothing to review."
-                print(summary)
-                return
-            pull_request, base_sha = found.number, found.base_sha
-        logger.info("Finding test invocations")
-        invocations = _invocations_for(args, run=subprocess.run)
-        test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
-        logger.info("Waiting for %d test invocation(s)", 1 if test_id in invocations else len(invocations))
-        readiness = wait_for_test_invocations(
-            [test_id] if test_id in invocations else invocations,
-            workflow_succeeded=args.ci_conclusion == "success" and test_id in invocations,
-            allow_build_only=args.ci_conclusion in ("success", "failure") and test_id in invocations,
-            build_invocation_id=str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build")),
-            run=subprocess.run,
+        _publish(
+            args, token=token, workflow_url=workflow_url, result=result, run=subprocess.run, s3_client=boto3.client
         )
-        logger.info("Test invocation readiness: %s", readiness)
-        if readiness == "incomplete":
-            raise RuntimeError("Bazel test invocation did not complete before visual publication")
-        if args.ci_conclusion != "success":
-            ci_failures = list_ci_failures(invocations, run=subprocess.run)
-        tests = (
-            download_visual_tests(invocations, args.work_dir / "tests", repository=args.repository, run=subprocess.run)
-            if readiness == "complete"
-            else []
-        )
-        github_output = os.environ.get("GITHUB_OUTPUT")
-        if github_output:
-            with Path(github_output).open("a") as output:
-                output.write(f"found={'true' if tests else 'false'}\n")
-        if not tests:
-            summary += ci_failure_summary(args.ci_conclusion, ci_failures)
-            no_visual_body = no_visual_comment_body(
-                repository=args.repository,
-                commit_sha=args.sha,
-                ci_conclusion=args.ci_conclusion,
-                ci_failures=ci_failures,
-                details_url=args.ci_details_url or workflow_url,
-            )
-            if args.ci_conclusion == "success":
-                refresh_stale_comment_body = no_visual_body
-            else:
-                comment_body = no_visual_body
-            print(f"{summary} Skipping publication.")
-            return
-
-        s3 = boto3.client("s3", endpoint_url=args.endpoint)
-        baseline_source: BaselineSource | None = None
-        if base_sha:
-            baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
-        logger.info("Building review for %d targets; baseline comparison: %s", len(tests), bool(base_sha))
-        bundle = build_bundle(
-            tests,
-            args.work_dir / "site",
-            commit_sha=args.sha,
-            repository=args.repository,
-            base_sha=base_sha,
-            baseline_source=baseline_source,
-        )
-        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
-        review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
-        if not base_sha:
-            # Devel push: advance the mutable per-target fallback pointers now
-            # that this commit's immutable bundle is fully uploaded and the
-            # invocation is confirmed complete.
-            slugs = [test.slug for test in review_tests if test.baseline_eligible]
-            logger.info("Updating %d baseline pointers", len(slugs))
-            write_baseline_pointers(slugs, commit_sha=args.sha, bucket=args.bucket, client=s3)
-        public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
-        if base_sha:
-            totals = classification_totals(review_tests)
-            summary = (
-                f"{len(tests)} target{'s' if len(tests) != 1 else ''} · {totals.modified} modified, "
-                f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged, "
-                f"{totals.unstable} unstable."
-            )
-        else:
-            summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
-        comment_body = success_comment_body(
-            repository=args.repository,
-            commit_sha=args.sha,
-            url=public_url,
-            review_tests=review_tests,
-            base_sha=base_sha,
-            ci_conclusion=args.ci_conclusion,
-            ci_failures=ci_failures,
-            ci_details_url=args.ci_details_url or workflow_url,
-        )
-        summary += ci_failure_summary(args.ci_conclusion, ci_failures)
-        if incomplete := sum(1 for test in review_tests if test.issues):
-            summary += f" {incomplete} target(s) have incomplete or non-comparable results."
-        conclusion = "neutral" if any(test.issues for test in review_tests) else "success"
-        details_url = f"{public_url}index.html"
-        if (diff := diff_check(review_tests)) is not None:
-            diff_conclusion, diff_summary = diff
-            upsert_check_run(
-                repository=args.repository,
-                commit_sha=args.sha,
-                status="completed",
-                conclusion=diff_conclusion,
-                summary=diff_summary,
-                details_url=details_url,
-                token=github_token,
-                name="PR visual diffs",
-            )
     except Exception as error:
-        comment_body = error_comment_body(
-            repository=args.repository,
-            commit_sha=args.sha,
-            error=error,
-            ci_conclusion=args.ci_conclusion,
-            ci_failures=ci_failures,
-            ci_details_url=args.ci_details_url or workflow_url,
-        )
-        summary = str(error) + ci_failure_summary(args.ci_conclusion, ci_failures)
-        conclusion = "failure"
-        raise
-    finally:
-        logger.info("Updating review comment and check")
-        if pull_request is not None and (comment_body is not None or refresh_stale_comment_body is not None):
-            # Rendering/uploading may outlast another push or PR closure. Recheck
-            # before replacing the singleton comment; immutable bundles stay useful.
-            current = find_reviewable_pull_request(
-                repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=github_token
-            )
-            if current is None or current.number != pull_request:
-                pull_request = None
-        if comment_body is not None and pull_request is not None:
-            upsert_pull_request_comment(
-                repository=args.repository, pull_request=pull_request, body=comment_body, token=github_token
-            )
-        elif refresh_stale_comment_body is not None and pull_request is not None:
-            refresh_stale_pull_request_comment(
+        result.summary = str(error) + ci_failure_summary(args.ci_conclusion, result.ci_failures)
+        result.conclusion = "failure"
+        reporting_errors: list[Exception] = []
+        try:
+            result.comment_body = error_comment_body(
                 repository=args.repository,
-                pull_request=pull_request,
                 commit_sha=args.sha,
-                body=refresh_stale_comment_body,
-                token=github_token,
+                error=error,
+                ci_conclusion=args.ci_conclusion,
+                ci_failures=result.ci_failures,
+                ci_details_url=args.ci_details_url or workflow_url,
             )
-        upsert_check_run(
-            repository=args.repository,
-            commit_sha=args.sha,
-            status="completed",
-            conclusion=conclusion,
-            summary=summary,
-            details_url=details_url,
-            external_id=args.check_external_id,
-            token=github_token,
-        )
-        logger.info("Visual publication finished: %s", conclusion)
+        except Exception as rendering_error:
+            logger.exception("Could not render the failure comment")
+            reporting_errors.append(rendering_error)
+        reporting_errors.extend(_report(args, token=token, result=result))
+        if reporting_errors:
+            raise error from ExceptionGroup("Visual review reporting failed", reporting_errors)
+        raise
+    reporting_errors = _report(args, token=token, result=result)
+    if reporting_errors:
+        raise ExceptionGroup("Visual review reporting failed", reporting_errors)
 
 
 if __name__ == "__main__":
