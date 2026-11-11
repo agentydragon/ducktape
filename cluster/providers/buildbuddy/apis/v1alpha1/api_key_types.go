@@ -52,7 +52,7 @@ type APIKeyParameters struct {
 	Label string `json:"label"`
 
 	// Capabilities are the permissions granted to the key.
-	// +kubebuilder:validation:UniqueItems=true
+	// +listType=set
 	Capabilities []APIKeyCapability `json:"capabilities"`
 
 	// VisibleToDevelopers controls whether BuildBuddy shows the key to
