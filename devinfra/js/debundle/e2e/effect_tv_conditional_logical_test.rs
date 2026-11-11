@@ -1080,6 +1080,7 @@ fn discarded_heritage_call_keeps_possible_superclass_capabilities() {
     for definitions in [
         "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
         "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), first) { constructor() { super(); h(); } }; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
+        "function ignore(x) { return 0; }\nfunction make(h) { first.prototype.fire = h; return class extends (ignore(h), first) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C().fire(); }",
         "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h()), first) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
         "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), first) {}; }\nfunction flag() { return 0; }\nfunction run() { first = second; const C = make(second); return new C(); }",
         "let base = first;\nfunction ignore(x) { base = arguments[0]; return 0; }\nfunction make(h) { return class extends (ignore(h), base) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
