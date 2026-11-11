@@ -266,7 +266,7 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "pr-visuals-announce = devinfra.pr_visuals.check_run:main",
-            "pr-visuals-publish = devinfra.pr_visuals.publisher:cli",
+            "pr-visuals-publish = devinfra.pr_visuals.publisher:main",
         ],
     },
     python_requires = ">=3.14",

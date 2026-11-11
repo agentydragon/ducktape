@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Any, NoReturn
@@ -49,14 +49,16 @@ from devinfra.pr_visuals.publisher import (
     DownloadedVariant,
     DownloadedVisualTest,
     _invocations_for,
+    GetObjectResponse,
+    HeadObjectResponse,
+    _parse_cli,
     build_bundle,
-    cli,
     diff_check,
     download_visual_tests,
     find_test_invocations,
     list_ci_failures,
     main,
-    parser,
+    publish_visual_review,
     refresh_stale_pull_request_comment,
     target_slug,
     upload_bundle,
@@ -135,12 +137,14 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
 
 
 def test_devel_uses_this_runs_ids_without_searching_other_runs() -> None:
-    args = argparse.Namespace(ci_run_id="42975955001", ci_run_attempt="2", pull_request_head=None)
+    config, _ = _parse_cli(
+        _publisher_argv(Path("unused"), "--ci-run-id", "42975955001", "--ci-run-attempt", "2")[1:]
+    )
 
     def unexpected_search(*_args: object, **_kwargs: object) -> NoReturn:
         pytest.fail("devel must use its own full-sweep invocation")
 
-    assert _invocations_for(args, run=unexpected_search) == [
+    assert _invocations_for(config, run=unexpected_search) == [
         str(invocation_id(run_id="42975955001", attempt="2", role=role)) for role in ("test", "build")
     ]
 
@@ -1057,7 +1061,7 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
         ),
     )
 
-    cli()
+    main()
 
     assert len(checks) == 1
     assert checks[0]["conclusion"] == "cancelled"
@@ -1121,9 +1125,18 @@ class EmptyBucket:
         self.requested.append(kwargs["Key"])
         raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
 
+    def head_object(self, *, Bucket: str, Key: str) -> NoReturn:  # noqa: N803
+        pytest.fail(f"unexpected HEAD for {Bucket}/{Key}")
+
+    def put_object(self, **kwargs: object) -> NoReturn:
+        pytest.fail(f"unexpected put for {kwargs['Key']}")
+
+    def upload_file(self, path: Path, bucket: str, key: str, *, ExtraArgs: dict[str, str]) -> NoReturn:  # noqa: N803
+        pytest.fail(f"unexpected upload for {bucket}/{key}")
+
 
 def _run_test_main(*, run: Runner, client: Any) -> None:
-    main(parser().parse_args(), run=run, client=client, token="token", workflow_url=None)
+    publish_visual_review(_parse_cli()[0], run=run, client=client, token="token", workflow_url=None)
 
 
 def _publish_one_visual_target(
@@ -1194,7 +1207,7 @@ def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch
     def fake_upload(_bundle: Path, **kwargs: object) -> None:
         upload_clients.append(kwargs["client"])
 
-    args = parser().parse_args(
+    config, _ = _parse_cli(
         _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID)[1:]
     )
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
@@ -1209,7 +1222,7 @@ def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch
         "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: comments.append(kwargs)
     )
 
-    main(args, run=fake_run, client=bucket, token="token", workflow_url=None)
+    publish_visual_review(config, run=fake_run, client=bucket, token="token", workflow_url=None)
 
     assert any("invocation" in command and "list" in command for command in commands)
     assert download_runners == [fake_run]
@@ -1392,11 +1405,15 @@ class PublishedObjects:
         self.puts: list[str] = []
         self.events: list[str] = []
 
-    def head_object(self, **kwargs: str) -> dict[str, int]:
-        key = kwargs["Key"]
-        if key not in self.objects:
+    def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+        if Key not in self.objects:
             raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
-        return {"ContentLength": len(self.objects[key])}
+        return {"ContentLength": len(self.objects[Key])}
+
+    def get_object(self, *, Bucket: str, Key: str) -> GetObjectResponse:  # noqa: N803
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": BytesIO(self.objects[Key])}
 
     def put_object(self, **kwargs: Any) -> None:
         assert kwargs["IfNoneMatch"] == "*"
@@ -1439,10 +1456,10 @@ def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path
     bundle = build_bundle([source], tmp_path / "site", commit_sha="a" * 40, repository="r")
 
     class RacingOrFailingS3(PublishedObjects):
-        def head_object(self, **kwargs: str) -> dict[str, int]:
+        def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
             if stage == "head":
                 raise ClientError({"Error": {"Code": code}}, "HeadObject")
-            return super().head_object(**kwargs)
+            return super().head_object(Bucket=Bucket, Key=Key)
 
         def put_object(self, **kwargs: Any) -> None:
             if code == "PreconditionFailed":
@@ -1646,8 +1663,8 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
             self.head_calls: list[str] = []
             self.review_uploads: list[str] = []
 
-        def head_object(self, **kwargs: str) -> dict[str, int]:
-            key = kwargs["Key"]
+        def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+            key = Key
             with self.lock:
                 self.active += 1
                 self.max_active = max(self.max_active, self.active)
@@ -1724,8 +1741,8 @@ def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp
             super().__init__()
             self.head_calls: list[str] = []
 
-        def head_object(self, **kwargs: str) -> dict[str, int]:
-            key = kwargs["Key"]
+        def head_object(self, *, Bucket: str, Key: str) -> HeadObjectResponse:  # noqa: N803
+            key = Key
             self.head_calls.append(key)
             if key == failed_key:
                 raise ClientError({"Error": {"Code": "AccessDenied"}}, "HeadObject")
@@ -1881,22 +1898,23 @@ def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
 
 
 def test_write_baseline_pointers_puts_mutable_json() -> None:
-    class FakeS3:
+    class FakeS3(PublishedObjects):
         def __init__(self) -> None:
-            self.puts: list[dict[str, object]] = []
+            super().__init__()
+            self.recorded_puts: list[dict[str, object]] = []
 
         def put_object(self, **kwargs: object) -> None:
-            self.puts.append(kwargs)
+            self.recorded_puts.append(kwargs)
 
     client = FakeS3()
     sha = "0123456789abcdef0123456789abcdef01234567"
     write_baseline_pointers(["slug-a", "slug-b"], commit_sha=sha, bucket="visuals", client=client)
 
-    assert [put["Key"] for put in client.puts] == [
+    assert [put["Key"] for put in client.recorded_puts] == [
         "baselines/reviews-test-outputs/slug-a.json",
         "baselines/reviews-test-outputs/slug-b.json",
     ]
-    for put in client.puts:
+    for put in client.recorded_puts:
         assert put["Bucket"] == "visuals"
         assert put["CacheControl"] == "no-cache"
         assert put["ContentType"] == "application/json"

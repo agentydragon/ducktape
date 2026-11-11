@@ -44,6 +44,12 @@ none, which is what lets it advance baseline pointers.
 
 ## Cancelled runs
 
+`publisher.main()` is the CLI boundary: it parses a frozen publication config,
+reads the GitHub token, and constructs the S3 client only for non-cancelled
+runs. `publish_visual_review(config, *, run, client, token, workflow_url)` is
+the injected application entry point. The S3 endpoint stays at the CLI boundary;
+publication helpers receive the client explicitly.
+
 A cancelled upstream CI run cancels any running visual workflow for that same
 run and attempt. The cancellation job completes an announced PR visual check as
 `cancelled`; the check's external ID includes both run ID and attempt so a delayed
