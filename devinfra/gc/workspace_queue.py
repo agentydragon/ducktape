@@ -507,12 +507,25 @@ class _Run:
 
     async def run(self) -> Report:
         self.seed()
+        result: Report | None = None
+        failure: QueueError | QueueInterrupted | None = None
+        async with asyncio.TaskGroup() as tasks:
+            try:
+                result = await self._run_tasks(tasks)
+            except (QueueError, QueueInterrupted) as error:
+                failure = error
+        if failure is not None:
+            raise failure
+        assert result is not None
+        return result
+
+    async def _run_tasks(self, tasks: asyncio.TaskGroup) -> Report:
         loop = asyncio.get_running_loop()
         next_update = loop.time()
         reporting = self.observer is not NULL_OBSERVER
         try:
             while self.queue:
-                for started in self.queue.start():
+                for started in self.queue.start(tasks):
                     logger.info("Starting %s: %s", started.phase, jobs.describe(started))
                 if reporting and loop.time() >= next_update:
                     self.observer.update(self.queue, waiting=self.waiting())

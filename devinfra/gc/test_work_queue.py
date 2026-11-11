@@ -1,8 +1,10 @@
 import asyncio
 import threading
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import ClassVar
 
+import pytest
 import pytest_bazel
 
 from devinfra.gc.work_queue import AsyncWorkItem, Cancelled, Finished, WorkFailure, WorkQueue
@@ -33,7 +35,13 @@ class AsyncDiscovery(AsyncWorkItem[str]):
         return Finished("network discovery", "done")
 
 
-async def test_async_discovery_does_not_block_independent_work() -> None:
+@pytest.fixture
+async def tasks() -> AsyncIterator[asyncio.TaskGroup]:
+    async with asyncio.TaskGroup() as group:
+        yield group
+
+
+async def test_async_discovery_does_not_block_independent_work(tasks: asyncio.TaskGroup) -> None:
     started, release = asyncio.Event(), asyncio.Event()
     immediate = threading.Event()
     immediate.set()
@@ -41,7 +49,7 @@ async def test_async_discovery_does_not_block_independent_work() -> None:
     queue.submit(AsyncDiscovery(started, release))
     queue.submit(Job("filesystem scan", "scan", threading.Event(), immediate))
     try:
-        queue.start()
+        queue.start(tasks)
         await asyncio.wait_for(started.wait(), 10)
         _, finished = await asyncio.wait_for(queue.next(), 10)
         assert isinstance(finished, Finished)
@@ -51,7 +59,7 @@ async def test_async_discovery_does_not_block_independent_work() -> None:
         await queue.drain()
 
 
-async def test_followup_can_run_while_another_discovery_is_in_progress() -> None:
+async def test_followup_can_run_while_another_discovery_is_in_progress(tasks: asyncio.TaskGroup) -> None:
     immediate = threading.Event()
     immediate.set()
     slow_started, slow_release, deleted = threading.Event(), threading.Event(), threading.Event()
@@ -59,7 +67,7 @@ async def test_followup_can_run_while_another_discovery_is_in_progress() -> None
     queue.submit(Job("first", "scan", threading.Event(), immediate))
     queue.submit(Job("slow", "scan", slow_started, slow_release))
     try:
-        queue.start()
+        queue.start(tasks)
         assert await asyncio.to_thread(slow_started.wait, 10)
         _, finished = await asyncio.wait_for(queue.next(), 10)
         assert not isinstance(finished, WorkFailure)
@@ -67,7 +75,7 @@ async def test_followup_can_run_while_another_discovery_is_in_progress() -> None
         assert queue.phases["scan"].running == 1
         assert queue.phases["scan"].finished == 1
         queue.submit(Job("delete", "remove", deleted, immediate), followup=True)
-        queue.start()
+        queue.start(tasks)
         assert await asyncio.to_thread(deleted.wait, 10)
         assert not slow_release.is_set()
     finally:
@@ -76,12 +84,12 @@ async def test_followup_can_run_while_another_discovery_is_in_progress() -> None
         await queue.drain()
 
 
-async def test_stop_does_not_start_queued_work() -> None:
+async def test_stop_does_not_start_queued_work(tasks: asyncio.TaskGroup) -> None:
     started, release, queued_started = threading.Event(), threading.Event(), threading.Event()
     queue = WorkQueue[str](workers=1)
     queue.submit(Job("running", "scan", started, release))
     queue.submit(Job("queued", "scan", queued_started, release))
-    queue.start()
+    queue.start(tasks)
     assert await asyncio.to_thread(started.wait, 10)
     queue.stop()
     release.set()
@@ -95,17 +103,48 @@ async def test_stop_does_not_start_queued_work() -> None:
     assert queue.phases["scan"].finished == 1
 
 
-async def test_stop_prevents_scheduled_threads_from_starting_work() -> None:
+async def test_stop_prevents_scheduled_threads_from_starting_work(tasks: asyncio.TaskGroup) -> None:
     started, release = threading.Event(), threading.Event()
     queue = WorkQueue[str](workers=1)
     queue.submit(Job("scheduled", "scan", started, release))
-    queue.start()
+    queue.start(tasks)
     queue.stop()
     drained = await queue.drain()
     assert len(drained) == 1
     assert isinstance(drained[0][1], Cancelled)
     assert not started.is_set()
     assert queue.phases["scan"].finished == 0
+
+
+async def test_job_failure_does_not_cancel_an_admitted_mutation(tasks: asyncio.TaskGroup) -> None:
+    mutation_started, mutation_release, trigger_failure = threading.Event(), threading.Event(), threading.Event()
+
+    class Fail:
+        phase = "scan"
+
+        def run(self) -> Finished[str]:
+            assert trigger_failure.wait(10)
+            raise ValueError("scan failed")
+
+    queue = WorkQueue[str](workers=2)
+    queue.submit(Job("mutation", "remove", mutation_started, mutation_release))
+    queue.submit(Fail())
+    try:
+        queue.start(tasks)
+        assert await asyncio.to_thread(mutation_started.wait, 10)
+        trigger_failure.set()
+        _, failed = await asyncio.wait_for(queue.next(), 10)
+        assert isinstance(failed, WorkFailure)
+        queue.stop()
+        mutation_release.set()
+        [(_, completed)] = await asyncio.wait_for(queue.drain(), 10)
+        assert isinstance(completed, Finished)
+        assert completed.value == "mutation"
+    finally:
+        trigger_failure.set()
+        mutation_release.set()
+        queue.stop()
+        await queue.drain()
 
 
 if __name__ == "__main__":

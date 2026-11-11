@@ -261,6 +261,7 @@ py_test(
         ":conftest",
         ":work_queue",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

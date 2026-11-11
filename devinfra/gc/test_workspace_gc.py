@@ -241,6 +241,59 @@ async def test_interrupt_drains_admitted_removal_without_starting_queued_work(
     assert bases[1].exists()
 
 
+async def test_scan_failure_drains_an_admitted_removal(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "output"
+    bases = sorted([make_base(root, tmp_path / "gone-a"), make_base(root, tmp_path / "gone-b")])
+    started, release, stopped = threading.Event(), threading.Event(), threading.Event()
+    inspect = output_base_gc.inspect_listed_base
+    delete = output_base_gc.delete_prunable_base
+
+    def inspect_with_failure(path: pathlib.Path, **kwargs: Any) -> output_base_gc.Inspection:
+        if path == bases[1]:
+            assert started.wait(10)
+            raise OSError("scan failed")
+        return inspect(path, **kwargs)
+
+    def blocking_delete(item: output_base_gc.PrunableBase) -> RemovalResult[pathlib.Path]:
+        started.set()
+        assert release.wait(10)
+        return delete(item)
+
+    monkeypatch.setattr(output_base_gc, "inspect_listed_base", inspect_with_failure)
+    monkeypatch.setattr(output_base_gc, "delete_prunable_base", blocking_delete)
+    monkeypatch.setattr(git_repo, "interrupt_running_git", stopped.set)
+    options = workspace_queue.Options(
+        domains=frozenset({workspace_queue.Domain.BASES}),
+        root=root,
+        session_bases=(),
+        workers=2,
+        apply=True,
+        sizes=False,
+        delete_foreign_clones=False,
+        repo=None,
+        pr_source=workspace_gc._without_prs,
+    )
+
+    async def run_until_failure() -> workspace_queue.QueueError:
+        try:
+            await workspace_queue.run(options)
+        except workspace_queue.QueueError as error:
+            return error
+        raise AssertionError("run did not fail")
+
+    task = asyncio.create_task(run_until_failure())
+    try:
+        assert await asyncio.to_thread(stopped.wait, 10)
+        assert not task.done()
+    finally:
+        release.set()
+    error = await asyncio.wait_for(task, 10)
+    assert str(error.error) == "scan failed"
+    assert len(error.report.base_removals) == 1
+    assert not bases[0].exists()
+    assert bases[1].exists()
+
+
 def test_joint_prune_removes_a_worktree_then_its_base_and_cache_entry(
     repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -850,7 +903,9 @@ async def test_queue_progress_denominator_grows_when_new_work_is_discovered(tmp_
     queue: WorkQueue[workspace_jobs.Event] = WorkQueue(workers=1)
     reporter = workspace_gc._QueueReporter()
     queue.submit(workspace_jobs.DiscoverBases(tmp_path, ()))
-    await queue.next()
+    async with asyncio.TaskGroup() as tasks:
+        queue.start(tasks)
+        await queue.next()
     reporter.update(queue, waiting=0)
     first = StringIO()
     Console(file=first, width=160, force_terminal=False).print(reporter.render())
