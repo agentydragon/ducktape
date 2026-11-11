@@ -132,6 +132,7 @@ py_library(
         ":comment_publishing",
         ":gallery",
         ":github_comment",
+        ":image_storage",
         ":metadata",
         ":pull_request",
         ":render_common",
@@ -198,6 +199,7 @@ py_test(
         ":collection",
         ":comment_publishing",
         ":github_comment",
+        ":image_storage",
         ":metadata",
         ":publisher",
         ":pull_request",
@@ -416,5 +418,17 @@ py_test(
         "//:conftest",
         "@pypi//pillow",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "image_storage",
+    srcs = ["image_storage.py"],
+    deps = [
+        ":artifacts",
+        ":render_common",
+        "@pypi//botocore",
+        "@pypi//pillow",
+        "@pypi//types_boto3_s3",
     ],
 )
