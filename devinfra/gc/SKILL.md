@@ -23,11 +23,10 @@ unreferenced once the bases linking to it are gone):
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
 result, scoped to one domain.
-All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
-immediately before removing it, skipping (and exiting nonzero for) one that changed.
-Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
-them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
-anything you would miss.
+All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every removable
+candidate immediately before removing it, skipping (and exiting nonzero for) one that changed.
+Gitignored files are not uncommitted changes, so removing a worktree deletes them (a gitignored
+`.env` or local data is lost); foreign clones are only reported and remain in place.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
@@ -107,6 +106,14 @@ default is the only root.
 The PR cross-check uses `GITHUB_TOKEN` or `gh auth token`; pass `--no-prs` to classify on
 git signals only (offline). After pruning, re-run `git worktree prune --dry-run --verbose`
 and run `git worktree prune --verbose` only if every listed record is confirmed stale.
+
+## Foreign Clones
+
+The `all` view reports clones of the same project found through Bazel output-base workspaces.
+They use independent Git object stores, and their registered worktrees do not account for all
+refs, commits, or other repository data. A clone whose worktrees otherwise look prunable is
+therefore `REVIEW`; the tool never removes an independent clone. The old `--delete-foreign-clones`
+flag is rejected with an explanation.
 
 ### Inspect KEEP worktrees, don't just trust the label
 

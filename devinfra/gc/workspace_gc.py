@@ -14,19 +14,18 @@ and the subcommands are views of that single result:
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
   * `repo-cache`   — the repo-contents-cache slice; `--delete` removes unreferenced entries.
 
-The `all` command also surfaces foreign clones (`foreign_clone_gc`) — other clones of the same
+The `all` command also reports foreign clones (`foreign_clone_gc`) — other clones of the same
 project, found among Bazel output-base workspaces, that are invisible to `git worktree list`
-run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an independent git
-object store is a bigger blast radius than anything else this tool does); it additionally
-needs `--delete-foreign-clones`.
+run against this repo. Foreign clones are independent Git repositories and are never removed
+automatically; their refs and other repository data are outside the worktree scan's safety proof.
 
 Nothing is removed without an explicit flag. Each removal revalidates its candidate immediately
 beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
 still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
 Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
-Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
-clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
-network-free.
+Files that git ignores do not count as uncommitted work, so removing a worktree deletes them.
+Foreign clones are only reported, so their files remain. `github_prs` owns GitHub access (PR
+state); the scan itself is network-free.
 """
 
 from __future__ import annotations
@@ -66,7 +65,7 @@ from devinfra.gc import (
     worktree_gc,
 )
 from devinfra.gc.branch_gc import BranchClassification, PrunableBranch, RetainedBranch
-from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, PrunableForeignClone, RetainedForeignClone
+from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, RetainedForeignClone
 from devinfra.gc.git_repo import GitError
 from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo
@@ -142,16 +141,12 @@ def render_foreign_clones(items: list[ForeignCloneClassification], *, include_ke
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedForeignClone)]
     rows = [[verdict_of(item), _short(item.clone.root), len(item.clone.members), item.reason] for item in visible]
     counts = {
-        "prunable": sum(isinstance(item, PrunableForeignClone) for item in items),
         "kept": sum(isinstance(item, RetainedForeignClone) for item in items),
         "review": sum(isinstance(item, foreign_clone_gc.ReviewForeignClone) for item in items),
     }
     headers = ["STATUS", "ROOT", "WORKTREES", "DETAIL"]
     parts = [tabulate(rows, headers=headers, tablefmt="plain")] if rows else []
-    parts.append(
-        f"Summary: {len(items)} foreign clones; {counts['prunable']} prunable, "
-        f"{counts['kept']} kept, {counts['review']} review"
-    )
+    parts.append(f"Summary: {len(items)} foreign clones; {counts['kept']} kept, {counts['review']} review")
     return "\n".join(parts)
 
 
@@ -322,7 +317,6 @@ class _RemovalOutcome[S]:
 _WORKTREE_LABELS = _RemovalLabels("worktree", "worktrees", "Worktrees", "removed", _short)
 _BRANCH_LABELS = _RemovalLabels("branch", "branches", "Branches", "deleted", str)
 _BASE_LABELS = _RemovalLabels("base", "bases", "Bases", "deleted", _short, leftover="quarantine")
-_FOREIGN_CLONE_LABELS = _RemovalLabels("foreign clone", "foreign clones", "Foreign clones", "removed", _short)
 
 
 def _removal_outcome[S](result: RemovalResult[S]) -> str:
@@ -493,43 +487,6 @@ async def _apply_repo_cache_deletions(
     )
 
 
-async def _apply_foreign_clone_deletions(
-    context: _RunContext, output_user_root: Path, session_bases: Sequence[Path]
-) -> _RemovalOutcome[Path]:
-    """Remove every prunable foreign clone.
-
-    Fresh discovery + classification right here is the revalidation: nothing computed before
-    this call is reused, so a clone that turned dirty (or gained an open PR) in the meantime is
-    never passed to `prune_foreign_clone`.
-    """
-    roots = workspace_scan.foreign_clone_roots(context.repo, output_user_root, session_bases=session_bases)
-    active_path = _active_worktree(context.repo)
-
-    def classify_one(root: Path) -> foreign_clone_gc.ForeignCloneClassification:
-        return foreign_clone_gc.classify_foreign_clone(root, pr_states=context.prs, active_path=active_path)
-
-    classifications = workspace_scan.parallel_classify(
-        roots,
-        lambda: classify_one,
-        phase="foreign_clones",
-        noun="foreign clone",
-        progress=NULL_PROGRESS,
-        category_of=verdict_of,
-        describe=str,
-        workers=context.workers,
-    )
-    candidates = [item.clone for item in classifications if isinstance(item, PrunableForeignClone)]
-    if not candidates:
-        return _nothing_to_remove()
-    logger.info("Removing %d foreign clones", len(candidates))
-    return _report_removals(
-        await _remove_all(
-            candidates, foreign_clone_gc.prune_foreign_clone, _FOREIGN_CLONE_LABELS, workers=context.workers
-        ),
-        _FOREIGN_CLONE_LABELS,
-    )
-
-
 class _Domain(enum.StrEnum):
     WORKTREES = enum.auto()
     BRANCHES = enum.auto()
@@ -567,7 +524,6 @@ class _Options:
     verbose: bool
     workers: int
     apply: bool  # --prune / --delete
-    delete_foreign_clones: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -686,7 +642,7 @@ def _print_findings(command: _Command, options: _Options, findings: _Findings) -
 
 
 def _any_prunable(command: _Command, findings: _Findings) -> bool:
-    """Whether a dry run should point at the apply flag (foreign clones have a flag of their own)."""
+    """Whether a dry run should print the command's apply hint."""
     scan, domains = findings.scan, command.domains
     return (
         (_Domain.WORKTREES in domains and any(isinstance(i, PrunableWorktree) for i in scan.worktrees))
@@ -756,12 +712,6 @@ async def _apply(
             workers=options.workers,
         )
         oks.append(cache_outcome.ok)
-    if _Domain.FOREIGN_CLONES in domains:
-        assert context is not None
-        if options.delete_foreign_clones:
-            oks.append((await _apply_foreign_clone_deletions(context, options.output_user_root, session_bases)).ok)
-        elif any(isinstance(i, PrunableForeignClone) for i in scan.foreign_clones):
-            print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
     return all(oks)
 
 
@@ -787,14 +737,9 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
 
     _print_findings(command, options, findings)
     multiple = len(domains) > 1
-    foreign_prunable = _Domain.FOREIGN_CLONES in domains and any(
-        isinstance(i, PrunableForeignClone) for i in findings.scan.foreign_clones
-    )
     if not options.apply:
         if _any_prunable(command, findings):
             print(f"{'\n' if multiple else ''}{command.dry_run_hint}")
-        if foreign_prunable:
-            print("Foreign clones are prunable too; pass --prune --delete-foreign-clones to remove them.")
         return
 
     if multiple:
@@ -816,7 +761,7 @@ _WorkersOption = Annotated[
     typer.Option(
         "--workers",
         min=1,
-        help="worker threads for worktree/branch/foreign-clone classification and for removing worktrees, output bases, repo-cache entries and foreign clones (the right count depends on the machine and disk)",
+        help="worker threads for worktree/branch/foreign-clone classification and for removing worktrees, output bases, and repo-cache entries",
     ),
 ]
 
@@ -841,13 +786,6 @@ def _all_command(
         bool,
         typer.Option("--prune", help="remove all prunable worktrees, branches, output bases, and repo-cache entries"),
     ] = False,
-    delete_foreign_clones: Annotated[
-        bool,
-        typer.Option(
-            "--delete-foreign-clones",
-            help="with --prune, also rmtree prunable foreign clones (bigger blast radius: an independent git object store, not a linked worktree)",
-        ),
-    ] = False,
 ) -> None:
     """Classify worktrees, branches, and output bases together (the default command)."""
     _configure_logging(verbose=verbose)
@@ -858,7 +796,6 @@ def _all_command(
         verbose=verbose,
         workers=workers,
         apply=prune,
-        delete_foreign_clones=delete_foreign_clones,
     )
     asyncio.run(run(_ALL_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -881,7 +818,6 @@ def _worktrees_command(
         verbose=False,
         workers=workers,
         apply=prune,
-        delete_foreign_clones=False,
     )
     asyncio.run(run(_WORKTREES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -906,7 +842,6 @@ def _bases_command(
         verbose=False,
         workers=workers,
         apply=delete,
-        delete_foreign_clones=False,
     )
     asyncio.run(run(_BASES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -933,7 +868,6 @@ def _repo_cache_command(
         verbose=verbose,
         workers=workers,
         apply=delete,
-        delete_foreign_clones=False,
     )
     asyncio.run(run(_REPO_CACHE_COMMAND, options, repo=None, pr_source=_without_prs))
 
@@ -961,8 +895,21 @@ def main(argv: list[str] | None = None) -> None:
     # handler only cancels the main task, which cannot take effect while a scan blocks the loop
     # thread, so Ctrl+C would need a second press. This one interrupts immediately.
     signal.signal(signal.SIGINT, _raise_keyboard_interrupt)
+    arguments = sys.argv[1:] if argv is None else argv
+    rejects_foreign_clone_deletion = any(
+        argument == "--delete-foreign-clones" or argument.startswith("--delete-foreign-clones=")
+        for argument in arguments
+    )
+    if rejects_foreign_clone_deletion:
+        print(
+            "workspace-gc: --delete-foreign-clones is no longer supported: it could recursively delete an "
+            "independent Git repository whose refs and other data are not covered by the worktree scan; "
+            "foreign clones are report-only.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     try:
-        app(args=_with_default_command(sys.argv[1:] if argv is None else argv))
+        app(args=_with_default_command(arguments))
     except git_repo.INSPECTION_ERRORS as error:
         print(f"workspace-gc: {type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(1) from error

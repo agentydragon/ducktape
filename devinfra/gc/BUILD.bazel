@@ -40,7 +40,6 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
-        ":removal",
         ":verdict",
         "@pypi//pygit2",
     ],
@@ -248,7 +247,6 @@ py_test(
         ":conftest",
         ":foreign_clone_gc",
         ":pull_request",
-        ":removal",
         ":worktree_gc",
         "//:conftest",
         "@pypi//pygit2",
