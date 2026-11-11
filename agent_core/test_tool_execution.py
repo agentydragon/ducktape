@@ -124,7 +124,7 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
         yield m.assistant_text("Successfully sent message")
 
     async with Client(validation_server) as client:
-        agent = await Agent.create(
+        agent = Agent(
             tool_provider=MCPToolProvider(client),
             client=mock,
             handlers=[FinishOnTextMessageHandler(), recording_handler],
@@ -179,7 +179,7 @@ async def test_parallel_tool_calls_run_concurrently(rendezvous_server, recording
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
     async with Client(rendezvous_server) as client:
-        agent = await Agent.create(
+        agent = Agent(
             tool_provider=MCPToolProvider(client),
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
             parallel_tool_calls=True,
@@ -211,7 +211,7 @@ async def _run_malformed_json_test(
         return factory.make_assistant_message("I received an error")
 
     client = make_mock(handle_request)
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=client,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
