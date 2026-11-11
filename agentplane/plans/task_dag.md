@@ -3714,6 +3714,24 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
+- **`SAMPLER_TURN_RECONCILIATION`** (operator, 2026-11-11): the central sampler drives a turn as one
+  long-running loop under a single `turn_timeout_seconds` context (3600 on staging,
+  `runtime.go` `execute`). Thread `0702a8cc` hit it at exactly 3600 s on 2026-11-11: the deadline
+  cancelled a statement mid-sample (`pq: canceling statement due to user request`), the sampling
+  intent kept no result, and the Session blocked on an "unresolved outcome" needing manual
+  recovery. A slow local model can legitimately run one turn for hours. Direction: replace the loop
+  with a reconciliation loop over durable state. Each step reads the conversation, its pending
+  intent and live executor state, performs the next step (sample, run a tool call, settle a result)
+  and persists it, so a restart or lease handoff mid-turn resumes at the next step with nothing
+  lost. Liveness comes from progress, not a turn deadline: connect and stream-idle timeouts on
+  provider calls, the tools' own limits, and short per-statement database timeouts independent of
+  any turn. An optional per-Session or per-model turn budget, if wanted, ends the turn cleanly at a
+  step boundary with an ordinary result. A sampling or compaction intent cancelled before its
+  result is stored has no external effects beyond cost: record it abandoned and continue, never
+  block the Session on it (the unknown-effect block is for executor intents). Failure settlement
+  runs on a context that is not already cancelled. **Exit:** a decided design and the PRs it
+  implies; a test where a turn outlives any former timeout and survives a sampler restart
+  mid-sample.
 - **`SAMPLER_STABLE_PROVIDER_PREFIX`**: a sampler rollout must not break the request prefix an
   existing conversation already sent. #15591 edited the `write_stdin` schema text inside the
   sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The
