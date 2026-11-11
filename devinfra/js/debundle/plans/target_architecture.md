@@ -320,7 +320,7 @@ replay of the canonical inputs in gaffer-private.
     remainder (no accepted-divergent shape found yet); `super` does not mark
     a method as reading `this`.
   - Prototype chains built by `Object.create` or `Object.setPrototypeOf`; only
-    a literal `__proto__` makes an object's accessors unknown.
+    a literal `__proto__` chain is followed for accessors.
   - The kernel lane's own `for`-`of` and destructuring over non-native values
     are unaudited.
   - Precision gaps, all refused: `({ ...gen() })`; an `Object.assign` copy of

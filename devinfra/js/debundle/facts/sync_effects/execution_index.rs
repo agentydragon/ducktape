@@ -6234,15 +6234,16 @@ pub(super) struct ExecutionIndex {
     pub(super) class_spans: BTreeMap<u32, Span>,
     /// The `extends` expression of each class that has one.
     pub(super) class_heritage_spans: BTreeMap<u32, Span>,
-    /// Object literals with a getter or setter that reads `this`, or whose
-    /// `__proto__` may supply one: a member read or write that may run it
-    /// hands it the receiver.
+    /// Object literals with a getter or setter that reads `this`: a member
+    /// read or write that may run it hands it the receiver.
     pub(super) this_reading_accessor_objects: BTreeSet<u32>,
-    /// Object literals with a non-null `__proto__`, until merged above.
-    unknown_prototype_objects: BTreeSet<u32>,
+    /// The non-null `__proto__` expression of each object literal with one.
+    pub(super) literal_prototypes: BTreeMap<u32, ValueExpr>,
     /// Constructors, methods and accessors of every class: they run as class
     /// members, not as values the class body creates.
     pub(super) class_member_callables: BTreeSet<u32>,
+    /// The constructors among `class_member_callables`.
+    pub(super) class_constructors: BTreeSet<u32>,
     /// Per class, the spans that run at construction or class creation and
     /// can store values on the instance or the class: the constructor,
     /// field initializers and static blocks.
@@ -6506,12 +6507,13 @@ impl Default for ExecutionIndex {
             class_spans: BTreeMap::new(),
             class_heritage_spans: BTreeMap::new(),
             class_member_callables: BTreeSet::new(),
+            class_constructors: BTreeSet::new(),
             class_store_regions: BTreeMap::new(),
             class_accessors: BTreeMap::new(),
             this_reading_accessor_classes: BTreeSet::new(),
             top_destructuring_member_receivers: Vec::new(),
             this_reading_accessor_objects: BTreeSet::new(),
-            unknown_prototype_objects: BTreeSet::new(),
+            literal_prototypes: BTreeMap::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
@@ -11126,9 +11128,6 @@ impl ExecutionIndex {
                 _ => None,
             })
             .collect();
-        index
-            .this_reading_accessor_objects
-            .extend(std::mem::take(&mut index.unknown_prototype_objects));
         index.this_reading_accessor_classes = index
             .class_accessors
             .iter()
@@ -12092,6 +12091,11 @@ impl Visit for ExecutionIndex {
         }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_spans.insert(class.span.lo.0, class.span);
+        self.class_constructors
+            .extend(class.body.iter().filter_map(|member| match member {
+                ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
+                _ => None,
+            }));
         self.class_member_callables
             .extend(class.body.iter().filter_map(|member| match member {
                 ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
@@ -12275,12 +12279,20 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
-        if object.props.iter().any(|property| {
-            matches!(property, PropOrSpread::Prop(property) if matches!(property.as_ref(),
-                Prop::KeyValue(pair) if static_property_name(&pair.key).as_deref() == Some("__proto__")
-                    && !matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_)))))
+        if let Some(prototype) = object.props.iter().find_map(|property| match property {
+            PropOrSpread::Prop(property) => match property.as_ref() {
+                Prop::KeyValue(pair)
+                    if matches!(pair.key, PropName::Ident(_) | PropName::Str(_))
+                        && static_property_name(&pair.key).as_deref() == Some("__proto__")
+                        && !matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                {
+                    Some(ValueExpr::from_expr(&pair.value))
+                }
+                _ => None,
+            },
+            _ => None,
         }) {
-            self.unknown_prototype_objects.insert(object.span.lo.0);
+            self.literal_prototypes.insert(object.span.lo.0, prototype);
         }
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);

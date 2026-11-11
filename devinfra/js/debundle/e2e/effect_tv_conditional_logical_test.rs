@@ -1768,3 +1768,111 @@ fn chain_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 
         ),
     ]
 }
+
+/// An escaped or unknown instance exposes its class chain's methods: unknown
+/// code holding it can call them, and `k.m` reads them as values. Each
+/// install reads a generator method (own, inherited, from a class factory,
+/// beside a refused constructor, or under a computed key) or a value a
+/// method returned to the constructor.
+#[test]
+fn an_iterator_reached_through_a_class_method_runs_where_the_protocol_finds_it() {
+    for (install, extra) in method_iterator_installs("second") {
+        for flag in ITERATING_FLAGS {
+            assert_reader_split_diverges_with(&format!("{install}\n{flag}"), extra);
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same installs of a generator
+/// calling the effect-free `first` keep the split.
+#[test]
+fn an_iterator_reached_through_a_class_method_without_effects_keeps_the_split() {
+    for (install, extra) in method_iterator_installs("first") {
+        let fixture = with_reader_split(
+            &format!("{install}\n{}", ITERATING_FLAGS[0]),
+            extra,
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// Iterating an instance runs its class's own iterator method, with no
+/// prototype install.
+#[test]
+fn iterating_an_instance_runs_its_class_iterator_method() {
+    for run in [
+        "function run() { if (first()) {} flag(); return 0; }",
+        "function run() { return flag()(); }",
+    ] {
+        assert_reader_split_diverges_with(
+            &format!(
+                "class K {{ *[Symbol.iterator]() {{ second(); }} }}\nconst k = new K();\nfunction flag() {{ if (first()) {{}} for (const x of k) {{}} return noop; }}\n{run}"
+            ),
+            &["K", "k"],
+        );
+    }
+}
+
+/// A read or write through a `__proto__` literal whose chain has no
+/// accessor reading `this` keeps the split, although another binding holds
+/// an uncalled effect.
+#[test]
+fn a_prototype_literal_without_a_this_reading_accessor_keeps_the_split() {
+    for definitions in [
+        "const handlers = { onClick: second };\nconst base = { kind: 'b' };\nconst o = { __proto__: base, n: 1 };\nfunction flag() { o.kind; o.n = 2; return noop; }\nfunction run() { flag(); return 0; }",
+        "const handlers = { onClick: second };\nconst base = { get kind() { return 'b'; } };\nconst o = { __proto__: base, n: 1 };\nfunction flag() { o.kind; return noop; }\nfunction run() { flag(); return 0; }",
+    ] {
+        let fixture = with_reader_split(definitions, &["handlers", "base", "o"], run_fixture);
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+fn method_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 7] {
+    let k_it = "Object.defineProperty(String.prototype, Symbol.iterator, { value: k.it })";
+    let named = format!("function* it() {{ {callee}(); }}");
+    [
+        (
+            format!(
+                "{named}\nclass B {{ gen() {{ return it; }} }}\nclass K extends B {{ constructor() {{ super(); this.it = super.gen(); }} }}\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["it", "B", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "{named}\nclass K {{ static gen() {{ return it; }} constructor() {{ this.it = this.constructor.gen(); }} }}\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["it", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "class B {{ *it() {{ {callee}(); }} }}\nclass K extends B {{}}\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["B", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "function mkK() {{ return class {{ *it() {{ {callee}(); }} }}; }}\nconst K = mkK();\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["mkK", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ constructor() {{ this.n = JSON.parse('1'); }} *it() {{ {callee}(); }} }}\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "class B {{ constructor() {{ this.n = JSON.parse('1'); }} }}\nclass K extends B {{ *it() {{ {callee}(); }} }}\nconst k = new K();\nconst patched = {k_it};"
+            ),
+            &["B", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ *[Symbol.iterator]() {{ {callee}(); }} }}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k[Symbol.iterator] }});"
+            ),
+            &["K", "k", "patched"][..],
+        ),
+    ]
+}
