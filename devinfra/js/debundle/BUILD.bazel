@@ -55,6 +55,13 @@ rust_library(
 )
 
 rust_library(
+    name = "analysis_thread",
+    srcs = ["analysis_thread.rs"],
+    edition = "2024",
+    deps = ["@crates//:swc_common"],
+)
+
+rust_library(
     name = "report_io",
     srcs = ["report_io.rs"],
     edition = "2024",
@@ -1817,9 +1824,9 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":analysis_identity",
+        ":analysis_thread",
         ":analyze_command",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
@@ -1830,10 +1837,10 @@ rust_binary(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        ":analysis_thread",
         ":transform_command",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
@@ -1845,10 +1852,10 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":analysis_identity",
+        ":analysis_thread",
         ":cli",
         ":gate",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
@@ -1865,10 +1872,10 @@ rust_binary(
     visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
     deps = [
         ":analysis_identity",
+        ":analysis_thread",
         ":cli",
         ":gate",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
