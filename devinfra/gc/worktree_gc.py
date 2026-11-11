@@ -293,8 +293,15 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     left intact — its work stays reachable through it (branch GC is a separate step). Use
     `remove_if_still_prunable` unless the caller has just classified `path` itself. A file or
     detached commit created after inspection but before Git removes the directory remains a
-    race this interface cannot make atomic.
+    race this interface cannot make atomic. If the directory is already missing, skip removal
+    and leave stale worktree metadata for separate, reviewed `git worktree prune`.
     """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return Skipped(path, "worktree directory is missing; review and prune its stale Git metadata separately")
+    except OSError as error:
+        return Failed(path, f"cannot inspect worktree directory before removal: {error}")
     try:
         if _ignored_paths(path):
             return Skipped(path, "ignored files or directories would be deleted")
@@ -323,14 +330,16 @@ def remove_if_still_prunable(
 ) -> RemovalResult[Path]:
     """Re-classify `worktree` now and remove it only if it is still prunable.
 
-    The scan that found it may be seconds old: a process may have entered the tree, a commit
-    landed on a detached HEAD, or ignored data may have appeared. The direct removal helper
-    checks ignored paths and the current HEAD again immediately before invoking Git, though
-    those checks are not atomic with the removal.
+    The scan that found it may be seconds old: a process may have entered the tree, the branch
+    may have changed, a commit landed on a detached HEAD, or ignored data may have appeared.
+    The direct removal helper checks ignored paths and the current HEAD again immediately
+    before invoking Git, though those checks are not atomic with the removal.
     """
     fresh = classify_worktree(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
     )
+    if fresh.worktree.branch != worktree.branch:
+        return Skipped(worktree.path, "checked-out branch changed since the scan")
     if not isinstance(fresh, PrunableWorktree):
         return Skipped(worktree.path, describe_reason(fresh))
     return remove_worktree(repo, worktree.path)

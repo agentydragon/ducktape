@@ -332,6 +332,17 @@ def test_remove_worktree_fails_on_dirty_tree(repo: GitRepo) -> None:
     assert wt.path.exists()
 
 
+def test_remove_worktree_skips_missing_directory_for_git_worktree_prune(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    shutil.rmtree(wt.path)
+
+    result = wg.remove_worktree(repo.path, wt.path)
+
+    assert isinstance(result, Skipped)
+    assert "prune its stale Git metadata separately" in result.reason
+    assert any(item.path == wt.path for item in git_repo.list_worktrees(repo.path))
+
+
 def test_remove_worktree_skips_ignored_file_for_direct_call(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     _ignore_in_repo(repo, ".env")
@@ -393,6 +404,27 @@ def test_remove_if_still_prunable_skips_when_worktree_detaches_after_scan(repo: 
     assert isinstance(result, Skipped)
     assert wt.path.exists()
     assert wt.rev("HEAD") == detached_head
+
+
+def test_remove_if_still_prunable_skips_when_branch_changes_after_scan(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    worktree = Worktree(wt.path, "feature")
+    pr_states = {"feature": PrInfo(13, PrState.MERGED)}
+    assert isinstance(
+        wg.classify_worktree(
+            worktree, main="main", pr_states=pr_states, main_path=repo.path, active_path=None, live_pids=[]
+        ),
+        wg.PrunableWorktree,
+    )
+    wt.run("switch", "-c", "new-open-pr")
+
+    result = wg.remove_if_still_prunable(
+        repo.path, worktree, main="main", pr_states=pr_states, main_path=repo.path, active_path=None, live_pids=[]
+    )
+
+    assert isinstance(result, Skipped)
+    assert "branch changed" in result.reason
+    assert wt.path.exists()
 
 
 def test_remove_if_still_prunable_skips_a_tree_a_process_entered_since_the_scan(repo: GitRepo) -> None:
