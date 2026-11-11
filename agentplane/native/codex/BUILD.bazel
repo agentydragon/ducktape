@@ -289,7 +289,6 @@ py_test(
     ],
     deps = [
         ":conftest",
-        ":driver",
         ":scenarios",
         ":wire",
         "//:conftest",
@@ -364,8 +363,8 @@ py_test(
     ],
     deps = [
         ":conftest",
-        ":driver",
         ":scenarios",
+        ":wire",
         "//:conftest",
         "//agentplane/native:conftest",
         "//agentplane/native/codex/testing:harness",
