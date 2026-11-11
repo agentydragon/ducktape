@@ -1,48 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_ids import make_worktree_id
-from x.wt.server.worktree_index import WorktreeIndex
-
-
-class WorktreeIndexService:
-    def __init__(
-        self, *, get_index: Callable[[], WorktreeIndex | None], run_discovery_once: Callable[[], Awaitable[object]]
-    ) -> None:
-        self._get_index = get_index
-        self._run_discovery_once = run_discovery_once
-
-    async def ensure_discovery(self) -> None:
-        await self._run_discovery_once()
-
-    def list_paths(self) -> list[Path]:
-        idx = self._get_index()
-        if not idx:
-            return []
-        return list(idx.by_path)
-
-    def get_by_name(self, name: str) -> DiscoveredWorktree | None:
-        idx = self._get_index()
-        if not idx:
-            return None
-        return idx.by_name.get(name)
-
-    def resolve_target(self, name: str | None, current_path: Path):
-        idx = self._get_index()
-        if not idx:
-            return None
-        return idx.resolve_target(name, current_path)
-
-    def main(self) -> DiscoveredWorktree | None:
-        idx = self._get_index()
-        if not idx:
-            return None
-        return idx.main
 
 
 async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:

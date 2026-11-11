@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from x.wt.server.rpc import RpcError, ServiceDependencies, rpc
-from x.wt.server.services import WorktreeIndexService
+from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from x.wt.shared.protocol import (
     ErrorCodes,
@@ -15,9 +15,9 @@ from x.wt.shared.protocol import (
 )
 
 
-def _find_target_worktree(index: WorktreeIndexService, worktree_name: str | None, current_path: Path):
-    if worktree_name == MAIN_WORKTREE_DISPLAY_NAME and index.main():
-        return index.main(), None
+def _find_target_worktree(index: WorktreeIndex, worktree_name: str | None, current_path: Path):
+    if worktree_name == MAIN_WORKTREE_DISPLAY_NAME and index.main:
+        return index.main, None
     resolved = index.resolve_target(worktree_name, current_path)
     if not resolved:
         raise RpcError(
@@ -72,7 +72,7 @@ async def handle_teleport_target(
     index = deps.index
     current_path = params.current_path
     target_wt = (
-        index.main() if params.target_name == MAIN_WORKTREE_DISPLAY_NAME else index.get_by_name(params.target_name)
+        index.main if params.target_name == MAIN_WORKTREE_DISPLAY_NAME else index.by_name.get(params.target_name)
     )
     if not target_wt:
         return TeleportDoesNotExist(type="does_not_exist", name=params.target_name)

@@ -97,6 +97,7 @@ py_library(
         ":github_watcher",
         ":gitstatusd_listener",
         ":services",
+        ":worktree_index",
         ":worktree_service",
         "//x/wt/shared:configuration",
         "//x/wt/shared:protocol",
@@ -110,7 +111,6 @@ py_library(
     deps = [
         ":types",
         ":worktree_ids",
-        ":worktree_index",
     ],
 )
 

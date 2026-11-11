@@ -196,11 +196,11 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
             worktree_path = config.worktrees_dir / worktree_name
             worktree_paths.append(worktree_path)
     else:
-        if not index.list_paths():
+        if not index.by_path:
             logger.debug("Index empty; scheduling discovery run")
-            t = asyncio.create_task(index.ensure_discovery())
+            t = asyncio.create_task(deps.run_discovery_once())
             t.add_done_callback(_log_task_exception)
-        worktree_paths = index.list_paths()
+        worktree_paths = list(index.by_path)
         if not worktree_paths:
             worktree_paths = [config.main_repo]
 

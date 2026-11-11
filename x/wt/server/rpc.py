@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, overload
@@ -13,7 +13,8 @@ from x.wt.server.git_manager import GitManager
 from x.wt.server.git_refs_watcher import GitRefsWatcher
 from x.wt.server.github_watcher import GitHubWatcher
 from x.wt.server.gitstatusd_listener import GitstatusdListener
-from x.wt.server.services import WorktreeCoordinator, WorktreeIndexService
+from x.wt.server.services import WorktreeCoordinator
+from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
@@ -44,7 +45,8 @@ class RpcError(Exception):
 class ServiceDependencies:
     config: Configuration
     git_manager: GitManager
-    index: WorktreeIndexService
+    index: WorktreeIndex
+    run_discovery_once: Callable[[], Coroutine[Any, Any, None]]
     gitstatusd_client: Callable[[Path], GitstatusdListener | None]
     github_watcher: GitHubWatcher | None
     git_refs_watcher: GitRefsWatcher

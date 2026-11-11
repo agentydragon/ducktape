@@ -34,7 +34,7 @@ from x.wt.server.handlers import (
     worktree_handler,  # noqa: F401
 )
 from x.wt.server.rpc import ServiceDependencies, rpc
-from x.wt.server.services import WorktreeIndexService, scan_worktrees
+from x.wt.server.services import scan_worktrees
 from x.wt.server.stores import DaemonStore
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.watcher import start_watcher
@@ -131,7 +131,7 @@ class WtDaemon:
         self._worktree_observer = None  # Filesystem watcher for worktrees dir
 
         # Managed state
-        self.worktree_index: WorktreeIndex | None = None
+        self.worktree_index = WorktreeIndex(by_path={}, by_name={}, main=None)
         self.gitstatusd_clients: dict[WorktreeID, GitstatusdListener] = {}
         self.git_watchers: dict[WorktreeID, DebouncedGitstatusRefresh] = {}
 
@@ -147,11 +147,6 @@ class WtDaemon:
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
         # Centralized git refs watcher for cached ahead/behind (created here, started in start())
         self.git_refs_watcher = GitRefsWatcher(store=self.store, git_manager=self.git_manager, config=self.config)
-        # Build DI services
-        self.index_service = WorktreeIndexService(
-            get_index=lambda: self.worktree_index, run_discovery_once=self._run_discovery_once
-        )
-
         # WtDaemon implements WorktreeCoordinator protocol directly
 
         # Server state
@@ -164,9 +159,6 @@ class WtDaemon:
 
         # Ensure daemon directory exists
         self.config.wt_dir.mkdir(exist_ok=True)
-
-        # Defer initial discovery to start() to avoid running async in __init__
-        self.worktree_index = None
 
         self._method_handlers = rpc
         with contextlib.suppress(Exception):
@@ -302,7 +294,8 @@ class WtDaemon:
             deps = ServiceDependencies(
                 config=self.config,
                 git_manager=self.git_manager,
-                index=self.index_service,
+                index=self.worktree_index,
+                run_discovery_once=self._run_discovery_once,
                 gitstatusd_client=lambda p: (
                     self.gitstatusd_clients.get(wt.wtid) if (wt := self.known_worktrees.get(p)) else None
                 ),
