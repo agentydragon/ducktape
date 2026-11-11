@@ -1,6 +1,7 @@
 import { Badge, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import Decimal from "decimal.js";
+import { formatCalendarDate, formatLocalTimestamp } from "../../../../personal_dashboard/presentation.js";
 
 import type { AllowancePeriodId } from "./types";
 
@@ -52,15 +53,11 @@ export function Money({ value, currency }: { value: number | null | undefined; c
 }
 
 export function time(value: string | null | undefined, now = new Date()): string {
-  if (!value || Number.isNaN(new Date(value).getTime())) return "Unknown";
-  const date = new Date(value);
-  const label = date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
-  });
-  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  return Math.abs(date.getTime() - now.getTime()) <= 14 * 86400_000 ? `${label}, ${clock}` : label;
+  return formatLocalTimestamp(value, now) ?? "Unknown";
+}
+
+export function calendarDate(value: string, now = new Date()): string {
+  return formatCalendarDate(value, now) ?? value;
 }
 
 export type Signal = "normal" | "warning" | "exceeded";

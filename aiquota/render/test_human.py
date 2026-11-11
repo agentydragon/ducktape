@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
@@ -9,11 +10,13 @@ from python.runfiles import Runfiles
 from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.peak_windows import PeakInterval
 from aiquota.render import human
 from aiquota.render.format import (
     extra_spend_has_hidden_fraction,
     format_deadline,
     format_extra_spend,
+    format_peak_interval,
     format_reset_credit_summary,
     format_summary_minor_currency,
     format_summary_usd,
@@ -239,6 +242,24 @@ def test_near_exhausted_usage_does_not_round_up_to_full_quota() -> None:
 def test_deadline_uses_local_time_and_date_only_after_two_weeks(when: datetime, expected: str) -> None:
     assert format_deadline(when, _NOW, UTC) == expected
     assert format_deadline(when, _NOW, UTC, details=True) == when.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def test_shared_date_vectors_match_browser_formatters(runfiles: Runfiles) -> None:
+    vectors = json.loads(
+        (runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text()
+    )
+    zone = ZoneInfo(vectors["timeZone"])
+    for vector in vectors["instants"]:
+        now = datetime.fromisoformat(vector["now"])
+        when = datetime.fromisoformat(vector["value"])
+        assert format_deadline(when, now, zone) == vector["expected"], vector["name"]
+
+    for vector in vectors["peakIntervals"]:
+        interval = PeakInterval(
+            start=datetime.fromisoformat(vector["start"]),
+            end=datetime.fromisoformat(vector["end"]),
+        )
+        assert format_peak_interval(interval, zone) == vector["expected"]
 
 
 def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_details() -> None:

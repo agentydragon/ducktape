@@ -19,7 +19,7 @@ import {
 
 import type { SustainabilityDashboard, SustainabilityView } from "./schema";
 import { monthlySpendingMinorUnits, percentagePointDifference } from "./decimal_math";
-import { money, time } from "./spend_display";
+import { calendarDate, money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
 import type { SustainabilityPortfolio, SustainabilitySource } from "./types";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
@@ -795,8 +795,8 @@ export function SustainabilityPage() {
                     </Badge>
                   </Group>
                   <Text size="sm" c="dimmed">
-                    {view.covered_days} of {view.window_days} days covered · {view.period_start} through{" "}
-                    {view.period_end} (complete days, {view.time_zone})
+                    {view.covered_days} of {view.window_days} days covered · {calendarDate(view.period_start)} through{" "}
+                    {calendarDate(view.period_end)} (complete days, {view.time_zone})
                   </Text>
                   {view.status === "unavailable" && (
                     <Alert

@@ -351,11 +351,12 @@ py_test(
 
 py_package(
     name = "aiquota_pkg",
-    packages = ["aiquota"],
+    packages = ["aiquota", "personal_dashboard"],
     visibility = ["//visibility:public"],
     deps = [
         ":cli_lib",
         ":desktop_lib",
+        "//personal_dashboard:date_format",
     ],
 )
 

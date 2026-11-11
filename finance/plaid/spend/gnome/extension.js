@@ -8,6 +8,7 @@ import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
+import { formatCalendarDate, formatLocalTimestamp } from "./personal_dashboard/presentation.js";
 
 const BUS_NAME = "works.allegedly.PlaidSpend";
 const OBJECT_PATH = "/works/allegedly/PlaidSpend";
@@ -131,16 +132,7 @@ function needsExactMoneyDetail(minorUnits, currency) {
 }
 
 function formatTimestamp(value, now = new Date()) {
-  if (!value) return "Unknown";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  const label = date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
-  });
-  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  return Math.abs(date.getTime() - now.getTime()) <= 14 * 86400_000 ? `${label}, ${clock}` : label;
+  return formatLocalTimestamp(value, now) ?? "Unknown";
 }
 
 function cardTitle(card) {
@@ -1013,9 +1005,9 @@ const PlaidSpendIndicator = GObject.registerClass(
           );
           const cycle =
             card.statement_period?.kind === "statement"
-              ? `Cycle starts ${card.statement_period.start}`
+              ? `Cycle starts ${formatCalendarDate(card.statement_period.start) ?? card.statement_period.start}`
               : card.statement_period?.kind === "provisional"
-                ? `Since first recorded transaction ${card.statement_period.start} · statement date unavailable`
+                ? `Since first recorded transaction ${formatCalendarDate(card.statement_period.start) ?? card.statement_period.start} · statement date unavailable`
                 : "Statement cycle unavailable";
           this._addReadOnly(cycle);
           this._addReadOnly(cardAlert(card));

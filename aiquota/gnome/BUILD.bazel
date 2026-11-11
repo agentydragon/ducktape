@@ -22,12 +22,19 @@ pkg_files(
     visibility = ["//visibility:public"],
 )
 
-# The extension loads this shared implementation relative to extension.js. Keep
-# the module beside it in the packaged extension while the source lives in the
-# platform-neutral aiquota/shared package.
+# Preserve the source-relative import layout in the packaged extension so the
+# platform-neutral AIQuota and date helpers resolve in GNOME Shell.
 pkg_files(
     name = "shared_presentation_file",
     srcs = ["//aiquota/shared:presentation.js"],
+    prefix = "aiquota/shared",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "common_date_presentation_file",
+    srcs = ["//personal_dashboard:presentation.js"],
+    prefix = "personal_dashboard",
     strip_prefix = strip_prefix.files_only(),
 )
 
@@ -39,6 +46,7 @@ pkg_files(
 pkg_zip(
     name = "aiquota_zip",
     srcs = [
+        ":common_date_presentation_file",
         ":extension_files",
         ":shared_presentation_file",
     ],

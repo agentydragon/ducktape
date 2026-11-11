@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { money, signalText, time } from "./spend_display";
+import dateVectors from "../../../../personal_dashboard/date_presentation_vectors.json";
+import { calendarDate, money, signalText, time } from "./spend_display";
 
 describe("summary money", () => {
   it.each([
@@ -56,6 +57,29 @@ describe("summary timestamps", () => {
     expect(time(distant.toISOString(), now)).toBe("Jan 3, 2027");
     expect(time(new Date(2026, 11, 19, 12).toISOString(), now)).toBe("Dec 19, 12:00");
     expect(time("not a date", now)).toBe("Unknown");
+  });
+
+  it("matches the shared viewer-timezone instant vectors", () => {
+    vi.stubEnv("TZ", dateVectors.timeZone);
+    try {
+      for (const vector of dateVectors.instants) {
+        expect(time(vector.value, new Date(vector.now)), vector.name).toBe(vector.expected);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("formats calendar dates without moving them through a timezone", () => {
+    vi.stubEnv("TZ", dateVectors.timeZone);
+    try {
+      for (const vector of dateVectors.calendarDates) {
+        expect(calendarDate(vector.value, new Date(vector.now)), vector.name).toBe(vector.expected);
+      }
+      expect(calendarDate("2026-02-30")).toBe("2026-02-30");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

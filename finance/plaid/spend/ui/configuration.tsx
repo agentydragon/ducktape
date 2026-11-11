@@ -1,7 +1,7 @@
 import { Alert, Badge, Box, Card, Divider, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 
 import type { SpendConfigurationView } from "./schema";
-import { Metric, Money, periodLabels } from "./spend_display";
+import { calendarDate, Metric, Money, periodLabels } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay, rulesFootnote } from "./rule_display";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
@@ -58,7 +58,7 @@ export function ConfigurationPage({
                     label="MONTHLY ALLOWANCE"
                     value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
                   />
-                  <Metric label="START DATE" value={allowance.activation_at} />
+                  <Metric label="START DATE" value={calendarDate(allowance.activation_at)} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
                   <Metric label="DEFAULT ESTIMATE WINDOW" value={periodLabels[allowance.forecast_basis_period_id]} />

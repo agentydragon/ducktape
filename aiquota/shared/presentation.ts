@@ -1,3 +1,9 @@
+import {
+  formatLocalClock,
+  formatLocalTimestamp,
+  formatPeakInterval as sharedFormatPeakInterval,
+} from "../../personal_dashboard/presentation.js";
+
 export type Tint = "cool" | "ok" | "warn" | "hot" | "unknown" | "stale";
 
 export function roundHalfToEven(value: number): number {
@@ -34,38 +40,14 @@ export function formatPrepaidBalance(amountMinor: number, exponent: number, curr
   return currency === "USD" ? `${sign}$${value}` : `${sign}${value} ${currency}`;
 }
 
-export function formatClock(instant: Date): string {
-  return instant.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-}
+export { formatLocalClock as formatClock };
 
 export function formatPeakInterval(interval: { start: string; end: string }): string {
-  const start = new Date(interval.start);
-  const weekday = start.toLocaleDateString("en-US", { weekday: "short" });
-  return `${weekday} ${formatClock(start)}-${formatClock(new Date(interval.end))}`;
+  return sharedFormatPeakInterval(interval);
 }
 
-const DEADLINE_DATE_ONLY_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
-
 export function formatDeadline(expiry: string | Date, now: Date, details = false): string | null {
-  const date = expiry instanceof Date ? expiry : new Date(expiry);
-  if (Number.isNaN(date.getTime())) return null;
-  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  if (details) {
-    const zone =
-      new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
-        .formatToParts(date)
-        .find((part) => part.type === "timeZoneName")?.value ?? "";
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day} ${clock} ${zone}`;
-  }
-  const label = date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
-  });
-  return Math.abs(date.getTime() - now.getTime()) > DEADLINE_DATE_ONLY_AFTER_MS ? label : `${label}, ${clock}`;
+  return formatLocalTimestamp(expiry, now, details);
 }
 
 // Keep the default visibility rule in sync with render/view_model.py.

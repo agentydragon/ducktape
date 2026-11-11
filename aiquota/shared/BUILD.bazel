@@ -13,4 +13,5 @@ ts_library(
     srcs = ["presentation.ts"],
     isolated_typecheck = True,
     tsconfig = ":tsconfig",
+    deps = ["//personal_dashboard:presentation"],
 )

@@ -7,7 +7,7 @@ import asyncio
 import json
 import os
 import sys
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -21,6 +21,7 @@ from sparklines import sparklines
 from finance.plaid.spend.allowance import AllowanceView, Status
 from finance.plaid.spend.models import CardView, SpendView
 from finance.plaid.spend.pace_history_models import PaceHistory
+from personal_dashboard.date_format import format_calendar_date, format_instant
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
@@ -110,16 +111,7 @@ def _card_title(card: CardView) -> str:
 
 
 def _format_timestamp(value: datetime | None, *, now: datetime | None = None, tz: tzinfo | None = None) -> str:
-    if value is None:
-        return "unknown"
-    current = (now or datetime.now().astimezone()).astimezone(tz)
-    local = value.astimezone(tz)
-    label = local.strftime("%b %-d")
-    if local.year != current.year:
-        label += local.strftime(", %Y")
-    if abs(local.astimezone(UTC) - current.astimezone(UTC)) <= timedelta(days=14):
-        label += local.strftime(", %H:%M")
-    return label
+    return format_instant(value, now=now, tz=tz) or "unknown"
 
 
 def _format_allowance(allowance: AllowanceView) -> str:
@@ -203,10 +195,10 @@ def _format_view(view: SpendView, status: str, last_error: str) -> str:
         currency = card.currency
         lines.extend(["", _card_title(card)])
         if card.statement_period.kind == "statement":
-            lines.append(f"  Statement cycle starts: {card.statement_period.start.isoformat()}")
+            lines.append(f"  Statement cycle starts: {format_calendar_date(card.statement_period.start)}")
         elif card.statement_period.kind == "provisional":
             lines.append(
-                f"  Since first recorded transaction: {card.statement_period.start.isoformat()} (statement date unavailable)"
+                f"  Since first recorded transaction: {format_calendar_date(card.statement_period.start)} (statement date unavailable)"
             )
         else:
             lines.append("  Statement cycle: unavailable")

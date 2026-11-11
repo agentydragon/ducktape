@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
+from personal_dashboard.date_format import format_calendar_date
+from python.runfiles import Runfiles
 
 from finance.plaid.spend.allowance import (
     AllowanceSpendPeriod,
@@ -377,6 +379,22 @@ def test_timestamp_cutoff_is_elapsed_time_across_dst() -> None:
     now = datetime(2026, 3, 1, 20, tzinfo=UTC)
     assert _format_timestamp(now + timedelta(days=14), now=now, tz=zone) == "Mar 15, 13:00"
     assert _format_timestamp(now + timedelta(days=14, seconds=1), now=now, tz=zone) == "Mar 15"
+
+
+def test_shared_date_vectors_match_aiquota_and_javascript(runfiles: Runfiles) -> None:
+    vectors = json.loads(
+        (runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text()
+    )
+    zone = ZoneInfo(vectors["timeZone"])
+    for vector in vectors["instants"]:
+        now = datetime.fromisoformat(vector["now"])
+        when = datetime.fromisoformat(vector["value"])
+        assert _format_timestamp(when, now=now, tz=zone) == vector["expected"], vector["name"]
+
+    for vector in vectors["calendarDates"]:
+        now = datetime.fromisoformat(vector["now"])
+        value = date.fromisoformat(vector["value"])
+        assert format_calendar_date(value, now=now, tz=zone) == vector["expected"], vector["name"]
 
 
 if __name__ == "__main__":

@@ -18,9 +18,19 @@ pkg_files(
     visibility = ["//visibility:public"],
 )
 
+pkg_files(
+    name = "common_date_presentation_file",
+    srcs = ["//personal_dashboard:presentation.js"],
+    prefix = "personal_dashboard",
+    strip_prefix = strip_prefix.files_only(),
+)
+
 pkg_zip(
     name = "plaid_spend_extension",
-    srcs = [":extension_files"],
+    srcs = [
+        ":common_date_presentation_file",
+        ":extension_files",
+    ],
     out = "plaid-spend-desktop.zip",
     visibility = ["//visibility:public"],
 )

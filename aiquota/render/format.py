@@ -1,11 +1,16 @@
 """Shared format helpers for human and tmux renderers."""
 
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from aiquota.models import PaceResult, PrepaidBalanceAvailable, QuotaWindow
 from aiquota.pace import is_exhausted
 from aiquota.peak_windows import BurnStatus, PeakInterval
+from personal_dashboard.date_format import (
+    format_clock as _shared_format_clock,
+    format_instant,
+    format_peak_interval as _shared_format_peak_interval,
+)
 
 
 def format_duration(seconds: float) -> str:
@@ -140,19 +145,8 @@ def _format_cents_usd(value: Decimal) -> str:
     return f"{'-' if value < 0 else ''}${abs(_round_currency(value, 2)):,.2f}"
 
 
-_DEADLINE_DATE_ONLY_AFTER = timedelta(days=14)
-
-
 def format_deadline(when: datetime, now: datetime, tz: tzinfo | None = None, *, details: bool = False) -> str:
-    local = when.astimezone(tz)
-    if details:
-        return local.strftime("%Y-%m-%d %H:%M %Z")
-    label = local.strftime("%b %-d")
-    if local.year != now.astimezone(tz).year:
-        label += local.strftime(", %Y")
-    if abs(when.astimezone(UTC) - now.astimezone(UTC)) <= _DEADLINE_DATE_ONLY_AFTER:
-        label += local.strftime(", %H:%M")
-    return label
+    return format_instant(when, now=now, tz=tz, details=details) or ""
 
 
 def format_reset_credit_summary(
@@ -221,7 +215,7 @@ def format_local_clock(when: datetime, tz: tzinfo | None = None) -> str:
     exists so snapshot tests can pin a zone — without it, rendered output
     differs per machine and the snapshots only hold where they were recorded.
     """
-    return when.astimezone(tz).strftime("%H:%M")
+    return _shared_format_clock(when, tz)
 
 
 def format_multiplier(value: float) -> str:
@@ -230,8 +224,7 @@ def format_multiplier(value: float) -> str:
 
 def format_peak_interval(interval: PeakInterval, tz: tzinfo | None = None) -> str:
     """One upcoming window as `Day HH:MM-HH:MM` in `tz` (default system local)."""
-    start = interval.start.astimezone(tz)
-    return f"{start:%a} {start:%H:%M}-{format_local_clock(interval.end, tz)}"
+    return _shared_format_peak_interval(interval.start, interval.end, tz)
 
 
 def format_burn(burn: BurnStatus, now: datetime, tz: tzinfo | None = None) -> str:

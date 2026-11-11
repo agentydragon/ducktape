@@ -8,6 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import dateVectors from "../../personal_dashboard/date_presentation_vectors.json";
 import {
   formatDuration,
   formatExtraSpend,
@@ -16,6 +17,7 @@ import {
   quotaActivity,
   staleObservationAt,
   formatDeadline,
+  formatPeakInterval,
   formatResetCreditSummary,
   formatPrepaidBalance,
   formatSummaryUsd,
@@ -111,6 +113,23 @@ describe("formatDeadline", () => {
     try {
       expect(formatDeadline("2026-03-08T09:30:00Z", new Date("2026-03-08T08:00:00Z"))).toBe("Mar 8, 01:30");
       expect(formatDeadline("2026-03-08T10:30:00Z", new Date("2026-03-08T08:00:00Z"))).toBe("Mar 8, 03:30");
+    } finally {
+      vi.stubEnv("TZ", "UTC");
+    }
+  });
+
+  it("matches the cross-runtime local instant and peak-day vectors", () => {
+    vi.stubEnv("TZ", dateVectors.timeZone);
+    try {
+      for (const vector of dateVectors.instants) {
+        expect(formatDeadline(vector.value, new Date(vector.now)), vector.name).toBe(vector.expected);
+      }
+      for (const vector of dateVectors.peakIntervals) {
+        expect(formatPeakInterval(vector), vector.start).toBe(vector.expected);
+      }
+      expect(formatDeadline("2026-03-08T10:30:00Z", new Date("2026-03-08T08:00:00Z"), true)).toBe(
+        "2026-03-08 03:30 PDT"
+      );
     } finally {
       vi.stubEnv("TZ", "UTC");
     }

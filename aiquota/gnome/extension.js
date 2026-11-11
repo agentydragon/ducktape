@@ -20,14 +20,16 @@ import {
   showResetCredits,
   quotaActivity,
   staleObservationAt,
-  formatClock,
   formatDuration as sharedFormatDuration,
-  formatDeadline,
   formatMultiplier,
-  formatPeakInterval,
   formatResetCreditSummary,
   roundHalfToEven,
-} from "./presentation.js";
+} from "./aiquota/shared/presentation.js";
+import {
+  formatLocalClock as formatClock,
+  formatLocalTimestamp as formatDeadline,
+  formatPeakInterval,
+} from "./personal_dashboard/presentation.js";
 
 let fixtureNowMs = null;
 

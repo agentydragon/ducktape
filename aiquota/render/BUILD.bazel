@@ -10,6 +10,7 @@ py_library(
         "//aiquota:models",
         "//aiquota:pace",
         "//aiquota:peak_windows",
+        "//personal_dashboard:date_format",
     ],
 )
 
@@ -73,6 +74,7 @@ py_test(
     data = [
         "__snapshots__/test_human.ambr",
         "//aiquota/testing:fixtures",
+        "//personal_dashboard:date_presentation_vectors",
     ],
     uses_syrupy = True,
     deps = [

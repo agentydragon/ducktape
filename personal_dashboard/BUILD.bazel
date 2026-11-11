@@ -1,0 +1,23 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+js_library(
+    name = "presentation",
+    srcs = [
+        "presentation.d.ts",
+        "presentation.js",
+    ],
+)
+
+js_library(
+    name = "date_presentation_vectors",
+    srcs = ["date_presentation_vectors.json"],
+)
+
+py_library(
+    name = "date_format",
+    srcs = ["__init__.py", "date_format.py"],
+    imports = [".."],
+)

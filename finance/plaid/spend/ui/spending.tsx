@@ -17,7 +17,7 @@ import {
 import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
-import { linkedSyncDescription, Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
+import { calendarDate, linkedSyncDescription, Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
 import type { AllowancePeriodId, EstimatePeriodId } from "./types";
 
@@ -381,7 +381,7 @@ function AllowancePanel({
           <Accordion.Panel>
             <Stack gap="lg">
               <Text size="sm" c="dimmed">
-                Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone}).
+                Allowance began: {calendarDate(allowance.activation_at)} at midnight ({allowance.time_zone}).
               </Text>
               <Text size="sm" c="dimmed">
                 These are overlapping views of the same purchases, not separate budgets. Your available balance includes
@@ -455,7 +455,7 @@ function SpendCard({ card }: { card: CardView }) {
               )}
             </>
           ) : card.statement_period.kind === "provisional" ? (
-            `Provisional card total since ${card.statement_period.start}; statement date not yet reported. Includes purchases outside the allowance.`
+            `Provisional card total since ${calendarDate(card.statement_period.start)}; statement date not yet reported. Includes purchases outside the allowance.`
           ) : (
             "Statement data unavailable"
           )}

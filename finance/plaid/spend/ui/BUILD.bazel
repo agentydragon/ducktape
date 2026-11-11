@@ -110,6 +110,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":types",
+        "//personal_dashboard:presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/decimal.js",
@@ -122,6 +123,7 @@ spend_vitest_test(
     srcs = ["spend_display.test.ts"],
     deps = [
         ":spend_display",
+        "//personal_dashboard:date_presentation_vectors",
         "//:node_modules/@mantine/core",
         "//:node_modules/decimal.js",
         "//:node_modules/react",
