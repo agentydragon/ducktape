@@ -718,7 +718,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         app,
         env,
         db=DbProps(
-            instances=2, wal_archive=True, profile=cluster.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
+            instances=2, wal_archive=True, profile=cluster.OVH_PIRAEUS_SSD, size="24Gi", resize_in_use_volumes=True
         ),
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
