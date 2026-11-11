@@ -111,6 +111,7 @@ class PatternSummarizer(FeedbackProvider):
             tool_choice="auto",
         )
         resp = await self.model.sample(self.model.prepare(req))
+        # TODO: store, log
         for item in resp.output:
             if isinstance(item, AssistantMessageOut) and (text := item.text):
                 return text
