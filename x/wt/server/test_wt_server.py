@@ -30,8 +30,9 @@ async def test_discovery_reconciles_added_removed_and_existing_worktrees(real_co
 
     start.assert_awaited_once_with(added)
     stop.assert_awaited_once_with(removed)
-    assert daemon.store.worktree_paths() == {refreshed.path, added.path}
     assert daemon.worktree_index is not None
+    assert set(daemon.known_worktrees) == {refreshed.path, added.path}
+    assert set(daemon.worktree_index.by_path) == {real_config.main_repo, refreshed.path, added.path}
     assert daemon.worktree_index.by_name["refreshed"] == refreshed
     assert "removed" not in daemon.worktree_index.by_name
 

@@ -37,7 +37,6 @@ from x.wt.server.rpc import ServiceDependencies, rpc
 from x.wt.server.services import scan_worktrees
 from x.wt.server.stores import DaemonStore
 from x.wt.server.types import DiscoveredWorktree
-from x.wt.server.watcher import start_watcher
 from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration, load_config
@@ -128,7 +127,6 @@ class WtDaemon:
 
         # Reactive state store
         self.store = DaemonStore()
-        self._worktree_observer = None  # Filesystem watcher for worktrees dir
 
         # Managed state
         self.worktree_index = WorktreeIndex(by_path={}, by_name={}, main=None)
@@ -252,8 +250,6 @@ class WtDaemon:
                 removed = [self.known_worktrees[path] for path in self.known_worktrees.keys() - current.keys()]
                 self.known_worktrees = current
                 self._refresh_index()
-                # Sync paths to reactive store
-                self.store.set_worktree_paths(self.known_worktrees.keys())
         finally:
             self.discovery_scanning = False
         for wt in added:
@@ -445,21 +441,13 @@ class WtDaemon:
             if (worktree := self.known_worktrees.get(path)) and self.gitstatusd_clients.get(worktree.wtid):
                 await self._ensure_git_watcher(worktree)
 
-        # Start filesystem watcher for worktrees directory
         if not self.config.worktrees_dir.exists():
             raise RuntimeError(f"Worktrees directory does not exist: {self.config.worktrees_dir}")
-        self._worktree_observer = start_watcher(self.store, self.config.worktrees_dir)
 
     async def stop(self) -> None:
         logger.info("Stopping wt daemon")
 
         self.running = False
-
-        # Stop filesystem watcher
-        if self._worktree_observer:
-            self._worktree_observer.stop()
-            self._worktree_observer.join(timeout=2.0)
-            self._worktree_observer = None
 
         # Stop long-running service loops
         for watcher in list(self.git_watchers.values()):

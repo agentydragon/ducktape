@@ -1,7 +1,4 @@
-"""Integration test for path watcher - tests daemon through full worktree lifecycle.
-
-Refactored to use wt_cli fixture for invoking the CLI.
-"""
+"""Exercise daemon status across a worktree create and removal."""
 
 from datetime import timedelta
 
@@ -42,14 +39,14 @@ def wait_for_status_not_contains(wt_cli, needle: str, timeout: float = WATCHER_D
         pytest.fail(f"Timed out waiting for status to drop '{needle}'. Last output:\n{last['out']}")
 
 
-def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
+def test_worktree_full_lifecycle(wt_cli, real_config, pygit2_repo):
     """
-    Test the path watcher through complete worktree lifecycle:
+    Exercise the complete worktree lifecycle:
     1. status (should start daemon)
     2. create worktree
-    3. status (should detect new worktree via path watcher)
+    3. status (shows the newly registered worktree)
     4. remove worktree
-    5. status (should detect removal via path watcher)
+    5. status (no longer shows the removed worktree)
     """
     # Step 1: Initial status - should start daemon and show empty state
     result = wt_cli.status(timeout=timedelta(seconds=5.0))
@@ -64,7 +61,7 @@ def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     assert worktree_path.exists(), f"Worktree not created at {worktree_path}"
     assert worktree_path.is_dir(), f"Worktree path is not a directory: {worktree_path}"
 
-    # Step 3: Status should now show the new worktree (detected via path watcher)
+    # Step 3: Status should now show the new worktree
     wait_for_status_contains(wt_cli, "feature-test")
 
     # Step 4: Remove the worktree
@@ -76,7 +73,7 @@ def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     # Verify worktree was removed from filesystem
     assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
 
-    # Step 5: Status should no longer show the worktree (detected removal via path watcher)
+    # Step 5: Status should no longer show the worktree
     wait_for_status_not_contains(wt_cli, "feature-test")
 
 
