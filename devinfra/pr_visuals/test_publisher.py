@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import subprocess
@@ -47,6 +48,7 @@ from devinfra.pr_visuals.publisher import (
     DownloadedAsset,
     DownloadedVariant,
     DownloadedVisualTest,
+    _invocations_for,
     build_bundle,
     diff_check,
     download_visual_tests,
@@ -101,7 +103,11 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
         )
 
     found = find_test_invocations(
-        run_id="33066954750", run_attempt="1", commit_sha="5ee3b732cc68b03ef86a1b6e95598f54d796e8f2", run=fake_run
+        run_id="33066954750",
+        run_attempt="1",
+        commit_sha="5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
+        repository="example/repo",
+        run=fake_run,
     )
     assert found == ["full-sweep"]
     assert command_seen == [
@@ -112,7 +118,7 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
             "invocation",
             "list",
             "--repo",
-            "https://github.com/agentydragon/ducktape",
+            "https://github.com/example/repo",
             "--commit",
             "5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
             "--command",
@@ -123,6 +129,17 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
             "25",
             "--json",
         ]
+    ]
+
+
+def test_devel_uses_this_runs_ids_without_searching_other_runs() -> None:
+    args = argparse.Namespace(ci_run_id="42975955001", ci_run_attempt="2", pull_request_head=None)
+
+    def unexpected_search(*_args: object, **_kwargs: object) -> NoReturn:
+        pytest.fail("devel must use its own full-sweep invocation")
+
+    assert _invocations_for(args, run=unexpected_search) == [
+        str(invocation_id(run_id="42975955001", attempt="2", role=role)) for role in ("test", "build")
     ]
 
 
