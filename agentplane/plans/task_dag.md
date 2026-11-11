@@ -2109,14 +2109,15 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 ### `HISTORY_INGRESS_OUTCOME_DESIGN` — item completion and command outcome invariants at History ingress
 
 **Decision, unscheduled; operator direction, 2026-11-10.** The incident's
-`HarnessUserMessageConfirmed` and later `CommandFailed` name the same command: the
-[Thread fold](../history_service/threadfold/fold.go) settles origin commands as effected at
-confirmation, then errors when a later event settles an already-settled command. The
-[History append](../history_service/storage/store.go) accepts exact cursor replays and commits new
-entries without checking these semantic outcomes, leaving the raw event available while that
-Session's Thread projection stalls. Consider whether ingress should enforce one-time settlement
-invariants, and whether item completion and command outcome need different rules; rejection is an
-option to review, not a selected protocol policy.
+`HarnessUserMessageConfirmed` and later `CommandFailed` name the same command. The
+[Thread fold](../history_service/threadfold/fold.go) narrowly tolerates that sequence for a
+`SubmitInput` only when the failure reason is `session blocked by unresolved effects`; other
+contradictory settlements still fail the fold. The [History append](../history_service/storage/store.go)
+accepts exact cursor replays and commits new cursor-valid entries without checking command outcomes,
+so other contradictions can remain in raw history while that Session's Thread projection stalls.
+Consider whether ingress should enforce one-time settlement invariants, and whether item completion
+and command outcome need different rules; rejection is an option to review, not a selected protocol
+policy.
 
 Alternatives include refusing a contradictory outcome before commit, retaining every raw event and
 folding the conflict into a visible anomaly while continuing the projection, or leaving ingress
