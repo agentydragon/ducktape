@@ -131,6 +131,10 @@ Rules for the operations:
   configured managers (the app for the operator); no agent use needs it yet. If an operation is added,
   it must also require the destination: rebinding from I to J makes whatever I left in the workspace
   run as J, so the caller needs the right to create Sessions as J.
+- **Binding across Identities is deferred.** A later rule may allow a Session–environment binding
+  where the Session's Identity differs from the environment's. It would come in a separate task DAG
+  node, with its own model of what each side may see and do; until then step 3 of
+  [admitting a binding](#operations) holds without exception.
 - **Settings stay with roles.** `SetEnvironmentWakeOnSend` and `SetEnvironmentIdleSuspend` change the
   target's own policy and stay with the configured managers; no operation grants them.
 - **`bind_session` grants a relation, not a Session.** A Session–environment binding is its own
@@ -150,6 +154,8 @@ Rules for the operations:
      `CreateSession` takes the Session's Identity from the placed Sandbox, delivery refuses a
      mismatch, and the [session model](session_environment_model.md) requires it of attachments. No
      grant overrides it.
+     Rules allowing a binding across Identities may come later, under their own task DAG node; this
+     rule type does not express them.
   4. E's own state allows it: no operator stop or pending delete, the incarnation is current, and
      E has room for another binding.
 - **A Session's Identity never changes.** No operation rebinds a Session to another Identity: its
