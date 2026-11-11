@@ -141,6 +141,32 @@ def session(
         yield session
 
 
+def test_fixture_preview_starts_without_daemon(
+    runfiles: Runfiles,
+    gnome_shell_test_image: str,
+    extension_dir: Path,
+    fixture_json_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    with gnome_session(
+        gnome_shell_test_image,
+        extension_dir=extension_dir,
+        extension=_EXTENSION_UUID,
+        fixture_dir=fixture_json_dir,
+        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
+        screenshot_dir=tmp_path_factory.mktemp("gnome-fixture-preview"),
+        destination=_TEST_DBUS_DEST,
+        object_path=_TEST_DBUS_PATH,
+        environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_two_cards.json"},
+        compile_extension_schemas=True,
+    ) as session:
+        assert string_reply(session.call("GetDaemonOwner")) == ""
+        session.open_menu()
+        assert "Everyday" in string_reply(session.call("GetMenuText"))
+        assert "Travel" in string_reply(session.call("GetMenuText"))
+        _assert_no_plaid_extension_error(session)
+
+
 def _card_view(amount_minor_units: int) -> str:
     return json.dumps(
         {

@@ -48,3 +48,19 @@ class SecretServiceTokenStore:
         if process.returncode != 0:
             detail = stderr.decode("utf-8", errors="replace").strip()
             raise RuntimeError(f"could not remove Plaid Spend credentials from Secret Service: {detail}")
+
+
+class EphemeralTokenStore(SecretServiceTokenStore):
+    """Keep a separate devkit login only for the lifetime of this daemon."""
+
+    def __init__(self) -> None:
+        self.refresh_token: str | None = None
+
+    async def load_refresh_token(self) -> str | None:
+        return self.refresh_token
+
+    async def save_refresh_token(self, token: str) -> None:
+        self.refresh_token = token
+
+    async def clear(self) -> None:
+        self.refresh_token = None

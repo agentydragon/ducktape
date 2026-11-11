@@ -1,22 +1,5 @@
 #!/bin/bash
-# Bazel-runnable launcher for local iteration on aiquota.
-#
-# Builds the extension zip via Bazel, extracts it to a temp dir, and launches
-# a nested gnome-shell --devkit session with the extension pre-enabled. The
-# display setup is explicit because Wyrm2 is a Wayland VM with multiple DRM
-# render nodes; letting Mutter auto-select a display or renderer produces a
-# blank/black devkit surface.
-# Fully isolated: does not write to ~/.local/share or modify live dconf.
-# Requires gnome-shell to be installed on the host (not bundled — local
-# iteration only).
-#
-# Usage:
-#   bazelisk run //aiquota/gnome:devkit
-#
-# Optional env:
-#   AI_QUOTA_FIXTURE=/path/to/fixture.json
-#       Skip real auth/HTTP and load the indicator from an API-shaped quota
-#       view JSON payload (same hook used by //aiquota/gnome:test_render).
+# Launch a packaged extension in an isolated nested GNOME Shell.
 set -euo pipefail
 
 if ! command -v gnome-shell >/dev/null 2>&1; then
@@ -29,7 +12,59 @@ fi
 # (home-manager) > XDG_DATA_DIRS, so a hand-installed copy at ~/.local will
 # shadow the devkit-extracted version and you'll be debugging stale JS. We
 # burned an evening on this once; fail loudly instead.
-uuid="aiquota@allegedly.works"
+uuid="$1"
+zip_runfile="$2"
+daemon_runfile="$3"
+fixture_env="$4"
+default_fixture_runfile="$5"
+daemon_arg="$6"
+shift 6
+
+fixture="${!fixture_env:-}"
+mode=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --live)
+      mode=live
+      shift
+      ;;
+    --fixture)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --fixture requires a file" >&2
+        exit 2
+      fi
+      mode=fixture
+      fixture="$2"
+      shift 2
+      ;;
+    *)
+      echo "ERROR: unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+if [[ "$mode" == live ]]; then
+  fixture=""
+elif [[ -z "$fixture" && "$default_fixture_runfile" != - ]]; then
+  fixture="$(rlocation "$default_fixture_runfile")"
+fi
+if [[ "$mode" == fixture && -z "$fixture" ]]; then
+  echo "ERROR: --fixture requires a file" >&2
+  exit 2
+fi
+if [[ -n "$fixture" ]]; then
+  if [[ "$fixture" != /* ]]; then
+    fixture="${BUILD_WORKING_DIRECTORY:-$PWD}/$fixture"
+  fi
+  if [[ ! -f "$fixture" ]]; then
+    echo "ERROR: fixture not found: $fixture" >&2
+    exit 1
+  fi
+  printf -v "$fixture_env" '%s' "$fixture"
+  export "$fixture_env"
+else
+  unset "$fixture_env"
+fi
 shadow="$HOME/.local/share/gnome-shell/extensions/$uuid"
 if [[ -e "$shadow" ]]; then
   echo "ERROR: $shadow exists and would shadow the devkit extension." >&2
@@ -40,22 +75,21 @@ if [[ -e "$shadow" ]]; then
 fi
 
 # --- locate inputs ---------------------------------------------------------
-zip_path="$(rlocation "$1")"
+zip_path="$(rlocation "$zip_runfile")"
 if [[ ! -f "$zip_path" ]]; then
-  echo "ERROR: aiquota.zip not found in runfiles at $zip_path" >&2
+  echo "ERROR: extension zip not found in runfiles at $zip_path" >&2
   exit 1
 fi
 
-# Resolve the in-repo desktop daemon so the extension and live API client use
-# this checkout while running inside the isolated D-Bus session.
-aiquota_daemon_bin="$(rlocation "$2")"
-if [[ ! -x "$aiquota_daemon_bin" ]]; then
-  echo "ERROR: aiquota desktop daemon not found in runfiles at $aiquota_daemon_bin" >&2
+# Resolve the checkout daemon for live mode.
+daemon_bin="$(rlocation "$daemon_runfile")"
+if [[ ! -x "$daemon_bin" ]]; then
+  echo "ERROR: desktop daemon not found in runfiles at $daemon_bin" >&2
   exit 1
 fi
 
 # --- set up isolated temp tree ---------------------------------------------
-tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/aiquota-devkit.XXXXXX")
+tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/gnome-devkit.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 
 # Extract extension to temp data dir.
@@ -63,6 +97,9 @@ ext_dir="$tmpdir/data/gnome-shell/extensions/$uuid"
 mkdir -p "$ext_dir"
 echo ">> extracting $(basename "$zip_path") → $ext_dir"
 unzip -q -o "$zip_path" -d "$ext_dir"
+if [[ -d "$ext_dir/schemas" ]]; then
+  glib-compile-schemas "$ext_dir/schemas"
+fi
 
 # Isolated config dir: symlink everything from real config except dconf,
 # which gets its own isolated db via DCONF_PROFILE.
@@ -70,6 +107,7 @@ real_conf="${XDG_CONFIG_HOME:-$HOME/.config}"
 conf_dir="$tmpdir/config"
 mkdir -p "$conf_dir/dconf"
 for item in "$real_conf"/*; do
+  [[ -e "$item" ]] || continue
   base=$(basename "$item")
   [[ "$base" == "dconf" ]] && continue
   ln -s "$item" "$conf_dir/$base"
@@ -112,7 +150,7 @@ export __NV_DISABLE_EXPLICIT_SYNC="${__NV_DISABLE_EXPLICIT_SYNC:-1}"
 
 # --- launch the devkit shell ----------------------------------------------
 echo ">> launching gnome-shell --devkit (Ctrl-C to exit)"
-exec dbus-run-session -- bash -c '
+dbus-run-session -- bash -c '
   set -eu
   daemon_pid=""
   shell_pid=""
@@ -130,15 +168,21 @@ exec dbus-run-session -- bash -c '
   gsettings set org.gnome.shell disable-user-extensions false
   gsettings set org.gnome.shell enabled-extensions "$1"
 
-  "$2" &
-  daemon_pid=$!
+  if [[ "$3" == live ]]; then
+    if [[ "$4" == - ]]; then
+      "$2" &
+    else
+      "$2" "$4" &
+    fi
+    daemon_pid=$!
+  fi
 
   runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-  nested_wayland_name="aiquota-$$"
+  nested_wayland_name="gnome-devkit-$$"
   suffix=0
   while [[ -e "$runtime_dir/$nested_wayland_name" || -e "$runtime_dir/$nested_wayland_name.lock" ]]; do
     suffix=$((suffix + 1))
-    nested_wayland_name="aiquota-$$-$suffix"
+    nested_wayland_name="gnome-devkit-$$-$suffix"
   done
 
   gnome-shell --devkit --unsafe-mode --wayland --wayland-display="$nested_wayland_name" &
@@ -162,4 +206,4 @@ exec dbus-run-session -- bash -c '
 
   echo ">> nested Wayland display is $nested_wayland_name"
   wait "$shell_pid"
-' sh "['aiquota@allegedly.works']" "$aiquota_daemon_bin"
+' sh "['$uuid']" "$daemon_bin" "$([[ -n "$fixture" ]] && printf fixture || printf live)" "$daemon_arg"
