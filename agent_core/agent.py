@@ -4,7 +4,6 @@ import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -53,13 +52,6 @@ from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class StepResult:
-    """`done` reflects handler completion; output remains with handlers."""
-
-    done: bool
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
@@ -339,17 +331,18 @@ class Agent:
 
         raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
-    async def step(self) -> StepResult:
+    async def step(self) -> bool:
         """Run one step and resolve pending calls.
 
-        Preserves accumulated text and resets `finished` before returning; output is emitted to handlers.
+        Return whether a handler finished. Preserve accumulated text and reset `finished` before
+        returning; output is emitted to handlers.
         """
         await self._run_one_phase()
         if self.pending_function_calls:
             await self._handle_pending_tool_calls()
         done = self.finished
         self.finished = False  # Reset so step() can be called again
-        return StepResult(done=done)
+        return done
 
     async def run(self) -> str:
         """Clear state, then step until a handler finishes and return the assembled text."""
@@ -358,8 +351,7 @@ class Agent:
         self.finished = False
         try:
             while True:
-                result = await self.step()
-                if result.done:
+                if await self.step():
                     break
             return "\n".join(self.assistant_text_chunks)
         except Exception as exc:
