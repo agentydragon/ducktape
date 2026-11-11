@@ -378,10 +378,6 @@ impl Values {
         changed
     }
 
-    fn union_without_change_tracking(&mut self, other: &Self) {
-        self.union_with(other);
-    }
-
     /// Preserve the vectorized wordwise path when neither operand contains
     /// zero words. Growing a dense destination adds the dense source's tail
     /// ranks to the already sorted occupied-word index.
@@ -649,7 +645,7 @@ impl ValuesBuilder {
             return;
         }
         assert!(Arc::ptr_eq(&self.values.origins, &values.origins));
-        self.values.union_without_change_tracking(values);
+        self.values.union_with(values);
         #[cfg(test)]
         {
             self.work.set(self.work.get() + values.len());
