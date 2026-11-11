@@ -207,7 +207,7 @@ def test_fixture_preview_starts_without_daemon(
 
         set_visible("['pace', 'sparkline']")
         wait_until(lambda: panel_state()["items"] == ["pace", "sparkline"], "fixture settings were not applied")
-        assert string_reply(session.call("GetPanelLabel")) == "7d 90%"
+        assert string_reply(session.call("GetPanelLabel")) == "90%"
         set_visible("['pace']")
         wait_until(lambda: panel_state()["items"] == ["pace"], "sparkline was not hidden")
         set_visible("['pace', 'sparkline']")
@@ -538,14 +538,19 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
 
     try:
         configure(
-            order=["pace", "sparkline", "status", "balance"],
-            visible=["status", "balance", "pace", "sparkline"],
+            order=["pace-window", "pace", "sparkline", "status", "balance"],
+            visible=["status", "balance", "pace-window", "pace", "sparkline"],
             window="7d",
         )
         with _menu(session, "panel_composition", "7d 110% $12.3k") as geometry:
-            assert state() == {"items": ["pace", "sparkline", "status", "balance"], "level": "caution", "window": "7d"}
+            assert state() == {
+                "items": ["pace-window", "pace", "sparkline", "status", "balance"],
+                "level": "caution",
+                "window": "7d",
+            }
             assert "$12,345 available" in string_reply(session.call("GetMenuText"))
             assert "Customize panel" in string_reply(session.call("GetMenuText"))
+            assert "Use 30-day pace" not in string_reply(session.call("GetMenuText"))
             assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))
             capture_menu.capture(geometry, label="custom panel 7d with sparkline", checkpoint="7d", left_padding=160)
         configure(window="30d")
@@ -554,6 +559,12 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         geometry = session.open_menu()
         capture_menu.capture(geometry, label="custom panel 30d with sparkline", checkpoint="30d", left_padding=160)
         session.close_menu()
+        configure(visible=["pace-window"])
+        assert state()["items"] == ["pace-window"]
+        assert string_reply(session.call("GetPanelLabel")) == "30d"
+        configure(visible=["pace"])
+        assert state()["items"] == ["pace"]
+        assert string_reply(session.call("GetPanelLabel")) == "140%"
         configure(order=["sparkline", "pace", "balance", "status"], visible=["sparkline", "pace"])
         assert state()["items"] == ["sparkline", "pace"]
         session.reload("/fixtures/allowance_paced.json")
@@ -563,7 +574,62 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         assert state()["items"] == ["status"]
         _assert_no_plaid_extension_error(session)
     finally:
-        configure(order=["status", "balance", "pace", "sparkline"], visible=["status", "balance"], window="7d")
+        configure(
+            order=["status", "balance", "pace-window", "pace", "sparkline"], visible=["status", "balance"], window="7d"
+        )
+
+
+def test_existing_pace_panel_setting_is_migrated(
+    runfiles: Runfiles,
+    gnome_shell_test_image: str,
+    extension_dir: Path,
+    fixture_json_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    def set_legacy_settings(session: GnomeSession) -> None:
+        command = (
+            f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
+            "set org.gnome.shell.extensions.plaid-spend "
+        )
+        for key, value in [
+            ("panel-visible", "['pace']"),
+            ("panel-order", "['sparkline', 'pace', 'status', 'balance']"),
+        ]:
+            result = session.exec(f"{command}{key} {shlex.quote(value)}")
+            assert result.exit_code == 0, exec_output(result)
+
+    with gnome_session(
+        gnome_shell_test_image,
+        extension_dir=extension_dir,
+        extension=_EXTENSION_UUID,
+        fixture_dir=fixture_json_dir,
+        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
+        screenshot_dir=tmp_path_factory.mktemp("gnome-panel-migration"),
+        destination=_TEST_DBUS_DEST,
+        object_path=_TEST_DBUS_PATH,
+        environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_allowance.json"},
+        compile_extension_schemas=True,
+        before_start=set_legacy_settings,
+    ) as session:
+        assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace-window", "pace"]
+        assert string_reply(session.call("GetPanelLabel")) == "7d 90%"
+        session.call("SetPanelSettings", json.dumps({"visible": ["pace"]}))
+        for method in ("DisableExtension", "EnableExtension"):
+            result = session.exec(
+                "gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell "
+                f"--method org.gnome.Shell.Extensions.{method} {shlex.quote(_EXTENSION_UUID)}"
+            )
+            assert result.exit_code == 0, exec_output(result)
+        wait_until(
+            lambda: (
+                session.exec(
+                    f"gdbus introspect --session --dest {_TEST_DBUS_DEST} --object-path {_TEST_DBUS_PATH}"
+                ).exit_code
+                == 0
+            ),
+            "extension did not restart",
+        )
+        assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace"]
 
 
 def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:

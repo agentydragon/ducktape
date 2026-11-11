@@ -2,12 +2,16 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.plaid-spend" path="/org/gnome/shell/extensions/plaid-spend/">
     <key name="panel-order" type="as">
-      <default>['status', 'balance', 'pace', 'sparkline']</default>
+      <default>['status', 'balance', 'pace-window', 'pace', 'sparkline']</default>
       <summary>Panel item order</summary>
     </key>
     <key name="panel-visible" type="as">
       <default>['status', 'balance']</default>
       <summary>Visible panel items</summary>
+    </key>
+    <key name="panel-pace-window-migrated" type="b">
+      <default>false</default>
+      <summary>Whether the separate pace window panel item has been migrated</summary>
     </key>
     <key name="pace-window" type="s">
       <choices>
