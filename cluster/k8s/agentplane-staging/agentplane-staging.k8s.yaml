@@ -2224,9 +2224,11 @@ spec:
         - dl.google.com
         - files.pythonhosted.org
         - ftp.gnu.org
+        - gcr.io
         - ghcr.io
         - go.dev
         - index.crates.io
+        - mirror.gcr.io
         - nixos.org
         - nodejs.org
         - pkg-containers.githubusercontent.com
@@ -2240,6 +2242,14 @@ spec:
       methods:
         - GET
         - HEAD
+      type: egress
+    - hosts:
+        - storage.googleapis.com
+      methods:
+        - GET
+        - HEAD
+      paths:
+        - /proxy-golang-org-prod/**
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
