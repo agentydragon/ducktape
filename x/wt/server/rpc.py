@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 class Stream:
     def __init__(self, writer: asyncio.StreamWriter | Any):
         self._writer = writer
-        self._error_logged = False
         # TODO(mpokorny): consider async emit with backpressure for large/continuous streams
 
     def emit(self, event: BaseModel) -> None:

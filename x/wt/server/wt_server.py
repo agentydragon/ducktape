@@ -144,7 +144,6 @@ class WtDaemon:
         self.discovery_task: asyncio.Task | None = None
         self.discovery_scanning: bool = False
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
-        self._startup_tasks: list[asyncio.Task] = []
 
         # Ensure daemon directory exists
         self.config.wt_dir.mkdir(exist_ok=True)
