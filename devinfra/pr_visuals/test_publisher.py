@@ -28,7 +28,6 @@ from devinfra.pr_visuals.collection import (
 from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
 from devinfra.pr_visuals.github_comment import (
     COMMENT_BUDGET,
-    COMMENT_MARKER,
     CommentKind,
     CommentState,
     error_comment_body,
@@ -925,12 +924,7 @@ def _success_comment(commit_sha: str) -> str:
         pytest.param(_success_comment(HEAD_SHA), "no_visual", "success", True, False, id="same-head-review"),
         pytest.param(_success_comment(OTHER_SHA), "no_visual", "success", True, False, id="older-review"),
         pytest.param(
-            "<!-- pr-visuals -->\n<!-- pr-visuals-state {malformed} -->\nOld output",
-            "no_visual",
-            "success",
-            True,
-            False,
-            id="malformed-metadata",
+            "<!-- pr-visuals {malformed} -->\nOld output", "no_visual", "success", True, False, id="malformed-metadata"
         ),
         pytest.param(
             f"<!-- pr-visuals -->\n## Visual review for [`{HEAD_SHA[:8]}`]"
@@ -992,16 +986,16 @@ def test_publish_pull_request_comment(
 
     monkeypatch.setattr("devinfra.pr_visuals.comment_publishing.Github", FakeGithub)
     update = CommentUpdate(
-        body=f"{COMMENT_MARKER}\nreplacement",
-        state=CommentState(commit_sha=HEAD_SHA, kind=kind, ci_conclusion=ci_conclusion),
+        body="replacement", state=CommentState(commit_sha=HEAD_SHA, kind=kind, ci_conclusion=ci_conclusion)
     )
     publish_pull_request_comment(repository=REPOSITORY, pull_request=4594, update=update, token="token")
 
     assert edits == ([update.render()] if expected_edit else [])
     assert created == ([update.render()] if expected_create else [])
     if expected_edit or expected_create:
+        assert update.render().count("<!-- pr-visuals") == 1
         marker = update.render().split("\n", 1)[0]
-        assert json.loads(marker.removeprefix("<!-- pr-visuals-state ").removesuffix(" -->")) == {
+        assert json.loads(marker.removeprefix("<!-- pr-visuals ").removesuffix(" -->")) == {
             "version": 1,
             "commit_sha": HEAD_SHA,
             "kind": kind,
@@ -2120,7 +2114,7 @@ def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged()
         repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
     )
 
-    assert body.startswith(COMMENT_MARKER)
+    assert body.startswith("<h2>Visual review")
     assert f"https://github.com/r/commit/{sha}" in body
     assert "https://v/commits/sha/index.html" in body
     # Compact: no per-target list (the unchanged targets would be named) and no previews.

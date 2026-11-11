@@ -118,9 +118,10 @@ failure, or processing failure creates or updates it. A successful run with no
 visual output updates an existing comment to describe that run, but creates no
 comment when none exists. This can happen for the same PR head when the affected
 test set changes, so an earlier review is not preserved as the current result.
-Every newly written comment includes a versioned HTML metadata marker with its
-commit SHA, result kind, and CI conclusion. Older comments with only the
-singleton marker are found and replaced without parsing their display text.
+Every newly written comment starts with one versioned HTML marker,
+`<!-- pr-visuals {"version":1,...} -->`, containing its commit SHA, result
+kind, and CI conclusion. Older comments using `<!-- pr-visuals -->` remain
+discoverable and are replaced without parsing their display text.
 
 ## Storage
 

@@ -22,6 +22,7 @@ from devinfra.pr_visuals.render_common import (
 )
 
 COMMENT_MARKER = "<!-- pr-visuals -->"
+COMMENT_METADATA_PREFIX = "<!-- pr-visuals {"
 CommentKind = Literal["published", "no_visual", "failure"]
 
 
@@ -37,7 +38,7 @@ class CommentState:
             sort_keys=True,
             separators=(",", ":"),
         )
-        return f"<!-- pr-visuals-state {payload} -->"
+        return f"<!-- pr-visuals {payload} -->"
 
 
 COMMENT_BUDGET = 55_000

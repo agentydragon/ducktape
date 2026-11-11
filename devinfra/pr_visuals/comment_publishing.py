@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from github import Auth, Github
+from github.Issue import Issue
+from github.IssueComment import IssueComment
 
-from devinfra.pr_visuals.github_comment import COMMENT_MARKER, CommentState
+from devinfra.pr_visuals.github_comment import COMMENT_MARKER, COMMENT_METADATA_PREFIX, CommentState
 
 
 @dataclass(frozen=True)
@@ -19,12 +20,14 @@ class CommentUpdate:
         return f"{self.state.metadata()}\n{self.body}"
 
 
-def _find_pull_request_comment(issue: Any) -> Any | None:
+def _find_pull_request_comment(issue: Issue) -> IssueComment | None:
     return next(
         (
             comment
             for comment in issue.get_comments()
-            if comment.user is not None and comment.user.type == "Bot" and COMMENT_MARKER in (comment.body or "")
+            if comment.user is not None
+            and comment.user.type == "Bot"
+            and (COMMENT_MARKER in (comment.body or "") or COMMENT_METADATA_PREFIX in (comment.body or ""))
         ),
         None,
     )
