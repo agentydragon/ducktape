@@ -52,6 +52,7 @@ py_library(
     deps = [
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:pace_history_models",
         "@pypi//babel",
         "@pypi//dbus_next",
         "@pypi//sparklines",
@@ -66,6 +67,7 @@ py_test(
         "//:conftest",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:pace_history_models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -121,6 +123,7 @@ py_package(
         ":package_init",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:pace_history_models",
     ],
 )
 

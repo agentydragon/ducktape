@@ -20,6 +20,7 @@ from sparklines import sparklines
 
 from finance.plaid.spend.allowance import AllowanceView, Status
 from finance.plaid.spend.models import CardView, SpendView
+from finance.plaid.spend.pace_history_models import PaceHistory
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
@@ -233,37 +234,31 @@ def _format_view(view: SpendView, status: str, last_error: str) -> str:
     return "\n".join(lines)
 
 
-def _sparkline(history: dict[str, Any], window: str, days: int, scale: str, color: bool) -> str:
-    windows = history.get("windows")
-    if not isinstance(windows, list):
-        raise ValueError("invalid history windows")
-    selected = next(
-        (item for item in windows if isinstance(item, dict) and item.get("period_id") == f"rolling_{window}"), None
-    )
-    if not selected or not isinstance(selected.get("points"), list):
+def _sparkline(history: PaceHistory, window: str, days: int, scale: str, color: bool) -> str:
+    selected = next((item for item in history.windows if item.period_id == f"rolling_{window}"), None)
+    if selected is None:
         raise ValueError("history window unavailable")
-    points = selected["points"][-days:]
-    values = [point.get("observed_daily_minor_units") if isinstance(point, dict) else None for point in points]
-    values = [value if type(value) is int and value >= 0 else None for value in values]
+    points = selected.points[-days:]
+    values = [point.observed_daily_minor_units for point in points]
+    values = [value if value is not None and value >= 0 else None for value in values]
     present = [value for value in values if value is not None]
     if len(present) < 2:
         return "Pace history lacks coverage"
     lower = 0 if scale == "zero" else min(present)
     upper = max(present)
-    reference = history.get("daily_reference_minor_units")
+    reference = history.daily_reference_minor_units
     chars = []
     graph = sparklines(values, minimum=lower, maximum=upper)[0]
     for value, char in zip(values, graph, strict=True):
         if value is None:
             chars.append("·")
             continue
-        if color and isinstance(reference, int) and not isinstance(reference, bool) and reference > 0:
+        if color and reference > 0:
             code = 31 if value * 5 > reference * 6 else 33 if value > reference else 32
             chars.append(f"\x1b[{code}m{char}\x1b[0m")
         else:
             chars.append(char)
-    currency = history.get("currency")
-    range_label = f"{_format_money(lower, currency)} to {_format_money(upper, currency)}/day"
+    range_label = f"{_format_money(lower, history.currency)} to {_format_money(upper, history.currency)}/day"
     gaps = " · gaps: unknown" if len(present) != len(values) else ""
     return f"{window} pace · last {len(values)} days: {''.join(chars)}  ({range_label}{gaps})"
 
@@ -333,9 +328,7 @@ async def _history_line(bus: MessageBus, window: str, days: int, scale: str, col
         result = await _call(bus, "GetPaceHistory")
         if not result or not isinstance(result[0], str):
             raise ValueError("invalid history reply")
-        history = json.loads(result[0])
-        if not isinstance(history, dict):
-            raise ValueError("invalid history")
+        history = PaceHistory.model_validate_json(result[0])
         return _sparkline(history, window, days, scale, color)
     except RuntimeError, ValueError, DBusError:
         return "Pace history unavailable"

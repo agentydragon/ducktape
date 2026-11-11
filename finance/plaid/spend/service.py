@@ -56,7 +56,8 @@ from finance.plaid.spend.models import (
     StatementReason,
     UnavailableCardPeriod,
 )
-from finance.plaid.spend.pace_history import PaceHistory, pace_history
+from finance.plaid.spend.pace_history import pace_history
+from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation

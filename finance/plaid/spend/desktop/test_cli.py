@@ -3,6 +3,7 @@
 import json
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -22,6 +23,7 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.desktop import cli
 from finance.plaid.spend.desktop.cli import _format_money, _format_summary, _format_timestamp, _format_view, _sparkline
 from finance.plaid.spend.models import AlertState, CardView, SpendView, StatementCycle
+from finance.plaid.spend.pace_history_models import PaceHistory, PaceHistoryPoint, PaceHistoryWindow
 
 NOW = datetime(2026, 1, 31, 16, tzinfo=UTC)
 
@@ -127,11 +129,21 @@ def test_compact_summary_preserves_pace_and_actionable_information() -> None:
 
 def test_sparkline_scale_thresholds_gaps_and_history_span() -> None:
     values = [0, 100, 120, 121, None, 40, 50, 60]
-    history = {
-        "currency": "USD",
-        "daily_reference_minor_units": 100,
-        "windows": [{"period_id": "rolling_7d", "points": [{"observed_daily_minor_units": v} for v in values]}],
-    }
+    history = PaceHistory(
+        generated_at=NOW,
+        time_zone="UTC",
+        currency="USD",
+        status=Status.ACTIVE,
+        last_synced_at=NOW,
+        daily_reference_minor_units=100,
+        windows=[
+            PaceHistoryWindow(
+                period_id=PeriodId.ROLLING_7D,
+                points=[PaceHistoryPoint(date=NOW.date(), observed_daily_minor_units=v) for v in values],
+            )
+        ],
+        issues=[],
+    )
     graph = _sparkline(history, "7d", 7, "auto", True)
     assert "last 7 days" in graph
     assert "gaps: unknown" in graph
@@ -177,6 +189,37 @@ async def test_cli_history_failure_does_not_hide_current_view(
     await cli._run("show", True)
     assert json.loads(capsys.readouterr().out) == view
     assert calls == ["GetView"]
+
+
+@pytest.mark.asyncio
+async def test_history_response_uses_shared_wire_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "generated_at": NOW.isoformat(),
+        "time_zone": "UTC",
+        "currency": "USD",
+        "status": "active",
+        "last_synced_at": NOW.isoformat(),
+        "daily_reference_minor_units": 100,
+        "windows": [
+            {
+                "period_id": "rolling_7d",
+                "points": [
+                    {"date": NOW.date().isoformat(), "observed_daily_minor_units": 100},
+                    {"date": NOW.date().isoformat(), "observed_daily_minor_units": 120},
+                ],
+            }
+        ],
+        "issues": [],
+    }
+
+    async def call(_bus: object, _member: str) -> list[str]:
+        return [json.dumps(payload)]
+
+    monkeypatch.setattr(cli, "_call", call)
+    bus = cast(cli.MessageBus, object())
+    assert "last 2 days" in await cli._history_line(bus, "7d", 30, "zero", False)
+    del payload["generated_at"]
+    assert await cli._history_line(bus, "7d", 30, "zero", False) == "Pace history unavailable"
 
 
 def test_formats_unavailable_allowance_without_inventing_balance() -> None:
