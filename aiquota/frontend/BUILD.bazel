@@ -191,9 +191,9 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":fixtures",
-        "//personal_dashboard:date_presentation_vectors",
         "//:node_modules/vitest",
         "//aiquota/shared:presentation",
+        "//personal_dashboard:date_presentation_vectors",
     ],
 )
 

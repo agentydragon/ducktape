@@ -245,9 +245,7 @@ def test_deadline_uses_local_time_and_date_only_after_two_weeks(when: datetime, 
 
 
 def test_shared_date_vectors_match_browser_formatters(runfiles: Runfiles) -> None:
-    vectors = json.loads(
-        (runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text()
-    )
+    vectors = json.loads((runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text())
     zone = ZoneInfo(vectors["timeZone"])
     for vector in vectors["instants"]:
         now = datetime.fromisoformat(vector["now"])
@@ -256,8 +254,7 @@ def test_shared_date_vectors_match_browser_formatters(runfiles: Runfiles) -> Non
 
     for vector in vectors["peakIntervals"]:
         interval = PeakInterval(
-            start=datetime.fromisoformat(vector["start"]),
-            end=datetime.fromisoformat(vector["end"]),
+            start=datetime.fromisoformat(vector["start"]), end=datetime.fromisoformat(vector["end"])
         )
         assert format_peak_interval(interval, zone) == vector["expected"]
 

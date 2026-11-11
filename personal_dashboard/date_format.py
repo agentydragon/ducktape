@@ -30,11 +30,7 @@ def format_calendar_date(value: date, *, now: datetime | None = None, tz: tzinfo
 
 
 def format_instant(
-    value: datetime | None,
-    *,
-    now: datetime | None = None,
-    tz: tzinfo | None = None,
-    details: bool = False,
+    value: datetime | None, *, now: datetime | None = None, tz: tzinfo | None = None, details: bool = False
 ) -> str | None:
     """Show a local date, adding year and clock only when they add context."""
     if value is None:

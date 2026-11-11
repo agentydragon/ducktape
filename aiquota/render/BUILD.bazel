@@ -83,6 +83,7 @@ py_test(
         ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
+        "//aiquota:peak_windows",
         "//aiquota/testing:quota_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

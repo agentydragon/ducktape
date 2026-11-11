@@ -382,9 +382,7 @@ def test_timestamp_cutoff_is_elapsed_time_across_dst() -> None:
 
 
 def test_shared_date_vectors_match_aiquota_and_javascript(runfiles: Runfiles) -> None:
-    vectors = json.loads(
-        (runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text()
-    )
+    vectors = json.loads((runfiles.root() / "ducktape/personal_dashboard/date_presentation_vectors.json").read_text())
     zone = ZoneInfo(vectors["timeZone"])
     for vector in vectors["instants"]:
         now = datetime.fromisoformat(vector["now"])

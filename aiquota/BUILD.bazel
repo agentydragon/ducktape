@@ -351,7 +351,10 @@ py_test(
 
 py_package(
     name = "aiquota_pkg",
-    packages = ["aiquota", "personal_dashboard"],
+    packages = [
+        "aiquota",
+        "personal_dashboard",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":cli_lib",

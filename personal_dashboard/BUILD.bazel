@@ -18,6 +18,11 @@ js_library(
 
 py_library(
     name = "date_format",
-    srcs = ["__init__.py", "date_format.py"],
+    srcs = ["date_format.py"],
     imports = [".."],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
 )
