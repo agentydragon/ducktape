@@ -25,9 +25,11 @@ from devinfra.pr_visuals.collection import (
     ResultKey,
     SourceSummary,
 )
+from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
 from devinfra.pr_visuals.github_comment import (
     COMMENT_BUDGET,
-    COMMENT_MARKER,
+    CommentKind,
+    CommentState,
     error_comment_body,
     no_visual_comment_body,
     success_comment_body,
@@ -55,7 +57,6 @@ from devinfra.pr_visuals.publisher import (
     find_test_invocations,
     list_ci_failures,
     main,
-    refresh_stale_pull_request_comment,
     target_slug,
     upload_bundle,
     wait_for_test_invocations,
@@ -909,42 +910,46 @@ REPOSITORY = "agentydragon/ducktape"
 
 
 def _success_comment(commit_sha: str) -> str:
-    return success_comment_body(
-        repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/", review_tests=[]
-    )
-
-
-# Each existing body comes from the function that writes it, so this pins that the refresh
-# recognizes what the publisher actually posts, whatever its wording.
-@pytest.mark.parametrize(
-    ("existing_body", "expected_edit"),
-    [
-        pytest.param(
-            error_comment_body(repository=REPOSITORY, commit_sha=HEAD_SHA, error=ValueError("boom")),
-            True,
-            id="failure-of-this-commit",
+    return CommentUpdate(
+        body=success_comment_body(
+            repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/", review_tests=[]
         ),
-        pytest.param(_success_comment(OTHER_SHA), True, id="success-of-another-commit"),
-        pytest.param(_success_comment(HEAD_SHA), False, id="success-of-this-commit"),
+        state=CommentState(commit_sha=commit_sha, kind="published", ci_conclusion="success"),
+    ).render()
+
+
+@pytest.mark.parametrize(
+    ("existing_body", "kind", "ci_conclusion", "expected_edit", "expected_create"),
+    [
+        pytest.param(_success_comment(HEAD_SHA), "no_visual", "success", True, False, id="same-head-review"),
+        pytest.param(_success_comment(OTHER_SHA), "no_visual", "success", True, False, id="older-review"),
+        pytest.param(
+            "<!-- pr-visuals {malformed} -->\nOld output", "no_visual", "success", True, False, id="malformed-metadata"
+        ),
         pytest.param(
             f"<!-- pr-visuals -->\n## Visual review for [`{HEAD_SHA[:8]}`]"
             f"(https://github.com/{REPOSITORY}/commit/{HEAD_SHA})\n"
             "[Open visual review](https://visuals/commits/sha/index.html)",
-            False,
-            id="previous-markdown-success-of-this-commit",
-        ),
-        pytest.param(
-            no_visual_comment_body(
-                repository=REPOSITORY, commit_sha=HEAD_SHA, ci_conclusion="failure", ci_failures=[], details_url=None
-            ),
+            "no_visual",
+            "success",
             True,
-            id="no-artifacts-for-this-commit",
+            False,
+            id="legacy-markdown-review",
         ),
-        pytest.param(None, False, id="no-comment"),
+        pytest.param(None, "no_visual", "success", False, False, id="no-comment-for-empty-success"),
+        pytest.param(None, "no_visual", "failure", False, True, id="failed-ci-empty-result"),
+        pytest.param(_success_comment(HEAD_SHA), "published", "success", True, False, id="replace-review"),
+        pytest.param(None, "published", "success", False, True, id="create-review"),
+        pytest.param(None, "failure", "success", False, True, id="processing-error"),
     ],
 )
-def test_refresh_stale_pull_request_comment(
-    monkeypatch: pytest.MonkeyPatch, existing_body: str | None, expected_edit: bool
+def test_publish_pull_request_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    existing_body: str | None,
+    kind: CommentKind,
+    ci_conclusion: str,
+    expected_edit: bool,
+    expected_create: bool,
 ) -> None:
     edits: list[str] = []
     created: list[str] = []
@@ -979,13 +984,23 @@ def test_refresh_stale_pull_request_comment(
         def get_issue(self, _pull_request: int) -> FakeIssue:
             return FakeIssue()
 
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", FakeGithub)
-    refresh_stale_pull_request_comment(
-        repository=REPOSITORY, pull_request=4594, commit_sha=HEAD_SHA, body="replacement", token="token"
+    monkeypatch.setattr("devinfra.pr_visuals.comment_publishing.Github", FakeGithub)
+    update = CommentUpdate(
+        body="replacement", state=CommentState(commit_sha=HEAD_SHA, kind=kind, ci_conclusion=ci_conclusion)
     )
+    publish_pull_request_comment(repository=REPOSITORY, pull_request=4594, update=update, token="token")
 
-    assert edits == (["replacement"] if expected_edit else [])
-    assert created == []
+    assert edits == ([update.render()] if expected_edit else [])
+    assert created == ([update.render()] if expected_create else [])
+    if expected_edit or expected_create:
+        assert update.render().count("<!-- pr-visuals") == 1
+        marker = update.render().split("\n", 1)[0]
+        assert json.loads(marker.removeprefix("<!-- pr-visuals ").removesuffix(" -->")) == {
+            "version": 1,
+            "commit_sha": HEAD_SHA,
+            "kind": kind,
+            "ci_conclusion": ci_conclusion,
+        }
 
 
 PR_HEAD_REF = "pr-owner:topic"
@@ -1036,8 +1051,7 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     _forbid(
         monkeypatch,
         "find_reviewable_pull_request",
-        "upsert_pull_request_comment",
-        "refresh_stale_pull_request_comment",
+        "publish_pull_request_comment",
         "wait_for_test_invocations",
         "download_visual_tests",
         "build_bundle",
@@ -1084,7 +1098,7 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
     run = PublisherRun()
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: run.checks.append(kwargs))
     monkeypatch.setattr(
-        "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
+        "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
     )
 
     # The PR head is absent from invocation search (CI records the merge SHA), but
@@ -1176,6 +1190,24 @@ def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
+def test_successful_pr_run_without_visuals_reports_no_visual_state(
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
+) -> None:
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
+        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
+    )
+
+    main()
+
+    assert len(publisher_run.comments) == 1
+    assert publisher_run.comments[0]["pull_request"] == 8733
+    update = publisher_run.comments[0]["update"]
+    assert isinstance(update, CommentUpdate)
+    assert update.state == CommentState(commit_sha=HEAD_SHA, kind="no_visual", ci_conclusion="success")
+    assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
+
+
 def test_a_devel_push_run_advances_the_baseline_pointers_and_looks_up_no_pr(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
 ) -> None:
@@ -1198,7 +1230,7 @@ def test_a_pr_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
     monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: None)
-    _forbid(monkeypatch, "download_visual_tests", "refresh_stale_pull_request_comment", "write_baseline_pointers")
+    _forbid(monkeypatch, "download_visual_tests", "publish_pull_request_comment", "write_baseline_pointers")
 
     main()
 
@@ -1262,7 +1294,7 @@ def test_comment_failure_marks_final_check_failed_and_raises(
     def fail_comment(**_kwargs: object) -> NoReturn:
         raise OSError("comment write failed")
 
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_pull_request_comment", fail_comment)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.publish_pull_request_comment", fail_comment)
 
     with pytest.raises(ExceptionGroup) as raised:
         main()
@@ -1317,7 +1349,7 @@ def test_processing_error_survives_comment_and_check_failures(
         raise ConnectionError("check write failed")
 
     monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", fail_download)
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_pull_request_comment", fail_comment)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.publish_pull_request_comment", fail_comment)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", fail_check)
 
     with pytest.raises(RuntimeError, match="visual collection failed") as raised:
@@ -2082,7 +2114,7 @@ def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged()
         repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
     )
 
-    assert body.startswith(COMMENT_MARKER)
+    assert body.startswith("<h2>Visual review")
     assert f"https://github.com/r/commit/{sha}" in body
     assert "https://v/commits/sha/index.html" in body
     # Compact: no per-target list (the unchanged targets would be named) and no previews.
