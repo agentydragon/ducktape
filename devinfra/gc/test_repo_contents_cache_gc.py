@@ -152,9 +152,8 @@ def test_unlistable_external_marks_entries_without_known_referrers_for_review(
     assert isinstance(item, gc.ReviewEntry)
     assert item.reason is gc.ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN
     assert "permission denied" in gc.describe_reason(item)
-    retained = by_path[cache.prunable_only]
-    assert isinstance(retained, gc.RetainedEntry)
-    assert retained.reason is gc.RetainedEntryReason.REFERENCED
+    assert isinstance(by_path[cache.prunable_only], gc.ReviewEntry)
+    assert gc.unreferenced_after_deleting(list(by_path.values()), {cache.prunable_base}) == []
 
 
 def test_unreadable_external_link_marks_entries_without_known_referrers_for_review(

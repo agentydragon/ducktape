@@ -284,7 +284,7 @@ def scan_repo_contents_cache(
 ) -> list[EntryInspection]:
     """Classify every entry against `bases`: the joint scan's verdict on every output base
     whose `external/` may link into this cache (the root's and the session-env ones). Entries
-    with no known referrers are REVIEW when any base's reference inventory is incomplete."""
+    are REVIEW when any base's reference inventory is incomplete."""
     uid = os.getuid() if uid is None else uid
     try:
         contents = contents.resolve(strict=True)
@@ -303,19 +303,14 @@ def scan_repo_contents_cache(
         inspection: EntryInspection
         if isinstance(item, ReviewEntry):
             inspection = item
+        elif not reference_inventory.complete:
+            inspection = ReviewEntry(
+                item.contents, ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN, detail=reference_inventory.failure_detail
+            )
         else:
             linked_from = reference_inventory.referrers.get(item.contents, frozenset())
             if not linked_from:
-                if reference_inventory.complete:
-                    inspection = PrunableEntry(item)
-                else:
-                    inspection = ReviewEntry(
-                        item.contents,
-                        ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN,
-                        detail=reference_inventory.failure_detail,
-                    )
-            elif not reference_inventory.complete:
-                inspection = RetainedEntry(item, RetainedEntryReason.REFERENCED, linked_from)
+                inspection = PrunableEntry(item)
             elif linked_from <= prunable_bases:
                 inspection = RetainedEntry(item, RetainedEntryReason.ONLY_PRUNABLE_REFERRERS, linked_from)
             else:
