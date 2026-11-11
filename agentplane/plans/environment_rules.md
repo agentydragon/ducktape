@@ -5,7 +5,7 @@ Status: **design for review, 2026-11-10; no code.** The decision node is
 `ENVIRONMENT_LIFECYCLE_RULES` implements it. Settled and not reopened here
 ([identity plan](identity_and_kubernetes_accounts.md#identity-lifetime), operator 2026-11-10): acting
 in a workload is implied for its bound Identity, and so are same-Identity messaging and the wake it
-causes; lifecycle control (resume, wake, suspend, delete or rebind an environment as a direct request,
+causes; lifecycle control (resume, suspend, delete or rebind an environment as a direct request,
 or create Sessions on it) needs an explicit grant. This is that grant: one `PolicySet` rule type,
 bound to a subject by the ordinary `PolicyBinding`. Rebinding stays with the configured managers
 for now ([below](#operations)). Creating environments is
@@ -25,7 +25,7 @@ existing inbox rules mean. Inbox rules can move to selectors once one needs a co
 // Operations lists what a session_inbox_access or environment rule allows on its targets.
 // +listType=set
 // +kubebuilder:validation:MinItems=1
-// +kubebuilder:validation:items:Enum=send_message;read;resume;wake;suspend;delete;bind_session
+// +kubebuilder:validation:items:Enum=send_message;read;resume;suspend;delete;bind_session
 Operations []string `json:"operations,omitempty" proto:"11"`
 
 // Environments lists what an environment rule covers: a Sandbox matching every field of at least
@@ -106,7 +106,6 @@ until `IDENTITY_CUTOVER` removes them, ServiceAccount callers keep today's
 | -------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `read`         | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord` | EnvironmentService (implemented RPCs)                                                            |
 | `resume`       | `ResumeEnvironment` of an idle-suspended target                                                               | EnvironmentService → lifecycle manager (implemented RPC)                                         |
-| `wake`         | the automatic wake for work the caller queued on a target not bound to its Identity                           | Dispatcher delivery → lifecycle manager `RequestWake` (implemented path)                         |
 | `suspend`      | `SuspendEnvironment`                                                                                          | EnvironmentService (implemented RPC)                                                             |
 | `delete`       | `DeleteEnvironment`                                                                                           | EnvironmentService (implemented RPC)                                                             |
 | `bind_session` | creating a Session–environment binding: `CreateSession` placed on the target, or `AttachEnvironment` of it    | Dispatcher (implemented RPC; Identity admission is the addition), `AttachEnvironment` per #15436 |
@@ -114,19 +113,16 @@ until `IDENTITY_CUTOVER` removes them, ServiceAccount callers keep today's
 Rules for the operations:
 
 - **The rule is the caller's grant; the target keeps its own state gates.** A matching `resume`
-  still refuses an operator-requested stop, and `wake` still needs `spec.wakeOnSend` and spends the
-  caller's wake budget (`WakeBudgetKey` for the Identity). `resumePolicy` governs only the implied
+  still refuses an operator-requested stop. `resumePolicy` governs only the implied
   path for the Sandbox's own principal, so a rule needs no flag on the target.
-- **`wake` versus the implied wake.** The implied wake (`SESSION_IDENTITY_MESSAGING`,
-  `identityWakeAssessment`) covers work an Identity queues on a Sandbox bound to it. `wake` is the
-  explicit grant for any other target: an orchestrator's `SubmitInput` to a worker Session on a
-  suspended worker Sandbox. It is the Identity form of today's `wake_callers` broker role, limited
-  to its targets. A cross-Identity send through Notification still needs `session_inbox_access` for
-  the send; the wake it causes is the sender's, so it needs `wake` too.
-  TODO (operator, 2026-11-10): revisit this seam. `resume` names an explicit request to the
-  environment, and `wake` names a side effect of delivering Session work. These are different
-  layers, so the two may fold into one operation, or `wake` may move to Session authority. The
-  split stays for now.
+- **Automatic wake is not an operation here** (operator, 2026-11-11). `resume` is an explicit
+  request to an environment. Whether delivering Session work wakes a suspended environment is a
+  different layer: the sender's right to deliver is already a grant (`session_inbox_access` or
+  same-Identity messaging), and whether delivery starts the Sandbox is the recipient's choice, a
+  property of the Sandbox (today's `spec.wakeOnSend`) or of the Session, bounded by wake budgets.
+  The wake paths stay as they are today: the implied same-Identity wake
+  (`identityWakeAssessment`) and the `wake_callers` broker role. Decomposing them is deferred to
+  [`WAKE_ON_DELIVERY_DESIGN`](task_dag.md#wake_on_delivery_design--whether-delivering-session-work-wakes-its-environment).
 - **Rebinding is deferred** (operator, 2026-11-10). `SetEnvironmentIdentity` stays with the
   configured managers (the app for the operator); no agent use needs it yet. If an operation is added,
   it must also require the destination: rebinding from I to J makes whatever I left in the workspace
@@ -187,7 +183,6 @@ between check and patch is caught there.
 | Evaluator                                                 | Caller it evaluates                                                                                    | Reads                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | EnvironmentService (`runner_gateway/environments/`)       | a direct Identity SVID, or a delegated Identity effective caller (Session delegation, central sampler) | the index; the Sandbox's name, UID and `spec.identity`    |
-| Lifecycle manager (`lifecycle.WakeCaller`)                | an `IdentityWakeCaller` from Dispatcher's `wakeCaller(attribution)` in `delivery_wake.go`              | the index after the implied check fails; the Sandbox      |
 | Dispatcher `CreateSession`, `AttachEnvironment`           | the Identity effective caller; the Identity the request names                                          | the index; the placed or attached Sandbox                 |
 | Action Service (`session_delegation`, `orchestration_v1`) | nothing itself: it forwards the request's caller as the effective caller and the backend evaluates     | `action_auto_approve` only, for the Action request itself |
 
@@ -202,8 +197,7 @@ grant becomes an owned `PolicySet` whose `environment` rule names the new Sandbo
 
 A refusal is `NotFound` where the caller can't read the target, by a `read` rule or because it is
 bound to the caller's Identity (EnvironmentService does not
-confirm existence), else `PermissionDenied`; an automatic wake records
-`WAKE_REASON_CALLER_NOT_AUTHORIZED` as today.
+confirm existence), else `PermissionDenied`.
 
 ## Worked examples
 
@@ -232,12 +226,13 @@ The same set, bound to other Identities, serves each of them. Additions: Identit
 two RPCs and the rule check.
 
 **An orchestrator drives two named workers.** Identity `orchestrator` holds
-`operations: [resume, wake, bind_session]` on
+`operations: [resume, bind_session]` on
 `environments: [{sandbox: {name: worker-1}, boundIdentity: {name: worker}}, {sandbox: {name: worker-2}, boundIdentity: {name: worker}}]`;
 both workers are bound to Identity `worker`. It resumes `worker-1` and calls `CreateSession` placed
 there; the Session runs as `worker`, the Sandbox's Identity, with `orchestrator` recorded as creator.
-Its `SubmitInput` to that Session wakes a suspended `worker-2` under `wake`; a message through
-Notification also needs `session_inbox_access`. `DeleteEnvironment(worker-1)` is `PermissionDenied`,
+Sending input to that Session is acting on another Identity's Session, deferred to
+`SESSION_CROSS_IDENTITY_AUTHORITY`; whether it wakes a suspended worker is
+`WAKE_ON_DELIVERY_DESIGN`'s. `DeleteEnvironment(worker-1)` is `PermissionDenied`,
 and `GetEnvironment` is `NotFound` without `read`. Operations: implemented RPCs; Identity creation
 in Dispatcher is the addition `SESSION_SUBAGENT_DELEGATION` builds on.
 

@@ -3158,6 +3158,7 @@ flowchart LR
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and inboxes authorized by identity]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
+    ENVIRONMENT_LIFECYCLE_RULES --> WAKE_ON_DELIVERY_DESIGN[Deferred: whether delivering Session work wakes its environment]
     ENVIRONMENT_LIFECYCLE_RULES --> CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
 ```
 
@@ -3586,6 +3587,18 @@ itself) needs a rule naming that Identity. The likely shape is a `session` rule 
 their Identity (`identities: [{name: worker}]`), never by creator, with no operation that changes a
 Session's Identity. Picked up when an orchestration use needs it. **Exit:** a decided design and the
 PRs it implies.
+
+### `WAKE_ON_DELIVERY_DESIGN` — whether delivering Session work wakes its environment
+
+**Deferred (operator, 2026-11-11).** The [`environment` rule design](environment_rules.md) keeps
+only `resume`, an explicit request; it has no `wake` operation. Today a delivery wakes a suspended
+Sandbox through the implied same-Identity path (`identityWakeAssessment`) or a configured broker
+role (`wake_callers`), gated by `spec.wakeOnSend` and wake budgets. Direction: the sender's right to
+deliver is already a grant, so whether delivery starts the Sandbox is the recipient's choice, a
+property of the Sandbox or of the Session living in a harness inside it, rather than a sender-side
+"X may wake S" rule. Decide which carries it (a Sandbox default with a per-Session override is one
+option), how budgets bound a permitted sender, and what replaces the broker role. **Exit:** a
+decided design and the PRs it implies.
 
 ### `CROSS_IDENTITY_SESSION_BINDING` — binding a Session to another Identity's environment
 
