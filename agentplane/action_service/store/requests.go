@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -302,7 +303,7 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 		row.ID, row.Version, storedState(row.State), row.UpdatedAt, actorProto); err != nil {
 		return err
 	}
-	return notify(ctx, tx, UpdatesChannel, row.ID.String())
+	return postgres.Notify(ctx, tx, UpdatesChannel, row.ID.String())
 }
 
 func recordedActor(principal Principal) (*action_servicepb.Principal, error) {

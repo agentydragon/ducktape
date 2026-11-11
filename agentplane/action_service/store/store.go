@@ -42,10 +42,6 @@ func (s *Store) read(ctx context.Context, f func(*sql.Tx) error) error {
 	return postgres.ReadTransaction(ctx, s.db, sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}, f)
 }
 
-func notify(ctx context.Context, tx *sql.Tx, channel, payload string) error {
-	return postgres.Notify(ctx, tx, channel, payload)
-}
-
 // Errors the store distinguishes. Every failure of a request that is not one of these is the database's.
 var (
 	// ErrNotFound is a missing request, or one the reader may not see.
