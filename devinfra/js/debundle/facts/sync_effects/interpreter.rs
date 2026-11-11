@@ -7595,6 +7595,48 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // body at `new`, even without a callback argument to seed the opaque
         // fallback.
         self.promote_class_members(key, outcome);
+        self.publish_refused_instance_reach(key, call.span);
+    }
+
+    /// The unknown instance of a refused construction holds whatever its
+    /// fields and constructors stored on `this`: publish every value of the
+    /// bindings the class body (and each local class it reaches, such as its
+    /// base) reads, and every function it creates. Kept out of line for
+    /// `execute_call`'s frame size.
+    #[inline(never)]
+    fn publish_refused_instance_reach(&mut self, key: u32, span: Span) {
+        let index = self.inputs.index;
+        let mut reached = Values::new();
+        let mut pending = vec![key];
+        let mut visited = BTreeSet::new();
+        while let Some(class) = pending.pop() {
+            if !visited.insert(class) {
+                continue;
+            }
+            let Some(class_span) = index.class_spans.get(&class) else {
+                continue;
+            };
+            let (lo, hi) = (class_span.lo.0, class_span.hi.0);
+            reached.extend(index.callable_spans.range(lo..hi).map(|(callable, _)| {
+                AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
+            }));
+            for binding in index.references_within(lo, hi) {
+                if !self.inputs.flow.is_declared(binding) {
+                    continue;
+                }
+                for value in self.inputs.flow.values_of_binding(binding) {
+                    if let Value::Alloc(Kind::Class, other) = value {
+                        pending.push(other);
+                    }
+                    reached.insert(AbstractValue::Value(value));
+                }
+            }
+        }
+        self.publish_values(
+            &reached,
+            ClassMembersPublicationWriter::RefusedConstructionInstance,
+            Some(span),
+        );
     }
 
     /// The value of a refused construction: unknown, but it may retain every
@@ -11401,6 +11443,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
+    /// Whether a method call to `targets` can read its receiver through
+    /// `this` (including from an arrow inside the method), which the summary
+    /// does not bind.
+    fn method_may_read_receiver(&self, targets: &Values) -> bool {
+        let index = self.inputs.index;
+        !index.dynamic_scope_owners.is_empty()
+            || targets.iter().any(|target| {
+                let key = match target {
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => key,
+                    _ => return false,
+                };
+                let Some(span) = index.callable_spans.get(key) else {
+                    return true;
+                };
+                index.callables.get(key).is_none_or(|body| body.opaque)
+                    || index
+                        .callable_spans
+                        .range(span.lo.0..span.hi.0)
+                        .any(|(nested, _)| {
+                            index
+                                .callables
+                                .get(nested)
+                                .is_some_and(|nested| nested.implicit_capture)
+                        })
+            })
+    }
+
     /// The `Call`/`New` transfer over already evaluated targets and arguments.
     /// `supplied` carries the kernel's operand selections; `None` is the
     /// self-evaluating mode, which requests no value.
@@ -11757,7 +11827,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .clone()
                     .unwrap_or_else(|| self.evaluate(receiver, env, captures));
                 let contains_array = self.contains_dense_array(&values);
-                self.taint_objects(&values);
+                if self.method_may_read_receiver(&targets) {
+                    // The summary reads `this` as unknown, which stands only
+                    // for published values.
+                    self.publish_values(
+                        &values,
+                        ClassMembersPublicationWriter::MethodReceiver,
+                        Some(call.span),
+                    );
+                } else {
+                    self.taint_objects(&values);
+                }
                 if contains_array {
                     // A dense receiver preserves possible callback reach, but
                     // does not prove that the method invoked those callbacks.

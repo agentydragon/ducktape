@@ -956,6 +956,11 @@ pub enum ClassMembersPublicationWriter {
     GeneratorCreation,
     /// `Object.assign` onto a target the analysis does not track.
     ObjectAssignCopy,
+    /// The receiver of a local method that reads `this`, which the summary
+    /// does not bind.
+    MethodReceiver,
+    /// The unknown instance of a refused local class construction.
+    RefusedConstructionInstance,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The

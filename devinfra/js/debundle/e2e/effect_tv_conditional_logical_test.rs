@@ -1461,3 +1461,72 @@ fn constructions_and_copied_getters_without_effects_keep_the_split() {
         assert_preserved_entry_output(&fixture, "0 0\n");
     }
 }
+
+/// An install publishes the receiver a method reads through `this` (directly
+/// or from an arrow), and what a class's field, constructor or base
+/// constructor stored on the instance it reads.
+#[test]
+fn an_iterator_installed_through_a_receiver_runs_where_the_protocol_finds_it() {
+    for (install, extra) in receiver_iterator_installs("second") {
+        for flag in ITERATING_FLAGS {
+            assert_reader_split_diverges_with(&format!("{install}\n{flag}"), extra);
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same installs of a generator
+/// calling the effect-free `first` keep the split.
+#[test]
+fn an_iterator_installed_through_a_receiver_without_effects_keeps_the_split() {
+    for (install, extra) in receiver_iterator_installs("first") {
+        let fixture = with_reader_split(
+            &format!("{install}\n{}", ITERATING_FLAGS[0]),
+            extra,
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// A string iteration reached plainly, behind a guard, and through a returned
+/// callee.
+const ITERATING_FLAGS: [&str; 3] = [
+    "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { flag(); return 0; }",
+    "function flag() { if (first()) {} for (const x of 'ab') {} return noop; }\nfunction run() { if (first()) {} flag(); return 0; }",
+    "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { return flag()(); }",
+];
+
+fn receiver_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 5] {
+    [
+        (
+            format!(
+                "const obj = {{ it: function* () {{ {callee}(); }}, install() {{ return Object.defineProperty(String.prototype, Symbol.iterator, {{ value: this.it }}); }} }};\nconst patched = obj.install();"
+            ),
+            &["obj", "patched"][..],
+        ),
+        (
+            format!(
+                "function* it() {{ {callee}(); }}\nclass K {{ constructor() {{ this.it = it; }} }}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
+            ),
+            &["it", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "const obj = {{ it: function* () {{ {callee}(); }}, install() {{ const read = () => this.it; return Object.defineProperty(String.prototype, Symbol.iterator, {{ value: read() }}); }} }};\nconst patched = obj.install();"
+            ),
+            &["obj", "patched"][..],
+        ),
+        (
+            format!(
+                "function* it() {{ {callee}(); }}\nclass K {{ it = it; }}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
+            ),
+            &["it", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "function* it() {{ {callee}(); }}\nclass Base {{ constructor() {{ this.it = it; }} }}\nclass K extends Base {{}}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
+            ),
+            &["it", "Base", "K", "k", "patched"][..],
+        ),
+    ]
+}
