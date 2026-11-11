@@ -158,12 +158,6 @@ py_library(
 )
 
 py_library(
-    name = "worktree_registry",
-    srcs = ["worktree_registry.py"],
-    deps = [":types"],
-)
-
-py_library(
     name = "worktree_service",
     srcs = ["worktree_service.py"],
     deps = [
@@ -198,7 +192,6 @@ py_library(
         ":types",
         ":watcher",
         ":worktree_index",
-        ":worktree_registry",
         ":worktree_service",
         "//x/wt/server/handlers:path_handler",
         "//x/wt/server/handlers:pr_handler",

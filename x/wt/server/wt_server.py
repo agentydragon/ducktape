@@ -39,7 +39,6 @@ from x.wt.server.stores import DaemonStore
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.watcher import start_watcher
 from x.wt.server.worktree_index import WorktreeIndex
-from x.wt.server.worktree_registry import WorktreeRegistry
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration, load_config
 from x.wt.shared.protocol import (
@@ -160,7 +159,7 @@ class WtDaemon:
         self.running = False
         self.discovery_task: asyncio.Task | None = None
         self.discovery_scanning: bool = False
-        self.registry = WorktreeRegistry()
+        self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
         self._startup_tasks: list[asyncio.Task] = []
 
         # Ensure daemon directory exists
@@ -172,10 +171,6 @@ class WtDaemon:
         self._method_handlers = rpc
         with contextlib.suppress(Exception):
             logger.info("Registered RPC methods: %s", sorted(rpc.list_methods()))
-
-    @property
-    def known_worktrees(self) -> dict[Path, DiscoveredWorktree]:
-        return self.registry.known
 
     def _validate_configuration(self) -> str | None:
         """Returns error message if configuration is invalid, None if valid."""
@@ -260,15 +255,18 @@ class WtDaemon:
             # The scan runs under the lock: one that began before a concurrent register_worktree must not
             # overwrite the registry once that registration lands.
             async with self._state_lock:
-                changes = self.registry.apply(await scan_worktrees(self.config.worktrees_dir))
+                current = {wt.path: wt for wt in await scan_worktrees(self.config.worktrees_dir)}
+                added = [current[path] for path in current.keys() - self.known_worktrees.keys()]
+                removed = [self.known_worktrees[path] for path in self.known_worktrees.keys() - current.keys()]
+                self.known_worktrees = current
                 self._refresh_index()
                 # Sync paths to reactive store
                 self.store.set_worktree_paths(self.known_worktrees.keys())
         finally:
             self.discovery_scanning = False
-        for wt in changes.added:
+        for wt in added:
             await self._start_gitstatusd_for_worktree(wt)
-        for wt in changes.removed:
+        for wt in removed:
             await self._stop_gitstatusd_for_worktree(wt)
 
     async def _periodic_discovery(self) -> None:
@@ -509,14 +507,14 @@ class WtDaemon:
 
     async def register_worktree(self, info: DiscoveredWorktree) -> None:
         async with self._state_lock:
-            self.registry.add(info)
+            self.known_worktrees[info.path] = info
         await self._start_gitstatusd_for_worktree(info)
         await self.rebuild_index()
 
     async def unregister_worktree(self, info: DiscoveredWorktree) -> None:
         await self._stop_gitstatusd_for_worktree(info)
         async with self._state_lock:
-            self.registry.remove(info.path)
+            self.known_worktrees.pop(info.path, None)
         await self.rebuild_index()
 
 
