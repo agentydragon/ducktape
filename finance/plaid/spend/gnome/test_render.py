@@ -425,7 +425,7 @@ def test_allowance_warming(
 def test_allowance_exhausted(
     session: GnomeSession, capture_menu: GnomeMenuCapture, allowance_scenarios: dict[str, SpendView]
 ) -> None:
-    with _menu(session, "allowance_exhausted", "-<$1") as geometry:
+    with _menu(session, "allowance_exhausted", "-$0.01") as geometry:
         view = allowance_scenarios["allowance_exhausted"]
         assert "Allowance exhausted" in _allowance_menu_text(session, view)
         capture_menu.capture(geometry, label="allowance exhausted")
