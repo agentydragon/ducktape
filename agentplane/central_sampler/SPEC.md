@@ -313,7 +313,7 @@ the first new user message after kept turns. Native compaction puts the summary 
 prepend the Responses environment reinjection. Background compaction and dynamic definitions are
 deferred.
 
-Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
+Nested `exec_command` and `write_stdin` follow Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
 `exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
 truncation and the unified exec environment overlay. Every executor process (nested tools and the
@@ -460,8 +460,14 @@ without changing that confirmed input outcome, while queued commands follow the 
 
 Process exit can precede stdout/stderr closure. Setup, tool reads and idle reconciliation retain the
 process until `process/read` reports closed streams and an empty output page, preserving late output.
-Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
-releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
+Tool reads stop waiting for output at their yield deadline even when a process has exited but its
+output remains open; RPC, reconnect and evidence writes have separate bounded budgets. In that state
+they return the known exit code and retain a session ID for reading late output; input is not sent to
+the exited process. This retained handle differs from Codex's exit handling. Executor
+notifications wake foreground and idle cursor reads, and an initial read catches up after connection
+or reconnect. Unchanged exit observations do not count as reconciliation progress. Once the output
+is drained, the idle owner releases driver/host capacity without a model poll. An exited process with
+open output retains capacity until it closes. Unread output per handle remains in PostgreSQL as
 upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
 including after the old executor session expires. The sampler never advances a read cursor until
 the corresponding page is durably recorded. Once an uncertain process operation is settled as abandoned,
@@ -597,7 +603,9 @@ sampler DB. Each provider intent stores its final serialized request before disp
 bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
 usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
 at 64 MiB per response; received bytes are recorded before parsing, including incomplete SSE tails.
-A DB write failure prevents further effect dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
+A received executor response gets a bounded evidence and outcome journal window independent of the
+RPC deadline; each write still checks the owner lease. A DB write failure prevents further effect
+dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
 raw `BoundaryRecord` observations plus source-linked normalized reasoning, text, tool and turn
 records. `ExecutionProgress` preserves code-cell visibility where upstream native APIs lack it.
 Thread is a lossy display projection; it is not suitable for reconstructing provider continuation.

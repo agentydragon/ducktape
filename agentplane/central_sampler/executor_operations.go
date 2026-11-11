@@ -230,20 +230,20 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 			err = handshakeCtx.Err()
 		}
 		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, environmentFailure.intentEvidence()); finishErr != nil {
 				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
 			}
 			return environmentFailure
 		}
 		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, fence.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
 				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
 			}
 			fence.recorded = true
 			return fence
 		}
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+		if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return fmt.Errorf("record OpenSession transport outcome after %v: %w", transport, finishErr)
 		}
 		return transport
@@ -281,20 +281,20 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 			err = handshakeCtx.Err()
 		}
 		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, environmentFailure.intentEvidence()); finishErr != nil {
 				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
 			}
 			return environmentFailure
 		}
 		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, fence.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
 				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
 			}
 			fence.recorded = true
 			return fence
 		}
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+		if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return fmt.Errorf("record OpenSession receive outcome after %v: %w", transport, finishErr)
 		}
 		return transport
@@ -302,7 +302,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	if opened == nil {
 		cancel()
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor OpenSession returned an empty response")}
-		if err := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); err != nil {
+		if err := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); err != nil {
 			return fmt.Errorf("record empty OpenSession response: %w", err)
 		}
 		return transport
@@ -318,7 +318,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 			cause = errors.New("executor OpenSession handshake cancellation raced its first response")
 		}
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: cause}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+		if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return fmt.Errorf("record OpenSession canceled first response after %v: %w", transport, finishErr)
 		}
 		return transport
@@ -331,7 +331,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
 		cancel()
 		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor resumed a different or empty execution session")}
-		finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession))
+		finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession))
 		if frameErr != nil || finishErr != nil {
 			return fmt.Errorf("record mismatched OpenSession response: %w", errors.Join(frameErr, finishErr))
 		}
@@ -347,7 +347,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	if opened.Shell != nil {
 		environmentInfo = map[string]any{"shell": map[string]any{"name": opened.Shell.Name, "path": opened.Shell.Path}}
 	}
-	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{
+	if err := e.finishNested(ctx, intent, map[string]any{
 		"outcome": NestedCompleted, "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
 		"sessionId": opened.ExecutionSessionId, "environmentInfo": environmentInfo,
 	}); err != nil {
@@ -404,7 +404,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 		}
 		rejectedError := &executorRejectedError{method: executorMethodInitialize, code: int(response.Status.GetUpstreamCode()), message: message}
 		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
-		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
+		if err := e.finishNested(ctx, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
 			return fmt.Errorf("record rejected OpenSession result: %w", errors.Join(nativeEvidenceErr, err))
 		}
 		// A typed rejection alone is insufficient if accompanying native frames failed to
@@ -419,7 +419,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 	if response.Status != nil && response.Status.Message != "" {
 		message = response.Status.Message
 	}
-	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "message": message}); err != nil {
+	if err := e.finishNested(ctx, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "message": message}); err != nil {
 		return errors.Join(nativeEvidenceErr, errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
 	}
 	if nativeEvidenceErr != nil {
@@ -430,6 +430,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 
 func (e *Executor) watchSession(streamCtx context.Context, stream executorSessionStream, operationID, sessionID string, generation uint64, cancel context.CancelFunc, done chan struct{}) {
 	defer close(done)
+	defer e.signalProcessChange()
 	for {
 		response, err := stream.Recv()
 		if err != nil {
@@ -473,15 +474,19 @@ func (e *Executor) watchSession(streamCtx context.Context, stream executorSessio
 			cancel()
 			return
 		}
+		if len(response.NativeFrames) != 0 {
+			// Notifications are evidence and wakeups. Cursor reads remain authoritative for
+			// output, so duplicate or coalesced wakeups cannot duplicate process bytes.
+			e.signalProcessChange()
+		}
 	}
 }
 
 func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionID string, method executionMethod, frames []*executorpb.ExecutionNativeFrame) error {
-	if ctx.Err() != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
+	// The RPC deadline bounds receiving the response, not committing its evidence.
+	// Store writes still verify the Session lease after caller or stream cancellation.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	for _, frame := range frames {
 		if frame == nil {
 			continue
@@ -582,7 +587,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	request, err := e.typedRequest(ctx, method, params, intent)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
 		return nil, errors.Join(err, finishErr)
 	}
 	response, err := e.callWithReadDeadline(ctx, method, request)
@@ -600,7 +605,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				fence.afterSequence, fence.output = read.AfterSeq, read.ObservedOutput
 			}
 			e.setReconnectRequired(true)
-			if finishErr := e.finishUnknownIntent(ctx, intent, fence.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
 				return nil, fmt.Errorf("record stale execution incarnation for %s after %v: %w", method, fence, finishErr)
 			}
 			fence.recorded = true
@@ -615,7 +620,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				readRetried = true
 				response, err = e.callWithReadDeadline(ctx, method, request)
 			} else if !isExecutorConnectionFailure(reconnectErr) {
-				finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID))
+				finishErr := e.finishNested(ctx, intent, transport.evidence(e.sessionID))
 				return nil, fmt.Errorf("resume executor state after %v: %w", transport, errors.Join(reconnectErr, finishErr))
 			} else {
 				transport.cause = errors.Join(transport.cause, fmt.Errorf("resume executor session: %w", reconnectErr))
@@ -635,7 +640,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				environment.remoteOutcome = NestedUnknown
 			}
 			e.setReconnectRequired(true)
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environment.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, environment.intentEvidence()); finishErr != nil {
 				return nil, fmt.Errorf("record known typed execution %s refusal after %v: %w", method, environment, finishErr)
 			}
 			return nil, environment
@@ -644,7 +649,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			transport.intentID, transport.processID = intent, executorProcessID(params)
 			transport.retainedSession = e.retainedSessionID(ctx)
 			e.setReconnectRequired(true)
-			if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 				return nil, fmt.Errorf("record unknown typed execution %s outcome after %v: %w", method, transport, finishErr)
 			}
 		}
@@ -682,7 +687,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				}
 			} else if !isExecutorConnectionFailure(reconnectErr) {
 				transport := &executorTransportError{method: method, phase: "native", intentID: intent, processID: executorProcessID(params), retainedSession: e.sessionID, cause: errors.New(statusValue.Message)}
-				finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID))
+				finishErr := e.finishNested(ctx, intent, transport.evidence(e.sessionID))
 				return nil, fmt.Errorf("resume executor state after %v: %w", transport, errors.Join(reconnectErr, finishErr))
 			} else if statusValue.Message == "" {
 				statusValue.Message = reconnectErr.Error()
@@ -698,7 +703,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			message = "request rejected"
 		}
 		rejected := map[string]any{"code": statusValue.UpstreamCode, "message": message}
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
 		if frameJournalErr != nil {
 			return nil, errors.Join(frameJournalErr, finishErr)
 		}
@@ -721,7 +726,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			message = "remote execution outcome is unknown; operation was not replayed"
 		}
 		transport = &executorTransportError{method: method, phase: "native", intentID: intent, processID: executorProcessID(params), retainedSession: e.sessionID, cause: errors.New(message)}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID)); finishErr != nil {
+		if finishErr := e.finishNested(ctx, intent, transport.evidence(e.sessionID)); finishErr != nil {
 			return nil, fmt.Errorf("record unknown typed execution outcome after %v: %w", transport, errors.Join(frameJournalErr, finishErr))
 		}
 		e.setReconnectRequired(true)
@@ -732,12 +737,12 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	result, err := responseObject(method, response)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	evidenceResult := make(map[string]any, len(result))
@@ -749,7 +754,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	evidence["outcome"] = NestedCompleted
 	evidence["request_id"] = intent
 	evidence["execution_session_id"] = e.sessionID
-	if err := e.store.FinishNested(ctx, e.owner, intent, evidence); err != nil {
+	if err := e.finishNested(ctx, intent, evidence); err != nil {
 		return nil, errors.Join(frameJournalErr, fmt.Errorf("record completed typed execution %s result: %w", method, err))
 	}
 	if frameJournalErr != nil {
@@ -1115,10 +1120,9 @@ func (e *Executor) retainedSessionID(ctx context.Context) string {
 	return *c.ExecutorSession
 }
 
-func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evidence any) error {
-	// A handshake deadline may expire while this write is in flight. Always
-	// give the outcome journal its own bounded cleanup window, including on
-	// caller cancellation, so no retry can leave an unresolved intent behind.
+func (e *Executor) finishNested(ctx context.Context, intent string, evidence any) error {
+	// Once an outcome is known, give its journal write a bounded window independent
+	// of the RPC deadline. FinishNested still verifies the Session lease.
 	journalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	return e.store.FinishNested(journalCtx, e.owner, intent, evidence)
