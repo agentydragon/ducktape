@@ -139,6 +139,7 @@ py_test(
         "//:conftest",
         "//aiquota:models",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
