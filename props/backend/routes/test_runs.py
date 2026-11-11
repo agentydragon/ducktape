@@ -14,7 +14,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from props.backend.auth import AdminRole, AuthenticatedIdentity, require_critic_run_access
+from props.backend.auth import AdminRole, AuthenticatedIdentity, get_caller_db, require_critic_run_access
 from props.backend.deps import get_admin_db
 from props.backend.routes import runs
 from props.core.agent_types import CriticTypeConfig
@@ -22,7 +22,7 @@ from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest
 from props.orchestration.agent_registry import BudgetExceededError, ImageResolutionError, ResolvedImage
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
-from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions, make_fake_critic_run
 
 # gazelle:include_dep //util/testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
@@ -136,6 +136,29 @@ def test_budget_view_includes_child_costs(synced_db: Database, parent_run: UUID)
 
 
 # --- HTTP endpoint tests (mock registry, real FastAPI) ---
+
+
+def test_active_runs_returns_only_active_run_details(synced_db: Database, parent_run: UUID) -> None:
+    with synced_db.session() as session:
+        finished = make_fake_critic_run(session=session, example=TRAIN_EXAMPLE, status=AgentRunStatus.EXITED)
+        finished_id = finished.agent_run_id
+        session.add(finished)
+        session.commit()
+
+    app = FastAPI()
+    app.include_router(runs.router, prefix="/api/runs")
+    app.dependency_overrides[get_caller_db] = lambda: synced_db
+    with TestClient(app) as client:
+        response = client.get("/api/runs/active")
+
+    assert response.status_code == 200
+    rows = {row["agent_run_id"]: row for row in response.json()["runs"]}
+    assert str(finished_id) not in rows
+    active = rows[str(parent_run)]
+    assert active["image_digest"] == FAKE_CRITIC_DIGEST
+    assert active["model"] == BUDGET_TEST_MODEL
+    assert active["status"] == "in_progress"
+    assert active["created_at"]
 
 
 @pytest.fixture
