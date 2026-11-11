@@ -2109,14 +2109,15 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 ### `HISTORY_INGRESS_OUTCOME_DESIGN` — item completion and command outcome invariants at History ingress
 
 **Decision, unscheduled; operator direction, 2026-11-10.** The incident's
-`HarnessUserMessageConfirmed` and later `CommandFailed` name the same command: the
-[Thread fold](../history_service/threadfold/fold.go) settles origin commands as effected at
-confirmation, then errors when a later event settles an already-settled command. The
-[History append](../history_service/storage/store.go) accepts exact cursor replays and commits new
-entries without checking these semantic outcomes, leaving the raw event available while that
-Session's Thread projection stalls. Consider whether ingress should enforce one-time settlement
-invariants, and whether item completion and command outcome need different rules; rejection is an
-option to review, not a selected protocol policy.
+`HarnessUserMessageConfirmed` and later `CommandFailed` name the same command. The
+[Thread fold](../history_service/threadfold/fold.go) narrowly tolerates that sequence for a
+`SubmitInput` only when the failure reason is `session blocked by unresolved effects`; other
+contradictory settlements still fail the fold. The [History append](../history_service/storage/store.go)
+accepts exact cursor replays and commits new cursor-valid entries without checking command outcomes,
+so other contradictions can remain in raw history while that Session's Thread projection stalls.
+Consider whether ingress should enforce one-time settlement invariants, and whether item completion
+and command outcome need different rules; rejection is an option to review, not a selected protocol
+policy.
 
 Alternatives include refusing a contradictory outcome before commit, retaining every raw event and
 folding the conflict into a visible anomaly while continuing the projection, or leaving ingress
@@ -3156,6 +3157,10 @@ flowchart LR
     STANDING_WORKLOAD_IDENTITY --> IDENTITY_CUTOVER
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and inboxes authorized by identity]
+    SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
+    ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_RUNTIME_NATIVE_SURFACE[Deferred: a runtime surface unmistakably about native Sessions]
+    ENVIRONMENT_LIFECYCLE_RULES --> WAKE_ON_DELIVERY_DESIGN[Deferred: whether delivering Session work wakes its environment]
+    ENVIRONMENT_LIFECYCLE_RULES --> CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
 ```
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
@@ -3352,11 +3357,15 @@ another Identity stops matching.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
-**Blocked on open question 11 only, who creates a launched Sandbox's `Identity`
-([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).** The
+**Unblocked: question 11 is settled (operator, 2026-11-11)**: a launch is three separate
+operations, create the Identity, bind the launch's PolicySets to it, then `CreateEnvironment` naming it
+in `spec.identity`; no environment operation creates or deletes an Identity
+([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The launch paths (the
+app's launch form, `LaunchSandbox`, the system-test driver) switch to that sequence with the
+controller. The
 consumers-first hold is discharged: the services and proxy accept Identity subjects on staging since
-2026-11-10 (#15391 and the images before it). Draft #15239 holds the controller part and must be
-rebuilt on the answer to question 11 rather than rebased.
+2026-11-10 (#15391 and the images before it). Draft #15239 holds the controller part and is rebuilt on
+that answer rather than rebased.
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
 only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
 Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes
@@ -3573,6 +3582,50 @@ the Sandbox is the only remaining anchor to replace. It also reviews any policy 
 component's ServiceAccount as though the component were an identity (`IDENTITY_CUTOVER`): components
 are authorized by role and name the Identity they act for through delegation.
 
+### `SESSION_CROSS_IDENTITY_AUTHORITY` — acting on another Identity's Sessions
+
+**Deferred (operator, 2026-11-11).** Under the [`environment` rule design](environment_rules.md),
+authority over an existing Session is implied only for a caller of the Session's own Identity;
+every other caller is refused. An orchestrator that wants to submit input to, read, attach
+environments to or detach them from Sessions of another Identity (worker Sessions it did not create
+itself) needs a rule naming that Identity. The likely shape is a `session` rule targeting Sessions by
+their Identity (`identities: [{name: worker}]`), never by creator, with no operation that changes a
+Session's Identity. Picked up when an orchestration use needs it. **Exit:** a decided design and the
+PRs it implies.
+
+### `ENVIRONMENT_RUNTIME_NATIVE_SURFACE` — an Environment Runtime surface unmistakably about native Sessions
+
+**Deferred (operator, 2026-11-11).** The Environment Runtime's gRPC service
+(`env/runtime/control/environment_runtime.proto`) has a `CreateSession` that starts a native Session
+Dispatcher already admitted, but its name reads like a second authority beside Dispatcher's
+`CreateSession` ([environment rules](environment_rules.md#operations)). Make the surface
+unmistakably about native Sessions: names, request shapes and docs that say Dispatcher admits and
+the runtime materializes. This may mean rethinking how the service is cut (native-harness control
+versus environment facts, executor and other concerns) and its callers beyond Dispatcher. **Exit:** a
+decided cut and the renames or splits it implies.
+
+### `WAKE_ON_DELIVERY_DESIGN` — whether delivering Session work wakes its environment
+
+**Deferred (operator, 2026-11-11).** The [`environment` rule design](environment_rules.md) keeps
+only `resume`, an explicit request; it has no `wake` operation. Today a delivery wakes a suspended
+Sandbox through the implied same-Identity path (`identityWakeAssessment`) or a configured broker
+role (`wake_callers`), gated by `spec.wakeOnSend` and wake budgets. Direction: the sender's right to
+deliver is already a grant, so whether delivery starts the Sandbox is the recipient's choice, a
+property of the Sandbox or of the Session living in a harness inside it, rather than a sender-side
+"X may wake S" rule. A per-sender wake rule is not planned (YAGNI, operator 2026-11-11); add it
+only if a use appears. Decide which carries it (a Sandbox default with a per-Session override is one
+option), how budgets bound a permitted sender, and what replaces the broker role. **Exit:** a
+decided design and the PRs it implies.
+
+### `CROSS_IDENTITY_SESSION_BINDING` — binding a Session to another Identity's environment
+
+**Deferred (operator, 2026-11-11).** A Session–environment binding requires the Session's Identity
+to equal the environment's bound Identity, with no policy override
+([admitting a binding](environment_rules.md#operations)). A later rule may allow a binding across
+Identities. It needs its own model of what each side may see and do: the environment's Identity
+would run work directed by a conversation carrying another Identity's history. Picked up only when a
+use needs it. **Exit:** a decided design, or a recorded decision not to allow it.
+
 ### `IDENTITY_CUTOVER` — the staging cutover
 
 **Blocked on `IDENTITY_SYSTEM_TESTS`, `APP_IDENTITIES_UI` and `STANDING_WORKLOAD_IDENTITY`.** One PR flips the staging rendering
@@ -3654,7 +3707,6 @@ service-to-service TokenReview (operator, 2026-11-10); that is not dead and is n
 ```mermaid
 flowchart LR
     REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit]
-    FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
     TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
@@ -3666,22 +3718,38 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
-#### Smaller items
-
-- **History migration 00012's trigger and function** (`thread_command_operation_enum` in
-  `history_service/migrations/history/00012_thread_command_operation_enum.sql`): the gate is met,
-  since migration 00013 is on staging (section 14), so no History replica older than 00012 runs.
-  Drop both in a new migration. Source: tombstone of 2026-11-09.
-- **`pythonJSON`** in `runner_gateway/environments/internal/management/access.go`, a Python-emulating
-  intent encoding left by the Go port: replace it with deterministic encoding and semantic
-  caller/request comparison. No gate; Python-byte interoperability is not a requirement. Source:
-  [EnvironmentService TODO](../runner_gateway/environments/TODO.md).
-- **The OAuth MCP fixture image** (`action_service/testing/oauth_mcp_server.py` and its deployment
-  wiring): check whether an existing MCP image (the Everything image) can serve the tool surface with
-  Dex, then delete the custom fixture. Source: `TODO` at the fixture.
-- **`cluster/cdk8s/agentplane/test_sandbox_service.py`** is named for the retired Sandbox Service;
-  rename it for what it tests. The other item section 9 knew, `docs/operator_federation.md` saying
-  "Event & Notification Hub", is gone on devel. Source: `REFACTOR_COHERENCE_AUDIT`.
+- **`SAMPLER_TURN_RECONCILIATION`** (operator, 2026-11-11): the central sampler drives a turn as one
+  long-running loop under a single `turn_timeout_seconds` context (3600 on staging,
+  `runtime.go` `execute`). Thread `0702a8cc` hit it at exactly 3600 s on 2026-11-11: the deadline
+  cancelled a statement mid-sample (`pq: canceling statement due to user request`), the sampling
+  intent kept no result, and the Session blocked on an "unresolved outcome" needing manual
+  recovery. A slow local model can legitimately run one turn for hours. Direction: replace the loop
+  with a reconciliation loop over durable state. Each step reads the conversation, its pending
+  intent and live executor state, performs the next step (sample, run a tool call, settle a result)
+  and persists it, so a restart or lease handoff mid-turn resumes at the next step with nothing
+  lost. Liveness comes from progress, not a turn deadline: connect and stream-idle timeouts on
+  provider calls, the tools' own limits, and short per-statement database timeouts independent of
+  any turn. An optional per-Session or per-model turn budget, if wanted, ends the turn cleanly at a
+  step boundary with an ordinary result. A sampling or compaction intent cancelled before its
+  result is stored has no external effects beyond cost: record it abandoned and continue, never
+  block the Session on it (the unknown-effect block is for executor intents). Failure settlement
+  runs on a context that is not already cancelled. **Exit:** a decided design and the PRs it
+  implies; a test where a turn outlives any former timeout and survives a sampler restart
+  mid-sample.
+- **`SAMPLER_STABLE_PROVIDER_PREFIX`**: a sampler rollout must not break the request prefix an
+  existing conversation already sent. #15591 edited the `write_stdin` schema text inside the
+  sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The
+  `tools` list differs from the one this block was created with"), because the tool list and
+  instructions are rendered from current code on every request and staging sets
+  `prefix_mismatch_behavior: error`. Those Threads cannot continue. Planning inputs: (1) provider
+  mechanisms for changing tool definitions inside a conversation without invalidating earlier
+  blocks, such as Anthropic's ways to append a tool or schema change after the prefix, and their
+  Responses API equivalents; (2) persisting the rendered tools, system instructions and other prefix
+  inputs with the conversation and reconciling the committed prefix with what current code would
+  render, so a change is appended or adopted at an explicit boundary (new Thread, compaction,
+  operator-chosen migration); (3) `drop_block` only as a last resort, since it silently loses
+  reasoning. Test by rendering a stored conversation under a changed tool description and asserting
+  the provider accepts the continuation. Covers the Responses and Anthropic Messages paths.
 - **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): selected, unscheduled; the App's Thread-events SSE
   route and its code go once supported callers use a History-backed contract. Stays in section 11.
 
@@ -3724,17 +3792,6 @@ code as it is, without cutover narration; no compatibility branch, optional-with
 showing exactly the deployed services and the traffic between them in `cluster/cdk8s/agentplane`.
 Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
 node leaves with the last of them.
-
-#### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
-
-**Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
-Kubernetes clients for state envtest can hold:
-
-Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
-`recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
-`sandboxes/sandboxreader/reader_test.go`.
-
-One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 

@@ -1,0 +1,10 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -1,5 +1,5 @@
+ module(
+     name = "rules_python",
+-    version = "0.0.0",
++    version = "2.5.0-rc4",
+     compatibility_level = 1,
+ )

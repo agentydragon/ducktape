@@ -311,7 +311,8 @@ def scan_repo_contents_cache(
     progress: ProgressSink = NULL_PROGRESS,
 ) -> list[EntryInspection]:
     """Classify every entry against `bases`: the joint scan's verdict on every output base
-    whose `external/` may link into this cache (the root's and the session-env ones)."""
+    whose `external/` may link into this cache (the root's and the session-env ones). Entries
+    are REVIEW when any base's reference inventory is incomplete."""
     uid = os.getuid() if uid is None else uid
     try:
         contents = contents.resolve(strict=True)

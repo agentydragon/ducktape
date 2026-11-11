@@ -5,7 +5,7 @@ import json
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -179,6 +179,15 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
         if await asyncio.to_thread(logs.exists):
             await asyncio.to_thread(shutil.copytree, logs, output / "sessions", dirs_exist_ok=True)
         return output
+
+
+async def sampler_caller_after_gateway_roll(cluster: Cluster, deployed: CentralStack) -> CentralStack:
+    """Replace the sampler caller token bound to the Gateway Pod that was rolled."""
+    async with cluster.api_client() as connection:
+        core = k8s.CoreV1Api(connection)
+        pod = await _pod(cluster, core, "runner-gateway")
+        token = await _bound_token(cluster, core, "runner-gateway", pod, SERVICE)
+    return replace(deployed, sampler_metadata=(("authorization", f"Bearer {token}"),))
 
 
 @asynccontextmanager

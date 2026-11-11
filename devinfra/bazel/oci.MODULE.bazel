@@ -281,6 +281,7 @@ apt.install(
     packages = [
         "dbus-x11",
         "fonts-cantarell",
+        "fonts-noto-color-emoji",
         "gir1.2-secret-1",
         "gnome-shell",
         "libgdk-pixbuf2.0-bin",

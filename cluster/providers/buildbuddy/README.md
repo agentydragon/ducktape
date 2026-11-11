@@ -39,33 +39,32 @@ metadata. The group ID is
 immutable. Expiration is not exposed because BuildBuddy's list API omits it and
 the update API cannot change it.
 
-BuildBuddy generates the API-key value during Create. Crossplane publishes it
-only to the same-namespace `spec.writeConnectionSecretToRef`, under `api-key`;
-the provider does not put it in the managed resource spec or status and does not
-use `GetApiKey` value readback, which the BuildBuddy server can disable. Keep
-that connection Secret: if it is missing after creation, the provider reports
-an error because it cannot guarantee that the server will return the value
-again. Change permissions or labels in place; rotate a token by creating a
-replacement `APIKey`, moving consumers, then deleting the old resource.
+The provider requires BuildBuddy's `GetApiKey` value readback to be enabled.
+Crossplane publishes the value only to the same-namespace
+`spec.writeConnectionSecretToRef`, under `api-key`; it never stores the value in
+the managed resource spec or status. The provider reads it back on each
+observation, so it restores a missing or changed connection Secret. If readback
+is disabled or denied, reconciliation reports an error. Change permissions or
+labels in place; rotate a token by creating a replacement `APIKey`, moving
+consumers, then deleting the old resource.
 
 BuildBuddy's Create API has no idempotency token and does not accept a
 caller-selected key ID. Crossplane persists an external-create-pending marker
-before the RPC, then persists the returned ID before publishing the one-time
-value. A provider crash after BuildBuddy commits but before those writes can
-leave a key whose value was lost with the process. The pending marker prevents
-an automatic duplicate create. If the ID was saved but publishing the Secret
-did not finish, the next observation fails closed because BuildBuddy does not
-guarantee value readback. There is no automatic recovery for either window:
-inspect the group's keys, revoke any key without a usable connection Secret,
-and create a replacement. Clear a pending marker only after confirming no key
-was committed.
+before the RPC, then persists the returned ID before publishing the value. If
+the provider crashes before it saves the ID, the pending marker prevents an
+automatic duplicate create. Inspect the group's keys and resolve the marker:
+if the key can be identified, set its ID as the external name and clear the
+pending annotation; otherwise clear the marker only after confirming no key
+was committed. If the ID was saved but Secret publication did not finish,
+the next observation reads the value and publishes it.
 
-If Create returns an ambiguous gRPC error, the provider persists an
-external-name marker and blocks further key operations. Inspect the group's
-keys before clearing it; if a key was committed, revoke it and replace the
-resource because its one-time value may be lost. Default `Delete` management
-policy revokes a managed key; without `Delete`, Kubernetes can garbage-collect
-the connection Secret while the remote key remains active.
+If Create fails, the provider treats the outcome as uncertain, persists an
+external-name marker, and blocks further key operations. This includes errors
+such as permission denials. Inspect the group's keys before clearing it; if the
+created key can be identified, set the external name to its ID and the provider
+will read its value. Default `Delete`
+management policy revokes a managed key; without `Delete`, Kubernetes can
+garbage-collect the connection Secret while the remote key remains active.
 
 The runtime requires `WATCH_NAMESPACE`, `WATCH_SECRET`, and `CREDENTIAL_SECRET`.
 It watches only the configured source, rejects other source names, and accepts
@@ -77,8 +76,7 @@ not what a compromised provider process can access.
 ## LiteLLM ownership handoff
 
 The cluster manages `litellm/live-tests` with `Observe`, `Create`, and `Update`
-policies. Its former Terraform resource had a destroy provisioner that deletes
-BuildBuddy `OPENAI_API_KEY`; it was forgotten from state using a `removed` block
-with `destroy = false`. The remaining Terraform CR is suspended and can be
-retired in a later change after checking deletion behavior and Flux ownership.
-The BuildBuddy admin credential remains independently owned.
+policies. The former `litellm-buildbuddy-sync` Terraform state was emptied using
+a `removed` block with `destroy = false`. Both retired state schemas were then
+removed without running their former destroy provisioners. The BuildBuddy admin
+credential remains independently owned.

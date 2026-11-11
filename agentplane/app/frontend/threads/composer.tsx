@@ -14,7 +14,6 @@ export interface ThreadComposerProps {
   onResumeSandbox: () => void;
   onSubmit: (text: string) => boolean;
   onInterrupt: (turnId: string) => void;
-  status: ReactNode;
   children: ReactNode;
 }
 
@@ -27,7 +26,6 @@ export function ThreadComposer({
   onResumeSandbox,
   onSubmit,
   onInterrupt,
-  status,
   children,
 }: ThreadComposerProps): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -80,7 +78,6 @@ export function ThreadComposer({
         disabled={!canSend}
         onKeyDown={composerKey}
       />
-      {status}
       <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
         {children}
         <Group className="agentplane-composer-send" gap="xs" wrap="nowrap">

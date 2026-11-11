@@ -533,7 +533,7 @@ pub fn run_plan_work_report(
 }
 
 pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsReport> {
-    let input = load_graph(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
     let mut atomic_groups = graph.atomic_graph.nodes.clone();
     if args.residual_only {
@@ -577,7 +577,7 @@ pub fn run_patch_plan_report(
     args: &PatchPlanArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<PatchPlanReport> {
-    let input = load_graph(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
     let propose = if args.include_proposals {
         Some(propose_from_graph(
@@ -628,7 +628,7 @@ pub fn run_graph_summary_report(
     args: &GraphSummaryArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<GraphSummaryReport> {
-    let input = load_graph(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
     let propose = if args.include_proposals {
         Some(propose_from_graph(
@@ -740,7 +740,7 @@ impl ExplainSession {
         {
             common.modules_root = modules_root.to_path_buf();
         }
-        let graph = load_graph(&common.dependency_graph_path)?;
+        let graph = DependencyGraphInput::read(&common.dependency_graph_path)?;
         let report = graph.report();
         let module_files = if let Some(config) = &tree_config {
             let scope = ModuleTreeScope::from_config(config, &report.chunk_id)?;
@@ -1215,7 +1215,7 @@ pub fn run_source_selection_report(
     args: &SourceSelectionArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<SourceSelectionReport> {
-    let input = load_graph(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
     let selection = &args.selection;
     let module_files = if matches!(selection, SelectionKind::ModulePath(_)) {
@@ -1287,10 +1287,6 @@ pub fn run_source_selection_report(
         unknown_binding_ids,
         source_units: selected,
     })
-}
-
-fn load_graph(path: &Path) -> Result<DependencyGraphInput> {
-    DependencyGraphInput::read(path)
 }
 
 fn load_program_graph(

@@ -106,7 +106,7 @@ ts_library(
 )
 
 # The result-side counterpart of :entry (the tool's zod result schema + renderer) plus the
-# defineResultPreview/renderResultPreview helpers and the CallToolResult unwrap. Leaf too.
+# defineResultPreview/renderResultPreview helpers. Leaf too.
 ts_library(
     name = "result_entry",
     srcs = ["result_entry.tsx"],
@@ -117,15 +117,13 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend:mcp_result",
     ],
 )
 
 # A combined pending/finished registry entry (one widget over both the tool's args and, once
 # present, its result) plus the defineCallPreview/renderCallPreview/describeCallAction helpers.
-# Depends on :entry (the ToolAction type) and :result_entry (the CallToolResult unwrap shared
-# with the result-only path), so a pending call, an error result, and a schema mismatch all
-# resolve the same way a result-only widget's does.
+# Uses the shared CallToolResult unwrap so pending calls, errors and schema mismatches
+# resolve the same way a result-only widget's do.
 ts_library(
     name = "call_entry",
     srcs = ["call_entry.tsx"],
@@ -133,11 +131,11 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
-        ":result_entry",
         ":vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend:mcp_result",
     ],
 )
 

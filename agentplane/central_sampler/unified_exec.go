@@ -98,7 +98,7 @@ func writeStdinToolDefinition() protocol.CodeToolDefinition {
 		InputSchema: &protocol.JSONSchema{
 			Type: "object", Required: []string{"session_id"}, AdditionalProperties: &closed,
 			Properties: map[string]protocol.JSONSchema{
-				"session_id":        schemaNumber("Identifier of the running unified exec session."),
+				"session_id":        schemaNumber("Identifier of the unified exec session, including one with output still open after exit."),
 				"chars":             schemaString("Bytes to write to stdin. Defaults to empty, which polls without writing."),
 				"yield_time_ms":     schemaNumber("Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default."),
 				"max_output_tokens": schemaNumber(outputTokenBudgetPropertyDoc),
@@ -116,8 +116,8 @@ func unifiedExecOutputSchema() *protocol.JSONSchema {
 		Properties: map[string]protocol.JSONSchema{
 			"chunk_id":             schemaString("Chunk identifier included when the response reports one."),
 			"wall_time_seconds":    schemaNumber("Elapsed wall time spent waiting for output in seconds."),
-			"exit_code":            schemaNumber("Process exit code when the command finished during this call."),
-			"session_id":           schemaNumber("Session identifier to pass to write_stdin when the process is still running."),
+			"exit_code":            schemaNumber("Process exit code when known."),
+			"session_id":           schemaNumber("Session identifier to pass to write_stdin while the process is running or its output remains open."),
 			"original_token_count": schemaNumber("Approximate token count before output truncation."),
 			"output":               schemaString("Command output text, possibly truncated."),
 		},

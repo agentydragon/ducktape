@@ -139,7 +139,8 @@ one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-service
   rules, saying who may resume, wake or manage which environments, are the mechanism; no such
   `PolicySet` rule type exists yet (`Rule.Type` has `kubernetes_role_binding`,
   `kubernetes_cluster_role_binding`, `egress`, `action_auto_approve`, `session_inbox_access`), an
-  open item tied to open question 11 and `SESSION_IDENTITY_AUTHZ`.
+  open item tied to open question 11 and `SESSION_IDENTITY_AUTHZ`. Its proposed shape, the
+  `environment` rule type, is [The `environment` rule type](environment_rules.md).
 - **Action boxes:** creating one is lifecycle. Today it is granted explicitly, through the Action
   Service's `action_auto_approve` policy on the effective caller. **Open consideration** (operator,
   not decided): an agent creating its own boxes with automatic approval is a deliberate path, so MCP
@@ -303,17 +304,30 @@ Identity only (`IDENTITY_CUTOVER`).
    whichever direction is chosen.
 10. **Accounts per preset or per role set** (operator, 2026-11-09: per preset for now; reconsider).
     Per role set is finer-grained, but an agent then needs a different token per command.
-11. **Who creates the Identity a launched Sandbox runs as.** Blocks `SANDBOX_IDENTITY_SPEC`'s switch,
-    which deletes `Sandbox.spec.policySets`: today every launch path names PolicySets and the Sandbox
-    Controller binds the Sandbox's own ServiceAccount to them, and nothing creates an `Identity`. The
-    paths are the app's launch form (`CreateEnvironment`), the Action Service's `LaunchSandbox`
-    (also `CreateEnvironment`) and the system-test driver. One option: `CreateEnvironment` mints an
-    Identity per environment unless the request names one, and binds the launch sets to it. It keeps
-    Sandbox-first launches working, but the Identity is never owned by the environment, so deleting
-    the environment leaks it until someone deletes it (the app's unreferenced filter shows it).
-    The operator wants to settle how this looks for central-sampler Sessions, which name an Identity
-    at `CreateSession`, versus Sessions inside Sandboxes, whose environment holds the identity; it
-    meets question 7.
+11. **Who creates the Identity a launched Sandbox runs as: settled, separate operations**
+    (operator, 2026-11-11). A launch is three operations, and no environment operation creates or
+    deletes an Identity:
+    1. Create the `Identity` (the Identity API the app's identity pages use).
+    2. Grant it the launch's PolicySets: ordinary `PolicyBinding`s naming it as subject. Who may
+       create those is `AGENT_LAUNCH_POLICY_DESIGN`'s.
+    3. `CreateEnvironment` with `spec.identity` naming it, or bind an existing stopped environment to
+       it, as admission already allows. `CreateEnvironment` takes no PolicySets.
+
+    The app's launch form and `LaunchSandbox` may run the three for the caller as one action; they
+    stay separate operations underneath. Deleting an environment never deletes its Identity. On
+    delete, the app checks whether anything else still uses the Identity and offers to delete it as
+    well; the check is advisory, and the Identity delete guard
+    (`IDENTITY_CLEANUP_REFERENCE_DECISION`) is authoritative, refusing while a Sandbox, Session,
+    credential or Connection still uses it. A Sandbox's `WorkloadCredential`s carry a controller owner
+    reference to the Sandbox (`requester.Controller`), so they go with it and exist only while a
+    Sandbox names the Identity; the guard counts them through the Sandbox. Only owner-less
+    credentials (`requester.Unowned`: standing workloads such as `haku-ui` and the `haku-ci` relay)
+    count on their own. The Identity is never a credential's owner: the UID pin already revokes on
+    delete, and an owner reference would not block the delete anyway. Accepted consequences: a launch failing after step 1
+    leaves an Identity and its grants, which the app's unreferenced filter shows; if that becomes a
+    problem, the server-side launch action rolls back what it created on failure. Also Identities left by `LaunchSandbox` or the system-test driver remain until
+    deleted; a cleanup job can come later if they accumulate. Central Sessions keep naming their
+    Identity at `CreateSession`; question 7 is independent of this.
 
 ## Exit
 

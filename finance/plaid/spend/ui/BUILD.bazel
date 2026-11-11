@@ -117,12 +117,26 @@ ts_library(
     ],
 )
 
+spend_vitest_test(
+    name = "spend_display_test",
+    srcs = ["spend_display.test.ts"],
+    deps = [
+        ":spend_display",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/decimal.js",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
 ts_library(
     name = "SpendingHistoryChart",
     srcs = ["SpendingHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
         ":schema",
+        ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

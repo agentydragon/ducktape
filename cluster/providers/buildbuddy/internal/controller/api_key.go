@@ -65,7 +65,8 @@ func validateAPIKeyConnectionSecret(cr *v1alpha1.APIKey, sourceSecret, credentia
 
 type buildBuddyAPIKey interface {
 	APIKeys(context.Context, string) ([]buildbuddy.APIKey, error)
-	CreateAPIKey(context.Context, string, string, []string, bool) (buildbuddy.CreatedAPIKey, error)
+	APIKeyValue(context.Context, string, string) ([]byte, error)
+	CreateAPIKey(context.Context, string, string, []string, bool) (string, error)
 	UpdateAPIKey(context.Context, string, string, []string, bool) error
 	DeleteAPIKey(context.Context, string) error
 	Close() error
@@ -111,7 +112,7 @@ func (e *apiKeyExternal) Observe(ctx context.Context, cr *v1alpha1.APIKey) (mana
 	if meta.WasDeleted(cr) {
 		return managed.ExternalObservation{ResourceExists: true}, nil
 	}
-	connectionDetails, err := e.connectionSecretDetails(ctx, cr)
+	connectionDetails, err := e.connectionSecretDetails(ctx, cr, groupID, externalName)
 	if err != nil {
 		return managed.ExternalObservation{}, err
 	}
@@ -161,26 +162,27 @@ func (e *apiKeyExternal) Create(ctx context.Context, cr *v1alpha1.APIKey) (manag
 	if err != nil {
 		return managed.ExternalCreation{}, err
 	}
-	created, err := e.api.CreateAPIKey(ctx, groupID, cr.Spec.ForProvider.Label, capabilities, cr.Spec.ForProvider.VisibleToDevelopers)
-	if err != nil {
-		if buildbuddy.IsAmbiguousAPIKeyCreate(err) {
-			// Crossplane retries a Create call that returned an error. BuildBuddy
-			// has no idempotency token or caller-supplied key ID, so block that
-			// retry instead of risking a second live key with a lost value.
-			meta.SetExternalName(cr, ambiguousExternalName+string(cr.UID))
-		}
-		return managed.ExternalCreation{}, err
+	if cr.Spec.ForProvider.Label == "" {
+		return managed.ExternalCreation{}, errors.New("BuildBuddy API-key label is required")
 	}
-	if created.ID == "" || len(created.Value) == 0 {
+	id, err := e.api.CreateAPIKey(ctx, groupID, cr.Spec.ForProvider.Label, capabilities, cr.Spec.ForProvider.VisibleToDevelopers)
+	if err != nil {
+		// Crossplane retries failed creates, but a failed response can still
+		// mean that BuildBuddy created the key. Require an operator to resolve
+		// the outcome before allowing another create.
+		meta.SetExternalName(cr, ambiguousExternalName+string(cr.UID))
+		return managed.ExternalCreation{}, fmt.Errorf("BuildBuddy API-key creation may have succeeded; inspect group-owned keys before retrying: %w", err)
+	}
+	if id == "" {
 		// The client validates this too. Treat any incomplete response as
 		// ambiguous because the remote key may already exist.
 		meta.SetExternalName(cr, ambiguousExternalName+string(cr.UID))
-		return managed.ExternalCreation{}, errors.New("BuildBuddy returned an incomplete API key; automatic creation is blocked to avoid duplicating it")
+		return managed.ExternalCreation{}, errors.New("BuildBuddy returned no API-key ID; automatic creation is blocked to avoid duplicating it")
 	}
-	meta.SetExternalName(cr, created.ID)
-	return managed.ExternalCreation{ConnectionDetails: managed.ConnectionDetails{
-		apiKeyConnectionSecretKey: append([]byte(nil), created.Value...),
-	}}, nil
+	// Let Crossplane persist the ID before the next observation reads the
+	// value, so a readback failure cannot cause another create.
+	meta.SetExternalName(cr, id)
+	return managed.ExternalCreation{}, nil
 }
 
 func (e *apiKeyExternal) Update(ctx context.Context, cr *v1alpha1.APIKey) (managed.ExternalUpdate, error) {
@@ -192,14 +194,14 @@ func (e *apiKeyExternal) Update(ctx context.Context, cr *v1alpha1.APIKey) (manag
 	if err != nil {
 		return managed.ExternalUpdate{}, err
 	}
-	connectionDetails, err := e.connectionSecretDetails(ctx, cr)
-	if err != nil {
-		return managed.ExternalUpdate{}, err
-	}
 	if _, exists, err := e.keyInGroup(ctx, groupID, externalName); err != nil {
 		return managed.ExternalUpdate{}, err
 	} else if !exists {
 		return managed.ExternalUpdate{}, errors.New("BuildBuddy API key is no longer present in its configured group")
+	}
+	connectionDetails, err := e.connectionSecretDetails(ctx, cr, groupID, externalName)
+	if err != nil {
+		return managed.ExternalUpdate{}, err
 	}
 	capabilities, err := desiredCapabilities(cr.Spec.ForProvider.Capabilities)
 	if err != nil {
@@ -275,24 +277,27 @@ func (e *apiKeyExternal) outputSecretReadyForCreate(ctx context.Context, cr *v1a
 	return nil
 }
 
-func (e *apiKeyExternal) connectionSecretDetails(ctx context.Context, cr *v1alpha1.APIKey) (managed.ConnectionDetails, error) {
+func (e *apiKeyExternal) connectionSecretDetails(ctx context.Context, cr *v1alpha1.APIKey, groupID, id string) (managed.ConnectionDetails, error) {
 	ref := cr.Spec.WriteConnectionSecretToReference
 	if ref == nil || ref.Name == "" {
 		return nil, errors.New("writeConnectionSecretToRef is required for BuildBuddy API keys")
 	}
 	secret := &corev1.Secret{}
 	if err := e.kube.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: ref.Name}, secret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, errors.New("BuildBuddy API key exists but its connection Secret is missing; BuildBuddy may not allow the generated value to be read again")
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("check API-key connection Secret: %w", err)
 		}
-		return nil, fmt.Errorf("check API-key connection Secret: %w", err)
+	} else if controller := metav1.GetControllerOf(secret); controller == nil || controller.UID != cr.UID {
+		return nil, errors.New("API-key connection Secret already exists and is not controlled by this APIKey")
 	}
-	controller := metav1.GetControllerOf(secret)
-	value := secret.Data[apiKeyConnectionSecretKey]
-	if controller == nil || controller.UID != cr.UID || len(value) == 0 {
-		return nil, errors.New("BuildBuddy API key exists but its owned connection Secret does not contain api-key")
+	value, err := e.api.APIKeyValue(ctx, groupID, id)
+	if err != nil {
+		return nil, err
 	}
-	return managed.ConnectionDetails{apiKeyConnectionSecretKey: append([]byte(nil), value...)}, nil
+	if len(value) == 0 {
+		return nil, errors.New("BuildBuddy API-key value readback is empty")
+	}
+	return managed.ConnectionDetails{apiKeyConnectionSecretKey: value}, nil
 }
 
 func apiKeyGroupID(cr *v1alpha1.APIKey) (string, error) {

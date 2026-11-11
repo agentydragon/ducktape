@@ -93,6 +93,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     }
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
+    assert "executor_reconnect_timeout_seconds" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
     platform_instructions = config["platform_instructions"]
     assert platform_instructions

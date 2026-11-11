@@ -1492,22 +1492,6 @@ fn mergeable_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool 
     true
 }
 
-/// Run the greedy contraction loop to convergence. Returns the
-/// sequence of (c1, c2) contractions in the order they were applied.
-/// Each returned pair uses canonical (lower, higher) ClassId order —
-/// the surviving class is always the lower of the two.
-///
-/// Driver: lazy priority-queue candidate enumeration. The PQ is
-/// initialized once over all cross-class pairs; each contract pushes
-/// fresh entries for the winner's new neighborhood and pop-time
-/// staleness checks re-rank entries whose coupling has drifted. See
-/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm and
-/// `testing::greedy_merge_to_convergence_full_scan` for the byte-equal
-/// reference driver the tests compare it against.
-pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
-    greedy_merge_to_convergence_lazy_pq(q)
-}
-
 // ---------------------------------------------------------------------
 // Lazy priority-queue greedy driver.
 //
@@ -1621,10 +1605,19 @@ fn repush_affected_neighborhood(
     }
 }
 
-/// Lazy-PQ greedy driver. Its output is byte-identical to
-/// `testing::greedy_merge_to_convergence_full_scan`. See
-/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm.
-fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
+/// Run the greedy contraction loop to convergence. Returns the
+/// sequence of (c1, c2) contractions in the order they were applied.
+/// Each returned pair uses canonical (lower, higher) ClassId order —
+/// the surviving class is always the lower of the two.
+///
+/// Driver: lazy priority-queue candidate enumeration. The PQ is
+/// initialized once over all cross-class pairs; each contract pushes
+/// fresh entries for the winner's new neighborhood and pop-time
+/// staleness checks re-rank entries whose coupling has drifted. See
+/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm and
+/// `testing::greedy_merge_to_convergence_full_scan` for the byte-equal
+/// reference driver the tests compare it against.
+pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
     let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
     let mut heap = initialize_candidate_queue(q);
     loop {

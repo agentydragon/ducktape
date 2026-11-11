@@ -1,5 +1,6 @@
 """Per-user D-Bus daemon that streams the current Plaid spend view."""
 
+import argparse
 import asyncio
 import contextlib
 import json
@@ -16,7 +17,7 @@ from dbus_next.service import ServiceInterface, dbus_property, method, signal as
 
 from util.network_monitor import NetworkMonitor
 
-from .credentials import SecretServiceTokenStore
+from .credentials import EphemeralTokenStore, SecretServiceTokenStore
 from .oauth import AuthenticationRequiredError, Authenticator, OAuthConfig
 
 BUS_NAME = "works.allegedly.PlaidSpend"
@@ -98,13 +99,13 @@ class PlaidSpendBusInterface(ServiceInterface):
 
 
 class PlaidSpendDaemon:
-    def __init__(self) -> None:
+    def __init__(self, *, ephemeral_credentials: bool = False) -> None:
         self.view: dict[str, Any] = {"generated_at": None, "cards": []}
         self.status = "starting"
         self.error = ""
         self.last_attempt_at = 0.0
         self.next_retry_at = 0.0
-        self.token_store = SecretServiceTokenStore()
+        self.token_store = EphemeralTokenStore() if ephemeral_credentials else SecretServiceTokenStore()
         self.http = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=15, read=None, write=15, pool=15), follow_redirects=False
         )
@@ -336,8 +337,8 @@ class PlaidSpendDaemon:
         await self.http.aclose()
 
 
-async def run() -> None:
-    daemon = PlaidSpendDaemon()
+async def run(*, ephemeral_credentials: bool = False) -> None:
+    daemon = PlaidSpendDaemon(ephemeral_credentials=ephemeral_credentials)
     await daemon.connect_bus()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -357,8 +358,13 @@ async def run() -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--ephemeral-credentials", action="store_true", help="keep refresh credentials in memory for this session"
+    )
+    args = parser.parse_args()
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(run())
+        asyncio.run(run(ephemeral_credentials=args.ephemeral_credentials))
 
 
 if __name__ == "__main__":

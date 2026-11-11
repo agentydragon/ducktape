@@ -270,7 +270,7 @@ impl Visit for GlobalAliasUses<'_> {
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
         if self.lazy_depth == 0
             && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
-                binding_targets::simple_update_target(&update.arg)
+                binding_targets::simple_write_target_expr(&update.arg)
             && self.is_alias(&member.obj)
         {
             self.escaped = true;

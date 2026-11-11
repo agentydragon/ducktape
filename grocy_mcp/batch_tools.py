@@ -217,7 +217,7 @@ def register_batch_tools(
         if len(items) > max_batch:
             raise ValueError(f"batch too large: {len(items)} {label} exceeds maximum of {max_batch}")
 
-    async def _request[T](fn: Callable[[], Awaitable[T]], *, mutation: bool = False, describe: str = "") -> T:
+    async def _retry[T](fn: Callable[[], Awaitable[T]], *, mutation: bool = False, describe: str = "") -> T:
         retry_predicate = _is_retryable_mutation if mutation else _is_retryable
         async with sem:
             try:
@@ -250,11 +250,8 @@ def register_batch_tools(
                 raise
         raise AssertionError("unreachable")
 
-    async def _retry[T](fn: Callable[[], Awaitable[T]]) -> T:
-        return await _request(fn)
-
     async def _retry_mutation[T](fn: Callable[[], Awaitable[T]], *, describe: str) -> T:
-        return await _request(fn, mutation=True, describe=describe)
+        return await _retry(fn, mutation=True, describe=describe)
 
     async def _ordered_batch[T, R](
         items: list[T], label: str, worker: Callable[[T], Awaitable[R]], error: Callable[[T, Exception], R]

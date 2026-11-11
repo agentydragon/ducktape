@@ -9,10 +9,10 @@ use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
 use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
-    LexicalClassHeritage, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
-    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
-    static_property_name,
+    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
+    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
+    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
+    object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
@@ -36,6 +36,7 @@ use crate::facts::at_init_fallback::{
 use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
+use crate::facts::collector::UnresolvedCallSourceCollector;
 use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
@@ -631,8 +632,18 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 }
 
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
+    let mut heritage_inputs = UnresolvedCallSourceCollector::default();
+    if let Some(heritage) = class.super_class.as_deref() {
+        heritage.visit_with(&mut heritage_inputs);
+    }
     let mut facts = ClassValueFacts {
         super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
+        super_class_inputs: heritage_inputs.idents,
+        super_class_inputs_incomplete: heritage_inputs.inline_fn,
+        discarded_heritage_call: class
+            .super_class
+            .as_deref()
+            .and_then(DiscardedHeritageCall::collect),
         lexical_heritage: class
             .super_class
             .as_deref()
@@ -1503,6 +1514,8 @@ pub(super) struct Callable {
     pub(super) callback_result_writes: Vec<CallbackResultWrite>,
     pub(super) dynamic_property_effect: bool,
     pub(super) dynamic_property_receivers: Vec<ValueExpr>,
+    /// Receivers of member targets in this body's destructuring assignments.
+    pub(super) destructuring_member_receivers: Vec<ValueExpr>,
     pub(super) implicit_capture: bool,
     pub(super) opaque: bool,
     pub(super) generator: bool,
@@ -1817,6 +1830,7 @@ impl Default for Callable {
             callback_result_writes: Vec::new(),
             dynamic_property_effect: false,
             dynamic_property_receivers: Vec::new(),
+            destructuring_member_receivers: Vec::new(),
             implicit_capture: false,
             opaque: false,
             generator: false,
@@ -6196,6 +6210,8 @@ pub(super) struct ExecutionIndex {
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
     pub(super) callables: BTreeMap<u32, Callable>,
+    /// Functions whose call cannot inspect or retain any argument.
+    inert_argument_functions: BTreeSet<u32>,
     pub(super) callable_spans: BTreeMap<u32, Span>,
     immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
@@ -6216,6 +6232,29 @@ pub(super) struct ExecutionIndex {
     pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) class_bindings: BTreeMap<u32, Id>,
     pub(super) class_spans: BTreeMap<u32, Span>,
+    /// The `extends` expression of each class that has one.
+    pub(super) class_heritage_spans: BTreeMap<u32, Span>,
+    /// Object literals with a getter or setter that reads `this`: a member
+    /// read or write that may run it hands it the receiver.
+    pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    /// The non-null `__proto__` expression of each object literal with one.
+    pub(super) literal_prototypes: BTreeMap<u32, ValueExpr>,
+    /// Constructors, methods and accessors of every class: they run as class
+    /// members, not as values the class body creates.
+    pub(super) class_member_callables: BTreeSet<u32>,
+    /// The constructors among `class_member_callables`.
+    pub(super) class_constructors: BTreeSet<u32>,
+    /// Per class, the spans that run at construction or class creation and
+    /// can store values on the instance or the class: the constructor,
+    /// field initializers and static blocks.
+    pub(super) class_store_regions: BTreeMap<u32, Vec<Span>>,
+    /// The getters and setters (static or not) each class declares.
+    class_accessors: BTreeMap<u32, Vec<u32>>,
+    /// Classes declaring a getter or setter that reads `this`.
+    pub(super) this_reading_accessor_classes: BTreeSet<u32>,
+    /// Receivers of member targets in destructuring assignments, per
+    /// top-level owner; a callable's own are on `Callable`.
+    pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
@@ -6279,6 +6318,9 @@ pub(super) struct ExecutionIndex {
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
     binding_use_bounds: BTreeMap<Id, (u32, u32)>,
+    /// Every identifier reference by source position, sorted: what the
+    /// unexecuted remainder of a truncated operation can read.
+    ident_references: Vec<(u32, Id)>,
     top_const_declarations: BTreeSet<Id>,
     direct_top_level_var_declaration: bool,
     direct_top_level_const_declaration: bool,
@@ -6447,6 +6489,7 @@ impl Default for ExecutionIndex {
             factory_member_value_depth: 0,
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
+            inert_argument_functions: BTreeSet::new(),
             callable_spans: BTreeMap::new(),
             immediate_anonymous_callers: BTreeMap::new(),
             inline_callback_entries: BTreeMap::new(),
@@ -6462,6 +6505,15 @@ impl Default for ExecutionIndex {
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
             class_spans: BTreeMap::new(),
+            class_heritage_spans: BTreeMap::new(),
+            class_member_callables: BTreeSet::new(),
+            class_constructors: BTreeSet::new(),
+            class_store_regions: BTreeMap::new(),
+            class_accessors: BTreeMap::new(),
+            this_reading_accessor_classes: BTreeSet::new(),
+            top_destructuring_member_receivers: Vec::new(),
+            this_reading_accessor_objects: BTreeSet::new(),
+            literal_prototypes: BTreeMap::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
@@ -6513,6 +6565,7 @@ impl Default for ExecutionIndex {
             binding_declaration_writes: BTreeMap::new(),
             namespace_wrapper_candidates: BTreeMap::new(),
             binding_use_bounds: BTreeMap::new(),
+            ident_references: Vec::new(),
             top_const_declarations: BTreeSet::new(),
             direct_top_level_var_declaration: false,
             direct_top_level_const_declaration: false,
@@ -6742,6 +6795,33 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    /// A unique top-level function identity with no source writes or dynamic
+    /// scope; earlier statements cannot silently replace this class base.
+    pub(super) fn stable_heritage_function(
+        &self,
+        binding: &Id,
+        flow: &ChunkValueFlow,
+    ) -> Option<u32> {
+        let &key = self.hoisted_bindings.get(binding)?;
+        (self.dynamic_scope_owners.is_empty()
+            && self.direct_top_level_functions.contains(binding)
+            && !self.reassigned_bindings.contains(binding)
+            && !self.binding_target_writes.contains(binding)
+            && !self.binding_declaration_writes.contains_key(binding)
+            && flow
+                .values_of_binding(binding)
+                .iter()
+                .eq([Value::Alloc(Kind::Function, key)]))
+        .then_some(key)
+    }
+
+    /// The callee's exact body and parameters cannot observe or publish any
+    /// argument; this does not waive the call's normal evaluation effects.
+    pub(super) fn inert_heritage_callee(&self, binding: &Id, flow: &ChunkValueFlow) -> bool {
+        self.stable_heritage_function(binding, flow)
+            .is_some_and(|key| self.inert_argument_functions.contains(&key))
+    }
+
     /// A closure can resolve module bindings and unresolved globals when it is
     /// later invoked. Creating it does not read those values into the factory
     /// activation, so they are not retained provider captures. Enclosing
@@ -9542,6 +9622,7 @@ impl ExecutionIndex {
             owner_callable_prefix_effects: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
+            top_destructuring_member_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             ordered_initializers: BTreeMap::new(),
             initialization_source_identities: BTreeMap::new(),
@@ -11030,7 +11111,62 @@ impl ExecutionIndex {
             &hints.assumptions.native_operation_inputs,
             array_spreads,
         );
+        index.ident_references.sort_unstable();
+        index.ident_references.dedup();
+        index.this_reading_accessor_objects = index
+            .callable_creations
+            .values()
+            .filter_map(|creation| match *creation {
+                DeferredCallableCreation::Getter {
+                    callable,
+                    home_object,
+                }
+                | DeferredCallableCreation::Setter {
+                    callable,
+                    home_object,
+                } => index.reads_this(callable).then_some(home_object),
+                _ => None,
+            })
+            .collect();
+        index.this_reading_accessor_classes = index
+            .class_accessors
+            .iter()
+            .filter(|(_, accessors)| accessors.iter().any(|accessor| index.reads_this(*accessor)))
+            .map(|(class, _)| *class)
+            .collect();
         index
+    }
+
+    /// Whether `callable`, or an arrow or other callable nested in it, reads
+    /// `this`. An unindexed or opaque callable may.
+    pub(super) fn reads_this(&self, callable: u32) -> bool {
+        let Some(span) = self.callable_spans.get(&callable) else {
+            return true;
+        };
+        self.callables.get(&callable).is_none_or(|body| body.opaque)
+            || self
+                .callable_spans
+                .range(span.lo.0..span.hi.0)
+                .any(|(nested, _)| {
+                    self.callables
+                        .get(nested)
+                        .is_some_and(|nested| nested.implicit_capture)
+                })
+    }
+
+    /// The bindings referenced in `[lo, hi)`.
+    pub(super) fn references_within(&self, lo: u32, hi: u32) -> impl Iterator<Item = &Id> {
+        let start = self
+            .ident_references
+            .partition_point(|(position, _)| *position < lo);
+        self.ident_references[start..]
+            .iter()
+            .take_while(move |(position, _)| *position < hi)
+            .map(|(_, id)| id)
+    }
+
+    pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
+        self.original_statement_spans[owner.0]
     }
 
     fn populate_native_point_effects(&mut self, external: &NativeWriteCensus) {
@@ -11823,6 +11959,18 @@ impl ExecutionIndex {
         self.record_iterated_value(value);
     }
 
+    fn record_head_iterated_defaults(&mut self, head: &ForHead) {
+        match head {
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    self.record_iterated_defaults(&declarator.name);
+                }
+            }
+            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
+            ForHead::UsingDecl(_) => {}
+        }
+    }
+
     fn record_iterated_defaults(&mut self, pattern: &Pat) {
         let mut defaults = Vec::new();
         iterated_defaults(pattern, &mut defaults);
@@ -11943,6 +12091,56 @@ impl Visit for ExecutionIndex {
         }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_spans.insert(class.span.lo.0, class.span);
+        self.class_constructors
+            .extend(class.body.iter().filter_map(|member| match member {
+                ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
+                _ => None,
+            }));
+        self.class_member_callables
+            .extend(class.body.iter().filter_map(|member| match member {
+                ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
+                ClassMember::Method(method) => Some(method.function.span.lo.0),
+                ClassMember::PrivateMethod(method) => Some(method.function.span.lo.0),
+                _ => None,
+            }));
+        self.class_store_regions.insert(
+            class.span.lo.0,
+            class
+                .body
+                .iter()
+                .filter_map(|member| match member {
+                    ClassMember::Constructor(constructor) => Some(constructor.span),
+                    ClassMember::ClassProp(prop) => prop.value.as_ref().map(|value| value.span()),
+                    ClassMember::PrivateProp(prop) => prop.value.as_ref().map(|value| value.span()),
+                    ClassMember::StaticBlock(block) => Some(block.span),
+                    _ => None,
+                })
+                .collect(),
+        );
+        self.class_accessors.insert(
+            class.span.lo.0,
+            class
+                .body
+                .iter()
+                .filter_map(|member| match member {
+                    ClassMember::Method(method)
+                        if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+                    {
+                        Some(method.function.span.lo.0)
+                    }
+                    ClassMember::PrivateMethod(method)
+                        if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+                    {
+                        Some(method.function.span.lo.0)
+                    }
+                    _ => None,
+                })
+                .collect(),
+        );
+        if let Some(heritage) = &class.super_class {
+            self.class_heritage_spans
+                .insert(class.span.lo.0, heritage.span());
+        }
         if let Some(site) = LocalClassConstructionShapes::private_empty_set_site(class) {
             self.private_empty_set_sites.insert(class.span.lo.0, site);
         }
@@ -12081,6 +12279,21 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
+        if let Some(prototype) = object.props.iter().find_map(|property| match property {
+            PropOrSpread::Prop(property) => match property.as_ref() {
+                Prop::KeyValue(pair)
+                    if matches!(pair.key, PropName::Ident(_) | PropName::Str(_))
+                        && static_property_name(&pair.key).as_deref() == Some("__proto__")
+                        && !matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                {
+                    Some(ValueExpr::from_expr(&pair.value))
+                }
+                _ => None,
+            },
+            _ => None,
+        }) {
+            self.literal_prototypes.insert(object.span.lo.0, prototype);
+        }
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
@@ -12629,6 +12842,19 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        // An array pattern in the head iterates each key, a string.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        if head_iterates {
+            self.record_iterated_value(ValueExpr::NonCallable(PrimKinds::STRING));
+        }
+        self.record_head_iterated_defaults(&node.left);
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
@@ -12652,15 +12878,7 @@ impl Visit for ExecutionIndex {
         if head_iterates && !entries {
             self.record_iterated_value(ValueExpr::Unknown);
         }
-        match &node.left {
-            ForHead::VarDecl(declaration) => {
-                for declarator in &declaration.decls {
-                    self.record_iterated_defaults(&declarator.name);
-                }
-            }
-            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
-            ForHead::UsingDecl(_) => {}
-        }
+        self.record_head_iterated_defaults(&node.left);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -12766,6 +12984,26 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        if !function.is_async
+            && !function.is_generator
+            && function.decorators.is_empty()
+            && function.type_params.is_none()
+            && function.return_type.is_none()
+            && function
+                .params
+                .iter()
+                .all(|param| param.decorators.is_empty() && matches!(param.pat, Pat::Ident(_)))
+            && function
+                .body
+                .as_ref()
+                .is_some_and(|body| match body.stmts.as_slice() {
+                    [] => true,
+                    [Stmt::Return(ret)] => ret.arg.as_deref().is_none_or(primitive_literal),
+                    _ => false,
+                })
+        {
+            self.inert_argument_functions.insert(function.span.lo.0);
+        }
         self.callable_creations
             .entry(function.span.lo.0)
             .or_insert(DeferredCallableCreation::Function(function.span.lo.0));
@@ -12934,6 +13172,7 @@ impl Visit for ExecutionIndex {
                 *last = (*last).max(position);
             })
             .or_insert((position, position));
+        self.ident_references.push((position, ident.to_id()));
         // A published outer closure can expose a nested closure's capabilities.
         for key in &self.prototype_capture_stack {
             self.prototype_callable_reads
@@ -13377,6 +13616,17 @@ impl Visit for ExecutionIndex {
                 _ => None,
             };
             if let Some(receiver) = receiver {
+                match self.current {
+                    Some(key) => self
+                        .callables
+                        .get_mut(&key)
+                        .unwrap()
+                        .destructuring_member_receivers
+                        .push(receiver.clone()),
+                    None => {
+                        self.top_destructuring_member_receivers[self.owner.0].push(receiver.clone())
+                    }
+                }
                 self.destructuring_member_writes
                     .push(DestructuringMemberWrite {
                         receiver,
@@ -13764,7 +14014,7 @@ impl Visit for ExecutionIndex {
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         binding_targets::record_update_target(&expression.arg, self);
-        let simple_target = binding_targets::simple_update_target(&expression.arg);
+        let simple_target = binding_targets::simple_write_target_expr(&expression.arg);
         if let Some(binding_targets::SimpleWriteTarget::Binding(binding)) = simple_target.as_ref() {
             if let Some(key) = self.current {
                 self.callables

@@ -2,12 +2,16 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.plaid-spend" path="/org/gnome/shell/extensions/plaid-spend/">
     <key name="panel-order" type="as">
-      <default>['status', 'balance', 'pace', 'sparkline']</default>
+      <default>['status', 'balance', 'pace-window', 'pace', 'sparkline']</default>
       <summary>Panel item order</summary>
     </key>
     <key name="panel-visible" type="as">
       <default>['status', 'balance']</default>
       <summary>Visible panel items</summary>
+    </key>
+    <key name="panel-pace-window-migrated" type="b">
+      <default>false</default>
+      <summary>Whether the separate pace window panel item has been migrated</summary>
     </key>
     <key name="pace-window" type="s">
       <choices>
@@ -16,6 +20,27 @@
       </choices>
       <default>'7d'</default>
       <summary>Rolling pace window</summary>
+    </key>
+    <key name="sparkline-anchor-zero" type="b">
+      <default>true</default>
+      <summary>Anchor sparkline scale at zero</summary>
+    </key>
+    <key name="sparkline-show-leash" type="b">
+      <default>true</default>
+      <summary>Show the daily leash on the sparkline</summary>
+    </key>
+    <key name="sparkline-leash-color" type="s">
+      <default>''</default>
+      <summary>Leash line color, or empty to use the panel foreground</summary>
+    </key>
+    <key name="sparkline-history-days" type="s">
+      <choices>
+        <choice value="7"/>
+        <choice value="14"/>
+        <choice value="30"/>
+      </choices>
+      <default>'30'</default>
+      <summary>Number of days shown on the sparkline</summary>
     </key>
   </schema>
 </schemalist>

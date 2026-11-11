@@ -331,8 +331,7 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
   model names survived the swap: LiteLLM served them over CLIProxyAPI's native
   `/v1/responses` (`openai/` passthrough, not a bridge), so the baked configs pinning
   those names (<../images/agent-workspace/codex-config.toml>,
-  <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
-  <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries
+  <../../x/codex_pod_image/home.nix>, `oai_lane_models`) needed no rebuild, and the `codex-*` entries
   stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later established
   the account/wire/model naming scheme and retired both
   legacy name families. The CLIProxyAPI subscription routes now use

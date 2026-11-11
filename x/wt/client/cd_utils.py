@@ -1,9 +1,9 @@
 """Shell helpers for emitting 'cd' commands."""
 
+import errno
+import os
 import shlex
 from pathlib import Path
-
-from x.wt.client.shell_utils import emit_command
 
 
 def emit_cd_command(dest_repo: Path, *, main_repo: Path) -> None:
@@ -21,4 +21,10 @@ def emit_cd_command(dest_repo: Path, *, main_repo: Path) -> None:
             dest_path = dest_repo / rel
         except ValueError:
             dest_path = dest_repo
-    emit_command(f"cd {shlex.quote(str(dest_path))}")
+    try:
+        os.write(3, f"cd {shlex.quote(str(dest_path))}\n".encode())
+    except OSError as e:
+        # fd3 may be unavailable when the CLI is not invoked through the shell function.
+        if e.errno in (errno.EBADF, errno.EINVAL, errno.ENXIO):
+            return
+        raise

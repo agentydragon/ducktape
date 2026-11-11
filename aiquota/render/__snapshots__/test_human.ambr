@@ -3,17 +3,16 @@
   '''
   Anthropic API
     Main org
-      Available balance: $123.45
-      Grant: $85.00 remaining · expires Jul 1
-      Promo grant: $25.00 remaining · expires May 1 · scope: Claude API (Sonnet), Claude Code
+      Available balance: $123
+      Grant: $85 remaining · expires Jul 1
+      Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet), Claude Code
     Secondary org
-      Available balance: $50.00
+      Available balance: $50
   '''
 # ---
 # name: test_renders_shared_fixture[banked_resets_exhausted]
   '''
   Codex
-    Included quota exhausted
     Banked resets: 0
     5h:  12% used  ↻ 1m
     7d: 100% used  ↻ 1h  exhausted
@@ -37,7 +36,6 @@
 # name: test_renders_shared_fixture[banked_resets_unknown]
   '''
   Codex
-    Included quota exhausted
     5h:  12% used  ↻ 1m
     7d: 100% used  ↻ 1h  exhausted
   '''
@@ -61,7 +59,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance]
   '''
   Claude
-    Prepaid balance: $123.45
+    Available balance: $123
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -69,7 +67,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance_stale]
   '''
   Claude
-    Prepaid balance: $123.45 · stale 1h
+    Available balance: $123 · stale 1h
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -77,7 +75,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance_unavailable]
   '''
   Claude
-    Prepaid balance: unavailable
+    Available balance: unavailable
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -85,7 +83,7 @@
 # name: test_renders_shared_fixture[claude_reset_grants]
   '''
   Claude
-    Fable resets: 2 remaining · expires Jan 29, 12:00 UTC
+    Fable resets: 2 remaining · expires Jan 29, 12:00
     Full resets: 1 remaining · expires Feb 15 · paused
     7d:  95% used  ↻ 2d  exhausts ~1d 17h before reset
   '''
@@ -112,7 +110,6 @@
     7d:  36% used  ↻ 5d 21h  exhausts ~3d 21h before reset
   
   z.ai
-    Included quota exhausted
     1x burn — next 3x window in 18h
     5h: 100% used  ↻ 3h 1m   exhausted
     7d:  30% used  ↻ 1d 19h  leaves ~60% unused at reset
@@ -121,13 +118,13 @@
 # name: test_renders_shared_fixture[extra_disabled_positive]
   '''
   Claude
-    Extra spend this month: $25.50 of $100 limit
+    Extra spend this month: $26 of $100 limit
   '''
 # ---
 # name: test_renders_shared_fixture[extra_enabled_not_burning]
   '''
   Claude
-    Extra spend this month: $2,324.85 of $4,600 limit
+    Extra spend this month: $2,325 of $4,600 limit
     5h:   6% used  ↻ 2h      leaves ~90% unused at reset
     7d:   2% used  ↻ 5d      leaves ~93% unused at reset
   
@@ -146,16 +143,14 @@
   Claude
     Stale data · last observed 5m ago
     Refresh failed · showing available data
-    Included quota exhausted
-    Extra spend this month: $25.50 of $100 limit
+    Extra spend this month: $26 of $100 limit
     5h: 100% used  ↻ 1h 55m
   '''
 # ---
 # name: test_renders_shared_fixture[hot]
   '''
   Claude
-    Included quota exhausted · extra usage enabled
-    Extra spend this month: $3,141.59 of $5,000 limit
+    Extra spend this month: $3,142 of $5,000 limit · extra usage enabled
     5h:  50% used  ↻ 3h 30m  exhausts ~2h before reset
     7d: 100% used  ↻ 4d 21h  exhausted
   
@@ -173,7 +168,7 @@
   '''
   Claude
     Reset time passed · awaiting updated usage
-    Extra spend this month: $25.50 of $100 limit
+    Extra spend this month: $26 of $100 limit
     5h: 100% used  ↻ awaiting update
     7d: 100% used  ↻ 23h 58m          exhausted
   
@@ -189,7 +184,7 @@
   Subscriptions
   
   Claude
-    Prepaid balance: $0.00
+    Available balance: $0
     7d:  96% used  ↻ 1d 15h  exhausts ~1d 9h before reset
   
   Codex
@@ -200,30 +195,29 @@
   API balances
   
   OpenAI API
-    Available balance: $557.42
-    Grant: $490.00 remaining · expires Dec 1
-    Grant: $17.16 remaining · expires Jan 1, 2027
-    Grant: $50.26 remaining · expires Feb 1, 2027
+    Available balance: $557
+    Grant: $490 remaining · expires Dec 1
+    Grant: $17 remaining · expires Jan 1, 2027
+    Grant: $50 remaining · expires Feb 1, 2027
   
   Anthropic API
     Wide-scope promo org
-      Available balance: $219.70
-      Grant: $21.75 remaining · expires Jul 1, 2027
-      Promo grant: $197.93 remaining · expires Nov 25
+      Available balance: $220
+      Grant: $22 remaining · expires Jul 1, 2027
+      Promo grant: $198 remaining · expires Nov 25
   '''
 # ---
 # name: test_renders_shared_fixture[openai_platform_credits]
   '''
   OpenAI API
-    Available balance: $125.75
-    Grant: $100.00 remaining · expires Feb 1
-    Grant: $25.75 remaining · expires Dec 1
+    Available balance: $126
+    Grant: $100 remaining · expires Feb 1
+    Grant: $26 remaining · expires Dec 1
   '''
 # ---
 # name: test_renders_shared_fixture[paid_credits]
   '''
   Codex
-    Included quota exhausted · paid credits available
     Paid credits: 2,746 credits
     Banked resets: 0
     5h: 100% used  ↻ 1h 30m  exhausted
@@ -235,26 +229,26 @@
   Subscriptions
   
   Claude
-    Prepaid balance: $25.75
+    Available balance: $26
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   
   Codex
-    Banked resets: 3 · next known expiry Jan 29, 12:00 UTC · 1 expiry unknown
+    Banked resets: 3 · next known expiry Jan 29, 12:00 · 1 expiry unknown
     5h:  36% used  ↻ 2h  leaves ~40% unused at reset
     7d:  42% used  ↻ 4d  on pace
   
   API balances
   
   OpenAI API
-    Available balance: $60.00
-    Grant: $60.00 remaining · expires Jun 1
+    Available balance: $60
+    Grant: $60 remaining · expires Jun 1
   
   Anthropic API
     Shared org
-      Available balance: $75.00
-      Grant: $50.00 remaining · expires Jul 1
-      Promo grant: $25.00 remaining · expires May 1 · scope: Claude API (Sonnet)
+      Available balance: $75
+      Grant: $50 remaining · expires Jul 1
+      Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet)
   '''
 # ---
 # name: test_renders_shared_fixture[reset_credit_expiry_unavailable]
@@ -279,7 +273,7 @@
     Stale data · last observed 1d ago
     Refresh failed · showing available data
     Reset time passed · awaiting updated usage
-    Prepaid balance: $123.45
+    Available balance: $123
     5h:  35% used  ↻ awaiting update
     7d:  72% used  ↻ 4d 3h
   
@@ -295,7 +289,7 @@
   '''
   Claude
     Stale data · last observed 20m ago
-    Prepaid balance: $123.45
+    Available balance: $123
     5h:  45% used  ↻ 1h 40m
   '''
 # ---
@@ -303,13 +297,11 @@
   '''
   Claude
     Stale data · last observed 15m ago
-    Included quota exhausted
-    Extra spend this month: $25.50 of $100 limit
+    Extra spend this month: $26 of $100 limit
     5h: 100% used  ↻ 1h 45m
   
   Codex
     Stale data · last observed 15m ago
-    Included quota exhausted
     Paid credits: 500 credits
     5h: 100% used  ↻ 1h 45m
   '''

@@ -495,6 +495,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		}
 	}()
 	var activeCommand *string
+	var reconciled <-chan struct{}
 	drainContinued := false
 	client := &http.Client{}
 	for {
@@ -506,6 +507,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			_ = live.Close(closeCtx)
 			closeCancel()
 			live = nil
+			reconciled = nil
 		}
 		changed, err := r.store.ReconcileCodeHostLoss(ctx, owner, r.codeHost.InstanceID(), encoding)
 		if err != nil {
@@ -545,6 +547,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 					closeErr := live.Close(closeCtx)
 					cancel()
 					live = nil
+					reconciled = nil
 					if closeErr != nil {
 						return nil, closeErr
 					}
@@ -573,27 +576,48 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 					return activeCommand, err
 				}
 			}
-			progressed, err := live.executor.ReconcileProcesses(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
-			if err != nil {
-				return activeCommand, err
+			changes := live.executor.processChanges()
+			if changes != reconciled {
+				progressed, err := live.executor.ReconcileProcesses(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
+				if err != nil {
+					return activeCommand, err
+				}
+				if progressed {
+					continue
+				}
+				reconciled = changes
 			}
-			if progressed {
-				continue
+			// Live cells still require the host's existing periodic check. Process
+			// reads are driven by executor notifications, not this timer or work scans.
+			var timer *time.Timer
+			var tick <-chan time.Time
+			if len(state.Cells) != 0 {
+				timer = time.NewTimer(250 * time.Millisecond)
+				tick = timer.C
 			}
-			timer := time.NewTimer(250 * time.Millisecond)
 			select {
 			case <-ctx.Done():
-				timer.Stop()
+				if timer != nil {
+					timer.Stop()
+				}
 				return activeCommand, ctx.Err()
 			case <-liveDone(live):
-				timer.Stop()
+				if timer != nil {
+					timer.Stop()
+				}
 				if err := live.code.Err(); err != nil {
 					return activeCommand, err
 				}
 				return activeCommand, errors.New("code-mode session detached while remote effects were live")
 			case <-task.wake:
-				timer.Stop()
-			case <-timer.C:
+				if timer != nil {
+					timer.Stop()
+				}
+			case <-reconciled:
+				if timer != nil {
+					timer.Stop()
+				}
+			case <-tick:
 			}
 			continue
 		}

@@ -109,7 +109,7 @@ pub fn project_endpoints(
         return None;
     }
     // Fallback-promoted edges (marked by `callee_source_unit == edge.from`,
-    // see `UnresolvedCallFallback`) record "this statement's
+    // see `promote_at_init_calls`) record "this statement's
     // unresolvable at-init call may invoke chunk functions reading
     // `to`'s bindings". When the caller lands in residual, the
     // constraint is vacuous: residual is the ESM DFS root and its

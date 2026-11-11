@@ -664,6 +664,102 @@ async def test_restart_settles_live_javascript_and_continues(
             assert len(intents) == 1
 
 
+async def test_exited_process_with_open_output_yields_and_preserves_late_output(
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        release = tmp_path / "release-late-output"
+        request = create_request(tmp_path)
+        async with service(config) as stub:
+            try:
+                await stub.CreateSession(request, metadata=METADATA, timeout=10)
+                await stub.SubmitInput(
+                    environment_runtime_pb2.SubmitInputRequest(
+                        session_id=request.session_id, command_id="start-open-output", text="Run the command."
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                async with await endpoint.next() as exchange:
+                    command = f"(while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf late-output) & printf early-output"
+                    arguments = {"cmd": command, "yield_time_ms": 1000}
+                    await exchange.send(
+                        *response_stream(
+                            [
+                                CustomToolCall(
+                                    "start", "exec", f"text(await tools.exec_command({json.dumps(arguments)}));"
+                                )
+                            ],
+                            model="test-model",
+                        ).events
+                    )
+                async with await endpoint.next() as exchange:
+                    outputs = [
+                        item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                    ]
+                    result = json.loads(outputs[-1]["output"][1]["text"])
+                    process_id = result["session_id"]
+                    assert result["exit_code"] == 0
+                    assert result["output"] == "early-output"
+                    await exchange.send(*response_stream([Message("The command exited.")], model="test-model").events)
+                assert (
+                    await turn_completed(stub, request.session_id, "start-open-output")
+                ).status == event_pb2.TURN_STATUS_COMPLETED
+
+                # The periodic Session work scan must not become process/read polling.
+                await asyncio.sleep(0.3)
+                before = sum(intent.request.get("method") == "process/read" for intent in await store.intents())
+                await asyncio.sleep(1.3)
+                after = sum(intent.request.get("method") == "process/read" for intent in await store.intents())
+                assert after == before
+
+                release.write_text("")
+                async for attempt in AsyncRetrying(stop=stop_after_delay(5), wait=wait_fixed(0.05), reraise=True):
+                    with attempt:
+                        process = await store.process(process_id)
+                        assert process is not None
+                        assert process.status == "exited_unread"
+                        assert process.buffered_output == b"late-output"
+
+                await stub.SubmitInput(
+                    environment_runtime_pb2.SubmitInputRequest(
+                        session_id=request.session_id, command_id="read-late-output", text="Read the late output."
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                async with await endpoint.next() as exchange:
+                    arguments = {"session_id": process_id, "yield_time_ms": 1}
+                    await exchange.send(
+                        *response_stream(
+                            [
+                                CustomToolCall(
+                                    "read", "exec", f"text(await tools.write_stdin({json.dumps(arguments)}));"
+                                )
+                            ],
+                            model="test-model",
+                        ).events
+                    )
+                async with await endpoint.next() as exchange:
+                    outputs = [
+                        item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                    ]
+                    result = json.loads(outputs[-1]["output"][1]["text"])
+                    assert result["output"] == "late-output"
+                    assert result["exit_code"] == 0
+                    assert "session_id" not in result
+                    await exchange.send(*response_stream([Message("Late output read.")], model="test-model").events)
+                assert (
+                    await turn_completed(stub, request.session_id, "read-late-output")
+                ).status == event_pb2.TURN_STATUS_COMPLETED
+            finally:
+                release.touch()
+
+
 async def test_unpolled_process_exit_releases_capacity_and_retains_output(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:

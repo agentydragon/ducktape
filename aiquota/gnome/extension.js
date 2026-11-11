@@ -13,6 +13,9 @@ import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import {
   formatAge as sharedFormatAge,
   formatExtraSpend as sharedFormatExtraSpend,
+  formatExtraSpendExact,
+  formatSummaryUsd,
+  extraSpendHasHiddenFraction,
   refreshWindowTiming,
   showResetCredits,
   quotaActivity,
@@ -97,14 +100,14 @@ function effectiveState(state) {
 function formatCompactDollars(usd) {
   if (usd >= 1000) {
     const k = usd / 1000;
-    return `$${k >= 10 ? roundHalfToEven(k) : roundHalfToEven(k * 10) / 10}k`;
+    return `$${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`;
   }
-  return `$${roundHalfToEven(usd)}`;
+  return formatSummaryUsd(usd);
 }
 
-function formatExtraSpend(extra) {
+function formatExtraSpend(extra, enabled = false) {
   if (!extra) return null;
-  return sharedFormatExtraSpend(extra.used_usd, extra.monthly_limit_usd);
+  return sharedFormatExtraSpend(extra.used_usd, extra.monthly_limit_usd, enabled);
 }
 
 function formatBankedResets(count, expiries, expiryLookupFailed, now, details = false) {
@@ -123,13 +126,22 @@ function formatExpiry(expiry, details = false) {
 
 function formatGrant(grant, details = false, includeGroup = false) {
   const parts = [];
-  if (includeGroup && grant.group) parts.push(grant.group);
-  parts.push(`${grant.label}: ${grant.remaining} left`);
-  parts.push(formatExpiry(grant.expires_at, details));
-  if (details) parts.push(`original ${grant.original}`);
-  const scope = details ? (grant.scope_detail ?? grant.scope) : grant.scope;
-  if (scope) parts.push(`scope: ${scope}`);
-  if (grant.status) parts.push(grant.status);
+  if (details) {
+    const facts = [];
+    if (!grant.original_repeats_remaining) facts.push(`original ${grant.original}`);
+    if (grant.exact_remaining) facts.push(`exact remaining ${grant.exact_remaining}`);
+    if (grant.expires_at) facts.push(formatExpiry(grant.expires_at, true));
+    if (grant.scope_detail && grant.scope_detail !== grant.scope) facts.push(`scope: ${grant.scope_detail}`);
+    if (facts.length === 0) return "";
+    if (includeGroup && grant.group) parts.push(grant.group);
+    parts.push(`${grant.label}: ${facts.join(" · ")}`);
+  } else {
+    if (includeGroup && grant.group) parts.push(grant.group);
+    parts.push(`${grant.label}: ${grant.remaining} left`);
+    parts.push(formatExpiry(grant.expires_at));
+    if (grant.scope) parts.push(`scope: ${grant.scope}`);
+    if (grant.status) parts.push(grant.status);
+  }
   return parts.join(" · ");
 }
 
@@ -716,6 +728,7 @@ const QuotaIndicator = GObject.registerClass(
           this._makeQuotaRow("quota")
         );
         p.detailsItem = this._makeDetailsSubmenu("Details");
+        p.header.add_style_class_name("quota-popup-provider-header");
         this.menu.addMenuItem(p.header);
         this.menu.addMenuItem(p.statusRow);
         for (const section of p.readingSections) {
@@ -753,6 +766,7 @@ const QuotaIndicator = GObject.registerClass(
       item.menu.removeAll();
       item._detailRows = next.map((detail) => {
         const row = new PopupMenu.PopupMenuItem(detail, { reactive: false, can_focus: false });
+        row.add_style_class_name("quota-popup-read-only");
         row.label.clutter_text.line_wrap = true;
         row.label.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         row.label.clutter_text.ellipsize = 0;
@@ -764,6 +778,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeTextRow() {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+      item.add_style_class_name("quota-popup-read-only");
       item.add_style_class_name("quota-popup-bar-item");
       item._summaryLabel = new St.Label({ text: "", style_class: "quota-popup-row", x_expand: true });
       item._summaryLabel.clutter_text.line_wrap = true;
@@ -775,6 +790,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeQuotaRow(label) {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+      item.add_style_class_name("quota-popup-read-only");
       item.add_style_class_name("quota-popup-bar-item");
 
       const content = new St.BoxLayout({
@@ -1049,11 +1065,19 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         const groups = readingGroups(p.state);
         const single = groups.length === 1;
-        this._renderProviderHeader(p.header, p.state.label || p.label, single ? groups[0] : null, single);
+        const inlineBalance = !isApiProvider(p.id) || (single && !groups[0].name);
+        this._renderProviderHeader(
+          p.header,
+          p.state.label || p.label,
+          single ? groups[0] : null,
+          single,
+          inlineBalance
+        );
         p.readingSections.forEach((section, index) => {
           const group = groups[index];
-          if (section.header) this._renderProviderHeader(section.header, group.name, group, false);
-          this._renderBalanceRow(section.balanceRow, group, single || section.header !== null);
+          if (section.header)
+            this._renderProviderHeader(section.header, group.name, group, false, !isApiProvider(p.id));
+          this._renderBalanceRow(section.balanceRow, group, inlineBalance && (single || section.header !== null));
           this._renderGrantRow(section.grantRow, group);
         });
         this._renderResetRow(p.resetRow, p.state);
@@ -1067,11 +1091,11 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
-    _renderProviderHeader(item, title, group, includeGroup) {
+    _renderProviderHeader(item, title, group, includeGroup, inlineBalance) {
       const parts = [title];
       if (includeGroup && group?.name) parts.push(group.name);
       const balance = group && headerBalance(group);
-      if (balance) parts.push(`${balance.label}: ${balance.value}`);
+      if (balance && inlineBalance) parts.push(`${balance.label}: ${balance.value}`);
       item.label.set_text(parts.join(" — "));
     }
 
@@ -1120,7 +1144,8 @@ const QuotaIndicator = GObject.registerClass(
         state.windows.map((window) => withLiveReset(window)),
         staleAge != null,
         state.currentlyOverPlan,
-        state.paidCreditsActive
+        state.paidCreditsActive,
+        state.monthlyExtraSpend != null
       );
       if (status) parts.push(status);
       if (state.errorSummary) parts.push(state.errorSummary);
@@ -1136,7 +1161,15 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderSpendRow(item, state) {
-      const spend = formatExtraSpend(state.monthlyExtraSpend);
+      const { windows, staleAge } = effectiveState(state);
+      const { overPlan } = quotaActivity(
+        windows.map((window) => withLiveReset(window)),
+        staleAge != null,
+        state.currentlyOverPlan,
+        state.paidCreditsActive,
+        state.monthlyExtraSpend != null
+      );
+      const spend = formatExtraSpend(state.monthlyExtraSpend, overPlan);
       item.visible = spend != null;
       item._summaryLabel.set_text(spend ?? "");
     }
@@ -1153,12 +1186,25 @@ const QuotaIndicator = GObject.registerClass(
       if (state.errorDetail) details.push(`${state.errorSummary ?? "Refresh failed"}: ${state.errorDetail}`);
       const includeGroup = readingGroups(state).length > 1;
       for (const balance of state.balances) {
+        if (balance.pool_detail)
+          details.push(
+            `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.pool_detail}`
+          );
+        if (balance.exact_value)
+          details.push(
+            `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: exact ${balance.exact_value}`
+          );
         if (balance.error)
           details.push(
             `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.error}`
           );
       }
-      details.push(...state.grants.map((grant) => formatGrant(grant, true, includeGroup)));
+      details.push(...state.grants.map((grant) => formatGrant(grant, true, includeGroup)).filter(Boolean));
+      if (state.monthlyExtraSpend) {
+        const { used_usd: used, monthly_limit_usd: limit } = state.monthlyExtraSpend;
+        const exact = formatExtraSpendExact(used, limit);
+        if (extraSpendHasHiddenFraction(used, limit)) details.push(`Exact extra spend: ${exact}`);
+      }
       const { staleAge } = effectiveState(state);
       for (const window of state.windows.map((window) => withLiveReset(window))) {
         if (staleAge == null && window.pace) details.push(`${window.label} pace: ${window.pace}`);

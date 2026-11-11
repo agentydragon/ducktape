@@ -202,7 +202,6 @@ from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, ope
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.litellm import (
     buildbuddy_crossplane as litellm_buildbuddy_crossplane,
-    buildbuddy_sync as litellm_buildbuddy_sync,
     crossplane_keys as litellm_crossplane_keys,
     database as litellm_database,
     keys as litellm_keys,
@@ -1873,7 +1872,6 @@ def generate_manifests(root: Path) -> None:
     litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
         flux_chart,
         write_directory(root, litellm_keys_tf_artifact, siblings=["buildbuddy-org-admin-api-key.sops.yaml"]),
-        tofu_controller_kustomization,
         litellm_kustomization,
     )
     litellm_crossplane_keys_artifact = artifact("litellm-crossplane-keys", litellm_crossplane_keys.OUTPUT_DIR)
@@ -1916,18 +1914,6 @@ def generate_manifests(root: Path) -> None:
         buildbuddy_provider_kustomization,
         litellm_crossplane_keys_kustomization,
         litellm_keys_tf_kustomization,
-    )
-    litellm_buildbuddy_sync_artifact = artifact("litellm-buildbuddy-sync", litellm_buildbuddy_sync.OUTPUT_DIR)
-    litellm_buildbuddy_sync_module = terraform.gitops_module(litellm_buildbuddy_sync.TF_MODULE)
-    litellm_buildbuddy_sync.resources(
-        flux_chart,
-        write_directory(
-            root,
-            litellm_buildbuddy_sync_artifact,
-            functools.partial(litellm_buildbuddy_sync.chart, module=litellm_buildbuddy_sync_module),
-        ),
-        tofu_controller_kustomization,
-        litellm_crossplane_keys_kustomization,
     )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
@@ -2073,7 +2059,6 @@ def generate_manifests(root: Path) -> None:
             kyverno_artifact,
             litellm_keys_tf_artifact,
             litellm_crossplane_keys_artifact,
-            litellm_buildbuddy_sync_artifact,
             buildbuddy_provider_artifact,
             litellm_buildbuddy_crossplane_artifact,
             reflector_artifact,
@@ -2209,7 +2194,6 @@ def generate_manifests(root: Path) -> None:
             website_artifact,
             home_switch_module,
             gitlab_spike_module,
-            litellm_buildbuddy_sync_module,
         ],
         flux_system=[external_creds_artifact],
     )

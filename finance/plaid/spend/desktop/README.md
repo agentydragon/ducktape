@@ -28,11 +28,14 @@ The CLI reads the same view and status over the session D-Bus interface as the p
 owned by the daemon and stored in Secret Service.
 
 The panel's **Customize panel…** menu opens preferences for independently showing and ordering the status icon,
-abbreviated available balance, pace percentage, and sparkline. A switch in the menu or preferences chooses the 7- or
+abbreviated available balance, pace window, pace percentage, and sparkline. Preferences choose the 7- or
 30-day pace. The percentage compares the selected recorded purchase average with the daily leash, independently of
 the existing forecast/pace warning also shown in the expanded view. Green means at or below the leash, yellow above 100% through 120%, and red above
 120% or when the allowance is exhausted. The sparkline uses backend-calculated daily history, with a dotted line at
-the current leash and gaps for unknown coverage. Exact available balance remains in the menu.
+the current leash and gaps for unknown coverage. Each segment uses the same pace thresholds and colors as the panel text.
+Its displayed time span, vertical baseline, leash line, and leash line color are
+configurable separately from the rolling-average period. The menu rounds larger available balances; when rounding hides a
+fraction, expand **Balance details** for the exact amount.
 
 ## Wire contract
 

@@ -1,0 +1,40 @@
+{
+  "status": "ready",
+  "error": "",
+  "view": {
+    "generated_at": "2026-10-15T12:00:00Z",
+    "cards": [],
+    "allowance": {
+      "status": "active",
+      "currency": "USD",
+      "available_minor_units": 123450,
+      "daily_reference_minor_units": 2000,
+      "recorded_pace_periods": [
+        { "period": { "id": "rolling_7d" }, "observed_daily_minor_units": 1800 },
+        { "period": { "id": "rolling_30d" }, "observed_daily_minor_units": 2200 }
+      ]
+    }
+  },
+  "pace_history": {
+    "status": "active",
+    "daily_reference_minor_units": 2000,
+    "windows": [
+      {
+        "period_id": "rolling_7d",
+        "points": [
+          { "observed_daily_minor_units": 1300 },
+          { "observed_daily_minor_units": 1600 },
+          { "observed_daily_minor_units": 1800 }
+        ]
+      },
+      {
+        "period_id": "rolling_30d",
+        "points": [
+          { "observed_daily_minor_units": 1900 },
+          { "observed_daily_minor_units": 2100 },
+          { "observed_daily_minor_units": 2200 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,4 +1,5 @@
-"""Environment management is hosted in Runner Gateway without a separate Sandbox Service."""
+"""Staging manifests keep each service to its own data and authority: History owns its database, the Runner
+Gateway alone mutates Sandboxes, and Notifications never calls the app."""
 
 from typing import Any
 

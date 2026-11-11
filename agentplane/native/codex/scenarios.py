@@ -78,11 +78,6 @@ def config(
     return result
 
 
-def _toml_literal(value: object) -> str:
-    # JSON literals for strings, booleans, integers, and arrays of those are valid TOML values.
-    return json.dumps(value)
-
-
 def _overrides(config: dict[str, Any], prefix: str = "") -> list[str]:
     """`-c dotted.key=value` pairs; app-server parses each value as TOML."""
     result: list[str] = []
@@ -91,7 +86,8 @@ def _overrides(config: dict[str, Any], prefix: str = "") -> list[str]:
         if isinstance(value, dict):
             result.extend(_overrides(value, f"{path}."))
         else:
-            result.extend(["-c", f"{path}={_toml_literal(value)}"])
+            # JSON literals for strings, booleans, integers, and arrays of those are valid TOML values.
+            result.extend(["-c", f"{path}={json.dumps(value)}"])
     return result
 
 

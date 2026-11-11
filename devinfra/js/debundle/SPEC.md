@@ -2097,6 +2097,16 @@ the declaration. Later writes to that binding do not replace the superclass
 captured by the class. Unsupported or uncertain heritage retains the generic
 fallback.
 
+For a superclass expression `(helper(value), base)` whose call result is
+discarded, the capture fallback need not publish argument values when the
+callee is a stable top-level function whose simple parameters and empty or
+literal-return body cannot inspect or retain them. The call arguments must be
+tracked lexical reads or primitive literals without spreads, and `base` must be
+an unmodified top-level function declaration with one known identity. The
+helper, base and all normal evaluation effects remain tracked.
+Rebinding, dynamic scope, defaults, other argument expressions or uncertain
+function identity keep the conservative heritage-input fallback.
+
 A pure initializer that calls a uniquely known local function can retain an
 unpublished callback graph in a fresh ordinary record without making that
 initializer a speculative reachability root. The function must have simple

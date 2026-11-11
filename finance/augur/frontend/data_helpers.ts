@@ -54,10 +54,6 @@ function currency(result: { currency_code: string; currency_quantum: string } | 
   return { currencyCode: result?.currency_code, currencyQuantum: result?.currency_quantum };
 }
 
-function cu(value: unknown, currencyMeta: CurrencyMetadata | undefined) {
-  return fmtQuanta(value, currencyMeta);
-}
-
 export const SELECTED_ROLLOUT_COLOR = "#0f766e";
 export const FAILED_ROLLOUT_COLOR = "#ef4444";
 // Presentation stays frontend policy, but its keys are exhaustively checked against the
@@ -308,8 +304,10 @@ export function formatDueWithShortfall(
   shortfallQuanta: unknown,
   currencyMeta: CurrencyMetadata
 ) {
-  const base = `due ${cu(amountDueQuanta, currencyMeta)}`;
-  return currencyQuantaIsPositive(shortfallQuanta) ? `${base}; shortfall ${cu(shortfallQuanta, currencyMeta)}` : base;
+  const base = `due ${fmtQuanta(amountDueQuanta, currencyMeta)}`;
+  return currencyQuantaIsPositive(shortfallQuanta)
+    ? `${base}; shortfall ${fmtQuanta(shortfallQuanta, currencyMeta)}`
+    : base;
 }
 
 export function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
@@ -327,26 +325,26 @@ export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
 export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
   const gain = currencyQuantaAdd(event.ltcg_quanta, event.stcg_quanta);
   const parts = [
-    `ordinary tax ${cu(event.ordinary_tax_quanta, event._currency)}`,
-    `gain tax ${cu(event.capital_gain_tax_quanta, event._currency)}`,
-    `gains ${cu(gain, event._currency)}`,
+    `ordinary tax ${fmtQuanta(event.ordinary_tax_quanta, event._currency)}`,
+    `gain tax ${fmtQuanta(event.capital_gain_tax_quanta, event._currency)}`,
+    `gains ${fmtQuanta(gain, event._currency)}`,
   ];
   if (currencyQuantaIsPositive(event.mortgage_interest_deduction_quanta)) {
     const usedItemized =
       currencyQuantaIsPositive(event.itemized_deduction_quanta) &&
       BigInt(event.itemized_deduction_quanta) > BigInt(event.standard_deduction_quanta);
-    parts.push(`MID ${cu(event.mortgage_interest_deduction_quanta, event._currency)}`);
+    parts.push(`MID ${fmtQuanta(event.mortgage_interest_deduction_quanta, event._currency)}`);
     parts.push(
-      `deduction ${cu(usedItemized ? event.itemized_deduction_quanta : event.standard_deduction_quanta, event._currency)} (${usedItemized ? "itemized" : "standard"})`
+      `deduction ${fmtQuanta(usedItemized ? event.itemized_deduction_quanta : event.standard_deduction_quanta, event._currency)} (${usedItemized ? "itemized" : "standard"})`
     );
   }
   return parts.join("; ");
 }
 
 export function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
-  const parts = [`down ${cu(event.down_payment_quanta, event._currency)}`];
+  const parts = [`down ${fmtQuanta(event.down_payment_quanta, event._currency)}`];
   if (currencyQuantaIsPositive(event.mortgage_principal_quanta)) {
-    parts.push(`mortgage ${cu(event.mortgage_principal_quanta, event._currency)}`);
+    parts.push(`mortgage ${fmtQuanta(event.mortgage_principal_quanta, event._currency)}`);
   }
   return parts.join("; ");
 }
@@ -385,7 +383,7 @@ const tlhOperationLabel: Record<EventOfKind<"tlh_financial_effect">["operation"]
 export const EVENT_FORMATTERS: EventFormatterMap = {
   holding_sale: {
     label: (event) => `Sold ${event.asset_label ?? assetDisplayName(event.asset) ?? "asset"}`,
-    detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.cost_basis_quanta, event._currency)}`,
+    detail: (event) => `${fmtNumber(event.units)} units; basis ${fmtQuanta(event.cost_basis_quanta, event._currency)}`,
   },
   tlh_financial_effect: {
     label: (event) => {
@@ -393,7 +391,7 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
       return `TLH ${operation}: ${event.portfolio_id}`;
     },
     detail: (event) =>
-      `cash ${cu(event.amount_quanta, event._currency)}; ST gain ${cu(event.short_term_gain_quanta, event._currency)}; LT gain ${cu(event.long_term_gain_quanta, event._currency)}; basis change ${cu(event.basis_change_quanta, event._currency)}; income ${cu(event.income_quanta, event._currency)}`,
+      `cash ${fmtQuanta(event.amount_quanta, event._currency)}; ST gain ${fmtQuanta(event.short_term_gain_quanta, event._currency)}; LT gain ${fmtQuanta(event.long_term_gain_quanta, event._currency)}; basis change ${fmtQuanta(event.basis_change_quanta, event._currency)}; income ${fmtQuanta(event.income_quanta, event._currency)}`,
   },
   monthly_expense: {
     label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),
@@ -413,7 +411,7 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
   mortgage_payment: {
     label: () => "Paid mortgage",
     detail: (event) =>
-      `interest ${cu(event.interest_quanta, event._currency)}; principal ${cu(event.principal_quanta, event._currency)}`,
+      `interest ${fmtQuanta(event.interest_quanta, event._currency)}; principal ${fmtQuanta(event.principal_quanta, event._currency)}`,
   },
   property_tax_payment: {
     label: (event) => shortfallLabel(event, { ok: "Paid property tax", shortfall: "Property tax shortfall" }),
@@ -434,7 +432,7 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
   },
   failure: {
     label: () => "Rollout failed",
-    detail: (event) => `shortfall ${cu(event.shortfall_quanta, event._currency)}`,
+    detail: (event) => `shortfall ${fmtQuanta(event.shortfall_quanta, event._currency)}`,
   },
   set_rented_fraction: {
     label: (event) => {
@@ -451,25 +449,25 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
   },
   capital_improvement: {
     label: () => "Capital improvement",
-    detail: (event) => `${event.property_id}; basis bump ${cu(event.amount_quanta, event._currency)}`,
+    detail: (event) => `${event.property_id}; basis bump ${fmtQuanta(event.amount_quanta, event._currency)}`,
   },
   property_sale: {
     label: () => "Sold property",
     detail: (event) => {
       const parts = [
         `${event.property_id}`,
-        `proceeds ${cu(event.gross_proceeds_quanta, event._currency)}`,
-        `payoff ${cu(event.mortgage_payoff_quanta, event._currency)}`,
-        `net cash ${cu(event.net_cash_to_owner_quanta, event._currency)}`,
+        `proceeds ${fmtQuanta(event.gross_proceeds_quanta, event._currency)}`,
+        `payoff ${fmtQuanta(event.mortgage_payoff_quanta, event._currency)}`,
+        `net cash ${fmtQuanta(event.net_cash_to_owner_quanta, event._currency)}`,
       ];
       if (currencyQuantaIsPositive(event.depreciation_recapture_quanta)) {
-        parts.push(`§1250 ${cu(event.depreciation_recapture_quanta, event._currency)}`);
+        parts.push(`§1250 ${fmtQuanta(event.depreciation_recapture_quanta, event._currency)}`);
       }
       if (currencyQuantaIsPositive(event.section_121_exclusion_quanta)) {
-        parts.push(`§121 ${cu(event.section_121_exclusion_quanta, event._currency)}`);
+        parts.push(`§121 ${fmtQuanta(event.section_121_exclusion_quanta, event._currency)}`);
       }
       if (currencyQuantaIsPositive(event.long_term_capital_gain_quanta)) {
-        parts.push(`LTCG ${cu(event.long_term_capital_gain_quanta, event._currency)}`);
+        parts.push(`LTCG ${fmtQuanta(event.long_term_capital_gain_quanta, event._currency)}`);
       }
       return parts.join("; ");
     },
@@ -486,7 +484,10 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
       return `PE event: ${label}`;
     },
     detail: (event) => {
-      const parts = [`mark ${cu(event.mark_quanta, event._currency)}`, String(event.regime ?? "").replace(/_/g, " ")];
+      const parts = [
+        `mark ${fmtQuanta(event.mark_quanta, event._currency)}`,
+        String(event.regime ?? "").replace(/_/g, " "),
+      ];
       const capacity = Number(event.sale_capacity_fraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
       const eligible = Number(event.eligible_fraction);
@@ -495,7 +496,7 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
       if (forcedSale > 0) parts.push(`forced sale ${(forcedSale * 100).toFixed(0)}%`);
       if (event.liquidity_blocked) parts.push("liquidity blocked");
       if (currencyQuantaIsPositive(event.forced_recovery_cashout_quanta)) {
-        parts.push(`recovery ${cu(event.forced_recovery_cashout_quanta, event._currency)}`);
+        parts.push(`recovery ${fmtQuanta(event.forced_recovery_cashout_quanta, event._currency)}`);
       }
       return parts.filter(Boolean).join("; ");
     },
@@ -508,12 +509,12 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
     },
     detail: (event) => {
       const parts = [
-        `mark ${cu(event.mark_quanta, event._currency)}`,
-        `shortfall ${cu(event.shortfall_quanta, event._currency)}`,
+        `mark ${fmtQuanta(event.mark_quanta, event._currency)}`,
+        `shortfall ${fmtQuanta(event.shortfall_quanta, event._currency)}`,
         `target ${fmtNumber(event.target_units)} units`,
       ];
       if (currencyQuantaIsPositive(event.proceeds_quanta)) {
-        parts.push(`proceeds ${cu(event.proceeds_quanta, event._currency)}`);
+        parts.push(`proceeds ${fmtQuanta(event.proceeds_quanta, event._currency)}`);
       }
       const capacity = Number(event.sale_capacity_fraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
@@ -622,7 +623,7 @@ export function eventDetailText(event: RolloutEventWithCurrency | null | undefin
 }
 
 export function eventTitle(event: RolloutEventWithCurrency) {
-  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), event?._currency)}`;
+  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtQuanta(eventAmount(event), event?._currency)}`;
 }
 
 // Rows the target allocation may name, in portfolio order: held securities, then TLH portfolios.

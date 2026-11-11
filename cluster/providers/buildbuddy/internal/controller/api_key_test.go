@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -24,14 +26,18 @@ import (
 type fakeAPIKeyRecord struct {
 	key     buildbuddy.APIKey
 	groupID string
+	value   []byte
 }
 
 type fakeBuildBuddyAPIKey struct {
-	keys        map[string]fakeAPIKeyRecord
-	createCalls int
-	updateCalls int
-	deleteCalls int
-	createErr   error
+	keys            map[string]fakeAPIKeyRecord
+	createCalls     int
+	updateCalls     int
+	deleteCalls     int
+	readbackCalls   int
+	createErr       error
+	commitBeforeErr bool
+	readbackErr     error
 }
 
 func (f *fakeBuildBuddyAPIKey) APIKeys(_ context.Context, groupID string) ([]buildbuddy.APIKey, error) {
@@ -44,18 +50,30 @@ func (f *fakeBuildBuddyAPIKey) APIKeys(_ context.Context, groupID string) ([]bui
 	return keys, nil
 }
 
-func (f *fakeBuildBuddyAPIKey) CreateAPIKey(_ context.Context, groupID, label string, capabilities []string, visible bool) (buildbuddy.CreatedAPIKey, error) {
+func (f *fakeBuildBuddyAPIKey) APIKeyValue(_ context.Context, groupID, id string) ([]byte, error) {
+	f.readbackCalls++
+	if f.readbackErr != nil {
+		return nil, f.readbackErr
+	}
+	record, ok := f.keys[id]
+	if !ok || record.groupID != groupID {
+		return nil, errors.New("key not found in group")
+	}
+	return append([]byte(nil), record.value...), nil
+}
+
+func (f *fakeBuildBuddyAPIKey) CreateAPIKey(_ context.Context, groupID, label string, capabilities []string, visible bool) (string, error) {
 	f.createCalls++
 	if f.createErr != nil {
-		if ambiguous, ok := f.createErr.(interface{ AmbiguousAPIKeyCreate() bool }); ok && ambiguous.AmbiguousAPIKeyCreate() {
+		if f.commitBeforeErr {
 			key := buildbuddy.APIKey{ID: "fake-api-key-id", Label: label, Capabilities: append([]string(nil), capabilities...), VisibleToDevelopers: visible}
-			f.keys[key.ID] = fakeAPIKeyRecord{key: key, groupID: groupID}
+			f.keys[key.ID] = fakeAPIKeyRecord{key: key, groupID: groupID, value: []byte("fake-generated-key")}
 		}
-		return buildbuddy.CreatedAPIKey{}, f.createErr
+		return "", f.createErr
 	}
 	key := buildbuddy.APIKey{ID: "fake-api-key-id", Label: label, Capabilities: append([]string(nil), capabilities...), VisibleToDevelopers: visible}
-	f.keys[key.ID] = fakeAPIKeyRecord{key: key, groupID: groupID}
-	return buildbuddy.CreatedAPIKey{APIKey: key, Value: []byte("fake-generated-key")}, nil
+	f.keys[key.ID] = fakeAPIKeyRecord{key: key, groupID: groupID, value: []byte("fake-generated-key")}
+	return key.ID, nil
 }
 
 func (f *fakeBuildBuddyAPIKey) UpdateAPIKey(_ context.Context, id, label string, capabilities []string, visible bool) error {
@@ -75,11 +93,6 @@ func (f *fakeBuildBuddyAPIKey) DeleteAPIKey(_ context.Context, id string) error 
 }
 
 func (*fakeBuildBuddyAPIKey) Close() error { return nil }
-
-type ambiguousCreateError struct{}
-
-func (ambiguousCreateError) Error() string               { return "ambiguous fake create" }
-func (ambiguousCreateError) AmbiguousAPIKeyCreate() bool { return true }
 
 type apiKeyTestConnector struct {
 	external *apiKeyExternal
@@ -105,12 +118,12 @@ func TestAPIKeyReconciliation(t *testing.T) {
 	cr := newAPIKeyResource()
 	ctx := context.Background()
 
-	creation, err := e.Create(ctx, cr)
+	_, err := e.Create(ctx, cr)
 	if err != nil {
 		t.Fatal("create API key:", err)
 	}
-	if meta.GetExternalName(cr) != "fake-api-key-id" || string(creation.ConnectionDetails[apiKeyConnectionSecretKey]) != "fake-generated-key" {
-		t.Fatal("create did not set the ID and one-time connection detail")
+	if meta.GetExternalName(cr) != "fake-api-key-id" {
+		t.Fatal("create did not set the ID")
 	}
 	status, err := json.Marshal(cr.Status)
 	if err != nil || strings.Contains(string(status), "fake-generated-key") {
@@ -128,7 +141,7 @@ func TestAPIKeyReconciliation(t *testing.T) {
 		t.Fatalf("observe created API key: %+v %v", observation, err)
 	}
 	if string(observation.ConnectionDetails[apiKeyConnectionSecretKey]) != "fake-generated-key" {
-		t.Fatal("observe did not preserve the write-only key for connection Secret publication")
+		t.Fatal("observe did not read back the key for connection Secret publication")
 	}
 	if cr.Status.AtProvider.GroupID != "fake-group" || cr.Status.AtProvider.Label != "test-key" {
 		t.Fatal("observation did not record non-secret group-key metadata")
@@ -137,6 +150,7 @@ func TestAPIKeyReconciliation(t *testing.T) {
 	api.keys[meta.GetExternalName(cr)] = fakeAPIKeyRecord{
 		groupID: "fake-group",
 		key:     buildbuddy.APIKey{ID: meta.GetExternalName(cr), Label: "drifted", Capabilities: []string{"CACHE_WRITE"}},
+		value:   []byte("fake-generated-key"),
 	}
 	observation, err = e.Observe(ctx, cr)
 	if err != nil || observation.ResourceUpToDate {
@@ -162,8 +176,8 @@ func TestAPIKeyReconciliation(t *testing.T) {
 	}
 }
 
-func TestAPIKeyCreationFailsClosedOnAmbiguousError(t *testing.T) {
-	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord), createErr: ambiguousCreateError{}}
+func TestAPIKeyCreationFailsClosedOnCreateError(t *testing.T) {
+	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord), createErr: errors.New("fake create failed"), commitBeforeErr: true}
 	e := &apiKeyExternal{kube: newAPIKeyTestClient(t), api: api}
 	cr := newAPIKeyResource()
 
@@ -193,6 +207,9 @@ func TestAPIKeyReconcilerCreatesAndPreservesConnectionSecret(t *testing.T) {
 
 	if _, err := r.Reconcile(ctx, req); err != nil {
 		t.Fatal("reconcile new API key:", err)
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("observe new API key:", err)
 	}
 	stored := &v1alpha1.APIKey{}
 	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
@@ -235,10 +252,103 @@ func TestAPIKeyReconcilerCreatesAndPreservesConnectionSecret(t *testing.T) {
 	}
 }
 
+func TestAPIKeyReconcilerRestoresConnectionSecret(t *testing.T) {
+	for _, damage := range []string{"deleted", "empty", "changed"} {
+		t.Run(damage, func(t *testing.T) {
+			ctx := context.Background()
+			cr := newAPIKeyResource()
+			api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord)}
+			r, kube := newAPIKeyTestReconciler(t, cr, api)
+			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name}}
+			if _, err := r.Reconcile(ctx, req); err != nil {
+				t.Fatal("create managed API key:", err)
+			}
+			if _, err := r.Reconcile(ctx, req); err != nil {
+				t.Fatal("observe managed API key:", err)
+			}
+			secret := &corev1.Secret{}
+			secretKey := types.NamespacedName{Namespace: cr.Namespace, Name: cr.Spec.WriteConnectionSecretToReference.Name}
+			if err := kube.Get(ctx, secretKey, secret); err != nil {
+				t.Fatal("get connection Secret:", err)
+			}
+			if damage == "deleted" {
+				if err := kube.Delete(ctx, secret); err != nil {
+					t.Fatal("delete connection Secret:", err)
+				}
+			} else {
+				secret.Data = nil
+				if damage == "changed" {
+					secret.Data = map[string][]byte{apiKeyConnectionSecretKey: []byte("wrong-key")}
+				}
+				if err := kube.Update(ctx, secret); err != nil {
+					t.Fatal("damage connection Secret:", err)
+				}
+			}
+			if _, err := r.Reconcile(ctx, req); err != nil {
+				t.Fatal("restore connection Secret:", err)
+			}
+			if err := kube.Get(ctx, secretKey, secret); err != nil {
+				t.Fatal("get restored connection Secret:", err)
+			}
+			if string(secret.Data[apiKeyConnectionSecretKey]) != "fake-generated-key" || api.createCalls != 1 {
+				t.Fatal("reconcile did not restore the original key without creating another")
+			}
+		})
+	}
+}
+
+func TestAPIKeyReconcilerRecoversWhenReadbackEnabled(t *testing.T) {
+	ctx := context.Background()
+	cr := newAPIKeyResource()
+	api := &fakeBuildBuddyAPIKey{
+		keys:        make(map[string]fakeAPIKeyRecord),
+		readbackErr: errors.New("API-key value readback must be enabled"),
+	}
+	r, kube := newAPIKeyTestReconciler(t, cr, api)
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name}}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("create with readback disabled:", err)
+	}
+	stored := &v1alpha1.APIKey{}
+	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
+		t.Fatal("get created APIKey:", err)
+	}
+	if meta.GetExternalName(stored) != "fake-api-key-id" || api.readbackCalls != 0 {
+		t.Fatal("created key ID must be persisted before value readback")
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("observe with readback disabled:", err)
+	}
+	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
+		t.Fatal("get APIKey after readback failure:", err)
+	}
+	if meta.GetExternalName(stored) != "fake-api-key-id" || !strings.Contains(fmt.Sprint(stored.Status.Conditions), "readback must be enabled") {
+		t.Fatal("readback failure must persist the created ID and report the error")
+	}
+	secret := &corev1.Secret{}
+	secretKey := types.NamespacedName{Namespace: cr.Namespace, Name: cr.Spec.WriteConnectionSecretToReference.Name}
+	if err := kube.Get(ctx, secretKey, secret); err != nil {
+		t.Fatal("get connection Secret after readback failure:", err)
+	}
+	if len(secret.Data[apiKeyConnectionSecretKey]) != 0 {
+		t.Fatal("published a key without successful readback")
+	}
+	api.readbackErr = nil
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("reconcile after readback was enabled:", err)
+	}
+	if err := kube.Get(ctx, secretKey, secret); err != nil {
+		t.Fatal("get recovered connection Secret:", err)
+	}
+	if string(secret.Data[apiKeyConnectionSecretKey]) != "fake-generated-key" || api.createCalls != 1 {
+		t.Fatal("did not recover the original key after enabling readback")
+	}
+}
+
 func TestAPIKeyReconcilerPersistsAmbiguousCreateMarker(t *testing.T) {
 	ctx := context.Background()
 	cr := newAPIKeyResource()
-	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord), createErr: ambiguousCreateError{}}
+	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord), createErr: errors.New("fake create failed"), commitBeforeErr: true}
 	r, kube := newAPIKeyTestReconciler(t, cr, api)
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name}}
 
@@ -264,6 +374,26 @@ func TestAPIKeyReconcilerPersistsAmbiguousCreateMarker(t *testing.T) {
 	}
 	if api.createCalls != 1 {
 		t.Fatalf("reconciler retried an ambiguous Create %d times", api.createCalls)
+	}
+
+	// An operator can identify the key and replace the marker with its ID.
+	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
+		t.Fatal("get APIKey before resolving its ID:", err)
+	}
+	meta.SetExternalName(stored, "fake-api-key-id")
+	if err := kube.Update(ctx, stored); err != nil {
+		t.Fatal("resolve ambiguous key ID:", err)
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("reconcile identified key:", err)
+	}
+	secret := &corev1.Secret{}
+	secretKey := types.NamespacedName{Namespace: cr.Namespace, Name: cr.Spec.WriteConnectionSecretToReference.Name}
+	if err := kube.Get(ctx, secretKey, secret); err != nil {
+		t.Fatal("get recovered connection Secret:", err)
+	}
+	if string(secret.Data[apiKeyConnectionSecretKey]) != "fake-generated-key" || api.createCalls != 1 {
+		t.Fatal("identified key was not recovered without another create")
 	}
 }
 
@@ -294,6 +424,31 @@ func TestAPIKeyReconcilerDoesNotAdoptUnrelatedOutputSecret(t *testing.T) {
 	}
 }
 
+func TestAPIKeyReconcilerDoesNotOverwriteUnrelatedSecretOnReadback(t *testing.T) {
+	ctx := context.Background()
+	cr := newAPIKeyResource()
+	meta.SetExternalName(cr, "existing-id")
+	unrelated := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: cr.Spec.WriteConnectionSecretToReference.Name, Namespace: cr.Namespace},
+		Data:       map[string][]byte{apiKeyConnectionSecretKey: []byte("unrelated-value")},
+	}
+	api := &fakeBuildBuddyAPIKey{keys: map[string]fakeAPIKeyRecord{
+		"existing-id": {groupID: "fake-group", key: buildbuddy.APIKey{ID: "existing-id"}, value: []byte("remote-value")},
+	}}
+	r, kube := newAPIKeyTestReconciler(t, cr, api, unrelated)
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name}}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("reconcile existing key with unrelated output Secret:", err)
+	}
+	secret := &corev1.Secret{}
+	if err := kube.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: unrelated.Name}, secret); err != nil {
+		t.Fatal("get unrelated Secret:", err)
+	}
+	if string(secret.Data[apiKeyConnectionSecretKey]) != "unrelated-value" || len(secret.OwnerReferences) != 0 {
+		t.Fatal("reconcile overwrote or adopted an unrelated output Secret")
+	}
+}
+
 func TestAPIKeyEmptyCapabilitiesCanBeCreatedAndCleared(t *testing.T) {
 	ctx := context.Background()
 	createCR := newAPIKeyResource()
@@ -315,6 +470,7 @@ func TestAPIKeyEmptyCapabilitiesCanBeCreatedAndCleared(t *testing.T) {
 	api.keys[meta.GetExternalName(updateCR)] = fakeAPIKeyRecord{
 		groupID: "fake-group",
 		key:     buildbuddy.APIKey{ID: meta.GetExternalName(updateCR), Capabilities: []string{"CACHE_WRITE"}},
+		value:   []byte("fake-existing-key"),
 	}
 	updateCR.Spec.ForProvider.Capabilities = nil
 	if _, err := e.Update(ctx, updateCR); err != nil {

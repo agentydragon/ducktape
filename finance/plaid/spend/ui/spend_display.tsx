@@ -18,24 +18,29 @@ export function money(value: number | Decimal | null | undefined, currency: stri
   if (!minorUnits.isFinite()) return "Unavailable";
   const code = currency?.length === 3 ? currency.toUpperCase() : "USD";
   try {
-    const formatter = new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: code,
-      maximumFractionDigits: exact ? undefined : 0,
-      minimumFractionDigits: exact ? undefined : 0,
-    });
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+    const precision = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const exactAmount = minorUnits.div(new Decimal(10).pow(precision ?? 2));
-    if (!exact && !exactAmount.isZero() && exactAmount.abs().lessThan("0.5")) {
-      return `${exactAmount.isNegative() ? "-" : ""}<${formatter.format(1)}`;
+    const digits =
+      exact || (!exactAmount.isZero() && exactAmount.abs().lessThan(10) && !exactAmount.isInteger())
+        ? (precision ?? 2)
+        : 0;
+    const formatter = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
+    });
+    const unit = new Decimal(10).pow(-(precision ?? 2));
+    if (!exactAmount.isZero() && exactAmount.abs().lessThan(unit.div(2))) {
+      return `${exactAmount.isNegative() ? "-" : ""}<${formatter.format(unit.toNumber())}`;
     }
-    const displayAmount = exactAmount.toDecimalPlaces(exact ? (precision ?? 2) : 0, Decimal.ROUND_HALF_UP);
+    const displayAmount = exactAmount.toDecimalPlaces(digits, Decimal.ROUND_HALF_UP);
     return formatter.format(displayAmount.toNumber());
   } catch {
     const amount = minorUnits.div(100).toNumber();
-    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
-    return `${code} ${amount.toFixed(exact ? 2 : 0)}`;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.005) return `${amount < 0 ? "-" : ""}<${code} 0.01`;
+    return `${code} ${amount.toFixed(exact || (amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount)) ? 2 : 0)}`;
   }
 }
 
@@ -43,9 +48,16 @@ export function Money({ value, currency }: { value: number | null | undefined; c
   return <span title={money(value, currency, true)}>{money(value, currency)}</span>;
 }
 
-export function time(value: string | null | undefined): string {
+export function time(value: string | null | undefined, now = new Date()): string {
   if (!value || Number.isNaN(new Date(value).getTime())) return "Unknown";
-  return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const date = new Date(value);
+  const label = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
+  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return Math.abs(date.getTime() - now.getTime()) <= 14 * 86400_000 ? `${label}, ${clock}` : label;
 }
 
 export type Signal = "normal" | "warning" | "exceeded";

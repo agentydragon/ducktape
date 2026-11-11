@@ -174,6 +174,7 @@ def gnome_session(
     display_size: tuple[int, int] = (1920, 500),
     compile_extension_schemas: bool = False,
     activate_display: bool = False,
+    before_start: Callable[[GnomeSession], None] | None = None,
 ) -> Iterator[GnomeSession]:
     screenshot_dir.chmod(0o777)  # GNOME writes screenshots as a different uid.
     container = DockerContainer(image)
@@ -211,6 +212,8 @@ def gnome_session(
                 )
                 if result.exit_code != 0:
                     raise RuntimeError(f"Extension schema compilation failed: {exec_output(result)}")
+            if before_start is not None:
+                before_start(session)
             session.start(environment=environment)
             session.wait_for_paint()
             yield session

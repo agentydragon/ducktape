@@ -5,6 +5,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "models",
@@ -75,7 +76,9 @@ oci_image(
 
 py_test(
     name = "test_database_migrate",
+    size = "medium",
     srcs = ["test_database_migrate.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -122,7 +125,9 @@ py_library(
 
 py_test(
     name = "test_progress_queries",
+    size = "medium",
     srcs = ["test_progress_queries.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -220,6 +225,7 @@ py_test(
     size = "medium",
     srcs = ["test_ingest_migrate_image.py"],
     data = ["@crane"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         "//:conftest",
@@ -265,8 +271,10 @@ py_test(
 
 py_test(
     name = "test_json_storage",
+    size = "medium",
     srcs = ["test_json_storage.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -301,8 +309,10 @@ py_test(
 
 py_test(
     name = "test_initial_import",
+    size = "medium",
     srcs = ["test_initial_import.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -319,8 +329,10 @@ py_test(
 
 py_test(
     name = "test_modified_version",
+    size = "medium",
     srcs = ["test_modified_version.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -337,8 +349,10 @@ py_test(
 
 py_test(
     name = "test_truncated_deleted_version",
+    size = "medium",
     srcs = ["test_truncated_deleted_version.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -355,8 +369,10 @@ py_test(
 
 py_test(
     name = "test_parentless_snapshot",
+    size = "medium",
     srcs = ["test_parentless_snapshot.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -372,8 +388,10 @@ py_test(
 
 py_test(
     name = "test_postgres_retry",
+    size = "medium",
     srcs = ["test_postgres_retry.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -390,8 +408,10 @@ py_test(
 
 py_test(
     name = "test_codex_title_conflict",
+    size = "medium",
     srcs = ["test_codex_title_conflict.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -407,7 +427,9 @@ py_test(
 
 py_test(
     name = "test_discovery_ledger",
+    size = "medium",
     srcs = ["test_discovery_ledger.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -424,7 +446,9 @@ py_test(
 
 py_test(
     name = "test_codex_parent_links",
+    size = "medium",
     srcs = ["test_codex_parent_links.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -555,8 +579,10 @@ py_library(
 
 py_test(
     name = "test_codex_title_rename",
+    size = "medium",
     srcs = ["test_codex_title_rename.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":codex_titles_testing",
@@ -573,8 +599,10 @@ py_test(
 
 py_test(
     name = "test_codex_titles",
+    size = "medium",
     srcs = ["test_codex_titles.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":codex_titles_testing",
@@ -591,8 +619,10 @@ py_test(
 
 py_test(
     name = "test_codex_title_retry",
+    size = "medium",
     srcs = ["test_codex_title_retry.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":codex_titles_testing",
@@ -610,7 +640,9 @@ py_test(
 
 py_test(
     name = "test_codex_title_projection",
+    size = "medium",
     srcs = ["test_codex_title_projection.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -632,8 +664,10 @@ py_library(
 
 py_test(
     name = "test_claude_title_projection",
+    size = "medium",
     srcs = ["test_claude_title_projection.py"],
     data = ["//third_party/restic"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",
@@ -674,7 +708,9 @@ py_library(
 
 py_test(
     name = "test_codex_title_candidates",
+    size = "medium",
     srcs = ["test_codex_title_candidates.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":codex_title_projection",
@@ -695,7 +731,9 @@ py_test(
 
 py_test(
     name = "test_file_batches",
+    size = "medium",
     srcs = ["test_file_batches.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":database",

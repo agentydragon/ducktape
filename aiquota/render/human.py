@@ -2,15 +2,17 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
-from decimal import Decimal
 
 from rich.text import Text
 
 from aiquota.models import AllQuotas
 from aiquota.render.format import (
+    extra_spend_has_hidden_fraction,
     format_age,
     format_burn,
     format_deadline,
+    format_extra_spend,
+    format_extra_spend_exact,
     format_peak_schedule,
     format_reset_credit_summary,
 )
@@ -141,11 +143,12 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
 
     extra = pv.monthly_extra_spend
     if extra is not None:
-        lines.append(
-            Text(
-                f"  Extra spend this month: {_usd(extra.used_usd)} of {_usd(extra.monthly_limit_usd, whole=True)} limit"
-            )
-        )
+        summary = format_extra_spend(extra.used_usd, extra.monthly_limit_usd)
+        enabled = " · extra usage enabled" if pv.currently_over_plan else ""
+        lines.append(Text(f"  {summary}{enabled}"))
+        exact = format_extra_spend_exact(extra.used_usd, extra.monthly_limit_usd)
+        if details and extra_spend_has_hidden_fraction(extra.used_usd, extra.monthly_limit_usd):
+            lines.append(Text(f"    exact spend: {exact}"))
 
     if pv.display_windows:
         lines.extend(
@@ -173,6 +176,10 @@ def _credit_lines(pv: ProviderView, now: datetime, tz: tzinfo | None, details: b
 def _balance_line(balance: BalanceView, indent: str, now: datetime, details: bool) -> Text:
     stale = f" · stale {format_age((now - balance.stale_since).total_seconds())}" if balance.stale_since else ""
     line = Text(f"{indent}{balance.label}: {balance.value}{stale}")
+    if details and balance.pool_detail is not None:
+        line.append(f"\n{indent}  pool: {balance.pool_detail}")
+    if details and balance.exact_value is not None:
+        line.append(f"\n{indent}  exact balance: {balance.exact_value}")
     if details and balance.error is not None:
         line.append(f"\n{indent}  error: {balance.error}")
     return line
@@ -190,13 +197,11 @@ def _grant_line(grant: GrantView, indent: str, now: datetime, tz: tzinfo | None,
     if grant.status:
         line += f" · {grant.status}"
     if details:
-        line += f" · {grant.original} granted"
+        if grant.exact_remaining is not None:
+            line += f" · exact remaining {grant.exact_remaining}"
+        if not grant.original_repeats_remaining:
+            line += f" · {grant.original} granted"
     return Text(line)
-
-
-def _usd(amount: float, *, whole: bool = False) -> str:
-    precision = ",.0f" if whole else ",.2f"
-    return f"${format(Decimal(str(amount)), precision)}"
 
 
 def _format_window_line(window: WindowView, widths: _ColumnWidths, details: bool) -> str:

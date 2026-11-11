@@ -74,6 +74,7 @@ py_test(
     name = "test_daemon",
     srcs = ["test_daemon.py"],
     deps = [
+        ":credentials",
         ":daemon",
         ":oauth",
         "//:conftest",
@@ -81,6 +82,13 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_binary(
+    name = "daemon_bin",
+    main_module = "finance.plaid.spend.desktop.daemon",
+    visibility = ["//finance/plaid/spend/gnome:__pkg__"],
+    deps = [":daemon"],
 )
 
 py_binary(

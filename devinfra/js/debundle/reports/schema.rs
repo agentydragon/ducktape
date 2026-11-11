@@ -954,6 +954,21 @@ pub enum ClassMembersPublicationWriter {
     /// A generator call: whoever later resumes the generator object runs
     /// the body.
     GeneratorCreation,
+    /// `Object.assign` onto a target the analysis does not track.
+    ObjectAssignCopy,
+    /// The receiver of a local method that reads `this`, which the summary
+    /// does not bind.
+    MethodReceiver,
+    /// The unknown instance of a refused local class construction.
+    RefusedConstructionInstance,
+    /// The receiver of a member read or write that may run an accessor
+    /// reading `this`.
+    AccessorReceiver,
+    /// What an escaped class's construction stored on an instance or the
+    /// class.
+    ClassReach,
+    /// A store on a local class or its prototype.
+    ClassSurfaceMemberWrite,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The

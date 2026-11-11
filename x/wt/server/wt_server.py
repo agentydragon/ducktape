@@ -34,12 +34,11 @@ from x.wt.server.handlers import (
     worktree_handler,  # noqa: F401
 )
 from x.wt.server.rpc import ServiceDependencies, rpc
-from x.wt.server.services import GitstatusdService, WorktreeIndexService, scan_worktrees
+from x.wt.server.services import scan_worktrees
 from x.wt.server.stores import DaemonStore
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.watcher import start_watcher
 from x.wt.server.worktree_index import WorktreeIndex
-from x.wt.server.worktree_registry import WorktreeRegistry
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration, load_config
 from x.wt.shared.protocol import (
@@ -132,7 +131,7 @@ class WtDaemon:
         self._worktree_observer = None  # Filesystem watcher for worktrees dir
 
         # Managed state
-        self.worktree_index: WorktreeIndex | None = None
+        self.worktree_index = WorktreeIndex(by_path={}, by_name={}, main=None)
         self.gitstatusd_clients: dict[WorktreeID, GitstatusdListener] = {}
         self.git_watchers: dict[WorktreeID, DebouncedGitstatusRefresh] = {}
 
@@ -148,24 +147,6 @@ class WtDaemon:
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
         # Centralized git refs watcher for cached ahead/behind (created here, started in start())
         self.git_refs_watcher = GitRefsWatcher(store=self.store, git_manager=self.git_manager, config=self.config)
-        # Build DI services
-        self.index_service = WorktreeIndexService(
-            get_index=lambda: self.worktree_index, run_discovery_once=self._run_discovery_once
-        )
-
-        # Helper to fetch known worktree info without repeated membership checks
-        def get_known_worktree(p):
-            return self.known_worktrees.get(p)
-
-        self.gitstatusd_service = GitstatusdService(
-            get_client=lambda p: self.gitstatusd_clients.get(wt.wtid) if (wt := get_known_worktree(p)) else None,
-            iter_client_paths=lambda: list(self.known_worktrees),
-            ensure_watcher_for_path=lambda p: (
-                self._ensure_git_watcher(get_known_worktree(p)) if get_known_worktree(p) else asyncio.sleep(0)
-            ),
-            list_watchers=lambda: list(self.git_watchers.values()),
-            clear_watchers=self.git_watchers.clear,
-        )
         # WtDaemon implements WorktreeCoordinator protocol directly
 
         # Server state
@@ -173,22 +154,15 @@ class WtDaemon:
         self.running = False
         self.discovery_task: asyncio.Task | None = None
         self.discovery_scanning: bool = False
-        self.registry = WorktreeRegistry()
+        self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
         self._startup_tasks: list[asyncio.Task] = []
 
         # Ensure daemon directory exists
         self.config.wt_dir.mkdir(exist_ok=True)
 
-        # Defer initial discovery to start() to avoid running async in __init__
-        self.worktree_index = None
-
         self._method_handlers = rpc
         with contextlib.suppress(Exception):
             logger.info("Registered RPC methods: %s", sorted(rpc.list_methods()))
-
-    @property
-    def known_worktrees(self) -> dict[Path, DiscoveredWorktree]:
-        return self.registry.known
 
     def _validate_configuration(self) -> str | None:
         """Returns error message if configuration is invalid, None if valid."""
@@ -273,15 +247,18 @@ class WtDaemon:
             # The scan runs under the lock: one that began before a concurrent register_worktree must not
             # overwrite the registry once that registration lands.
             async with self._state_lock:
-                changes = self.registry.apply(await scan_worktrees(self.config.worktrees_dir))
+                current = {wt.path: wt for wt in await scan_worktrees(self.config.worktrees_dir)}
+                added = [current[path] for path in current.keys() - self.known_worktrees.keys()]
+                removed = [self.known_worktrees[path] for path in self.known_worktrees.keys() - current.keys()]
+                self.known_worktrees = current
                 self._refresh_index()
                 # Sync paths to reactive store
                 self.store.set_worktree_paths(self.known_worktrees.keys())
         finally:
             self.discovery_scanning = False
-        for wt in changes.added:
+        for wt in added:
             await self._start_gitstatusd_for_worktree(wt)
-        for wt in changes.removed:
+        for wt in removed:
             await self._stop_gitstatusd_for_worktree(wt)
 
     async def _periodic_discovery(self) -> None:
@@ -317,8 +294,11 @@ class WtDaemon:
             deps = ServiceDependencies(
                 config=self.config,
                 git_manager=self.git_manager,
-                index=self.index_service,
-                gitstatusd=self.gitstatusd_service,
+                index=self.worktree_index,
+                run_discovery_once=self._run_discovery_once,
+                gitstatusd_client=lambda p: (
+                    self.gitstatusd_clients.get(wt.wtid) if (wt := self.known_worktrees.get(p)) else None
+                ),
                 github_watcher=self.github_watcher,
                 git_refs_watcher=self.git_refs_watcher,
                 discovery_scanning=lambda: self.discovery_scanning,
@@ -461,7 +441,9 @@ class WtDaemon:
         # Start long-running service loops
         if not self.discovery_task or self.discovery_task.done():
             self.discovery_task = asyncio.create_task(self._periodic_discovery())
-        await self.gitstatusd_service.start()
+        for path in list(self.known_worktrees):
+            if (worktree := self.known_worktrees.get(path)) and self.gitstatusd_clients.get(worktree.wtid):
+                await self._ensure_git_watcher(worktree)
 
         # Start filesystem watcher for worktrees directory
         if not self.config.worktrees_dir.exists():
@@ -480,7 +462,10 @@ class WtDaemon:
             self._worktree_observer = None
 
         # Stop long-running service loops
-        await self.gitstatusd_service.stop()
+        for watcher in list(self.git_watchers.values()):
+            with contextlib.suppress(Exception):
+                await watcher.stop()
+        self.git_watchers.clear()
         if self.github_watcher:
             await self.github_watcher.stop()
         await self.git_refs_watcher.stop()
@@ -515,14 +500,14 @@ class WtDaemon:
 
     async def register_worktree(self, info: DiscoveredWorktree) -> None:
         async with self._state_lock:
-            self.registry.add(info)
+            self.known_worktrees[info.path] = info
         await self._start_gitstatusd_for_worktree(info)
         await self.rebuild_index()
 
     async def unregister_worktree(self, info: DiscoveredWorktree) -> None:
         await self._stop_gitstatusd_for_worktree(info)
         async with self._state_lock:
-            self.registry.remove(info.path)
+            self.known_worktrees.pop(info.path, None)
         await self.rebuild_index()
 
 
