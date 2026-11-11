@@ -566,6 +566,7 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         assert state()["items"] == ["pace"]
         assert string_reply(session.call("GetPanelLabel")) == "140%"
         configure(order=["sparkline", "pace", "balance", "status"], visible=["sparkline", "pace"])
+        session.reload("/fixtures/panel_composition.json")
         assert state()["items"] == ["sparkline", "pace"]
         session.reload("/fixtures/allowance_paced.json")
         assert state()["items"] == ["sparkline-unavailable", "pace"]
