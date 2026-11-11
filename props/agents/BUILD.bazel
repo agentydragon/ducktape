@@ -23,7 +23,6 @@ py_library(
         "//mako_utils:preprocessor",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:queries",
         "//props/db:snapshot_io",
         "@pypi//mako",
         "@pypi//sqlalchemy",

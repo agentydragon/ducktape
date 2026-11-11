@@ -46,16 +46,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "queries",
-    srcs = ["queries.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":models",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 # =============================================================================
 # Core models (depend on config, snapshots, external modules)
 # =============================================================================
@@ -160,7 +150,6 @@ assert_no_deps(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:notifications",
-        "//props/db:queries",
         "//props/db:query_builders",
         "//props/db:setup",
         "//props/db:snapshot_io",
