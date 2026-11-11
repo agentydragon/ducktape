@@ -512,7 +512,7 @@ its cost.
 
 ### Step 8 — promotion and fallback
 
-- Replace the syntactic closure used by `UnresolvedCallFallback` for incomplete
+- Replace the syntactic closure used by unresolved-call fallback for incomplete
   execution with interpreter-derived `Havoc(reach)`. Bounded reach is
   report-only until a retained effect-domain closure proves it covers every
   relevant binding, property, global and host effect; see

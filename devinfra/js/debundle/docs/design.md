@@ -325,7 +325,7 @@ assumption, so an invocation's outcome and memo stay relative to it, and
 `absorb_binding_effects` re-tags a nested outcome under the merging path. The
 per-statement fallback accumulator (`fallback_outcome`) merges under
 `fallback_summary` at the statement's end. Graph build tags the
-`UnresolvedCallFallback` closure's eager uses for the shared-`var` order. A
+unresolved-call read closure's eager uses for the shared-`var` order. A
 path whose code the statement definitely runs (an applied accessor, an
 unsupported construction's body, a named setter) stays `Observed`, which only
 rejects more premises. `promote_at_init_calls` also offers each binding's
@@ -1687,7 +1687,7 @@ first-order closure above.
 dynamic member calls, IIFEs, optional-chain calls, tagged templates,
 conditional or externally supplied function values, and calls into
 resolvable functions whose own first-order bodies contain such calls — take a
-conservative fallback (`UnresolvedCallFallback` in `graph/build.rs`). The
+conservative fallback (in `graph/build.rs`). The
 fallback's premise: whatever function value the call invokes must
 have reached the call site through a binding the call expression
 mentions (callee root, arguments, computed keys) or through an

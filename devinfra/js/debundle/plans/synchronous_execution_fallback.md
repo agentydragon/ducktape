@@ -27,9 +27,9 @@ closure fallback; normal completion alone cannot restore legacy authority.
 ## Remaining effect-authority boundary
 
 `graph/build.rs` emits known synchronous reads and rebinds according to their
-binding-effect authority. Incomplete owners still fall through to
-`UnresolvedCallFallback`, which expands unresolved roots through
-`SourceUnitReadClosure` and adds closure reads as eager uses. The fallback is
+binding-effect authority. Incomplete owners still fall through to a fallback
+that expands unresolved roots through `SourceUnitReadClosure` and adds closure
+reads as eager uses. The fallback is
 not conditioned on `HavocReach`.
 
 Replace remaining `LegacyExecution` owners with exact lexical receipts before
