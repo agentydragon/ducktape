@@ -1,15 +1,8 @@
 import { SegmentedControl } from "@mantine/core";
-import { type JSX, useState } from "react";
+import type { JSX } from "react";
 
 import { ListDetailsIcon, ListIcon } from "./icons";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
-
-// The per-view compact/detailed selection, shared by capability-request cards and tool-call cards.
-// The owner holds the state, threading `variant` down (to ToolArgumentsField and to gate the
-// detail-only fields) and `setVariant` up to the control.
-export function useVariant(initial: PreviewVariant): [PreviewVariant, (v: PreviewVariant) => void] {
-  return useState(initial);
-}
 
 /** Brief↔Full detail selector: a plain list (compact) vs a list-with-detail-lines (detailed). It
  * belongs at the **top** of a card, because switching to Full grows content below it and the
