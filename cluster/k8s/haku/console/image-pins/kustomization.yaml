@@ -4,4 +4,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/haku-console
     newTag: devel-20261111024059-2a3e599 # {"$imagepolicy": "flux-system:haku-console:tag"}
   - name: git.allegedly.works/ducktape-ci/haku-console-static
-    newTag: devel-20261111021913-168cd1f # {"$imagepolicy": "flux-system:haku-console-static:tag"}
+    newTag: devel-20261111072855-aeab506 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
