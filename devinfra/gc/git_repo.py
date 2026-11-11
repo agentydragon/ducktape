@@ -71,8 +71,10 @@ def _track_interruptible_git(process: subprocess.Popen[str]) -> Iterator[None]:
             _running_git.discard(process)
 
 
-def git(repo: Path, *args: str, check: bool = True, interruptible: bool = True) -> subprocess.CompletedProcess[str]:
-    command = ["git", "-C", os.fspath(repo), *args]
+def git(
+    repo: Path, *args: str | os.PathLike[str], check: bool = True, interruptible: bool = True
+) -> subprocess.CompletedProcess[str]:
+    command = ["git", "-C", os.fspath(repo), *(os.fspath(arg) for arg in args)]
     with (
         subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process,
         _track_interruptible_git(process) if interruptible else nullcontext(),
@@ -83,7 +85,7 @@ def git(repo: Path, *args: str, check: bool = True, interruptible: bool = True) 
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
-def git_out(repo: Path, *args: str) -> str:
+def git_out(repo: Path, *args: str | os.PathLike[str]) -> str:
     return git(repo, *args).stdout.strip()
 
 

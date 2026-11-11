@@ -284,7 +284,7 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     classified `path` itself.
     """
     try:
-        outcome = git(repo, "worktree", "remove", os.fspath(path), check=False, interruptible=False)
+        outcome = git(repo, "worktree", "remove", path, check=False, interruptible=False)
     except (OSError, subprocess.SubprocessError) as error:
         return Failed(path, str(error))
     if outcome.returncode == 0:
