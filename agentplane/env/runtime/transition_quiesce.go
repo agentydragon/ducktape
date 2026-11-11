@@ -58,7 +58,7 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context) (runt
 	current := r.desired
 	r.mu.Unlock()
 	if current.Mode == lifecycle.Quiescing && current.SealUID == uid {
-		progress, found, err := r.readSessionStatus(ctx)
+		progress, found, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 		if err != nil {
 			return runtimeTransitionOutcome{}, err
 		}
