@@ -6,7 +6,6 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import { unwrapMcpToolResult } from "../mcp_result";
 import type { PreviewVariant } from "./vocabulary";
 
 export type ToolResultPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
@@ -45,13 +44,4 @@ export function renderResultPreview(
   // parsed.data is `unknown` (the schema is type-erased to ZodTypeAny in storage); the matching
   // `defineResultPreview` bound this render to exactly this schema's output, so the cast is sound.
   return parsed.success ? preview.render(parsed.data as never, variant) : null;
-}
-
-/** The tool's own return value, dug out of a stored CallToolResult envelope: prefer
- * `structuredContent` (un-wrapping FastMCP's `{"result": …}` envelope for non-dict returns,
- * flagged by `_meta.fastmcp.wrap_result`), else parse a single JSON text block. `null` when
- * there is no structured payload to dispatch on — including error results, whose message
- * already renders through the card's error line. */
-export function unwrapToolResult(resultJson: unknown): unknown {
-  return unwrapMcpToolResult(resultJson);
 }
