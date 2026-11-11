@@ -964,6 +964,11 @@ pub enum ClassMembersPublicationWriter {
     /// The receiver of a member read or write that may run an accessor
     /// reading `this`.
     AccessorReceiver,
+    /// What an escaped class's construction stored on an instance or the
+    /// class.
+    ClassReach,
+    /// A store on a local class or its prototype.
+    ClassSurfaceMemberWrite,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The

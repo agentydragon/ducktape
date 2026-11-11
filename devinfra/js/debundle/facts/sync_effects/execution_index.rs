@@ -1514,6 +1514,8 @@ pub(super) struct Callable {
     pub(super) callback_result_writes: Vec<CallbackResultWrite>,
     pub(super) dynamic_property_effect: bool,
     pub(super) dynamic_property_receivers: Vec<ValueExpr>,
+    /// Receivers of member targets in this body's destructuring assignments.
+    pub(super) destructuring_member_receivers: Vec<ValueExpr>,
     pub(super) implicit_capture: bool,
     pub(super) opaque: bool,
     pub(super) generator: bool,
@@ -1828,6 +1830,7 @@ impl Default for Callable {
             callback_result_writes: Vec::new(),
             dynamic_property_effect: false,
             dynamic_property_receivers: Vec::new(),
+            destructuring_member_receivers: Vec::new(),
             implicit_capture: false,
             opaque: false,
             generator: false,
@@ -6231,12 +6234,26 @@ pub(super) struct ExecutionIndex {
     pub(super) class_spans: BTreeMap<u32, Span>,
     /// The `extends` expression of each class that has one.
     pub(super) class_heritage_spans: BTreeMap<u32, Span>,
-    /// Object literals with a getter or setter that reads `this`: a member
-    /// read or write that may run it hands it the receiver.
+    /// Object literals with a getter or setter that reads `this`, or whose
+    /// `__proto__` may supply one: a member read or write that may run it
+    /// hands it the receiver.
     pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    /// Object literals with a non-null `__proto__`, until merged above.
+    unknown_prototype_objects: BTreeSet<u32>,
     /// Constructors, methods and accessors of every class: they run as class
     /// members, not as values the class body creates.
     pub(super) class_member_callables: BTreeSet<u32>,
+    /// Per class, the spans that run at construction or class creation and
+    /// can store values on the instance or the class: the constructor,
+    /// field initializers and static blocks.
+    pub(super) class_store_regions: BTreeMap<u32, Vec<Span>>,
+    /// The getters and setters (static or not) each class declares.
+    class_accessors: BTreeMap<u32, Vec<u32>>,
+    /// Classes declaring a getter or setter that reads `this`.
+    pub(super) this_reading_accessor_classes: BTreeSet<u32>,
+    /// Receivers of member targets in destructuring assignments, per
+    /// top-level owner; a callable's own are on `Callable`.
+    pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
@@ -6489,7 +6506,12 @@ impl Default for ExecutionIndex {
             class_spans: BTreeMap::new(),
             class_heritage_spans: BTreeMap::new(),
             class_member_callables: BTreeSet::new(),
+            class_store_regions: BTreeMap::new(),
+            class_accessors: BTreeMap::new(),
+            this_reading_accessor_classes: BTreeSet::new(),
+            top_destructuring_member_receivers: Vec::new(),
             this_reading_accessor_objects: BTreeSet::new(),
+            unknown_prototype_objects: BTreeSet::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
@@ -9598,6 +9620,7 @@ impl ExecutionIndex {
             owner_callable_prefix_effects: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
+            top_destructuring_member_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             ordered_initializers: BTreeMap::new(),
             initialization_source_identities: BTreeMap::new(),
@@ -11104,6 +11127,15 @@ impl ExecutionIndex {
             })
             .collect();
         index
+            .this_reading_accessor_objects
+            .extend(std::mem::take(&mut index.unknown_prototype_objects));
+        index.this_reading_accessor_classes = index
+            .class_accessors
+            .iter()
+            .filter(|(_, accessors)| accessors.iter().any(|accessor| index.reads_this(*accessor)))
+            .map(|(class, _)| *class)
+            .collect();
+        index
     }
 
     /// Whether `callable`, or an arrow or other callable nested in it, reads
@@ -12067,6 +12099,40 @@ impl Visit for ExecutionIndex {
                 ClassMember::PrivateMethod(method) => Some(method.function.span.lo.0),
                 _ => None,
             }));
+        self.class_store_regions.insert(
+            class.span.lo.0,
+            class
+                .body
+                .iter()
+                .filter_map(|member| match member {
+                    ClassMember::Constructor(constructor) => Some(constructor.span),
+                    ClassMember::ClassProp(prop) => prop.value.as_ref().map(|value| value.span()),
+                    ClassMember::PrivateProp(prop) => prop.value.as_ref().map(|value| value.span()),
+                    ClassMember::StaticBlock(block) => Some(block.span),
+                    _ => None,
+                })
+                .collect(),
+        );
+        self.class_accessors.insert(
+            class.span.lo.0,
+            class
+                .body
+                .iter()
+                .filter_map(|member| match member {
+                    ClassMember::Method(method)
+                        if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+                    {
+                        Some(method.function.span.lo.0)
+                    }
+                    ClassMember::PrivateMethod(method)
+                        if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+                    {
+                        Some(method.function.span.lo.0)
+                    }
+                    _ => None,
+                })
+                .collect(),
+        );
         if let Some(heritage) = &class.super_class {
             self.class_heritage_spans
                 .insert(class.span.lo.0, heritage.span());
@@ -12209,6 +12275,13 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
+        if object.props.iter().any(|property| {
+            matches!(property, PropOrSpread::Prop(property) if matches!(property.as_ref(),
+                Prop::KeyValue(pair) if static_property_name(&pair.key).as_deref() == Some("__proto__")
+                    && !matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_)))))
+        }) {
+            self.unknown_prototype_objects.insert(object.span.lo.0);
+        }
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
@@ -13531,6 +13604,17 @@ impl Visit for ExecutionIndex {
                 _ => None,
             };
             if let Some(receiver) = receiver {
+                match self.current {
+                    Some(key) => self
+                        .callables
+                        .get_mut(&key)
+                        .unwrap()
+                        .destructuring_member_receivers
+                        .push(receiver.clone()),
+                    None => {
+                        self.top_destructuring_member_receivers[self.owner.0].push(receiver.clone())
+                    }
+                }
                 self.destructuring_member_writes
                     .push(DestructuringMemberWrite {
                         receiver,

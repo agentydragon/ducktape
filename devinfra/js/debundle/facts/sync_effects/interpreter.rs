@@ -6871,6 +6871,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             } = write;
             let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
             let values = self.evaluate(expression, env, captures);
+            self.publish_accessor_receivers(&receivers, write.site.source_span());
             for receiver in receivers {
                 match receiver {
                     AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic => {
@@ -6901,10 +6902,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
                     {
-                        self.publish_accessor_receivers(
-                            &Values::from([receiver.clone()]),
-                            write.site.source_span(),
-                        );
                         let may_be_published =
                             self.state.world.surface.tainted_objects.contains(&object)
                                 || self.state.world.surface.unsettled_objects.contains(&object);
@@ -6927,6 +6924,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 Some(write.site.source_span()),
                             );
                         }
+                    }
+                    // A class, or its prototype: every instance inherits
+                    // the latter, including a refused construction's
+                    // unknown instance, and anything holding the class
+                    // reaches the former.
+                    AbstractValue::Value(Value::Alloc(Kind::Class, _))
+                    | AbstractValue::ClassMembers(_) => {
+                        self.publish_values(
+                            &values,
+                            ClassMembersPublicationWriter::ClassSurfaceMemberWrite,
+                            Some(write.site.source_span()),
+                        );
                     }
                     AbstractValue::Instance(key, captured, _) => {
                         self.state.world_mut().classes.tainted.insert(key);
@@ -7097,7 +7106,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // A class's prototype is inherited by every instance,
                     // including the unknown instance of a refused
                     // construction.
-                    AbstractValue::ClassMembers(_) => true,
+                    AbstractValue::ClassMembers(_)
+                    | AbstractValue::Value(Value::Alloc(Kind::Class, _)) => true,
                     _ => false,
                 })
         {
@@ -7270,6 +7280,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 });
         }
         let escaped = &self.state.world.publication.global_escaped_callbacks;
+        let escaping_classes: Vec<u32> = callbacks
+            .iter()
+            .filter_map(|callback| match callback {
+                AbstractValue::ClassMembers(key) if !escaped.contains(callback) => Some(*key),
+                _ => None,
+            })
+            .collect();
         if callbacks.iter().any(|callback| !escaped.contains(callback)) {
             let world = self.state.world_mut();
             world
@@ -7277,6 +7294,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .global_escaped_callbacks
                 .extend_absent(callbacks);
             world.revision.bump_prefix();
+        }
+        // An escaped class, or an escaped instance of it, reaches what its
+        // construction stored on the instance or the class. Each class
+        // escapes once, so this terminates.
+        for key in escaping_classes {
+            let reached = self.class_reach(key);
+            if !reached.is_empty() {
+                self.publish_values(&reached, ClassMembersPublicationWriter::ClassReach, span);
+            }
         }
     }
 
@@ -7617,76 +7643,80 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// The unknown instance of a refused construction holds whatever its
-    /// fields and constructors stored on `this`: publish every value of the
-    /// bindings the class body reads and every function it creates (not its
-    /// members, which run as the class's own), and the
-    /// same for each local base class. The `extends` expression ran when the
-    /// class was created; only the classes it names are followed. Kept out of
-    /// line for `execute_call`'s frame size.
+    /// fields and constructors stored on `this`. Kept out of line for
+    /// `execute_call`'s frame size.
     #[inline(never)]
     fn publish_refused_instance_reach(&mut self, key: u32, span: Span) {
-        let index = self.inputs.index;
-        let mut reached = Values::new();
-        let mut pending = vec![key];
-        let mut visited = BTreeSet::new();
-        while let Some(class) = pending.pop() {
-            if !visited.insert(class) {
-                continue;
-            }
-            let Some(class_span) = index.class_spans.get(&class) else {
-                continue;
-            };
-            let (lo, hi) = (class_span.lo.0, class_span.hi.0);
-            let heritage = index
-                .class_heritage_spans
-                .get(&class)
-                .map(|heritage| (heritage.lo.0, heritage.hi.0));
-            let in_heritage = |position: u32| {
-                heritage.is_some_and(|(start, end)| start <= position && position < end)
-            };
-            reached.extend(
-                index
-                    .callable_spans
-                    .range(lo..hi)
-                    .filter(|(callable, _)| {
-                        !in_heritage(**callable)
-                            && !index.class_member_callables.contains(*callable)
-                    })
-                    .map(|(callable, _)| {
-                        AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
-                    }),
-            );
-            if let Some((start, end)) = heritage {
-                pending.extend(index.class_spans.range(start..end).map(|(base, _)| *base));
-                for binding in index.references_within(start, end) {
-                    if self.inputs.flow.is_declared(binding) {
-                        pending.extend(
-                            self.inputs
-                                .flow
-                                .values_of_binding(binding)
-                                .into_iter()
-                                .filter_map(|value| match value {
-                                    Value::Alloc(Kind::Class, base) => Some(base),
-                                    _ => None,
-                                }),
-                        );
-                    }
-                }
-            }
-            for binding in index
-                .references_within(lo, heritage.map_or(hi, |(start, _)| start))
-                .chain(index.references_within(heritage.map_or(hi, |(_, end)| end), hi))
-            {
-                if self.inputs.flow.is_declared(binding) {
-                    reached.extend(from_flow(self.inputs.flow.values_of_binding(binding)));
-                }
-            }
-        }
+        let reached = self.class_reach(key);
         self.publish_values(
             &reached,
             ClassMembersPublicationWriter::RefusedConstructionInstance,
             Some(span),
         );
+    }
+
+    /// `class` and the local classes it extends, named by binding or inline
+    /// in an `extends` expression. That expression ran when the class was
+    /// created; only the classes it names are followed.
+    fn class_chain(&self, class: u32) -> BTreeSet<u32> {
+        let index = self.inputs.index;
+        let mut pending = vec![class];
+        let mut chain = BTreeSet::new();
+        while let Some(class) = pending.pop() {
+            if !chain.insert(class) {
+                continue;
+            }
+            let Some(heritage) = index.class_heritage_spans.get(&class) else {
+                continue;
+            };
+            let (start, end) = (heritage.lo.0, heritage.hi.0);
+            pending.extend(index.class_spans.range(start..end).map(|(base, _)| *base));
+            for binding in index.references_within(start, end) {
+                if self.inputs.flow.is_declared(binding) {
+                    pending.extend(
+                        self.inputs
+                            .flow
+                            .values_of_binding(binding)
+                            .into_iter()
+                            .filter_map(|value| match value {
+                                Value::Alloc(Kind::Class, base) => Some(base),
+                                _ => None,
+                            }),
+                    );
+                }
+            }
+        }
+        chain
+    }
+
+    /// What constructing `class`, or creating it, can store on an instance
+    /// or on the class: every function its constructors, field initializers
+    /// and static blocks create, and every value of the bindings they read,
+    /// along its class chain. Methods are not included: they run as the
+    /// class's own members, and their stores are their own.
+    fn class_reach(&self, class: u32) -> Values {
+        let index = self.inputs.index;
+        let mut reached = Values::new();
+        for class in self.class_chain(class) {
+            for region in index.class_store_regions.get(&class).into_iter().flatten() {
+                let (lo, hi) = (region.lo.0, region.hi.0);
+                reached.extend(
+                    index
+                        .callable_spans
+                        .range(lo..hi)
+                        .filter(|(callable, _)| !index.class_member_callables.contains(*callable))
+                        .map(|(callable, _)| {
+                            AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
+                        }),
+                );
+                for binding in index.references_within(lo, hi) {
+                    if self.inputs.flow.is_declared(binding) {
+                        reached.extend(from_flow(self.inputs.flow.values_of_binding(binding)));
+                    }
+                }
+            }
+        }
+        reached
     }
 
     /// The value of a refused construction: unknown, but it may retain every
@@ -11323,6 +11353,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &certified_data_receivers,
             false,
         );
+        self.publish_destructuring_target_receivers(
+            &callable.destructuring_member_receivers,
+            &env,
+            &env,
+        );
         // local_constructor checked every assignment as a static property
         // write to a fresh `this`, with a safe right-hand value and no
         // prototype getter collision. That receiver cannot publish a stored
@@ -11532,6 +11567,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
+    /// A destructuring assignment to a member target is a [[Set]]: it may run
+    /// a setter reading `this`.
+    pub(super) fn publish_destructuring_target_receivers(
+        &mut self,
+        receivers: &[ValueExpr],
+        env: &Context,
+        captures: &Context,
+    ) {
+        for receiver in receivers {
+            let values = self.evaluate(receiver, env, captures);
+            self.publish_accessor_receivers(&values, DUMMY_SP);
+        }
+    }
+
     /// A member read or write on `receivers` may run an accessor that reads
     /// `this`, which the summary does not bind: publish those receivers.
     /// Kept out of line for the call transfer's frame size.
@@ -11541,8 +11590,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let reached: Values = receivers
             .iter()
             .filter(|receiver| {
-                let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver else {
-                    return false;
+                let object = match receiver {
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => object,
+                    AbstractValue::Value(Value::Alloc(Kind::Class, class))
+                    | AbstractValue::ClassMembers(class)
+                    | AbstractValue::Instance(class, _, _) => {
+                        return self
+                            .class_chain(*class)
+                            .iter()
+                            .any(|class| index.this_reading_accessor_classes.contains(class));
+                    }
+                    _ => return false,
                 };
                 index.this_reading_accessor_objects.contains(object)
                     || self
@@ -13060,6 +13118,12 @@ pub(crate) fn annotate_synchronous_calls(
             .and_then(|class| class.super_class.as_ref())
         {
             super_class.bindings(&mut needed);
+        }
+    }
+    // A destructuring member target may run a setter on its receiver.
+    for receivers in &index.top_destructuring_member_receivers {
+        for receiver in receivers {
+            receiver.bindings(&mut needed);
         }
     }
     needed.extend(index.exported_bindings.iter().cloned());
