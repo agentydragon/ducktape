@@ -13,7 +13,7 @@ class FakeCheckRun:
         self,
         external_id: str | None,
         *,
-        id: int | None = None,
+        id: int = 0,
         status: str = "in_progress",
         conclusion: str | None = None,
         name: str = "PR visual review",
@@ -65,7 +65,7 @@ class FakeWorkflowRun:
 class FakeRepo:
     def __init__(self, checks: list[FakeCheckRun], workflow_runs: list[FakeWorkflowRun] | None = None) -> None:
         for check_id, check in enumerate(checks, start=1):
-            if check.id is None:
+            if check.id == 0:
                 check.id = check_id
         self.commit = FakeCommit(checks)
         self.created: list[dict[str, Any]] = []
@@ -304,6 +304,44 @@ def test_duplicate_attempt_checks_keep_failure_and_close_orphaned_announcement(m
         }
     ]
     assert retry.edits == []
+
+
+def test_duplicate_name_text_does_not_hide_a_custom_canonical_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = "PR visual review (duplicate CI run is part of the configured name)"
+    canonical = FakeCheckRun(
+        "pr-visual-review:123:1",
+        id=130209709770,
+        status="completed",
+        conclusion="failure",
+        name=check_run._superseded_check_name(name, 123, 1),
+    )
+    duplicate = FakeCheckRun(
+        "pr-visual-review:123:1",
+        id=130210000000,
+        status="completed",
+        conclusion="success",
+        name=check_run._duplicate_check_name(name, 123, 1, 130210000000),
+    )
+    repo = FakeRepo([duplicate, canonical], [FakeWorkflowRun(123)])
+    repo.workflow_run_snapshots = [[FakeWorkflowRun(123)], [FakeWorkflowRun(123), FakeWorkflowRun(124, run_number=2)]]
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="in_progress",
+        summary="A late announcement.",
+        external_id="pr-visual-review:123:1",
+        name=name,
+        token="token",
+    )
+
+    assert canonical.conclusion == "failure"
+    assert canonical.name == check_run._superseded_check_name(name, 123, 1)
+    assert canonical.edits == [{"name": name}, {"name": check_run._superseded_check_name(name, 123, 1)}]
+    assert duplicate.conclusion == "success"
+    assert duplicate.name == check_run._duplicate_check_name(name, 123, 1, duplicate.id)
+    assert duplicate.edits == []
 
 
 def test_duplicate_non_visual_external_ids_still_raise(monkeypatch: pytest.MonkeyPatch) -> None:

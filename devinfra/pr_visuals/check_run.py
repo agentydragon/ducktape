@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import os
 import re
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from github import Auth, Github
+from github.CheckRun import CheckRun
 from pydantic import BaseModel
 
 CheckConclusion = Literal[
@@ -15,17 +16,6 @@ CheckConclusion = Literal[
 ]
 CheckStatus = Literal["completed", "in_progress"]
 _VISUAL_REVIEW_EXTERNAL_ID = re.compile(r"pr-visual-review:(\d+):(\d+)")
-CHECK_CONCLUSIONS = (
-    "action_required",
-    "cancelled",
-    "failure",
-    "neutral",
-    "skipped",
-    "stale",
-    "startup_failure",
-    "success",
-    "timed_out",
-)
 
 
 class CheckRunOutput(BaseModel):
@@ -42,10 +32,6 @@ def _superseded_check_name(name: str, run_id: int, attempt: int) -> str:
 
 def _duplicate_check_name(name: str, run_id: int, attempt: int, check_run_id: int) -> str:
     return f"{name} (duplicate CI run {run_id} attempt {attempt}, check {check_run_id})"
-
-
-def _is_duplicate_check(check: Any) -> bool:
-    return " (duplicate CI run " in check.name
 
 
 def _is_superseded_attempt(*, repo: Any, commit_sha: str, external_id: str) -> bool:
@@ -70,17 +56,22 @@ def _is_superseded_attempt(*, repo: Any, commit_sha: str, external_id: str) -> b
     return max(candidates) > (workflow_run.run_number, attempt)
 
 
-def _canonical_check(existing: list[Any]) -> Any:
-    # A previous publisher can have created a duplicate with the same external ID.
-    # Prefer an existing canonical-name check, then a completed one, and finally the
-    # highest check-run ID as a stable choice among duplicates.
-    canonical_candidates = [check for check in existing if not _is_duplicate_check(check)] or existing
-    completed = [check for check in canonical_candidates if check.status == "completed"]
-    return max(completed or canonical_candidates, key=lambda check: check.id)
+def _canonical_check(
+    existing: list[CheckRun], *, name: str, preferred_name: str, attempt_identity: tuple[int, int] | None
+) -> CheckRun:
+    # A previous publisher can have created duplicates with the same external ID.
+    # Use only the exact canonical names this publisher can assign; if none remain,
+    # recover from the stable completion state and check-run ID.
+    canonical_names = {name}
+    if attempt_identity is not None:
+        canonical_names.add(_superseded_check_name(name, *attempt_identity))
+    named_candidates = [check for check in existing if check.name in canonical_names]
+    candidates = named_candidates or existing
+    return max(candidates, key=lambda check: (check.status == "completed", check.name == preferred_name, check.id))
 
 
 def _retire_duplicate_checks(
-    *, existing: list[Any], canonical: Any, name: str, run_id: int, attempt: int, canonical_name: str
+    *, existing: list[CheckRun], canonical: CheckRun, name: str, run_id: int, attempt: int, canonical_name: str
 ) -> None:
     for duplicate in existing:
         if duplicate is canonical:
@@ -108,7 +99,7 @@ def _rename_if_superseded(
     external_id: str | None,
     attempt_identity: tuple[int, int] | None,
     name: str,
-    check: Any,
+    check: CheckRun,
 ) -> None:
     if external_id is None or attempt_identity is None:
         return
@@ -146,7 +137,7 @@ def upsert_check_run(
             _superseded_check_name(name, *attempt_identity) if is_superseded and attempt_identity is not None else name
         )
 
-        existing = []
+        existing: list[CheckRun] = []
         if external_id is not None:
             existing = [
                 check
@@ -155,7 +146,11 @@ def upsert_check_run(
             ]
         if len(existing) > 1 and attempt_identity is None:
             raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
-        canonical = _canonical_check(existing) if existing else None
+        canonical = (
+            _canonical_check(existing, name=name, preferred_name=check_name, attempt_identity=attempt_identity)
+            if existing
+            else None
+        )
         if len(existing) > 1 and attempt_identity is not None and canonical is not None:
             _retire_duplicate_checks(
                 existing=existing,
@@ -210,8 +205,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     result.add_argument("--repository", required=True)
     result.add_argument("--sha", required=True)
-    result.add_argument("--status", choices=("completed", "in_progress"), required=True)
-    result.add_argument("--conclusion", choices=CHECK_CONCLUSIONS)
+    result.add_argument("--status", choices=get_args(CheckStatus), required=True)
+    result.add_argument("--conclusion", choices=get_args(CheckConclusion))
     result.add_argument("--summary", required=True)
     result.add_argument("--details-url")
     result.add_argument("--external-id")
