@@ -11183,7 +11183,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
-        self.iterate_callable_sources(callable, &env, &mut outcome);
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
@@ -11249,6 +11248,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        // The lane is flow-insensitive: iterate after the body's writes and
+        // calls, so the published pool holds what they install.
+        self.iterate_callable_sources(callable, &env, &mut outcome);
         if !certified_data_receivers.is_empty()
             && (self.state.array_iteration_unsupported
                 || !self.array_intrinsics_intact()
@@ -12003,7 +12005,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // not execute it.
                     self.note_unknown_call(call);
                     let possible_objects: Values = args.iter().flatten().cloned().collect();
-                    self.taint_objects(&possible_objects);
+                    // The target may be reachable by anyone (an intrinsic
+                    // prototype): what is copied onto it escapes.
+                    self.publish_values(
+                        &possible_objects,
+                        ClassMembersPublicationWriter::ObjectAssignCopy,
+                        Some(call.span),
+                    );
                     let mut possible_accessors: BTreeSet<_> = self
                         .state
                         .world

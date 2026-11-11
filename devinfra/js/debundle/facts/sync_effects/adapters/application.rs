@@ -213,6 +213,41 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         );
     }
 
+    /// The summarized remainder of the truncated body may read, store and
+    /// pass anything it mentions before it completes: the current values of
+    /// the bindings it references, and the functions it creates (a
+    /// descriptor's `value`, a stored callback), none of which has a value
+    /// yet. Kept out of line for the kernel's recursion depth.
+    #[inline(never)]
+    fn extend_with_remainder(&self, frame: &LocalFrame, span: Span, reached: &mut Values) {
+        let index = self.executor.inputs.index;
+        // A constructor body lies inside its statement.
+        let body = self
+            .scope
+            .caller()
+            .and_then(|key| index.callable_spans.get(&key).copied())
+            .unwrap_or_else(|| index.statement_span(self.owner));
+        reached.extend(
+            index
+                .callable_spans
+                .iter()
+                .filter(|(key, callable)| {
+                    callable.lo >= span.hi
+                        && callable.hi <= body.hi
+                        && index
+                            .callables
+                            .get(key)
+                            .is_some_and(|callable| callable.owner == self.owner)
+                })
+                .map(|(key, _)| AbstractValue::Value(Value::Alloc(Kind::Function, *key))),
+        );
+        for binding in index.references_within(span.hi.0, body.hi.0) {
+            if let Some(values) = self.binding_values(binding, frame) {
+                reached.extend(values.iter().cloned());
+            }
+        }
+    }
+
     pub(in crate::facts::sync_effects) fn fallback(
         &mut self,
         frame: &LocalFrame,
@@ -221,6 +256,8 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         span: Span,
     ) {
         self.retain_global_fallback_accesses(frame, &reason, span);
+        let mut reached = reached;
+        self.extend_with_remainder(frame, span, &mut reached);
         self.executor.local_operation_fallback(
             frame,
             reached,

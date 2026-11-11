@@ -1234,3 +1234,230 @@ fn new_of_a_plain_function_without_effects_keeps_the_split() {
         }
     }
 }
+
+/// Opposing control: an iterator installed where the protocol later finds
+/// it: an own `[Symbol.iterator]` written on `arguments` or by an analysed
+/// callee on an array, and `String.prototype[Symbol.iterator]` installed by
+/// `Object.defineProperty` or an assignment, found by a string iteration or
+/// by an array pattern in a `for`-`in` head; a default in a `for`-`in`
+/// assignment head; and `for await` over a generator. Each reaches `second`.
+#[test]
+fn an_installed_iterator_runs_where_the_protocol_finds_it() {
+    const STRING_DEFINE: &str = "const patched = Object.defineProperty(String.prototype, Symbol.iterator, { value: function* () { second(); } });";
+    const STRING_ASSIGN: &str =
+        "const patched = (String.prototype[Symbol.iterator] = function* () { second(); });";
+    for (definitions, extra) in [
+        (
+            "function take() { if (first()) {} arguments[Symbol.iterator] = function* () { second(); }; for (const x of arguments) {} }\nfunction flag() { if (first()) {} take(1); return noop; }\nfunction run() { if (first()) {} flag(); return 0; }".to_string(),
+            &["take"][..],
+        ),
+        (
+            "function patch(a) { if (first()) {} a[Symbol.iterator] = function* () { second(); }; }\nfunction flag() { if (first()) {} const a = [1]; patch(a); for (const x of a) {} return noop; }\nfunction run() { if (first()) {} flag(); return 0; }".to_string(),
+            &["patch"][..],
+        ),
+        (
+            format!("{STRING_DEFINE}\nfunction flag() {{ for (const x of 'ab') {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            format!("{STRING_ASSIGN}\nfunction flag() {{ for (const x of 'ab') {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            format!("{STRING_ASSIGN}\nfunction flag() {{ for (const [c] in {{ ab: 1 }}) {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            format!("{STRING_ASSIGN}\nfunction flag() {{ let c; for ([c] in {{ ab: 1 }}) {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }\nfunction flag() { let x; for ([, , [x] = mk()] in { ab: 1 }) {} return noop; }\nfunction run() { flag(); return 0; }".to_string(),
+            &["mk"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nasync function loop() { for await (const x of gen()) {} }\nfunction flag() { loop(); return noop; }\nfunction run() { flag(); return 0; }".to_string(),
+            &["gen", "loop"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nasync function loop() { if (first()) {} for await (const x of gen()) {} }\nfunction flag() { if (first()) {} loop(); return noop; }\nfunction run() { return flag()(); }".to_string(),
+            &["gen", "loop"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(&definitions, extra);
+    }
+}
+
+/// A truncated top-level install publishes what its unexecuted remainder
+/// reads: the iterator reaches the protocol through a binding declared
+/// before or after it, a class static member, an object method, a factory
+/// result, or an inline literal copied by `Object.assign`; and behind a
+/// guarded or a returned-callee iteration.
+#[test]
+fn an_iterator_installed_through_a_binding_runs_where_the_protocol_finds_it() {
+    const FLAG: &str = "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { flag(); return 0; }";
+    const DEFINE: &str =
+        "const patched = Object.defineProperty(String.prototype, Symbol.iterator, { value: it });";
+    for (install, extra) in iterator_installs(DEFINE, "second") {
+        assert_reader_split_diverges_with(&format!("{install}\n{FLAG}"), extra);
+    }
+    for flag in [
+        "function flag() { if (first()) {} for (const x of 'ab') {} return noop; }\nfunction run() { if (first()) {} flag(); return 0; }",
+        "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { return flag()(); }",
+    ] {
+        assert_reader_split_diverges_with(
+            &format!("function* it() {{ second(); }}\n{DEFINE}\n{flag}"),
+            &["it", "patched"],
+        );
+    }
+}
+
+/// Positive anchor for the control above: the same installs of a generator
+/// calling the effect-free `first` keep the split.
+#[test]
+fn an_iterator_installed_through_a_binding_without_effects_keeps_the_split() {
+    const FLAG: &str = "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { flag(); return 0; }";
+    const DEFINE: &str =
+        "const patched = Object.defineProperty(String.prototype, Symbol.iterator, { value: it });";
+    for (install, extra) in iterator_installs(DEFINE, "first") {
+        let fixture = with_reader_split(&format!("{install}\n{FLAG}"), extra, run_fixture);
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+fn iterator_installs(define: &str, callee: &str) -> Vec<(String, &'static [&'static str])> {
+    vec![
+        (
+            format!(
+                "const desc = {{ value: function* () {{ {callee}(); }} }};\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, desc);"
+            ),
+            &["desc", "patched"][..],
+        ),
+        (
+            format!("function* it() {{ {callee}(); }}\n{define}"),
+            &["it", "patched"][..],
+        ),
+        (
+            format!("{define}\nfunction* it() {{ {callee}(); }}"),
+            &["patched", "it"][..],
+        ),
+        (
+            format!("const it = function* () {{ {callee}(); }};\n{define}"),
+            &["it", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ static *it() {{ {callee}(); }} }}\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: K.it }});"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ static it = function* () {{ {callee}(); }}; }}\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: K.it }});"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "const impl = {{ *it() {{ {callee}(); }} }};\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: impl.it }});"
+            ),
+            &["impl", "patched"][..],
+        ),
+        (
+            format!(
+                "function mkIt() {{ return function* () {{ {callee}(); }}; }}\nconst it = mkIt();\n{define}"
+            ),
+            &["mkIt", "it", "patched"][..],
+        ),
+        (
+            format!(
+                "const patched = Object.assign(String.prototype, {{ [Symbol.iterator]: function* () {{ {callee}(); }} }});"
+            ),
+            &["patched"][..],
+        ),
+    ]
+}
+
+/// Positive anchor for the control above: the same iterations with no
+/// installed iterator keep the split.
+#[test]
+fn iterations_without_an_installed_iterator_keep_the_split() {
+    for body in [
+        "for (const [c] in { ab: 1 }) {}",
+        "let c; for ([c] in { ab: 1 }) {}",
+        "const a = [1]; for (const x of a) {}",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "function flag() {{ {body} return noop; }}\nfunction run() {{ flag(); return 0; }}"
+            ),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// Opposing control: `new` of a guarded plain function with a direct effect
+/// (a call, a store, a parameter default); `this` saved by a top-level
+/// construction and its stored callback called from another statement; and
+/// a getter that reaches `second` only through a capture, copied by
+/// `Object.defineProperties`. Each reaches `second`.
+#[test]
+fn constructions_and_copied_getters_reach_their_effects() {
+    for (definitions, extra) in [
+        (
+            "function F() { if (first()) {} second(); }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function F() { if (first()) {} counter = 1; }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function F(x = second()) { if (first()) {} }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function F() { if (first()) {} second(); }\nfunction flag() { new F(); return noop; }\nfunction run() { return flag()(); }",
+            &["F"][..],
+        ),
+        (
+            "let saved = null;\nfunction F() { saved = this; this.fn = second; }\nconst inst = new F();\nfunction flag() { return saved; }\nfunction run() { return flag().fn(); }",
+            &["saved", "F", "inst"][..],
+        ),
+        (
+            "function mk(h) { return { get x() { return h; } }; }\nconst src = mk(second);\nfunction flag() { const o = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src)); return o.x; }\nfunction run() { return flag()(); }",
+            &["mk", "src"][..],
+        ),
+        (
+            "function mk(h) { return { get x() { h(); return noop; } }; }\nconst src = mk(second);\nfunction flag() { const o = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src)); o.x; return noop; }\nfunction run() { flag(); return 0; }",
+            &["mk", "src"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(definitions, extra);
+    }
+}
+
+/// Positive anchor for the control above: the same shapes over the
+/// effect-free `first` keep the split.
+#[test]
+fn constructions_and_copied_getters_without_effects_keep_the_split() {
+    for (definitions, extra) in [
+        (
+            "let saved = null;\nfunction F() { saved = this; this.fn = first; }\nconst inst = new F();\nfunction flag() { return saved; }\nfunction run() { return flag().fn(); }",
+            &["saved", "F", "inst"][..],
+        ),
+        (
+            "function F() { if (first()) {} first(); }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function mk(h) { return { get x() { return h; } }; }\nconst src = mk(first);\nfunction flag() { const o = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src)); return o.x; }\nfunction run() { return flag()(); }",
+            &["mk", "src"][..],
+        ),
+    ] {
+        let fixture = with_reader_split(definitions, extra, run_fixture);
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}

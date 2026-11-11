@@ -6286,6 +6286,9 @@ pub(super) struct ExecutionIndex {
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
     binding_use_bounds: BTreeMap<Id, (u32, u32)>,
+    /// Every identifier reference by source position, sorted: what the
+    /// unexecuted remainder of a truncated operation can read.
+    ident_references: Vec<(u32, Id)>,
     top_const_declarations: BTreeSet<Id>,
     direct_top_level_var_declaration: bool,
     direct_top_level_const_declaration: bool,
@@ -6520,6 +6523,7 @@ impl Default for ExecutionIndex {
             binding_declaration_writes: BTreeMap::new(),
             namespace_wrapper_candidates: BTreeMap::new(),
             binding_use_bounds: BTreeMap::new(),
+            ident_references: Vec::new(),
             top_const_declarations: BTreeSet::new(),
             direct_top_level_var_declaration: false,
             direct_top_level_const_declaration: false,
@@ -11037,7 +11041,24 @@ impl ExecutionIndex {
             &hints.assumptions.native_operation_inputs,
             array_spreads,
         );
+        index.ident_references.sort_unstable();
+        index.ident_references.dedup();
         index
+    }
+
+    /// The bindings referenced in `[lo, hi)`.
+    pub(super) fn references_within(&self, lo: u32, hi: u32) -> impl Iterator<Item = &Id> {
+        let start = self
+            .ident_references
+            .partition_point(|(position, _)| *position < lo);
+        self.ident_references[start..]
+            .iter()
+            .take_while(move |(position, _)| *position < hi)
+            .map(|(_, id)| id)
+    }
+
+    pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
+        self.original_statement_spans[owner.0]
     }
 
     fn populate_native_point_effects(&mut self, external: &NativeWriteCensus) {
@@ -11828,6 +11849,18 @@ impl ExecutionIndex {
             value => ValueExpr::from_expr(value),
         };
         self.record_iterated_value(value);
+    }
+
+    fn record_head_iterated_defaults(&mut self, head: &ForHead) {
+        match head {
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    self.record_iterated_defaults(&declarator.name);
+                }
+            }
+            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
+            ForHead::UsingDecl(_) => {}
+        }
     }
 
     fn record_iterated_defaults(&mut self, pattern: &Pat) {
@@ -12636,6 +12669,19 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        // An array pattern in the head iterates each key, a string.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        if head_iterates {
+            self.record_iterated_value(ValueExpr::NonCallable(PrimKinds::STRING));
+        }
+        self.record_head_iterated_defaults(&node.left);
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
@@ -12659,15 +12705,7 @@ impl Visit for ExecutionIndex {
         if head_iterates && !entries {
             self.record_iterated_value(ValueExpr::Unknown);
         }
-        match &node.left {
-            ForHead::VarDecl(declaration) => {
-                for declarator in &declaration.decls {
-                    self.record_iterated_defaults(&declarator.name);
-                }
-            }
-            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
-            ForHead::UsingDecl(_) => {}
-        }
+        self.record_head_iterated_defaults(&node.left);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -12941,6 +12979,7 @@ impl Visit for ExecutionIndex {
                 *last = (*last).max(position);
             })
             .or_insert((position, position));
+        self.ident_references.push((position, ident.to_id()));
         // A published outer closure can expose a nested closure's capabilities.
         for key in &self.prototype_capture_stack {
             self.prototype_callable_reads

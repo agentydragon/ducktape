@@ -954,6 +954,8 @@ pub enum ClassMembersPublicationWriter {
     /// A generator call: whoever later resumes the generator object runs
     /// the body.
     GeneratorCreation,
+    /// `Object.assign` onto a target the analysis does not track.
+    ObjectAssignCopy,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The
