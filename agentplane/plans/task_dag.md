@@ -3666,6 +3666,20 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
+- **`SAMPLER_STABLE_PROVIDER_PREFIX`**: a sampler rollout must not break the request prefix an
+  existing conversation already sent. #15591 edited the `write_stdin` schema text inside the
+  sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The
+  `tools` list differs from the one this block was created with"), because the tool list and
+  instructions are rendered from current code on every request and staging sets
+  `prefix_mismatch_behavior: error`. Those Threads cannot continue. Planning inputs: (1) provider
+  mechanisms for changing tool definitions inside a conversation without invalidating earlier
+  blocks, such as Anthropic's ways to append a tool or schema change after the prefix, and their
+  Responses API equivalents; (2) persisting the rendered tools, system instructions and other prefix
+  inputs with the conversation and reconciling the committed prefix with what current code would
+  render, so a change is appended or adopted at an explicit boundary (new Thread, compaction,
+  operator-chosen migration); (3) `drop_block` only as a last resort, since it silently loses
+  reasoning. Test by rendering a stored conversation under a changed tool description and asserting
+  the provider accepts the continuation. Covers the Responses and Anthropic Messages paths.
 - **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): selected, unscheduled; the App's Thread-events SSE
   route and its code go once supported callers use a History-backed contract. Stays in section 11.
 
