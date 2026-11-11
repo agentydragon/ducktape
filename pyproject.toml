@@ -281,6 +281,7 @@ dependencies = [
     "protobuf>=7.36.2,<8",
 
     # Type stubs for mypy
+    "types-boto3-s3==1.40.61",
     "types-PyYAML",
     "types-requests",
     "types-docker",

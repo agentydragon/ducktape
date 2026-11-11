@@ -392,6 +392,8 @@ types.requirements(
     # runtime package isn't in the pip hub, instead of failing at load time.
     # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
+        # The standalone S3 stubs have no boto3_s3 runtime package.
+        "types-boto3-s3",
         # freecad-stubs provides FreeCAD/Part/Sketcher modules but there's
         # no "freecad" runtime pip package — FreeCAD comes from conda.
         "freecad-stubs",

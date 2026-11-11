@@ -16,8 +16,16 @@ before Bazel starts; it does not guarantee that the invocation was created.
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
 ~4.4 s per artifact (~16 min for a commit's ~294 files). The artifact listing already
 carries each blob's `bytestream://` URI; the publisher passes exact destinations to
-`bbapi blob download` in two manifest calls, one for output records and one for their
-selected screenshot payloads. Each call downloads up to eight blobs concurrently.
+`bbapi blob download` for output records. Selected screenshot payloads retain their
+CAS references until pixels are needed for a PR comparison or an image is absent
+at the final upload barrier. Those payloads are downloaded in manifest batches;
+each call downloads up to eight blobs concurrently.
+Collection records each variant's CAS source, digest, size, and candidate staging
+path under `<work-dir>/tests/<target-slug>/`. Comparison planning selects the
+digests whose pixels are needed before rendering. The bundle is staged under
+`<work-dir>/site/reviews-test-outputs/<sha>/`, while shared images are staged
+under `<work-dir>/site/assets/`. The image barrier receives that site root
+explicitly and may fetch remaining candidates directly into `assets/`.
 The publisher logs phase starts and workload counts; Actions timestamps on those
 lines show the time spent listing, downloading, building, and uploading.
 
@@ -42,13 +50,6 @@ none, which is what lets it advance baseline pointers.
   comments.
 
 ## Cancelled runs
-
-`publisher.main()` is the CLI boundary: it parses a frozen publication config,
-reads the GitHub token, constructs one GitHub client, and constructs the S3
-client only for non-cancelled runs. `publish_visual_review(config, *, run,
-client, github, workflow_url)` is the injected application entry point. The S3
-endpoint stays at the CLI boundary; publication helpers receive both clients
-explicitly.
 
 A cancelled upstream CI run cancels any running visual workflow for that same
 run and attempt. The cancellation job completes an announced PR visual check as
@@ -102,6 +103,16 @@ verifies the referenced image before comparing pixels. A missing or corrupted
 baseline image is an error, not evidence of a new screenshot. Pointers advance only
 after the review bundle and shared images upload successfully.
 
+An unchanged candidate or devel image can reuse an existing shared object without
+downloading its BuildBuddy payload. A differing PR candidate is downloaded when
+pixel comparison requires it. The final image barrier checks every referenced
+object once; absent objects are downloaded from BuildBuddy, checked against the
+advertised CAS digest and size, verified as PNG, and uploaded before metadata or
+pages. A HEAD response confirms presence and size, not content integrity or PNG
+validity, so reuse relies on the write-limited, immutable image pool. Some historical
+objects were uploaded before PNG validation was introduced; reusing one does not
+revalidate it. Shared-image collection is not enabled; see <retention.md>.
+
 ## Check-runs
 
 - **PR visual review**: `in_progress` with the Bazel CI run (linking it); then
@@ -147,9 +158,9 @@ discoverable and are replaced without parsing their display text.
 `//devinfra/pr_visuals:wheel` builds the `pr-visuals` wheel (`pr-visuals-announce`
 for check-runs, `pr-visuals-publish` for publication), bundling the publisher's small
 internal source deps and HTML templates; Python runtime deps are wheel metadata.
-The CLI parses arguments and creates the runner and S3 client before calling the
-publication entrypoint. Cancelled runs close their announced check before S3
-client creation.
+The publish `main()` parses arguments into `PublicationConfig` and supplies the
+command runner and S3 client to `publish_visual_review()`. A cancelled run closes
+its check before creating an S3 client.
 
 Both workflow jobs install `.#pr-visuals` from trusted `devel` (wheel deps + `bbapi`;
 closure in the public Attic cache) and log the wheel URL and hash from

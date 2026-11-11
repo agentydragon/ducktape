@@ -6,7 +6,7 @@ from PIL import Image
 
 from devinfra.buildbuddy.ci import invocation_ids
 from devinfra.pr_visuals import artifacts, collection, publisher, visual_diff
-from devinfra.pr_visuals.publisher import DownloadedAsset, DownloadedVariant, DownloadedVisualTest, build_bundle
+from devinfra.pr_visuals.publisher import CollectedAsset, CollectedVariant, CollectedVisualTest, build_bundle
 from devinfra.testing import output_records
 
 
@@ -22,13 +22,13 @@ def main() -> None:
     digest = hashlib.sha256(screen.read_bytes()).hexdigest()
     bundle = build_bundle(
         [
-            DownloadedVisualTest(
+            CollectedVisualTest(
                 target_label="//smoke:test",
                 slug=publisher.target_slug("//smoke:test", repository="owner/repo"),
                 title="Packaging smoke",
                 assets=[
-                    DownloadedAsset(
-                        "smoke.py::test_screen", None, "screenshot", "screen", [DownloadedVariant(screen, digest, [])]
+                    CollectedAsset(
+                        "smoke.py::test_screen", None, "screenshot", "screen", [CollectedVariant(screen, digest, [])]
                     )
                 ],
                 configuration="smoke",

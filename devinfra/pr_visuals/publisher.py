@@ -11,11 +11,9 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
@@ -39,6 +37,7 @@ from devinfra.pr_visuals.github_comment import (
     no_visual_comment_body,
     success_comment_body,
 )
+from devinfra.pr_visuals.image_storage import Download, ImageSource, download_all, publish_shared_images
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
@@ -80,39 +79,47 @@ class PublicationConfig:
 
 
 @dataclass(frozen=True)
-class _Download:
-    uri: str
-    invocation: str
-    destination: Path
-
-
-@dataclass(frozen=True)
-class DownloadedVariant:
-    path: Path
+class CollectedVariant:
+    local_path: Path
     sha256: str
     results: list[ReviewResult]
+    size: int | None = None
+
+    @property
+    def cas_source(self) -> ImageSource:
+        source = self.results[0]
+        if source.uri is None:
+            raise ValueError(f"screenshot {self.sha256} has no BuildBuddy CAS URI")
+        return ImageSource(source.uri, source.invocation, self.size)
 
 
 @dataclass(frozen=True)
-class DownloadedAsset:
+class ImageMaterialization:
+    """Candidate digests intentionally left in CAS until the image upload barrier."""
+
+    cas_only_digests: frozenset[str]
+
+
+@dataclass(frozen=True)
+class CollectedAsset:
     case_id: str
     checkpoint: str | None
     role: str
     label: str
-    variants: list[DownloadedVariant]
+    variants: list[CollectedVariant]
 
     @property
-    def path(self) -> str:
+    def review_filename(self) -> str:
         identity = json.dumps([self.case_id, self.checkpoint, self.role], ensure_ascii=False, separators=(",", ":"))
         return f"{hashlib.sha256(identity.encode()).hexdigest()}.png"
 
 
 @dataclass(frozen=True)
-class DownloadedVisualTest:
+class CollectedVisualTest:
     target_label: str
     slug: str
     title: str
-    assets: list[DownloadedAsset]
+    assets: list[CollectedAsset]
     configuration: str | None
     issues: list[ReviewIssue]
     notices: list[ReviewIssue] = field(default_factory=list)
@@ -230,7 +237,6 @@ def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -
 
 INVOCATION_WAIT_SECONDS = 300
 INVOCATION_POLL_SECONDS = 2
-S3_IMAGE_UPLOAD_WORKERS = 8
 
 
 def wait_for_test_invocations(
@@ -326,51 +332,15 @@ def target_slug(label: str, *, repository: str) -> str:
     return f"{readable[:80]}-{digest}"
 
 
-def _download_all(downloads: list[_Download], *, bbapi: Path, run: Runner) -> None:
-    """Download a batch of listed CAS blobs in one bbapi operation.
-
-    The manifest carries the URI BuildBuddy advertised and its exact destination, so the
-    CLI can download concurrently without resolving the invocation's event stream once
-    per file.
-    """
-    if not downloads:
-        return
-    for download in downloads:
-        download.destination.parent.mkdir(parents=True, exist_ok=True)
-    manifest = [
-        {"uri": download.uri, "destination": str(download.destination), "invocation_id": download.invocation}
-        for download in downloads
-    ]
-    manifest_dir = downloads[0].destination.parent
-    manifest_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest_dir, delete=False) as stream:
-        json.dump(manifest, stream)
-        manifest_path = Path(stream.name)
-    try:
-        result = run(
-            [bbapi, "--timeout", "30s", "blob", "download", "--manifest", str(manifest_path)],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"bbapi blob download failed: {result.stderr.strip()}")
-    finally:
-        manifest_path.unlink(missing_ok=True)
-    missing = [str(download.destination) for download in downloads if not download.destination.is_file()]
-    if missing:
-        raise RuntimeError(f"bbapi blob download did not create destinations: {', '.join(missing)}")
-
-
-def download_visual_tests(
+def collect_visual_tests(
     invocations: list[str],
     destination: Path,
     *,
     repository: str,
     bbapi: Path = Path("bbapi"),
     run: Runner = subprocess.run,
-) -> list[DownloadedVisualTest]:
-    """Materialize screenshot variants selected from exact test results by the collector."""
+) -> list[CollectedVisualTest]:
+    """Collect screenshot variants selected from exact test results by the collector."""
     collected = collect_outputs(invocations, repository, destination / ".records", bbapi=bbapi, run=run)
     by_target: dict[str, list[OutputObservation]] = defaultdict(list)
     for observation in collected.selected:
@@ -384,8 +354,7 @@ def download_visual_tests(
     for result in collected.results:
         if result.record_count and (result.issues or result.retried_by is not None):
             by_target.setdefault(result.result.target, [])
-    tests: list[DownloadedVisualTest] = []
-    downloads: list[_Download] = []
+    tests: list[CollectedVisualTest] = []
     for target, selected in sorted(by_target.items()):
         target_results = [entry for entry in collected.results if entry.result.target == target]
         issues = _group_collection_issues(issue for entry in target_results for issue in entry.issues)
@@ -420,7 +389,7 @@ def download_visual_tests(
         if len(titles) > 1:
             issues.append(ReviewIssue(message="Screenshot records disagree on the target title."))
         title = min(titles) if titles else target
-        assets: list[DownloadedAsset] = []
+        assets: list[CollectedAsset] = []
         for (case_id, checkpoint, role), observations in sorted(grouped.items(), key=lambda pair: repr(pair[0])):
             labels = {item.label for item in observations if item.label}
             if len(labels) > 1:
@@ -432,13 +401,12 @@ def download_visual_tests(
                     issues.append(ReviewIssue(message=f"{case_id}: the screenshot has no verified CAS digest."))
                     continue
                 variants_by_digest[item.digest].append(item)
-            variants: list[DownloadedVariant] = []
+            variants: list[CollectedVariant] = []
             for digest, items in sorted(variants_by_digest.items()):
                 item = items[0]
                 image_path = destination / target_slug(target, repository=repository) / f"{digest}.png"
-                downloads.append(_Download(item.uri, item.result.invocation, image_path))
                 variants.append(
-                    DownloadedVariant(
+                    CollectedVariant(
                         image_path,
                         digest,
                         [
@@ -454,21 +422,100 @@ def download_visual_tests(
                             )
                             for source in items
                         ],
+                        item.size,
                     )
                 )
             if variants:
-                assets.append(DownloadedAsset(case_id, checkpoint, role, label, variants))
+                assets.append(CollectedAsset(case_id, checkpoint, role, label, variants))
         tests.append(
-            DownloadedVisualTest(
+            CollectedVisualTest(
                 target, target_slug(target, repository=repository), title, assets, configuration, issues, notices
             )
         )
-    # Multiple cases may deliberately have identical bytes. Download each
-    # target/digest destination once; concurrent writers to a path are unsafe.
-    unique_downloads = {download.destination: download for download in downloads}
-    logger.info("Downloading %d screenshot blobs from %d targets", len(unique_downloads), len(tests))
-    _download_all(list(unique_downloads.values()), bbapi=bbapi, run=run)
     return tests
+
+
+def _comparable_baseline(test: CollectedVisualTest, baseline: ResolvedBaseline | None) -> bool:
+    return bool(
+        baseline is not None
+        and baseline.metadata.comparison_profile == "bazel-configuration-exact-v1"
+        and test.configuration
+        and baseline.metadata.configuration == test.configuration
+    )
+
+
+def _requires_pixel_comparison(asset: CollectedAsset, baseline_asset: ReviewAsset | None) -> bool:
+    return bool(
+        baseline_asset is not None
+        and len(asset.variants) == 1
+        and baseline_asset.candidate_sha256 != asset.variants[0].sha256
+    )
+
+
+def required_candidate_pixels(
+    tests: list[CollectedVisualTest], baselines: dict[str, ResolvedBaseline | None] | None
+) -> set[str]:
+    """Select candidate bytes used by the same comparison branch as classification."""
+    required: set[str] = set()
+    if baselines is None:
+        return required
+    for test in tests:
+        baseline = baselines[test.slug]
+        if not _comparable_baseline(test, baseline):
+            continue
+        assert baseline is not None
+        baseline_by_identity = {_asset_identity(asset): asset for asset in baseline.metadata.assets}
+        if len(baseline_by_identity) != len(baseline.metadata.assets):
+            raise ValueError(f"{test.target_label}: duplicate identities in baseline metadata")
+        for asset in test.assets:
+            if _requires_pixel_comparison(asset, baseline_by_identity.get(_asset_identity(asset))):
+                required.add(asset.variants[0].sha256)
+    return required
+
+
+def materialize_visual_tests(
+    tests: list[CollectedVisualTest],
+    *,
+    required_pixel_digests: set[str],
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
+) -> ImageMaterialization:
+    """Stage required candidate pixels; leave other CAS blobs for the image barrier."""
+    variants_by_digest: dict[str, list[CollectedVariant]] = defaultdict(list)
+    for test in tests:
+        for asset in test.assets:
+            for variant in asset.variants:
+                variants_by_digest[variant.sha256].append(variant)
+
+    unknown = required_pixel_digests - variants_by_digest.keys()
+    if unknown:
+        raise ValueError(f"required pixel digests are absent from collected screenshots: {sorted(unknown)}")
+
+    downloads: list[Download] = []
+    deferred: set[str] = set()
+    for digest, variants in sorted(variants_by_digest.items()):
+        sizes = {variant.size for variant in variants}
+        if len(sizes) != 1:
+            raise ValueError(f"inconsistent BuildBuddy CAS sizes for screenshot {digest}")
+        size = next(iter(sizes))
+        if digest not in required_pixel_digests and size is not None and not variants[0].local_path.is_file():
+            deferred.add(digest)
+            continue
+        if variants[0].local_path.is_file():
+            continue
+        candidate_source = variants[0].cas_source
+        downloads.append(Download(candidate_source.uri, candidate_source.invocation, variants[0].local_path))
+    logger.info("Downloading %d screenshot blobs from %d targets", len(downloads), len(tests))
+    download_all(downloads, bbapi=bbapi, run=run)
+    for digest, variants in variants_by_digest.items():
+        if digest in deferred:
+            continue
+        source_path = variants[0].local_path
+        for variant in variants[1:]:
+            if variant.local_path != source_path:
+                variant.local_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source_path, variant.local_path)
+    return ImageMaterialization(frozenset(deferred))
 
 
 def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
@@ -496,15 +543,15 @@ def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
     )
 
 
-def _asset_identity(asset: DownloadedAsset | ReviewAsset) -> tuple[str, str | None, str]:
+def _asset_identity(asset: CollectedAsset | ReviewAsset) -> tuple[str, str | None, str]:
     return asset.case_id, asset.checkpoint, asset.role
 
 
 def _review_asset(
-    asset: DownloadedAsset, classification: Literal["unchanged", "modified", "new", "removed", "unstable"] | None = None
+    asset: CollectedAsset, classification: Literal["unchanged", "modified", "new", "removed", "unstable"] | None = None
 ) -> ReviewAsset:
     return ReviewAsset(
-        path=asset.path,
+        path=asset.review_filename,
         label=asset.label,
         case_id=asset.case_id,
         checkpoint=asset.checkpoint,
@@ -515,7 +562,7 @@ def _review_asset(
 
 
 def _classify_test_assets(
-    test: DownloadedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, target_dir: Path
+    test: CollectedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, target_dir: Path
 ) -> list[ReviewAsset]:
     """Compare structured identities; paths only address the rendered page and staging files."""
     baseline_by_identity = {_asset_identity(asset): asset for asset in baseline.metadata.assets}
@@ -548,18 +595,18 @@ def _classify_test_assets(
             enriched.append(_review_asset(asset, "new"))
             continue
         candidate = asset.variants[0]
-        if candidate.sha256 == baseline_asset.candidate_sha256:
+        if not _requires_pixel_comparison(asset, baseline_asset):
             enriched.append(_review_asset(asset, "unchanged"))
             continue
-        baseline_png = materialize_baseline(baseline_asset, asset.path)
-        comparison = compare_pngs(candidate.path, baseline_png)
+        baseline_png = materialize_baseline(baseline_asset, asset.review_filename)
+        comparison = compare_pngs(candidate.local_path, baseline_png)
         if comparison.classification == "unchanged":
             baseline_png.unlink()
             enriched.append(_review_asset(asset, "unchanged"))
             continue
         if comparison.diff_overlay is not None:
             diff_dir.mkdir(parents=True, exist_ok=True)
-            comparison.diff_overlay.save(diff_dir / asset.path)
+            comparison.diff_overlay.save(diff_dir / asset.review_filename)
         result = _review_asset(asset, "modified")
         result.changed_fraction = comparison.changed_fraction
         result.changed_pixels = comparison.changed_pixels
@@ -600,13 +647,15 @@ def _share_png(image: Path, output_root: Path, *, known_digest: str | None = Non
 
 
 def build_bundle(
-    tests: list[DownloadedVisualTest],
+    tests: list[CollectedVisualTest],
     output_root: Path,
     *,
     commit_sha: str,
     repository: str,
     base_sha: str | None = None,
     baseline_source: BaselineSource | None = None,
+    resolved_baselines: dict[str, ResolvedBaseline | None] | None = None,
+    image_materialization: ImageMaterialization | None = None,
 ) -> Path:
     if not FULL_SHA.fullmatch(commit_sha):
         raise ValueError("commit SHA must be the full 40-character lowercase SHA-1")
@@ -634,12 +683,12 @@ def build_bundle(
         baseline: ResolvedBaseline | None = None
         comparable = bool(test.configuration)
         if base_sha and baseline_source is not None:
-            baseline = _resolve_baseline(test.slug, base_sha, baseline_source)
-            if baseline is not None and (
-                baseline.metadata.comparison_profile != "bazel-configuration-exact-v1"
-                or not test.configuration
-                or baseline.metadata.configuration != test.configuration
-            ):
+            baseline = (
+                resolved_baselines[test.slug]
+                if resolved_baselines is not None
+                else _resolve_baseline(test.slug, base_sha, baseline_source)
+            )
+            if baseline is not None and not _comparable_baseline(test, baseline):
                 issues.append(
                     ReviewIssue(
                         message="The baseline and candidate configurations cannot be compared under bazel-configuration-exact-v1."
@@ -660,14 +709,22 @@ def build_bundle(
             assets = [_review_asset(asset, "unstable" if len(asset.variants) > 1 else None) for asset in test.assets]
         for asset in test.assets:
             for index, variant in enumerate(asset.variants):
-                body = variant.path.read_bytes()
+                if (
+                    image_materialization is not None
+                    and variant.sha256 in image_materialization.cas_only_digests
+                    and not variant.local_path.is_file()
+                ):
+                    continue
+                body = variant.local_path.read_bytes()
                 if hashlib.sha256(body).hexdigest() != variant.sha256:
                     raise ValueError(f"{test.target_label}: screenshot content digest mismatch for {asset.case_id!r}")
-                with Image.open(variant.path) as image:
+                if variant.size is not None and len(body) != variant.size:
+                    raise ValueError(f"{test.target_label}: screenshot content size mismatch for {asset.case_id!r}")
+                with Image.open(variant.local_path) as image:
                     if image.format != "PNG":
                         raise ValueError(f"{test.target_label}: screenshot is not PNG: {asset.case_id!r}")
                     image.verify()
-                staged = target_dir / f".{asset.path}.{index}"
+                staged = target_dir / f".{asset.review_filename}.{index}"
                 staged.write_bytes(body)
                 _share_png(staged, output_root, known_digest=variant.sha256)
         for review_asset in assets:
@@ -723,29 +780,17 @@ def build_bundle(
     return bundle
 
 
-def _upload_shared_image(s3: S3Client, *, bundle: Path, bucket: str, digest: str, cache_control: str) -> None:
-    image_key = shared_image_key(digest)
-    try:
-        s3.head_object(Bucket=bucket, Key=image_key)
-        return
-    except ClientError as error:
-        if not _is_not_found(error):
-            raise
-    try:
-        s3.put_object(
-            Bucket=bucket,
-            Key=image_key,
-            Body=(bundle.parent.parent / image_key).read_bytes(),
-            ContentType="image/png",
-            CacheControl=cache_control,
-            IfNoneMatch="*",
-        )
-    except ClientError as error:
-        if error.response.get("Error", {}).get("Code") != "PreconditionFailed":
-            raise
-
-
-def upload_bundle(bundle: Path, *, bucket: str, key: str, client: S3Client) -> None:
+def upload_bundle(
+    bundle: Path,
+    *,
+    staged_image_root: Path,
+    bucket: str,
+    key: str,
+    client: S3Client,
+    candidates: list[CollectedVisualTest] | None = None,
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
+) -> None:
     prefix = key.strip("/")
     cache_control = "public,max-age=31536000,immutable"
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
@@ -761,24 +806,24 @@ def upload_bundle(bundle: Path, *, bucket: str, key: str, client: S3Client) -> N
         )
         if digest is not None
     }
-    failures: list[Exception] = []
-    logger.info("Checking and uploading %d shared images", len(digests))
-    with ThreadPoolExecutor(max_workers=S3_IMAGE_UPLOAD_WORKERS) as executor:
-        futures = [
-            executor.submit(
-                _upload_shared_image, client, bundle=bundle, bucket=bucket, digest=digest, cache_control=cache_control
-            )
-            for digest in sorted(digests)
-        ]
-        # Drain every task before deciding whether review metadata may publish.
-        # This keeps the index barrier intact even when image requests fail.
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as error:
-                failures.append(error)
-    if failures:
-        raise failures[0]
+    sources: dict[str, ImageSource] = {}
+    for test in candidates or []:
+        for asset in test.assets:
+            for variant in asset.variants:
+                source = variant.cas_source
+                previous = sources.setdefault(variant.sha256, source)
+                if previous.size != variant.size:
+                    raise ValueError(f"inconsistent BuildBuddy CAS sizes for screenshot {variant.sha256}")
+    publish_shared_images(
+        client,
+        bucket=bucket,
+        staged_image_root=staged_image_root,
+        digests=digests,
+        sources=sources,
+        bbapi=bbapi,
+        run=run,
+        cache_control=cache_control,
+    )
     paths = sorted(
         bundle.rglob("*"), key=lambda path: (path.name == "index.html", path == bundle / "index.html", path.as_posix())
     )
@@ -940,7 +985,7 @@ def _publish(
     if config.ci_conclusion != "success":
         result.ci_failures = list_ci_failures([test_id, build_id], run=run)
     tests = (
-        download_visual_tests([test_id], config.work_dir / "tests", repository=config.repository, run=run)
+        collect_visual_tests([test_id], config.work_dir / "tests", repository=config.repository, run=run)
         if readiness == "complete"
         else []
     )
@@ -965,6 +1010,14 @@ def _publish(
     baseline_source: BaselineSource | None = None
     if base_sha:
         baseline_source = S3BaselineSource(client=client, bucket=config.bucket)
+    resolved_baselines = (
+        {test.slug: _resolve_baseline(test.slug, base_sha, baseline_source) for test in tests}
+        if base_sha and baseline_source is not None
+        else None
+    )
+    image_materialization = materialize_visual_tests(
+        tests, run=run, required_pixel_digests=required_candidate_pixels(tests, resolved_baselines)
+    )
     logger.info("Building review for %d targets; baseline comparison: %s", len(tests), bool(base_sha))
     bundle = build_bundle(
         tests,
@@ -973,9 +1026,19 @@ def _publish(
         repository=config.repository,
         base_sha=base_sha,
         baseline_source=baseline_source,
+        resolved_baselines=resolved_baselines,
+        image_materialization=image_materialization,
     )
     review_key = f"{REVIEW_PREFIX}/{config.sha}"
-    upload_bundle(bundle, bucket=config.bucket, key=review_key, client=client)
+    upload_bundle(
+        bundle,
+        staged_image_root=config.work_dir / "site",
+        bucket=config.bucket,
+        key=review_key,
+        client=client,
+        candidates=tests,
+        run=run,
+    )
     review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
     if not base_sha:
         # Devel push: advance the mutable per-target fallback pointers now
@@ -1036,12 +1099,10 @@ def _report(config: PublicationConfig, *, github: Github, result: PublicationRes
             logger.exception("Could not update the visual diff check")
             errors.append(error)
     comment_pr = result.pull_request
-    if comment_pr is not None and result.comment is not None:
+    if comment_pr is not None and result.comment is not None and config.pull_request_head is not None:
         # Rendering/uploading may outlast another push or PR closure. Recheck
         # before updating the singleton comment; immutable bundles stay useful.
         try:
-            if config.pull_request_head is None:
-                raise ValueError("Cannot recheck a pull request without its head ref")
             current = find_reviewable_pull_request(
                 github=github, repository=config.repository, head=config.pull_request_head, head_sha=config.sha
             )
@@ -1052,7 +1113,7 @@ def _report(config: PublicationConfig, *, github: Github, result: PublicationRes
         else:
             if current is None or current.number != comment_pr:
                 comment_pr = None
-    if comment_pr is not None and result.comment is not None:
+    if comment_pr is not None and result.comment is not None and config.pull_request_head is not None:
         try:
             publish_pull_request_comment(
                 github=github, repository=config.repository, pull_request=comment_pr, update=result.comment
@@ -1085,6 +1146,7 @@ def publish_visual_review(
     config: PublicationConfig, *, run: Runner, client: S3Client, github: Github, workflow_url: str | None
 ) -> None:
     result = PublicationResult(details_url=config.ci_details_url or workflow_url)
+
     try:
         _publish(config, github=github, workflow_url=workflow_url, result=result, run=run, client=client)
     except Exception as error:
@@ -1125,7 +1187,7 @@ def main() -> None:
     workflow_url = current_workflow_url()
     with Github(auth=Auth.Token(token)) as github:
         if config.ci_conclusion == "cancelled":
-            # Cancelled CI needs no BuildBuddy read, S3 client, or bucket credentials.
+            # Close an announced check without reading BuildBuddy or constructing an S3 client.
             upsert_check_run(
                 github=github,
                 repository=config.repository,
