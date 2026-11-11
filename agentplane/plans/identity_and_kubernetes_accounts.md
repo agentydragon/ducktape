@@ -319,8 +319,8 @@ Identity only (`IDENTITY_CUTOVER`).
     well; the check is advisory, and the Identity delete guard
     (`IDENTITY_CLEANUP_REFERENCE_DECISION`) is authoritative, refusing while a Sandbox, Session,
     credential or Connection still uses it. Accepted consequences: a launch failing after step 1
-    leaves an Identity and its grants, which the app's unreferenced filter shows (the form offers
-    cleanup on failure), and Identities left by `LaunchSandbox` or the system-test driver remain until
+    leaves an Identity and its grants, which the app's unreferenced filter shows; if that becomes a
+    problem, the server-side launch action rolls back what it created on failure. Also Identities left by `LaunchSandbox` or the system-test driver remain until
     deleted; a cleanup job can come later if they accumulate. Central Sessions keep naming their
     Identity at `CreateSession`; question 7 is independent of this.
 
