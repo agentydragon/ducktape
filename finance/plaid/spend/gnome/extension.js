@@ -64,19 +64,18 @@ function formatMoney(minorUnits, currency) {
   try {
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
+    const amount = value / 10 ** (precision ?? 2);
+    const digits = amount !== 0 && Math.abs(amount) < 10 ? (precision ?? 2) : 0;
     const formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
-      maximumFractionDigits: 0,
-      minimumFractionDigits: 0,
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
     });
-    const amount = value / 10 ** (precision ?? 2);
-    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
     return formatter.format(amount);
   } catch (_error) {
     const amount = value / 100;
-    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
-    return `${code} ${amount.toFixed(0)}`;
+    return `${code} ${amount.toFixed(amount !== 0 && Math.abs(amount) < 10 ? 2 : 0)}`;
   }
 }
 
@@ -113,11 +112,17 @@ function formatExactMoney(minorUnits, currency) {
   }
 }
 
-function formatTimestamp(value) {
+function formatTimestamp(value, now = new Date()) {
   if (!value) return "Unknown";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const label = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
+  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return Math.abs(date.getTime() - now.getTime()) <= 14 * 86400_000 ? `${label}, ${clock}` : label;
 }
 
 function cardTitle(card) {

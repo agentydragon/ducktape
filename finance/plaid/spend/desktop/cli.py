@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -81,12 +81,10 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     code = currency.upper()
     precision = get_currency_precision(code)
     amount = Decimal(minor_units).scaleb(-precision)
-    currency_format = "¤¤ #,##0"
-    if amount and abs(amount) < Decimal("0.5"):
-        whole = format_currency(1, code, currency_format, locale="en_US", currency_digits=False)
-        return f"{'-' if amount < 0 else ''}<{whole}"
-    rounded = amount.quantize(Decimal(1), rounding=ROUND_HALF_UP)
-    return format_currency(rounded, code, currency_format, locale="en_US", currency_digits=False)
+    digits = precision if amount and abs(amount) < 10 else 0
+    pattern = "¤#,##0" + ("." + "0" * digits if digits else "")
+    rounded = amount.quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
+    return format_currency(rounded, code, pattern, locale="en_US", currency_digits=False)
 
 
 def _card_title(card: CardView) -> str:
@@ -98,8 +96,17 @@ def _card_title(card: CardView) -> str:
     return title
 
 
-def _format_timestamp(value: datetime | None) -> str:
-    return value.isoformat().replace("+00:00", "Z") if value else "unknown"
+def _format_timestamp(value: datetime | None, *, now: datetime | None = None, tz: tzinfo | None = None) -> str:
+    if value is None:
+        return "unknown"
+    current = (now or datetime.now().astimezone()).astimezone(tz)
+    local = value.astimezone(tz)
+    label = local.strftime("%b %-d")
+    if local.year != current.year:
+        label += local.strftime(", %Y")
+    if abs(local.astimezone(UTC) - current.astimezone(UTC)) <= timedelta(days=14):
+        label += local.strftime(", %H:%M")
+    return label
 
 
 def _format_allowance(allowance: AllowanceView) -> str:

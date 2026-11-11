@@ -1,7 +1,8 @@
 """Synthetic desktop spend CLI display tests."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_bazel
@@ -17,7 +18,7 @@ from finance.plaid.spend.allowance import (
     Status,
     UnmatchedCharges,
 )
-from finance.plaid.spend.desktop.cli import _format_money, _format_view
+from finance.plaid.spend.desktop.cli import _format_money, _format_timestamp, _format_view
 from finance.plaid.spend.models import AlertState, CardView, SpendView, StatementCycle
 
 NOW = datetime(2026, 1, 31, 16, tzinfo=UTC)
@@ -94,20 +95,20 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
 
 def test_formats_active_allowance_and_cards() -> None:
     output = _format_view(SpendView(generated_at=NOW, cards=[sample_card()], allowance=sample_allowance()), "ready", "")
-    assert "Available: USD 88" in output
-    assert "Monthly credit: USD 100" in output
-    assert "Spent this credit cycle: USD 12" in output
-    assert "Pending (included): USD 3" in output
+    assert "Available: $88" in output
+    assert "Monthly credit: $100" in output
+    assert "Spent this credit cycle: $12" in output
+    assert "Pending (included): $3.00" in output
     assert "Provisional leash signal: warning" in output
-    assert "7-day recorded flexible pace: USD 12/day" in output
-    assert "30-day recorded flexible pace: USD 10/day" in output
-    assert "Provisional leash rate: ~USD 23/day" in output
-    assert "7d unmatched: 2 (USD 3)" in output
+    assert "7-day recorded flexible pace: $12/day" in output
+    assert "30-day recorded flexible pace: $10/day" in output
+    assert "Provisional leash rate: ~$23/day" in output
+    assert "7d unmatched: 2 ($3.00)" in output
     assert "Estimated balance before next credit:" in output
-    assert "USD 2" in output
-    assert "2026-02-28T00:00:00Z" in output
+    assert "-$2.00" in output
+    assert "Next credit:" in output
     assert "Sample card" in output
-    assert "USD 12 / USD 100 · 12.0%" in output
+    assert "$12 / $100 · 12.0%" in output
 
 
 def test_formats_unavailable_allowance_without_inventing_balance() -> None:
@@ -123,7 +124,7 @@ def test_formats_unavailable_allowance_without_inventing_balance() -> None:
 def test_without_allowance_keeps_existing_card_output() -> None:
     output = _format_view(SpendView(generated_at=NOW, cards=[sample_card()]), "ready", "")
     assert "Sample card" in output
-    assert "Spend: USD 12" in output
+    assert "Spend: $12" in output
     assert "Flexible allowance" not in output
 
 
@@ -137,18 +138,41 @@ def test_card_percent_uses_decimal_json_string() -> None:
 @pytest.mark.parametrize(
     ("minor_units", "expected"),
     [
-        (0, "USD 0"),
-        (1, "<USD 1"),
-        (-1, "-<USD 1"),
-        (49, "<USD 1"),
-        (50, "USD 1"),
-        (1250, "USD 13"),
-        (1299, "USD 13"),
-        (-1299, "-USD 13"),
+        (0, "$0"),
+        (1, "$0.01"),
+        (-1, "-$0.01"),
+        (49, "$0.49"),
+        (50, "$0.50"),
+        (999, "$9.99"),
+        (1000, "$10"),
+        (1250, "$13"),
+        (1299, "$13"),
+        (-1299, "-$13"),
     ],
 )
 def test_compact_money_preserves_nonzero_sign(minor_units: int, expected: str) -> None:
     assert _format_money(minor_units, "USD") == expected
+
+
+def test_summary_timestamps_use_viewer_zone_and_conditional_precision() -> None:
+    zone = timezone(timedelta(hours=-8))
+    now = datetime(2026, 12, 20, 20, tzinfo=UTC)
+    assert _format_timestamp(now + timedelta(days=14), now=now, tz=zone) == "Jan 3, 2027, 12:00"
+    assert _format_timestamp(now + timedelta(days=14, seconds=1), now=now, tz=zone) == "Jan 3, 2027"
+    assert _format_timestamp(now - timedelta(days=1), now=now, tz=zone) == "Dec 19, 12:00"
+    assert _format_timestamp(None, now=now, tz=zone) == "unknown"
+
+
+def test_compact_money_uses_currency_precision() -> None:
+    assert _format_money(9, "JPY") == "¥9"
+    assert _format_money(1, "KWD") == "KWD0.001"
+
+
+def test_timestamp_cutoff_is_elapsed_time_across_dst() -> None:
+    zone = ZoneInfo("America/Los_Angeles")
+    now = datetime(2026, 3, 1, 20, tzinfo=UTC)
+    assert _format_timestamp(now + timedelta(days=14), now=now, tz=zone) == "Mar 15, 13:00"
+    assert _format_timestamp(now + timedelta(days=14, seconds=1), now=now, tz=zone) == "Mar 15"
 
 
 if __name__ == "__main__":
