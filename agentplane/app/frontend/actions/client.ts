@@ -236,10 +236,6 @@ export async function decideActionById(
   return validateActionRequest(required(response.actionRequest, "decided request"));
 }
 
-export function decideAction(request: ActionRequest, verdict: Verdict): Promise<ActionRequest> {
-  return decideActionById(request.id, request.version, verdict);
-}
-
 export type ActionRequestWatchFrame =
   | { kind: "snapshot"; requests: ActionRequest[] }
   | { kind: "snapshot_complete" }
