@@ -21,7 +21,7 @@ from pathlib import Path
 
 from reaktiv import Computed, Signal
 
-from x.wt.shared.protocol import Collector, GitstatusdConfig, GitstatusdData, GitstatusdUnavailable
+from x.wt.shared.protocol import Collector, GitstatusdData
 
 
 class DaemonStore:
@@ -36,8 +36,6 @@ class DaemonStore:
         # Sources register/unregister their signals; store reads them via Computed
         self._gitstatusd_sources: Signal[dict[Path, Signal[Collector[GitstatusdData]]]] = Signal({})
 
-        # Daemon config
-        self._gitstatusd_config: Signal[GitstatusdConfig] = Signal(GitstatusdUnavailable(error="not initialized"))
 
         # Computed: all branches currently checked out across worktrees
         # Reads branch from GitstatusdData
@@ -51,12 +49,6 @@ class DaemonStore:
 
         self.active_branches: Callable[[], frozenset[str]] = Computed(_compute_active_branches)
 
-        # Computed aggregator for gitstatusd data
-        def _compute_gitstatusd() -> dict[Path, Collector[GitstatusdData]]:
-            return {path: sig() for path, sig in self._gitstatusd_sources().items()}
-
-        self._gitstatusd_computed: Callable[[], dict[Path, Collector[GitstatusdData]]] = Computed(_compute_gitstatusd)
-
     # Registration methods - sources call these to join/leave the aggregation
 
     def register_gitstatusd(self, path: Path, signal: Signal[Collector[GitstatusdData]]) -> None:
@@ -66,15 +58,3 @@ class DaemonStore:
     def unregister_gitstatusd(self, path: Path) -> None:
         """Unregister a gitstatusd signal for a worktree path."""
         self._gitstatusd_sources.update(lambda d: {k: v for k, v in d.items() if k != path})
-
-    # Computed aggregators - read from all registered signals
-
-    def gitstatusd(self) -> dict[Path, Collector[GitstatusdData]]:
-        """Aggregate gitstatusd data by reading all registered signals."""
-        return self._gitstatusd_computed()
-
-    # Config accessors
-
-    def set_gitstatusd_config(self, config: GitstatusdConfig) -> None:
-        """Set gitstatusd configuration."""
-        self._gitstatusd_config.set(config)

@@ -95,6 +95,20 @@ async def test_worktree_found_by_a_scan_while_being_registered_gets_one_gitstatu
             orphan.kill()
 
 
+async def test_missing_gitstatusd_fails_the_startup_handshake(real_config, monkeypatch):
+    handshakes = []
+    monkeypatch.setattr(wt_server, "write_startup_handshake", lambda **kwargs: handshakes.append(kwargs))
+    monkeypatch.setattr(wt_server, "find_gitstatusd", lambda _config: (None, "gitstatusd unavailable"))
+    daemon = WtDaemon(real_config)
+
+    await daemon.start()
+
+    assert daemon.server is None
+    assert not any(handshake.get("ready") for handshake in handshakes)
+    assert handshakes[-1]["success"] is False
+    assert "gitstatusd unavailable" in handshakes[-1]["error_message"]
+
+
 async def test_failed_initial_discovery_fails_the_startup_handshake(real_config, monkeypatch):
     handshakes = []
     monkeypatch.setattr(wt_server, "write_startup_handshake", lambda **kwargs: handshakes.append(kwargs))
