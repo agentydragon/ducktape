@@ -661,13 +661,9 @@ const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sand
 	d.delegator_account_uid, d.delegator_pod_name, d.delegator_pod_uid,
 	d.delegated_action_request_id::text, d.delegated_action_execution_id::text`
 
-func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
-	return scanDispatchColumns(row)
-}
-
 func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *ServiceAccountIdentity, *identitypb.Identity, error) {
 	var ownerNS, ownerName, ownerUID, identityName, identityUID sql.NullString
-	dispatch, err := scanDispatchColumns(row, &ownerNS, &ownerName, &ownerUID, &identityName, &identityUID)
+	dispatch, err := scanDispatch(row, &ownerNS, &ownerName, &ownerUID, &identityName, &identityUID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -688,7 +684,7 @@ func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *Ser
 	return dispatch, owner, ownerIdentity, nil
 }
 
-func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any) (*Dispatch, error) {
+func scanDispatch(row interface{ Scan(...any) error }, additional ...any) (*Dispatch, error) {
 	d := &Dispatch{}
 	var callerNS, callerName, incarnation, reason sql.NullString
 	var actorNS, actorName, actorUID, actorPodName, actorPodUID sql.NullString
