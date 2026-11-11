@@ -246,7 +246,7 @@ func (r *Runtime) waitForInitialSessions(ctx context.Context) error {
 			default:
 			}
 		}
-		progress, found, err := r.readSessionStatus(ctx)
+		progress, found, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 		if err != nil {
 			return err
 		}

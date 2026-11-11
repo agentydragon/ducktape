@@ -34,7 +34,7 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 			(r.desired.Mode == lifecycle.Running && !r.admissionOpen) {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
-		progress, found, err := r.readSessionStatus(ctx)
+		progress, found, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 		if err != nil {
 			return err
 		}
@@ -142,7 +142,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 			}
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
-		progress, found, err := r.readSessionStatus(stream.Context())
+		progress, found, err := lifecycle.ReadStatus(stream.Context(), r.lifecycleState)
 		if err != nil {
 			return err
 		}
