@@ -9,10 +9,10 @@ use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
 use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
-    LexicalClassHeritage, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
-    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
-    static_property_name,
+    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
+    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
+    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
+    object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
@@ -640,6 +640,10 @@ fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
         super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
         super_class_inputs: heritage_inputs.idents,
         super_class_inputs_incomplete: heritage_inputs.inline_fn,
+        discarded_heritage_call: class
+            .super_class
+            .as_deref()
+            .and_then(DiscardedHeritageCall::collect),
         lexical_heritage: class
             .super_class
             .as_deref()
@@ -6203,6 +6207,8 @@ pub(super) struct ExecutionIndex {
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
     pub(super) callables: BTreeMap<u32, Callable>,
+    /// Functions whose call cannot inspect or retain any argument.
+    inert_argument_functions: BTreeSet<u32>,
     pub(super) callable_spans: BTreeMap<u32, Span>,
     immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
@@ -6454,6 +6460,7 @@ impl Default for ExecutionIndex {
             factory_member_value_depth: 0,
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
+            inert_argument_functions: BTreeSet::new(),
             callable_spans: BTreeMap::new(),
             immediate_anonymous_callers: BTreeMap::new(),
             inline_callback_entries: BTreeMap::new(),
@@ -6749,6 +6756,33 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    /// A unique top-level function identity with no source writes or dynamic
+    /// scope; earlier statements cannot silently replace this class base.
+    pub(super) fn stable_heritage_function(
+        &self,
+        binding: &Id,
+        flow: &ChunkValueFlow,
+    ) -> Option<u32> {
+        let &key = self.hoisted_bindings.get(binding)?;
+        (self.dynamic_scope_owners.is_empty()
+            && self.direct_top_level_functions.contains(binding)
+            && !self.reassigned_bindings.contains(binding)
+            && !self.binding_target_writes.contains(binding)
+            && !self.binding_declaration_writes.contains_key(binding)
+            && flow
+                .values_of_binding(binding)
+                .iter()
+                .eq([Value::Alloc(Kind::Function, key)]))
+        .then_some(key)
+    }
+
+    /// The callee's exact body and parameters cannot observe or publish any
+    /// argument; this does not waive the call's normal evaluation effects.
+    pub(super) fn inert_heritage_callee(&self, binding: &Id, flow: &ChunkValueFlow) -> bool {
+        self.stable_heritage_function(binding, flow)
+            .is_some_and(|key| self.inert_argument_functions.contains(&key))
+    }
+
     /// A closure can resolve module bindings and unresolved globals when it is
     /// later invoked. Creating it does not read those values into the factory
     /// activation, so they are not retained provider captures. Enclosing
@@ -12773,6 +12807,26 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        if !function.is_async
+            && !function.is_generator
+            && function.decorators.is_empty()
+            && function.type_params.is_none()
+            && function.return_type.is_none()
+            && function
+                .params
+                .iter()
+                .all(|param| param.decorators.is_empty() && matches!(param.pat, Pat::Ident(_)))
+            && function
+                .body
+                .as_ref()
+                .is_some_and(|body| match body.stmts.as_slice() {
+                    [] => true,
+                    [Stmt::Return(ret)] => ret.arg.as_deref().is_none_or(primitive_literal),
+                    _ => false,
+                })
+        {
+            self.inert_argument_functions.insert(function.span.lo.0);
+        }
         self.callable_creations
             .entry(function.span.lo.0)
             .or_insert(DeferredCallableCreation::Function(function.span.lo.0));

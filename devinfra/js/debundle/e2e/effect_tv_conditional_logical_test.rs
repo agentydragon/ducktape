@@ -1053,6 +1053,50 @@ fn class_heritage_preserves_inputs_of_module_binding_updates() {
     }
 }
 
+/// A discarded call to an inert helper does not make its argument a possible
+/// superclass. The unchanged `first` is the only base the class can use.
+#[test]
+fn discarded_inert_heritage_call_keeps_its_argument_private() {
+    for (helper, args) in [
+        ("function ignore(x) { return 0; }", "h"),
+        ("function ignore(x) {}", "h"),
+        ("function ignore(x) { return; }", "h"),
+        ("function ignore(x, y) { return false; }", "0, h, first"),
+    ] {
+        for guard in ["", "if (first()) {} "] {
+            let definitions = format!(
+                "{helper}\nfunction make(h) {{ {guard}return class extends (ignore({args}), first) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(second); return new C(); }}"
+            );
+            let fixture = with_reader_split(&definitions, &["ignore", "make"], run_fixture);
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+/// The argument remains reachable if it is also the selected base, if the
+/// helper can publish it, or if the helper binding can be replaced.
+#[test]
+fn discarded_heritage_call_keeps_possible_superclass_capabilities() {
+    for definitions in [
+        "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
+        "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), first) { constructor() { super(); h(); } }; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
+        "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h()), first) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
+        "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), first) {}; }\nfunction flag() { return 0; }\nfunction run() { first = second; const C = make(second); return new C(); }",
+        "let base = first;\nfunction ignore(x) { base = arguments[0]; return 0; }\nfunction make(h) { return class extends (ignore(h), base) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
+        "let base = first;\nfunction ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(h), base) {}; }\nfunction flag() { return 0; }\nfunction run() { ignore = function (x) { base = x; }; const C = make(second); return new C(); }",
+        "let base = first;\nfunction ignore(x) { return 0; }\nfunction make(h) { base = h; return class extends (ignore(h), base) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(second); return new C(); }",
+        "let base = first;\nfunction ignore(x = (base = second)) { return 0; }\nfunction make(h) { return class extends (ignore(h), base) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(undefined); return new C(); }",
+        "function ignore(x) { return 0; }\nfunction make(h) { return class extends (ignore(heritageArg), first) {}; }\nfunction flag() { return 0; }\nfunction run() { Object.defineProperty(globalThis, 'heritageArg', { get() { second(); return 0; }, configurable: true }); const C = make(first); return new C(); }",
+    ] {
+        let extra: &[&str] = if definitions.contains("let base") {
+            &["ignore", "make", "base"]
+        } else {
+            &["ignore", "make"]
+        };
+        assert_reader_split_diverges_with(definitions, extra);
+    }
+}
+
 #[test]
 fn effect_free_module_heritage_updates_keep_unrelated_parameters_private() {
     for &(prefix, update, extra) in MODULE_HERITAGE_UPDATES {

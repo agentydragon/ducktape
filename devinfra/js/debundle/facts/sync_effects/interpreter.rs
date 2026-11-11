@@ -10374,7 +10374,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // heritage factory may have effects already accounted for by
                 // the flattened call pass.
                 let mut inputs = facts
-                    .map(|facts| facts.super_class_inputs.clone())
+                    .map(|facts| {
+                        facts
+                            .discarded_heritage_call
+                            .as_ref()
+                            .filter(|call| {
+                                call.argument_reads.iter().all(|binding| {
+                                    self.inputs.flow.is_declared(binding)
+                                        && (self.inputs.top_bindings.contains(binding)
+                                            || env.contains_key(binding)
+                                            || captures.contains_key(binding))
+                                }) && self
+                                    .inputs
+                                    .index
+                                    .inert_heritage_callee(&call.callee, self.inputs.flow)
+                                    && self
+                                        .inputs
+                                        .index
+                                        .stable_heritage_function(&call.base, self.inputs.flow)
+                                        .is_some()
+                            })
+                            .map_or_else(
+                                || facts.super_class_inputs.clone(),
+                                |call| call.remaining_inputs.clone(),
+                            )
+                    })
                     .unwrap_or_default();
                 heritage.bindings(&mut inputs);
                 let mut incomplete = heritage.bindings_may_be_incomplete()
