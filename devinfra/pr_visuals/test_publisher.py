@@ -1072,7 +1072,6 @@ PR_CHECK_ID = "pr-visual-review:33060467222:1"
 class PublisherRun:
     checks: list[dict[str, object]] = field(default_factory=list)
     comments: list[dict[str, object]] = field(default_factory=list)
-    runner: Runner | None = None
 
 
 @pytest.fixture
@@ -1102,7 +1101,6 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
             raise AssertionError(f"unexpected command {words}")
         return subprocess.CompletedProcess(command, 0, output, "")
 
-    run.runner = fake_run
     monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", fake_run)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
@@ -1163,21 +1161,61 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
-def test_main_uses_injected_runner_and_s3_client(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
-) -> None:
-    candidate, bucket = _publish_one_visual_target(monkeypatch, tmp_path)
+def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
+    bucket = EmptyBucket()
+    commands: list[list[str]] = []
+    download_runners: list[Runner] = []
+    upload_clients: list[object] = []
+    checks: list[dict[str, object]] = []
+    comments: list[dict[str, object]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        commands.append(words)
+        if "invocation" in words and words[words.index("invocation") + 1] == "list":
+            output = '{"invocation": []}'
+        elif "status" in words:
+            output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+        else:
+            raise AssertionError(f"unexpected command {words}")
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    def fake_download(
+        _invocations: list[str], _destination: Path, *, repository: str, run: Runner
+    ) -> list[DownloadedVisualTest]:
+        assert repository == "agentydragon/ducktape"
+        download_runners.append(run)
+        return [candidate]
+
+    def fake_upload(_bundle: Path, **kwargs: object) -> None:
+        upload_clients.append(kwargs["client"])
+
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setattr(
+        "sys.argv",
+        _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID),
+    )
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", fake_download)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", fake_upload)
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
         lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
     )
-    assert publisher_run.runner is not None
-    _forbid(monkeypatch, "subprocess.run", "boto3.client")
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: comments.append(kwargs)
+    )
 
-    main(run=publisher_run.runner, client=bucket)
+    main(run=fake_run, client=bucket)
 
+    assert any("invocation" in command and "list" in command for command in commands)
+    assert download_runners == [fake_run]
     assert bucket.requested[0] == f"reviews-test-outputs/{'c' * 40}/tests/{candidate.slug}/metadata.json"
-    assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
+    assert upload_clients == [bucket]
+    assert [comment["pull_request"] for comment in comments] == [8733]
+    assert [check["conclusion"] for check in checks] == ["success", "success"]
 
 
 @pytest.mark.parametrize("current", [None, PullRequestRef(number=9999, base_sha="c" * 40)])
