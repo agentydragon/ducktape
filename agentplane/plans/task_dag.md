@@ -3157,6 +3157,8 @@ flowchart LR
     STANDING_WORKLOAD_IDENTITY --> IDENTITY_CUTOVER
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and inboxes authorized by identity]
+    SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
+    ENVIRONMENT_LIFECYCLE_RULES --> CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
 ```
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
@@ -3573,6 +3575,26 @@ the PRs it implies. It follows `SESSION_SA_PRINCIPAL_REMOVAL`: once a Session ha
 the Sandbox is the only remaining anchor to replace. It also reviews any policy bound to a platform
 component's ServiceAccount as though the component were an identity (`IDENTITY_CUTOVER`): components
 are authorized by role and name the Identity they act for through delegation.
+
+### `SESSION_CROSS_IDENTITY_AUTHORITY` — acting on another Identity's Sessions
+
+**Deferred (operator, 2026-11-11).** Under the [`environment` rule design](environment_rules.md),
+authority over an existing Session is implied only for a caller of the Session's own Identity;
+every other caller is refused. An orchestrator that wants to submit input to, read, attach
+environments to or detach them from Sessions of another Identity (worker Sessions it did not create
+itself) needs a rule naming that Identity. The likely shape is a `session` rule targeting Sessions by
+their Identity (`identities: [{name: worker}]`), never by creator, with no operation that changes a
+Session's Identity. Picked up when an orchestration use needs it. **Exit:** a decided design and the
+PRs it implies.
+
+### `CROSS_IDENTITY_SESSION_BINDING` — binding a Session to another Identity's environment
+
+**Deferred (operator, 2026-11-11).** A Session–environment binding requires the Session's Identity
+to equal the environment's bound Identity, with no policy override
+([admitting a binding](environment_rules.md#operations)). A later rule may allow a binding across
+Identities. It needs its own model of what each side may see and do: the environment's Identity
+would run work directed by a conversation carrying another Identity's history. Picked up only when a
+use needs it. **Exit:** a decided design, or a recorded decision not to allow it.
 
 ### `IDENTITY_CUTOVER` — the staging cutover
 
