@@ -141,6 +141,7 @@ py_library(
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//pygithub",
+        "@pypi//types_boto3_s3",
     ],
 )
 
@@ -206,8 +207,10 @@ py_test(
         "//devinfra/testing:output_writer",
         "@pypi//botocore",
         "@pypi//pillow",
+        "@pypi//pygithub",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_boto3_s3",
     ],
 )
 

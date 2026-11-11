@@ -395,6 +395,8 @@ types.requirements(
         # freecad-stubs provides FreeCAD/Part/Sketcher modules but there's
         # no "freecad" runtime pip package — FreeCAD comes from conda.
         "freecad-stubs",
+        # types-boto3-s3 augments boto3; there is no boto3-s3 runtime package.
+        "types-boto3-s3",
     ],
     pip_requirements = "@pypi//:requirements.bzl",
     requirements_txt = "//:requirements_bazel.txt",

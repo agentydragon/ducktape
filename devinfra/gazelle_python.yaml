@@ -452,6 +452,7 @@ manifest:
     typeguard: typeguard
     typer: typer
     typer_di: typer_di
+    types_boto3_s3: types_boto3_s3
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
     tzlocal: tzlocal
@@ -481,4 +482,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 498d34c6fb5c8850efd813c50be5ea8493ebca73293f0ba5e83d128aa3850195
+integrity: e3b6282de678321ba407e4f993c6255db4fa49e3f17bf60d8373025899e32b06

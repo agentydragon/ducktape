@@ -14,12 +14,12 @@ import subprocess
 import tempfile
 import time
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
@@ -55,10 +55,28 @@ from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
 
+if TYPE_CHECKING:
+    from types_boto3_s3.client import S3Client
+
 logger = logging.getLogger(__name__)
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 REVIEW_PREFIX = "reviews-test-outputs"
+
+
+@dataclass(frozen=True)
+class PublicationConfig:
+    ci_run_id: str
+    ci_run_attempt: str
+    work_dir: Path
+    sha: str
+    repository: str
+    bucket: str
+    public_base_url: str
+    pull_request_head: str | None
+    check_external_id: str | None
+    ci_conclusion: str
+    ci_details_url: str | None
 
 
 @dataclass(frozen=True)
@@ -159,7 +177,7 @@ def _is_not_found(error: ClientError) -> bool:
 
 @dataclass(frozen=True)
 class S3BaselineSource:
-    client: Any
+    client: S3Client
     bucket: str
 
     def fetch(self, key: str) -> bytes | None:
@@ -705,7 +723,7 @@ def build_bundle(
     return bundle
 
 
-def _upload_shared_image(s3: Any, *, bundle: Path, bucket: str, digest: str, cache_control: str) -> None:
+def _upload_shared_image(s3: S3Client, *, bundle: Path, bucket: str, digest: str, cache_control: str) -> None:
     image_key = shared_image_key(digest)
     try:
         s3.head_object(Bucket=bucket, Key=image_key)
@@ -727,8 +745,7 @@ def _upload_shared_image(s3: Any, *, bundle: Path, bucket: str, digest: str, cac
             raise
 
 
-def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client: Any | None = None) -> None:
-    s3 = client or boto3.client("s3", endpoint_url=endpoint)
+def upload_bundle(bundle: Path, *, bucket: str, key: str, client: S3Client) -> None:
     prefix = key.strip("/")
     cache_control = "public,max-age=31536000,immutable"
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
@@ -749,7 +766,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
     with ThreadPoolExecutor(max_workers=S3_IMAGE_UPLOAD_WORKERS) as executor:
         futures = [
             executor.submit(
-                _upload_shared_image, s3, bundle=bundle, bucket=bucket, digest=digest, cache_control=cache_control
+                _upload_shared_image, client, bundle=bundle, bucket=bucket, digest=digest, cache_control=cache_control
             )
             for digest in sorted(digests)
         ]
@@ -771,12 +788,15 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
             continue
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         relative = path.relative_to(bundle).as_posix()
-        s3.upload_file(
-            path, bucket, f"{prefix}/{relative}", ExtraArgs={"CacheControl": cache_control, "ContentType": content_type}
+        client.upload_file(
+            str(path),
+            bucket,
+            f"{prefix}/{relative}",
+            ExtraArgs={"CacheControl": cache_control, "ContentType": content_type},
         )
 
 
-def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, client: Any) -> None:
+def write_baseline_pointers(slugs: list[str], *, commit_sha: str, bucket: str, client: S3Client) -> None:
     """Point the current protocol's baseline at this commit for every published target.
 
     Runs on devel pushes after the immutable bundle upload succeeds, so PR runs
@@ -853,6 +873,26 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def _parse_cli(argv: Sequence[str] | None = None) -> tuple[PublicationConfig, str]:
+    args = parser().parse_args(argv)
+    return (
+        PublicationConfig(
+            ci_run_id=args.ci_run_id,
+            ci_run_attempt=args.ci_run_attempt,
+            work_dir=args.work_dir,
+            sha=args.sha,
+            repository=args.repository,
+            bucket=args.bucket,
+            public_base_url=args.public_base_url,
+            pull_request_head=args.pull_request_head,
+            check_external_id=args.check_external_id,
+            ci_conclusion=args.ci_conclusion,
+            ci_details_url=args.ci_details_url,
+        ),
+        args.endpoint,
+    )
+
+
 @dataclass
 class PublicationResult:
     summary: str = "No tests executed by Bazel CI exposed screenshot output records."
@@ -865,42 +905,42 @@ class PublicationResult:
 
 
 def _publish(
-    args: argparse.Namespace,
+    config: PublicationConfig,
     *,
     github: Github,
     workflow_url: str | None,
     result: PublicationResult,
     run: Runner,
-    s3_client: Callable[..., Any],
+    client: S3Client,
 ) -> None:
     base_sha: str | None = None
-    if args.pull_request_head:
+    if config.pull_request_head:
         logger.info("Resolving pull request")
         found = find_reviewable_pull_request(
-            github=github, repository=args.repository, head=args.pull_request_head, head_sha=args.sha
+            github=github, repository=config.repository, head=config.pull_request_head, head_sha=config.sha
         )
         if found is None:
             result.summary = "No open or merged pull request has this head commit; nothing to review."
             print(result.summary)
             return
         result.pull_request, base_sha = found.number, found.base_sha
-    test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
-    build_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build"))
+    test_id = str(invocation_id(run_id=config.ci_run_id, attempt=config.ci_run_attempt, role="test"))
+    build_id = str(invocation_id(run_id=config.ci_run_id, attempt=config.ci_run_attempt, role="build"))
     logger.info("Waiting for test invocation %s", test_id)
     readiness = wait_for_test_invocations(
         [test_id],
-        workflow_succeeded=args.ci_conclusion == "success",
-        allow_build_only=args.ci_conclusion in ("success", "failure"),
+        workflow_succeeded=config.ci_conclusion == "success",
+        allow_build_only=config.ci_conclusion in ("success", "failure"),
         build_invocation_id=build_id,
         run=run,
     )
     logger.info("Test invocation readiness: %s", readiness)
     if readiness == "incomplete":
         raise RuntimeError("Bazel test invocation did not complete before visual publication")
-    if args.ci_conclusion != "success":
+    if config.ci_conclusion != "success":
         result.ci_failures = list_ci_failures([test_id, build_id], run=run)
     tests = (
-        download_visual_tests([test_id], args.work_dir / "tests", repository=args.repository, run=run)
+        download_visual_tests([test_id], config.work_dir / "tests", repository=config.repository, run=run)
         if readiness == "complete"
         else []
     )
@@ -909,33 +949,33 @@ def _publish(
         with Path(github_output).open("a") as output:
             output.write(f"found={'true' if tests else 'false'}\n")
     if not tests:
-        result.summary += ci_failure_summary(args.ci_conclusion, result.ci_failures)
-        comment_state = CommentState(commit_sha=args.sha, kind="no_visual", ci_conclusion=args.ci_conclusion)
+        result.summary += ci_failure_summary(config.ci_conclusion, result.ci_failures)
+        comment_state = CommentState(commit_sha=config.sha, kind="no_visual", ci_conclusion=config.ci_conclusion)
         no_visual_body = no_visual_comment_body(
-            repository=args.repository,
+            repository=config.repository,
             commit_sha=comment_state.commit_sha,
             ci_conclusion=comment_state.ci_conclusion,
             ci_failures=result.ci_failures,
-            details_url=args.ci_details_url or workflow_url,
+            details_url=config.ci_details_url or workflow_url,
         )
         result.comment = CommentUpdate(body=no_visual_body, state=comment_state)
         print(f"{result.summary} Skipping publication.")
         return
 
-    s3 = s3_client("s3", endpoint_url=args.endpoint)
     baseline_source: BaselineSource | None = None
     if base_sha:
-        baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
+        baseline_source = S3BaselineSource(client=client, bucket=config.bucket)
     logger.info("Building review for %d targets; baseline comparison: %s", len(tests), bool(base_sha))
     bundle = build_bundle(
         tests,
-        args.work_dir / "site",
-        commit_sha=args.sha,
-        repository=args.repository,
+        config.work_dir / "site",
+        commit_sha=config.sha,
+        repository=config.repository,
         base_sha=base_sha,
         baseline_source=baseline_source,
     )
-    upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
+    review_key = f"{REVIEW_PREFIX}/{config.sha}"
+    upload_bundle(bundle, bucket=config.bucket, key=review_key, client=client)
     review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
     if not base_sha:
         # Devel push: advance the mutable per-target fallback pointers now
@@ -943,8 +983,8 @@ def _publish(
         # invocation is confirmed complete.
         slugs = [test.slug for test in review_tests if test.baseline_eligible]
         logger.info("Updating %d baseline pointers", len(slugs))
-        write_baseline_pointers(slugs, commit_sha=args.sha, bucket=args.bucket, client=s3)
-    public_url = f"{args.public_base_url.rstrip('/')}/{REVIEW_PREFIX}/{args.sha}/"
+        write_baseline_pointers(slugs, commit_sha=config.sha, bucket=config.bucket, client=client)
+    public_url = f"{config.public_base_url.rstrip('/')}/{review_key}/"
     if base_sha:
         totals = classification_totals(review_tests)
         result.summary = (
@@ -954,21 +994,21 @@ def _publish(
         )
     else:
         result.summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
-    comment_state = CommentState(commit_sha=args.sha, kind="published", ci_conclusion=args.ci_conclusion)
+    comment_state = CommentState(commit_sha=config.sha, kind="published", ci_conclusion=config.ci_conclusion)
     result.comment = CommentUpdate(
         body=success_comment_body(
-            repository=args.repository,
+            repository=config.repository,
             commit_sha=comment_state.commit_sha,
             url=public_url,
             review_tests=review_tests,
             base_sha=base_sha,
             ci_conclusion=comment_state.ci_conclusion,
             ci_failures=result.ci_failures,
-            ci_details_url=args.ci_details_url or workflow_url,
+            ci_details_url=config.ci_details_url or workflow_url,
         ),
         state=comment_state,
     )
-    result.summary += ci_failure_summary(args.ci_conclusion, result.ci_failures)
+    result.summary += ci_failure_summary(config.ci_conclusion, result.ci_failures)
     if incomplete := sum(1 for test in review_tests if test.issues):
         result.summary += f" {incomplete} target(s) have incomplete or non-comparable results."
     result.conclusion = "neutral" if any(test.issues for test in review_tests) else "success"
@@ -976,7 +1016,7 @@ def _publish(
     result.diff = diff_check(review_tests)
 
 
-def _report(args: argparse.Namespace, *, github: Github, result: PublicationResult) -> list[Exception]:
+def _report(config: PublicationConfig, *, github: Github, result: PublicationResult) -> list[Exception]:
     errors: list[Exception] = []
     logger.info("Updating review comment and check")
     if result.diff is not None:
@@ -984,8 +1024,8 @@ def _report(args: argparse.Namespace, *, github: Github, result: PublicationResu
         try:
             upsert_check_run(
                 github=github,
-                repository=args.repository,
-                commit_sha=args.sha,
+                repository=config.repository,
+                commit_sha=config.sha,
                 status="completed",
                 conclusion=diff_conclusion,
                 summary=diff_summary,
@@ -1000,8 +1040,10 @@ def _report(args: argparse.Namespace, *, github: Github, result: PublicationResu
         # Rendering/uploading may outlast another push or PR closure. Recheck
         # before updating the singleton comment; immutable bundles stay useful.
         try:
+            if config.pull_request_head is None:
+                raise ValueError("Cannot recheck a pull request without its head ref")
             current = find_reviewable_pull_request(
-                github=github, repository=args.repository, head=args.pull_request_head, head_sha=args.sha
+                github=github, repository=config.repository, head=config.pull_request_head, head_sha=config.sha
             )
         except Exception as error:
             logger.exception("Could not recheck the pull request before commenting")
@@ -1013,7 +1055,7 @@ def _report(args: argparse.Namespace, *, github: Github, result: PublicationResu
     if comment_pr is not None and result.comment is not None:
         try:
             publish_pull_request_comment(
-                github=github, repository=args.repository, pull_request=comment_pr, update=result.comment
+                github=github, repository=config.repository, pull_request=comment_pr, update=result.comment
             )
         except Exception as error:
             logger.exception("Could not update the pull request comment")
@@ -1024,13 +1066,13 @@ def _report(args: argparse.Namespace, *, github: Github, result: PublicationResu
     try:
         upsert_check_run(
             github=github,
-            repository=args.repository,
-            commit_sha=args.sha,
+            repository=config.repository,
+            commit_sha=config.sha,
             status="completed",
             conclusion=result.conclusion,
             summary=result.summary,
             details_url=result.details_url,
-            external_id=args.check_external_id,
+            external_id=config.check_external_id,
         )
     except Exception as error:
         logger.exception("Could not complete the visual review check")
@@ -1039,67 +1081,69 @@ def _report(args: argparse.Namespace, *, github: Github, result: PublicationResu
     return errors
 
 
+def publish_visual_review(
+    config: PublicationConfig, *, run: Runner, client: S3Client, github: Github, workflow_url: str | None
+) -> None:
+    result = PublicationResult(details_url=config.ci_details_url or workflow_url)
+    try:
+        _publish(config, github=github, workflow_url=workflow_url, result=result, run=run, client=client)
+    except Exception as error:
+        result.summary = str(error) + ci_failure_summary(config.ci_conclusion, result.ci_failures)
+        result.conclusion = "failure"
+        reporting_errors: list[Exception] = []
+        try:
+            comment_state = CommentState(commit_sha=config.sha, kind="failure", ci_conclusion=config.ci_conclusion)
+            result.comment = CommentUpdate(
+                body=error_comment_body(
+                    repository=config.repository,
+                    commit_sha=comment_state.commit_sha,
+                    error=error,
+                    ci_conclusion=comment_state.ci_conclusion,
+                    ci_failures=result.ci_failures,
+                    ci_details_url=config.ci_details_url or workflow_url,
+                ),
+                state=comment_state,
+            )
+        except Exception as rendering_error:
+            logger.exception("Could not render the failure comment")
+            reporting_errors.append(rendering_error)
+        reporting_errors.extend(_report(config, github=github, result=result))
+        if reporting_errors:
+            raise error from ExceptionGroup("Visual review reporting failed", reporting_errors)
+        raise
+    reporting_errors = _report(config, github=github, result=result)
+    if reporting_errors:
+        raise ExceptionGroup("Visual review reporting failed", reporting_errors)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
-    args = parser().parse_args()
+    config, endpoint = _parse_cli()
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
     workflow_url = current_workflow_url()
-    result = PublicationResult(details_url=args.ci_details_url or workflow_url)
-
     with Github(auth=Auth.Token(token)) as github:
-        if args.ci_conclusion == "cancelled":
-            # A direct CLI invocation must follow the workflow's cancelled-run policy too.
-            # Close an announced check without reading BuildBuddy or touching S3.
+        if config.ci_conclusion == "cancelled":
+            # Cancelled CI needs no BuildBuddy read, S3 client, or bucket credentials.
             upsert_check_run(
                 github=github,
-                repository=args.repository,
-                commit_sha=args.sha,
+                repository=config.repository,
+                commit_sha=config.sha,
                 status="completed",
                 conclusion="cancelled",
                 summary="Bazel CI was cancelled; visual publication stopped.",
-                details_url=result.details_url,
-                external_id=args.check_external_id,
+                details_url=config.ci_details_url or workflow_url,
+                external_id=config.check_external_id,
             )
             return
-
-        try:
-            _publish(
-                args,
-                github=github,
-                workflow_url=workflow_url,
-                result=result,
-                run=subprocess.run,
-                s3_client=boto3.client,
-            )
-        except Exception as error:
-            result.summary = str(error) + ci_failure_summary(args.ci_conclusion, result.ci_failures)
-            result.conclusion = "failure"
-            reporting_errors: list[Exception] = []
-            try:
-                comment_state = CommentState(commit_sha=args.sha, kind="failure", ci_conclusion=args.ci_conclusion)
-                result.comment = CommentUpdate(
-                    body=error_comment_body(
-                        repository=args.repository,
-                        commit_sha=comment_state.commit_sha,
-                        error=error,
-                        ci_conclusion=comment_state.ci_conclusion,
-                        ci_failures=result.ci_failures,
-                        ci_details_url=args.ci_details_url or workflow_url,
-                    ),
-                    state=comment_state,
-                )
-            except Exception as rendering_error:
-                logger.exception("Could not render the failure comment")
-                reporting_errors.append(rendering_error)
-            reporting_errors.extend(_report(args, github=github, result=result))
-            if reporting_errors:
-                raise error from ExceptionGroup("Visual review reporting failed", reporting_errors)
-            raise
-        reporting_errors = _report(args, github=github, result=result)
-        if reporting_errors:
-            raise ExceptionGroup("Visual review reporting failed", reporting_errors)
+        publish_visual_review(
+            config,
+            run=subprocess.run,
+            client=boto3.client("s3", endpoint_url=endpoint),
+            github=github,
+            workflow_url=workflow_url,
+        )
 
 
 if __name__ == "__main__":

@@ -5895,6 +5895,10 @@ types-aiofiles==25.1.0.20260518 \
     --hash=sha256:c0c95eb78755d4fa7b397d4f0332c632714dd7cd0d17f49b96e31d4d7a8d8c76 \
     --hash=sha256:f776bdfb4bec17f743d9ef042e61edf03bdcc7821fc08556fba9b63d873fdea9
     # via ducktape (pyproject.toml)
+types-boto3-s3==1.40.61 \
+    --hash=sha256:2263a878a1c29ba7b886bc71fc771b9b5dbfb85de15564595a77b33aa9f1aca4 \
+    --hash=sha256:8692242b1b2855b2b96b93268c921344c65c66250ec1f870b50bdef2009cfd67
+    # via ducktape (pyproject.toml)
 types-colorama==0.4.15.20260508 \
     --hash=sha256:3a8916039e57452bd21f57e674e1f221ca9e4f319893c5e3bbd37b845c27d8e6 \
     --hash=sha256:b0c39908a3e5171ef1f8bf3d59fae082e9eaff3a19ca49b6d640b83f78cff61c
