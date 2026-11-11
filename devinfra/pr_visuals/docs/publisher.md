@@ -131,6 +131,9 @@ already stale at the initial lookup gets a `neutral` check.
 `//devinfra/pr_visuals:wheel` builds the `pr-visuals` wheel (`pr-visuals-announce`
 for check-runs, `pr-visuals-publish` for publication), bundling the publisher's small
 internal source deps and HTML templates; Python runtime deps are wheel metadata.
+The CLI parses arguments and creates the runner and S3 client before calling the
+publication entrypoint. Cancelled runs close their announced check before S3
+client creation.
 
 Both workflow jobs install `.#pr-visuals` from trusted `devel` (wheel deps + `bbapi`;
 closure in the public Attic cache) and log the wheel URL and hash from

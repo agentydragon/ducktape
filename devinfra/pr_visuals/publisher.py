@@ -790,8 +790,7 @@ def _upload_shared_image(s3: Any, *, bundle: Path, bucket: str, digest: str, cac
             raise
 
 
-def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client: Any | None = None) -> None:
-    s3 = client or boto3.client("s3", endpoint_url=endpoint)
+def upload_bundle(bundle: Path, *, bucket: str, key: str, client: Any) -> None:
     prefix = key.strip("/")
     cache_control = "public,max-age=31536000,immutable"
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
@@ -812,7 +811,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
     with ThreadPoolExecutor(max_workers=S3_IMAGE_UPLOAD_WORKERS) as executor:
         futures = [
             executor.submit(
-                _upload_shared_image, s3, bundle=bundle, bucket=bucket, digest=digest, cache_control=cache_control
+                _upload_shared_image, client, bundle=bundle, bucket=bucket, digest=digest, cache_control=cache_control
             )
             for digest in sorted(digests)
         ]
@@ -834,7 +833,7 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
             continue
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         relative = path.relative_to(bundle).as_posix()
-        s3.upload_file(
+        client.upload_file(
             path, bucket, f"{prefix}/{relative}", ExtraArgs={"CacheControl": cache_control, "ContentType": content_type}
         )
 
@@ -1003,7 +1002,7 @@ def _publish(
     workflow_url: str | None,
     result: PublicationResult,
     run: Runner,
-    client: Any | None,
+    client: Any,
 ) -> None:
     base_sha: str | None = None
     if args.pull_request_head:
@@ -1057,7 +1056,7 @@ def _publish(
         print(f"{result.summary} Skipping publication.")
         return
 
-    s3 = client if client is not None else boto3.client("s3", endpoint_url=args.endpoint)
+    s3 = client
     baseline_source: BaselineSource | None = None
     if base_sha:
         baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
@@ -1070,7 +1069,7 @@ def _publish(
         base_sha=base_sha,
         baseline_source=baseline_source,
     )
-    upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
+    upload_bundle(bundle, bucket=args.bucket, key=f"{REVIEW_PREFIX}/{args.sha}", client=s3)
     review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
     if not base_sha:
         # Devel push: advance the mutable per-target fallback pointers now
@@ -1180,32 +1179,8 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
     return errors
 
 
-def main(*, run: Runner | None = None, client: Any | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
-    args = parser().parse_args()
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
-    workflow_url = current_workflow_url()
+def main(args: argparse.Namespace, *, run: Runner, client: Any, token: str, workflow_url: str | None) -> None:
     result = PublicationResult(details_url=args.ci_details_url or workflow_url)
-
-    if args.ci_conclusion == "cancelled":
-        # A direct CLI invocation must follow the workflow's cancelled-run policy too.
-        # Close an announced check without reading BuildBuddy or touching S3.
-        upsert_check_run(
-            repository=args.repository,
-            commit_sha=args.sha,
-            status="completed",
-            conclusion="cancelled",
-            summary="Bazel CI was cancelled; visual publication stopped.",
-            details_url=result.details_url,
-            external_id=args.check_external_id,
-            token=token,
-        )
-        return
-
-    if run is None:
-        run = subprocess.run
     try:
         _publish(args, token=token, workflow_url=workflow_url, result=result, run=run, client=client)
     except Exception as error:
@@ -1233,5 +1208,34 @@ def main(*, run: Runner | None = None, client: Any | None = None) -> None:
         raise ExceptionGroup("Visual review reporting failed", reporting_errors)
 
 
+def cli() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+    args = parser().parse_args()
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
+    workflow_url = current_workflow_url()
+    if args.ci_conclusion == "cancelled":
+        # Cancelled CI needs no BuildBuddy read, S3 client, or bucket credentials.
+        upsert_check_run(
+            repository=args.repository,
+            commit_sha=args.sha,
+            status="completed",
+            conclusion="cancelled",
+            summary="Bazel CI was cancelled; visual publication stopped.",
+            details_url=args.ci_details_url or workflow_url,
+            external_id=args.check_external_id,
+            token=token,
+        )
+        return
+    main(
+        args,
+        run=subprocess.run,
+        client=boto3.client("s3", endpoint_url=args.endpoint),
+        token=token,
+        workflow_url=workflow_url,
+    )
+
+
 if __name__ == "__main__":
-    main()
+    cli()

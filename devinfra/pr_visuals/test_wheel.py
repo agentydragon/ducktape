@@ -15,7 +15,7 @@ from python.runfiles import Runfiles
 # gazelle:include_dep //devinfra/pr_visuals:publisher
 EXPECTED_ENTRY_POINTS = {
     "pr-visuals-announce": "devinfra.pr_visuals.check_run:main",
-    "pr-visuals-publish": "devinfra.pr_visuals.publisher:main",
+    "pr-visuals-publish": "devinfra.pr_visuals.publisher:cli",
 }
 
 
