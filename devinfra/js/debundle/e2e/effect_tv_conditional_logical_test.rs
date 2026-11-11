@@ -1238,6 +1238,96 @@ fn an_installed_iterator_runs_where_the_protocol_finds_it() {
     }
 }
 
+/// A truncated top-level install publishes what its unexecuted remainder
+/// reads: the iterator reaches the protocol through a binding declared
+/// before or after it, a class static member, an object method, a factory
+/// result, or an inline literal copied by `Object.assign`; and behind a
+/// guarded or a returned-callee iteration.
+#[test]
+fn an_iterator_installed_through_a_binding_runs_where_the_protocol_finds_it() {
+    const FLAG: &str = "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { flag(); return 0; }";
+    const DEFINE: &str =
+        "const patched = Object.defineProperty(String.prototype, Symbol.iterator, { value: it });";
+    for (install, extra) in iterator_installs(DEFINE, "second") {
+        assert_reader_split_diverges_with(&format!("{install}\n{FLAG}"), extra);
+    }
+    for flag in [
+        "function flag() { if (first()) {} for (const x of 'ab') {} return noop; }\nfunction run() { if (first()) {} flag(); return 0; }",
+        "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { return flag()(); }",
+    ] {
+        assert_reader_split_diverges_with(
+            &format!("function* it() {{ second(); }}\n{DEFINE}\n{flag}"),
+            &["it", "patched"],
+        );
+    }
+}
+
+/// Positive anchor for the control above: the same installs of a generator
+/// calling the effect-free `first` keep the split.
+#[test]
+fn an_iterator_installed_through_a_binding_without_effects_keeps_the_split() {
+    const FLAG: &str = "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { flag(); return 0; }";
+    const DEFINE: &str =
+        "const patched = Object.defineProperty(String.prototype, Symbol.iterator, { value: it });";
+    for (install, extra) in iterator_installs(DEFINE, "first") {
+        let fixture = with_reader_split(&format!("{install}\n{FLAG}"), extra, run_fixture);
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+fn iterator_installs(define: &str, callee: &str) -> Vec<(String, &'static [&'static str])> {
+    vec![
+        (
+            format!(
+                "const desc = {{ value: function* () {{ {callee}(); }} }};\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, desc);"
+            ),
+            &["desc", "patched"][..],
+        ),
+        (
+            format!("function* it() {{ {callee}(); }}\n{define}"),
+            &["it", "patched"][..],
+        ),
+        (
+            format!("{define}\nfunction* it() {{ {callee}(); }}"),
+            &["patched", "it"][..],
+        ),
+        (
+            format!("const it = function* () {{ {callee}(); }};\n{define}"),
+            &["it", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ static *it() {{ {callee}(); }} }}\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: K.it }});"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "class K {{ static it = function* () {{ {callee}(); }}; }}\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: K.it }});"
+            ),
+            &["K", "patched"][..],
+        ),
+        (
+            format!(
+                "const impl = {{ *it() {{ {callee}(); }} }};\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: impl.it }});"
+            ),
+            &["impl", "patched"][..],
+        ),
+        (
+            format!(
+                "function mkIt() {{ return function* () {{ {callee}(); }}; }}\nconst it = mkIt();\n{define}"
+            ),
+            &["mkIt", "it", "patched"][..],
+        ),
+        (
+            format!(
+                "const patched = Object.assign(String.prototype, {{ [Symbol.iterator]: function* () {{ {callee}(); }} }});"
+            ),
+            &["patched"][..],
+        ),
+    ]
+}
+
 /// Positive anchor for the control above: the same iterations with no
 /// installed iterator keep the split.
 #[test]

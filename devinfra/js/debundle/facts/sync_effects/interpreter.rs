@@ -12003,7 +12003,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // not execute it.
                     self.note_unknown_call(call);
                     let possible_objects: Values = args.iter().flatten().cloned().collect();
-                    self.taint_objects(&possible_objects);
+                    // The target may be reachable by anyone (an intrinsic
+                    // prototype): what is copied onto it escapes.
+                    self.publish_values(
+                        &possible_objects,
+                        ClassMembersPublicationWriter::ObjectAssignCopy,
+                        Some(call.span),
+                    );
                     let mut possible_accessors: BTreeSet<_> = self
                         .state
                         .world
