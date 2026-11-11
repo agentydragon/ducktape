@@ -264,6 +264,13 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._paceLabel = new St.Label({ y_align: Clutter.ActorAlign.CENTER });
       this._sparklineUnavailable = new St.Label({ text: "—", y_align: Clutter.ActorAlign.CENTER });
       this._sparkline = new St.DrawingArea({ width: 60, height: 16, y_align: Clutter.ActorAlign.CENTER });
+      this._sparklineColors = Object.fromEntries(
+        ["good", "caution", "danger"].map((level) => {
+          const actor = new St.Widget({ visible: false, style_class: `plaid-spend-${level}` });
+          this._sparkline.add_child(actor);
+          return [level, actor];
+        })
+      );
       this._sparkline.connect("repaint", (area) => this._drawSparkline(area));
       this._panelText = "Loading…";
       this.add_child(this._box);
@@ -512,7 +519,9 @@ const PlaidSpendIndicator = GObject.registerClass(
       const periodId = this._settings.get_string("pace-window") === "30d" ? "rolling_30d" : "rolling_7d";
       const windows = Array.isArray(this._history?.windows) ? this._history.windows : [];
       const window = windows.find((candidate) => candidate?.period_id === periodId);
-      return Array.isArray(window?.points) ? window.points : [];
+      return Array.isArray(window?.points)
+        ? window.points.slice(-Number(this._settings.get_string("sparkline-history-days")))
+        : [];
     }
 
     _drawSparkline(area) {
@@ -526,30 +535,66 @@ const PlaidSpendIndicator = GObject.registerClass(
         if (present.length < 2 || !Number.isFinite(reference) || reference <= 0) return;
         const [width, height] = area.get_surface_size();
         const pad = 2;
-        const max = Math.max(reference * 1.25, ...present);
+        const showLeash = this._settings.get_boolean("sparkline-show-leash");
+        let min = this._settings.get_boolean("sparkline-anchor-zero")
+          ? 0
+          : Math.min(...present, ...(showLeash ? [reference] : []));
+        let max = Math.max(...present, ...(showLeash ? [reference * 1.25] : []));
+        if (max <= min) {
+          const padding = Math.max(1, max * 0.05);
+          if (min > 0) min = Math.max(0, min - padding);
+          max += padding;
+        }
         const x = (index) => pad + (index * Math.max(0, width - 2 * pad)) / Math.max(1, values.length - 1);
-        const y = (value) => height - pad - (value / max) * Math.max(0, height - 2 * pad);
+        const y = (value) => height - pad - ((value - min) / (max - min)) * Math.max(0, height - 2 * pad);
         const color = area.get_theme_node().get_foreground_color();
-        cr.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, 0.45);
-        cr.setLineWidth(1);
-        cr.setDash([2, 2], 0);
-        cr.moveTo(pad, y(reference));
-        cr.lineTo(width - pad, y(reference));
-        cr.stroke();
-        cr.setDash([], 0);
-        cr.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, 1);
+        if (showLeash) {
+          cr.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, 0.45);
+          cr.setLineWidth(1);
+          cr.setDash([2, 2], 0);
+          cr.moveTo(pad, y(reference));
+          cr.lineTo(width - pad, y(reference));
+          cr.stroke();
+          cr.setDash([], 0);
+        }
         cr.setLineWidth(1.5);
-        let drawing = false;
+        const palette = Object.fromEntries(
+          Object.entries(this._sparklineColors).map(([level, actor]) => [
+            level,
+            actor.get_theme_node().get_foreground_color(),
+          ])
+        );
+        let previous = null;
         values.forEach((value, index) => {
           if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-            drawing = false;
-          } else if (drawing) cr.lineTo(x(index), y(value));
-          else {
-            cr.moveTo(x(index), y(value));
-            drawing = true;
+            previous = null;
+            return;
           }
+          if (previous !== null) {
+            const [previousIndex, previousValue] = previous;
+            const delta = value - previousValue;
+            const breaks = [0, 1];
+            if (delta !== 0) {
+              for (const threshold of [reference, reference * 1.2]) {
+                const at = (threshold - previousValue) / delta;
+                if (at > 0 && at < 1) breaks.push(at);
+              }
+            }
+            breaks.sort((a, b) => a - b);
+            for (let i = 1; i < breaks.length; i++) {
+              const start = breaks[i - 1];
+              const end = breaks[i];
+              const midpoint = previousValue + (delta * (start + end)) / 2;
+              const level = midpoint > reference * 1.2 ? "danger" : midpoint > reference ? "caution" : "good";
+              const segmentColor = palette[level];
+              cr.setSourceRGBA(segmentColor.red / 255, segmentColor.green / 255, segmentColor.blue / 255, 1);
+              cr.moveTo(x(previousIndex + start), y(previousValue + delta * start));
+              cr.lineTo(x(previousIndex + end), y(previousValue + delta * end));
+              cr.stroke();
+            }
+          }
+          previous = [index, value];
         });
-        cr.stroke();
       } finally {
         cr.$dispose();
       }
@@ -680,6 +725,8 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="AdvanceClock"><arg type="d" direction="in" name="seconds"/></method>' +
           '<method name="OpenMenu"/>' +
           '<method name="OpenPreferences"/>' +
+          '<method name="HideOverview"/>' +
+          '<method name="GetOverviewVisible"><arg type="b" direction="out" name="visible"/></method>' +
           '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
@@ -688,6 +735,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="GetDaemonOwner"><arg type="s" direction="out" name="owner"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
+          '<method name="GetSparklineGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
         {
           Reload: (path) => this._loadFixtureFile(path),
@@ -710,6 +758,8 @@ const PlaidSpendIndicator = GObject.registerClass(
           },
           OpenMenu: () => this.menu.open(false),
           OpenPreferences: () => this._openPreferences(),
+          HideOverview: () => Main.overview.hide(),
+          GetOverviewVisible: () => Main.overview.visible,
           CloseMenu: () => this.menu.close(false),
           GetPanelLabel: () => this._panelText,
           GetPanelState: () => {
@@ -731,6 +781,9 @@ const PlaidSpendIndicator = GObject.registerClass(
             if (config.order) this._settings.set_strv("panel-order", config.order);
             if (config.visible) this._settings.set_strv("panel-visible", config.visible);
             if (config.window) this._settings.set_string("pace-window", config.window);
+            if ("anchorZero" in config) this._settings.set_boolean("sparkline-anchor-zero", config.anchorZero);
+            if ("showLeash" in config) this._settings.set_boolean("sparkline-show-leash", config.showLeash);
+            if (config.historyDays) this._settings.set_string("sparkline-history-days", String(config.historyDays));
           },
           GetDaemonOwner: () => this._proxy?.g_name_owner || "",
           GetMenuText: () =>
@@ -742,6 +795,11 @@ const PlaidSpendIndicator = GObject.registerClass(
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
             const [width, height] = actor.get_transformed_size();
+            return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+          },
+          GetSparklineGeometry: () => {
+            const [x, y] = this._sparkline.get_transformed_position();
+            const [width, height] = this._sparkline.get_transformed_size();
             return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
           },
         }
@@ -829,6 +887,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           this.menu.addMenuItem(windowToggle);
           if (this._settings.get_strv("panel-visible").includes("sparkline")) {
             const points = this._historyPoints();
+            if (points.length > 0) this._addReadOnly(`Sparkline: last ${points.length} days of ${window} averages`);
             if (this._historyError) this._addReadOnly("Pace history unavailable", "plaid-spend-caution");
             else if (this._history && points.filter((point) => point?.observed_daily_minor_units != null).length < 2)
               this._addReadOnly("Pace history lacks coverage", "plaid-spend-caution");

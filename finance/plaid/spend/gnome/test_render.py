@@ -114,6 +114,17 @@ def fixture_json_dir(
     (dest / "panel_composition.json").write_text(
         json.dumps({"status": "ready", "error": "", "view": view_payload, "pace_history": history})
     )
+    flat_history = {
+        "status": "active",
+        "daily_reference_minor_units": 2000,
+        "windows": [
+            {"period_id": period, "points": [{"observed_daily_minor_units": 1700} for _ in range(30)]}
+            for period in ("rolling_7d", "rolling_30d")
+        ],
+    }
+    (dest / "panel_flat.json").write_text(
+        json.dumps({"status": "ready", "error": "", "view": view_payload, "pace_history": flat_history})
+    )
     return dest
 
 
@@ -482,6 +493,51 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         configure(order=["status", "balance", "pace", "sparkline"], visible=["status", "balance"], window="7d")
 
 
+def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    def configure(**settings: object) -> None:
+        session.call("SetPanelSettings", json.dumps(settings))
+        session.wait_for_paint()
+
+    def sparkline_image() -> Image.Image:
+        match = re.search(rb"\((-?\d+),\s*(-?\d+),\s*(\d+),\s*(\d+)\)", session.call("GetSparklineGeometry"))
+        assert match is not None
+        x, y, width, height = (int(value) for value in match.groups())
+        assert width > 0
+        assert height > 0
+        return Image.open(BytesIO(session.screenshot())).convert("RGB").crop((x, y, x + width, y + height))
+
+    try:
+        configure(visible=["sparkline"], window="30d", anchorZero=True, showLeash=True, historyDays=30)
+        session.reload("/fixtures/panel_composition.json")
+        geometry = session.open_menu()
+        assert "Sparkline: last 30 days of 30d averages" in string_reply(session.call("GetMenuText"))
+        zero_with_leash = sparkline_image()
+        capture_menu.capture(geometry, label="sparkline at zero with leash", checkpoint="zero-leash", left_padding=160)
+        configure(anchorZero=False)
+        fitted_with_leash = sparkline_image()
+        assert ImageChops.difference(zero_with_leash, fitted_with_leash).getbbox() is not None
+        capture_menu.capture(geometry, label="sparkline fitted with leash", checkpoint="fitted-leash", left_padding=160)
+        configure(showLeash=False)
+        fitted_without_leash = sparkline_image()
+        assert ImageChops.difference(fitted_with_leash, fitted_without_leash).getbbox() is not None
+        pixels = cast(list[tuple[int, int, int]], list(fitted_without_leash.get_flattened_data()))
+        assert any(g > r + 12 and g > b + 12 for r, g, b in pixels)
+        assert any(r > g + 10 and g > b + 20 for r, g, b in pixels)
+        assert any(r > g + 30 and r > b + 30 for r, g, b in pixels)
+        capture_menu.capture(geometry, label="sparkline fitted without leash", checkpoint="fitted", left_padding=160)
+        configure(historyDays=7)
+        assert "Sparkline: last 7 days of 30d averages" in string_reply(session.call("GetMenuText"))
+        assert ImageChops.difference(fitted_without_leash, sparkline_image()).getbbox() is not None
+        capture_menu.capture(geometry, label="sparkline seven-day history", checkpoint="seven-days", left_padding=160)
+        session.reload("/fixtures/panel_flat.json")
+        flat_pixels = cast(list[tuple[int, int, int]], list(sparkline_image().get_flattened_data()))
+        assert any(g > r + 12 and g > b + 12 for r, g, b in flat_pixels)
+        session.close_menu()
+        _assert_no_plaid_extension_error(session)
+    finally:
+        configure(visible=["status", "balance"], window="7d", anchorZero=True, showLeash=True, historyDays=30)
+
+
 def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_json_dir: Path) -> None:
     fixture = json.loads((fixture_json_dir / "panel_composition.json").read_text())
     session.reload("/fixtures/panel_composition.json")
@@ -520,6 +576,8 @@ def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_
 
 def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTestOutputs) -> None:
     session.close_menu()
+    session.call("HideOverview")
+    wait_until(lambda: b"false" in session.call("GetOverviewVisible"), "GNOME overview did not close")
     before = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
     session.call("OpenPreferences")
 
@@ -537,10 +595,27 @@ def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTest
         )
         raise AssertionError(f"Preferences service call failed: {exec_output(result)}") from error
     test_outputs.publish(
+        checkpoint="sparkline-disabled",
         role="screenshot",
         data=session.screenshot(),
         suffix="png",
         label="panel preferences",
+        title="Plaid Spend GNOME extension",
+    )
+    disabled = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
+    session.call("SetPanelSettings", json.dumps({"visible": ["status", "balance", "sparkline"]}))
+
+    def sparkline_controls_enabled() -> bool:
+        enabled = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
+        return sum(ImageStat.Stat(ImageChops.difference(disabled, enabled)).sum) > 10_000
+
+    wait_until(sparkline_controls_enabled, "preferences did not update when sparkline was enabled")
+    test_outputs.publish(
+        checkpoint="sparkline-enabled",
+        role="screenshot",
+        data=session.screenshot(),
+        suffix="png",
+        label="panel preferences with sparkline enabled",
         title="Plaid Spend GNOME extension",
     )
 
