@@ -73,6 +73,7 @@ fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
         root_attempt: _,
         purity_disagreement: _,
         local_record_factory_purity: _,
+        local_record_factory_heap_call: _,
         binding_effect_coverage: _,
         settled_array_elements: _,
         global_object_aliases: _,

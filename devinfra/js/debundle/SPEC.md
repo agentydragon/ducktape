@@ -4365,6 +4365,21 @@ not change effect promotion.
 The ordered call-admission explanation does not change target admission,
 fallback effects, reachability, gate acceptance, or emitted JavaScript.
 
+An exact top-level call to a checked local constructor factory may receive a
+separate heap-locality receipt after ordinary synchronous execution completes.
+The receipt requires a single direct call with a fresh plain-data record
+argument, closed input values, stable local factory and class identities, and
+constructors whose checked bodies only retain arguments or read own fields of
+those fresh records. Implicit constructors with independently evaluated default
+fields are excluded. At that call site, the heap summary retains argument and
+callee evaluation, including nested allocations and reads, but does not treat
+retained arrays or captured callbacks as immediate reads and writes. The
+factory and constructor source bodies keep their conservative summaries for
+other calls. Prototype or getter uncertainty, an unknown call, incomplete
+execution, or an unsupported argument preserves the ordinary heap frontier.
+This receipt is independent of the call's purity certificate; later operations
+on retained values retain their own heap effects.
+
 An annotated local constructor-factory call kept on the conservative path records
 its first typed refusal in `synchronous_execution.local_record_factory_rejections`.
 The identity checks distinguish a non-binding callee, a missing hoisted
