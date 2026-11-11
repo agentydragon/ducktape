@@ -15,10 +15,11 @@ for now ([below](#operations)). Creating environments is
 
 ## Schema
 
-`Rule.Type` gains `environment`. It reuses the two fields `session_inbox_access` introduced:
-`operations` (proto 11), whose item enum grows, and `targets` (proto 12, `SandboxTargets`), which
-gains one field. A Go struct cannot give one JSON key two types, so the per-type subsets are CEL rules
-on `Rule`, in the style of the existing ones.
+`Rule.Type` gains `environment`. It reuses `operations` (proto 11), whose item enum grows, and adds
+`environments` (proto 13): a list of selectors. A Sandbox is a target when it matches every field of
+at least one selector. `session_inbox_access` keeps its additive `targets` (`SandboxTargets`, proto
+12), and `environment` does not use it: a separate field keeps the conjunction from changing what
+existing inbox rules mean. Inbox rules can move to selectors once one needs a conjunction.
 
 ```go
 // Operations lists what a session_inbox_access or environment rule allows on its targets.
@@ -27,12 +28,25 @@ on `Rule`, in the style of the existing ones.
 // +kubebuilder:validation:items:Enum=send_message;read;resume;wake;suspend;delete;bind_session
 Operations []string `json:"operations,omitempty" proto:"11"`
 
-// SandboxTargets ... The fields combine additively.
-// +kubebuilder:validation:XValidation:rule="has(self.sandboxes) || has(self.inboxTags) || has(self.boundIdentity) || (has(self.allSandboxes) && self.allSandboxes)",message="Name a Sandbox, an inbox tag or a bound Identity, or set allSandboxes."
-type SandboxTargets struct {
-	// ... sandboxes (1), allSandboxes (2), inboxTags (3) unchanged ...
-	// BoundIdentity covers every Sandbox whose spec.identity names this Identity when the rule is checked.
-	BoundIdentity *IdentityRef `json:"boundIdentity,omitempty" proto:"4"`
+// Environments lists what an environment rule covers: a Sandbox matching every field of at least
+// one selector.
+// +kubebuilder:validation:MinItems=1
+Environments []EnvironmentSelector `json:"environments,omitempty" proto:"13"`
+
+// +kubebuilder:validation:XValidation:rule="has(self.sandbox) || has(self.boundIdentity)",message="Name a Sandbox or a bound Identity."
+type EnvironmentSelector struct {
+	// Sandbox matches one Sandbox by name, optionally pinned to one incarnation by UID.
+	Sandbox *SandboxTarget `json:"sandbox,omitempty" proto:"1"`
+	// BoundIdentity matches a Sandbox whose spec.identity names this Identity when the rule is checked.
+	BoundIdentity *BoundIdentitySelector `json:"boundIdentity,omitempty" proto:"2"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.name) != (has(self.self) && self.self)",message="Set exactly one of name or self."
+type BoundIdentitySelector struct {
+	Name string `json:"name,omitempty" proto:"1"`
+	// Self names the Identity of the binding's subject, so one PolicySet serves every Identity it
+	// is bound to.
+	Self bool `json:"self,omitempty" proto:"2"`
 }
 ```
 
@@ -41,23 +55,24 @@ The `Rule` validations change as follows (each `message="Rule fields must match 
 ```text
 # the field chain: environment takes the session_inbox_access branch (no role, hosts, policy, ...)
 ... : (self.type == 'session_inbox_access' || self.type == 'environment') ? (!has(self.role) && ...) : ...
-# operations and targets are required exactly for these two types
-self.type in ['session_inbox_access', 'environment'] ? (has(self.operations) && has(self.targets))
-  : (!has(self.operations) && !has(self.targets))
+# operations for both types; targets only for inboxes; environments only for lifecycle
+self.type in ['session_inbox_access', 'environment'] ? has(self.operations) : !has(self.operations)
+self.type == 'session_inbox_access' ? has(self.targets) : !has(self.targets)
+self.type == 'environment' ? has(self.environments) : !has(self.environments)
 # each type's operation vocabulary
 self.type != 'session_inbox_access' || self.operations.all(o, o == 'send_message')
 self.type != 'environment' || self.operations.all(o, o != 'send_message')
-# each type's target vocabulary: no tags or allSandboxes for lifecycle, no boundIdentity for inboxes
-!has(self.targets) || (self.type == 'environment'
-  ? (!has(self.targets.inboxTags) && !(has(self.targets.allSandboxes) && self.targets.allSandboxes))
-  : !has(self.targets.boundIdentity))
+# bind_session on a named Sandbox also names the Identity it must be bound to
+self.type != 'environment' || !self.operations.exists(o, o == 'bind_session')
+  || self.environments.all(e, !has(e.sandbox) || has(e.boundIdentity))
 # settled (operator, 2026-11-11): delete names its Sandboxes
-self.type != 'environment' || !self.operations.exists(o, o == 'delete') || !has(self.targets.boundIdentity)
+self.type != 'environment' || !self.operations.exists(o, o == 'delete')
+  || self.environments.all(e, has(e.sandbox))
 ```
 
-The targets union for `environment` is `sandboxes` and `boundIdentity`, either or both:
+A selector's fields:
 
-- **`sandboxes`**: a Sandbox by name, optionally pinned to one incarnation by UID, matched exactly
+- **`sandbox`**: a Sandbox by name, optionally pinned to one incarnation by UID, matched exactly
   as `session_inbox_access` matches it (`inboxaccess.Rule.covers`).
 - **`boundIdentity: {name: I}`**: a Sandbox matches when its current `spec.identity.name` equals `I`,
   as the evaluator's Sandbox informer sees it; nothing records which Sandboxes once matched. The rule pins no
@@ -66,9 +81,22 @@ The targets union for `environment` is `sandboxes` and `boundIdentity`, either o
   it acts in them; the caller's own incarnation is fenced by the reader's subject lookup, which names
   a binding only while the live Identity has the caller's UID. A Sandbox with no `spec.identity`
   matches no `boundIdentity`. `boundIdentity` names an Identity; it selects nothing by label.
+- **`boundIdentity: {self: true}`**: as `{name: I}`, with `I` the Identity the binding's subject
+  names, resolved per subject when the index computes its grants. It lets one PolicySet, such as
+  "bind your own Sessions to your own environments", serve every Identity it is bound to.
+- **`sandbox` and `boundIdentity` together**: that Sandbox, while it is bound to that Identity.
 
-Inbox tags and `allSandboxes` are refused: tags address messages, and lifecycle by tag or by
-namespace would be selection. Bindings with a ServiceAccount subject grant no `environment` rule;
+**Why `bind_session` on a named Sandbox names its Identity.** A Session bound to an environment runs
+as the environment's Identity ([below](#operations)). A grant on `sandbox: worker-1` alone would
+allow work as whatever Identity `worker-1` is bound to when checked: written while it runs as
+`worker`, it would allow Sessions as `audit` after a rebind. Pinning the UID does not help, since a
+rebind keeps it. Requiring `boundIdentity` makes a rebind void the grant instead of widening it.
+Other operations on a named Sandbox create no work as a new Identity and keep the name-only form.
+
+No selector matches by inbox tag, by label, by namespace or by creator: tags address messages,
+lifecycle by namespace or label would be selection, and a creator never changes, so a grant keyed
+on it could not be revoked or expire (operator, 2026-11-11). Bindings with a ServiceAccount subject
+grant no `environment` rule;
 until `IDENTITY_CUTOVER` removes them, ServiceAccount callers keep today's
 `resumePolicy.allowOwnServiceAccount` and configured roles.
 
@@ -112,6 +140,22 @@ Rules for the operations:
   so binding to a target bound to J creates work as J; that is why the operation needs a grant.
   Removing a binding narrows and needs only write authority on the Session. Creating a Session
   with no binding is not an environment operation ([question 5](#questions-for-the-operator)).
+- **Admitting a binding.** Dispatcher admits a Session–environment binding of Session S to
+  environment E when all of these hold:
+  1. The caller has authority over S: implied when the caller's Identity is S's Identity. Across
+     Identities it is refused until Session authority decides it (`SESSION_IDENTITY_AUTHZ`). At a
+     native `CreateSession`, S does not exist yet and this step does not apply.
+  2. A `bind_session` rule of the caller's matches E.
+  3. S's Identity is E's bound Identity. This is the existing invariant, not policy: a native
+     `CreateSession` takes the Session's Identity from the placed Sandbox, delivery refuses a
+     mismatch, and the [session model](session_environment_model.md) requires it of attachments. No
+     grant overrides it.
+  4. E's own state allows it: no operator stop or pending delete, the incarnation is current, and
+     E has room for another binding.
+- **A Session's Identity never changes.** No operation rebinds a Session to another Identity: its
+  history was produced as that Identity, and later turns would run as the new one with the old
+  one's context. The way across is a new Session as the other Identity. Moving a central Session to
+  another environment of the same Identity is a detach and an attach, checked as above.
 - **Dispatcher only.** Dispatcher owns which Sessions and bindings exist: it admits them, takes
   commands, and later materializes a native Session by calling the Environment Runtime's or the
   sampler's `CreateSession`. No grant of any type lets an agent call
@@ -145,8 +189,8 @@ privileged callers, Notification as a configured wake broker, the Action Service
 `orchestration_v1`'s stopgap. An actor's role never becomes the effective caller's grant, and no
 `environment` binding names a component. `ORCHESTRATION_V1_BACKEND_GRANTS` moves each
 `orchestration_v1` operation onto this rule: the executor calls as the caller, and a launch's launcher
-grant becomes an owned `PolicySet` whose `environment` rule names the new Sandbox by UID with
-`resume` and `bind_session`, replacing the `argument_schema` auto-approval.
+grant becomes an owned `PolicySet` whose `environment` rule names the new Sandbox by UID, with its
+`boundIdentity`, for `resume` and `bind_session`, replacing the `argument_schema` auto-approval.
 
 A refusal is `NotFound` where the caller holds no `read` on the target (EnvironmentService does not
 confirm existence), else `PermissionDenied`; an automatic wake records
@@ -159,25 +203,28 @@ confirm existence), else `PermissionDenied`; an automatic wake records
 
 ```yaml
 kind: PolicySet
-metadata: { name: research-siblings }
+metadata: { name: own-environments }
 spec:
   rules:
     - type: environment
-      operations: [read, resume]
-      targets: { boundIdentity: { name: research } }
+      operations: [read, resume, bind_session]
+      environments:
+        - boundIdentity: { self: true }
 ---
 kind: PolicyBinding
-spec: { subject: { identity: { name: research } }, policySets: [research-siblings] }
+spec: { subject: { identity: { name: research } }, policySets: [own-environments] }
 ```
 
 The Session in `research-a` calls `GetEnvironment(research-b)` then
-`ResumeEnvironment(research-b, token)`: the index grants `resume`, the reread shows
+`ResumeEnvironment(research-b, token)`: the index resolves `self` to `research` and grants `resume`, the reread shows
 `spec.identity: research`, and the manager patches the wake generation. A message to
 `research-b`'s Session would have woken it without this rule; the rule is for the direct request.
-Additions: Identity admission on the two RPCs and the rule check.
+The same set, bound to other Identities, serves each of them. Additions: Identity admission on the
+two RPCs and the rule check.
 
 **An orchestrator drives two named workers.** Identity `orchestrator` holds
-`operations: [resume, wake, bind_session]`, `targets: {sandboxes: [{name: worker-1}, {name: worker-2}]}`;
+`operations: [resume, wake, bind_session]` on
+`environments: [{sandbox: {name: worker-1}, boundIdentity: {name: worker}}, {sandbox: {name: worker-2}, boundIdentity: {name: worker}}]`;
 both workers are bound to Identity `worker`. It resumes `worker-1` and calls `CreateSession` placed
 there; the Session runs as `worker`, the Sandbox's Identity, with `orchestrator` recorded as creator.
 Its `SubmitInput` to that Session wakes a suspended `worker-2` under `wake`; a message through
@@ -190,17 +237,21 @@ Sandbox is refused; a same-Identity message still wakes it under `allowOwnServic
 
 **A rebind stops a match.** The operator stops `research-b` and rebinds it to `audit`. The next
 `ResumeEnvironment(research-b)` from `research` finds `spec.identity: audit` and is `NotFound`; its
-list no longer shows it. A rule naming `research-b` directly would still match, which is why a
-named target is a grant on that Sandbox whoever it runs as.
+list no longer shows it. A `resume` rule naming `research-b` alone would still match, a grant on
+that Sandbox whoever it runs as. A `bind_session` rule must also name `boundIdentity: research`, so
+it stops matching and no Session as `audit` can be created through it.
 
 **#15436, zero environments.** `ci-daily`'s own Session, through the central sampler as delegating
 actor, calls `CreateSession(identity: ci-daily, placement: central_sampler)`. No binding is created,
 so no `environment` rule applies, and the call is `PermissionDenied` until question 5 decides who may
 create Sessions as an Identity. The app, as a privileged caller, can still create it.
 
-**#15436, attach.** `AttachEnvironment(S, target: ci-build)` passes when the caller holds
-`bind_session` matching `ci-build` and the Sandbox is bound to S's Identity; `DetachEnvironment`
-needs only Session write authority.
+**#15436, attach.** `ci-daily` holds `bind_session` on
+`environments: [{sandbox: {name: ci-build}, boundIdentity: {name: ci-daily}}]`.
+`AttachEnvironment(S, target: ci-build)` passes when the caller's Identity is S's (`ci-daily`), the
+rule matches, and `ci-build` is bound to `ci-daily`. The same call on a Session of another Identity
+fails step 1, and on a Sandbox bound to another Identity fails step 3. `DetachEnvironment` needs only
+authority over S.
 
 ## Positions on #15436
 
@@ -228,6 +279,12 @@ needs only Session write authority.
   acting, which the operator ruled out. Its EnvironmentService self-read and per-Identity wake
   budget carry over; its CRD flag and resume reason do not.
 
+- **Creator-based selectors** (`createdBy: self`, operator 2026-11-11). "The environments I
+  launched" reads naturally for an orchestrator, but a creator never changes: such a grant cannot be
+  revoked, expire, or pass to someone else, and a recreated Identity of the same name makes its
+  meaning unclear. A launch writes an owned PolicySet naming the new Sandbox instead. Dispatcher's
+  recorded Session creator stays audit data.
+
 ## Questions for the operator
 
 1. **Session target.** Recommendation above: none; Identity-initiated Session deletion is decided
@@ -241,10 +298,10 @@ needs only Session write authority.
    environments that do not exist yet, and deletion loses their workspace and state volumes; naming
    them, optionally by UID, makes each grant say what may be lost. The CEL rule in
    [Schema](#schema) enforces this.
-4. **One set per Identity.** `boundIdentity` names a fixed Identity, so the multi-agent set above is
-   written per Identity, which the Session-managed Identities of
-   `SESSION_IDENTITY_PROVISIONING_DESIGN` would make routine. A "the binding's own subject" form of
-   `boundIdentity` would let one set serve many; recommendation: wait until that design shows the need.
+4. **One set per Identity: settled, `boundIdentity: {self: true}`** (operator, 2026-11-11). A
+   fixed `boundIdentity` would need the multi-agent set written per Identity, which the
+   Session-managed Identities of `SESSION_IDENTITY_PROVISIONING_DESIGN` would make routine. `self`
+   lets one set serve every Identity it is bound to ([Schema](#schema)).
 5. **Creating a Session as an Identity, with no environment.** #15436 needs an Identity caller to
    create a central Session as I. Recommendation: decide it under `SESSION_SUBAGENT_DELEGATION` as
    Session authority keyed on the Identity, possibly implied for a caller creating Sessions as its
