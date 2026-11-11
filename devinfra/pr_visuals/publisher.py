@@ -209,22 +209,18 @@ def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -
     return None
 
 
-REPO_URL = "https://github.com/agentydragon/ducktape"
-
 INVOCATION_WAIT_SECONDS = 300
 INVOCATION_POLL_SECONDS = 2
 S3_IMAGE_UPLOAD_WORKERS = 8
 
 
 def search_ci_test_invocations(
-    commit_sha: str, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+    commit_sha: str, *, repository: str, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
 ) -> list[str]:
     """The CI test invocations BuildBuddy holds for `commit_sha`, full sweep first.
 
     A commit has several CI runs with different target sets — a `//...` devel sweep
-    alongside affected-set runs — and only the sweep carries the visual manifests.
-    Asking by commit finds whichever run actually did the testing; asking by the run
-    that triggered this publish finds whichever one happens to have triggered it.
+    alongside affected-set runs, and the sweep can cover more visual manifests.
     """
     result = run(
         [
@@ -234,7 +230,7 @@ def search_ci_test_invocations(
             "invocation",
             "list",
             "--repo",
-            REPO_URL,
+            f"https://github.com/{repository}",
             "--commit",
             commit_sha,
             "--command",
@@ -257,7 +253,13 @@ def search_ci_test_invocations(
 
 
 def find_test_invocations(
-    *, run_id: str, run_attempt: str, commit_sha: str, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+    *,
+    run_id: str,
+    run_attempt: str,
+    commit_sha: str,
+    repository: str,
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
 ) -> list[str]:
     """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
 
@@ -271,7 +273,7 @@ def find_test_invocations(
     disagree across invocations, and mixing a sweep with an affected-set run invites
     exactly that.
     """
-    if found := search_ci_test_invocations(commit_sha, bbapi=bbapi, run=run):
+    if found := search_ci_test_invocations(commit_sha, repository=repository, bbapi=bbapi, run=run):
         return found
     return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
 
@@ -966,8 +968,19 @@ def parser() -> argparse.ArgumentParser:
 def _invocations_for(
     args: argparse.Namespace, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
 ) -> list[str]:
+    if not args.pull_request_head:
+        # Devel pushes run a full sweep, so use this run's own invocations.
+        return [
+            str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role=role))
+            for role in ("test", "build")
+        ]
     return find_test_invocations(
-        run_id=args.ci_run_id, run_attempt=args.ci_run_attempt, commit_sha=args.sha, bbapi=bbapi, run=run
+        run_id=args.ci_run_id,
+        run_attempt=args.ci_run_attempt,
+        commit_sha=args.sha,
+        repository=args.repository,
+        bbapi=bbapi,
+        run=run,
     )
 
 

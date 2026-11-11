@@ -5,12 +5,13 @@ bucket layout. Overview: <../README.md>.
 
 ## Finding the invocation
 
-The publisher asks BuildBuddy which CI test invocation the **commit** has, preferring
-the `//...` devel sweep — a commit can have both a sweep and an affected-set run, and
-the sweep can cover more visual tests, so the run that triggered the publish is
-often not the one that ran the tests. Fallback: IDs derived from the run's identity
-(<../../buildbuddy/ci/invocation_ids.py>), the only handle on a PR run (which records the merge
-SHA, not the head SHA).
+The triggering CI run's test and build IDs are derived from its run ID and attempt
+(<../../buildbuddy/ci/invocation_ids.py>). Devel push CI runs a full sweep, so the
+publisher uses those IDs directly. For a PR, the publisher first asks BuildBuddy for
+CI test invocations at the **head commit**, preferring a `//...` sweep if present:
+a separate sweep may cover visuals absent from that PR's affected set. If no matching
+invocation exists, it falls back to the triggering run's derived IDs; PR CI normally
+records the synthetic merge SHA rather than the head SHA.
 
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
