@@ -1511,7 +1511,8 @@ fn constructions_and_copied_getters_without_effects_keep_the_split() {
 
 /// An install publishes the receiver a method reads through `this` (directly
 /// or from an arrow), and what a class's field, constructor or base
-/// constructor stored on the instance it reads.
+/// constructor (a class, a function, or a class expression in `extends`)
+/// stored on the instance it reads.
 #[test]
 fn an_iterator_installed_through_a_receiver_runs_where_the_protocol_finds_it() {
     for (install, extra) in receiver_iterator_installs("second") {
@@ -1543,7 +1544,7 @@ const ITERATING_FLAGS: [&str; 3] = [
     "function flag() { for (const x of 'ab') {} return noop; }\nfunction run() { return flag()(); }",
 ];
 
-fn receiver_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 5] {
+fn receiver_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 7] {
     [
         (
             format!(
@@ -1574,6 +1575,18 @@ fn receiver_iterator_installs(callee: &str) -> [(String, &'static [&'static str]
                 "function* it() {{ {callee}(); }}\nclass Base {{ constructor() {{ this.it = it; }} }}\nclass K extends Base {{}}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
             ),
             &["it", "Base", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "function* it() {{ {callee}(); }}\nfunction Base() {{ this.it = it; }}\nclass K extends Base {{}}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
+            ),
+            &["it", "Base", "K", "k", "patched"][..],
+        ),
+        (
+            format!(
+                "function* it() {{ {callee}(); }}\nclass K extends (class {{ constructor() {{ this.it = it; }} }}) {{}}\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
+            ),
+            &["it", "K", "k", "patched"][..],
         ),
     ]
 }

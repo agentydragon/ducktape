@@ -7600,9 +7600,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// The unknown instance of a refused construction holds whatever its
     /// fields and constructors stored on `this`: publish every value of the
-    /// bindings the class body (and each local class it reaches, such as its
-    /// base) reads, and every function it creates. Kept out of line for
-    /// `execute_call`'s frame size.
+    /// bindings the class body reads and every function it creates, and the
+    /// same for each local base class. The `extends` expression ran when the
+    /// class was created; only the classes it names are followed. Kept out of
+    /// line for `execute_call`'s frame size.
     #[inline(never)]
     fn publish_refused_instance_reach(&mut self, key: u32, span: Span) {
         let index = self.inputs.index;
@@ -7617,18 +7618,45 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 continue;
             };
             let (lo, hi) = (class_span.lo.0, class_span.hi.0);
-            reached.extend(index.callable_spans.range(lo..hi).map(|(callable, _)| {
-                AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
-            }));
-            for binding in index.references_within(lo, hi) {
-                if !self.inputs.flow.is_declared(binding) {
-                    continue;
-                }
-                for value in self.inputs.flow.values_of_binding(binding) {
-                    if let Value::Alloc(Kind::Class, other) = value {
-                        pending.push(other);
+            let heritage = index
+                .class_heritage_spans
+                .get(&class)
+                .map(|heritage| (heritage.lo.0, heritage.hi.0));
+            let in_heritage = |position: u32| {
+                heritage.is_some_and(|(start, end)| start <= position && position < end)
+            };
+            reached.extend(
+                index
+                    .callable_spans
+                    .range(lo..hi)
+                    .filter(|(callable, _)| !in_heritage(**callable))
+                    .map(|(callable, _)| {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
+                    }),
+            );
+            if let Some((start, end)) = heritage {
+                pending.extend(index.class_spans.range(start..end).map(|(base, _)| *base));
+                for binding in index.references_within(start, end) {
+                    if self.inputs.flow.is_declared(binding) {
+                        pending.extend(
+                            self.inputs
+                                .flow
+                                .values_of_binding(binding)
+                                .into_iter()
+                                .filter_map(|value| match value {
+                                    Value::Alloc(Kind::Class, base) => Some(base),
+                                    _ => None,
+                                }),
+                        );
                     }
-                    reached.insert(AbstractValue::Value(value));
+                }
+            }
+            for binding in index
+                .references_within(lo, heritage.map_or(hi, |(start, _)| start))
+                .chain(index.references_within(heritage.map_or(hi, |(_, end)| end), hi))
+            {
+                if self.inputs.flow.is_declared(binding) {
+                    reached.extend(from_flow(self.inputs.flow.values_of_binding(binding)));
                 }
             }
         }

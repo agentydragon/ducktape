@@ -6229,6 +6229,8 @@ pub(super) struct ExecutionIndex {
     pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) class_bindings: BTreeMap<u32, Id>,
     pub(super) class_spans: BTreeMap<u32, Span>,
+    /// The `extends` expression of each class that has one.
+    pub(super) class_heritage_spans: BTreeMap<u32, Span>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
@@ -6479,6 +6481,7 @@ impl Default for ExecutionIndex {
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
             class_spans: BTreeMap::new(),
+            class_heritage_spans: BTreeMap::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
@@ -12017,6 +12020,10 @@ impl Visit for ExecutionIndex {
         }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_spans.insert(class.span.lo.0, class.span);
+        if let Some(heritage) = &class.super_class {
+            self.class_heritage_spans
+                .insert(class.span.lo.0, heritage.span());
+        }
         if let Some(site) = LocalClassConstructionShapes::private_empty_set_site(class) {
             self.private_empty_set_sites.insert(class.span.lo.0, site);
         }
