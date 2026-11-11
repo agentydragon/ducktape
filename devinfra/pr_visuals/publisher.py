@@ -215,70 +215,6 @@ INVOCATION_POLL_SECONDS = 2
 S3_IMAGE_UPLOAD_WORKERS = 8
 
 
-def search_ci_test_invocations(
-    commit_sha: str, *, repository: str, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
-) -> list[str]:
-    """The CI test invocations BuildBuddy holds for `commit_sha`, full sweep first.
-
-    A commit has several CI runs with different target sets — a `//...` devel sweep
-    alongside affected-set runs, and the sweep can cover more visual manifests.
-    """
-    result = run(
-        [
-            bbapi,
-            "--timeout",
-            "30s",
-            "invocation",
-            "list",
-            "--repo",
-            f"https://github.com/{repository}",
-            "--commit",
-            commit_sha,
-            "--command",
-            "test",
-            "--role",
-            "CI",
-            "--count",
-            "25",
-            "--json",
-        ],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"bbapi invocation list failed: {result.stderr.strip()}")
-    found = json.loads(result.stdout).get("invocation", [])
-    sweeps = [i["invocationId"] for i in found if i.get("pattern") == ["//..."]]
-    return sweeps or [i["invocationId"] for i in found]
-
-
-def find_test_invocations(
-    *,
-    run_id: str,
-    run_attempt: str,
-    commit_sha: str,
-    repository: str,
-    bbapi: Path = Path("bbapi"),
-    run: Runner = subprocess.run,
-) -> list[str]:
-    """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
-
-    The by-run derivation (devinfra/buildbuddy/ci/invocation_ids.py) is the only
-    handle on a PR run, which records the merge SHA
-    and so cannot be found by head SHA. It is the fallback rather than the primary
-    because it names the run that triggered this publish, which is frequently not the
-    run that ran the tests.
-
-    The two are not combined: `download_visual_tests` rejects a target whose rosters
-    disagree across invocations, and mixing a sweep with an affected-set run invites
-    exactly that.
-    """
-    if found := search_ci_test_invocations(commit_sha, repository=repository, bbapi=bbapi, run=run):
-        return found
-    return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
-
-
 def wait_for_test_invocations(
     invocations: list[str],
     *,
@@ -917,25 +853,6 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def _invocations_for(
-    args: argparse.Namespace, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
-) -> list[str]:
-    if not args.pull_request_head:
-        # Devel pushes run a full sweep, so use this run's own invocations.
-        return [
-            str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role=role))
-            for role in ("test", "build")
-        ]
-    return find_test_invocations(
-        run_id=args.ci_run_id,
-        run_attempt=args.ci_run_attempt,
-        commit_sha=args.sha,
-        repository=args.repository,
-        bbapi=bbapi,
-        run=run,
-    )
-
-
 @dataclass
 class PublicationResult:
     summary: str = "No tests executed by Bazel CI exposed screenshot output records."
@@ -967,24 +884,23 @@ def _publish(
             print(result.summary)
             return
         result.pull_request, base_sha = found.number, found.base_sha
-    logger.info("Finding test invocations")
-    invocations = _invocations_for(args, run=run)
     test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
-    logger.info("Waiting for %d test invocation(s)", 1 if test_id in invocations else len(invocations))
+    build_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build"))
+    logger.info("Waiting for test invocation %s", test_id)
     readiness = wait_for_test_invocations(
-        [test_id] if test_id in invocations else invocations,
-        workflow_succeeded=args.ci_conclusion == "success" and test_id in invocations,
-        allow_build_only=args.ci_conclusion in ("success", "failure") and test_id in invocations,
-        build_invocation_id=str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build")),
+        [test_id],
+        workflow_succeeded=args.ci_conclusion == "success",
+        allow_build_only=args.ci_conclusion in ("success", "failure"),
+        build_invocation_id=build_id,
         run=run,
     )
     logger.info("Test invocation readiness: %s", readiness)
     if readiness == "incomplete":
         raise RuntimeError("Bazel test invocation did not complete before visual publication")
     if args.ci_conclusion != "success":
-        result.ci_failures = list_ci_failures(invocations, run=run)
+        result.ci_failures = list_ci_failures([test_id, build_id], run=run)
     tests = (
-        download_visual_tests(invocations, args.work_dir / "tests", repository=args.repository, run=run)
+        download_visual_tests([test_id], args.work_dir / "tests", repository=args.repository, run=run)
         if readiness == "complete"
         else []
     )

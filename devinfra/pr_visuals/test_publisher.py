@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import subprocess
@@ -50,11 +49,9 @@ from devinfra.pr_visuals.publisher import (
     DownloadedAsset,
     DownloadedVariant,
     DownloadedVisualTest,
-    _invocations_for,
     build_bundle,
     diff_check,
     download_visual_tests,
-    find_test_invocations,
     list_ci_failures,
     main,
     target_slug,
@@ -80,70 +77,6 @@ class FakeBaselineSource:
         return self.objects.get(key)
 
 
-def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> None:
-    """The case that made #4927 insufficient: one commit, several CI runs. Only the
-    `//...` sweep carries the visual manifests; an affected-set run at the same commit
-    is complete and real and has none. Picking by commit must prefer the sweep."""
-    command_seen: list[list[str]] = []
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        command_seen.append(words)
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            json.dumps(
-                {
-                    "invocation": [
-                        {"invocationId": "affected-set", "pattern": ["//cluster/k8s:cluster_all_files"]},
-                        {"invocationId": "full-sweep", "pattern": ["//..."]},
-                    ]
-                }
-            ),
-            "",
-        )
-
-    found = find_test_invocations(
-        run_id="33066954750",
-        run_attempt="1",
-        commit_sha="5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
-        repository="example/repo",
-        run=fake_run,
-    )
-    assert found == ["full-sweep"]
-    assert command_seen == [
-        [
-            "bbapi",
-            "--timeout",
-            "30s",
-            "invocation",
-            "list",
-            "--repo",
-            "https://github.com/example/repo",
-            "--commit",
-            "5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
-            "--command",
-            "test",
-            "--role",
-            "CI",
-            "--count",
-            "25",
-            "--json",
-        ]
-    ]
-
-
-def test_devel_uses_this_runs_ids_without_searching_other_runs() -> None:
-    args = argparse.Namespace(ci_run_id="42975955001", ci_run_attempt="2", pull_request_head=None)
-
-    def unexpected_search(*_args: object, **_kwargs: object) -> NoReturn:
-        pytest.fail("devel must use its own full-sweep invocation")
-
-    assert _invocations_for(args, run=unexpected_search) == [
-        str(invocation_id(run_id="42975955001", attempt="2", role=role)) for role in ("test", "build")
-    ]
-
-
 def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
     """A run cancelled before Bazel started names two invocations BuildBuddy has never
     seen, because the IDs are assigned up front. That is a normal empty result — raising
@@ -165,6 +98,58 @@ def test_a_genuine_query_failure_still_raises() -> None:
         list_ci_artifacts(["a", "b"], run=lambda *_a, **_k: broken)
 
 
+@pytest.mark.parametrize("pull_request_head", [None, "pr-owner:topic"])
+@pytest.mark.parametrize("attempt", ["1", "2"])
+def test_publisher_uses_triggering_run_for_artifacts_and_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    publisher_run: PublisherRun,
+    pull_request_head: str | None,
+    attempt: str,
+) -> None:
+    test_id = str(invocation_id(run_id="33060467222", attempt=attempt, role="test"))
+    build_id = str(invocation_id(run_id="33060467222", attempt=attempt, role="build"))
+    commands: list[list[str]] = []
+    downloaded: list[list[str]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        commands.append(words)
+        if words[1:4] == ["--timeout", "30s", "invocation"] and words[4:] == ["status", test_id, "--json"]:
+            output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+        elif words[1] == "target" and words[2] in (test_id, build_id):
+            output = "{}"
+        else:
+            pytest.fail(f"unexpected BuildBuddy command: {words}")
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    def download(invocations: list[str], _destination: Path, **_kwargs: object) -> list[DownloadedVisualTest]:
+        downloaded.append(invocations)
+        return []
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", fake_run)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", download)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: PullRequestRef(8733, "c" * 40)
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        _publisher_argv(
+            tmp_path / "work",
+            "--ci-run-attempt",
+            attempt,
+            "--ci-conclusion",
+            "failure",
+            *(["--pull-request-head", pull_request_head] if pull_request_head else []),
+        ),
+    )
+
+    main()
+
+    assert downloaded == [[test_id]]
+    assert [words[2] for words in commands if words[1] == "target"] == [test_id, build_id]
+
+
 def test_late_invocation_artifacts_are_read_only_after_completion(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
 ) -> None:
@@ -175,16 +160,15 @@ def test_late_invocation_artifacts_are_read_only_after_completion(
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
-        if "invocation" in words and words[words.index("invocation") + 1] == "list":
-            return subprocess.CompletedProcess(
-                command, 0, '{"invocation":[{"invocationId":"late-sweep","pattern":["//..."]}]}', ""
-            )
+        assert words[words.index("invocation") + 1] == "status"
+        assert words[words.index("status") + 1] == str(invocation_id(run_id="33060467222", attempt="1", role="test"))
         nonlocal complete
         state = next(states)
         complete = state == "COMPLETE_INVOCATION_STATUS"
         return subprocess.CompletedProcess(command, 0, json.dumps({"invocation": [{"invocationStatus": state}]}), "")
 
-    def download(_invocations: list[str], _destination: Path, **_kwargs: object) -> list[DownloadedVisualTest]:
+    def download(invocations: list[str], _destination: Path, **_kwargs: object) -> list[DownloadedVisualTest]:
+        assert invocations == [str(invocation_id(run_id="33060467222", attempt="1", role="test"))]
         listed_after_completion.append(complete)
         return [candidate] if complete else []
 
@@ -291,8 +275,6 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
-        if "invocation" in words and words[words.index("invocation") + 1] == "list":
-            return subprocess.CompletedProcess(command, 0, '{"invocation":[]}', "")
         selector = words[words.index("status") + 1]
         build_id = str(invocation_id(run_id="33060467222", attempt="1", role="build"))
         return subprocess.CompletedProcess(
@@ -1060,7 +1042,6 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
         "build_bundle",
         "upload_bundle",
         "write_baseline_pointers",
-        "_invocations_for",
     )
     monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", lambda *_a, **_k: pytest.fail("Bazel read"))
     monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_a, **_k: pytest.fail("S3 client"))
@@ -1122,13 +1103,10 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
         "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
     )
 
-    # The PR head is absent from invocation search (CI records the merge SHA), but
-    # its derived test invocation is complete when publication begins.
+    # The triggering run's test invocation is complete when publication begins.
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
-        if "invocation" in words and words[words.index("invocation") + 1] == "list":
-            output = '{"invocation": []}'
-        elif "status" in words:
+        if "status" in words:
             output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
         elif "artifact" in words:
             output = "[]"
