@@ -40,6 +40,7 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
+        ":removal",
         ":verdict",
         "@pypi//pygit2",
     ],
@@ -233,7 +234,6 @@ py_library(
     deps = [
         ":git_repo",
         ":pull_request",
-        ":removal",
         ":verdict",
         ":worktree_gc",
         "@pypi//pygit2",

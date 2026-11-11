@@ -71,7 +71,7 @@ from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.repo_contents_cache_gc import EntryInspection, PrunableEntry
-from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
+from devinfra.gc.scan_progress import ProgressSink
 from devinfra.gc.verdict import verdict_of
 from devinfra.gc.workspace_scan import WorkspaceScan
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
@@ -790,12 +790,7 @@ def _all_command(
     """Classify worktrees, branches, and output bases together (the default command)."""
     _configure_logging(verbose=verbose)
     options = _Options(
-        output_user_root=output_user_root,
-        show_all=show_all,
-        sizes=sizes,
-        verbose=verbose,
-        workers=workers,
-        apply=prune,
+        output_user_root=output_user_root, show_all=show_all, sizes=sizes, verbose=verbose, workers=workers, apply=prune
     )
     asyncio.run(run(_ALL_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
@@ -836,12 +831,7 @@ def _bases_command(
     """The Bazel output-base slice of the joint scan."""
     _configure_logging(verbose=verbose)
     options = _Options(
-        output_user_root=output_user_root,
-        show_all=show_all,
-        sizes=sizes,
-        verbose=False,
-        workers=workers,
-        apply=delete,
+        output_user_root=output_user_root, show_all=show_all, sizes=sizes, verbose=False, workers=workers, apply=delete
     )
     asyncio.run(run(_BASES_COMMAND, options, repo=repo, pr_source=_pr_source(no_prs=no_prs)))
 
