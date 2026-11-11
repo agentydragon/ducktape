@@ -98,12 +98,27 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   other callbacks as possible arguments, evaluates against evolving state, and
   falls back at depth, expansion and pool limits. Reduce repeated cross-product
   exploration with proved callee/reach summaries and shared effect composition;
-  keep global/unknown behavior explicit. Close with neutral CLI controls around
-  the current limits, recursion, callback order and reentry, plus a real profiler
-  comparison on identical inputs. Exhaustion must retain conservative effects,
-  dependencies and precision-loss evidence. Increasing limits alone is not a
-  resolution; the rejected global-prefix fixpoint in <docs/design.md> needs new
-  evidence before reconsideration.
+  keep global/unknown behavior explicit. Also distinguish a callback's
+  primitive argument from its collection receiver: for a fresh dense array
+  with an own data index, a callback that only passes and returns that primitive
+  must not taint the array merely because the primitive reaches opaque code.
+  Retain the later own-index fact only with an interpreter proof, across every
+  reachable callback execution, that the receiver does not escape, is not
+  written, and has no descriptor or prototype change. Otherwise keep the current
+  conservative taint and getter/callback fallback; a later read of that same
+  index must remain an ordinary own-data read without that fallback. Follow
+  <plans/abstract_interpreter.md> and <plans/synchronous_execution_fallback.md>.
+  Close with a neutral positive CLI case for that shape and adversarial negatives
+  for receiver escape, receiver writes, changed descriptors or prototype,
+  replaced callback-producing methods, getters or proxies, recursion, dynamic
+  scope and truncated execution. Each negative must retain conservative
+  behavior; the positive must pass the ordinary realizability gate and
+  original/emitted translation validation. Also retain controls around the
+  current limits, callback order and reentry, plus a real profiler comparison
+  on identical inputs. Exhaustion must retain conservative effects, dependencies
+  and precision-loss evidence. Increasing limits alone is not a resolution; the
+  rejected global-prefix fixpoint in <docs/design.md> needs new evidence before
+  reconsideration.
 
 - **AR3 — Compose callable capabilities and initialization availability.**
   `CallableSummary` in <analysis_inputs.rs>, <cross_module_purity.rs> and
