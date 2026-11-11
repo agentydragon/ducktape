@@ -8,6 +8,7 @@ import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/
 const ITEMS = [
   ["status", "Status icon"],
   ["balance", "Available balance"],
+  ["pace-window", "Pace window"],
   ["pace", "Pace as percentage of leash"],
   ["sparkline", "Rolling pace sparkline"],
 ];

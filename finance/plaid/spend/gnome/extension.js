@@ -210,7 +210,21 @@ function panelSignal(allowance, window) {
   return { level: "good", label: "Pace ≤ leash" };
 }
 
-const PANEL_ITEMS = ["status", "balance", "pace", "sparkline"];
+const PANEL_ITEMS = ["status", "balance", "pace-window", "pace", "sparkline"];
+
+function migratePanelPaceWindow(settings) {
+  if (settings.get_boolean("panel-pace-window-migrated")) return;
+  const visible = settings.get_strv("panel-visible");
+  if (visible.includes("pace") && !visible.includes("pace-window"))
+    settings.set_strv("panel-visible", [...visible, "pace-window"]);
+  const order = settings.get_strv("panel-order");
+  if (!order.includes("pace-window")) {
+    const paceIndex = order.indexOf("pace");
+    order.splice(paceIndex < 0 ? order.length : paceIndex, 0, "pace-window");
+    settings.set_strv("panel-order", order);
+  }
+  settings.set_boolean("panel-pace-window-migrated", true);
+}
 
 function panelOrder(settings) {
   return [...new Set([...settings.get_strv("panel-order").filter((id) => PANEL_ITEMS.includes(id)), ...PANEL_ITEMS])];
@@ -255,6 +269,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       super._init(0.0, "Plaid Spend", false);
 
       this._settings = settings;
+      migratePanelPaceWindow(settings);
       this._openPreferences = openPreferences;
       this._destroyed = false;
       this._view = { cards: [], generated_at: null };
@@ -283,6 +298,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER, style_class: "plaid-spend-panel" });
       this._icon = new St.Icon({ icon_name: "credit-card-symbolic", style_class: "system-status-icon" });
       this._label = new St.Label({ text: "Loading…", y_align: Clutter.ActorAlign.CENTER });
+      this._paceWindowLabel = new St.Label({ y_align: Clutter.ActorAlign.CENTER });
       this._paceLabel = new St.Label({ y_align: Clutter.ActorAlign.CENTER });
       this._sparklineUnavailable = new St.Label({ text: "—", y_align: Clutter.ActorAlign.CENTER });
       this._sparkline = new St.DrawingArea({ width: 60, height: 16, y_align: Clutter.ActorAlign.CENTER });
@@ -674,13 +690,21 @@ const PlaidSpendIndicator = GObject.registerClass(
         danger: "dialog-error-symbolic",
         unknown: "dialog-question-symbolic",
       }[signal.level];
-      for (const actor of [this._icon, this._label, this._paceLabel, this._sparkline, this._sparklineUnavailable]) {
+      for (const actor of [
+        this._icon,
+        this._label,
+        this._paceWindowLabel,
+        this._paceLabel,
+        this._sparkline,
+        this._sparklineUnavailable,
+      ]) {
         for (const level of ["good", "caution", "danger", "unknown"])
           actor.remove_style_class_name(`plaid-spend-${level}`);
         actor.add_style_class_name(`plaid-spend-${signal.level}`);
       }
       this._label.set_text(fallback ?? formatCompactMoney(allowance?.available_minor_units, allowance?.currency));
-      this._paceLabel.set_text(`${window} ${pace ? `${Math.round(pace.ratio * 100)}%` : "—"}`);
+      this._paceWindowLabel.set_text(window);
+      this._paceLabel.set_text(pace ? `${Math.round(pace.ratio * 100)}%` : "—");
       for (const child of this._box.get_children()) this._box.remove_child(child);
       if (fallback !== null) {
         if (visible.has("status")) this._box.add_child(this._icon);
@@ -692,6 +716,7 @@ const PlaidSpendIndicator = GObject.registerClass(
         const actors = {
           status: this._icon,
           balance: this._label,
+          "pace-window": this._paceWindowLabel,
           pace: this._paceLabel,
           sparkline: count >= 2 ? this._sparkline : this._sparklineUnavailable,
         };
@@ -699,6 +724,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           if (!visible.has(id)) continue;
           this._box.add_child(actors[id]);
           if (id === "balance") labels.push(this._label.get_text());
+          if (id === "pace-window") labels.push(this._paceWindowLabel.get_text());
           if (id === "pace") labels.push(this._paceLabel.get_text());
         }
         // An empty selection still leaves a way to open the menu and preferences.
@@ -796,6 +822,7 @@ const PlaidSpendIndicator = GObject.registerClass(
             const actors = new Map([
               [this._icon, "status"],
               [this._label, "balance"],
+              [this._paceWindowLabel, "pace-window"],
               [this._paceLabel, "pace"],
               [this._sparkline, "sparkline"],
               [this._sparklineUnavailable, "sparkline-unavailable"],
@@ -940,14 +967,6 @@ const PlaidSpendIndicator = GObject.registerClass(
           );
           const daily = allowance.daily_reference_minor_units;
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
-          const windowToggle = new PopupMenu.PopupSwitchMenuItem(
-            "Use 30-day pace",
-            this._settings.get_string("pace-window") === "30d"
-          );
-          windowToggle.connect("toggled", (_item, state) =>
-            this._settings.set_string("pace-window", state ? "30d" : "7d")
-          );
-          this.menu.addMenuItem(windowToggle);
           if (this._settings.get_strv("panel-visible").includes("sparkline")) {
             const points = this._historyPoints();
             if (points.length > 0) this._addReadOnly(`Sparkline: last ${points.length} days of ${window} averages`);
