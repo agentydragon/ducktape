@@ -18,14 +18,14 @@ export function money(value: number | Decimal | null | undefined, currency: stri
   if (!minorUnits.isFinite()) return "Unavailable";
   const code = currency?.length === 3 ? currency.toUpperCase() : "USD";
   try {
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+    const precision = new Intl.NumberFormat("en-US", { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const exactAmount = minorUnits.div(new Decimal(10).pow(precision ?? 2));
     const digits =
       exact || (!exactAmount.isZero() && exactAmount.abs().lessThan(10) && !exactAmount.isInteger())
         ? (precision ?? 2)
         : 0;
-    const formatter = new Intl.NumberFormat(undefined, {
+    const formatter = new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: code,
       maximumFractionDigits: digits,
