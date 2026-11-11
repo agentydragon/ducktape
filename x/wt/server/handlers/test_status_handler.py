@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pygit2
 import pytest
@@ -12,6 +13,7 @@ from more_itertools import one
 
 from x.wt.server.handlers.status_handler import get_status
 from x.wt.server.rpc import ServiceDependencies
+from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.shared.protocol import (
     Collector,
     ComponentState,
@@ -35,13 +37,11 @@ def status_deps(repo_factory, config_factory) -> ServiceDependencies:
 
     git_manager = Mock()
 
-    index = Mock()
-    index.list_paths.return_value = [config.main_repo]
-
     return ServiceDependencies(
         config=config,
         git_manager=git_manager,
-        index=index,
+        index=WorktreeIndex.build([], config.main_repo),
+        run_discovery_once=AsyncMock(),
         gitstatusd_client=Mock(return_value=None),
         github_watcher=None,
         git_refs_watcher=git_refs_watcher,
@@ -77,6 +77,30 @@ async def test_get_status_returns_ok_on_success(status_deps: ServiceDependencies
 
     assert isinstance(item.result, StatusResultOk)
     assert item.result.status.branch_name == "feature-branch"
+
+
+async def test_empty_index_schedules_discovery_and_reports_main_worktree(status_deps: ServiceDependencies):
+    discovery_started = asyncio.Event()
+
+    async def discover() -> None:
+        discovery_started.set()
+
+    git_manager = Mock()
+    git_manager.get_repo.return_value.head_is_detached = True
+    git_manager.get_commit_info.return_value = None
+    deps = replace(
+        status_deps,
+        index=WorktreeIndex(by_path={}, by_name={}, main=None),
+        run_discovery_once=discover,
+        git_manager=git_manager,
+    )
+
+    response = await get_status(deps, StatusParams())
+    await discovery_started.wait()
+
+    item = one(response.items.values())
+    assert item.absolute_path == deps.config.main_repo
+    assert isinstance(item.result, StatusResultOk)
 
 
 async def test_get_status_reads_gitstatusd_client(status_deps: ServiceDependencies) -> None:
