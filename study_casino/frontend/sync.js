@@ -95,10 +95,6 @@ class CasinoSync {
   /** Re-fetch /state and update the cache. Called automatically after every
    *  postAction() and on every WS `state_changed` ping; exposed publicly so
    *  SyncIcon can offer a manual "retry" affordance. */
-  async syncOnce() {
-    await this.fetchState();
-  }
-
   async fetchState() {
     this.status.set({ kind: "syncing" });
     try {

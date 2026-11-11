@@ -97,7 +97,7 @@ export function SyncIcon() {
           data-testid={testid}
           title={title}
           aria-label={title}
-          onClick={() => casinoSync.syncOnce()}
+          onClick={() => casinoSync.fetchState()}
           style={iconStyle}
         >
           {glyph}
