@@ -221,8 +221,8 @@
       "sha256": "zcaOOCVfx/GJzszicLGTJAe5K/Y4bZBdOGcq4soigII="
     },
     "gazelle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-e1def400e18f/gazelle_python_binary",
-      "sha256": "4d70AOGPzoLYzLuvvXTxPUiZ+7KGOb/11eVTzbQK9qc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-1cda724cc8c3/gazelle_python_binary",
+      "sha256": "HNpyTMjDP9ALu8zv7LgQhFqmpTTnBN/y3PgzGhM86l0="
     },
     "skill-ci_latency": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-ff19e61367cb/ci_latency.skill",
