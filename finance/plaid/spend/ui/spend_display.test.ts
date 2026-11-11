@@ -7,6 +7,7 @@ describe("summary money", () => {
     [0, "USD", "$0"],
     [1, "USD", "$0.01"],
     [-1, "USD", "-$0.01"],
+    [300, "USD", "$3"],
     [999, "USD", "$9.99"],
     [1000, "USD", "$10"],
     [1250, "USD", "$13"],
@@ -18,6 +19,12 @@ describe("summary money", () => {
 
   it("keeps exact amounts available in details", () => {
     expect(money(1250, "USD", true)).toBe("$12.50");
+  });
+
+  it("does not round a sub-cent nonzero computed amount to zero", () => {
+    expect(money(0.1, "USD")).toBe("<$0.01");
+    expect(money(-0.1, "USD")).toBe("-<$0.01");
+    expect(money(0.1, "USD", true)).toBe("<$0.01");
   });
 });
 

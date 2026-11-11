@@ -65,17 +65,21 @@ function formatMoney(minorUnits, currency) {
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const amount = value / 10 ** (precision ?? 2);
-    const digits = amount !== 0 && Math.abs(amount) < 10 ? (precision ?? 2) : 0;
+    const digits = amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount) ? (precision ?? 2) : 0;
     const formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
       maximumFractionDigits: digits,
       minimumFractionDigits: digits,
     });
+    if (amount !== 0 && Math.abs(amount) < 0.5 / 10 ** (precision ?? 2)) {
+      return `${amount < 0 ? "-" : ""}<${formatter.format(1 / 10 ** (precision ?? 2))}`;
+    }
     return formatter.format(amount);
   } catch (_error) {
     const amount = value / 100;
-    return `${code} ${amount.toFixed(amount !== 0 && Math.abs(amount) < 10 ? 2 : 0)}`;
+    if (amount !== 0 && Math.abs(amount) < 0.005) return `${amount < 0 ? "-" : ""}<${code} 0.01`;
+    return `${code} ${amount.toFixed(amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount) ? 2 : 0)}`;
   }
 }
 

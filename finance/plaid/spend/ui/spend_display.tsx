@@ -21,18 +21,26 @@ export function money(value: number | Decimal | null | undefined, currency: stri
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const exactAmount = minorUnits.div(new Decimal(10).pow(precision ?? 2));
-    const digits = exact || (!exactAmount.isZero() && exactAmount.abs().lessThan(10)) ? (precision ?? 2) : 0;
+    const digits =
+      exact || (!exactAmount.isZero() && exactAmount.abs().lessThan(10) && !exactAmount.isInteger())
+        ? (precision ?? 2)
+        : 0;
     const formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
       maximumFractionDigits: digits,
       minimumFractionDigits: digits,
     });
+    const unit = new Decimal(10).pow(-(precision ?? 2));
+    if (!exactAmount.isZero() && exactAmount.abs().lessThan(unit.div(2))) {
+      return `${exactAmount.isNegative() ? "-" : ""}<${formatter.format(unit.toNumber())}`;
+    }
     const displayAmount = exactAmount.toDecimalPlaces(digits, Decimal.ROUND_HALF_UP);
     return formatter.format(displayAmount.toNumber());
   } catch {
     const amount = minorUnits.div(100).toNumber();
-    return `${code} ${amount.toFixed(exact || (amount !== 0 && Math.abs(amount) < 10) ? 2 : 0)}`;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.005) return `${amount < 0 ? "-" : ""}<${code} 0.01`;
+    return `${code} ${amount.toFixed(exact || (amount !== 0 && Math.abs(amount) < 10 && !Number.isInteger(amount)) ? 2 : 0)}`;
   }
 }
 

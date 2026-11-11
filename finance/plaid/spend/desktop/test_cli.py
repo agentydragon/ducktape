@@ -98,14 +98,14 @@ def test_formats_active_allowance_and_cards() -> None:
     assert "Available: $88" in output
     assert "Monthly credit: $100" in output
     assert "Spent this credit cycle: $12" in output
-    assert "Pending (included): $3.00" in output
+    assert "Pending (included): $3" in output
     assert "Provisional leash signal: warning" in output
     assert "7-day recorded flexible pace: $12/day" in output
     assert "30-day recorded flexible pace: $10/day" in output
     assert "Provisional leash rate: ~$23/day" in output
-    assert "7d unmatched: 2 ($3.00)" in output
+    assert "7d unmatched: 2 ($3)" in output
     assert "Estimated balance before next credit:" in output
-    assert "-$2.00" in output
+    assert "-$2" in output
     assert "Next credit:" in output
     assert "Sample card" in output
     assert "$12 / $100 · 12.0%" in output
@@ -143,6 +143,7 @@ def test_card_percent_uses_decimal_json_string() -> None:
         (-1, "-$0.01"),
         (49, "$0.49"),
         (50, "$0.50"),
+        (300, "$3"),
         (999, "$9.99"),
         (1000, "$10"),
         (1250, "$13"),

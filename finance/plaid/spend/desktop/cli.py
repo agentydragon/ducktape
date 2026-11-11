@@ -81,7 +81,7 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     code = currency.upper()
     precision = get_currency_precision(code)
     amount = Decimal(minor_units).scaleb(-precision)
-    digits = precision if amount and abs(amount) < 10 else 0
+    digits = precision if amount and abs(amount) < 10 and amount != amount.to_integral_value() else 0
     pattern = "¤#,##0" + ("." + "0" * digits if digits else "")
     rounded = amount.quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
     return format_currency(rounded, code, pattern, locale="en_US", currency_digits=False)
