@@ -961,6 +961,9 @@ pub enum ClassMembersPublicationWriter {
     MethodReceiver,
     /// The unknown instance of a refused local class construction.
     RefusedConstructionInstance,
+    /// The receiver of a member read or write that may run an accessor
+    /// reading `this`.
+    AccessorReceiver,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The

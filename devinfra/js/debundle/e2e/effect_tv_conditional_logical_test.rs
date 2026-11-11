@@ -1590,3 +1590,80 @@ fn receiver_iterator_installs(callee: &str) -> [(String, &'static [&'static str]
         ),
     ]
 }
+
+/// A refused construction whose class body stores only a literal keeps the
+/// split, although another module binding holds an uncalled effect.
+#[test]
+fn a_refused_construction_storing_literals_keeps_the_split() {
+    for flag in [
+        "function flag() { new K(); return noop; }\nfunction run() { flag(); return 0; }",
+        "function flag() { if (first()) {} new K(); return noop; }\nfunction run() { if (first()) {} flag(); return 0; }",
+        "function flag() { new K(); return noop; }\nfunction run() { return flag()(); }",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "const holder = {{ h: second }};\nclass Base {{}}\nclass K extends Base {{ constructor() {{ super(); this.n = 1; }} }}\n{flag}"
+            ),
+            &["holder", "Base", "K"],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+/// An install publishes the receiver an accessor or an optional-chain method
+/// reads through `this`, and what another statement stored on a class's
+/// prototype that a refused instance inherits.
+#[test]
+fn an_iterator_installed_through_an_accessor_or_prototype_runs_where_the_protocol_finds_it() {
+    for (install, extra) in accessor_iterator_installs("second") {
+        for flag in ITERATING_FLAGS {
+            assert_reader_split_diverges_with(&format!("{install}\n{flag}"), extra);
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same installs of a generator
+/// calling the effect-free `first` keep the split.
+#[test]
+fn an_iterator_installed_through_an_accessor_or_prototype_without_effects_keeps_the_split() {
+    for (install, extra) in accessor_iterator_installs("first") {
+        let fixture = with_reader_split(
+            &format!("{install}\n{}", ITERATING_FLAGS[0]),
+            extra,
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
+
+fn accessor_iterator_installs(callee: &str) -> [(String, &'static [&'static str]); 4] {
+    const DEFINE: &str =
+        "Object.defineProperty(String.prototype, Symbol.iterator, { value: this.it })";
+    [
+        (
+            format!(
+                "const obj = {{ it: function* () {{ {callee}(); }}, get install() {{ return {DEFINE}; }} }};\nconst patched = obj.install;"
+            ),
+            &["obj", "patched"][..],
+        ),
+        (
+            format!(
+                "const obj = {{ it: function* () {{ {callee}(); }}, set install(v) {{ {DEFINE}; }} }};\nconst patched = (obj.install = 1);"
+            ),
+            &["obj", "patched"][..],
+        ),
+        (
+            format!(
+                "const obj = {{ it: function* () {{ {callee}(); }}, install() {{ return {DEFINE}; }} }};\nconst patched = obj?.install();"
+            ),
+            &["obj", "patched"][..],
+        ),
+        (
+            format!(
+                "function* it() {{ {callee}(); }}\nclass K {{}}\nconst set = (K.prototype.it = it);\nconst k = new K();\nconst patched = Object.defineProperty(String.prototype, Symbol.iterator, {{ value: k.it }});"
+            ),
+            &["it", "K", "set", "k", "patched"][..],
+        ),
+    ]
+}

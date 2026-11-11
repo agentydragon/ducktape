@@ -6231,6 +6231,12 @@ pub(super) struct ExecutionIndex {
     pub(super) class_spans: BTreeMap<u32, Span>,
     /// The `extends` expression of each class that has one.
     pub(super) class_heritage_spans: BTreeMap<u32, Span>,
+    /// Object literals with a getter or setter that reads `this`: a member
+    /// read or write that may run it hands it the receiver.
+    pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    /// Constructors, methods and accessors of every class: they run as class
+    /// members, not as values the class body creates.
+    pub(super) class_member_callables: BTreeSet<u32>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
@@ -6482,6 +6488,8 @@ impl Default for ExecutionIndex {
             class_bindings: BTreeMap::new(),
             class_spans: BTreeMap::new(),
             class_heritage_spans: BTreeMap::new(),
+            class_member_callables: BTreeSet::new(),
+            this_reading_accessor_objects: BTreeSet::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
@@ -11080,7 +11088,39 @@ impl ExecutionIndex {
         );
         index.ident_references.sort_unstable();
         index.ident_references.dedup();
+        index.this_reading_accessor_objects = index
+            .callable_creations
+            .values()
+            .filter_map(|creation| match *creation {
+                DeferredCallableCreation::Getter {
+                    callable,
+                    home_object,
+                }
+                | DeferredCallableCreation::Setter {
+                    callable,
+                    home_object,
+                } => index.reads_this(callable).then_some(home_object),
+                _ => None,
+            })
+            .collect();
         index
+    }
+
+    /// Whether `callable`, or an arrow or other callable nested in it, reads
+    /// `this`. An unindexed or opaque callable may.
+    pub(super) fn reads_this(&self, callable: u32) -> bool {
+        let Some(span) = self.callable_spans.get(&callable) else {
+            return true;
+        };
+        self.callables.get(&callable).is_none_or(|body| body.opaque)
+            || self
+                .callable_spans
+                .range(span.lo.0..span.hi.0)
+                .any(|(nested, _)| {
+                    self.callables
+                        .get(nested)
+                        .is_some_and(|nested| nested.implicit_capture)
+                })
     }
 
     /// The bindings referenced in `[lo, hi)`.
@@ -12020,6 +12060,13 @@ impl Visit for ExecutionIndex {
         }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_spans.insert(class.span.lo.0, class.span);
+        self.class_member_callables
+            .extend(class.body.iter().filter_map(|member| match member {
+                ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
+                ClassMember::Method(method) => Some(method.function.span.lo.0),
+                ClassMember::PrivateMethod(method) => Some(method.function.span.lo.0),
+                _ => None,
+            }));
         if let Some(heritage) = &class.super_class {
             self.class_heritage_spans
                 .insert(class.span.lo.0, heritage.span());
