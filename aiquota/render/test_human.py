@@ -1,6 +1,9 @@
+import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -289,6 +292,30 @@ def test_decimal_summary_uses_cents_and_preserves_nonzero_threshold() -> None:
     assert format_extra_spend(0.004, 0.001) == "Extra spend this month: <$0.01 of <$0.01 limit · over by <$0.01"
     assert summary_hides_fraction(Decimal("10.001"), 3)
     assert not summary_hides_fraction(Decimal("100.000000000000001"))
+
+
+def _assert_currency_vector(actual: str, case: dict[str, Any]) -> None:
+    match = re.search(r"(?<!\d)(\d[\d,]*(?:\.\d+)?)", actual)
+    assert match is not None, actual
+    assert Decimal(match.group(1).replace(",", "")) == Decimal(str(case["expected_magnitude"]))
+    prefix = actual[: match.start()]
+    assert ("-" in prefix) == (Decimal(str(case["major_amount"])) < 0)
+    assert ("<" in prefix) == case["below_threshold"]
+
+
+def test_shared_currency_vectors_cover_cli_numeric_semantics(runfiles: Runfiles) -> None:
+    path = runfiles.root() / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    vectors = json.loads(path.read_text())
+    for case in vectors["cases"]:
+        if case["currency"] == "USD":
+            _assert_currency_vector(format_summary_usd(Decimal(case["major_amount"])), case)
+
+        minor_units = Decimal(case["minor_units"])
+        if minor_units == minor_units.to_integral_value():
+            rendered = format_summary_minor_currency(
+                int(minor_units), case["currency_exponent"], case["currency"]
+            )
+            _assert_currency_vector(rendered, case)
 
 
 def test_deadline_uses_viewer_zone_through_daylight_saving_change() -> None:

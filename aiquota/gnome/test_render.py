@@ -136,6 +136,19 @@ def fixture_json_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactor
         src = runfiles_root / f"ducktape/aiquota/testing/fixtures/{fixture_name}.yaml"
         data = load_quota_view_fixture(src)
         (dest / f"{fixture_name}.json").write_text(json.dumps(data, indent=2) + "\n")
+    vectors_path = runfiles_root / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    for case in json.loads(vectors_path.read_text())["cases"]:
+        if case["currency"] != "USD" or float(case["major_amount"]) <= 0:
+            continue
+        data = json.loads((dest / "extra_enabled_not_burning.json").read_text())
+        provider = next(provider for provider in data["providers"] if provider["provider"] == "claude")
+        provider["monthly_extra_spend"] = {
+            "is_enabled": True,
+            "used_usd": float(case["major_amount"]),
+            "monthly_limit_usd": 100.0,
+            "utilization": float(case["major_amount"]),
+        }
+        (dest / f"currency_policy_{case['id']}.json").write_text(json.dumps(data) + "\n")
     return dest
 
 
@@ -224,6 +237,26 @@ def test_claude_prepaid_balance(session: GnomeSession) -> None:
     assert popup.header == "Claude — Available balance: $123"
     assert "Claude prepaid credits" in popup.details
     assert not popup.balance
+
+
+def test_shared_currency_vectors_match_gnome_numeric_semantics(
+    session: GnomeSession, fixture_json_dir: Path, runfiles: Runfiles
+) -> None:
+    assert fixture_json_dir.is_dir()
+    vectors_path = runfiles.root() / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    for case in json.loads(vectors_path.read_text())["cases"]:
+        if case["currency"] != "USD" or float(case["major_amount"]) <= 0:
+            continue
+        session.close_menu()
+        session.reload(f"/fixtures/currency_policy_{case['id']}.json")
+        spend = string_reply(session.call("GetSpendText", "claude"))
+        amount = spend.split(": ", 1)[1].split(" of ", 1)[0]
+        match = re.search(r"(?<!\d)(\d[\d,]*(?:\.\d+)?)", amount)
+        assert match is not None, amount
+        assert float(match.group(1).replace(",", "")) == float(case["expected_magnitude"])
+        prefix = amount[: match.start()]
+        assert ("-" in prefix) == (float(case["major_amount"]) < 0)
+        assert ("<" in prefix) == case["below_threshold"]
 
 
 @pytest.mark.parametrize(

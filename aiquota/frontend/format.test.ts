@@ -7,6 +7,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   formatDuration,
@@ -21,6 +23,36 @@ import {
   formatSummaryUsd,
   roundHalfToEven,
 } from "../shared/presentation.js";
+
+type CurrencyVector = {
+  currency: string;
+  currency_exponent: number;
+  major_amount: string;
+  minor_units: string;
+  expected_magnitude: string;
+  below_threshold: boolean;
+};
+
+const currencyVectors = JSON.parse(
+  readFileSync(
+    join(
+      process.env.TEST_SRCDIR ?? "",
+      process.env.TEST_WORKSPACE ?? "",
+      "personal_dashboard/shared/currency_policy_vectors.json"
+    ),
+    "utf8"
+  )
+) as { cases: CurrencyVector[] };
+
+function expectCurrencyVector(actual: string, vector: CurrencyVector): void {
+  const match = actual.match(/(?<!\d)(\d[\d,]*(?:\.\d+)?)/);
+  expect(match, actual).not.toBeNull();
+  if (!match) return;
+  expect(Number(match[1].replaceAll(",", ""))).toBe(Number(vector.expected_magnitude));
+  const prefix = actual.slice(0, match.index);
+  expect(prefix.includes("-")).toBe(Number(vector.major_amount) < 0);
+  expect(prefix.includes("<")).toBe(vector.below_threshold);
+}
 
 beforeAll(() => vi.stubEnv("TZ", "UTC"));
 afterAll(() => vi.unstubAllEnvs());
@@ -137,6 +169,11 @@ describe("summary currency", () => {
   ])("formats %s as %s", (amount, expected) => {
     expect(formatSummaryUsd(amount)).toBe(expected);
   });
+
+  it.each(currencyVectors.cases.filter(({ currency }) => currency === "USD"))(
+    "matches shared numeric policy vector $currency $major_amount",
+    (vector) => expectCurrencyVector(formatSummaryUsd(Number(vector.major_amount)), vector)
+  );
 
   it("shows exact values when rounding would hide a difference from the limit", () => {
     expect(formatExtraSpend(10.4, 10.49)).toBe("Extra spend this month: $10.40 of $10.49 limit");

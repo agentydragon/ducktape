@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "policy": {
+    "rounding": "ROUND_HALF_UP",
+    "threshold": "A nonzero amount below half of one minor unit is represented by less than one minor unit, with its sign preserved.",
+    "amount_fields": "major_amount and minor_units are exact decimal strings; minor_units = major_amount * 10^currency_exponent.",
+    "scope": "These vectors fix numeric rounding and threshold semantics. Locale, currency symbol placement, grouping, and optional trailing zeroes remain renderer-owned; differences there are not declared intentional."
+  },
+  "cases": [
+    {
+      "id": "usd-positive-half-cent",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "5.125",
+      "minor_units": "512.5",
+      "expected_magnitude": "5.13",
+      "below_threshold": false
+    },
+    {
+      "id": "usd-negative-half-cent",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "-5.125",
+      "minor_units": "-512.5",
+      "expected_magnitude": "5.13",
+      "below_threshold": false
+    },
+    {
+      "id": "usd-positive-below-half-cent",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "0.004",
+      "minor_units": "0.4",
+      "expected_magnitude": "0.01",
+      "below_threshold": true
+    },
+    {
+      "id": "usd-negative-below-half-cent",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "-0.004",
+      "minor_units": "-0.4",
+      "expected_magnitude": "0.01",
+      "below_threshold": true
+    },
+    {
+      "id": "usd-half-cent-is-visible",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "0.005",
+      "minor_units": "0.5",
+      "expected_magnitude": "0.01",
+      "below_threshold": false
+    },
+    {
+      "id": "usd-one-cent-wire-amount",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "0.01",
+      "minor_units": "1",
+      "expected_magnitude": "0.01",
+      "below_threshold": false
+    },
+    {
+      "id": "usd-cent-rounding-crosses-ten",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "9.995",
+      "minor_units": "999.5",
+      "expected_magnitude": "10",
+      "below_threshold": false
+    },
+    {
+      "id": "usd-whole-dollar-half-up",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "10.5",
+      "minor_units": "1050",
+      "expected_magnitude": "11",
+      "below_threshold": false
+    },
+    {
+      "id": "usd-negative-whole-dollar-half-up",
+      "currency": "USD",
+      "currency_exponent": 2,
+      "major_amount": "-10.5",
+      "minor_units": "-1050",
+      "expected_magnitude": "11",
+      "below_threshold": false
+    },
+    {
+      "id": "jpy-whole-minor-unit",
+      "currency": "JPY",
+      "currency_exponent": 0,
+      "major_amount": "123",
+      "minor_units": "123",
+      "expected_magnitude": "123",
+      "below_threshold": false
+    },
+    {
+      "id": "kwd-fractional-major-unit",
+      "currency": "KWD",
+      "currency_exponent": 3,
+      "major_amount": "9.125",
+      "minor_units": "9125",
+      "expected_magnitude": "9.125",
+      "below_threshold": false
+    },
+    {
+      "id": "kwd-one-fils-wire-amount",
+      "currency": "KWD",
+      "currency_exponent": 3,
+      "major_amount": "0.001",
+      "minor_units": "1",
+      "expected_magnitude": "0.001",
+      "below_threshold": false
+    },
+    {
+      "id": "kwd-below-half-fils",
+      "currency": "KWD",
+      "currency_exponent": 3,
+      "major_amount": "0.0004",
+      "minor_units": "0.4",
+      "expected_magnitude": "0.001",
+      "below_threshold": true
+    }
+  ]
+}

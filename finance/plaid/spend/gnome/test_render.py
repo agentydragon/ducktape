@@ -15,6 +15,7 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
@@ -107,6 +108,16 @@ def fixture_json_dir(
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
+    vectors_path = runfiles_root / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    for case in json.loads(vectors_path.read_text())["cases"]:
+        if Decimal(case["minor_units"]) != Decimal(case["minor_units"]).to_integral_value():
+            continue
+        currency_view = allowance_scenarios["allowance_paced"].model_dump(mode="json")
+        currency_view["allowance"]["available_minor_units"] = int(case["minor_units"])
+        currency_view["allowance"]["currency"] = case["currency"]
+        (dest / f"currency_policy_{case['id']}.json").write_text(
+            json.dumps({"status": "ready", "error": "", "view": currency_view})
+        )
     fractional_view = allowance_scenarios["allowance_paced"].model_dump(mode="json")
     fractional_view["allowance"]["available_minor_units"] = 20025
     (dest / "allowance_fractional.json").write_text(
@@ -443,6 +454,31 @@ def test_rounded_balance_keeps_exact_amount_in_details(session: GnomeSession, ca
         session.call("OpenBalanceDetails")
         session.wait_for_paint()
         capture_menu.capture(session.open_menu(), label="exact balance details")
+
+
+def test_shared_currency_vectors_match_gnome_numeric_semantics(
+    session: GnomeSession, fixture_json_dir: Path, runfiles: Runfiles
+) -> None:
+    assert fixture_json_dir.is_dir()
+    vectors_path = runfiles.root() / "ducktape/personal_dashboard/shared/currency_policy_vectors.json"
+    for case in json.loads(vectors_path.read_text())["cases"]:
+        if Decimal(case["minor_units"]) != Decimal(case["minor_units"]).to_integral_value():
+            continue
+        session.close_menu()
+        session.reload(f"/fixtures/currency_policy_{case['id']}.json")
+        session.open_menu()
+        try:
+            menu_text = string_reply(session.call("GetMenuText"))
+        finally:
+            session.close_menu()
+        amount_line = next(line for line in menu_text.splitlines() if " available · " in line)
+        amount = amount_line.split(" available · ", 1)[0]
+        match = re.search(r"(?<!\d)(\d[\d,]*(?:\.\d+)?)", amount)
+        assert match is not None, amount
+        assert Decimal(match.group(1).replace(",", "")) == Decimal(case["expected_magnitude"])
+        prefix = amount[: match.start()]
+        assert ("-" in prefix) == (Decimal(case["major_amount"]) < 0)
+        assert ("<" in prefix) == case["below_threshold"]
 
 
 def test_allowance_warning(

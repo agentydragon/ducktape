@@ -1,6 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import Decimal from "decimal.js";
 
 import { money, time } from "./spend_display";
+
+type CurrencyVector = {
+  currency: string;
+  currency_exponent: number;
+  major_amount: string;
+  minor_units: string;
+  expected_magnitude: string;
+  below_threshold: boolean;
+};
+
+const currencyVectors = JSON.parse(
+  readFileSync(
+    join(
+      process.env.TEST_SRCDIR ?? "",
+      process.env.TEST_WORKSPACE ?? "",
+      "personal_dashboard/shared/currency_policy_vectors.json"
+    ),
+    "utf8"
+  )
+) as { cases: CurrencyVector[] };
+
+function expectCurrencyVector(actual: string, vector: CurrencyVector): void {
+  const match = actual.match(/(?<!\d)(\d[\d,]*(?:\.\d+)?)/);
+  expect(match, actual).not.toBeNull();
+  if (!match) return;
+  expect(Number(match[1].replaceAll(",", ""))).toBe(Number(vector.expected_magnitude));
+  const prefix = actual.slice(0, match.index);
+  expect(prefix.includes("-")).toBe(Number(vector.major_amount) < 0);
+  expect(prefix.includes("<")).toBe(vector.below_threshold);
+}
 
 describe("summary money", () => {
   it.each([
@@ -16,6 +49,10 @@ describe("summary money", () => {
   ])("formats %s minor units of %s", (amount, currency, expected) => {
     expect(money(amount, currency)).toBe(expected);
   });
+
+  it.each(currencyVectors.cases)("matches shared numeric policy vector $currency $major_amount", (vector) =>
+    expectCurrencyVector(money(new Decimal(vector.minor_units), vector.currency), vector)
+  );
 
   it("keeps exact amounts available in details", () => {
     expect(money(1250, "USD", true)).toBe("$12.50");
