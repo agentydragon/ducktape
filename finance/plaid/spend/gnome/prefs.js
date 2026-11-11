@@ -1,5 +1,6 @@
 import Adw from "gi://Adw";
 import Gio from "gi://Gio";
+import Gdk from "gi://Gdk";
 import Gtk from "gi://Gtk";
 
 import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
@@ -58,6 +59,37 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
     const leashRow = new Adw.SwitchRow({ title: "Show the daily leash line" });
     settings.bind("sparkline-show-leash", leashRow, "active", Gio.SettingsBindFlags.DEFAULT);
     sparklineGroup.add(leashRow);
+    const colorRow = new Adw.ActionRow({ title: "Leash line color", subtitle: "Defaults to the panel text color" });
+    const colorButton = new Gtk.ColorDialogButton({
+      dialog: new Gtk.ColorDialog({ title: "Leash line color", with_alpha: false }),
+      valign: Gtk.Align.CENTER,
+    });
+    const resetColor = new Gtk.Button({ label: "Reset", valign: Gtk.Align.CENTER });
+    let updatingColor = false;
+    const updateColor = () => {
+      const color = new Gdk.RGBA();
+      if (!color.parse(settings.get_string("sparkline-leash-color"))) color.parse("#ffffff");
+      updatingColor = true;
+      colorButton.rgba = color;
+      updatingColor = false;
+    };
+    colorButton.connect("notify::rgba", () => {
+      if (updatingColor) return;
+      const color = colorButton.rgba;
+      const hex = [color.red, color.green, color.blue]
+        .map((component) =>
+          Math.round(component * 255)
+            .toString(16)
+            .padStart(2, "0")
+        )
+        .join("");
+      settings.set_string("sparkline-leash-color", `#${hex}`);
+    });
+    resetColor.connect("clicked", () => settings.reset("sparkline-leash-color"));
+    settings.bind("sparkline-show-leash", colorRow, "sensitive", Gio.SettingsBindFlags.GET);
+    colorRow.add_suffix(colorButton);
+    colorRow.add_suffix(resetColor);
+    sparklineGroup.add(colorRow);
     page.add(group);
     page.add(windowGroup);
     page.add(sparklineGroup);
@@ -107,11 +139,13 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
       settings.connect("changed::sparkline-history-days", () => {
         historyRow.selected = days.indexOf(Number(settings.get_string("sparkline-history-days")));
       }),
+      settings.connect("changed::sparkline-leash-color", updateColor),
     ];
     // GSettings reports changes only for keys read after connecting a handler.
     rebuild();
     windowRow.selected = settings.get_string("pace-window") === "30d" ? 1 : 0;
     historyRow.selected = days.indexOf(Number(settings.get_string("sparkline-history-days")));
+    updateColor();
     window.connect("close-request", () => {
       for (const handler of handlers) settings.disconnect(handler);
       return false;

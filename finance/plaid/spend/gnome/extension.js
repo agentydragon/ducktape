@@ -569,9 +569,15 @@ const PlaidSpendIndicator = GObject.registerClass(
         }
         const x = (index) => pad + (index * Math.max(0, width - 2 * pad)) / Math.max(1, values.length - 1);
         const y = (value) => height - pad - ((value - min) / (max - min)) * Math.max(0, height - 2 * pad);
-        const color = area.get_theme_node().get_foreground_color();
         if (showLeash) {
-          cr.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, 0.45);
+          const customColor = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(
+            this._settings.get_string("sparkline-leash-color")
+          );
+          const color = this.get_theme_node().get_foreground_color();
+          const [red, green, blue] = customColor
+            ? customColor.slice(1).map((component) => parseInt(component, 16))
+            : [color.red, color.green, color.blue];
+          cr.setSourceRGBA(red / 255, green / 255, blue / 255, 0.85);
           cr.setLineWidth(1);
           cr.setDash([2, 2], 0);
           cr.moveTo(pad, y(reference));
@@ -807,6 +813,7 @@ const PlaidSpendIndicator = GObject.registerClass(
             if (config.window) this._settings.set_string("pace-window", config.window);
             if ("anchorZero" in config) this._settings.set_boolean("sparkline-anchor-zero", config.anchorZero);
             if ("showLeash" in config) this._settings.set_boolean("sparkline-show-leash", config.showLeash);
+            if ("leashColor" in config) this._settings.set_string("sparkline-leash-color", config.leashColor);
             if (config.historyDays) this._settings.set_string("sparkline-history-days", String(config.historyDays));
           },
           GetDaemonOwner: () => this._proxy?.g_name_owner || "",
