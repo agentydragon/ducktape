@@ -703,7 +703,7 @@ async def _roll_gateway_for_central_session(
                 endpoint.get("conditions", {}).get("ready")
                 and new_pod["status"]["podIP"] in endpoint.get("addresses", [])
                 for item in slices
-                for endpoint in item.get("endpoints", [])
+                for endpoint in item.get("endpoints") or []
             ):
                 outage_seconds = asyncio.get_running_loop().time() - unavailable_started
                 break
