@@ -132,8 +132,8 @@ Rules for the operations:
   it must also require the destination: rebinding from I to J makes whatever I left in the workspace
   run as J, so the caller needs the right to create Sessions as J.
 - **Binding across Identities is deferred.** A later rule may allow a Session–environment binding
-  where the Session's Identity differs from the environment's. It would come in a separate task DAG
-  node, with its own model of what each side may see and do; until then step 3 of
+  where the Session's Identity differs from the environment's. It would come in
+  [`CROSS_IDENTITY_SESSION_BINDING`](task_dag.md#cross_identity_session_binding--binding-a-session-to-another-identitys-environment), with its own model of what each side may see and do; until then step 3 of
   [admitting a binding](#operations) holds without exception.
 - **Reading your own environments is implied** (question 2): an Identity reads the environments
   bound to it without a rule, and `read` grants reading any other target.
@@ -149,15 +149,15 @@ Rules for the operations:
 - **Admitting a binding.** Dispatcher admits a Session–environment binding of Session S to
   environment E when all of these hold:
   1. The caller has authority over S: implied when the caller's Identity is S's Identity. Across
-     Identities it is refused until Session authority decides it (`SESSION_IDENTITY_AUTHZ`). At a
+     Identities it is refused; that authority is deferred to
+     [`SESSION_CROSS_IDENTITY_AUTHORITY`](task_dag.md#session_cross_identity_authority--acting-on-another-identitys-sessions). At a
      native `CreateSession`, S does not exist yet and this step does not apply.
   2. A `bind_session` rule of the caller's matches E.
   3. S's Identity is E's bound Identity. This is the existing invariant, not policy: a native
      `CreateSession` takes the Session's Identity from the placed Sandbox, delivery refuses a
      mismatch, and the [session model](session_environment_model.md) requires it of attachments. No
-     grant overrides it.
-     Rules allowing a binding across Identities may come later, under their own task DAG node; this
-     rule type does not express them.
+     grant overrides it. Rules allowing a binding across Identities may come later
+     ([`CROSS_IDENTITY_SESSION_BINDING`](task_dag.md#cross_identity_session_binding--binding-a-session-to-another-identitys-environment)); this rule type does not express them.
   4. E's own state allows it: no operator stop or pending delete, the incarnation is current, and
      E has room for another binding.
 - **A Session's Identity never changes.** No operation rebinds a Session to another Identity: its
