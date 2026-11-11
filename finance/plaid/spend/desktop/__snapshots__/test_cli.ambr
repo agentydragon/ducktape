@@ -1,0 +1,12 @@
+# serializer version: 1
+# name: test_compact_cli_snapshot
+  '''
+  Plaid Spend
+  Available: $88 · advisory allowance
+  7d pace: $12/day · 51% of leash · leash ~$23/day
+  Unmatched: 2 ($3)
+  7d pace · last 7 days: ▃▄▅·▆▇█  ($0 to $28/day · gaps: unknown)
+  Sample card ···· 1234 (Example bank): $12 / $100 · 12.0%
+  View updated: Jan 31, 16:00
+  '''
+# ---

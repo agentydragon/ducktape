@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_bazel
+from syrupy.assertion import SnapshotAssertion
 
 from finance.plaid.spend.allowance import (
     AllowanceSpendPeriod,
@@ -152,6 +153,52 @@ def test_sparkline_scale_thresholds_gaps_and_history_span() -> None:
     assert "\x1b[31m" in graph
     assert _sparkline(history, "7d", 7, "zero", False) != _sparkline(history, "7d", 7, "auto", False)
     assert "\x1b[" not in _sparkline(history, "7d", 7, "zero", False)
+
+
+@pytest.mark.asyncio
+async def test_compact_cli_snapshot(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], snapshot: SnapshotAssertion
+) -> None:
+    view = SpendView(generated_at=NOW, cards=[sample_card()], allowance=sample_allowance())
+    history = PaceHistory(
+        generated_at=NOW,
+        time_zone="UTC",
+        currency="USD",
+        status=Status.ACTIVE,
+        last_synced_at=NOW,
+        daily_reference_minor_units=2345,
+        windows=[
+            PaceHistoryWindow(
+                period_id=PeriodId.ROLLING_7D,
+                points=[
+                    PaceHistoryPoint(date=NOW.date() - timedelta(days=6 - i), observed_daily_minor_units=value)
+                    for i, value in enumerate([900, 1200, 1600, None, 2200, 2500, 2800])
+                ],
+            )
+        ],
+        issues=[],
+    )
+
+    class Bus:
+        async def connect(self) -> Bus:
+            return self
+
+        def disconnect(self) -> None:
+            pass
+
+    async def call(_bus: object, member: str) -> list[str]:
+        return [history.model_dump_json() if member == "GetPaceHistory" else view.model_dump_json()]
+
+    async def prop(_bus: object, name: str) -> str:
+        return "ready" if name == "Status" else ""
+
+    format_timestamp = cli._format_timestamp
+    monkeypatch.setattr(cli, "MessageBus", Bus)
+    monkeypatch.setattr(cli, "_call", call)
+    monkeypatch.setattr(cli, "_property", prop)
+    monkeypatch.setattr(cli, "_format_timestamp", lambda value: format_timestamp(value, now=NOW, tz=UTC))
+    await cli._run("show", False)
+    assert capsys.readouterr().out.rstrip("\n") == snapshot
 
 
 @pytest.mark.asyncio

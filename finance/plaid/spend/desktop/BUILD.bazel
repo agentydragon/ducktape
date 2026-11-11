@@ -62,6 +62,8 @@ py_library(
 py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
+    data = ["__snapshots__/test_cli.ambr"],
+    uses_syrupy = True,
     deps = [
         ":cli",
         "//:conftest",
@@ -70,6 +72,7 @@ py_test(
         "//finance/plaid/spend:pace_history_models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )
 
