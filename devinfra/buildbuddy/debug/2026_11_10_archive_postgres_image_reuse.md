@@ -122,3 +122,38 @@ making progress at their deadlines. Provider-side CPU and I/O visibility during
 a failing action would be needed to investigate that boundary. The earlier
 [loader comparison](../../debug/2026_10_27_oci_loader_comparison.md) did not
 establish a faster replacement for the existing loader.
+
+## Follow-up guest CPU and disk observations
+
+On 2026-11-11 UTC, two more cold runs of the real `test_database_migrate`
+target used source `1459dc9fb63d362d248bed98fad833d12f926c43`, with an
+instrumentation wrapper and distinct temporary local-only recycling keys. Both
+passed and landed on `sjc-*` hosts. The wrapper sampled guest `/proc/diskstats`,
+`/proc/stat`, and CPU and I/O pressure at 0.5-second intervals; the first run
+also captured kernel-inclusive `perf` samples at 49 Hz. These are instrumented
+runs, not a representative fleet sample.
+
+The following counter deltas cover the sampled intervals enclosing each logged
+PostgreSQL import. Disk counters are guest-wide, and CPU and I/O-wait core-seconds
+sum across six guest vCPUs; neither is an attribution solely to PostgreSQL.
+
+| Invocation                                                                            | Import | Root `vda` writes | Workspace `vdb` reads |    Used CPU |    I/O wait | CPU PSI some | I/O PSI some |
+| ------------------------------------------------------------------------------------- | -----: | ----------------: | --------------------: | ----------: | ----------: | -----------: | -----------: |
+| [98e6f327](https://app.buildbuddy.io/invocation/98e6f327-4c37-43e4-9de0-ef2d953656ab) | 14.7 s |           446 MiB |               155 MiB | 23.4 core-s | 1.37 core-s |       0.75 s |      0.089 s |
+| [8d31c267](https://app.buildbuddy.io/invocation/8d31c267-07dc-49cd-a960-47e95f89ba94) | 15.5 s |           534 MiB |               155 MiB | 31.7 core-s | 2.19 core-s |       2.55 s |       0.10 s |
+
+The first run's perf capture reported no lost samples. During its approximately
+12-second `unpigz` window, 641 samples were in Docker and 156 in `unpigz`;
+Docker stacks included `copy_user_enhanced_fast_string`, `generic_perform_write`,
+and `ext4_buffered_write_iter`. This supports CPU work in Docker's unpack and
+guest filesystem-write path. The small guest I/O-pressure totals do not show
+sustained guest-visible I/O stalls in these two windows; they do not measure
+provider physical-disk latency or exclude buffered I/O costs. CPU pressure
+records runnable wait, not cgroup throttling.
+
+These two runs do not explain the earlier GKE–SJC timing difference: both used
+SJC, and the earlier GKE and SJC profiles had different kernel coverage.
+Synchronized provider-side host CPU and backing-disk metrics, or an identically
+instrumented cold run with controllable GKE placement, would be needed to
+separate those explanations. No remote snapshot sharing or save-policy change
+was used.
