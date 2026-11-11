@@ -68,11 +68,6 @@ class StepResult:
     done: bool
 
 
-@dataclass
-class CompactionResult:
-    compacted: bool
-
-
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
     validate_openai_strict_mode_schema(input_schema, tool_name)
     return FunctionToolParam(name=tool_name, description=description, parameters=input_schema, strict=True)
@@ -299,25 +294,23 @@ class Agent:
             return await self._dynamic_instructions()
         return None
 
-    async def compact_transcript(
-        self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None
-    ) -> CompactionResult:
+    async def compact_transcript(self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None) -> bool:
         """Summarize the transcript prefix before the last `keep_recent_turns` items.
 
         The prefix needs at least three items; it becomes one summary `UserMessage`.
-        If no prompt is supplied, load `compaction_prompt.md`.
+        If no prompt is supplied, load `compaction_prompt.md`. Return whether compaction occurred.
         """
 
         boundary_index = max(0, len(self._transcript) - keep_recent_turns)
 
         if boundary_index < 1:
-            return CompactionResult(compacted=False)
+            return False
 
         all_to_compact = self._transcript[:boundary_index]
         recent_region = self._transcript[boundary_index:]
 
         if len(all_to_compact) < 3:
-            return CompactionResult(compacted=False)
+            return False
 
         summary_text = await self._generate_summary(all_to_compact, summarization_prompt)
 
@@ -328,7 +321,7 @@ class Agent:
             *recent_region,  # Keep recent transcript items unchanged.
         ]
 
-        return CompactionResult(compacted=True)
+        return True
 
     async def _generate_summary(self, items: list[TranscriptItem], custom_prompt: str | None) -> str:
         """Serialize messages, reasoning items, function calls, and outputs for the summarizer."""
@@ -483,8 +476,8 @@ class Agent:
                     "Cannot compact transcript when last item is a ReasoningItem. "
                     "Handlers must not return Compact() after receiving reasoning output."
                 )
-            result = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
-            if result.compacted:
+            compacted = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
+            if compacted:
                 logger.info(
                     "Transcript compacted (kept %d recent turns, compacted %d items)",
                     decision.keep_recent_turns,
@@ -494,7 +487,7 @@ class Agent:
                 logger.info("Compaction skipped (not enough items to compact)")
 
             for h in self._handlers:
-                h.on_compaction_complete(compacted=result.compacted)
+                h.on_compaction_complete(compacted=compacted)
 
             return  # Continue to next iteration after compaction
 

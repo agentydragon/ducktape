@@ -8,7 +8,7 @@ if ! /usr/bin/perf stat -e cpu-clock -- /usr/bin/busybox true >/dev/ttyS0 2>&1; 
 fi
 
 # System-wide sampling starts before Runner. It stays in this separate systemd service, outside
-# the 96 MiB native executor leaf, and leaves the Codex app-server command and PID unchanged.
+# the 256 MiB native executor leaf, and leaves the Codex app-server command and PID unchanged.
 # The state virtiofs is shared with the launcher's virtiofs-state sidecar, which the test uses
 # to retain the raw file before deleting this Sandbox.
 profile=/state/testing/profiles/native-startup.perf.data

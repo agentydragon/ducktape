@@ -1,17 +1,25 @@
 # VM tool OOM budget probe, 2026-10-31
 
-The Codex tool OOM case previously used the ordinary VM test profile. Its native executor leaf had
+## Current status, 2026-11-10
+
+The OOM fixture now uses the ordinary 256 MiB native executor limit; its only special setting is
+the guest cgroup observer. The 96 MiB override in the historical experiment below was removed after
+a 96 MiB run killed both the intended command and the Codex process. A 256 MiB RBE control passed
+with the existing single-kill and same-session recovery assertions intact; details and artifacts are
+recorded at the end of this note.
+
+The Codex tool OOM case originally used the ordinary VM test profile. Its native executor leaf had
 `memory.max=268435456` (256 MiB), `memory.swap.max=0`, and `memory.oom.group=0`. The guest runs a
 real Codex shell command that touches pages until kernel memcg OOM selects the command as its
-victim. The exec-server, runner service, and the rest of the VM suite do not need that 256 MiB
-tool budget.
+victim. The original experiment assumed the exec-server, runner service, and rest of the VM suite did
+not need that full tool budget.
 
-The fixture now clones the VM SandboxTemplate and Runner config for this case alone, setting only
-the native executor leaf's `memory_max_bytes` to 96 MiB. Guest RAM remains 1536 MiB; the service,
+The 96 MiB experiment cloned the VM SandboxTemplate and Runner config for this case alone, setting
+the native executor leaf's `memory_max_bytes` to 96 MiB. Guest RAM remained 1536 MiB; the service,
 aggregate, and process memory budgets remain identical to the ordinary template. This keeps the
 exec-server cold-start path and systemd/cgroup hierarchy under test while reducing the amount of
-memory the tool must charge before the kernel kills it. A rendered-fixture test asserts the two
-profiles differ only in that executor leaf limit.
+memory the tool had to charge before the kernel killed it. A rendered-fixture test asserted the two
+profiles differed only in that executor leaf limit.
 
 ## Evidence
 
@@ -73,3 +81,47 @@ The candidate Python libraries built in BuildBuddy invocation
 rendered-fixture test passed in
 [`19a0dd4b`](https://app.buildbuddy.io/invocation/19a0dd4b-5575-4889-9583-9cefff2cdfa8). Normal
 pre-commit hooks passed on all changed source and documentation files.
+
+## Follow-up, 2026-11-10
+
+The `test_vm` failure in [BuildBuddy invocation `198b8476`](https://app.buildbuddy.io/invocation/198b8476-2718-5d75-bbef-01a1c53beb72)
+occurred under the 96 MiB limit. Its pre-OOM telemetry reported `memory.max=100663296`, swap and
+`oom_group` disabled, and all counters at zero. The guest console first shows the selected `awk`
+process killed at 95.7 seconds (`anon-rss=60544 KiB`). A later EROFS page fault reaches the same
+96 MiB limit (`usage=limit=98304 KiB`) and the kernel kills Codex (`anon-rss=35916 KiB`), which
+accounts for the lost tool session. The [invocation artifacts](https://app.buildbuddy.io/invocation/198b8476-2718-5d75-bbef-01a1c53beb72)
+can be read with:
+
+```bash
+bbapi artifact cat 198b8476-2718-5d75-bbef-01a1c53beb72 vm-codex-oom.json
+bbapi artifact cat 198b8476-2718-5d75-bbef-01a1c53beb72 1415586-virt-serial0-log.log
+```
+
+With the limit restored to 256 MiB, [RBE invocation `09bf7d75`](https://app.buildbuddy.io/invocation/09bf7d75-a63d-45e3-9d70-a1b3eef17660)
+passed `//agentplane/system_tests/suites:test_vm` in 368.361 seconds. The full before/after cgroup
+measurements were:
+
+| Field                                             | Before OOM            | After same-session follow-up |
+| ------------------------------------------------- | --------------------- | ---------------------------- |
+| Native executor cgroup                            | Same native leaf path | Same native leaf path        |
+| `memory.max`                                      | 268435456             | 268435456                    |
+| `memory.swap.max` / `memory.oom.group`            | 0 / 0                 | 0 / 0                        |
+| Executor subtree `oom` events                     | 0                     | 8                            |
+| Native leaf `oom` / `oom_kill` / `oom_group_kill` | 0 / 0 / 0             | 0 / 1 / 0                    |
+
+The OOM command returned 137 after 18471 ms. The console records exactly one kernel kill: `awk`
+PID 1226, `oom_score_adj=1000`, `anon-rss=217856 KiB`, at a 256 MiB cgroup usage. The Runner boot
+ID, process ID/PID, app-server session, and native session remained unchanged immediately after
+the kill and after the follow-up, which returned 0 and printed `VM_OOM_FOLLOWUP_OK`. The executor
+subtree event count is not a victim count; the test checks it increased, while the leaf's
+`oom_kill` counter verifies the one killed process. This one control demonstrates that the
+256 MiB profile can complete the full asserted path in one RBE run; it does not estimate its
+failure rate.
+
+The [control invocation artifacts](https://app.buildbuddy.io/invocation/09bf7d75-a63d-45e3-9d70-a1b3eef17660)
+can be read with:
+
+```bash
+bbapi artifact cat 09bf7d75-a63d-45e3-9d70-a1b3eef17660 vm-codex-oom.json
+bbapi artifact cat 09bf7d75-a63d-45e3-9d70-a1b3eef17660 1415560-virt-serial0-log.log
+```

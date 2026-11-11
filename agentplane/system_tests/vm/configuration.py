@@ -8,7 +8,6 @@ OOM_TEMPLATE = "environment-vm-codex-oom"
 
 _MIB = 1024 * 1024
 CPU_QUOTA_PERIOD_MICROS = 100_000
-OOM_EXECUTOR_MEMORY_BYTES = 96 * _MIB
 # Test memory budgets stay below staging while each native workload gets two emulated CPUs.
 RESOURCES = GuestResources(
     guest_memory_bytes=1536 * _MIB,

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 import pytest
 import pytest_bazel
 from botocore.exceptions import ClientError
+from github import Github
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
@@ -205,7 +206,7 @@ def test_late_invocation_artifacts_are_read_only_after_completion(
         "devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_k: PullRequestRef(8733, "c" * 40)
     )
 
-    _run_test_main(run=fake_run, client=EmptyBucket())
+    _run_test_main(run=fake_run, client=EmptyBucket(), github=cast(Github, FakePublisherGithub()))
 
     assert listed_after_completion == [True]
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
@@ -223,7 +224,7 @@ def test_incomplete_invocation_cannot_advance_a_devel_baseline(
     _forbid(monkeypatch, "download_visual_tests", "upload_bundle", "write_baseline_pointers")
 
     with pytest.raises(RuntimeError, match="did not complete"):
-        _run_test_main(run=fake_run, client=EmptyBucket())
+        _run_test_main(run=fake_run, client=EmptyBucket(), github=cast(Github, FakePublisherGithub()))
 
     assert [check["conclusion"] for check in publisher_run.checks] == ["failure"]
 
@@ -314,7 +315,7 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
 
     _forbid(monkeypatch, "download_visual_tests", "upload_bundle", "write_baseline_pointers")
 
-    _run_test_main(run=fake_run, client=EmptyBucket())
+    _run_test_main(run=fake_run, client=EmptyBucket(), github=cast(Github, FakePublisherGithub()))
 
     assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
@@ -951,12 +952,7 @@ def _success_comment(commit_sha: str) -> str:
     ],
 )
 def test_publish_pull_request_comment(
-    monkeypatch: pytest.MonkeyPatch,
-    existing_body: str | None,
-    kind: CommentKind,
-    ci_conclusion: str,
-    expected_edit: bool,
-    expected_create: bool,
+    existing_body: str | None, kind: CommentKind, ci_conclusion: str, expected_edit: bool, expected_create: bool
 ) -> None:
     edits: list[str] = []
     created: list[str] = []
@@ -991,11 +987,11 @@ def test_publish_pull_request_comment(
         def get_issue(self, _pull_request: int) -> FakeIssue:
             return FakeIssue()
 
-    monkeypatch.setattr("devinfra.pr_visuals.comment_publishing.Github", FakeGithub)
+    github = FakeGithub()
     update = CommentUpdate(
         body="replacement", state=CommentState(commit_sha=HEAD_SHA, kind=kind, ci_conclusion=ci_conclusion)
     )
-    publish_pull_request_comment(repository=REPOSITORY, pull_request=4594, update=update, token="token")
+    publish_pull_request_comment(github=cast(Github, github), repository=REPOSITORY, pull_request=4594, update=update)
 
     assert edits == ([update.render()] if expected_edit else [])
     assert created == ([update.render()] if expected_create else [])
@@ -1054,6 +1050,14 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pull_request_head: str | None
 ) -> None:
     checks: list[dict[str, object]] = []
+    github_clients: list[FakePublisherGithub] = []
+
+    def create_github_client(**_kwargs: object) -> FakePublisherGithub:
+        github = FakePublisherGithub()
+        github_clients.append(github)
+        return github
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github_client)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
     _forbid(
         monkeypatch,
@@ -1084,6 +1088,8 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     assert len(checks) == 1
     assert checks[0]["conclusion"] == "cancelled"
     assert checks[0]["commit_sha"] == HEAD_SHA
+    assert len(github_clients) == 1
+    assert checks[0]["github"] is github_clients[0]
 
 
 PR_CHECK_ID = "pr-visual-review:33060467222:1"
@@ -1094,6 +1100,15 @@ class PublisherRun:
     checks: list[dict[str, object]] = field(default_factory=list)
     comments: list[dict[str, object]] = field(default_factory=list)
     runner: Runner = subprocess.run
+    github_clients: list[FakePublisherGithub] = field(default_factory=list)
+
+
+class FakePublisherGithub:
+    def __enter__(self) -> FakePublisherGithub:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        pass
 
 
 @pytest.fixture
@@ -1103,7 +1118,12 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
     The run's event is not trusted to name its pull request, so the publisher is handed the run's head ref
     instead. A test of another kind of run replaces `sys.argv`.
     """
-    run = PublisherRun()
+    run = PublisherRun(github_clients=[FakePublisherGithub()])
+
+    def create_github_client(**_kwargs: object) -> FakePublisherGithub:
+        return run.github_clients[0]
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github_client)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: run.checks.append(kwargs))
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
@@ -1153,8 +1173,8 @@ class EmptyBucket:
         pytest.fail(f"unexpected upload for {bucket}/{key}")
 
 
-def _run_test_main(*, run: Runner, client: object) -> None:
-    publish_visual_review(_parse_cli()[0], run=run, client=_s3_client(client), token="token", workflow_url=None)
+def _run_test_main(*, run: Runner, client: object, github: Github) -> None:
+    publish_visual_review(_parse_cli()[0], run=run, client=_s3_client(client), github=github, workflow_url=None)
 
 
 def _publish_one_visual_target(
@@ -1174,9 +1194,9 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     """The PR and its base commit come from the lookup, never from the run's event. The run then comments
     on that PR, compares against that base and — being a PR run — leaves the devel baseline pointers alone."""
     base_sha = "c" * 40
-    lookups: list[dict[str, str]] = []
+    lookups: list[dict[str, object]] = []
 
-    def find(**kwargs: str) -> PullRequestRef:
+    def find(**kwargs: object) -> PullRequestRef:
         lookups.append(kwargs)
         return PullRequestRef(number=8733, base_sha=base_sha)
 
@@ -1184,10 +1204,15 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", find)
     _forbid(monkeypatch, "write_baseline_pointers")
 
-    _run_test_main(run=publisher_run.runner, client=bucket)
+    _run_test_main(run=publisher_run.runner, client=bucket, github=cast(Github, publisher_run.github_clients[0]))
 
     assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)] * 2
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
+    assert len(publisher_run.github_clients) == 1
+    github = publisher_run.github_clients[0]
+    assert all(lookup["github"] is github for lookup in lookups)
+    assert all(comment["github"] is github for comment in publisher_run.comments)
+    assert all(check["github"] is github for check in publisher_run.checks)
     assert bucket.requested[:2] == [
         f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json",
         f"baselines/reviews-test-outputs/{candidate.slug}.json",
@@ -1195,7 +1220,9 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
-def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_publish_visual_review_uses_injected_runner_and_clients(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
     bucket = EmptyBucket()
     commands: list[list[str]] = []
@@ -1240,7 +1267,8 @@ def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch
         "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: comments.append(kwargs)
     )
 
-    publish_visual_review(config, run=fake_run, client=_s3_client(bucket), token="token", workflow_url=None)
+    github = cast(Github, FakePublisherGithub())
+    publish_visual_review(config, run=fake_run, client=_s3_client(bucket), github=github, workflow_url=None)
 
     assert any("invocation" in command and "list" in command for command in commands)
     assert download_runners == [fake_run]
@@ -1248,6 +1276,7 @@ def test_main_uses_injected_runner_and_s3_client(monkeypatch: pytest.MonkeyPatch
     assert upload_clients == [bucket]
     assert [comment["pull_request"] for comment in comments] == [8733]
     assert [check["conclusion"] for check in checks] == ["success", "success"]
+    assert all(item["github"] is github for item in [*checks, *comments])
 
 
 @pytest.mark.parametrize("current", [None, PullRequestRef(number=9999, base_sha="c" * 40)])
@@ -1259,7 +1288,7 @@ def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: next(lookups))
     _forbid(monkeypatch, "write_baseline_pointers")
 
-    _run_test_main(run=publisher_run.runner, client=bucket)
+    _run_test_main(run=publisher_run.runner, client=bucket, github=cast(Github, publisher_run.github_clients[0]))
 
     assert publisher_run.comments == []
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
@@ -1273,7 +1302,7 @@ def test_successful_pr_run_without_visuals_reports_no_visual_state(
         lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
     )
 
-    _run_test_main(run=publisher_run.runner, client=EmptyBucket())
+    _run_test_main(run=publisher_run.runner, client=EmptyBucket(), github=cast(Github, publisher_run.github_clients[0]))
 
     assert len(publisher_run.comments) == 1
     assert publisher_run.comments[0]["pull_request"] == 8733
@@ -1294,7 +1323,7 @@ def test_a_devel_push_run_advances_the_baseline_pointers_and_looks_up_no_pr(
     _forbid(monkeypatch, "find_reviewable_pull_request")
     monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
 
-    _run_test_main(run=publisher_run.runner, client=bucket)
+    _run_test_main(run=publisher_run.runner, client=bucket, github=cast(Github, publisher_run.github_clients[0]))
 
     assert pointers == [[candidate.slug]]
     assert publisher_run.comments == []
@@ -1307,7 +1336,7 @@ def test_a_pr_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: None)
     _forbid(monkeypatch, "download_visual_tests", "publish_pull_request_comment", "write_baseline_pointers")
 
-    _run_test_main(run=publisher_run.runner, client=EmptyBucket())
+    _run_test_main(run=publisher_run.runner, client=EmptyBucket(), github=cast(Github, publisher_run.github_clients[0]))
 
     assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("neutral", PR_CHECK_ID)]
     assert publisher_run.comments == []
@@ -1323,7 +1352,9 @@ def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
     _forbid(monkeypatch, "download_visual_tests", "write_baseline_pointers")
 
     with pytest.raises(ValueError, match="Expected exactly one"):
-        _run_test_main(run=publisher_run.runner, client=EmptyBucket())
+        _run_test_main(
+            run=publisher_run.runner, client=EmptyBucket(), github=cast(Github, publisher_run.github_clients[0])
+        )
 
     assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("failure", PR_CHECK_ID)]
     assert publisher_run.comments == [], "with no PR identified there is nowhere to comment"
@@ -1348,7 +1379,9 @@ def test_pr_recheck_failure_preserves_processing_error_and_completes_check(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", fail_download)
 
     with pytest.raises(RuntimeError, match="visual collection failed") as raised:
-        _run_test_main(run=publisher_run.runner, client=EmptyBucket())
+        _run_test_main(
+            run=publisher_run.runner, client=EmptyBucket(), github=cast(Github, publisher_run.github_clients[0])
+        )
 
     assert lookups == 2
     assert isinstance(raised.value.__cause__, ExceptionGroup)
@@ -1372,7 +1405,7 @@ def test_comment_failure_marks_final_check_failed_and_raises(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.publish_pull_request_comment", fail_comment)
 
     with pytest.raises(ExceptionGroup) as raised:
-        _run_test_main(run=publisher_run.runner, client=bucket)
+        _run_test_main(run=publisher_run.runner, client=bucket, github=cast(Github, publisher_run.github_clients[0]))
 
     assert [type(error) for error in raised.value.exceptions] == [OSError]
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "failure"]
@@ -1396,7 +1429,7 @@ def test_diff_check_failure_still_comments_and_completes_final_check(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", update_check)
 
     with pytest.raises(ExceptionGroup) as raised:
-        _run_test_main(run=publisher_run.runner, client=bucket)
+        _run_test_main(run=publisher_run.runner, client=bucket, github=cast(Github, publisher_run.github_clients[0]))
 
     assert [type(error) for error in raised.value.exceptions] == [ConnectionError]
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
@@ -1428,7 +1461,9 @@ def test_processing_error_survives_comment_and_check_failures(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", fail_check)
 
     with pytest.raises(RuntimeError, match="visual collection failed") as raised:
-        _run_test_main(run=publisher_run.runner, client=EmptyBucket())
+        _run_test_main(
+            run=publisher_run.runner, client=EmptyBucket(), github=cast(Github, publisher_run.github_clients[0])
+        )
 
     assert attempts == ["comment", "check"]
     assert isinstance(raised.value.__cause__, ExceptionGroup)

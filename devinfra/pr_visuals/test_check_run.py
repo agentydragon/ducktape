@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
@@ -55,22 +56,22 @@ class FakeGithub:
         return self.repo
 
 
-def _install_github(monkeypatch: pytest.MonkeyPatch, repo: FakeRepo) -> None:
-    monkeypatch.setattr(check_run, "Github", lambda **_kwargs: FakeGithub(repo))
+def _github(repo: FakeRepo) -> FakeGithub:
+    return FakeGithub(repo)
 
 
-def test_upsert_creates_in_progress_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_creates_in_progress_check() -> None:
     repo = FakeRepo([])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="in_progress",
         summary="Bazel CI is running.",
         details_url="https://example.test/ci",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == [
@@ -85,19 +86,19 @@ def test_upsert_creates_in_progress_check(monkeypatch: pytest.MonkeyPatch) -> No
     ]
 
 
-def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_completes_matching_check() -> None:
     existing = FakeCheckRun("pr-visual-review:123:1")
     repo = FakeRepo([FakeCheckRun("different"), existing])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="success",
         summary="Published.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -112,20 +113,20 @@ def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> Non
     ]
 
 
-def test_upsert_does_not_complete_another_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upsert_does_not_complete_another_attempt() -> None:
     first_attempt = FakeCheckRun("pr-visual-review:123:1")
     second_attempt = FakeCheckRun("pr-visual-review:123:2")
     repo = FakeRepo([first_attempt, second_attempt])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="completed",
         conclusion="cancelled",
         summary="First CI attempt was cancelled.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -141,18 +142,18 @@ def test_upsert_does_not_complete_another_attempt(monkeypatch: pytest.MonkeyPatc
     ]
 
 
-def test_late_announcement_does_not_reopen_completed_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_late_announcement_does_not_reopen_completed_attempt() -> None:
     cancelled = FakeCheckRun("pr-visual-review:123:1", status="completed")
     repo = FakeRepo([cancelled])
-    _install_github(monkeypatch, repo)
+    github = _github(repo)
 
     check_run.upsert_check_run(
+        github=github,
         repository="owner/repo",
         commit_sha="a" * 40,
         status="in_progress",
         summary="Bazel CI is running.",
         external_id="pr-visual-review:123:1",
-        token="token",
     )
 
     assert repo.created == []
@@ -163,13 +164,56 @@ def test_late_announcement_does_not_reopen_completed_attempt(monkeypatch: pytest
 def test_upsert_rejects_invalid_status_conclusion_pair(status: Any, conclusion: Any) -> None:
     with pytest.raises(ValueError, match="completed checks require"):
         check_run.upsert_check_run(
+            github=FakeGithub(FakeRepo([])),
             repository="owner/repo",
             commit_sha="a" * 40,
             status=status,
             conclusion=conclusion,
             summary="summary",
-            token="token",
         )
+
+
+def test_standalone_cli_constructs_a_client_and_passes_it_to_the_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeRepo([])
+    github = FakeGithub(repo)
+    constructed: list[dict[str, Any]] = []
+
+    def build_github(**kwargs: Any) -> FakeGithub:
+        constructed.append(kwargs)
+        return github
+
+    monkeypatch.setattr(check_run, "Github", build_github)
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "pr-visuals-announce",
+            "--repository",
+            "owner/repo",
+            "--sha",
+            "a" * 40,
+            "--status",
+            "completed",
+            "--conclusion",
+            "success",
+            "--summary",
+            "Published.",
+        ],
+    )
+
+    check_run.main()
+
+    assert len(constructed) == 1
+    assert repo.created == [
+        {
+            "name": "PR visual review",
+            "head_sha": "a" * 40,
+            "status": "completed",
+            "output": {"title": "PR visual review", "summary": "Published."},
+            "conclusion": "success",
+        }
+    ]
 
 
 if __name__ == "__main__":

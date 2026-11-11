@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from github import Auth, Github
+from github import Github
 from more_itertools import only
 
 
@@ -18,13 +18,12 @@ class PullRequestRef:
     base_sha: str
 
 
-def find_reviewable_pull_request(*, repository: str, head: str, head_sha: str, token: str) -> PullRequestRef | None:
+def find_reviewable_pull_request(*, github: Github, repository: str, head: str, head_sha: str) -> PullRequestRef | None:
     """Find an open or merged PR whose final head is the run's exact commit.
 
     Closed-unmerged PRs and superseded commits cannot receive reviews. A merged
     PR can: publication may finish after merge. Ambiguous matches still raise.
     """
-    with Github(auth=Auth.Token(token)) as github:
-        pulls = github.get_repo(repository).get_pulls(state="all", head=head)
-        pull = only([pull for pull in pulls if pull.head.sha == head_sha and (pull.state == "open" or pull.merged)])
-        return None if pull is None else PullRequestRef(number=pull.number, base_sha=pull.base.sha)
+    pulls = github.get_repo(repository).get_pulls(state="all", head=head)
+    pull = only([pull for pull in pulls if pull.head.sha == head_sha and (pull.state == "open" or pull.merged)])
+    return None if pull is None else PullRequestRef(number=pull.number, base_sha=pull.base.sha)
