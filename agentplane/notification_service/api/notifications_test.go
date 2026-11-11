@@ -190,20 +190,27 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 }
 
 func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
+	// Each opening is made once its test's server has created the Sandboxes, whose UIDs it may name.
 	for _, test := range []struct {
 		name    string
-		opening *dispatcherpb.Session
+		opening func() *dispatcherpb.Session
 		want    codes.Code
 	}{
-		{name: "no Dispatcher opening", want: codes.NotFound},
-		{name: "different Session", opening: nativeSession("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
-		{name: "no UID", opening: nativeSession(testSession, sandboxName, ""), want: codes.Unavailable},
-		{name: "deleted Sandbox", opening: nativeSession(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
-		{name: "same-name replacement", opening: nativeSession(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
+		{name: "no Dispatcher opening", opening: func() *dispatcherpb.Session { return nil }, want: codes.NotFound},
+		{name: "different Session", opening: func() *dispatcherpb.Session {
+			return nativeSession("another-session", sandboxName, sandboxUID)
+		}, want: codes.Unavailable},
+		{name: "no UID", opening: func() *dispatcherpb.Session { return nativeSession(testSession, sandboxName, "") }, want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: func() *dispatcherpb.Session {
+			return nativeSession(testSession, "deleted-sandbox", sandboxUID)
+		}, want: codes.NotFound},
+		{name: "same-name replacement", opening: func() *dispatcherpb.Session {
+			return nativeSession(testSession, sandboxName, "previous-uid")
+		}, want: codes.NotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)
-			s.openings.placements[testSession] = test.opening
+			s.openings.placements[testSession] = test.opening()
 			_, err := s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("fenced-opening"))
 			requireCode(t, err, test.want)
 			s.requireNoInbox(t)
