@@ -191,7 +191,6 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":fixtures",
-        "//:node_modules/@types/node",
         "//:node_modules/vitest",
         "//aiquota/shared:presentation",
         "//personal_dashboard/shared:currency_policy_vectors",

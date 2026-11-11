@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import Decimal from "decimal.js";
+import currencyPolicyVectors from "../../../../personal_dashboard/shared/currency_policy_vectors.json";
 
 import { money, time } from "./spend_display";
 
@@ -14,25 +13,21 @@ type CurrencyVector = {
   below_threshold: boolean;
 };
 
-const currencyVectors = JSON.parse(
-  readFileSync(
-    join(
-      process.env.TEST_SRCDIR ?? "",
-      process.env.TEST_WORKSPACE ?? "",
-      "personal_dashboard/shared/currency_policy_vectors.json"
-    ),
-    "utf8"
-  )
-) as { cases: CurrencyVector[] };
+const currencyVectors = currencyPolicyVectors as { cases: CurrencyVector[] };
 
-function expectCurrencyVector(actual: string, vector: CurrencyVector): void {
+function currencyPresentation(actual: string): {
+  magnitude: number;
+  negative: boolean;
+  belowThreshold: boolean;
+} {
   const match = actual.match(/(?<!\d)(\d[\d,]*(?:\.\d+)?)/);
-  expect(match, actual).not.toBeNull();
-  if (!match) return;
-  expect(Number(match[1].replaceAll(",", ""))).toBe(Number(vector.expected_magnitude));
+  if (!match) throw new Error(`Currency output has no amount: ${actual}`);
   const prefix = actual.slice(0, match.index);
-  expect(prefix.includes("-")).toBe(Number(vector.major_amount) < 0);
-  expect(prefix.includes("<")).toBe(vector.below_threshold);
+  return {
+    magnitude: Number(match[1].replaceAll(",", "")),
+    negative: prefix.includes("-"),
+    belowThreshold: prefix.includes("<"),
+  };
 }
 
 describe("summary money", () => {
@@ -50,9 +45,14 @@ describe("summary money", () => {
     expect(money(amount, currency)).toBe(expected);
   });
 
-  it.each(currencyVectors.cases)("matches shared numeric policy vector $currency $major_amount", (vector) =>
-    expectCurrencyVector(money(new Decimal(vector.minor_units), vector.currency), vector)
-  );
+  it.each(currencyVectors.cases)("matches shared numeric policy vector $currency $major_amount", (vector) => {
+    const actual = currencyPresentation(money(new Decimal(vector.minor_units), vector.currency));
+    expect(actual).toEqual({
+      magnitude: Number(vector.expected_magnitude),
+      negative: Number(vector.major_amount) < 0,
+      belowThreshold: vector.below_threshold,
+    });
+  });
 
   it("keeps exact amounts available in details", () => {
     expect(money(1250, "USD", true)).toBe("$12.50");

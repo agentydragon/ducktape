@@ -7,8 +7,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import currencyPolicyVectors from "../../personal_dashboard/shared/currency_policy_vectors.json";
 
 import {
   formatDuration,
@@ -33,25 +32,21 @@ type CurrencyVector = {
   below_threshold: boolean;
 };
 
-const currencyVectors = JSON.parse(
-  readFileSync(
-    join(
-      process.env.TEST_SRCDIR ?? "",
-      process.env.TEST_WORKSPACE ?? "",
-      "personal_dashboard/shared/currency_policy_vectors.json"
-    ),
-    "utf8"
-  )
-) as { cases: CurrencyVector[] };
+const currencyVectors = currencyPolicyVectors as { cases: CurrencyVector[] };
 
-function expectCurrencyVector(actual: string, vector: CurrencyVector): void {
+function currencyPresentation(actual: string): {
+  magnitude: number;
+  negative: boolean;
+  belowThreshold: boolean;
+} {
   const match = actual.match(/(?<!\d)(\d[\d,]*(?:\.\d+)?)/);
-  expect(match, actual).not.toBeNull();
-  if (!match) return;
-  expect(Number(match[1].replaceAll(",", ""))).toBe(Number(vector.expected_magnitude));
+  if (!match) throw new Error(`Currency output has no amount: ${actual}`);
   const prefix = actual.slice(0, match.index);
-  expect(prefix.includes("-")).toBe(Number(vector.major_amount) < 0);
-  expect(prefix.includes("<")).toBe(vector.below_threshold);
+  return {
+    magnitude: Number(match[1].replaceAll(",", "")),
+    negative: prefix.includes("-"),
+    belowThreshold: prefix.includes("<"),
+  };
 }
 
 beforeAll(() => vi.stubEnv("TZ", "UTC"));
@@ -172,7 +167,14 @@ describe("summary currency", () => {
 
   it.each(currencyVectors.cases.filter(({ currency }) => currency === "USD"))(
     "matches shared numeric policy vector $currency $major_amount",
-    (vector) => expectCurrencyVector(formatSummaryUsd(Number(vector.major_amount)), vector)
+    (vector) => {
+      const actual = currencyPresentation(formatSummaryUsd(Number(vector.major_amount)));
+      expect(actual).toEqual({
+        magnitude: Number(vector.expected_magnitude),
+        negative: Number(vector.major_amount) < 0,
+        belowThreshold: vector.below_threshold,
+      });
+    }
   );
 
   it("shows exact values when rounding would hide a difference from the limit", () => {
