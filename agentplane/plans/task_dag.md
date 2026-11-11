@@ -3666,18 +3666,6 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
-#### Smaller items
-
-- **History migration 00012's trigger and function** (`thread_command_operation_enum` in
-  `history_service/migrations/history/00012_thread_command_operation_enum.sql`): the gate is met,
-  since migration 00013 is on staging (section 14), so no History replica older than 00012 runs.
-  Drop both in a new migration. Source: tombstone of 2026-11-09.
-- **The OAuth MCP fixture image** (`action_service/testing/oauth_mcp_server.py` and its deployment
-  wiring): check whether an existing MCP image (the Everything image) can serve the tool surface with
-  Dex, then delete the custom fixture. Source: `TODO` at the fixture.
-- **`cluster/cdk8s/agentplane/test_sandbox_service.py`** is named for the retired Sandbox Service;
-  rename it for what it tests. The other item section 9 knew, `docs/operator_federation.md` saying
-  "Event & Notification Hub", is gone on devel. Source: `REFACTOR_COHERENCE_AUDIT`.
 - **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): selected, unscheduled; the App's Thread-events SSE
   route and its code go once supported callers use a History-backed contract. Stays in section 11.
 

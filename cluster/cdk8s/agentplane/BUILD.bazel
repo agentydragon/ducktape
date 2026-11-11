@@ -1483,10 +1483,10 @@ py_library(
 )
 
 py_test(
-    name = "test_sandbox_service",
+    name = "test_service_boundaries",
     # Synthesizes both environments and checks History database wiring, Gateway-owned mutations, and notification scope.
     size = "medium",
-    srcs = ["test_sandbox_service.py"],
+    srcs = ["test_service_boundaries.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
