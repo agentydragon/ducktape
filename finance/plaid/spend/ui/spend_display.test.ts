@@ -68,4 +68,9 @@ describe("allowance signal wording", () => {
   it("names both causes of the overall warning", () => {
     expect(signalText("warning", 1)).toBe("Forecast or pace warning");
   });
+
+  it("includes equality in the normal pace label", () => {
+    // The backend treats pace equal to the leash as normal.
+    expect(signalText("normal", 1)).toBe("Pace ≤ provisional leash");
+  });
 });

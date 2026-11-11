@@ -69,7 +69,7 @@ export function signalText(signal: Signal, remainingMinorUnits: number | null): 
   if (signal === "exceeded")
     return remainingMinorUnits !== null && remainingMinorUnits < 0 ? "Over allowance" : "Allowance exhausted";
   if (signal === "warning") return "Forecast or pace warning";
-  return "Below provisional leash";
+  return "Pace ≤ provisional leash";
 }
 
 export function SignalLabel({ signal, remainingMinorUnits }: { signal: Signal; remainingMinorUnits: number | null }) {
