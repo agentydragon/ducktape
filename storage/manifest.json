@@ -6,7 +6,7 @@
   "request_start_clock": "Not retained",
   "assembled_at_utc": "2026-11-09T07:58:35.452343+00:00",
   "scope": "Read-only inventory38BucketCRs,23CNPGclusters,20latestactivebackups,2cachePVCs,6thin-pools;productresearchchecksandretirementdispositions.",
-  "visual_validation": "See remediation-validation.json for validation of the updated page and the root index. The historical presentation-validation.json refers to the prior report bytes.",
+  "visual_validation": "See remediation-validation.json for the prior Seaweed fullness and root-index validation, plus the current follow-up-layout verification status.",
   "report_html_sha256": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
   "evidence_sha256": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
   "presentation_validation": "../presentation-validation.json",
@@ -14,11 +14,11 @@
   "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements.",
   "historical_report_html_sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
   "historical_visual_validation": "The prior presentation-validation.json applies to the original 2026-11-09 report bytes identified by historical_report_html_sha256, not the modified report.",
-  "remediation_script_sha256": "1a491dc133b6865e0281ca715095cfafd993c60aa56252e6804bb0b5b8943131",
+  "remediation_script_sha256": "7fb7059b7532d59314c1bd7c44d00a2827e5c7d7282468101e0526471f64ae0d",
   "remediation_evidence_sha256": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
   "remediation_snapshot_utc": "2026-11-10T19:20:23Z",
   "remediation_validation": "remediation-validation.json",
-  "observability_snapshot_utc": "2026-11-10T21:12:00Z–21:28:00Z",
+  "observability_snapshot_utc": "2026-11-10T21:12:00Z\u201321:28:00Z",
   "followup_observations_utc": "2026-11-10",
-  "seaweed_volume_fullness_snapshot_utc": "2026-11-10 around 22:30–22:33 UTC"
+  "seaweed_volume_fullness_snapshot_utc": "2026-11-10 around 22:30\u201322:33 UTC"
 }
