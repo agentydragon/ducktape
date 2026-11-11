@@ -44,6 +44,13 @@ none, which is what lets it advance baseline pointers.
 
 ## Cancelled runs
 
+`publisher.main()` is the CLI boundary: it parses a frozen publication config,
+reads the GitHub token, constructs one GitHub client, and constructs the S3
+client only for non-cancelled runs. `publish_visual_review(config, *, run,
+client, github, workflow_url)` is the injected application entry point. The S3
+endpoint stays at the CLI boundary; publication helpers receive both clients
+explicitly.
+
 A cancelled upstream CI run cancels any running visual workflow for that same
 run and attempt. The cancellation job completes an announced PR visual check as
 `cancelled`; the check's external ID includes both run ID and attempt so a delayed
@@ -141,6 +148,9 @@ discoverable and are replaced without parsing their display text.
 `//devinfra/pr_visuals:wheel` builds the `pr-visuals` wheel (`pr-visuals-announce`
 for check-runs, `pr-visuals-publish` for publication), bundling the publisher's small
 internal source deps and HTML templates; Python runtime deps are wheel metadata.
+The CLI parses arguments and creates the runner and S3 client before calling the
+publication entrypoint. Cancelled runs close their announced check before S3
+client creation.
 
 Both workflow jobs install `.#pr-visuals` from trusted `devel` (wheel deps + `bbapi`;
 closure in the public Attic cache) and log the wheel URL and hash from
