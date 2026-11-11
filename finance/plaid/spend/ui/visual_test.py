@@ -217,7 +217,7 @@ async def test_spending_decision_render(
     await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional leash ~$23 / day.", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Pace ≤ provisional leash", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Oldest linked sync", exact=False)).to_have_count(1)
     sync_help = page.get_by_role("button", name="About Linked sync time")
     await sync_help.click()
