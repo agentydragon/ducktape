@@ -210,11 +210,15 @@ class Agent:
         client: Model,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool,
+        parallel_tool_calls: bool = True,
         handlers: Iterable[BaseHandler],
         tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
+        """Keep `tool_policy` fixed for the agent's lifetime.
+
+        Use transcript system messages for static context; `dynamic_instructions` fills the separate API field per request.
+        """
         self._tool_provider = tool_provider
         self._client = client
         self._parallel_tool_calls = parallel_tool_calls
@@ -621,34 +625,6 @@ class Agent:
                 self.pending_function_calls.append(item)
             else:
                 raise TypeError(f"Unsupported Responses output item: {type(item)}")
-
-    @classmethod
-    async def create(
-        cls,
-        *,
-        tool_provider: ToolProvider,
-        handlers: Iterable[BaseHandler],
-        client: Model,
-        reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool = True,
-        tool_policy: ToolPolicy,
-        dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
-    ) -> Agent:
-        """Keep `tool_policy` fixed for the agent's lifetime.
-
-        Use transcript system messages for static context; `dynamic_instructions` fills the separate API field per request.
-        """
-        return cls(
-            tool_provider=tool_provider,
-            client=client,
-            reasoning_effort=reasoning_effort,
-            reasoning_summary=reasoning_summary,
-            parallel_tool_calls=parallel_tool_calls,
-            tool_policy=tool_policy,
-            handlers=list(handlers),
-            dynamic_instructions=dynamic_instructions,
-        )
 
     def _emit_tool_result(self, function_call: FunctionCallItem, result: ToolResult) -> None:
         call_id = _require_call_id(function_call)

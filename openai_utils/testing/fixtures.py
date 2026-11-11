@@ -85,7 +85,7 @@ def mock_or_live(request, live_openai_model):
                 yield
                 yield m.assistant_text("done")
 
-            agent = await Agent.create(client=client, ...)
+            agent = Agent(client=client, ...)
     """
     mode = request.param
 

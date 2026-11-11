@@ -48,7 +48,7 @@ def summarizing_client():
 
 async def test_compact_transcript_basic(mcp_tool_provider, summarizing_client):
     """Test basic transcript compaction."""
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider,
         client=summarizing_client,
         handlers=[BaseHandler()],
@@ -80,7 +80,7 @@ async def test_compact_transcript_basic(mcp_tool_provider, summarizing_client):
 
 async def test_compact_transcript_insufficient_history(mcp_tool_provider, summarizing_client):
     """Test that compaction doesn't happen when history is too short."""
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider,
         client=summarizing_client,
         handlers=[BaseHandler()],
