@@ -35,7 +35,7 @@ from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, g
 
 _EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_FIXTURE_NAMES = ("ready_two_cards", "authentication_required", "offline", "retrying")
+_FIXTURE_NAMES = ("ready_allowance", "ready_two_cards", "authentication_required", "offline", "retrying")
 _FIXTURE_DIR = "ducktape/finance/plaid/spend/gnome/fixtures"
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
@@ -159,13 +159,28 @@ def test_fixture_preview_starts_without_daemon(
         screenshot_dir=tmp_path_factory.mktemp("gnome-fixture-preview"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
-        environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_two_cards.json"},
+        environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_allowance.json"},
         compile_extension_schemas=True,
     ) as session:
         assert string_reply(session.call("GetDaemonOwner")) == ""
-        session.open_menu()
-        assert "Everyday" in string_reply(session.call("GetMenuText"))
-        assert "Travel" in string_reply(session.call("GetMenuText"))
+
+        def panel_state() -> dict[str, Any]:
+            return cast(dict[str, Any], json.loads(string_reply(session.call("GetPanelState"))))
+
+        def set_visible(value: str) -> None:
+            result = session.exec(
+                f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
+                f"set org.gnome.shell.extensions.plaid-spend panel-visible {value!r}"
+            )
+            assert result.exit_code == 0, exec_output(result)
+
+        set_visible("['pace', 'sparkline']")
+        wait_until(lambda: panel_state()["items"] == ["pace", "sparkline"], "fixture settings were not applied")
+        assert string_reply(session.call("GetPanelLabel")) == "7d 90%"
+        set_visible("['pace']")
+        wait_until(lambda: panel_state()["items"] == ["pace"], "sparkline was not hidden")
+        set_visible("['pace', 'sparkline']")
+        wait_until(lambda: panel_state()["items"] == ["pace", "sparkline"], "fixture history was not retained")
         _assert_no_plaid_extension_error(session)
 
 
