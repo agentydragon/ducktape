@@ -40,7 +40,7 @@ class CodexHarness:
         response = await self.request(
             driver.initialize(self._request_id(), client_name=self._client_name, experimental_api=experimental_api)
         )
-        await self.transport.send(driver.initialized())
+        await self.transport.send(wire.InitializedNotification())
         return response
 
     async def start_thread(
