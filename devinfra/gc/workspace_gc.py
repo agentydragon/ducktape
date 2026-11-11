@@ -123,7 +123,7 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
 
 def render_branches(items: list[BranchClassification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedBranch)]
-    rows = [[verdict_of(item), item.branch.name, branch_gc.describe_reason(item)] for item in visible]
+    rows = [[verdict_of(item), item.branch, branch_gc.describe_reason(item)] for item in visible]
     counts = {
         "prunable": sum(isinstance(item, PrunableBranch) for item in items),
         "kept": sum(isinstance(item, RetainedBranch) for item in items),
@@ -426,8 +426,8 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
     logger.info("Deleting %d branches", len(candidates))
     results = []
     for index, item in enumerate(candidates, start=1):
-        logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch.name)
-        results.append(branch_gc.delete_branch(repo, item.branch.name, expected_tip=item.tip))
+        logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch)
+        results.append(branch_gc.delete_branch(repo, item.branch, expected_tip=item.tip))
     return _report_removals(results, _BRANCH_LABELS)
 
 

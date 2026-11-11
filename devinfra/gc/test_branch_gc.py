@@ -212,7 +212,7 @@ _PR = PrInfo(7421, PrState.MERGED)
 
 def _populated(reason: StrEnum) -> bg.BranchClassification:
     """The classification `reason` belongs to, carrying all the evidence a reason can cite."""
-    branch = bg.Branch("feature")
+    branch = "feature"
     match reason:
         case bg.PrunableBranchReason():
             return bg.PrunableBranch(branch, reason, Path("/wt"), _MAIN, "0" * 40, _PR)

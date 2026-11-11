@@ -45,11 +45,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class Branch:
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
 class MainCheckout:
     """Sentinel holder: the branch is checked out in the repo's main worktree."""
 
@@ -78,7 +73,7 @@ class ReviewBranchReason(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PrunableBranch(Prunable):
-    branch: Branch
+    branch: str
     reason: PrunableBranchReason
     checkout: Path | None  # the prunable worktree holding it, removed before the branch
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
@@ -88,7 +83,7 @@ class PrunableBranch(Prunable):
 
 @dataclass(frozen=True, slots=True)
 class RetainedBranch(Retained):
-    branch: Branch
+    branch: str
     reason: RetainedBranchReason
     checkout: Path | None = None  # set for HELD_BY_WORKTREE: the worktree holding it
     pr: PrInfo | None = None  # set for OPEN_PR
@@ -96,7 +91,7 @@ class RetainedBranch(Retained):
 
 @dataclass(frozen=True, slots=True)
 class ReviewBranch(Review):
-    branch: Branch
+    branch: str
     reason: ReviewBranchReason
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
     pr: PrInfo | None = None  # set for PR_HEAD_EXCEEDED
@@ -168,38 +163,36 @@ def classify_branch(
     except git_repo.INSPECTION_ERRORS as error:
         detail = f"{type(error).__name__}: {error}"
         logger.warning("Cannot inspect branch %s in %s: %s", name, pg.path, detail)
-        return ReviewBranch(Branch(name), ReviewBranchReason.INSPECTION_FAILED, main, detail=detail)
+        return ReviewBranch(name, ReviewBranchReason.INSPECTION_FAILED, main, detail=detail)
 
 
 def _classify_branch(
     name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
 ) -> BranchClassification:
-    branch = Branch(name)
-
     if name == default_branch:
-        return RetainedBranch(branch, RetainedBranchReason.DEFAULT_BRANCH)
+        return RetainedBranch(name, RetainedBranchReason.DEFAULT_BRANCH)
     if isinstance(holder, MainCheckout):
-        return RetainedBranch(branch, RetainedBranchReason.MAIN_CHECKOUT)
+        return RetainedBranch(name, RetainedBranchReason.MAIN_CHECKOUT)
     if isinstance(holder, RetainedWorktree | ReviewWorktree):
-        return RetainedBranch(branch, RetainedBranchReason.HELD_BY_WORKTREE, checkout=holder.worktree.path)
+        return RetainedBranch(name, RetainedBranchReason.HELD_BY_WORKTREE, checkout=holder.worktree.path)
     if pr is not None and pr.state is PrState.OPEN:
-        return RetainedBranch(branch, RetainedBranchReason.OPEN_PR, pr=pr)
+        return RetainedBranch(name, RetainedBranchReason.OPEN_PR, pr=pr)
 
     # holder is None or a PrunableWorktree (removed before the branch is deleted).
     checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
     branch_oid = pg.branches.local[name].peel(pygit2.Commit).id
     if content_in_main(pg, branch_oid, main):
-        return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, str(branch_oid), pr)
+        return PrunableBranch(name, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, str(branch_oid), pr)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) and _tip_within_pr_head(pg, branch_oid, pr):
-        return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, str(branch_oid), pr)
+        return PrunableBranch(name, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, str(branch_oid), pr)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
     if patches_landed_in_main(Path(pg.path), name, main):
-        return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, str(branch_oid), None)
+        return PrunableBranch(name, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, str(branch_oid), None)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
-        return ReviewBranch(branch, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
-    return ReviewBranch(branch, ReviewBranchReason.UNMERGED, main)
+        return ReviewBranch(name, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
+    return ReviewBranch(name, ReviewBranchReason.UNMERGED, main)
 
 
 def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
