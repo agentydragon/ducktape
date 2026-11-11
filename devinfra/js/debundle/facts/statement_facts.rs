@@ -233,6 +233,9 @@ pub(crate) struct SynchronousCalls {
     /// succeed. It is deliberately separate from the serialized proof-use
     /// report: report data is not an analysis input.
     pub local_record_factory_purity: Option<LocalRecordFactoryPurityCertificate>,
+    /// Exact completed constructor-factory call whose checked bodies have no
+    /// immediate array-content operation. Separate from the purity proof.
+    pub(crate) local_record_factory_heap_call: Option<swc_common::Span>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order

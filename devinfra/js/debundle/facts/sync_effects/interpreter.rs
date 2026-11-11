@@ -1761,6 +1761,10 @@ impl std::ops::DerefMut for ExecutionStateSlot {
 pub(super) struct CheckedLocalConstructorFactory {
     pub(super) call_span: Span,
     pub(super) checked_owners: BTreeSet<SourceUnitOrdinal>,
+    /// The checked bodies only store values or read own fields of fresh
+    /// plain-data inputs. This is a separate heap judgment: completing a
+    /// pure call alone says nothing about its array-content accesses.
+    pub(super) heap_local: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -5338,6 +5342,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Ok(CheckedLocalConstructorFactory {
             call_span: call.span,
             checked_owners: owners,
+            heap_local: args
+                .iter()
+                .any(|arg| matches!(arg, ValueExpr::ObjectLiteral(..)))
+                && allocations.keys().all(|(class, _)| {
+                    self.inputs
+                        .index
+                        .local_constructors
+                        .get(class)
+                        .is_some_and(|constructor| {
+                            constructor.inert_allocation
+                                || (!constructor.checked_default_fields
+                                    && constructor.key.is_some())
+                        })
+                }),
         })
     }
 

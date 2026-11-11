@@ -617,6 +617,16 @@ fn analyze_chunk_with_policy_and_sync(
             .map(|fact| CompletedPurity::unrefined(purity_context.statement_effects(fact)))
             .collect(),
     };
+    for fact in &mut facts {
+        if let Some(span) = fact
+            .synchronous_calls
+            .as_ref()
+            .and_then(|calls| calls.local_record_factory_heap_call)
+            && let Some(arguments) = heap_contents.checked_factory_arguments.get(&span.lo.0)
+        {
+            fact.heap_contents = arguments.clone();
+        }
+    }
     let global_object_names = unshadowed_global_object_aliases(&body);
     for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
         settle_statement_purity(

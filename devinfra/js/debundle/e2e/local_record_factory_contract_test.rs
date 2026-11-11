@@ -61,6 +61,179 @@ export const observed = command.run();
 console.log(observed);
 "#;
 
+#[test]
+fn independent_retained_arrays_do_not_create_a_constructor_heap_frontier() {
+    let source = r#"class Empty {}
+class Holder {
+  constructor(record, checker) { this.record = record; this.checker = checker; this.size = record.size ?? 0; }
+  size;
+  run() { return this.record.callback(); }
+}
+function create(record) { return new Holder(record, new Empty()); }
+const shared = [0];
+const first = create({ size: 1, items: [1], callback: () => shared.push(1) });
+const second = create({ size: 2, items: [2], callback: () => shared.push(2) });
+console.log(first.size, second.size, first.run(), second.run(), shared.join(','));
+export { first, second, shared };
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "framework",
+                    &[
+                        Member::new("Empty"),
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                    ],
+                ),
+                logical_module("first", &[Member::new("first")]),
+                logical_module("second", &[Member::new("second")]),
+                logical_module("shared", &[Member::new("shared")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1 2 2 3 0,1,2\n");
+    let graph = fixture.dependency_graph();
+    let ordinal = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("named source unit")
+            .id
+            .clone()
+    };
+    for result in ["first", "second"] {
+        let heap = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == ordinal(result))
+            .and_then(|node| node.synchronous_execution.as_ref())
+            .and_then(|execution| execution.heap_frontier.as_ref())
+            .expect("literal allocations keep heap evidence");
+        assert!(!heap.own_at_init.opaque, "{result}: {heap:#?}");
+        assert_eq!(heap.own_at_init.reads.count, 0, "{result}: {heap:#?}");
+        assert_eq!(heap.own_at_init.writes.count, 0, "{result}: {heap:#?}");
+        assert!(
+            heap.own_at_init.allocations.count > 0,
+            "{result}: {heap:#?}"
+        );
+        assert!(
+            !heap.composed_synchronous_calls.opaque,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.composed_synchronous_calls.reads.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.composed_synchronous_calls.writes.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.non_assumed_heap_accesses.reads.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.non_assumed_heap_accesses.writes.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert!(
+            !graph
+                .edges
+                .iter()
+                .any(|edge| edge.edge_kind == analysis_model::DepKind::Sequenced
+                    && edge.source == ordinal(result)
+                    && edge.target == ordinal("shared")),
+            "retaining a callback is not a read or write of the captured array: {:#?}",
+            graph.edges
+        );
+    }
+}
+
+#[test]
+fn argument_mutation_keeps_its_heap_edge_beside_a_checked_call() {
+    let source = r#"class Holder {
+  constructor(record) { this.items = record.items; }
+}
+function create(record) { return new Holder(record); }
+const shared = [0];
+function mutateSharedArray() { shared.push(1); return [1]; }
+const first = create({ items: mutateSharedArray() });
+const second = create({ items: [2] });
+console.log(shared.join(','), first.items[0], second.items[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("shared"),
+                Member::new("mutateSharedArray"),
+                Member::new("first"),
+                Member::new("second"),
+            ],
+            &["console.log(shared.join(','), first.items[0], second.items[0]);"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "0,1 1 2\n");
+    let graph = fixture.dependency_graph();
+    let node = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("named source unit")
+    };
+    let first_heap = node("first")
+        .synchronous_execution
+        .as_ref()
+        .and_then(|execution| execution.heap_frontier.as_ref())
+        .expect("the nested call retains its heap effects");
+    assert!(first_heap.own_at_init.opaque, "{first_heap:#?}");
+    assert!(
+        first_heap.composed_synchronous_calls.writes.count > 0,
+        "{first_heap:#?}"
+    );
+    assert!(
+        first_heap.non_assumed_heap_accesses.writes.count > 0,
+        "{first_heap:#?}"
+    );
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|edge| edge.edge_kind == analysis_model::DepKind::Sequenced
+                && edge.source == node("first").id
+                && edge.target == node("shared").id),
+        "the nested mutation must remain ordered after the shared array: {:#?}",
+        graph.edges
+    );
+    assert!(
+        !graph
+            .edges
+            .iter()
+            .any(|edge| edge.edge_kind == analysis_model::DepKind::Sequenced
+                && edge.source == node("second").id
+                && edge.target == node("shared").id),
+        "the independent checked call must not inherit the first call's heap effects: {:#?}",
+        graph.edges
+    );
+}
+
 fn exported_record_factory_modules(callback_statements: &[&str]) -> Vec<LogicalModuleEntry> {
     let callback_bindings = [
         Member::new("Holder"),

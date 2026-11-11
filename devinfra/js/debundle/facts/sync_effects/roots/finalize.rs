@@ -92,6 +92,14 @@ pub(super) fn finalize(
         && let Some(proof) = checked_local_constructor_factory
     {
         let dependencies = observations.dependencies().clone();
+        if proof.heap_local {
+            // The source proof selected this exact root call and only local
+            // constructor bodies. The completed execution below rules out a
+            // refused path. Argument evaluation is projected separately from
+            // the root AST after this pass; these callable summaries still
+            // describe arbitrary invocations of the same source functions.
+            outcome.effects.local_record_factory_heap_call = Some(proof.call_span);
+        }
         outcome.effects.local_record_factory_purity =
             Some(crate::facts::LocalRecordFactoryPurityCertificate {
                 call_span: proof.call_span,
@@ -111,6 +119,10 @@ pub(super) fn finalize(
         if let Some(cells) = inputs.callable_heap_contents.get(&key) {
             outcome.effects.heap_contents.extend(cells);
         }
+    }
+    if outcome.effects.local_record_factory_heap_call.is_some() {
+        outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
+        outcome.effects.non_assumed_heap_accesses = Default::default();
     }
     outcome.effects.purity_disagreement =
         queries.complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());

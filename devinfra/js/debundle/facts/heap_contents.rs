@@ -25,6 +25,9 @@ pub(crate) struct ChunkHeapContents {
     /// First-order pre-await body cells of each callable, keyed like the
     /// execution index's callables (the body's span start).
     pub callables: BTreeMap<u32, HeapContentCells>,
+    /// Root syntax with the call's conservative argument-escape contribution
+    /// removed. Used only after that exact call earns a heap-local receipt.
+    pub checked_factory_arguments: BTreeMap<u32, HeapContentCells>,
     pub native_read_uses: Vec<(
         Vec<crate::analysis_provenance::InferenceUse>,
         Vec<crate::reports::schema::NativeOperationInputUse>,
@@ -51,6 +54,7 @@ pub(crate) fn annotate_heap_contents(
     );
     let reachability = value_flow.candidate_object_index(&candidates);
     let mut callables = BTreeMap::new();
+    let mut checked_factory_arguments = BTreeMap::new();
     let mut native_read_uses = Vec::with_capacity(body.len());
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
@@ -73,6 +77,7 @@ pub(crate) fn annotate_heap_contents(
             lazy_depth: 0,
             past_await: false,
             may_skip_await_depth: 0,
+            checked_factory_call: None,
         };
         item.as_module_item().visit_with(&mut collector);
         // A local export list wires live bindings without evaluating their
@@ -120,9 +125,59 @@ pub(crate) fn annotate_heap_contents(
             collector.native_read_inferences.into_values().collect(),
             collector.native_read_inputs.into_values().collect(),
         ));
+        // Prepare an argument-evaluation projection only for the small direct
+        // fresh-record call shape. Its own collector cannot change generic
+        // callable summaries, deferred allocations, or native observations.
+        if let Some(span) = var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+            match declaration.decls.as_slice() {
+                [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
+                    match declarator.init.as_deref()?.unwrap_parens() {
+                        Expr::Call(call)
+                            if matches!(&call.callee, Callee::Expr(callee)
+                                if matches!(callee.unwrap_parens(), Expr::Ident(_)))
+                                && call.args.iter().all(|arg| arg.spread.is_none())
+                                && call.args.iter().any(|arg| {
+                                    matches!(arg.expr.unwrap_parens(), Expr::Object(_))
+                                }) =>
+                        {
+                            Some(call.span.lo.0)
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }) {
+            let mut unused_callables = BTreeMap::new();
+            let mut projection = ArrayContentCollector {
+                value_flow,
+                statement_owner: fact.ordinal,
+                local_class_heap_proof: proofs.local_class,
+                set_iterable_proof: proofs.set_iterable,
+                fresh_freeze_proof: proofs.fresh_freeze,
+                native_reads: proofs.native_reads,
+                native_facts: proofs.native_facts,
+                array_reachability: &reachability,
+                array_origins: &origins.0,
+                eager: HeapContentCells::default(),
+                callables: &mut unused_callables,
+                deferred_allocations: BTreeSet::new(),
+                bodies: Vec::new(),
+                heap_native_integrity_uses: BTreeSet::new(),
+                native_read_inferences: BTreeMap::new(),
+                native_read_inputs: BTreeMap::new(),
+                lazy_depth: 0,
+                past_await: false,
+                may_skip_await_depth: 0,
+                checked_factory_call: Some(span),
+            };
+            item.as_module_item().visit_with(&mut projection);
+            checked_factory_arguments.insert(span, projection.eager);
+        }
     }
     ChunkHeapContents {
         callables,
+        checked_factory_arguments,
         native_read_uses,
     }
 }
@@ -181,6 +236,7 @@ struct ArrayContentCollector<'a> {
     lazy_depth: u32,
     past_await: bool,
     may_skip_await_depth: u32,
+    checked_factory_call: Option<u32>,
 }
 
 impl ArrayContentCollector<'_> {
@@ -507,6 +563,14 @@ impl Visit for ArrayContentCollector<'_> {
         // invoke a callback. The same validated site proves item purity.
         if let Some(input) = self.native_facts.symbol_literal_proof(node) {
             self.record_native_input_use(input.evidence.clone(), node.span);
+            return;
+        }
+        if self.checked_factory_call == Some(node.span.lo.0) {
+            // The later receipt certifies that this exact call only retains
+            // its argument graph. Visit evaluation normally so nested reads,
+            // allocations and effects are still present in the root summary.
+            node.callee.visit_with(self);
+            node.args.visit_with(self);
             return;
         }
         match &node.callee {
