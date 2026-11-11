@@ -1504,6 +1504,15 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
 
+debundle_e2e_test(
+    name = "bounded_async_callback_fallback_test",
+    saved_analysis_tools = True,
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
+
 debundle_e2e_test(name = "callback_future_availability_test")
 
 debundle_e2e_test(

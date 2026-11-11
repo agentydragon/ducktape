@@ -103,6 +103,10 @@ pub struct StatementFacts {
     /// Proven effects are retained even when some targets remain unresolved;
     /// `complete` decides whether the conservative fallback also runs.
     pub(crate) synchronous_calls: Option<SynchronousCalls>,
+    /// Every source-indexed callable this statement can publish contributes
+    /// its synchronous prefix. `None` means coverage is incomplete, so the
+    /// graph fallback must use the whole lazy read/rebind closure.
+    pub(crate) synchronous_prefix_effects: Option<(BTreeSet<Id>, BTreeSet<Id>)>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
