@@ -587,13 +587,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]
     ordinary_resources = config["environment"]["resources"]
-    oom_executor = oom_resources["executor"]
-    ordinary_executor = ordinary_resources["executor"]
-    assert oom_executor["memory_max_bytes"] < ordinary_executor["memory_max_bytes"]
-    assert {
-        **oom_resources,
-        "executor": {**oom_executor, "memory_max_bytes": ordinary_executor["memory_max_bytes"]},
-    } == ordinary_resources
+    assert oom_resources == ordinary_resources
     control = config["control"]
     assert {"port": int(control["listen_address"].rsplit(":", 1)[1])} in interface["ports"]
     assert control["security"] == {

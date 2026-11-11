@@ -874,7 +874,6 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     )
     oom_config_map["metadata"]["name"] = oom_config_map_name
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
-    oom_config["environment"]["resources"]["executor"]["memory_max_bytes"] = vm_configuration.OOM_EXECUTOR_MEMORY_BYTES
     oom_config_map["data"]["environment-runtime.json"] = json.dumps(oom_config, separators=(",", ":"))
     oom_spec = oom_template["spec"]["vm"]["template"]["spec"]
     oom_spec["domain"]["firmware"]["kernelBoot"]["kernelArgs"] += " agentplane.cgroup-observer=1"
