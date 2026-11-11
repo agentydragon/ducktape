@@ -36,7 +36,6 @@ class DaemonStore:
         # Sources register/unregister their signals; store reads them via Computed
         self._gitstatusd_sources: Signal[dict[Path, Signal[Collector[GitstatusdData]]]] = Signal({})
 
-
         # Computed: all branches currently checked out across worktrees
         # Reads branch from GitstatusdData
         def _compute_active_branches() -> frozenset[str]:
