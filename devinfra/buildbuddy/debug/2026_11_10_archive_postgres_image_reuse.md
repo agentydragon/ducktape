@@ -122,3 +122,45 @@ making progress at their deadlines. Provider-side CPU and I/O visibility during
 a failing action would be needed to investigate that boundary. The earlier
 [loader comparison](../../debug/2026_10_27_oci_loader_comparison.md) did not
 establish a faster replacement for the existing loader.
+
+## Follow-up guest CPU and disk observations
+
+On 2026-11-11 UTC, two more cold runs of the real `test_database_migrate`
+target used source `1459dc9fb63d362d248bed98fad833d12f926c43`, with an
+instrumentation wrapper and distinct temporary local-only recycling keys. Both
+passed and landed on `sjc-*` hosts. The wrapper sampled guest `/proc/diskstats`
+and `/proc/stat` at roughly 0.5-second intervals; the first run also captured
+kernel-inclusive `perf` samples at 49 Hz. These are instrumented runs, not a
+representative fleet sample.
+
+The following counter deltas cover the sampled intervals enclosing each logged
+PostgreSQL import. Disk counters are guest-wide, and active CPU, I/O-wait, and
+steal core-seconds sum across six guest vCPUs; none is an attribution solely to
+PostgreSQL. BuildBuddy execution metadata reports `/dev/vda` mounted at `/` and
+`/dev/vdb` mounted at `/workspace`; the probe did not capture its own mount table.
+
+| Invocation                                                                            | Import | `vda` writes (`/`) | `vdb` reads (`/workspace`) |   Active CPU |    I/O wait |       Steal |
+| ------------------------------------------------------------------------------------- | -----: | -----------------: | -------------------------: | -----------: | ----------: | ----------: |
+| [98e6f327](https://app.buildbuddy.io/invocation/98e6f327-4c37-43e4-9de0-ef2d953656ab) | 14.7 s |            446 MiB |                    155 MiB | 22.00 core-s | 1.37 core-s | 1.43 core-s |
+| [8d31c267](https://app.buildbuddy.io/invocation/8d31c267-07dc-49cd-a960-47e95f89ba94) | 15.5 s |            534 MiB |                    155 MiB | 23.82 core-s | 2.19 core-s | 7.84 core-s |
+
+Across the **whole test actions**, BuildBuddy reports CPU pressure `some` totals
+of 0.75 and 2.55 seconds, and I/O pressure `some` totals of 0.089 and 0.099
+seconds. These are not aligned to the import windows. CPU pressure records
+runnable wait, not cgroup throttling.
+
+The first run's perf capture reported no lost samples. During its approximately
+12-second `unpigz` window, 641 samples were in Docker and 156 in `unpigz`;
+Docker stacks included `copy_user_enhanced_fast_string`, `generic_perform_write`,
+and `ext4_buffered_write_iter`. This shows CPU work in Docker's unpack and guest
+filesystem-write path. On-CPU samples and aggregate guest I/O-wait core time do
+not establish how much import wall time was spent on decompression, writing, or
+off-CPU waits; they cannot rule out a serial disk stall or expose provider
+disk latency.
+
+These two runs do not explain the earlier GKE–SJC timing difference: both used
+SJC, and the earlier GKE and SJC profiles had different kernel coverage.
+Synchronized provider-side host CPU and backing-disk metrics, or an identically
+instrumented cold run with controllable GKE placement, would be needed to
+separate those explanations. No remote snapshot sharing or save-policy change
+was used.

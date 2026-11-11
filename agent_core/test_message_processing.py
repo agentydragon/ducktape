@@ -37,7 +37,7 @@ class _ApiRequestRecorder(BaseHandler):
 
 async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
     recorder = _ApiRequestRecorder()
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider,
         client=FakeOpenAIModel(outputs=[ResponsesResult(id="resp_0"), ResponsesResult(id="resp_1")]),
         handlers=[recorder],
@@ -54,7 +54,7 @@ async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
 @pytest.fixture
 async def noop_agent(mcp_tool_provider, recording_handler):
     """Agent with NoopOpenAIClient for testing message processing without sampling."""
-    return await Agent.create(
+    return Agent(
         tool_provider=mcp_tool_provider,
         client=NoopOpenAIClient(),
         handlers=[recording_handler],
@@ -110,7 +110,7 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
         # Single response with reasoning + tool call + text - agent finishes immediately
         yield [m.make_item_reasoning(), m.echo_call("hi"), m.assistant_text("done")]
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
@@ -180,7 +180,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
 
         yield m.assistant_text("done")
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],

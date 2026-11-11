@@ -195,10 +195,6 @@ func (s *Store) sessionPredicate(alias string, firstArgument int) (string, []any
 	return s.readScope.Predicate(alias, firstArgument)
 }
 
-func transaction(ctx context.Context, db *sql.DB, opts sql.TxOptions, f func(*sql.Tx) error) error {
-	return postgres.Transaction(ctx, db, opts, f)
-}
-
 // snapshot is one read-only snapshot: settlement deletes entries and adds their range in one commit,
 // so a page read across that commit could pair entries with the range that removed them.
 var snapshot = sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
@@ -320,7 +316,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 	namespace, name, sandboxUID := sandbox.Namespace, sandbox.Name, sandbox.UID
 	written := writerColumns(writer)
 	var checkpoint Checkpoint
-	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		created := false
 		changed := false
 		var sandboxUIDValue any
@@ -463,7 +459,7 @@ func (s *Store) RecordedSessions(ctx context.Context, afterPosition uint64, limi
 // the new checkpoint commit together; on any error the entire batch rolls back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
 func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (uint64, error) {
 	var lastCursor uint64
-	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -565,7 +561,7 @@ func isUnstored(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor uin
 // it is, which also makes a repeat a no-op.
 func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnationUID string, announcedCursor uint64) (Checkpoint, error) {
 	var checkpoint Checkpoint
-	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -602,7 +598,7 @@ func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnati
 
 // RecordFeedState records only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
 func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *historypb.SessionFeedState) error {
-	return transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -721,7 +717,7 @@ func (s *Store) ReadPage(ctx context.Context, sessionID uuid.UUID, afterCursor u
 		return nil, invalid("history page")
 	}
 	var page *historypb.ReadSessionEventsResponse
-	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		var lastCursor uint64
 		var feedState []byte
 		predicate, scopeArgs := s.sessionPredicate("h", 2)
@@ -798,7 +794,7 @@ func (s *Store) ReadSequences(ctx context.Context, sessionID uuid.UUID, sequence
 		}
 	}
 	var page SequenceReadPage
-	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		predicate, scopeArgs := s.sessionPredicate("h", 2)
 		args := append([]any{sessionID}, scopeArgs...)
 		if err := tx.QueryRowContext(ctx, "SELECT h.last_cursor FROM session_history h WHERE h.id = $1 AND "+predicate, args...).Scan(&page.LastCursor); err != nil {
@@ -939,7 +935,7 @@ func (s *Store) ReadObservations(ctx context.Context, sessionID uuid.UUID, befor
 		return ObservationPage{}, invalid("observation page")
 	}
 	var page ObservationPage
-	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		predicate, scopeArgs := s.sessionPredicate("h", 2)
 		scopeArguments := append([]any{sessionID}, scopeArgs...)
 		err := tx.QueryRowContext(ctx, "SELECT h.last_cursor FROM session_history h WHERE h.id = $1 AND "+predicate, scopeArguments...).Scan(&page.LastCursor)

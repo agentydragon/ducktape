@@ -159,13 +159,21 @@ def _format_allowance(allowance: AllowanceView) -> str:
         f"  Estimated balance before next credit: {_format_money(allowance.forecast.projected_cycle_end_minor_units, currency)}"
     )
     lines.append(f"  Next credit: {_format_timestamp(allowance.next_credit_at)}")
-    exhaustion = (
-        _format_timestamp(allowance.forecast.estimated_exhaustion_at)
-        if allowance.forecast.estimated_exhaustion_at
-        else "no recent spend"
-    )
+    if allowance.available_minor_units is not None and allowance.available_minor_units <= 0:
+        exhaustion = "already exhausted"
+    elif allowance.forecast.estimated_exhaustion_at:
+        exhaustion = _format_timestamp(allowance.forecast.estimated_exhaustion_at)
+    elif allowance.forecast.daily_pace_minor_units is None:
+        exhaustion = "unknown (pace warming up)"
+    elif allowance.forecast.daily_pace_minor_units == 0:
+        exhaustion = "not projected (zero pace)"
+    else:
+        exhaustion = "unknown (forecast unavailable)"
     lines.append(f"  Projected exhaustion (no future credits): {exhaustion}")
-    lines.append(f"  Oldest account sync: {_format_timestamp(allowance.last_synced_at)}")
+    lines.append(
+        f"  Oldest linked sync: {_format_timestamp(allowance.last_synced_at)} "
+        "(last successful local Item sync; may be transactions-only, not a bank refresh)"
+    )
     if allowance.note:
         lines.append(f"  {allowance.note}")
     return "\n".join(lines)
@@ -320,7 +328,7 @@ def _format_summary(view: SpendView, status: str, last_error: str, window: str, 
     if sync_times:
         present_syncs = [value for value in sync_times if value is not None]
         oldest = min(present_syncs) if len(present_syncs) == len(sync_times) else None
-        lines.append(f"Oldest source sync: {_format_timestamp(oldest)}")
+        lines.append(f"Oldest linked sync: {_format_timestamp(oldest)} (local; bank refresh unknown)")
     if status != "ready":
         lines.append(f"Desktop client: {status}.")
         if status == "authentication-required":

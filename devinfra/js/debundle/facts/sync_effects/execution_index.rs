@@ -14014,7 +14014,7 @@ impl Visit for ExecutionIndex {
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         binding_targets::record_update_target(&expression.arg, self);
-        let simple_target = binding_targets::simple_update_target(&expression.arg);
+        let simple_target = binding_targets::simple_write_target_expr(&expression.arg);
         if let Some(binding_targets::SimpleWriteTarget::Binding(binding)) = simple_target.as_ref() {
             if let Some(key) = self.current {
                 self.callables

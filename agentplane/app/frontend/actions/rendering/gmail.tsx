@@ -96,14 +96,9 @@ function DraftOpened({ args }: { args: DraftArguments }): JSX.Element {
   );
 }
 
-function DraftDetails({ args }: { args: DraftArguments }): JSX.Element {
-  return <DraftOpened args={args} />;
-}
-
 export const gmailDraftLabel: ArgumentsPreview = definePreview(draftArguments, DraftLabel);
 export const gmailDraftCollapsed: ArgumentsPreview = definePreview(draftArguments, DraftCollapsed);
 export const gmailDraftOpened: ArgumentsPreview = definePreview(draftArguments, DraftOpened);
-export const gmailDraftDetails: ArgumentsPreview = definePreview(draftArguments, DraftDetails);
 
 const threadSearchArguments = z.strictObject({
   q: z.string().nullable().optional(),
@@ -305,7 +300,7 @@ export const gmailDraftPresentation: ActionPresentation = {
   label: gmailDraftLabel,
   call: gmailDraftCall,
   pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
-  details: { arguments: gmailDraftDetails, result: gmailDraftResult },
+  details: { arguments: gmailDraftOpened, result: gmailDraftResult },
   offersCardDecisionButtons: offersCardDecisionButtonsDraftsCreate,
 };
 

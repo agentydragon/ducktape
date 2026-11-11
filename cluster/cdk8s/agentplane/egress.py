@@ -430,9 +430,12 @@ def _egress_policies(
                     "dl.google.com",
                     "files.pythonhosted.org",
                     "ftp.gnu.org",
+                    # Base images Bazel's rules_oci pulls (mirror.gcr.io fronts Docker Hub).
+                    "gcr.io",
                     "ghcr.io",
                     "go.dev",
                     "index.crates.io",
+                    "mirror.gcr.io",
                     "nixos.org",
                     "nodejs.org",
                     # ghcr.io redirects blob reads here, so a pull fails without it. A
@@ -449,7 +452,14 @@ def _egress_policies(
                     # keep-sorted end
                 ],
                 methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            )
+            ),
+            # proxy.golang.org answers a module zip with a signed redirect into its own bucket, so
+            # a Go module fetch fails without it. Only that bucket: the host serves every GCS bucket.
+            Rule.egress(
+                hosts=["storage.googleapis.com"],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                paths=["/proxy-golang-org-prod/**"],
+            ),
         ],
     )
     add_egress_policy(

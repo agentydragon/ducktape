@@ -263,7 +263,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         # TODO(mpokorny): A max-iterations abort handler and current ProposePromptNTimes can be exceeded under
         # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
         # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
-        pe = await Agent.create(
+        pe = Agent(
             tool_provider=MCPToolProvider(clients),
             client=model,
             handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(events_path=run_dir / "events.jsonl")],

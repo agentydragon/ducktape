@@ -33,7 +33,7 @@ async def test_llm_exec_echo(mock_or_live, docker_exec_server) -> None:
         yield m.assistant_text("hello")
 
     async with Client(docker_exec_server) as mcp_client:
-        agent = await Agent.create(
+        agent = Agent(
             tool_provider=MCPToolProvider(mcp_client),
             client=client,
             # Simple echo roundtrip shouldn't need more than ~3 turns; 10 is a generous safety margin.

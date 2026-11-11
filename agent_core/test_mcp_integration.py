@@ -27,7 +27,7 @@ async def test_agent_mcp_echo(mcp_tool_provider_echo, test_handlers, recording_h
         yield from m.echo_roundtrip("hello")
         yield m.assistant_text("done")
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=test_handlers,

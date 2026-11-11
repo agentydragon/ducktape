@@ -989,7 +989,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           }
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
         if (allowance.last_synced_at)
-          this._addReadOnly(`Sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
+          this._addReadOnly(`Oldest linked sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {
         const link = new PopupMenu.PopupMenuItem("Check a purchase / dashboard…");

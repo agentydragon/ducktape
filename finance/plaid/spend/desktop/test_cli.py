@@ -112,6 +112,8 @@ def test_formats_active_allowance_and_cards() -> None:
     assert "Estimated balance before next credit:" in output
     assert "-$2" in output
     assert "Next credit:" in output
+    assert "Projected exhaustion (no future credits):" in output
+    assert "Oldest linked sync:" in output
     assert "Sample card" in output
     assert "$12 / $100 · 12.0%" in output
 
@@ -131,7 +133,7 @@ def test_compact_summary_preserves_pace_and_actionable_information() -> None:
 def test_compact_summary_does_not_hide_unknown_source_sync() -> None:
     card = sample_card().model_copy(update={"last_synced_at": None})
     view = SpendView(generated_at=NOW, cards=[card], allowance=sample_allowance())
-    assert "Oldest source sync: unknown" in _format_summary(view, "ready", "", "7d", None)
+    assert "Oldest linked sync: unknown" in _format_summary(view, "ready", "", "7d", None)
 
 
 def test_sparkline_scale_thresholds_gaps_and_history_span() -> None:
@@ -273,6 +275,43 @@ async def test_history_response_uses_shared_wire_model(monkeypatch: pytest.Monke
     assert "last 2 days" in await cli._history_line(bus, "7d", 30, "zero", False)
     del payload["generated_at"]
     assert await cli._history_line(bus, "7d", 30, "zero", False) == "Pace history unavailable"
+
+
+def test_cli_distinguishes_unknown_and_zero_pace_forecasts() -> None:
+    allowance = sample_allowance()
+    warming_forecast = allowance.forecast.model_copy(
+        update={
+            "daily_pace_minor_units": None,
+            "projected_cycle_end_minor_units": None,
+            "estimated_exhaustion_at": None,
+            "alert_state": PaceAlert.UNAVAILABLE,
+        }
+    )
+    warming = allowance.model_copy(update={"forecast": warming_forecast, "spending_signal": PaceAlert.UNAVAILABLE})
+    warming_output = _format_view(SpendView(generated_at=NOW, cards=[], allowance=warming), "ready", "")
+    assert "Projected exhaustion (no future credits): unknown (pace warming up)" in warming_output
+    assert "no recent spend" not in warming_output
+
+    zero_forecast = allowance.forecast.model_copy(
+        update={
+            "daily_pace_minor_units": 0,
+            "projected_cycle_end_minor_units": allowance.available_minor_units,
+            "estimated_exhaustion_at": None,
+            "alert_state": PaceAlert.NORMAL,
+        }
+    )
+    zero_pace = allowance.model_copy(update={"forecast": zero_forecast, "spending_signal": PaceAlert.NORMAL})
+    zero_output = _format_view(SpendView(generated_at=NOW, cards=[], allowance=zero_pace), "ready", "")
+    assert "Projected exhaustion (no future credits): not projected (zero pace)" in zero_output
+
+    missing_projection = zero_forecast.model_copy(update={"daily_pace_minor_units": 1})
+    inconsistent = allowance.model_copy(update={"forecast": missing_projection})
+    inconsistent_output = _format_view(SpendView(generated_at=NOW, cards=[], allowance=inconsistent), "ready", "")
+    assert "Projected exhaustion (no future credits): unknown (forecast unavailable)" in inconsistent_output
+
+    exhausted = allowance.model_copy(update={"available_minor_units": 0})
+    exhausted_output = _format_view(SpendView(generated_at=NOW, cards=[], allowance=exhausted), "ready", "")
+    assert "Projected exhaustion (no future credits): already exhausted" in exhausted_output
 
 
 def test_formats_unavailable_allowance_without_inventing_balance() -> None:
