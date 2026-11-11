@@ -38,7 +38,7 @@ func (s *Span) next() *eventlogpb.EventEntry {
 func (s *Span) Native(frame map[string]any) uint64 {
 	entry := s.next()
 	entry.Event.Observation = &eventpb.Event_Native{Native: &eventpb.Native{
-		Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: encode(frame),
+		Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: Encode(frame),
 	}}
 	return entry.Cursor
 }
@@ -58,7 +58,8 @@ func (s *Span) Stderr(line string) uint64 {
 	return entry.Cursor
 }
 
-func encode(frame map[string]any) string {
+// Encode serializes a frame as the line a native entry carries.
+func Encode(frame map[string]any) string {
 	line, err := json.Marshal(frame)
 	if err != nil {
 		panic(err)
@@ -76,9 +77,6 @@ func With(frame map[string]any, extra map[string]any) map[string]any {
 	}
 	return result
 }
-
-// Encode serializes a frame as the line a native entry carries.
-func Encode(frame map[string]any) string { return encode(frame) }
 
 func ClaudeFrame(event map[string]any, uuid string) map[string]any {
 	return map[string]any{
@@ -157,7 +155,7 @@ func ClaudeToolArguments(chunks []string, toolInput map[string]any) *Span {
 		"type": "tool_use", "id": "toolu_test", "name": "Bash", "input": toolInput,
 	}))
 	span.Derived([]uint64{assistant}, &eventpb.Event{Observation: &eventpb.Event_ToolArguments{
-		ToolArguments: &eventpb.ToolArguments{ItemId: "toolu_test", ArgumentsJson: encode(toolInput)},
+		ToolArguments: &eventpb.ToolArguments{ItemId: "toolu_test", ArgumentsJson: Encode(toolInput)},
 	}})
 	return span
 }
