@@ -165,9 +165,9 @@ Rules for the operations:
   sampler's `CreateSession`. No grant of any type lets an agent call
   a runtime's `CreateSession` directly (operator, 2026-11-10): the Gateway admits only Dispatcher
   on that method (`runner_gateway/gateway/gateway.go`), and a Session an agent wants goes through
-  Dispatcher. TODO (operator, 2026-11-10): rename the runtime-side
-  `CreateSession` (`env/runtime/control/environment_runtime.proto`) to say it starts a native
-  Session that Dispatcher already admitted, so it does not read as a second authority.
+  Dispatcher. Making the runtime's gRPC surface unmistakably about native Sessions (its
+  `CreateSession` starts one Dispatcher already admitted) is deferred to
+  [`ENVIRONMENT_RUNTIME_NATIVE_SURFACE`](task_dag.md#environment_runtime_native_surface--an-environment-runtime-surface-unmistakably-about-native-sessions).
 
 ## Evaluation points
 

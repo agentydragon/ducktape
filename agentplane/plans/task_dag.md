@@ -3158,6 +3158,7 @@ flowchart LR
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and inboxes authorized by identity]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
+    ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_RUNTIME_NATIVE_SURFACE[Deferred: a runtime surface unmistakably about native Sessions]
     ENVIRONMENT_LIFECYCLE_RULES --> WAKE_ON_DELIVERY_DESIGN[Deferred: whether delivering Session work wakes its environment]
     ENVIRONMENT_LIFECYCLE_RULES --> CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
 ```
@@ -3587,6 +3588,17 @@ itself) needs a rule naming that Identity. The likely shape is a `session` rule 
 their Identity (`identities: [{name: worker}]`), never by creator, with no operation that changes a
 Session's Identity. Picked up when an orchestration use needs it. **Exit:** a decided design and the
 PRs it implies.
+
+### `ENVIRONMENT_RUNTIME_NATIVE_SURFACE` — an Environment Runtime surface unmistakably about native Sessions
+
+**Deferred (operator, 2026-11-11).** The Environment Runtime's gRPC service
+(`env/runtime/control/environment_runtime.proto`) has a `CreateSession` that starts a native Session
+Dispatcher already admitted, but its name reads like a second authority beside Dispatcher's
+`CreateSession` ([environment rules](environment_rules.md#operations)). Make the surface
+unmistakably about native Sessions: names, request shapes and docs that say Dispatcher admits and
+the runtime materializes. This may mean rethinking how the service is cut (native-harness control
+versus environment facts, executor and other concerns) and its callers beyond Dispatcher. **Exit:** a
+decided cut and the renames or splits it implies.
 
 ### `WAKE_ON_DELIVERY_DESIGN` — whether delivering Session work wakes its environment
 
