@@ -207,7 +207,7 @@ function panelSignal(allowance, window) {
   if (!pace) return { level: "unknown", label: "Pace unavailable" };
   if (pace.ratio > 1.2) return { level: "danger", label: "Pace over 120% of leash" };
   if (pace.ratio > 1) return { level: "caution", label: "Pace above leash" };
-  return { level: "good", label: "Pace at or below leash" };
+  return { level: "good", label: "Pace ≤ leash" };
 }
 
 const PANEL_ITEMS = ["status", "balance", "pace", "sparkline"];

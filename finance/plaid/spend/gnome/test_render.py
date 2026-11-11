@@ -422,7 +422,7 @@ def test_allowance_paced(
         menu_text = _allowance_menu_text(session, view)
         assert "$200 available" in menu_text
         assert "Balance details" not in menu_text
-        assert "7d pace at or below leash" in menu_text
+        assert "7d pace ≤ leash" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
@@ -451,7 +451,7 @@ def test_allowance_warning(
     view = allowance_scenarios["allowance_warning"]
     with _menu(session, "allowance_warning", "$200") as geometry:
         menu_text = _allowance_menu_text(session, view)
-        assert "7d pace at or below leash" in menu_text
+        assert "7d pace ≤ leash" in menu_text
         assert "Overall warning · 30d forecast or pace" in menu_text
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
