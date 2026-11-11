@@ -51,7 +51,7 @@ self.type != 'environment' || self.operations.all(o, o != 'send_message')
 !has(self.targets) || (self.type == 'environment'
   ? (!has(self.targets.inboxTags) && !(has(self.targets.allSandboxes) && self.targets.allSandboxes))
   : !has(self.targets.boundIdentity))
-# proposed with question 3: delete names its Sandboxes
+# settled (operator, 2026-11-11): delete names its Sandboxes
 self.type != 'environment' || !self.operations.exists(o, o == 'delete') || !has(self.targets.boundIdentity)
 ```
 
@@ -237,9 +237,10 @@ needs only Session write authority.
    branch's self-read); `read` stays in this rule for every other target, such as an orchestrator's
    workers. The alternative keeps every read explicit, so an Identity with no rule cannot list the
    Sandboxes it runs in.
-3. **`delete` only by name.** Recommendation: yes, through the CEL rule above. A `boundIdentity`
-   target covers environments that do not exist yet, and deletion loses their workspace and state
-   volumes; naming them, optionally by UID, makes each grant say what may be lost.
+3. **`delete` only by name: settled yes** (operator, 2026-11-11). A `boundIdentity` target covers
+   environments that do not exist yet, and deletion loses their workspace and state volumes; naming
+   them, optionally by UID, makes each grant say what may be lost. The CEL rule in
+   [Schema](#schema) enforces this.
 4. **One set per Identity.** `boundIdentity` names a fixed Identity, so the multi-agent set above is
    written per Identity, which the Session-managed Identities of
    `SESSION_IDENTITY_PROVISIONING_DESIGN` would make routine. A "the binding's own subject" form of
