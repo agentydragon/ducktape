@@ -32,7 +32,9 @@ abbreviated available balance, pace percentage, and sparkline. A switch in the m
 30-day pace. The percentage compares the selected recorded purchase average with the daily leash, independently of
 the existing forecast/pace warning also shown in the expanded view. Green means at or below the leash, yellow above 100% through 120%, and red above
 120% or when the allowance is exhausted. The sparkline uses backend-calculated daily history, with a dotted line at
-the current leash and gaps for unknown coverage. Exact available balance remains in the menu.
+the current leash and gaps for unknown coverage. Each segment uses the same pace thresholds and colors as the panel text.
+Its displayed time span, vertical baseline, and leash line are
+configurable separately from the rolling-average period. Exact available balance remains in the menu.
 
 ## Wire contract
 

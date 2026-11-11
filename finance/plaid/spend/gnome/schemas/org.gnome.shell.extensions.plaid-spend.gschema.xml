@@ -17,5 +17,22 @@
       <default>'7d'</default>
       <summary>Rolling pace window</summary>
     </key>
+    <key name="sparkline-anchor-zero" type="b">
+      <default>true</default>
+      <summary>Anchor sparkline scale at zero</summary>
+    </key>
+    <key name="sparkline-show-leash" type="b">
+      <default>true</default>
+      <summary>Show the daily leash on the sparkline</summary>
+    </key>
+    <key name="sparkline-history-days" type="s">
+      <choices>
+        <choice value="7"/>
+        <choice value="14"/>
+        <choice value="30"/>
+      </choices>
+      <default>'30'</default>
+      <summary>Number of days shown on the sparkline</summary>
+    </key>
   </schema>
 </schemalist>

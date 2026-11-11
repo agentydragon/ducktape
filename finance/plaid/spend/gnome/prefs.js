@@ -1,4 +1,5 @@
 import Adw from "gi://Adw";
+import Gio from "gi://Gio";
 import Gtk from "gi://Gtk";
 
 import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
@@ -18,6 +19,7 @@ function orderedItems(settings) {
 
 export default class PlaidSpendPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window) {
+    window.set_default_size(640, 760);
     const settings = this.getSettings();
     const page = new Adw.PreferencesPage({ title: "Panel", icon_name: "view-more-symbolic" });
     const group = new Adw.PreferencesGroup({
@@ -34,8 +36,31 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
       settings.set_string("pace-window", windowRow.selected === 1 ? "30d" : "7d")
     );
     windowGroup.add(windowRow);
+    const sparklineGroup = new Adw.PreferencesGroup({ title: "Sparkline" });
+    const days = [7, 14, 30];
+    const historyRow = new Adw.ComboRow({
+      title: "Time shown",
+      subtitle: "Separate from the rolling average period",
+      model: Gtk.StringList.new(days.map((value) => `${value} days`)),
+      selected: days.indexOf(Number(settings.get_string("sparkline-history-days"))),
+    });
+    historyRow.connect("notify::selected", () => {
+      if (days[historyRow.selected] !== undefined)
+        settings.set_string("sparkline-history-days", String(days[historyRow.selected]));
+    });
+    sparklineGroup.add(historyRow);
+    const anchorRow = new Adw.SwitchRow({
+      title: "Start vertical scale at zero",
+      subtitle: "Turn off to fit the displayed history",
+    });
+    settings.bind("sparkline-anchor-zero", anchorRow, "active", Gio.SettingsBindFlags.DEFAULT);
+    sparklineGroup.add(anchorRow);
+    const leashRow = new Adw.SwitchRow({ title: "Show the daily leash line" });
+    settings.bind("sparkline-show-leash", leashRow, "active", Gio.SettingsBindFlags.DEFAULT);
+    sparklineGroup.add(leashRow);
     page.add(group);
     page.add(windowGroup);
+    page.add(sparklineGroup);
     window.add(page);
 
     let rows = [];
@@ -44,6 +69,7 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
       rows = [];
       const order = orderedItems(settings);
       const visible = settings.get_strv("panel-visible");
+      sparklineGroup.sensitive = visible.includes("sparkline");
       for (const [index, id] of order.entries()) {
         const title = ITEMS.find(([item]) => item === id)?.[1] ?? id;
         const row = new Adw.ActionRow({ title });
@@ -72,14 +98,20 @@ export default class PlaidSpendPreferences extends ExtensionPreferences {
         rows.push(row);
       }
     };
-    rebuild();
     const handlers = [
       settings.connect("changed::panel-order", rebuild),
       settings.connect("changed::panel-visible", rebuild),
       settings.connect("changed::pace-window", () => {
         windowRow.selected = settings.get_string("pace-window") === "30d" ? 1 : 0;
       }),
+      settings.connect("changed::sparkline-history-days", () => {
+        historyRow.selected = days.indexOf(Number(settings.get_string("sparkline-history-days")));
+      }),
     ];
+    // GSettings reports changes only for keys read after connecting a handler.
+    rebuild();
+    windowRow.selected = settings.get_string("pace-window") === "30d" ? 1 : 0;
+    historyRow.selected = days.indexOf(Number(settings.get_string("sparkline-history-days")));
     window.connect("close-request", () => {
       for (const handler of handlers) settings.disconnect(handler);
       return false;
