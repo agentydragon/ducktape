@@ -249,8 +249,9 @@ it stops matching and no Session as `audit` can be created through it.
 
 **#15436, zero environments.** `ci-daily`'s own Session, through the central sampler as delegating
 actor, calls `CreateSession(identity: ci-daily, placement: central_sampler)`. No binding is created,
-so no `environment` rule applies, and the call is `PermissionDenied` until question 5 decides who may
-create Sessions as an Identity. The app, as a privileged caller, can still create it.
+so no `environment` rule applies. It passes when `ci-daily` holds a `session` rule with `create` on
+`identities: [{self: true}]` ([question 5](#questions-for-the-operator)); without one it is
+`PermissionDenied`. The app, as a privileged caller, can still create it.
 
 **#15436, attach.** `ci-daily` holds `bind_session` on
 `environments: [{sandbox: {name: ci-build}, boundIdentity: {name: ci-daily}}]`.
@@ -266,8 +267,8 @@ authority over S.
   operation keeps the two from diverging.
 - **`boundIdentity: I` read as "run as I": disagree.** A Session with no environment has no
   binding, so creating one is not an operation on an environment. Reading it into this rule would
-  make an environment grant mean something with no environment in it. Question 5 asks where it
-  belongs instead.
+  make an environment grant mean something with no environment in it. It is a `session` rule's
+  `create` instead (question 5).
 - **No Session target.** The rule's nouns are environments; a Session is addressed by UUID and by its
   Identity, and policy cannot name a Session before it exists. Whether an Identity may delete its own
   Sessions is Session authority, decided with reads and inboxes under `SESSION_IDENTITY_AUTHZ`,
@@ -308,7 +309,20 @@ authority over S.
    fixed `boundIdentity` would need the multi-agent set written per Identity, which the
    Session-managed Identities of `SESSION_IDENTITY_PROVISIONING_DESIGN` would make routine. `self`
    lets one set serve every Identity it is bound to ([Schema](#schema)).
-5. **Creating a Session as an Identity, with no environment.** #15436 needs an Identity caller to
-   create a central Session as I. Recommendation: decide it under `SESSION_SUBAGENT_DELEGATION` as
-   Session authority keyed on the Identity, possibly implied for a caller creating Sessions as its
-   own Identity. Until then only privileged callers create a Session with no binding.
+5. **Creating a Session as an Identity, with no environment: settled, an explicit grant**
+   (operator, 2026-11-11). Not implied even for a caller creating a Session as its own Identity, to
+   stay conservative. The smallest shape is a `session` rule type whose only operation is `create`,
+   targeted by Identity:
+
+   ```yaml
+   - type: session
+     operations: [create]
+     identities:
+       - self: true # the binding's own subject, as boundIdentity: {self: true}
+   ```
+
+   Only `self` is accepted at first; creating a Session as another Identity with no environment
+   waits for the deferred cross-Identity node. A native placement needs no `session` rule: its
+   `bind_session` on the target is the grant. The rule type itself is built under
+   `SESSION_SUBAGENT_DELEGATION`; until it exists, only privileged callers create a Session with no
+   binding.
