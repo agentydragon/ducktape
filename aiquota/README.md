@@ -120,7 +120,9 @@ in separate rows. Its popup wraps to a bounded width. Broad API promo scopes are
 details; product or model restrictions remain visible in the default output on all surfaces.
 
 `aiquota --details` expands numeric pace, exact expiry times, all known reset-credit expiries,
-peak schedules and original error messages. The default keeps usage, reset countdowns,
+peak schedules and original error messages. An expanded peak schedule includes the active interval
+and the following windows: its start remains useful context while the compact summary reports when
+the current multiplier ends. The default keeps usage, reset countdowns,
 forecasts and concise error summaries. `--verbose` remains provider-response debugging.
 The tmux segment shows one compact subscription summary per provider and omits API balances.
 GNOME's panel also reserves API balances for its popup.
