@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -19,6 +17,7 @@ from devinfra.gc import (
     workspace_scan,
     worktree_gc,
 )
+from devinfra.gc.async_io import run_blocking
 from devinfra.gc.branch_gc import BranchClassification, Holder
 from devinfra.gc.foreign_clone_gc import ForeignCloneClassification, PrunableForeignClone
 from devinfra.gc.git_repo import Worktree
@@ -27,7 +26,7 @@ from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.removal import RemovalResult, Skipped
 from devinfra.gc.repo_contents_cache_gc import EntryInspection, PrunableEntry, ReviewEntry, TrashedEntries
 from devinfra.gc.verdict import verdict_of
-from devinfra.gc.work_queue import AsyncWorkItem, Finished, WorkItem
+from devinfra.gc.work_queue import AsyncMutation, AsyncWorkItem, Finished, WorkItem
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree
 
 
@@ -42,18 +41,6 @@ class RepositoryFacts:
 
 
 type PrSource = Callable[[Path, set[str]], Awaitable[dict[str, PrInfo]]]
-
-
-async def _finish_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-    """Keep a cancelled discovery job alive until its blocking work has stopped."""
-    thread = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))
-    try:
-        return await asyncio.shield(thread)
-    except asyncio.CancelledError:
-        # Cancellation wins over errors from the abandoned read.
-        with suppress(Exception):
-            await thread
-        raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,21 +178,20 @@ type Event = (
 )
 
 
-def _active_worktree(repo: Path) -> Path | None:
-    toplevel = git_repo.git(repo, "rev-parse", "--show-toplevel", check=False).stdout.strip()
+async def _active_worktree(repo: Path) -> Path | None:
+    toplevel = (await git_repo.git(repo, "rev-parse", "--show-toplevel", check=False)).stdout.strip()
     return Path(toplevel) if toplevel else None
 
 
-def _repository_facts(repo: Path, prs: dict[str, PrInfo]) -> RepositoryFacts:
-    pg = git_repo.open_repo(repo)
-    return RepositoryFacts(
-        repo,
-        git_repo.main_worktree(repo),
-        _active_worktree(repo),
-        git_repo.main_ref(pg),
-        git_repo.default_branch_name(pg),
-        prs,
-    )
+async def _repository_facts(repo: Path, prs: dict[str, PrInfo]) -> RepositoryFacts:
+    def refs() -> tuple[str, str]:
+        pg = git_repo.open_repo(repo)
+        return git_repo.main_ref(pg), git_repo.default_branch_name(pg)
+
+    main_path = await git_repo.main_worktree(repo)
+    active_path = await _active_worktree(repo)
+    main, default_branch = await run_blocking(refs)
+    return RepositoryFacts(repo, main_path, active_path, main, default_branch, prs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,21 +204,15 @@ class PrepareRepositoryScan(AsyncWorkItem[Event]):
     phase: ClassVar[str] = "discover git state"
 
     async def run_async(self) -> Finished[Event]:
-        def discover() -> tuple[list[Path], set[str]]:
-            roots = (
-                workspace_scan.foreign_clone_roots(self.repo, self.root, session_bases=self.session_bases)
-                if self.foreign
-                else []
-            )
-            names = workspace_scan.pr_branch_candidates(self.repo) | workspace_scan.foreign_clone_branch_candidates(
-                roots
-            )
-            return roots, names
-
-        roots, names = await _finish_thread(discover)
+        roots = (
+            await workspace_scan.foreign_clone_roots(self.repo, self.root, session_bases=self.session_bases)
+            if self.foreign
+            else []
+        )
+        names = await workspace_scan.pr_branch_candidates(self.repo)
+        names |= await workspace_scan.foreign_clone_branch_candidates(roots)
         prs = await self.pr_source(self.repo, names)
-
-        return Finished(PreparedRepositoryScan(await _finish_thread(_repository_facts, self.repo, prs), roots), "done")
+        return Finished(PreparedRepositoryScan(await _repository_facts(self.repo, prs), roots), "done")
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,39 +223,39 @@ class DiscoverBaseWorkspaces(AsyncWorkItem[Event]):
     phase: ClassVar[str] = "discover base workspaces"
 
     async def run_async(self) -> Finished[Event]:
-        worktrees = await _finish_thread(workspace_scan.base_worktrees, self.repo, self.bases)
+        worktrees = await workspace_scan.base_worktrees(self.repo, self.bases)
         names = {worktree.branch for worktree in worktrees if worktree.branch}
         prs = await self.pr_source(self.repo, names)
-        facts = await _finish_thread(_repository_facts, self.repo, prs)
-        live = await _finish_thread(worktree_gc.processes_by_worktree, [wt.path for wt in worktrees])
+        facts = await _repository_facts(self.repo, prs)
+        live = await run_blocking(worktree_gc.processes_by_worktree, [wt.path for wt in worktrees])
         return Finished(FoundBaseWorkspaces(facts, worktrees, live), "done")
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoverWorktrees:
+class DiscoverWorktrees(AsyncWorkItem[Event]):
     facts: RepositoryFacts
     phase: ClassVar[str] = "discover"
 
-    def run(self) -> Finished[Event]:
-        worktrees = [wt for wt in git_repo.list_worktrees(self.facts.repo) if wt.path != self.facts.main_path]
-        live = worktree_gc.processes_by_worktree(wt.path for wt in worktrees)
+    async def run_async(self) -> Finished[Event]:
+        worktrees = [wt for wt in await git_repo.list_worktrees(self.facts.repo) if wt.path != self.facts.main_path]
+        live = await run_blocking(worktree_gc.processes_by_worktree, (wt.path for wt in worktrees))
         return Finished(FoundWorktrees(worktrees, live), "done")
 
 
 @dataclass(frozen=True, slots=True)
-class InspectWorktree:
+class InspectWorktree(AsyncWorkItem[Event]):
     facts: RepositoryFacts
     worktree: Worktree
     live: list[int]
     phase: ClassVar[str] = "inspect worktrees"
 
-    def run(self) -> Finished[Event]:
-        item = _inspect_worktree(self.facts, self.worktree, self.live)
+    async def run_async(self) -> Finished[Event]:
+        item = await _inspect_worktree(self.facts, self.worktree, self.live)
         return Finished(InspectedWorktree(item), verdict_of(item).lower())
 
 
-def _inspect_worktree(facts: RepositoryFacts, worktree: Worktree, live: list[int]) -> Classification:
-    return worktree_gc.classify_worktree(
+async def _inspect_worktree(facts: RepositoryFacts, worktree: Worktree, live: list[int]) -> Classification:
+    return await worktree_gc.classify_worktree(
         worktree,
         main=facts.main,
         pr_states=facts.prs,
@@ -286,26 +266,26 @@ def _inspect_worktree(facts: RepositoryFacts, worktree: Worktree, live: list[int
 
 
 @dataclass(frozen=True, slots=True)
-class InspectBaseWorkspace:
+class InspectBaseWorkspace(AsyncWorkItem[Event]):
     facts: RepositoryFacts
     worktree: Worktree
     live: list[int]
     phase: ClassVar[str] = "inspect base workspaces"
 
-    def run(self) -> Finished[Event]:
-        item = _inspect_worktree(self.facts, self.worktree, self.live)
+    async def run_async(self) -> Finished[Event]:
+        item = await _inspect_worktree(self.facts, self.worktree, self.live)
         return Finished(InspectedBaseWorkspace(item), verdict_of(item).lower())
 
 
 @dataclass(frozen=True, slots=True)
-class RemoveWorktree:
+class RemoveWorktree(AsyncMutation[Event]):
     facts: RepositoryFacts
     item: PrunableWorktree
     phase: ClassVar[str] = "remove worktrees"
 
-    def run(self) -> Finished[Event]:
-        live = worktree_gc.processes_by_worktree([self.item.worktree.path])
-        result = worktree_gc.remove_if_still_prunable(
+    async def run_async(self) -> Finished[Event]:
+        live = await run_blocking(worktree_gc.processes_by_worktree, [self.item.worktree.path])
+        result = await worktree_gc.remove_if_still_prunable(
             self.facts.repo,
             self.item.worktree,
             main=self.item.main,
@@ -318,25 +298,25 @@ class RemoveWorktree:
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoverBranches:
+class DiscoverBranches(AsyncWorkItem[Event]):
     facts: RepositoryFacts
     phase: ClassVar[str] = "discover"
 
-    def run(self) -> Finished[Event]:
-        pg = git_repo.open_repo(self.facts.main_path)
-        return Finished(FoundBranches(branch_gc.local_branches(pg), branch_gc.branch_holders(self.facts.repo)), "done")
+    async def run_async(self) -> Finished[Event]:
+        names = await run_blocking(lambda: branch_gc.local_branches(git_repo.open_repo(self.facts.main_path)))
+        return Finished(FoundBranches(names, await branch_gc.branch_holders(self.facts.repo)), "done")
 
 
 @dataclass(frozen=True, slots=True)
-class InspectBranch:
+class InspectBranch(AsyncWorkItem[Event]):
     facts: RepositoryFacts
     name: str
     holder: Holder
     phase: ClassVar[str] = "inspect branches"
 
-    def run(self) -> Finished[Event]:
-        pg = git_repo.open_repo(self.facts.main_path)
-        item = branch_gc.classify_branch(
+    async def run_async(self) -> Finished[Event]:
+        pg = await run_blocking(git_repo.open_repo, self.facts.main_path)
+        item = await branch_gc.classify_branch(
             self.name,
             pg=pg,
             main=self.facts.main,
@@ -348,13 +328,13 @@ class InspectBranch:
 
 
 @dataclass(frozen=True, slots=True)
-class RemoveBranch:
+class RemoveBranch(AsyncMutation[Event]):
     facts: RepositoryFacts
     item: branch_gc.PrunableBranch
     phase: ClassVar[str] = "delete branches"
 
-    def run(self) -> Finished[Event]:
-        result = branch_gc.delete_branch(self.facts.repo, self.item.branch.name, expected_tip=self.item.tip)
+    async def run_async(self) -> Finished[Event]:
+        result = await branch_gc.delete_branch(self.facts.repo, self.item.branch.name, expected_tip=self.item.tip)
         return Finished(RemovedBranch(result), type(result).__name__.lower())
 
 
@@ -472,39 +452,39 @@ class EmptyCacheTrash:
 
 
 @dataclass(frozen=True, slots=True)
-class InspectForeignClone:
+class InspectForeignClone(AsyncWorkItem[Event]):
     facts: RepositoryFacts
     root: Path
     phase: ClassVar[str] = "inspect foreign clones"
 
-    def run(self) -> Finished[Event]:
-        item = foreign_clone_gc.classify_foreign_clone(
+    async def run_async(self) -> Finished[Event]:
+        item = await foreign_clone_gc.classify_foreign_clone(
             self.root, pr_states=self.facts.prs, active_path=self.facts.active_path
         )
         return Finished(InspectedForeignClone(item), verdict_of(item).lower())
 
 
 @dataclass(frozen=True, slots=True)
-class RemoveForeignClone:
+class RemoveForeignClone(AsyncMutation[Event]):
     facts: RepositoryFacts
     root: Path
     output_user_root: Path
     session_bases: tuple[Path, ...]
     phase: ClassVar[str] = "remove foreign clones"
 
-    def run(self) -> Finished[Event]:
+    async def run_async(self) -> Finished[Event]:
         try:
-            roots = workspace_scan.foreign_clone_roots(
+            roots = await workspace_scan.foreign_clone_roots(
                 self.facts.repo, self.output_user_root, session_bases=self.session_bases
             )
             if self.root not in roots:
                 result: RemovalResult[Path] = Skipped(self.root, "clone is no longer discoverable")
             else:
-                fresh = foreign_clone_gc.classify_foreign_clone(
+                fresh = await foreign_clone_gc.classify_foreign_clone(
                     self.root, pr_states=self.facts.prs, active_path=self.facts.active_path
                 )
                 if isinstance(fresh, PrunableForeignClone):
-                    result = foreign_clone_gc.prune_foreign_clone(fresh.clone)
+                    result = await foreign_clone_gc.prune_foreign_clone(fresh.clone)
                 else:
                     result = Skipped(self.root, fresh.reason)
         except git_repo.INSPECTION_ERRORS as error:

@@ -7,7 +7,7 @@ from typing import ClassVar
 import pytest
 import pytest_bazel
 
-from devinfra.gc.work_queue import AsyncWorkItem, Cancelled, Finished, WorkFailure, WorkQueue
+from devinfra.gc.work_queue import AsyncMutation, AsyncWorkItem, Cancelled, Finished, WorkFailure, WorkQueue
 
 
 @dataclass(frozen=True)
@@ -101,6 +101,28 @@ async def test_stop_does_not_start_queued_work(tasks: asyncio.TaskGroup) -> None
     assert not queued_started.is_set()
     assert queue.phases["scan"].ready == 0
     assert queue.phases["scan"].finished == 1
+
+
+async def test_stop_drains_an_admitted_async_mutation(tasks: asyncio.TaskGroup) -> None:
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Mutation(AsyncMutation[str]):
+        phase = "remove"
+
+        async def run_async(self) -> Finished[str]:
+            started.set()
+            await release.wait()
+            return Finished("removed", "done")
+
+    queue = WorkQueue[str](workers=1)
+    queue.submit(Mutation())
+    queue.start(tasks)
+    await asyncio.wait_for(started.wait(), 10)
+    queue.stop()
+    release.set()
+    [(_, result)] = await asyncio.wait_for(queue.drain(), 10)
+    assert isinstance(result, Finished)
+    assert result.value == "removed"
 
 
 async def test_stop_prevents_scheduled_threads_from_starting_work(tasks: asyncio.TaskGroup) -> None:

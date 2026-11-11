@@ -3,6 +3,11 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
 py_library(
+    name = "async_io",
+    srcs = ["async_io.py"],
+)
+
+py_library(
     name = "scan_progress",
     srcs = ["scan_progress.py"],
 )
@@ -43,6 +48,7 @@ py_library(
     srcs = ["worktree_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":async_io",
         ":git_repo",
         ":pull_request",
         ":removal",
@@ -56,6 +62,7 @@ py_library(
     srcs = ["branch_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":async_io",
         ":git_repo",
         ":pull_request",
         ":removal",
@@ -70,6 +77,7 @@ py_library(
     srcs = ["workspace_scan.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":async_io",
         ":branch_gc",
         ":foreign_clone_gc",
         ":git_repo",
@@ -82,6 +90,7 @@ py_library(
     name = "workspace_jobs",
     srcs = ["workspace_jobs.py"],
     deps = [
+        ":async_io",
         ":branch_gc",
         ":foreign_clone_gc",
         ":git_repo",
@@ -102,7 +111,6 @@ py_library(
     deps = [
         ":branch_gc",
         ":foreign_clone_gc",
-        ":git_repo",
         ":output_base_gc",
         ":removal",
         ":repo_contents_cache_gc",
@@ -287,6 +295,7 @@ py_library(
     srcs = ["foreign_clone_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":async_io",
         ":git_repo",
         ":pull_request",
         ":removal",

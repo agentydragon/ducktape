@@ -20,7 +20,7 @@ def test_annotate_base_flags_only_a_prunable_worktree_workspace(tmp_path: Path) 
     assert not kept.workspace_is_prunable_worktree
 
 
-def test_base_worktrees_covers_only_retained_base_workspaces(
+async def test_base_worktrees_covers_only_retained_base_workspaces(
     repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
@@ -31,7 +31,7 @@ def test_base_worktrees_covers_only_retained_base_workspaces(
 
     bases = list(output_base_gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
 
-    assert {worktree.branch for worktree in workspace_scan.base_worktrees(repo.path, bases)} == {"has_base"}
+    assert {worktree.branch for worktree in (await workspace_scan.base_worktrees(repo.path, bases))} == {"has_base"}
 
 
 if __name__ == "__main__":

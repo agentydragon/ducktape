@@ -35,6 +35,7 @@ from pathlib import Path
 import pygit2
 
 from devinfra.gc import git_repo
+from devinfra.gc.async_io import run_blocking
 from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
@@ -136,9 +137,9 @@ def local_branches(pg: pygit2.Repository) -> list[str]:
     return sorted(pg.branches.local)
 
 
-def branch_holders(repo: Path) -> dict[str, Path]:
+async def branch_holders(repo: Path) -> dict[str, Path]:
     """Each branch that is checked out, mapped to the worktree holding it (main included)."""
-    return {wt.branch: wt.path for wt in git_repo.list_worktrees(repo) if wt.branch}
+    return {wt.branch: wt.path for wt in await git_repo.list_worktrees(repo) if wt.branch}
 
 
 def _tip_within_pr_head(pg: pygit2.Repository, branch_oid: pygit2.Oid, pr: PrInfo) -> bool:
@@ -159,19 +160,19 @@ def _tip_within_pr_head(pg: pygit2.Repository, branch_oid: pygit2.Oid, pr: PrInf
     return branch_oid == head_oid or pg.descendant_of(head_oid, branch_oid)
 
 
-def classify_branch(
+async def classify_branch(
     name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
 ) -> BranchClassification:
     """Classify one branch, reporting inspection failures without blocking other branches."""
     try:
-        return _classify_branch(name, pg=pg, main=main, default_branch=default_branch, pr=pr, holder=holder)
+        return await _classify_branch(name, pg=pg, main=main, default_branch=default_branch, pr=pr, holder=holder)
     except git_repo.INSPECTION_ERRORS as error:
         detail = f"{type(error).__name__}: {error}"
         logger.warning("Cannot inspect branch %s in %s: %s", name, pg.path, detail)
         return ReviewBranch(Branch(name), ReviewBranchReason.INSPECTION_FAILED, main, detail=detail)
 
 
-def _classify_branch(
+async def _classify_branch(
     name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
 ) -> BranchClassification:
     branch = Branch(name)
@@ -187,22 +188,26 @@ def _classify_branch(
 
     # holder is None or a PrunableWorktree (removed before the branch is deleted).
     checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
-    branch_oid = pg.branches.local[name].peel(pygit2.Commit).id
-    if content_in_main(pg, branch_oid, main):
+    branch_oid = await run_blocking(lambda: pg.branches.local[name].peel(pygit2.Commit).id)
+    if await run_blocking(content_in_main, pg, branch_oid, main):
         return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, str(branch_oid), pr)
-    if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) and _tip_within_pr_head(pg, branch_oid, pr):
+    if (
+        pr is not None
+        and pr.state in (PrState.MERGED, PrState.CLOSED)
+        and await run_blocking(_tip_within_pr_head, pg, branch_oid, pr)
+    ):
         return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, str(branch_oid), pr)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
-    if patches_landed_in_main(Path(pg.path), name, main):
+    if await patches_landed_in_main(Path(pg.path), name, main):
         return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, str(branch_oid), None)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
         return ReviewBranch(branch, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
     return ReviewBranch(branch, ReviewBranchReason.UNMERGED, main)
 
 
-def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
+async def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
     """Force-delete one branch with `git branch -D` (git's safe `-d` rejects squash-merges),
     unless it no longer points at `expected_tip`, the commit proven to be in main.
 
@@ -211,12 +216,12 @@ def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[
     landing between them is still lost from the branch (it stays in the reflog).
     """
     try:
-        tip = git_repo.git(repo, "rev-parse", "--verify", f"refs/heads/{name}", check=False)
+        tip = await git_repo.git(repo, "rev-parse", "--verify", f"refs/heads/{name}", check=False)
         if tip.returncode != 0:
             return Skipped(name, "branch no longer exists")
         if tip.stdout.strip() != expected_tip:
             return Skipped(name, "branch moved since the scan")
-        outcome = git_repo.git(repo, "branch", "-D", name, check=False, interruptible=False)
+        outcome = await git_repo.git(repo, "branch", "-D", name, check=False, interruptible=False)
     except (OSError, subprocess.SubprocessError) as error:
         return Failed(name, str(error))
     if outcome.returncode == 0:

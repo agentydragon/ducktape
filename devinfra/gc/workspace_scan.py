@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc
+from devinfra.gc.async_io import run_blocking
 from devinfra.gc.branch_gc import BranchClassification
 from devinfra.gc.foreign_clone_gc import ForeignCloneClassification
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
@@ -26,11 +27,11 @@ class WorkspaceScan:
     foreign_clones: list[ForeignCloneClassification] = field(default_factory=list)
 
 
-def pr_branch_candidates(repo: Path) -> set[str]:
+async def pr_branch_candidates(repo: Path) -> set[str]:
     """Branch names worth a GitHub PR lookup: every local branch plus any checked out."""
-    pg = git_repo.open_repo(git_repo.main_worktree(repo))
-    names = set(branch_gc.local_branches(pg))
-    names.update(wt.branch for wt in git_repo.list_worktrees(repo) if wt.branch)
+    main = await git_repo.main_worktree(repo)
+    names = await run_blocking(lambda: set(branch_gc.local_branches(git_repo.open_repo(main))))
+    names.update(wt.branch for wt in await git_repo.list_worktrees(repo) if wt.branch)
     return names
 
 
@@ -64,11 +65,11 @@ def _retained_workspaces(bases: Iterable[Inspection]) -> set[Path]:
     )
 
 
-def _known_worktree_paths(repo: Path) -> set[Path]:
-    return _resolved({wt.path for wt in git_repo.list_worktrees(repo)})
+async def _known_worktree_paths(repo: Path) -> set[Path]:
+    return await run_blocking(_resolved, {wt.path for wt in await git_repo.list_worktrees(repo)})
 
 
-def foreign_clone_roots(repo: Path, output_user_root: Path, *, session_bases: Sequence[Path]) -> list[Path]:
+async def foreign_clone_roots(repo: Path, output_user_root: Path, *, session_bases: Sequence[Path]) -> list[Path]:
     """Roots of foreign clones of `repo`'s project found among Bazel output-base workspaces.
 
     Filesystem-only (no network): inspect output bases to find candidate workspace paths
@@ -77,28 +78,32 @@ def foreign_clone_roots(repo: Path, output_user_root: Path, *, session_bases: Se
     # TODO: Add an age-based `/tmp` review pass for same-project Git clone roots that are not
     # discoverable through a Bazel output base. Dirty/unique-work and live-process checks must
     # continue to govern removal.
-    bases = output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
-    return foreign_clone_gc.discover_foreign_clones(
-        _retained_workspaces(bases), known_paths=_known_worktree_paths(repo), repo=repo
+    bases = await run_blocking(output_base_gc.scan_output_user_root, output_user_root, session_bases=session_bases)
+    workspaces = await run_blocking(_retained_workspaces, bases)
+    return await foreign_clone_gc.discover_foreign_clones(
+        workspaces, known_paths=await _known_worktree_paths(repo), repo=repo
     )
 
 
-def foreign_clone_branch_candidates(roots: Sequence[Path]) -> set[str]:
+async def foreign_clone_branch_candidates(roots: Sequence[Path]) -> set[str]:
     """Branch names worth a PR lookup across every worktree these foreign clones hold."""
     names: set[str] = set()
     for root in roots:
         try:
-            names.update(wt.branch for wt in git_repo.list_worktrees(root) if wt.branch)
+            names.update(wt.branch for wt in await git_repo.list_worktrees(root) if wt.branch)
         except (OSError, subprocess.SubprocessError) as error:
             logger.warning("Cannot read PR branch candidates from %s: %s", root, error)
             continue
     return names
 
 
-def base_worktrees(repo: Path, bases: Iterable[Inspection]) -> list[git_repo.Worktree]:
+async def base_worktrees(repo: Path, bases: Iterable[Inspection]) -> list[git_repo.Worktree]:
     """Linked worktrees that are workspaces of retained bases."""
-    workspaces = _retained_workspaces(bases)
+    workspaces = await run_blocking(_retained_workspaces, bases)
     if not workspaces:
         return []
-    main_path = git_repo.main_worktree(repo)
-    return [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path and _resolve(wt.path) in workspaces]
+    main_path = await git_repo.main_worktree(repo)
+    worktrees = await git_repo.list_worktrees(repo)
+    return await run_blocking(
+        lambda: [wt for wt in worktrees if wt.path != main_path and _resolve(wt.path) in workspaces]
+    )

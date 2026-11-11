@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pygit2
 
+from devinfra.gc.async_io import run_blocking
 from devinfra.gc.git_repo import (
     INSPECTION_ERRORS,
     Worktree,
@@ -126,7 +127,7 @@ def describe_reason(item: Classification) -> str:
             raise ValueError(f"{item=} lacks the data its reason cites")
 
 
-def _status(path: Path) -> list[str]:
+async def _status(path: Path) -> list[str]:
     """Paths `git status` reports (tracked changes, then untracked files; ignored excluded).
 
     Shells out because libgit2's status holds the GIL, which serializes the scan's worker
@@ -145,7 +146,9 @@ def _status(path: Path) -> list[str]:
     on that timestamp.
     """
     for untracked in ("no", "normal"):
-        outcome = git(path, "--no-optional-locks", "status", "--porcelain=v1", "-z", f"--untracked-files={untracked}")
+        outcome = await git(
+            path, "--no-optional-locks", "status", "--porcelain=v1", "-z", f"--untracked-files={untracked}"
+        )
         # `-z` entries are `XY <path>` joined by NUL; renames are not detected in porcelain v1
         # without `-M`, so each entry carries exactly one path.
         paths = [entry[3:] for entry in outcome.stdout.split("\0") if entry]
@@ -196,7 +199,7 @@ def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/pro
     return live
 
 
-def classify_worktree(
+async def classify_worktree(
     worktree: Worktree,
     *,
     main: str,
@@ -207,7 +210,7 @@ def classify_worktree(
 ) -> Classification:
     """Classify one worktree; unreadable state requires review and cannot justify pruning."""
     try:
-        return _classify_worktree(
+        return await _classify_worktree(
             worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
         )
     except INSPECTION_ERRORS as error:
@@ -216,7 +219,7 @@ def classify_worktree(
         return ReviewWorktree(worktree, ReviewWorktreeReason.INSPECTION_FAILED, None, main, detail=detail)
 
 
-def _classify_worktree(
+async def _classify_worktree(
     worktree: Worktree,
     *,
     main: str,
@@ -227,14 +230,14 @@ def _classify_worktree(
 ) -> Classification:
     path = worktree.path
     try:
-        path.lstat()
+        await run_blocking(path.lstat)
     except FileNotFoundError:
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
-    pg = pygit2.Repository(os.fspath(path))
+    pg = await run_blocking(pygit2.Repository, os.fspath(path))
     logger.info("Scanning worktree %s: reading Git status", path)
-    status = _status(path)
+    status = await _status(path)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
-    activity = _last_activity(pg, path, status)
+    activity = await run_blocking(_last_activity, pg, path, status)
 
     def keep(reason: RetainedWorktreeReason, *, pr: PrInfo | None = None, pid: int | None = None) -> RetainedWorktree:
         return RetainedWorktree(worktree, reason, activity, pr=pr, pid=pid)
@@ -264,17 +267,17 @@ def _classify_worktree(
         # caught separately by branch_gc, which does have to care (deleting a branch ref
         # is destructive).
         return prune(PrunableWorktreeReason.PR_LANDED, pr=pr)
-    if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
+    if await run_blocking(lambda: content_in_main(pg, pg.head.peel(pygit2.Commit).id, main)):
         return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
     # As in `branch_gc`: the shell-out only runs once the in-process test has already failed.
-    if patches_landed_in_main(path, "HEAD", main):
+    if await patches_landed_in_main(path, "HEAD", main):
         return prune(PrunableWorktreeReason.PATCHES_IN_MAIN)
     if worktree.branch is None:
         return review(ReviewWorktreeReason.DETACHED_HEAD)
     return review(ReviewWorktreeReason.UNMERGED)
 
 
-def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
+async def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     """Remove one worktree with `git worktree remove` (never `--force`).
 
     git refuses a tree with tracked changes or untracked files, so a tree that turned dirty
@@ -284,7 +287,7 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     classified `path` itself.
     """
     try:
-        outcome = git(repo, "worktree", "remove", path, check=False, interruptible=False)
+        outcome = await git(repo, "worktree", "remove", path, check=False, interruptible=False)
     except (OSError, subprocess.SubprocessError) as error:
         return Failed(path, str(error))
     if outcome.returncode == 0:
@@ -292,7 +295,7 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     return Failed(path, outcome.stderr.strip() or "git worktree remove failed")
 
 
-def remove_if_still_prunable(
+async def remove_if_still_prunable(
     repo: Path,
     worktree: Worktree,
     *,
@@ -308,14 +311,14 @@ def remove_if_still_prunable(
     commit landed on a detached HEAD, which `git worktree remove` alone would not catch.
     """
     try:
-        current = next((item for item in list_worktrees(repo) if item.path == worktree.path), None)
+        current = next((item for item in await list_worktrees(repo) if item.path == worktree.path), None)
     except INSPECTION_ERRORS as error:
         return Skipped(worktree.path, f"cannot list worktrees: {error}")
     if current != worktree:
         return Skipped(worktree.path, "worktree or checked-out branch changed since the scan")
-    fresh = classify_worktree(
+    fresh = await classify_worktree(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
     )
     if not isinstance(fresh, PrunableWorktree):
         return Skipped(worktree.path, describe_reason(fresh))
-    return remove_worktree(repo, worktree.path)
+    return await remove_worktree(repo, worktree.path)

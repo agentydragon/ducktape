@@ -35,12 +35,16 @@ class ThreadWorkItem[T](Protocol):
 
 
 class AsyncWorkItem[T]:
-    """Cancellable read-only work; mutations use `ThreadWorkItem` and finish once admitted."""
+    """Cancellable read-only work."""
 
     phase: ClassVar[str]
 
     async def run_async(self) -> Finished[T]:
         raise NotImplementedError
+
+
+class AsyncMutation[T](AsyncWorkItem[T]):
+    """An admitted mutation must finish and report its outcome during shutdown."""
 
 
 type WorkItem[T] = ThreadWorkItem[T] | AsyncWorkItem[T]
@@ -143,7 +147,7 @@ class WorkQueue[T]:
         with self._start_lock:
             self._stopped = True
         for task, item in self._running.items():
-            if isinstance(item, AsyncWorkItem):
+            if isinstance(item, AsyncWorkItem) and not isinstance(item, AsyncMutation):
                 task.cancel()
         cancelled = [*self._ready, *self._followups]
         for item in cancelled:

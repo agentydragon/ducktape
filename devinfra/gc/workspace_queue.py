@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
-from devinfra.gc import git_repo, repo_contents_cache_gc, workspace_jobs as jobs
+from devinfra.gc import repo_contents_cache_gc, workspace_jobs as jobs
 from devinfra.gc.branch_gc import (
     Branch,
     BranchClassification,
@@ -659,7 +659,6 @@ class _Run:
             for item in self.queue.stop():
                 if isinstance(item, jobs.EmptyCacheTrash):
                     self.cache.removals.append(Failed(item.path, "cleanup stopped with entry in trash", item.trash))
-            git_repo.interrupt_running_git()
             for stopped_item, stopped_result in await self.queue.drain():
                 self._record_stopped(stopped_item, stopped_result)
             if reporting:
