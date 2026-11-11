@@ -163,6 +163,16 @@ struct LocalCallTarget<'a> {
     call_span: Span,
 }
 
+/// The receiver of a method callee, also behind an optional chain's
+/// short-circuit alternative.
+fn method_callee_receiver(callee: &ValueExpr) -> Option<&ValueExpr> {
+    match callee {
+        ValueExpr::Member(receiver, _, _, _) => Some(receiver),
+        ValueExpr::Alternatives(options) => options.iter().find_map(method_callee_receiver),
+        _ => None,
+    }
+}
+
 pub(super) fn from_flow(values: FlowValues) -> Values {
     values.into_iter().map(AbstractValue::Value).collect()
 }
@@ -6891,6 +6901,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
                     {
+                        self.publish_accessor_receivers(
+                            &Values::from([receiver.clone()]),
+                            write.site.source_span(),
+                        );
                         let may_be_published =
                             self.state.world.surface.tainted_objects.contains(&object)
                                 || self.state.world.surface.unsettled_objects.contains(&object);
@@ -7080,6 +7094,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     | AbstractValue::DeferredCallbacks(_)
                     | AbstractValue::AuditedRetainedResult(_, _)
                     | AbstractValue::Instance(_, _, _) => true,
+                    // A class's prototype is inherited by every instance,
+                    // including the unknown instance of a refused
+                    // construction.
+                    AbstractValue::ClassMembers(_) => true,
                     _ => false,
                 })
         {
@@ -7595,6 +7613,80 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // body at `new`, even without a callback argument to seed the opaque
         // fallback.
         self.promote_class_members(key, outcome);
+        self.publish_refused_instance_reach(key, call.span);
+    }
+
+    /// The unknown instance of a refused construction holds whatever its
+    /// fields and constructors stored on `this`: publish every value of the
+    /// bindings the class body reads and every function it creates (not its
+    /// members, which run as the class's own), and the
+    /// same for each local base class. The `extends` expression ran when the
+    /// class was created; only the classes it names are followed. Kept out of
+    /// line for `execute_call`'s frame size.
+    #[inline(never)]
+    fn publish_refused_instance_reach(&mut self, key: u32, span: Span) {
+        let index = self.inputs.index;
+        let mut reached = Values::new();
+        let mut pending = vec![key];
+        let mut visited = BTreeSet::new();
+        while let Some(class) = pending.pop() {
+            if !visited.insert(class) {
+                continue;
+            }
+            let Some(class_span) = index.class_spans.get(&class) else {
+                continue;
+            };
+            let (lo, hi) = (class_span.lo.0, class_span.hi.0);
+            let heritage = index
+                .class_heritage_spans
+                .get(&class)
+                .map(|heritage| (heritage.lo.0, heritage.hi.0));
+            let in_heritage = |position: u32| {
+                heritage.is_some_and(|(start, end)| start <= position && position < end)
+            };
+            reached.extend(
+                index
+                    .callable_spans
+                    .range(lo..hi)
+                    .filter(|(callable, _)| {
+                        !in_heritage(**callable)
+                            && !index.class_member_callables.contains(*callable)
+                    })
+                    .map(|(callable, _)| {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, *callable))
+                    }),
+            );
+            if let Some((start, end)) = heritage {
+                pending.extend(index.class_spans.range(start..end).map(|(base, _)| *base));
+                for binding in index.references_within(start, end) {
+                    if self.inputs.flow.is_declared(binding) {
+                        pending.extend(
+                            self.inputs
+                                .flow
+                                .values_of_binding(binding)
+                                .into_iter()
+                                .filter_map(|value| match value {
+                                    Value::Alloc(Kind::Class, base) => Some(base),
+                                    _ => None,
+                                }),
+                        );
+                    }
+                }
+            }
+            for binding in index
+                .references_within(lo, heritage.map_or(hi, |(start, _)| start))
+                .chain(index.references_within(heritage.map_or(hi, |(_, end)| end), hi))
+            {
+                if self.inputs.flow.is_declared(binding) {
+                    reached.extend(from_flow(self.inputs.flow.values_of_binding(binding)));
+                }
+            }
+        }
+        self.publish_values(
+            &reached,
+            ClassMembersPublicationWriter::RefusedConstructionInstance,
+            Some(span),
+        );
     }
 
     /// The value of a refused construction: unknown, but it may retain every
@@ -11425,6 +11517,69 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
+    /// Whether a method call to `targets` can read its receiver through
+    /// `this` (including from an arrow inside the method), which the summary
+    /// does not bind.
+    fn method_may_read_receiver(&self, targets: &Values) -> bool {
+        let index = self.inputs.index;
+        !index.dynamic_scope_owners.is_empty()
+            || targets.iter().any(|target| match target {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
+                    index.reads_this(*key)
+                }
+                _ => false,
+            })
+    }
+
+    /// A member read or write on `receivers` may run an accessor that reads
+    /// `this`, which the summary does not bind: publish those receivers.
+    /// Kept out of line for the call transfer's frame size.
+    #[inline(never)]
+    pub(super) fn publish_accessor_receivers(&mut self, receivers: &Values, span: Span) {
+        let index = self.inputs.index;
+        let reached: Values = receivers
+            .iter()
+            .filter(|receiver| {
+                let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver else {
+                    return false;
+                };
+                index.this_reading_accessor_objects.contains(object)
+                    || self
+                        .state
+                        .world
+                        .surface
+                        .applied_accessors
+                        .get(object)
+                        .is_some_and(|accessors| {
+                            accessors.values().any(|accessor| {
+                                accessor.getter.iter().chain(accessor.setter.iter()).any(
+                                    |function| match function {
+                                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                                        | AbstractValue::Closure(
+                                            HeapAddress { callable: key, .. },
+                                            _,
+                                        ) => index.reads_this(*key),
+                                        AbstractValue::Value(
+                                            Value::Prim(_) | Value::Unavailable,
+                                        ) => false,
+                                        _ => true,
+                                    },
+                                )
+                            })
+                        })
+            })
+            .cloned()
+            .collect();
+        if !reached.is_empty() {
+            self.publish_values(
+                &reached,
+                ClassMembersPublicationWriter::AccessorReceiver,
+                Some(span),
+            );
+        }
+    }
+
     /// The `Call`/`New` transfer over already evaluated targets and arguments.
     /// `supplied` carries the kernel's operand selections; `None` is the
     /// self-evaluating mode, which requests no value.
@@ -11772,7 +11927,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Its effects are not resolved by invoke, so it can mutate any retained
         // array reachable from the receiver before a later intrinsic iteration.
         if call.kind == CallKind::Call
-            && let ValueExpr::Member(receiver, _, _, _) = &call.callee
+            && let Some(receiver) = method_callee_receiver(&call.callee)
         {
             let unused_receiver = prepared_receiver_unused
                 .unwrap_or_else(|| self.method_receiver_is_unused(&targets));
@@ -11781,7 +11936,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .clone()
                     .unwrap_or_else(|| self.evaluate(receiver, env, captures));
                 let contains_array = self.contains_dense_array(&values);
-                self.taint_objects(&values);
+                if self.method_may_read_receiver(&targets) {
+                    // The summary reads `this` as unknown, which stands only
+                    // for published values.
+                    self.publish_values(
+                        &values,
+                        ClassMembersPublicationWriter::MethodReceiver,
+                        Some(call.span),
+                    );
+                } else {
+                    self.taint_objects(&values);
+                }
                 if contains_array {
                     // A dense receiver preserves possible callback reach, but
                     // does not prove that the method invoked those callbacks.
@@ -11790,7 +11955,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         let mut opaque_args = args.clone();
-        if let ValueExpr::Member(receiver, _, _, _) = &call.callee {
+        if let Some(receiver) = method_callee_receiver(&call.callee) {
             let receiver_values = prepared_receiver
                 .clone()
                 .unwrap_or_else(|| self.evaluate(receiver, env, captures));
@@ -11829,7 +11994,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // construction proofs (including changes to an entry's own data
             // properties or an array's iterator/species surface).
             let mut possible_objects: Values = args.iter().flatten().cloned().collect();
-            if let ValueExpr::Member(receiver, _, _, _) = &call.callee {
+            if let Some(receiver) = method_callee_receiver(&call.callee) {
                 possible_objects.extend(
                     prepared_receiver
                         .clone()

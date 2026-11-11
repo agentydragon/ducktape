@@ -233,6 +233,7 @@ impl Executor<'_, '_> {
                 unreachable!()
             };
             let values = self.evaluate(receiver, env, captures);
+            self.publish_accessor_receivers(&values, call.span);
             if values.iter().any(|value| {
                 matches!(value, AbstractValue::Value(Value::Top))
                     || matches!(value,
