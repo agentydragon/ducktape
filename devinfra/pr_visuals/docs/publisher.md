@@ -103,6 +103,15 @@ after the review bundle and shared images upload successfully.
   publisher errors, `neutral` when no test exposed screenshot records. Failed CI runs still
   publish what arrived; summary and comment list failed targets when BuildBuddy
   exposes them. Reviewers can request a manual rerun from the CI run page.
+  The publisher searches all check runs to retain each attempt's external ID. It orders
+  reruns and independent runs for the same head commit within the same workflow by
+  workflow run number and attempt; a late older result keeps its conclusion under a
+  run-specific check name, so it cannot replace the newer same-name result. If old
+  publisher behavior left duplicate checks for one attempt, it keeps a completed check
+  as canonical, closes duplicate announcements as cancelled, and moves duplicates to
+  check-specific names while preserving terminal conclusions. This ordering is scoped
+  to one source workflow; different workflows on the same commit have no shared run
+  number and are not globally ordered.
 - **PR visual diffs**: only when a baseline comparison ran; `success` if nothing was
   modified, removed, unstable or incomplete, else `neutral` — deliberately not a merge gate.
 

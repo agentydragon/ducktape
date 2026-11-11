@@ -9,35 +9,97 @@ from devinfra.pr_visuals import check_run
 
 
 class FakeCheckRun:
-    def __init__(self, external_id: str | None, *, status: str = "in_progress") -> None:
+    def __init__(
+        self,
+        external_id: str | None,
+        *,
+        id: int | None = None,
+        status: str = "in_progress",
+        conclusion: str | None = None,
+        name: str = "PR visual review",
+    ) -> None:
         self.external_id = external_id
+        self.id = id
         self.status = status
+        self.conclusion = conclusion
+        self.name = name
         self.edits: list[dict[str, Any]] = []
 
     def edit(self, **kwargs: Any) -> None:
         self.edits.append(kwargs)
+        if "name" in kwargs:
+            self.name = kwargs["name"]
+        if "status" in kwargs:
+            self.status = kwargs["status"]
+        if "conclusion" in kwargs:
+            self.conclusion = kwargs["conclusion"]
 
 
 class FakeCommit:
     def __init__(self, checks: list[FakeCheckRun]) -> None:
         self.checks = checks
 
-    def get_check_runs(self, *, check_name: str) -> list[FakeCheckRun]:
-        assert check_name == "PR visual review"
+    def get_check_runs(self, *, filter: str) -> list[FakeCheckRun]:
+        assert filter == "all"
         return self.checks
 
 
+class FakeWorkflowRun:
+    def __init__(
+        self,
+        run_id: int,
+        *,
+        run_number: int = 1,
+        run_attempt: int = 1,
+        workflow_id: int = 456,
+        event: str = "pull_request",
+    ) -> None:
+        self.id = run_id
+        self.head_sha = "a" * 40
+        self.run_number = run_number
+        self.run_attempt = run_attempt
+        self.workflow_id = workflow_id
+        self.event = event
+
+
 class FakeRepo:
-    def __init__(self, checks: list[FakeCheckRun]) -> None:
+    def __init__(self, checks: list[FakeCheckRun], workflow_runs: list[FakeWorkflowRun] | None = None) -> None:
+        for check_id, check in enumerate(checks, start=1):
+            if check.id is None:
+                check.id = check_id
         self.commit = FakeCommit(checks)
         self.created: list[dict[str, Any]] = []
+        self.workflow_runs = workflow_runs or [FakeWorkflowRun(123)]
+        self.workflow_run_reads = 0
+        self.workflow_run_snapshots: list[list[FakeWorkflowRun]] | None = None
 
     def get_commit(self, sha: str) -> FakeCommit:
         assert sha == "a" * 40
         return self.commit
 
-    def create_check_run(self, **kwargs: Any) -> None:
+    def get_workflow_run(self, run_id: int) -> FakeWorkflowRun:
+        assert run_id == 123
+        return next(run for run in self.workflow_runs if run.id == run_id)
+
+    def get_workflow_runs(self, *, head_sha: str) -> list[FakeWorkflowRun]:
+        assert head_sha == "a" * 40
+        if self.workflow_run_snapshots is not None:
+            snapshot = self.workflow_run_snapshots[min(self.workflow_run_reads, len(self.workflow_run_snapshots) - 1)]
+            self.workflow_run_reads += 1
+            return snapshot
+        return self.workflow_runs
+
+    def create_check_run(self, **kwargs: Any) -> FakeCheckRun:
         self.created.append(kwargs)
+        check = FakeCheckRun(
+            kwargs.get("external_id"),
+            id=len(self.commit.checks) + 1,
+            status=kwargs["status"],
+            conclusion=kwargs.get("conclusion"),
+            name=kwargs["name"],
+        )
+        self.commit.checks.append(check)
+        return check
 
 
 class FakeGithub:
@@ -157,6 +219,147 @@ def test_late_announcement_does_not_reopen_completed_attempt(monkeypatch: pytest
 
     assert repo.created == []
     assert cancelled.edits == []
+
+
+def test_late_announcement_postflight_renames_newly_superseded_completed_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    completed = FakeCheckRun("pr-visual-review:123:1", status="completed", conclusion="success")
+    repo = FakeRepo([completed], [FakeWorkflowRun(123)])
+    repo.workflow_run_snapshots = [[FakeWorkflowRun(123)], [FakeWorkflowRun(123), FakeWorkflowRun(124, run_number=2)]]
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="in_progress",
+        summary="A late announcement.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert repo.created == []
+    assert completed.conclusion == "success"
+    assert completed.edits == [{"name": "PR visual review (CI run 123 attempt 1)"}]
+
+
+def test_late_attempt_completion_updates_its_check_without_reordering_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_attempt = FakeCheckRun("pr-visual-review:123:1")
+    second_attempt = FakeCheckRun("pr-visual-review:123:2", status="completed")
+    repo = FakeRepo([first_attempt, second_attempt], [FakeWorkflowRun(123, run_attempt=2)])
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="completed",
+        conclusion="failure",
+        summary="Attempt 1 publication failed.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert repo.created == []
+    assert first_attempt.edits == [
+        {
+            "name": "PR visual review (CI run 123 attempt 1)",
+            "status": "completed",
+            "output": {"title": "PR visual review (CI run 123 attempt 1)", "summary": "Attempt 1 publication failed."},
+            "conclusion": "failure",
+            "external_id": "pr-visual-review:123:1",
+        }
+    ]
+    assert second_attempt.edits == []
+
+
+def test_duplicate_attempt_checks_keep_failure_and_close_orphaned_announcement(monkeypatch: pytest.MonkeyPatch) -> None:
+    orphaned_announcement = FakeCheckRun("pr-visual-review:123:1", id=130204254354)
+    late_failure = FakeCheckRun("pr-visual-review:123:1", id=130209709770, status="completed", conclusion="failure")
+    retry = FakeCheckRun("pr-visual-review:123:2", id=130208076211, status="completed", conclusion="neutral")
+    repo = FakeRepo([orphaned_announcement, retry, late_failure], [FakeWorkflowRun(123, run_attempt=2)])
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="completed",
+        conclusion="failure",
+        summary="Attempt 1 publication failed.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert late_failure.conclusion == "failure"
+    assert late_failure.name == "PR visual review (CI run 123 attempt 1)"
+    assert orphaned_announcement.status == "completed"
+    assert orphaned_announcement.conclusion == "cancelled"
+    assert orphaned_announcement.name == ("PR visual review (duplicate CI run 123 attempt 1, check 130204254354)")
+    assert orphaned_announcement.edits == [
+        {
+            "name": "PR visual review (duplicate CI run 123 attempt 1, check 130204254354)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "output": {
+                "title": "PR visual review (duplicate CI run 123 attempt 1, check 130204254354)",
+                "summary": "Duplicate check run. The canonical check is PR visual review (CI run 123 attempt 1).",
+            },
+        }
+    ]
+    assert retry.edits == []
+
+
+def test_duplicate_non_visual_external_ids_still_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeRepo([FakeCheckRun("other-id"), FakeCheckRun("other-id")])
+    _install_github(monkeypatch, repo)
+
+    with pytest.raises(ValueError, match="multiple 'PR visual review' checks"):
+        check_run.upsert_check_run(
+            repository="owner/repo",
+            commit_sha="a" * 40,
+            status="completed",
+            conclusion="failure",
+            summary="Publication failed.",
+            external_id="other-id",
+            token="token",
+        )
+
+
+def test_independent_newer_run_supersedes_old_run_on_the_same_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    old_run_check = FakeCheckRun("pr-visual-review:123:1")
+    repo = FakeRepo([old_run_check], [FakeWorkflowRun(123, run_number=1), FakeWorkflowRun(124, run_number=2)])
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="completed",
+        conclusion="failure",
+        summary="The older CI run failed.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert old_run_check.name == "PR visual review (CI run 123 attempt 1)"
+    assert old_run_check.edits[0]["conclusion"] == "failure"
+
+
+def test_attempt_starting_during_write_is_renamed_after_postflight_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_attempt = FakeCheckRun("pr-visual-review:123:1")
+    repo = FakeRepo([first_attempt], [FakeWorkflowRun(123)])
+    repo.workflow_run_snapshots = [[FakeWorkflowRun(123)], [FakeWorkflowRun(123), FakeWorkflowRun(124, run_number=2)]]
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="completed",
+        conclusion="failure",
+        summary="The earlier run failed.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert first_attempt.name == "PR visual review (CI run 123 attempt 1)"
+    assert first_attempt.status == "completed"
+    assert first_attempt.edits[-1] == {"name": "PR visual review (CI run 123 attempt 1)"}
 
 
 @pytest.mark.parametrize(("status", "conclusion"), [("in_progress", "success"), ("completed", None)])
