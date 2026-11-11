@@ -467,7 +467,7 @@ impl Visit for ArrayContentCollector<'_> {
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
-            binding_targets::simple_update_target(&node.arg)
+            binding_targets::simple_write_target_expr(&node.arg)
         {
             self.record_member_write(member, true);
             self.visit_member_children(member);

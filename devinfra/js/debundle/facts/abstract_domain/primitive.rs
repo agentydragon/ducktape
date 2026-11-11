@@ -451,7 +451,7 @@ impl Visit for GlobalWriteFinder {
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        match binding_targets::simple_update_target(&node.arg) {
+        match binding_targets::simple_write_target_expr(&node.arg) {
             Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
                 self.record(binding.0.as_ref());
             }
