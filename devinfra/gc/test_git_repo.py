@@ -109,7 +109,7 @@ async def test_cancel_reaps_read_but_waits_for_noninterruptible_git(
         return process
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", monitored)
-    fd = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
+    pipe = fifo.open("r+b", buffering=0)
     read = asyncio.create_task(git_repo.git(tmp_path, "read", check=False))
     mutation = asyncio.create_task(git_repo.git(tmp_path, "mutate", check=False, interruptible=False))
     try:
@@ -125,16 +125,16 @@ async def test_cancel_reaps_read_but_waits_for_noninterruptible_git(
         with pytest.raises(ProcessLookupError):
             os.kill(processes["read"].pid, 0)
         assert not mutation.done()
-        os.write(fd, b"release\n")
+        pipe.write(b"release\n")
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(mutation, 10)
         with pytest.raises(ProcessLookupError):
             os.kill(processes["mutate"].pid, 0)
     finally:
         creation_allowed.set()
-        os.write(fd, b"release\nrelease\n")
+        pipe.write(b"release\nrelease\n")
         await asyncio.gather(read, mutation, return_exceptions=True)
-        os.close(fd)
+        pipe.close()
 
 
 if __name__ == "__main__":

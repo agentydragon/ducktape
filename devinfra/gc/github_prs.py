@@ -60,10 +60,8 @@ def _repo_slug(repo: Path) -> str | None:
 
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
-_GRAPHQL_BATCH = 50  # aliased pullRequests fields per request; well under GraphQL node limits
-_MAX_CONCURRENT_REQUESTS = 4  # GitHub's secondary rate limits penalize bursts of concurrent requests
-PR_BATCH_SIZE = _GRAPHQL_BATCH
-MAX_CONCURRENT_REQUESTS = _MAX_CONCURRENT_REQUESTS
+PR_BATCH_SIZE = 50  # aliased pullRequests fields per request; well under GraphQL node limits
+MAX_CONCURRENT_REQUESTS = 4  # GitHub's secondary rate limits penalize bursts of concurrent requests
 
 
 def pr_batches(branches: Iterable[str]) -> tuple[frozenset[str], ...]:
@@ -136,33 +134,34 @@ async def _fetch_batch(
         elif info is not None:
             states[branch] = info
     logger.info("Finished GitHub PR state batch %d/%d", index, total)
-    return PrLookup(states, frozenset(unknown))
+    return PrLookup(states, unknown)
 
 
-async def pr_states(repo: Path, branches: set[str]) -> PrLookup:
+async def pr_states(repo: Path, branches: Iterable[str]) -> PrLookup:
     """Most-decisive PR (open > merged > closed) per branch, via batched GraphQL queries.
 
     Aliased `pullRequests(headRefName:)` fields fetch ~50 branches per request instead of a
     REST call per branch — a few round-trips rather than hundreds. Up to
-    `_MAX_CONCURRENT_REQUESTS` batches are in flight at once. `headRefName` matches PR
+    `MAX_CONCURRENT_REQUESTS` batches are in flight at once. `headRefName` matches PR
     records, so a branch whose remote ref was deleted after merge still resolves. A failed
     lookup is distinct from a successful lookup finding no PR: its branches are unknown.
     """
+    branches = set(branches)
     if not branches:
         return PrLookup({})
     slug = await run_blocking(_repo_slug, repo)
     token = await _github_token()
     if slug is None:
         logger.warning("PR check skipped: origin is not a GitHub remote")
-        return PrLookup({}, frozenset(branches))
+        return PrLookup({}, branches)
     if token is None:
         logger.warning("PR check skipped: no GITHUB_TOKEN and `gh auth token` unavailable")
-        return PrLookup({}, frozenset(branches))
+        return PrLookup({}, branches)
     owner, name = slug.split("/", 1)
     headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
     batches = [sorted(batch) for batch in pr_batches(branches)]
     logger.info("Checking GitHub PR state for %d branches in %d batches", len(branches), len(batches))
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     try:
         async with httpx.AsyncClient(headers=headers, timeout=30) as client, asyncio.TaskGroup() as group:
             tasks = [
@@ -171,7 +170,7 @@ async def pr_states(repo: Path, branches: set[str]) -> PrLookup:
             ]
     except Exception:
         logger.warning("PR check skipped: GitHub API error", exc_info=True)
-        return PrLookup({}, frozenset(branches))
+        return PrLookup({}, branches)
     states: dict[str, PrInfo] = {}
     unknown: set[str] = set()
     exhausted = 0
@@ -197,4 +196,4 @@ async def pr_states(repo: Path, branches: set[str]) -> PrLookup:
     # page may contain an open PR.
     for branch in unknown:
         states.pop(branch, None)
-    return PrLookup(states, frozenset(unknown))
+    return PrLookup(states, unknown)

@@ -7,6 +7,7 @@ PrInfo]`, so the classifiers stay offline-testable.
 from __future__ import annotations
 
 import enum
+from collections.abc import Collection
 from dataclasses import dataclass
 
 
@@ -30,8 +31,12 @@ class PrLookup:
     """A missing state means no PR only when the branch is not unknown."""
 
     states: dict[str, PrInfo]
-    unknown: frozenset[str] = frozenset()
+    unknown: Collection[str] = ()
     disabled: bool = False
+
+    def __post_init__(self) -> None:
+        # A lookup is a snapshot even when the caller passes a mutable collection.
+        object.__setattr__(self, "unknown", frozenset(self.unknown))
 
 
 def pr_phrase(pr: PrInfo) -> str:

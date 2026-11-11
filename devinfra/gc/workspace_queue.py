@@ -607,7 +607,7 @@ class _PrLookupBatches:
         self.disabled = False
 
     def snapshot(self) -> PrLookup:
-        return PrLookup(dict(self.states), frozenset(self.unknown), disabled=self.disabled)
+        return PrLookup(dict(self.states), self.unknown, disabled=self.disabled)
 
     def request(self, branches: set[str] | frozenset[str]) -> None:
         if self.disabled:

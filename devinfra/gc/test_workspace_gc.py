@@ -362,7 +362,7 @@ async def test_interrupt_reaps_running_git_read(tmp_path: pathlib.Path, monkeypa
         repo=tmp_path,
         pr_source=workspace_gc._without_prs,
     )
-    fd = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
+    pipe = fifo.open("r+b", buffering=0)
 
     async def run_until_interrupted() -> None:
         with pytest.raises(asyncio.CancelledError):
@@ -375,8 +375,8 @@ async def test_interrupt_reaps_running_git_read(tmp_path: pathlib.Path, monkeypa
         await asyncio.wait_for(task, 10)
         assert processes[0].returncode == -signal.SIGKILL
     finally:
-        os.write(fd, b"release\n")
-        os.close(fd)
+        pipe.write(b"release\n")
+        pipe.close()
 
 
 async def test_interrupt_drains_admitted_worktree_removal(

@@ -194,7 +194,7 @@ async def test_unknown_pr_state_is_review_and_one_worker_completes(repo: GitRepo
     checkout.branch("unheld")
 
     async def unknown_lookup(_repo: pathlib.Path, branches: set[str]) -> PrLookup:
-        return PrLookup({}, frozenset(branches))
+        return PrLookup({}, branches)
 
     run = workspace_queue.Run(
         _options(

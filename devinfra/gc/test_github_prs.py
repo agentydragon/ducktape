@@ -11,6 +11,7 @@ import pytest_bazel
 import respx
 
 from devinfra.gc import github_prs
+from devinfra.gc.pull_request import PrLookup
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _ALIAS_RE = re.compile(r"\b(b\d+): pullRequests\(")
@@ -102,6 +103,20 @@ _NOT_FOUND = {"data": None, "errors": [{"type": "NOT_FOUND"}]}
 _BRANCHES = {f"branch-{i:03d}" for i in range(github_prs.PR_BATCH_SIZE + 10)}
 _FIRST_BATCH = {branch for branch in _BRANCHES if branch < "branch-050"}
 _SECOND_BATCH = _BRANCHES - _FIRST_BATCH
+
+
+def test_pr_lookup_accepts_mutable_collections_as_snapshots() -> None:
+    unknown = ["topic"]
+    lookup = PrLookup({}, unknown)
+    unknown.append("later")
+    assert lookup.unknown == {"topic"}
+
+
+@respx.mock
+async def test_pr_states_accepts_an_iterable(github_repo: pathlib.Path) -> None:
+    respx.post(_GRAPHQL_URL).mock(side_effect=_always_merged)
+    lookup = await github_prs.pr_states(github_repo, iter(["topic", "topic"]))
+    assert lookup.states.keys() == {"topic"}
 
 
 @respx.mock
