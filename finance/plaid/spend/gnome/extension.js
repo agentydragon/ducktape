@@ -86,7 +86,7 @@ function formatCompactMoney(minorUnits, currency) {
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
     const amount = Number(minorUnits) / 10 ** (precision ?? 2);
-    if (amount !== 0 && Math.abs(amount) < 0.5) return formatMoney(minorUnits, currency);
+    if (Math.abs(amount) < 1000) return formatMoney(minorUnits, currency);
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
@@ -881,11 +881,14 @@ const PlaidSpendIndicator = GObject.registerClass(
           starting: "Starting desktop client…",
           connecting: "Connecting to Plaid Spend…",
           authorizing: "Waiting for Authentik sign-in…",
-          "authentication-required": "Sign in to see flexible spending",
           error: hasCachedCardSpend ? "Connection problem · figures may be stale" : "Connection problem",
           ready: allowance ? "Flexible spending" : "Statement-cycle spend",
         }[this._status] || "Plaid Spend";
-      if ((!allowance || this._status !== "ready") && (this._status !== "error" || hasCachedCardSpend || !this._error))
+      if (
+        this._status !== "authentication-required" &&
+        (!allowance || this._status !== "ready") &&
+        (this._status !== "error" || hasCachedCardSpend || !this._error)
+      )
         this._addReadOnly(statusText, "plaid-spend-header");
 
       if (this._status === "authentication-required") {
@@ -908,12 +911,12 @@ const PlaidSpendIndicator = GObject.registerClass(
           );
           if (needsExactMoneyDetail(allowance.available_minor_units, allowance.currency)) {
             const details = new PopupMenu.PopupSubMenuMenuItem("Balance details");
-            details.menu.addMenuItem(
-              new PopupMenu.PopupMenuItem(
-                `Exact available: ${formatExactMoney(allowance.available_minor_units, allowance.currency)}`,
-                { reactive: false, can_focus: false }
-              )
+            const exact = new PopupMenu.PopupMenuItem(
+              `Exact available: ${formatExactMoney(allowance.available_minor_units, allowance.currency)}`,
+              { reactive: false, can_focus: false }
             );
+            exact.add_style_class_name("plaid-spend-read-only");
+            details.menu.addMenuItem(exact);
             this.menu.addMenuItem(details);
           }
           if (allowance.spending_signal === "warning") {
@@ -994,7 +997,10 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._addReadOnly(`View updated ${formatTimestamp(this._view.generated_at)}`);
       }
-      if (this._error) this._addReadOnly(`Details: ${this._error.slice(0, 120)}`);
+      const genericSignIn =
+        this._status === "authentication-required" &&
+        ["Sign in to connect this computer", "Sign in to connect your Plaid account."].includes(this._error);
+      if (this._error && !genericSignIn) this._addReadOnly(`Details: ${this._error.slice(0, 120)}`);
       const preferences = new PopupMenu.PopupMenuItem("Customize panel…");
       preferences.connect("activate", () => this._openPreferences());
       this.menu.addMenuItem(preferences);

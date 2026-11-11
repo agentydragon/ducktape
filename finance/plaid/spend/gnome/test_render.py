@@ -97,6 +97,13 @@ def fixture_json_dir(
     for fixture_name in _FIXTURE_NAMES:
         source = runfiles_root / f"{_FIXTURE_DIR}/{fixture_name}.json"
         (dest / f"{fixture_name}.json").write_bytes(source.read_bytes())
+    auth_fixture = json.loads((dest / "authentication_required.json").read_text())
+    for name, error in (
+        ("auth_generic", "Sign in to connect this computer"),
+        ("auth_error", "The refresh token was revoked"),
+    ):
+        auth_fixture["error"] = error
+        (dest / f"{name}.json").write_text(json.dumps(auth_fixture))
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
@@ -499,13 +506,26 @@ def test_desktop_retry_timing_ticks_and_stays_separate_from_server_sync(
 def test_authentication_required_has_no_retry_countdown(session: GnomeSession) -> None:
     with _menu(session, "authentication_required", "Sign in"):
         menu_text = string_reply(session.call("GetMenuText"))
-        assert "Sign in to see flexible spending" in menu_text
+        assert "Sign in to see flexible spending" not in menu_text
         assert "Sign in with Authentik" in menu_text
         assert "Last attempt 1m 15s ago" in menu_text
         assert "Sign-in required" not in menu_text
         assert "Your account is not connected." not in menu_text
-        assert "Details: Sign in to connect your Plaid account." in menu_text
+        assert "Details: Sign in to connect your Plaid account." not in menu_text
         assert "Retry in" not in menu_text
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "detail"), [("auth_generic", ""), ("auth_error", "Details: The refresh token was revoked")]
+)
+def test_sign_in_keeps_distinct_errors(session: GnomeSession, fixture_name: str, detail: str) -> None:
+    with _menu(session, fixture_name, "Sign in"):
+        menu_text = string_reply(session.call("GetMenuText"))
+        assert "Sign in with Authentik" in menu_text
+        if detail:
+            assert detail in menu_text
+        else:
+            assert "Details:" not in menu_text
 
 
 def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
@@ -524,7 +544,7 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
         )
         with _menu(session, "panel_composition", "7d 110% $12.3k") as geometry:
             assert state() == {"items": ["pace", "sparkline", "status", "balance"], "level": "caution", "window": "7d"}
-            assert "$12,345.00 available" in string_reply(session.call("GetMenuText"))
+            assert "$12,345 available" in string_reply(session.call("GetMenuText"))
             assert "Customize panel" in string_reply(session.call("GetMenuText"))
             assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))
             capture_menu.capture(geometry, label="custom panel 7d with sparkline", checkpoint="7d", left_padding=160)
