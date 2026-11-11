@@ -13,7 +13,6 @@
 # name: test_renders_shared_fixture[banked_resets_exhausted]
   '''
   Codex
-    Included quota exhausted
     Banked resets: 0
     5h:  12% used  ↻ 1m
     7d: 100% used  ↻ 1h  exhausted
@@ -37,7 +36,6 @@
 # name: test_renders_shared_fixture[banked_resets_unknown]
   '''
   Codex
-    Included quota exhausted
     5h:  12% used  ↻ 1m
     7d: 100% used  ↻ 1h  exhausted
   '''
@@ -112,7 +110,6 @@
     7d:  36% used  ↻ 5d 21h  exhausts ~3d 21h before reset
   
   z.ai
-    Included quota exhausted
     1x burn — next 3x window in 18h
     5h: 100% used  ↻ 3h 1m   exhausted
     7d:  30% used  ↻ 1d 19h  leaves ~60% unused at reset
@@ -146,7 +143,6 @@
   Claude
     Stale data · last observed 5m ago
     Refresh failed · showing available data
-    Included quota exhausted
     Extra spend this month: $26 of $100 limit
     5h: 100% used  ↻ 1h 55m
   '''
@@ -154,8 +150,7 @@
 # name: test_renders_shared_fixture[hot]
   '''
   Claude
-    Included quota exhausted · extra usage enabled
-    Extra spend this month: $3,142 of $5,000 limit
+    Extra spend this month: $3,142 of $5,000 limit · extra usage enabled
     5h:  50% used  ↻ 3h 30m  exhausts ~2h before reset
     7d: 100% used  ↻ 4d 21h  exhausted
   
@@ -223,7 +218,6 @@
 # name: test_renders_shared_fixture[paid_credits]
   '''
   Codex
-    Included quota exhausted · paid credits available
     Paid credits: 2,746 credits
     Banked resets: 0
     5h: 100% used  ↻ 1h 30m  exhausted
@@ -303,13 +297,11 @@
   '''
   Claude
     Stale data · last observed 15m ago
-    Included quota exhausted
     Extra spend this month: $26 of $100 limit
     5h: 100% used  ↻ 1h 45m
   
   Codex
     Stale data · last observed 15m ago
-    Included quota exhausted
     Paid credits: 500 credits
     5h: 100% used  ↻ 1h 45m
   '''
