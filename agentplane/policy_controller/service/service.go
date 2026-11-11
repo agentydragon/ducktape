@@ -82,6 +82,8 @@ func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Metho
 		policypb.PolicyService_ListPolicySetNames_FullMethodName:         rule,
 		policypb.PolicyService_WatchIdentities_FullMethodName:            rule,
 		policypb.PolicyService_DeleteIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
+		policypb.PolicyService_CreateIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
+		policypb.PolicyService_GrantIdentityPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
 	}
 }
 
@@ -543,6 +545,98 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		return nil, status.Error(codes.Unavailable, "Identity could not be deleted")
 	}
 	return &policypb.DeleteIdentityResponse{}, nil
+}
+
+func (s *Service) CreateIdentity(ctx context.Context, request *policypb.CreateIdentityRequest) (*policypb.CreateIdentityResponse, error) {
+	if request.GetName() == "" || request.GetDescription() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Identity name and description are required")
+	}
+	if errs := validation.IsDNS1123Subdomain(request.GetName()); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, "Identity name must be a DNS subdomain: "+strings.Join(errs, "; "))
+	}
+	identity := &policyapi.Identity{
+		TypeMeta:   metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: request.GetName()},
+		Spec:       policyapi.IdentitySpec{Description: request.GetDescription()},
+	}
+	if err := s.objects.Create(ctx, identity); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil, status.Error(codes.AlreadyExists, "an Identity of that name exists")
+		}
+		if apierrors.IsInvalid(err) {
+			return nil, status.Error(codes.InvalidArgument, "Identity is invalid")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity creation failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity could not be created")
+	}
+	message, err := identityMessage(identity)
+	if err != nil {
+		slog.ErrorContext(ctx, "PolicyService created an invalid Identity", "error", err)
+		return nil, status.Error(codes.Internal, "Identity response is invalid")
+	}
+	return &policypb.CreateIdentityResponse{Identity: message}, nil
+}
+
+func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *policypb.GrantIdentityPolicyBindingRequest) (*policypb.GrantIdentityPolicyBindingResponse, error) {
+	if request.GetIdentityName() == "" || request.GetIdentityUid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Identity name and UID are required")
+	}
+	if len(request.GetPolicySets()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one PolicySet is required")
+	}
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetIdentityName()}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "Identity not found")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	}
+	if string(identity.UID) != request.GetIdentityUid() || !identity.DeletionTimestamp.IsZero() {
+		return nil, status.Error(codes.NotFound, "Identity not found")
+	}
+	if err := s.requireKnownPolicySets(ctx, request.GetPolicySets()); err != nil {
+		return nil, err
+	}
+	var expiresAt *metav1.Time
+	if value := request.GetExpiresAt(); value != nil {
+		if err := value.CheckValid(); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "expires_at must be a valid timestamp")
+		}
+		converted := metav1.NewTime(value.AsTime().UTC())
+		expiresAt = &converted
+	}
+	controller, blockOwnerDeletion := false, false
+	binding := &policyapi.PolicyBinding{
+		TypeMeta: metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "PolicyBinding"},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: s.namespace, GenerateName: identity.Name + "-",
+			// Owned by the Identity incarnation: deleting it deletes this grant (DeleteIdentity does
+			// not count owned bindings), and a same-named successor inherits nothing.
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity",
+				Name: identity.Name, UID: identity.UID,
+				Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
+			}},
+		},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
+			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
+		},
+	}
+	if err := s.objects.Create(ctx, binding); err != nil {
+		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
+		if apierrors.IsAlreadyExists(err) {
+			return nil, status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
+		}
+		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be created")
+	}
+	message, err := bindingMessage(binding)
+	if err != nil {
+		slog.ErrorContext(ctx, "PolicyService created an invalid PolicyBinding", "error", err)
+		return nil, status.Error(codes.Internal, "PolicyBinding response is invalid")
+	}
+	return &policypb.GrantIdentityPolicyBindingResponse{Binding: message}, nil
 }
 
 func ownedBy(owners []metav1.OwnerReference, uid types.UID) bool {
