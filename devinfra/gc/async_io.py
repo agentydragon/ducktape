@@ -20,7 +20,17 @@ async def _wait_owned[T](task: asyncio.Task[T]) -> T:
 
 
 async def run_blocking[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-    thread = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))
+    def invoke() -> T:
+        try:
+            return func(*args, **kwargs)
+        except BaseException as error:
+            # SystemExit/KeyboardInterrupt must not cross an asyncio Task boundary: the
+            # event loop treats them specially, before its owner can drain other work.
+            if isinstance(error, Exception):
+                raise
+            raise RuntimeError(f"{type(error).__name__}: {error}") from error
+
+    thread = asyncio.create_task(asyncio.to_thread(invoke))
     try:
         return await asyncio.shield(thread)
     except asyncio.CancelledError:

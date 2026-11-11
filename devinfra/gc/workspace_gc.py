@@ -4,7 +4,7 @@ and Bazel's repo contents cache.
 The domains are coupled (branch classification depends on worktree holders; an output base
 orphans when its workspace worktree is removed, and a base for a workspace under `/tmp` can be
 reclaimed without removing its workspace; a repo-cache entry is unreferenced once the bases
-linking to it are gone), so a shared work queue discovers and processes related items as their
+linking to it are gone), so concurrent item tasks discover and process related items as their
 dependencies permit. The subcommands scope which domains are shown and removed:
 
   * `all`          — the default; `--prune` removes eligible worktrees, branches, bases, and
@@ -59,8 +59,7 @@ from devinfra.gc import (
     github_prs,
     output_base_gc,
     repo_contents_cache_gc,
-    workspace_jobs,
-    workspace_queue,
+    workspace_run,
     worktree_gc,
 )
 from devinfra.gc.async_io import run_blocking
@@ -70,8 +69,9 @@ from devinfra.gc.output_base_gc import PrunableBase, default_output_user_root
 from devinfra.gc.pull_request import PrLookup
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.repo_contents_cache_gc import PrunableEntry
+from devinfra.gc.scan_progress import ProgressState
 from devinfra.gc.verdict import verdict_of
-from devinfra.gc.work_queue import DEFAULT_WORKERS, WorkQueue
+from devinfra.gc.workspace_run import DEFAULT_WORKERS
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
 
 logger = logging.getLogger(__name__)
@@ -158,15 +158,14 @@ def _pr_source(*, no_prs: bool) -> _PrSource:
     return _without_prs if no_prs else github_prs.pr_states
 
 
-class _QueueReporter:
-    """Live queue counts; each bar covers only work discovered so far."""
+class _ProgressReporter:
+    """Render live work counts; each bar covers only work discovered so far."""
 
     def __init__(self) -> None:
-        self._queue: WorkQueue[workspace_jobs.Event] | None = None
-        self._waiting = 0
+        self._progress: ProgressState | None = None
         self._live: Live | None = None
 
-    def __enter__(self) -> _QueueReporter:
+    def __enter__(self) -> _ProgressReporter:
         self._live = Live(self.render(), console=Console(stderr=True), transient=True)
         self._live.start()
         return self
@@ -176,8 +175,8 @@ class _QueueReporter:
         self._live.stop()
         self._live = None
 
-    def update(self, queue: WorkQueue[workspace_jobs.Event], *, waiting: int) -> None:
-        self._queue, self._waiting = queue, waiting
+    def update(self, progress: ProgressState) -> None:
+        self._progress = progress
         if self._live is not None:
             self._live.update(self.render())
 
@@ -190,29 +189,28 @@ class _QueueReporter:
         table.add_column()
         table.add_column(justify="right")
         table.add_row("work", "ready", "active", "finished", "outcomes", "discovered", "")
-        if self._queue is None:
+        if self._progress is None:
             return table
-        phases = self._queue.phases
+        status = "discovering" if self._progress.discovering else "draining" if self._progress.stopped else "working"
         table.add_row(
-            "draining" if self._queue.stopped else "queue",
-            str(sum(p.ready for p in phases.values())),
-            str(sum(p.running for p in phases.values())),
-            str(sum(p.finished for p in phases.values())),
-            f"{self._waiting} waiting",
+            status,
+            str(sum(p.ready for p in self._progress.phases.values())),
+            str(sum(p.active for p in self._progress.phases.values())),
+            str(sum(p.completed for p in self._progress.phases.values())),
+            f"{self._progress.waiting} waiting",
             "",
             "",
         )
-        for name, phase in phases.items():
-            total = phase.ready + phase.running + phase.finished
+        for name, phase in self._progress.phases.items():
             outcomes = ", ".join(f"{count} {name}" for name, count in sorted(phase.outcomes.items()))
             table.add_row(
                 name,
                 str(phase.ready),
-                str(phase.running),
-                str(phase.finished),
+                str(phase.active),
+                str(phase.completed),
                 outcomes,
-                ProgressBar(total=total, completed=phase.finished, width=_PROGRESS_BAR_WIDTH),
-                f"{phase.finished}/{total}",
+                ProgressBar(total=phase.discovered, completed=phase.completed, width=_PROGRESS_BAR_WIDTH),
+                f"{phase.completed}/{phase.discovered}",
             )
         return table
 
@@ -282,22 +280,22 @@ def _report_removals[S](
 class _Command:
     """The domains one subcommand shows, and removes when it is told to."""
 
-    domains: frozenset[workspace_queue.Domain]
+    domains: frozenset[workspace_run.Domain]
     dry_run_hint: str
 
 
 _WORKTREES_COMMAND = _Command(
-    frozenset({workspace_queue.Domain.WORKTREES}),
+    frozenset({workspace_run.Domain.WORKTREES}),
     "Dry run only; pass --prune to remove clean, attached worktrees without ignored files.",
 )
 _BASES_COMMAND = _Command(
-    frozenset({workspace_queue.Domain.BASES}), "Dry run only; pass --delete to remove the prunable bases."
+    frozenset({workspace_run.Domain.BASES}), "Dry run only; pass --delete to remove the prunable bases."
 )
 _REPO_CACHE_COMMAND = _Command(
-    frozenset({workspace_queue.Domain.REPO_CACHE}), "Dry run only; pass --delete to remove the unreferenced entries."
+    frozenset({workspace_run.Domain.REPO_CACHE}), "Dry run only; pass --delete to remove the unreferenced entries."
 )
 _ALL_COMMAND = _Command(
-    frozenset(workspace_queue.Domain),
+    frozenset(workspace_run.Domain),
     "Dry run only; pass --prune to remove eligible worktrees, branches, bases, and repo-cache entries.",
 )
 
@@ -312,22 +310,22 @@ class _Options:
     apply: bool  # --prune / --delete
 
 
-def _print_findings(command: _Command, options: _Options, findings: workspace_queue.Report) -> None:
+def _print_findings(command: _Command, options: _Options, findings: workspace_run.Report) -> None:
     scan, entries = findings.scan, findings.entries
     contents = repo_contents_cache_gc.repo_contents_cache(options.output_user_root)
-    sections: list[tuple[workspace_queue.Domain, str, Callable[[], str]]] = [
+    sections: list[tuple[workspace_run.Domain, str, Callable[[], str]]] = [
         (
-            workspace_queue.Domain.WORKTREES,
+            workspace_run.Domain.WORKTREES,
             "Worktrees",
             lambda: render_worktrees(scan.worktrees, include_kept=options.show_all),
         ),
         (
-            workspace_queue.Domain.BRANCHES,
+            workspace_run.Domain.BRANCHES,
             "Branches",
             lambda: render_branches(scan.branches, include_kept=options.show_all),
         ),
         (
-            workspace_queue.Domain.BASES,
+            workspace_run.Domain.BASES,
             "Bazel output bases",
             lambda: output_base_gc.render_report(
                 scan.bases,
@@ -337,7 +335,7 @@ def _print_findings(command: _Command, options: _Options, findings: workspace_qu
             ),
         ),
         (
-            workspace_queue.Domain.REPO_CACHE,
+            workspace_run.Domain.REPO_CACHE,
             "Repo contents cache",
             lambda: repo_contents_cache_gc.render_report(
                 entries,
@@ -349,7 +347,7 @@ def _print_findings(command: _Command, options: _Options, findings: workspace_qu
             ),
         ),
         (
-            workspace_queue.Domain.FOREIGN_CLONES,
+            workspace_run.Domain.FOREIGN_CLONES,
             "Foreign clones",
             lambda: render_foreign_clones(scan.foreign_clones, include_kept=options.show_all),
         ),
@@ -361,19 +359,17 @@ def _print_findings(command: _Command, options: _Options, findings: workspace_qu
         print(render())
 
 
-def _any_prunable(command: _Command, findings: workspace_queue.Report) -> bool:
+def _any_prunable(command: _Command, findings: workspace_run.Report) -> bool:
     scan, domains = findings.scan, command.domains
     return (
-        (workspace_queue.Domain.WORKTREES in domains and any(isinstance(i, PrunableWorktree) for i in scan.worktrees))
-        or (workspace_queue.Domain.BRANCHES in domains and any(isinstance(i, PrunableBranch) for i in scan.branches))
-        or (workspace_queue.Domain.BASES in domains and any(isinstance(i, PrunableBase) for i in scan.bases))
-        or (
-            workspace_queue.Domain.REPO_CACHE in domains and any(isinstance(i, PrunableEntry) for i in findings.entries)
-        )
+        (workspace_run.Domain.WORKTREES in domains and any(isinstance(i, PrunableWorktree) for i in scan.worktrees))
+        or (workspace_run.Domain.BRANCHES in domains and any(isinstance(i, PrunableBranch) for i in scan.branches))
+        or (workspace_run.Domain.BASES in domains and any(isinstance(i, PrunableBase) for i in scan.bases))
+        or (workspace_run.Domain.REPO_CACHE in domains and any(isinstance(i, PrunableEntry) for i in findings.entries))
     )
 
 
-def _report_queue_results(options: _Options, report: workspace_queue.Report) -> bool:
+def _report_removal_results(options: _Options, report: workspace_run.Report) -> bool:
     def space_change(path: Path, before: int | None) -> str:
         if before is None:
             return ""
@@ -416,7 +412,7 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
     task = asyncio.current_task()
     assert task is not None
     stopping = False
-    gc_run: workspace_queue.Run | None = None
+    gc_run: workspace_run.Run | None = None
 
     def stop() -> None:
         nonlocal stopping
@@ -430,10 +426,10 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
         session_bases = (
             tuple(await run_blocking(output_base_gc.session_env_output_bases))
             if domains
-            & {workspace_queue.Domain.BASES, workspace_queue.Domain.REPO_CACHE, workspace_queue.Domain.FOREIGN_CLONES}
+            & {workspace_run.Domain.BASES, workspace_run.Domain.REPO_CACHE, workspace_run.Domain.FOREIGN_CLONES}
             else ()
         )
-        queue_options = workspace_queue.Options(
+        run_options = workspace_run.Options(
             domains,
             options.output_user_root,
             session_bases,
@@ -444,8 +440,8 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
             pr_source,
             options.show_all,
         )
-        with _QueueReporter() as reporter:
-            gc_run = workspace_queue.Run(queue_options, reporter)
+        with _ProgressReporter() as reporter:
+            gc_run = workspace_run.Run(run_options, reporter)
             report = await gc_run.run()
 
         if options.apply and any(
@@ -460,17 +456,17 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
             return
         if multiple:
             print()
-        ok = await run_blocking(_report_queue_results, options, report)
+        ok = await run_blocking(_report_removal_results, options, report)
         if not ok:
             raise SystemExit(1)
-    except workspace_queue.QueueError as error:
-        await run_blocking(_report_queue_results, options, error.report)
+    except workspace_run.RunError as error:
+        await run_blocking(_report_removal_results, options, error.report)
         print(error.error, file=sys.stderr)
         raise SystemExit(1) from error
     except asyncio.CancelledError as error:
         if gc_run is not None:
-            await run_blocking(_report_queue_results, options, gc_run.report())
-        print("Interrupted; queued work was cancelled.", file=sys.stderr)
+            await run_blocking(_report_removal_results, options, gc_run.report())
+        print("Interrupted; pending work was cancelled.", file=sys.stderr)
         raise SystemExit(130) from error
     except (*git_repo.INSPECTION_ERRORS, RuntimeError) as error:
         print(error, file=sys.stderr)
@@ -494,7 +490,7 @@ _WorkersOption = Annotated[
 
 
 def _configure_logging(*, verbose: bool) -> None:
-    # The compact live queue indicator is the default on-TTY signal for
+    # The compact live progress indicator is the default on-TTY signal for
     # a scan in progress; --verbose additionally streams the per-item `logger.info` trace this
     # module already emits, which would otherwise bury that indicator in scroll.
     logging.basicConfig(level=logging.INFO if verbose else logging.WARNING, format="%(message)s")

@@ -24,7 +24,7 @@ import logging
 import os
 import subprocess
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -40,7 +40,7 @@ from devinfra.gc.git_repo import (
     open_repo,
     patches_landed_in_main,
 )
-from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+from devinfra.gc.pull_request import PrInfo, PrLookup, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
 
@@ -98,6 +98,44 @@ class ReviewWorktree(Review):
 
 
 type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
+
+
+def resolve_worktree_pr(item: Classification, lookup: PrLookup) -> Classification:
+    """Apply the completed branch lookup to a local worktree classification.
+
+    Local inspection can run while the GitHub request is in flight.
+    """
+    branch = item.worktree.branch
+    if branch is None:
+        return item
+    pr = lookup.states.get(branch)
+    if isinstance(item, PrunableWorktree):
+        if branch in lookup.unknown:
+            return ReviewWorktree(
+                item.worktree, ReviewWorktreeReason.PR_LOOKUP_UNAVAILABLE, item.last_activity, item.main
+            )
+        if item.reason is PrunableWorktreeReason.DIRECTORY_MISSING:
+            return item
+        if pr is not None and pr.state is PrState.OPEN:
+            return RetainedWorktree(item.worktree, RetainedWorktreeReason.OPEN_PR, item.last_activity, pr=pr)
+        if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
+            return PrunableWorktree(
+                item.worktree, PrunableWorktreeReason.PR_LANDED, item.last_activity, item.main, pr=pr
+            )
+        return item
+    if isinstance(item, RetainedWorktree):
+        if item.reason in (RetainedWorktreeReason.UNCOMMITTED_CHANGES, RetainedWorktreeReason.IGNORED_FILES):
+            return replace(item, pr=pr)
+        return item
+    if item.reason is not ReviewWorktreeReason.UNMERGED:
+        return item
+    if branch in lookup.unknown:
+        return ReviewWorktree(item.worktree, ReviewWorktreeReason.PR_LOOKUP_UNAVAILABLE, item.last_activity, item.main)
+    if pr is not None and pr.state is PrState.OPEN:
+        return RetainedWorktree(item.worktree, RetainedWorktreeReason.OPEN_PR, item.last_activity, pr=pr)
+    if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
+        return PrunableWorktree(item.worktree, PrunableWorktreeReason.PR_LANDED, item.last_activity, item.main, pr=pr)
+    return item
 
 
 def describe_reason(item: Classification) -> str:

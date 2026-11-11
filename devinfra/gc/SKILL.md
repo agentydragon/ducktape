@@ -9,7 +9,7 @@ description: >-
 
 # Clean Workspaces
 
-`workspace-gc` processes four coupled domains through a shared work queue (branch classification
+`workspace-gc` processes four coupled domains concurrently (branch classification
 depends on its worktree holders; an output base orphans when its workspace worktree is removed;
 a repo-cache entry is unreferenced once the bases linking to it are gone):
 
@@ -25,7 +25,7 @@ All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every ca
 immediately before removing it, skipping one that changed.
 With a deletion flag, removals start while other items are being scanned; completed work can
 unlock further work. Findings describe each item as observed, not a single snapshot. The live
-queue shows ready, running, dependency-waiting, and finished counts; each bar covers only work
+display shows ready, running, dependency-waiting, and finished counts; each bar covers only work
 discovered so far, so it can move backward as new work is added.
 Gitignored files are not uncommitted changes, so removing a worktree deletes them (a
 gitignored `.env` or local data could be lost). The scan inventories ignored paths with

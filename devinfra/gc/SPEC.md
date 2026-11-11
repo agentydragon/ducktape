@@ -5,13 +5,12 @@ and foreign clones. Without an explicit removal flag it reports classifications 
 
 ## Work and dependencies
 
-Discovery, inspection, and eligible removals can run concurrently. Discovery publishes items
-incrementally; the worker limit bounds active work, not the number of discovered items.
-Waiting for a prerequisite does not consume a worker. The coordinator owns the item states,
-dependency relationships, and progress counters. It registers follow-up work before marking
-the work that produced it complete. Completion requires discovery to have ended and no ready,
-running, or unresolved work to remain. A failed or unknown prerequisite is not evidence that
-an item is safe to delete.
+Discovery, inspection, and eligible removals can run concurrently. An asyncio task group owns
+the item coroutines and a shared semaphore bounds active work. Discovery publishes items
+incrementally; waiting for a prerequisite does not consume a worker. Follow-up tasks are
+created before their producers finish, so the task group exits only after discovery and all
+dependent work finish. A failed or unknown prerequisite is not evidence that an item is safe
+to delete.
 
 Branch classification accounts for worktree holders. A branch held by a prunable worktree waits
 for that worktree's removal. Before deleting a branch, the run checks worktree holders, preserves

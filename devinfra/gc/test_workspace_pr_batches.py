@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from devinfra.gc import branch_gc, output_base_gc, workspace_jobs, workspace_queue, worktree_gc
+from devinfra.gc import branch_gc, output_base_gc, workspace_run, workspace_scan, worktree_gc
 from devinfra.gc.conftest import GitRepo, make_base
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrLookup, PrState
@@ -18,13 +18,13 @@ PrSource = Callable[[pathlib.Path, set[str]], Awaitable[PrLookup]]
 def _options(
     repo: GitRepo,
     *,
-    domains: set[workspace_queue.Domain],
+    domains: set[workspace_run.Domain],
     workers: int,
     source: PrSource,
     apply: bool = False,
     root: pathlib.Path | None = None,
-) -> workspace_queue.Options:
-    return workspace_queue.Options(
+) -> workspace_run.Options:
+    return workspace_run.Options(
         domains=frozenset(domains),
         root=repo.path if root is None else root,
         session_bases=(),
@@ -56,8 +56,8 @@ async def test_local_worktree_inspection_runs_while_pr_batch_is_blocked(
         return await classify(*args, **kwargs)
 
     monkeypatch.setattr(worktree_gc, "classify_worktree", inspect_local)
-    run = workspace_queue.Run(
-        _options(checkout, domains={workspace_queue.Domain.WORKTREES}, workers=2, source=blocked_lookup)
+    run = workspace_run.Run(
+        _options(checkout, domains={workspace_run.Domain.WORKTREES}, workers=2, source=blocked_lookup)
     )
     task = asyncio.create_task(run.run())
     try:
@@ -76,7 +76,7 @@ async def test_repository_scan_failure_cancels_and_drains_sibling(
 ) -> None:
     sibling_started, sibling_finished = asyncio.Event(), asyncio.Event()
 
-    async def failed_facts(_repo: pathlib.Path, _prs: PrLookup) -> workspace_jobs.RepositoryFacts:
+    async def failed_facts(_repo: pathlib.Path, _prs: PrLookup) -> workspace_run.RepositoryFacts:
         await sibling_started.wait()
         raise ValueError("local facts failed")
 
@@ -88,13 +88,18 @@ async def test_repository_scan_failure_cancels_and_drains_sibling(
             sibling_finished.set()
         return set()
 
-    monkeypatch.setattr(workspace_jobs, "_repository_facts", failed_facts)
-    monkeypatch.setattr(workspace_jobs.workspace_scan, "pr_branch_candidates", blocked_candidates)
+    monkeypatch.setattr(workspace_run, "_repository_facts", failed_facts)
+    monkeypatch.setattr(workspace_scan, "pr_branch_candidates", blocked_candidates)
 
-    with pytest.raises(ExceptionGroup) as error_info:
-        await workspace_jobs.PrepareRepositoryScan(repo.path).run_async()
+    async def no_lookup(_repo: pathlib.Path, _branches: set[str]) -> PrLookup:
+        return PrLookup({})
 
-    assert "local facts failed" in str(error_info.value.exceptions[0])
+    run = workspace_run.Run(_options(repo, domains={workspace_run.Domain.WORKTREES}, workers=2, source=no_lookup))
+    with pytest.raises(workspace_run.RunError) as error_info:
+        await run.run()
+
+    assert isinstance(error_info.value.error, ExceptionGroup)
+    assert "local facts failed" in str(error_info.value.error.exceptions[0])
     assert sibling_finished.is_set()
 
 
@@ -116,9 +121,7 @@ async def test_inspected_worktree_requests_its_current_branch_pr(
 
     monkeypatch.setattr(worktree_gc, "classify_worktree", classify_current_branch)
     report = await asyncio.wait_for(
-        workspace_queue.Run(
-            _options(checkout, domains={workspace_queue.Domain.WORKTREES}, workers=2, source=lookup)
-        ).run(),
+        workspace_run.Run(_options(checkout, domains={workspace_run.Domain.WORKTREES}, workers=2, source=lookup)).run(),
         10,
     )
 
@@ -133,14 +136,14 @@ def test_resolved_pr_never_overrides_ignored_worktree_safety(state: PrState) -> 
     item = worktree_gc.RetainedWorktree(worktree, worktree_gc.RetainedWorktreeReason.IGNORED_FILES, None)
     pr = PrInfo(42, state)
 
-    resolved = workspace_jobs.resolve_worktree_pr(item, "topic", PrLookup({"topic": pr}))
+    resolved = worktree_gc.resolve_worktree_pr(item, PrLookup({"topic": pr}))
 
     assert isinstance(resolved, worktree_gc.RetainedWorktree)
     assert resolved.reason is worktree_gc.RetainedWorktreeReason.IGNORED_FILES
     assert resolved.pr == pr
 
 
-async def test_one_pr_batch_resolves_while_another_is_blocked(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_one_pr_batch_resolves_while_another_is_blocked(repo: GitRepo) -> None:
     checkout = repo.clone("checkout")
     for index in range(51):
         checkout.branch(f"branch-{index:03d}")
@@ -162,22 +165,22 @@ async def test_one_pr_batch_resolves_while_another_is_blocked(repo: GitRepo, mon
             other_finished.set()
         return PrLookup({})
 
-    run = workspace_queue.Run(_options(checkout, domains={workspace_queue.Domain.BRANCHES}, workers=3, source=lookup))
-    inspected_branch = workspace_queue._WorktreesAndBranches.inspected_branch
+    class Observer:
+        def update(self, progress: Any) -> None:
+            if any(item.branch.name == "branch-050" for item in run.report().scan.branches):
+                target_resolved.set()
 
-    def observe_branch(trees: workspace_queue._WorktreesAndBranches, item: branch_gc.BranchClassification) -> None:
-        inspected_branch(trees, item)
-        if item.branch.name == "branch-050":
-            target_resolved.set()
-
-    monkeypatch.setattr(workspace_queue._WorktreesAndBranches, "inspected_branch", observe_branch)
+    run = workspace_run.Run(
+        _options(checkout, domains={workspace_run.Domain.BRANCHES}, workers=3, source=lookup), Observer()
+    )
     task = asyncio.create_task(run.run())
     try:
         await asyncio.wait_for(blocked_started.wait(), 5)
         await asyncio.wait_for(other_finished.wait(), 5)
         await asyncio.wait_for(target_resolved.wait(), 5)
-        assert "branch-000" not in run.trees.branches
-        assert "branch-050" in run.trees.branches
+        resolved = {item.branch.name for item in run.report().scan.branches}
+        assert "branch-000" not in resolved
+        assert "branch-050" in resolved
     finally:
         release_blocked.set()
 
@@ -196,10 +199,10 @@ async def test_unknown_pr_state_is_review_and_one_worker_completes(repo: GitRepo
     async def unknown_lookup(_repo: pathlib.Path, branches: set[str]) -> PrLookup:
         return PrLookup({}, branches)
 
-    run = workspace_queue.Run(
+    run = workspace_run.Run(
         _options(
             checkout,
-            domains={workspace_queue.Domain.WORKTREES, workspace_queue.Domain.BRANCHES},
+            domains={workspace_run.Domain.WORKTREES, workspace_run.Domain.BRANCHES},
             workers=1,
             source=unknown_lookup,
             apply=True,
@@ -217,22 +220,39 @@ async def test_unknown_pr_state_is_review_and_one_worker_completes(repo: GitRepo
     assert worktree.path.exists()
 
 
-async def test_foreign_branch_discovery_is_submitted_once_regardless_of_event_order(repo: GitRepo) -> None:
+async def test_foreign_clone_referenced_by_multiple_bases_is_inspected_once(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = repo.clone("checkout")
+    foreign = checkout.clone("foreign")
+    shared_remote = "https://github.com/example/project"
+    checkout.set_origin(shared_remote)
+    foreign.set_origin(shared_remote)
+    output_root = tmp_path / "output"
+    make_base(output_root, foreign.path)
+    session = make_base(tmp_path / "session", foreign.path, name="bazel-output-base")
+    monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
+    discover = workspace_scan.foreign_clone_branch_candidates
+    discovered: list[pathlib.Path] = []
+
+    async def discover_once(roots: Any) -> set[str]:
+        discovered.extend(roots)
+        return await discover(roots)
+
+    monkeypatch.setattr(workspace_scan, "foreign_clone_branch_candidates", discover_once)
+
     async def no_lookup(_repo: pathlib.Path, _branches: set[str]) -> PrLookup:
         return PrLookup({})
 
-    run = workspace_queue.Run(
-        _options(repo, domains={workspace_queue.Domain.FOREIGN_CLONES}, workers=2, source=no_lookup)
+    options = replace(
+        _options(
+            checkout, domains={workspace_run.Domain.FOREIGN_CLONES}, workers=2, source=no_lookup, root=output_root
+        ),
+        session_bases=(session,),
     )
-    root = repo.path / "foreign"
-    facts = workspace_jobs.RepositoryFacts(repo.path, repo.path, None, "refs/heads/main", "main", PrLookup({}))
-
-    run.foreign.found([root])
-    run.foreign.repository_ready(facts)
-    run.foreign.found([root])
-
-    phase = run.queue.phases["discover foreign clone branches"]
-    assert phase.ready == 1
+    report = await asyncio.wait_for(workspace_run.Run(options).run(), 10)
+    assert discovered == [foreign.path]
+    assert [item.clone.root for item in report.scan.foreign_clones] == [foreign.path]
 
 
 async def test_bases_only_run_starts_late_pr_lookup_with_one_worker(
@@ -249,8 +269,8 @@ async def test_bases_only_run_starts_late_pr_lookup_with_one_worker(
         calls.append(set(branches))
         return PrLookup({})
 
-    run = workspace_queue.Run(
-        _options(checkout, domains={workspace_queue.Domain.BASES}, workers=1, source=lookup, root=output_root)
+    run = workspace_run.Run(
+        _options(checkout, domains={workspace_run.Domain.BASES}, workers=1, source=lookup, root=output_root)
     )
 
     await asyncio.wait_for(run.run(), 10)
@@ -277,8 +297,8 @@ async def test_foreign_only_run_starts_late_pr_lookup_with_one_worker(
         calls.append(set(branches))
         return PrLookup({})
 
-    run = workspace_queue.Run(
-        _options(checkout, domains={workspace_queue.Domain.FOREIGN_CLONES}, workers=1, source=lookup, root=output_root)
+    run = workspace_run.Run(
+        _options(checkout, domains={workspace_run.Domain.FOREIGN_CLONES}, workers=1, source=lookup, root=output_root)
     )
 
     report = await asyncio.wait_for(run.run(), 10)
