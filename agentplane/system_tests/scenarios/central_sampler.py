@@ -17,7 +17,7 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.requests import ResponsesRequest
-from agentplane.proto import event_pb2, identity_pb2, session_pb2
+from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.driver.central_sampler import (
     MODEL,
@@ -2046,6 +2046,265 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
                     "folded_through": summary.folded_through,
                     "feed_status": history_service_pb2.FeedStatus.Name(summary.feed_status),
                     "command_failed_count": 0,
+                    "passed": True,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+
+
+async def _sampler_events_after(deployed: CentralStack, session_id: str, cursor: int) -> list[event_log_pb2.EventEntry]:
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
+    )
+    try:
+        return [frame.entry async for frame in stream]
+    finally:
+        stream.cancel()
+
+
+async def _ready_service_endpoint_addresses(cluster: Cluster, service: str) -> set[str]:
+    slices = json.loads(
+        await cluster.kubectl("get", "endpointslices", "-l", f"kubernetes.io/service-name={service}", "-o", "json")
+    )["items"]
+    return {
+        address
+        for item in slices
+        for endpoint in item.get("endpoints") or []
+        if (endpoint.get("conditions") or {}).get("ready") is True
+        for address in endpoint.get("addresses") or []
+    }
+
+
+async def _wait_for_service_ready_endpoints(cluster: Cluster, service: str, *, available: bool) -> set[str]:
+    async with asyncio.timeout(120):
+        while True:
+            addresses = await _ready_service_endpoint_addresses(cluster, service)
+            if bool(addresses) == available:
+                return addresses
+            await asyncio.sleep(0.2)
+
+
+async def _ready_pod_uids(cluster: Cluster, component: str) -> set[str]:
+    pods = json.loads(await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={component}", "-o", "json"))[
+        "items"
+    ]
+    ready = [
+        pod
+        for pod in pods
+        if not pod["metadata"].get("deletionTimestamp")
+        and any(
+            condition.get("type") == "Ready" and condition.get("status") == "True"
+            for condition in pod.get("status", {}).get("conditions", [])
+        )
+    ]
+    assert ready, f"no ready Pods for {component}"
+    return {pod["metadata"]["uid"] for pod in ready}
+
+
+async def _assert_central_components_unchanged(
+    cluster: Cluster, deployed: CentralStack, pod_uids: dict[str, set[str]]
+) -> None:
+    for component, expected in pod_uids.items():
+        assert await _ready_pod_uids(cluster, component) == expected, f"{component} changed during History outage"
+    control = json.loads(await cluster.kubectl("get", "endpointslice", f"{deployed.sandbox}-control", "-o", "json"))
+    ready = [
+        address
+        for endpoint in control.get("endpoints") or []
+        if (endpoint.get("conditions") or {}).get("ready") is True
+        for address in endpoint.get("addresses") or []
+    ]
+    assert ready, f"Sandbox runner lost its ready Gateway endpoint: {control}"
+    assert any(address in deployed.control_target for address in ready), ready
+
+
+async def _wait_for_history_cursors(
+    deployed: CentralStack, session_id: str, cursor: int
+) -> history_service_pb2.SessionSummary:
+    async with asyncio.timeout(90):
+        while True:
+            try:
+                summary = await deployed.history.get_session_summary(session_id)
+                if summary.committed_cursor >= cursor and summary.folded_through >= cursor:
+                    assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
+                    entities = await deployed.history.read_thread_entities(
+                        history_service_pb2.ReadThreadEntitiesRequest(
+                            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+                        )
+                    )
+                    (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
+                    assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
+                    return summary
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.UNAVAILABLE:
+                    raise
+            await asyncio.sleep(0.1)
+
+
+async def history_outage_backfills_completed_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """A completed active turn is committed by the sampler and folded after History returns."""
+    session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(
+                session_id=session_id,
+                spec=session_pb2.SessionSpec(
+                    placement=session_pb2.SessionPlacement(
+                        central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                            executor_environment=session_pb2.ExactEnvironment(
+                                name=deployed.sandbox, uid=deployed.sandbox_uid
+                            )
+                        )
+                    ),
+                    cwd=executor.cwd,
+                    model=MODEL,
+                ),
+                setup_script=":\n",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        submitted = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=command_id,
+                text="Complete this synthetic turn while History is unavailable.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert submitted.dispatch.command_id == command_id
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        assert any("synthetic turn" in text for text in request.user_texts)
+
+        active = await deployed.sampler.GetSession(
+            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        )
+        assert active.attached.active_turn_id == command_id
+        before = await _sampler_events_after(deployed, session_id, 0)
+        assert before
+        before_outage_cursor = before[-1].cursor
+        await _wait_for_history_fold(deployed, session_id, before_outage_cursor)
+        history_before = await deployed.history.get_session_summary(session_id)
+        assert history_before.committed_cursor >= before_outage_cursor, history_before
+        assert history_before.folded_through >= before_outage_cursor, history_before
+
+        component_pods = {
+            component: await _ready_pod_uids(cluster, component)
+            for component in ("app", "central-sampler", "runner-gateway")
+        }
+        history_deployment = json.loads(await cluster.kubectl("get", "deployment", "history-service", "-o", "json"))
+        history_replicas = int(history_deployment["spec"].get("replicas", 1))
+        assert history_replicas > 0, history_deployment
+        after_outage_cursor = 0
+        try:
+            await cluster.kubectl("scale", "deployment/history-service", "--replicas=0")
+            await _wait_for_service_ready_endpoints(cluster, "history-service", available=False)
+            await _assert_central_components_unchanged(cluster, deployed, component_pods)
+
+            async with deployed.history.new_client() as history_probe:
+                with pytest.raises(ServiceError) as unavailable:
+                    await history_probe.get_session_summary(session_id)
+                assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE, unavailable.value
+
+            # Finish the already-open synthetic model response normally while only History is down.
+            await model.reply(request, Text("The active turn completed while History was unavailable."))
+            await _wait_for_turn_status(deployed, session_id, command_id, event_pb2.TURN_STATUS_COMPLETED)
+            outage_entries = await _sampler_events_after(deployed, session_id, before_outage_cursor)
+            assert outage_entries, "sampler journal did not advance during the History outage"
+            (terminal,) = [
+                entry
+                for entry in outage_entries
+                if entry.event.HasField("turn_completed") and entry.event.turn_completed.turn_id == command_id
+            ]
+            assert terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED, terminal
+            assert terminal.cursor > history_before.committed_cursor, (terminal, history_before)
+            after_outage_cursor = outage_entries[-1].cursor
+            assert terminal.cursor <= after_outage_cursor
+            assert after_outage_cursor > before_outage_cursor
+            assert not await _ready_service_endpoint_addresses(cluster, "history-service")
+            await _assert_central_components_unchanged(cluster, deployed, component_pods)
+        finally:
+            # This suite owns its stack, but diagnostics and teardown still require History to be restored.
+            await cluster.kubectl("scale", "deployment/history-service", f"--replicas={history_replicas}")
+            await cluster.kubectl("rollout", "status", "deployment/history-service", "--timeout=120s")
+
+        restored_endpoints = await _wait_for_service_ready_endpoints(cluster, "history-service", available=True)
+        assert restored_endpoints
+        assert after_outage_cursor > before_outage_cursor
+        recovered = await _wait_for_history_cursors(deployed, session_id, after_outage_cursor)
+        assert recovered.committed_cursor >= after_outage_cursor, recovered
+        assert recovered.folded_through >= after_outage_cursor, recovered
+        retained = await deployed.history.read_session_events(session_id, after_cursor=before_outage_cursor, limit=1000)
+        outage_history = [entry for entry in retained.entries if entry.cursor <= after_outage_cursor]
+        (folded_terminal,) = [
+            entry
+            for entry in outage_history
+            if entry.event.HasField("turn_completed") and entry.event.turn_completed.turn_id == command_id
+        ]
+        assert folded_terminal.cursor == terminal.cursor
+        assert folded_terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+        await _assert_single_command_settlement(deployed, session_id, command_id)
+        first_command = await deployed.sampler.GetCommand(
+            sampler_pb2.GetCommandRequest(session_id=session_id, command_id=command_id),
+            metadata=deployed.sampler_metadata,
+            timeout=10,
+        )
+        assert first_command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+
+        await _assert_projected_ready_for_input(deployed, session_id)
+        submitted = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=next_command_id,
+                text="Complete a subsequent input after History recovery.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert submitted.dispatch.command_id == next_command_id
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        assert any("subsequent input" in text for text in request.user_texts)
+        await model.reply(request, Text("The subsequent input completed after History recovery."))
+        await _wait_for_folded_turn(deployed, session_id, next_command_id)
+        await _assert_projected_ready_for_input(deployed, session_id)
+        await _assert_single_command_settlement(deployed, session_id, command_id, next_command_id)
+        second_command = await deployed.sampler.GetCommand(
+            sampler_pb2.GetCommandRequest(session_id=session_id, command_id=next_command_id),
+            metadata=deployed.sampler_metadata,
+            timeout=10,
+        )
+        assert second_command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+        final_cursor = (await _sampler_events_after(deployed, session_id, after_outage_cursor))[-1].cursor
+        (undeclared_outputs_dir() / "central-sampler-history-outage.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "command_id": command_id,
+                    "next_command_id": next_command_id,
+                    "history_replicas_restored": history_replicas,
+                    "history_unavailable_rpc": unavailable.value.code.name,
+                    "history_ready_endpoints_after_restore": sorted(restored_endpoints),
+                    "before_outage_cursor": before_outage_cursor,
+                    "after_outage_cursor": after_outage_cursor,
+                    "committed_cursor_after_recovery": recovered.committed_cursor,
+                    "folded_through_after_recovery": recovered.folded_through,
+                    "final_cursor": final_cursor,
+                    "feed_status": history_service_pb2.FeedStatus.Name(recovered.feed_status),
+                    "outage_turn_status": event_pb2.TurnStatus.Name(folded_terminal.event.turn_completed.status),
+                    "command_settlements": 1,
                     "passed": True,
                 },
                 indent=2,

@@ -128,6 +128,25 @@ k3s_suite(
     ],
 )
 
+# The History outage is isolated so a failed recovery assertion cannot leave another case without History.
+k3s_suite(
+    name = "test_history_outage",
+    srcs = ["test_history_outage.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # The external delegation acceptance scales app to zero after OAuth consent, so it owns a stack
 # independent from the services and Action suites.
 k3s_suite(
