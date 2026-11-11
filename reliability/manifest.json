@@ -2,10 +2,10 @@
   "source_devel_commit": "17ed98e8ea69787689c908a3ed49749b6ee7e554",
   "window_start_utc": "2026-11-03T00:00:00Z",
   "window_end_utc": "2026-11-10T23:13:00Z",
-  "published_at_utc": "2026-11-10T23:20:51.886716+00:00",
+  "published_at_utc": "2026-11-11T01:02:21+00:00",
   "attribution": "not collected",
   "previous_report_branch_commit": "4aa6b2d2148fc8365a04985680295b39c2542d29",
-  "report_html_sha256": "4287a9ec4a69d9bdb096dc6f395597d8bbad69fe8f4833168199bcfec6c71909",
-  "evidence_sha256": "829d4c8ece7c918f9dc6bf44fb3711bf776bdb487d127bb51d2e3a018334b6b9",
+  "report_html_sha256": "81e2bcda3e487428ceceee758ef7cc4e7100f0d62dc9cd33878fd05d77cf9dda",
+  "evidence_sha256": "e9b2238aafe2e76906f2569febe1f4778ad977c88379c1294ec7d1c2edabb958",
   "sampling_design": "Focused eight-day devel-filtered VM stats and branch-unverified target history through 23:04 UTC, plus selected #15493 PR attempts through 23:13 UTC; no repository-wide PR or fresh physical denominator."
 }

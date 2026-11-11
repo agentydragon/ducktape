@@ -152,12 +152,41 @@
               ${"Focused reliability snapshot · PR observations close 10 November 2026 at 23:13 UTC; target tracker counts close at 23:04"}
             <//>
             <${Title} order=${1} mb="sm">
-              ${"Four failed CI attempts, distinct VM failure paths"}
+              ${"Four failed CI attempts through the 10 November cutoff"}
             <//>
             <${Text} component="p" my="sm">
-              ${"The latest completed "}
+              ${"The first four "}
               <${Anchor} href=${pr}>${"#15493"}<//>
-              ${" attempts show a guest-progress stall, a guest kernel panic followed by a separate snapshot restore error, a supervision proof read at the end of a shared context, and exhaustion of the outer pytest deadline during active setup and scenarios. No cause is established for the first stall or the snapshot's origin."}
+              ${" attempts observed through 10 November at 23:13 UTC show a guest-progress stall, a guest kernel panic followed by a separate snapshot restore error, a supervision proof read at the end of a shared context, and exhaustion of the outer pytest deadline during active setup and scenarios. No cause is established for the first stall or the snapshot's origin."}
+            <//>
+            <${Paper} withBorder p="md" my="md">
+              <${Text} fw=${700}
+                >${"Post-cutoff update · 11 November 2026 UTC"}<//
+              >
+              <${Text} component="p" my="sm">
+                <${Anchor} href=${pr}>${"#15493"}<//>
+                ${" merged after its "}
+                <${Anchor}
+                  href="https://github.com/agentydragon/ducktape/actions/runs/42911870369/attempts/5"
+                  >${"fifth Test & Build attempt"}<//
+                >
+                ${" passed. Its VM result was a remote cache hit (one of one runs cached), with output artifacts matching a "}
+                <${Anchor}
+                  href="https://app.buildbuddy.io/invocation/ada176c7-0a2f-5535-a3d5-678316d0467a"
+                  >${"fresh warm passing run"}<//
+                >
+                ${". The green check does not show that the four earlier failure paths were fixed. After this report's cutoff, "}
+                <${Anchor}
+                  href="https://app.buildbuddy.io/invocation/c6e943d6-8bc8-50a7-98d5-9799c97fcb3e"
+                  >${"#15564 CI"}<//
+                >
+                ${" encountered another TSC-scaling restore failure, recorded in "}
+                <${Anchor}
+                  href="https://github.com/agentydragon/ducktape/issues/15581"
+                  >${"#15581"}<//
+                >
+                ${". The failing snapshot's origin and TSC values remain unknown."}
+              <//>
             <//>
             <${Group} gap="xs" my="md">
               <${Badge} variant="light">${"3 Nov 00:00–10 Nov 23:13 UTC"}<//>
@@ -197,7 +226,7 @@
               <${Paper} withBorder p="lg" radius="md">
                 <${Text} size="xl" fw=${700}>${"4 / 4"}<//>
                 <${Text} size="sm"
-                  >${"Selected #15493 Test & Build jobs failed among completed attempts. Three produced fresh VM test verdicts; one failed before TestResult."}<//
+                  >${"First four #15493 Test & Build attempts, all before the 10 November 23:13 UTC cutoff, failed. Three produced fresh VM test verdicts; one failed before TestResult."}<//
                 >
               <//>
             <//>
@@ -223,7 +252,7 @@
             <//>
             <${DailyVmChart} />
             <${Text} component="p">
-              ${"The #15493 table below is a selected pull-request population: four completed failed GitHub job attempts through 23:13 UTC on 10 November. It is not a repository-wide PR failure rate. A failed job before TestResult is not counted as a failed VM test. No current merged-PR census or complete PR job-attempt census was collected."}
+              ${"The #15493 table below covers only the first four completed GitHub job attempts, all failed before the 10 November 23:13 UTC cutoff. It is not a repository-wide PR failure rate. A failed job before TestResult is not counted as a failed VM test. No merged-PR census or complete PR job-attempt census was collected for this window."}
             <//>
           <//>
 
@@ -232,9 +261,9 @@
               >${"#15493: separate the first fault from later fallout"}<//
             >
             <${Text} component="p">
-              ${"All four completed "}
+              ${"The first four completed "}
               <${Anchor} href=${run}>${"Test & Build attempts"}<//>
-              ${" failed, but only attempts 1, 3 and 4 produced VM TestResult events. Each was one uncached remote test run in configuration 6db61594, with a distinct physical TestRunner execution ID. Attempt 2 failed in RBE before a test verdict; it had two physical executor executions. Do not count those executor attempts as test failures. Attempt 4's test-action digest differs from the first three attempts despite the same tested merge SHA."}
+              ${" failed before the 10 November 23:13 UTC cutoff, but only attempts 1, 3 and 4 produced VM TestResult events. Each was one uncached remote test run in configuration 6db61594, with a distinct physical TestRunner execution ID. Attempt 2 failed in RBE before a test verdict; it had two physical executor executions. Do not count those executor attempts as test failures. Attempt 4's test-action digest differs from the first three attempts despite the same tested merge SHA."}
             <//>
             <${Box} visibleFrom="sm">
               <${Table.ScrollContainer}
