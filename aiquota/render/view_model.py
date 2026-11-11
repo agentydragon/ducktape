@@ -34,6 +34,8 @@ from aiquota.render.format import (
     format_summary_minor_currency,
     format_summary_usd,
     format_window_label,
+    same_at_precision,
+    summary_hides_fraction,
 )
 
 ExtraStatus = Literal["none", "informational", "active"]
@@ -407,8 +409,10 @@ def _credit_rows(
                 exact_value=(
                     exact
                     if prepaid.kind == "available"
-                    and abs(prepaid.amount_minor) >= 10 * 10**prepaid.exponent
-                    and prepaid.amount_minor % 10**prepaid.exponent
+                    and summary_hides_fraction(
+                        Decimal(prepaid.amount_minor).scaleb(-prepaid.exponent),
+                        2 if prepaid.currency == "USD" else prepaid.exponent,
+                    )
                     else None
                 ),
                 stale_since=selection.prepaid_stale_since if selection.prepaid_stale_since != stale_since else None,
@@ -427,20 +431,20 @@ def _credit_rows(
             BalanceView(
                 label="Available balance",
                 value=summary,
-                exact_value=exact if abs(openai.total_available_usd) >= 10 and openai.total_available_usd % 1 else None,
+                exact_value=exact if summary_hides_fraction(openai.total_available_usd) else None,
             )
         )
         for grant in openai.grants:
             remaining_amount = grant.granted_usd - grant.used_usd
-            remaining = format_summary_usd(remaining_amount)
+            remaining_label = format_summary_usd(remaining_amount)
             exact_remaining = format_exact_usd(remaining_amount)
             grants.append(
                 GrantView(
                     label="Grant",
-                    remaining=remaining,
-                    exact_remaining=exact_remaining if abs(remaining_amount) >= 10 and remaining_amount % 1 else None,
+                    remaining=remaining_label,
+                    exact_remaining=exact_remaining if summary_hides_fraction(remaining_amount) else None,
                     original=format_exact_usd(grant.granted_usd),
-                    original_repeats_remaining=grant.used_usd == 0,
+                    original_repeats_remaining=same_at_precision(grant.granted_usd, remaining_amount),
                     expires_at=grant.expires_at,
                     status="scheduled"
                     if grant.is_scheduled
@@ -472,8 +476,10 @@ def _credit_rows(
                         exact
                         if balance is not None
                         and org.error is None
-                        and abs(balance.amount_minor) >= 10 * 10**balance.exponent
-                        and balance.amount_minor % 10**balance.exponent
+                        and summary_hides_fraction(
+                            Decimal(balance.amount_minor).scaleb(-balance.exponent),
+                            2 if (org.currency or "USD") == "USD" else balance.exponent,
+                        )
                         else None
                     ),
                     group=org.name,
@@ -510,14 +516,17 @@ def _credit_rows(
                             ),
                             exact_remaining=(
                                 format_minor_currency(remaining.amount_minor, remaining.exponent, tranche.currency)
-                                if abs(remaining.amount_minor) >= 10 * 10**remaining.exponent
-                                and remaining.amount_minor % 10**remaining.exponent
+                                if summary_hides_fraction(
+                                    Decimal(remaining.amount_minor).scaleb(-remaining.exponent),
+                                    2 if tranche.currency == "USD" else remaining.exponent,
+                                )
                                 else None
                             ),
                             original=format_minor_currency(original.amount_minor, original.exponent, tranche.currency),
-                            original_repeats_remaining=(
-                                Decimal(original.amount_minor).scaleb(-original.exponent)
-                                == Decimal(remaining.amount_minor).scaleb(-remaining.exponent)
+                            original_repeats_remaining=same_at_precision(
+                                Decimal(original.amount_minor).scaleb(-original.exponent),
+                                Decimal(remaining.amount_minor).scaleb(-remaining.exponent),
+                                2 if tranche.currency == "USD" else max(original.exponent, remaining.exponent),
                             ),
                             expires_at=tranche.expires_at,
                             scope=None if broad_scope else scope,

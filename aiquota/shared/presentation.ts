@@ -129,14 +129,29 @@ export function formatUsdWhole(amount: number): string {
   return `${amount < 0 ? "-" : ""}$${Math.round(Math.abs(amount)).toLocaleString("en-US")}`;
 }
 
+function formatUsdCents(amount: number): string {
+  return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function sameToCents(first: number, second: number): boolean {
+  return formatUsdCents(first) === formatUsdCents(second);
+}
+
+function summaryHidesCents(amount: number): boolean {
+  return Math.abs(amount) >= 10 && formatUsdCents(amount).replace(/\.00$/, "") !== formatUsdWhole(amount);
+}
+
 export function formatExtraSpend(usedUsd: number, limitUsd: number, enabled = false): string {
   let used = formatSummaryUsd(usedUsd);
   let limit = formatSummaryUsd(limitUsd);
-  if (usedUsd !== limitUsd && used === limit) {
-    used = formatUsd(usedUsd);
-    limit = formatUsd(limitUsd);
+  let qualifier = "";
+  if (!sameToCents(usedUsd, limitUsd) && used === limit) {
+    used = formatUsdCents(usedUsd);
+    limit = formatUsdCents(limitUsd);
+  } else if (usedUsd !== limitUsd && used === limit) {
+    qualifier = ` · ${usedUsd > limitUsd ? "over" : "under"} by <$0.01`;
   }
-  return `Extra spend this month: ${used} of ${limit} limit${enabled ? " · extra usage enabled" : ""}`;
+  return `Extra spend this month: ${used} of ${limit} limit${qualifier}${enabled ? " · extra usage enabled" : ""}`;
 }
 
 export function formatExtraSpendExact(usedUsd: number, limitUsd: number): string {
@@ -146,16 +161,15 @@ export function formatExtraSpendExact(usedUsd: number, limitUsd: number): string
 export function extraSpendHasHiddenFraction(usedUsd: number, limitUsd: number): boolean {
   const used = formatSummaryUsd(usedUsd);
   const limit = formatSummaryUsd(limitUsd);
-  if (usedUsd !== limitUsd && used === limit) return false; // The summary already expands this collision.
-  return [usedUsd, limitUsd].some((amount) => Math.abs(amount) >= 10 && !Number.isInteger(amount));
+  if (!sameToCents(usedUsd, limitUsd) && used === limit) return false; // The summary expands cent-level collisions.
+  return [usedUsd, limitUsd].some(summaryHidesCents);
 }
 
 export function formatSummaryUsd(amount: number): string {
   if (amount === 0) return "$0";
-  if (Math.abs(amount) < 1e-20) return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toExponential()}`;
+  if (Math.abs(amount) < 0.005) return `${amount < 0 ? "-" : ""}<$0.01`;
   if (Math.abs(amount) < 10) {
-    const precision = currencyPrecision(amount);
-    return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toLocaleString("en-US", { minimumFractionDigits: precision, maximumFractionDigits: precision })}`;
+    return formatUsdCents(amount).replace(/\.00$/, "");
   }
   return `${amount < 0 ? "-" : ""}${formatUsdWhole(Math.abs(amount))}`;
 }

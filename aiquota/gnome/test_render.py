@@ -371,8 +371,8 @@ def test_openai_platform_credits(session: GnomeSession) -> None:
     _reload_fixture(session, "openai_platform_credits")
     popup = _ProviderPopup(session, "openai_platform")
     grants = popup.grants
-    assert popup.header == "OpenAI API"
-    assert "Available balance: $126" in popup.balance
+    assert popup.header == "OpenAI API — Available balance: $126"
+    assert not popup.balance
     assert "Grant: $100 left" in grants
     assert "Grant: $26 left" in grants
     assert "expires" in grants
@@ -396,7 +396,8 @@ def test_platform_credits_with_subscription_resets(session: GnomeSession) -> Non
 
     openai = _ProviderPopup(session, "openai_platform")
     grants = openai.grants
-    assert "Available balance: $60" in openai.balance
+    assert "Available balance: $60" in openai.header
+    assert not openai.balance
     assert "Grant: $60" in grants
     assert "Jun 1" in grants
 

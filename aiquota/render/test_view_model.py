@@ -40,6 +40,76 @@ def test_old_grant_payload_keeps_original_string_visible() -> None:
     assert not grant.original_repeats_remaining
 
 
+def test_credit_display_ignores_subcent_artifacts_without_changing_source_values() -> None:
+    granted = Decimal("100.000000000000001")
+    used = Decimal("0.000000000000001")
+    credits = OpenAIPlatformCredits(
+        total_available_usd=granted,
+        total_paid_available_usd=granted,
+        grants=[
+            OpenAIPlatformCreditGrant(
+                granted_usd=granted,
+                used_usd=used,
+                effective_at=_NOW - timedelta(days=1),
+                expires_at=_NOW + timedelta(days=1),
+                is_scheduled=False,
+                is_held_for_prepaid_transition=False,
+            )
+        ],
+    )
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="openai_platform",
+                last_output=ProviderFetch(fetched_at=_NOW, result=FetchSuccess(openai_platform_credits=credits)),
+            )
+        ],
+    )
+    view = to_view(quota, _NOW).providers[0]
+    assert view.balances[0].value == "$100"
+    assert view.balances[0].exact_value is None
+    assert view.grants[0].remaining == "$100"
+    assert view.grants[0].exact_remaining is None
+    assert view.grants[0].original_repeats_remaining
+    assert view.display_openai_platform_credits == credits
+
+
+def test_non_usd_credit_display_keeps_provider_minor_unit_precision() -> None:
+    original = AnthropicPlatformCreditValue(credits=AnthropicPlatformCreditAmount(amount_minor=10002, exponent=3))
+    remaining = AnthropicPlatformCreditValue(credits=AnthropicPlatformCreditAmount(amount_minor=10001, exponent=3))
+    tranche = AnthropicPlatformTranche(
+        id="kwd-grant",
+        currency="KWD",
+        granted_at=_NOW,
+        granted=original,
+        remaining=remaining,
+        scope=AnthropicPlatformScope(kind="restricted"),
+    )
+    credits = AnthropicPlatformCredits(
+        organizations=[
+            AnthropicPlatformOrganization(
+                uuid="kwd-org", name="KWD org", currency="KWD", balance=original, tranches=[tranche]
+            )
+        ]
+    )
+    quota = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(
+                provider="anthropic_platform",
+                last_output=ProviderFetch(fetched_at=_NOW, result=FetchSuccess(anthropic_platform_credits=credits)),
+            )
+        ],
+    )
+    view = to_view(quota, _NOW).providers[0]
+    assert view.balances[0].value == "10 KWD"
+    assert view.balances[0].exact_value == "10.002 KWD"
+    assert view.grants[0].remaining == "10 KWD"
+    assert view.grants[0].exact_remaining == "10.001 KWD"
+    assert not view.grants[0].original_repeats_remaining
+
+
 def test_claude_reset_rows_group_counts_keep_scope_and_hide_expired() -> None:
     expiry = _NOW + timedelta(days=2)
     result = FetchSuccess(

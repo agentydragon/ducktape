@@ -120,12 +120,16 @@ describe("formatDeadline", () => {
 describe("summary currency", () => {
   it.each([
     [0, "$0"],
-    [0.001, "$0.001"],
-    [0.00000001, "$0.00000001"],
-    [1e-21, "$1e-21"],
-    [-1e-21, "-$1e-21"],
+    [0.001, "<$0.01"],
+    [0.00000001, "<$0.01"],
+    [1e-21, "<$0.01"],
+    [-1e-21, "-<$0.01"],
+    [0.005, "$0.01"],
     [-0.01, "-$0.01"],
+    [5, "$5"],
+    [5.125, "$5.13"],
     [9.99, "$9.99"],
+    [9.995, "$10"],
     [10.49, "$10"],
     [10.5, "$11"],
     [-10.5, "-$11"],
@@ -139,6 +143,11 @@ describe("summary currency", () => {
     expect(extraSpendHasHiddenFraction(10.4, 10.49)).toBe(false);
     expect(extraSpendHasHiddenFraction(20, 100)).toBe(false);
     expect(extraSpendHasHiddenFraction(20.4, 100)).toBe(true);
+    expect(extraSpendHasHiddenFraction(100.00000000000001, 200)).toBe(false);
+    expect(formatExtraSpend(10.001, 10.002)).toBe("Extra spend this month: $10 of $10 limit · under by <$0.01");
+    expect(formatExtraSpend(10.004, 10.001)).toBe("Extra spend this month: $10 of $10 limit · over by <$0.01");
+    expect(formatExtraSpend(0.004, 0.001)).toBe("Extra spend this month: <$0.01 of <$0.01 limit · over by <$0.01");
+    expect(formatExtraSpend(10, 10)).toBe("Extra spend this month: $10 of $10 limit");
   });
 });
 

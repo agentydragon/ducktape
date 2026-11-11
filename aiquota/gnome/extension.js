@@ -728,6 +728,7 @@ const QuotaIndicator = GObject.registerClass(
           this._makeQuotaRow("quota")
         );
         p.detailsItem = this._makeDetailsSubmenu("Details");
+        p.header.add_style_class_name("quota-popup-provider-header");
         this.menu.addMenuItem(p.header);
         this.menu.addMenuItem(p.statusRow);
         for (const section of p.readingSections) {
@@ -1064,22 +1065,19 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         const groups = readingGroups(p.state);
         const single = groups.length === 1;
+        const inlineBalance = !isApiProvider(p.id) || (single && !groups[0].name);
         this._renderProviderHeader(
           p.header,
           p.state.label || p.label,
           single ? groups[0] : null,
           single,
-          !isApiProvider(p.id)
+          inlineBalance
         );
         p.readingSections.forEach((section, index) => {
           const group = groups[index];
           if (section.header)
             this._renderProviderHeader(section.header, group.name, group, false, !isApiProvider(p.id));
-          this._renderBalanceRow(
-            section.balanceRow,
-            group,
-            !isApiProvider(p.id) && (single || section.header !== null)
-          );
+          this._renderBalanceRow(section.balanceRow, group, inlineBalance && (single || section.header !== null));
           this._renderGrantRow(section.grantRow, group);
         });
         this._renderResetRow(p.resetRow, p.state);

@@ -17,6 +17,7 @@ from aiquota.render.format import (
     format_reset_credit_summary,
     format_summary_minor_currency,
     format_summary_usd,
+    summary_hides_fraction,
 )
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
@@ -89,9 +90,9 @@ def test_extra_spend_details_only_when_rounding_hides_fraction() -> None:
     assert extra_spend_has_hidden_fraction(20.4, 100)
 
 
-def test_tiny_nonzero_credit_formats_match_browser_scientific_fallback() -> None:
-    assert format_summary_usd(Decimal("1e-21")) == "$1e-21"
-    assert format_summary_usd(Decimal("-1e-21")) == "-$1e-21"
+def test_tiny_nonzero_credit_formats_match_browser_threshold() -> None:
+    assert format_summary_usd(Decimal("1e-21")) == "<$0.01"
+    assert format_summary_usd(Decimal("-1e-21")) == "-<$0.01"
 
 
 def test_peak_burn_identifies_affected_models(quota_fixture: Callable[[str], AllQuotas]) -> None:
@@ -257,6 +258,9 @@ def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_de
         (1, 2, "USD", "$0.01"),
         (-1, 2, "USD", "-$0.01"),
         (999, 2, "USD", "$9.99"),
+        (1, 3, "KWD", "0.001 KWD"),
+        (125, 3, "USD", "$0.13"),
+        (10001, 3, "KWD", "10 KWD"),
         (1050, 2, "USD", "$11"),
         (-1150, 2, "USD", "-$12"),
         (10500, 3, "EUR", "11 EUR"),
@@ -269,11 +273,19 @@ def test_summary_currency_preserves_small_values_and_minor_unit_precision(
     assert format_summary_minor_currency(minor, exponent, currency) == expected
 
 
-def test_decimal_summary_preserves_subcent_values_and_spend_threshold() -> None:
-    assert format_summary_usd(Decimal("0.001")) == "$0.001"
+def test_decimal_summary_uses_cents_and_preserves_nonzero_threshold() -> None:
+    assert format_summary_usd(Decimal("0.001")) == "<$0.01"
+    assert format_summary_usd(Decimal("0.005")) == "$0.01"
+    assert format_summary_usd(Decimal("5.125")) == "$5.13"
+    assert format_summary_usd(Decimal("9.995")) == "$10"
     assert format_summary_usd(Decimal("-0.01")) == "-$0.01"
     assert format_summary_usd(Decimal("10.5")) == "$11"
     assert format_extra_spend(10.4, 10.49) == "Extra spend this month: $10.40 of $10.49 limit"
+    assert format_extra_spend(10.001, 10.002) == "Extra spend this month: $10 of $10 limit · under by <$0.01"
+    assert format_extra_spend(10.004, 10.001) == "Extra spend this month: $10 of $10 limit · over by <$0.01"
+    assert format_extra_spend(0.004, 0.001) == "Extra spend this month: <$0.01 of <$0.01 limit · over by <$0.01"
+    assert summary_hides_fraction(Decimal("10.001"), 3)
+    assert not summary_hides_fraction(Decimal("100.000000000000001"))
 
 
 def test_deadline_uses_viewer_zone_through_daylight_saving_change() -> None:

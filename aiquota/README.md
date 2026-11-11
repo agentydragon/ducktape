@@ -127,9 +127,12 @@ GNOME's panel also reserves API balances for its popup.
 
 All surfaces use local 24-hour time with minute precision. Expiries within 14 days before or after now include
 the time without a zone label; more distant expiries show a date, with the year when different.
-Details show the full local timestamp and zone. Monetary summaries show fractions for nonzero
-amounts below 10 major units and round larger amounts to whole units, with exact values in details
-where rounding hides a fraction. Forecasts extrapolate average usage since the window started.
+Details show the full local timestamp and zone. USD summaries show cents for amounts below
+10 major units when needed, a signed less-than-one-cent threshold for smaller nonzero amounts,
+and whole units above 10. Other currencies retain their provider-reported minor-unit precision
+below 10. Exact details appear when rounding hides a difference at the currency's precision;
+provider precision remains in the underlying response. Forecasts extrapolate average usage
+since the window started.
 The meter fill shows quota used and its tick shows elapsed window time.
 
 Provider observations become stale after ten minutes (two default collector intervals),
