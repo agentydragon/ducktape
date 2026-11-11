@@ -23,6 +23,7 @@ from typing import Any, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
+from github import Auth, Github
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
@@ -949,7 +950,7 @@ class PublicationResult:
 def _publish(
     args: argparse.Namespace,
     *,
-    token: str,
+    github: Github,
     workflow_url: str | None,
     result: PublicationResult,
     run: Runner,
@@ -959,7 +960,7 @@ def _publish(
     if args.pull_request_head:
         logger.info("Resolving pull request")
         found = find_reviewable_pull_request(
-            repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=token
+            github=github, repository=args.repository, head=args.pull_request_head, head_sha=args.sha
         )
         if found is None:
             result.summary = "No open or merged pull request has this head commit; nothing to review."
@@ -1059,20 +1060,20 @@ def _publish(
     result.diff = diff_check(review_tests)
 
 
-def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) -> list[Exception]:
+def _report(args: argparse.Namespace, *, github: Github, result: PublicationResult) -> list[Exception]:
     errors: list[Exception] = []
     logger.info("Updating review comment and check")
     if result.diff is not None:
         diff_conclusion, diff_summary = result.diff
         try:
             upsert_check_run(
+                github=github,
                 repository=args.repository,
                 commit_sha=args.sha,
                 status="completed",
                 conclusion=diff_conclusion,
                 summary=diff_summary,
                 details_url=result.details_url,
-                token=token,
                 name="PR visual diffs",
             )
         except Exception as error:
@@ -1084,7 +1085,7 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
         # before updating the singleton comment; immutable bundles stay useful.
         try:
             current = find_reviewable_pull_request(
-                repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=token
+                github=github, repository=args.repository, head=args.pull_request_head, head_sha=args.sha
             )
         except Exception as error:
             logger.exception("Could not recheck the pull request before commenting")
@@ -1096,7 +1097,7 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
     if comment_pr is not None and result.comment is not None:
         try:
             publish_pull_request_comment(
-                repository=args.repository, pull_request=comment_pr, update=result.comment, token=token
+                github=github, repository=args.repository, pull_request=comment_pr, update=result.comment
             )
         except Exception as error:
             logger.exception("Could not update the pull request comment")
@@ -1106,6 +1107,7 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
         result.summary += " Pull request review reporting failed."
     try:
         upsert_check_run(
+            github=github,
             repository=args.repository,
             commit_sha=args.sha,
             status="completed",
@@ -1113,7 +1115,6 @@ def _report(args: argparse.Namespace, *, token: str, result: PublicationResult) 
             summary=result.summary,
             details_url=result.details_url,
             external_id=args.check_external_id,
-            token=token,
         )
     except Exception as error:
         logger.exception("Could not complete the visual review check")
@@ -1131,52 +1132,58 @@ def main() -> None:
     workflow_url = current_workflow_url()
     result = PublicationResult(details_url=args.ci_details_url or workflow_url)
 
-    if args.ci_conclusion == "cancelled":
-        # A direct CLI invocation must follow the workflow's cancelled-run policy too.
-        # Close an announced check without reading BuildBuddy or touching S3.
-        upsert_check_run(
-            repository=args.repository,
-            commit_sha=args.sha,
-            status="completed",
-            conclusion="cancelled",
-            summary="Bazel CI was cancelled; visual publication stopped.",
-            details_url=result.details_url,
-            external_id=args.check_external_id,
-            token=token,
-        )
-        return
-
-    try:
-        _publish(
-            args, token=token, workflow_url=workflow_url, result=result, run=subprocess.run, s3_client=boto3.client
-        )
-    except Exception as error:
-        result.summary = str(error) + ci_failure_summary(args.ci_conclusion, result.ci_failures)
-        result.conclusion = "failure"
-        reporting_errors: list[Exception] = []
-        try:
-            comment_state = CommentState(commit_sha=args.sha, kind="failure", ci_conclusion=args.ci_conclusion)
-            result.comment = CommentUpdate(
-                body=error_comment_body(
-                    repository=args.repository,
-                    commit_sha=comment_state.commit_sha,
-                    error=error,
-                    ci_conclusion=comment_state.ci_conclusion,
-                    ci_failures=result.ci_failures,
-                    ci_details_url=args.ci_details_url or workflow_url,
-                ),
-                state=comment_state,
+    with Github(auth=Auth.Token(token)) as github:
+        if args.ci_conclusion == "cancelled":
+            # A direct CLI invocation must follow the workflow's cancelled-run policy too.
+            # Close an announced check without reading BuildBuddy or touching S3.
+            upsert_check_run(
+                github=github,
+                repository=args.repository,
+                commit_sha=args.sha,
+                status="completed",
+                conclusion="cancelled",
+                summary="Bazel CI was cancelled; visual publication stopped.",
+                details_url=result.details_url,
+                external_id=args.check_external_id,
             )
-        except Exception as rendering_error:
-            logger.exception("Could not render the failure comment")
-            reporting_errors.append(rendering_error)
-        reporting_errors.extend(_report(args, token=token, result=result))
+            return
+
+        try:
+            _publish(
+                args,
+                github=github,
+                workflow_url=workflow_url,
+                result=result,
+                run=subprocess.run,
+                s3_client=boto3.client,
+            )
+        except Exception as error:
+            result.summary = str(error) + ci_failure_summary(args.ci_conclusion, result.ci_failures)
+            result.conclusion = "failure"
+            reporting_errors: list[Exception] = []
+            try:
+                comment_state = CommentState(commit_sha=args.sha, kind="failure", ci_conclusion=args.ci_conclusion)
+                result.comment = CommentUpdate(
+                    body=error_comment_body(
+                        repository=args.repository,
+                        commit_sha=comment_state.commit_sha,
+                        error=error,
+                        ci_conclusion=comment_state.ci_conclusion,
+                        ci_failures=result.ci_failures,
+                        ci_details_url=args.ci_details_url or workflow_url,
+                    ),
+                    state=comment_state,
+                )
+            except Exception as rendering_error:
+                logger.exception("Could not render the failure comment")
+                reporting_errors.append(rendering_error)
+            reporting_errors.extend(_report(args, github=github, result=result))
+            if reporting_errors:
+                raise error from ExceptionGroup("Visual review reporting failed", reporting_errors)
+            raise
+        reporting_errors = _report(args, github=github, result=result)
         if reporting_errors:
-            raise error from ExceptionGroup("Visual review reporting failed", reporting_errors)
-        raise
-    reporting_errors = _report(args, token=token, result=result)
-    if reporting_errors:
-        raise ExceptionGroup("Visual review reporting failed", reporting_errors)
+            raise ExceptionGroup("Visual review reporting failed", reporting_errors)
 
 
 if __name__ == "__main__":

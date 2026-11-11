@@ -140,6 +140,7 @@ py_library(
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//pillow",
+        "@pypi//pygithub",
     ],
 )
 

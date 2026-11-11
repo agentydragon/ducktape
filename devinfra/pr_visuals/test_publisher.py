@@ -944,12 +944,7 @@ def _success_comment(commit_sha: str) -> str:
     ],
 )
 def test_publish_pull_request_comment(
-    monkeypatch: pytest.MonkeyPatch,
-    existing_body: str | None,
-    kind: CommentKind,
-    ci_conclusion: str,
-    expected_edit: bool,
-    expected_create: bool,
+    existing_body: str | None, kind: CommentKind, ci_conclusion: str, expected_edit: bool, expected_create: bool
 ) -> None:
     edits: list[str] = []
     created: list[str] = []
@@ -984,11 +979,11 @@ def test_publish_pull_request_comment(
         def get_issue(self, _pull_request: int) -> FakeIssue:
             return FakeIssue()
 
-    monkeypatch.setattr("devinfra.pr_visuals.comment_publishing.Github", FakeGithub)
+    github = FakeGithub()
     update = CommentUpdate(
         body="replacement", state=CommentState(commit_sha=HEAD_SHA, kind=kind, ci_conclusion=ci_conclusion)
     )
-    publish_pull_request_comment(repository=REPOSITORY, pull_request=4594, update=update, token="token")
+    publish_pull_request_comment(github=github, repository=REPOSITORY, pull_request=4594, update=update)
 
     assert edits == ([update.render()] if expected_edit else [])
     assert created == ([update.render()] if expected_create else [])
@@ -1047,6 +1042,14 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pull_request_head: str | None
 ) -> None:
     checks: list[dict[str, object]] = []
+    github_clients: list[FakePublisherGithub] = []
+
+    def create_github_client(**_kwargs: object) -> FakePublisherGithub:
+        github = FakePublisherGithub()
+        github_clients.append(github)
+        return github
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github_client)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
     _forbid(
         monkeypatch,
@@ -1077,6 +1080,8 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     assert len(checks) == 1
     assert checks[0]["conclusion"] == "cancelled"
     assert checks[0]["commit_sha"] == HEAD_SHA
+    assert len(github_clients) == 1
+    assert checks[0]["github"] is github_clients[0]
 
 
 PR_CHECK_ID = "pr-visual-review:33060467222:1"
@@ -1086,6 +1091,15 @@ PR_CHECK_ID = "pr-visual-review:33060467222:1"
 class PublisherRun:
     checks: list[dict[str, object]] = field(default_factory=list)
     comments: list[dict[str, object]] = field(default_factory=list)
+    github_clients: list[FakePublisherGithub] = field(default_factory=list)
+
+
+class FakePublisherGithub:
+    def __enter__(self) -> FakePublisherGithub:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        pass
 
 
 @pytest.fixture
@@ -1096,6 +1110,13 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
     instead. A test of another kind of run replaces `sys.argv`.
     """
     run = PublisherRun()
+
+    def create_github_client(**_kwargs: object) -> FakePublisherGithub:
+        github = FakePublisherGithub()
+        run.github_clients.append(github)
+        return github
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github_client)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: run.checks.append(kwargs))
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
@@ -1154,9 +1175,9 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     """The PR and its base commit come from the lookup, never from the run's event. The run then comments
     on that PR, compares against that base and — being a PR run — leaves the devel baseline pointers alone."""
     base_sha = "c" * 40
-    lookups: list[dict[str, str]] = []
+    lookups: list[dict[str, object]] = []
 
-    def find(**kwargs: str) -> PullRequestRef:
+    def find(**kwargs: object) -> PullRequestRef:
         lookups.append(kwargs)
         return PullRequestRef(number=8733, base_sha=base_sha)
 
@@ -1168,6 +1189,11 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
 
     assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)] * 2
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
+    assert len(publisher_run.github_clients) == 1
+    github = publisher_run.github_clients[0]
+    assert all(lookup["github"] is github for lookup in lookups)
+    assert all(comment["github"] is github for comment in publisher_run.comments)
+    assert all(check["github"] is github for check in publisher_run.checks)
     assert bucket.requested[:2] == [
         f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json",
         f"baselines/reviews-test-outputs/{candidate.slug}.json",
