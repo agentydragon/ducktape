@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -31,7 +32,7 @@ from devinfra.gc.worktree_gc import Classification, PrunableWorktree
 
 
 @dataclass(frozen=True, slots=True)
-class Context:
+class RepositoryFacts:
     repo: Path
     main_path: Path
     active_path: Path | None
@@ -43,15 +44,27 @@ class Context:
 type PrSource = Callable[[Path, set[str]], Awaitable[dict[str, PrInfo]]]
 
 
+async def _finish_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+    """Keep a cancelled discovery job alive until its blocking work has stopped."""
+    thread = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))
+    try:
+        return await asyncio.shield(thread)
+    except asyncio.CancelledError:
+        # Cancellation wins over errors from the abandoned read.
+        with suppress(Exception):
+            await thread
+        raise
+
+
 @dataclass(frozen=True, slots=True)
-class FoundContext:
-    context: Context
+class PreparedRepositoryScan:
+    facts: RepositoryFacts
     foreign_roots: list[Path]
 
 
 @dataclass(frozen=True, slots=True)
 class FoundBaseWorkspaces:
-    context: Context
+    facts: RepositoryFacts
     worktrees: list[Worktree]
     live: dict[Path, list[int]]
 
@@ -112,7 +125,7 @@ class RemovedBase:
 
 
 @dataclass(frozen=True, slots=True)
-class CacheContext:
+class CacheFacts:
     referrers: dict[Path, set[Path]]
     points: set[Path]
 
@@ -120,13 +133,13 @@ class CacheContext:
 @dataclass(frozen=True, slots=True)
 class FoundCacheBuckets:
     buckets: list[Path]
-    context: CacheContext
+    facts: CacheFacts
 
 
 @dataclass(frozen=True, slots=True)
 class FoundCacheCandidates:
     candidates: list[Path | ReviewEntry]
-    context: CacheContext
+    facts: CacheFacts
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +169,7 @@ class RemovedForeignClone:
 
 
 type Event = (
-    FoundContext
+    PreparedRepositoryScan
     | FoundBaseWorkspaces
     | InspectedBaseWorkspace
     | FoundWorktrees
@@ -183,9 +196,9 @@ def _active_worktree(repo: Path) -> Path | None:
     return Path(toplevel) if toplevel else None
 
 
-def _context(repo: Path, prs: dict[str, PrInfo]) -> Context:
+def _repository_facts(repo: Path, prs: dict[str, PrInfo]) -> RepositoryFacts:
     pg = git_repo.open_repo(repo)
-    return Context(
+    return RepositoryFacts(
         repo,
         git_repo.main_worktree(repo),
         _active_worktree(repo),
@@ -196,7 +209,7 @@ def _context(repo: Path, prs: dict[str, PrInfo]) -> Context:
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoverContext(AsyncWorkItem[Event]):
+class PrepareRepositoryScan(AsyncWorkItem[Event]):
     repo: Path
     root: Path
     session_bases: tuple[Path, ...]
@@ -216,10 +229,10 @@ class DiscoverContext(AsyncWorkItem[Event]):
             )
             return roots, names
 
-        roots, names = await asyncio.to_thread(discover)
+        roots, names = await _finish_thread(discover)
         prs = await self.pr_source(self.repo, names)
 
-        return Finished(FoundContext(await asyncio.to_thread(_context, self.repo, prs), roots), "done")
+        return Finished(PreparedRepositoryScan(await _finish_thread(_repository_facts, self.repo, prs), roots), "done")
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,75 +243,75 @@ class DiscoverBaseWorkspaces(AsyncWorkItem[Event]):
     phase: ClassVar[str] = "discover base workspaces"
 
     async def run_async(self) -> Finished[Event]:
-        worktrees = await asyncio.to_thread(workspace_scan.base_worktrees, self.repo, self.bases)
+        worktrees = await _finish_thread(workspace_scan.base_worktrees, self.repo, self.bases)
         names = {worktree.branch for worktree in worktrees if worktree.branch}
         prs = await self.pr_source(self.repo, names)
-        context = await asyncio.to_thread(_context, self.repo, prs)
-        live = await asyncio.to_thread(worktree_gc.processes_by_worktree, [wt.path for wt in worktrees])
-        return Finished(FoundBaseWorkspaces(context, worktrees, live), "done")
+        facts = await _finish_thread(_repository_facts, self.repo, prs)
+        live = await _finish_thread(worktree_gc.processes_by_worktree, [wt.path for wt in worktrees])
+        return Finished(FoundBaseWorkspaces(facts, worktrees, live), "done")
 
 
 @dataclass(frozen=True, slots=True)
 class DiscoverWorktrees:
-    context: Context
+    facts: RepositoryFacts
     phase: ClassVar[str] = "discover"
 
     def run(self) -> Finished[Event]:
-        worktrees = [wt for wt in git_repo.list_worktrees(self.context.repo) if wt.path != self.context.main_path]
+        worktrees = [wt for wt in git_repo.list_worktrees(self.facts.repo) if wt.path != self.facts.main_path]
         live = worktree_gc.processes_by_worktree(wt.path for wt in worktrees)
         return Finished(FoundWorktrees(worktrees, live), "done")
 
 
 @dataclass(frozen=True, slots=True)
 class InspectWorktree:
-    context: Context
+    facts: RepositoryFacts
     worktree: Worktree
     live: list[int]
     phase: ClassVar[str] = "inspect worktrees"
 
     def run(self) -> Finished[Event]:
-        item = _inspect_worktree(self.context, self.worktree, self.live)
+        item = _inspect_worktree(self.facts, self.worktree, self.live)
         return Finished(InspectedWorktree(item), verdict_of(item).lower())
 
 
-def _inspect_worktree(context: Context, worktree: Worktree, live: list[int]) -> Classification:
+def _inspect_worktree(facts: RepositoryFacts, worktree: Worktree, live: list[int]) -> Classification:
     return worktree_gc.classify_worktree(
         worktree,
-        main=context.main,
-        pr_states=context.prs,
-        main_path=context.main_path,
-        active_path=context.active_path,
+        main=facts.main,
+        pr_states=facts.prs,
+        main_path=facts.main_path,
+        active_path=facts.active_path,
         live_pids=live,
     )
 
 
 @dataclass(frozen=True, slots=True)
 class InspectBaseWorkspace:
-    context: Context
+    facts: RepositoryFacts
     worktree: Worktree
     live: list[int]
     phase: ClassVar[str] = "inspect base workspaces"
 
     def run(self) -> Finished[Event]:
-        item = _inspect_worktree(self.context, self.worktree, self.live)
+        item = _inspect_worktree(self.facts, self.worktree, self.live)
         return Finished(InspectedBaseWorkspace(item), verdict_of(item).lower())
 
 
 @dataclass(frozen=True, slots=True)
 class RemoveWorktree:
-    context: Context
+    facts: RepositoryFacts
     item: PrunableWorktree
     phase: ClassVar[str] = "remove worktrees"
 
     def run(self) -> Finished[Event]:
         live = worktree_gc.processes_by_worktree([self.item.worktree.path])
         result = worktree_gc.remove_if_still_prunable(
-            self.context.repo,
+            self.facts.repo,
             self.item.worktree,
             main=self.item.main,
-            pr_states=self.context.prs,
-            main_path=self.context.main_path,
-            active_path=self.context.active_path,
+            pr_states=self.facts.prs,
+            main_path=self.facts.main_path,
+            active_path=self.facts.active_path,
             live_pids=live.get(self.item.worktree.path, []),
         )
         return Finished(RemovedWorktree(result), type(result).__name__.lower())
@@ -306,31 +319,29 @@ class RemoveWorktree:
 
 @dataclass(frozen=True, slots=True)
 class DiscoverBranches:
-    context: Context
+    facts: RepositoryFacts
     phase: ClassVar[str] = "discover"
 
     def run(self) -> Finished[Event]:
-        pg = git_repo.open_repo(self.context.main_path)
-        return Finished(
-            FoundBranches(branch_gc.local_branches(pg), branch_gc.branch_holders(self.context.repo)), "done"
-        )
+        pg = git_repo.open_repo(self.facts.main_path)
+        return Finished(FoundBranches(branch_gc.local_branches(pg), branch_gc.branch_holders(self.facts.repo)), "done")
 
 
 @dataclass(frozen=True, slots=True)
 class InspectBranch:
-    context: Context
+    facts: RepositoryFacts
     name: str
     holder: Holder
     phase: ClassVar[str] = "inspect branches"
 
     def run(self) -> Finished[Event]:
-        pg = git_repo.open_repo(self.context.main_path)
+        pg = git_repo.open_repo(self.facts.main_path)
         item = branch_gc.classify_branch(
             self.name,
             pg=pg,
-            main=self.context.main,
-            default_branch=self.context.default_branch,
-            pr=self.context.prs.get(self.name),
+            main=self.facts.main,
+            default_branch=self.facts.default_branch,
+            pr=self.facts.prs.get(self.name),
             holder=self.holder,
         )
         return Finished(InspectedBranch(item), verdict_of(item).lower())
@@ -338,12 +349,12 @@ class InspectBranch:
 
 @dataclass(frozen=True, slots=True)
 class RemoveBranch:
-    context: Context
+    facts: RepositoryFacts
     item: branch_gc.PrunableBranch
     phase: ClassVar[str] = "delete branches"
 
     def run(self) -> Finished[Event]:
-        result = branch_gc.delete_branch(self.context.repo, self.item.branch.name, expected_tip=self.item.tip)
+        result = branch_gc.delete_branch(self.facts.repo, self.item.branch.name, expected_tip=self.item.tip)
         return Finished(RemovedBranch(result), type(result).__name__.lower())
 
 
@@ -398,35 +409,33 @@ class DiscoverCache:
         try:
             contents = self.contents.resolve(strict=True)
         except FileNotFoundError:
-            return Finished(FoundCacheBuckets([], CacheContext({}, set())), "done")
+            return Finished(FoundCacheBuckets([], CacheFacts({}, set())), "done")
         buckets = repo_contents_cache_gc.cache_buckets(contents)
         referrers = repo_contents_cache_gc.references(self.base_paths, contents)
-        context = CacheContext(referrers, output_base_gc.mount_points())
-        return Finished(FoundCacheBuckets(buckets, context), "done")
+        facts = CacheFacts(referrers, output_base_gc.mount_points())
+        return Finished(FoundCacheBuckets(buckets, facts), "done")
 
 
 @dataclass(frozen=True, slots=True)
 class DiscoverCacheBucket:
     path: Path
-    context: CacheContext
+    facts: CacheFacts
     phase: ClassVar[str] = "discover repo-cache buckets"
 
     def run(self) -> Finished[Event]:
         candidates = repo_contents_cache_gc.list_cache_bucket(self.path)
-        return Finished(FoundCacheCandidates(candidates, self.context), "done")
+        return Finished(FoundCacheCandidates(candidates, self.facts), "done")
 
 
 @dataclass(frozen=True, slots=True)
 class InspectCacheEntry:
     candidate: Path | ReviewEntry
-    context: CacheContext
+    facts: CacheFacts
     phase: ClassVar[str] = "inspect repo-cache entries"
 
     def run(self) -> Finished[Event]:
-        item = repo_contents_cache_gc.inspect_cache_candidate(
-            self.candidate, uid=os.getuid(), points=self.context.points
-        )
-        inspection = repo_contents_cache_gc.classify_entry(item, self.context.referrers, set())
+        item = repo_contents_cache_gc.inspect_cache_candidate(self.candidate, uid=os.getuid(), points=self.facts.points)
+        inspection = repo_contents_cache_gc.classify_entry(item, self.facts.referrers, set())
         return Finished(InspectedCacheEntry(inspection), verdict_of(inspection).lower())
 
 
@@ -464,20 +473,20 @@ class EmptyCacheTrash:
 
 @dataclass(frozen=True, slots=True)
 class InspectForeignClone:
-    context: Context
+    facts: RepositoryFacts
     root: Path
     phase: ClassVar[str] = "inspect foreign clones"
 
     def run(self) -> Finished[Event]:
         item = foreign_clone_gc.classify_foreign_clone(
-            self.root, pr_states=self.context.prs, active_path=self.context.active_path
+            self.root, pr_states=self.facts.prs, active_path=self.facts.active_path
         )
         return Finished(InspectedForeignClone(item), verdict_of(item).lower())
 
 
 @dataclass(frozen=True, slots=True)
 class RemoveForeignClone:
-    context: Context
+    facts: RepositoryFacts
     root: Path
     output_user_root: Path
     session_bases: tuple[Path, ...]
@@ -486,13 +495,13 @@ class RemoveForeignClone:
     def run(self) -> Finished[Event]:
         try:
             roots = workspace_scan.foreign_clone_roots(
-                self.context.repo, self.output_user_root, session_bases=self.session_bases
+                self.facts.repo, self.output_user_root, session_bases=self.session_bases
             )
             if self.root not in roots:
                 result: RemovalResult[Path] = Skipped(self.root, "clone is no longer discoverable")
             else:
                 fresh = foreign_clone_gc.classify_foreign_clone(
-                    self.root, pr_states=self.context.prs, active_path=self.context.active_path
+                    self.root, pr_states=self.facts.prs, active_path=self.facts.active_path
                 )
                 if isinstance(fresh, PrunableForeignClone):
                     result = foreign_clone_gc.prune_foreign_clone(fresh.clone)
@@ -504,11 +513,11 @@ class RemoveForeignClone:
 
 
 def describe(item: WorkItem[Event]) -> str:
-    """Identify a job without logging its context or pull request data."""
-    if isinstance(item, DiscoverContext | DiscoverBaseWorkspaces):
+    """Identify a job without logging its facts or pull request data."""
+    if isinstance(item, PrepareRepositoryScan | DiscoverBaseWorkspaces):
         return str(item.repo)
     if isinstance(item, DiscoverWorktrees | DiscoverBranches):
-        return str(item.context.repo)
+        return str(item.facts.repo)
     if isinstance(item, InspectWorktree | InspectBaseWorkspace):
         return str(item.worktree.path)
     if isinstance(item, RemoveWorktree):

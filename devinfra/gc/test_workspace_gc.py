@@ -241,6 +241,45 @@ async def test_interrupt_drains_admitted_removal_without_starting_queued_work(
     assert bases[1].exists()
 
 
+async def test_interrupt_waits_for_discovery_thread_to_stop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started, release, interrupted = threading.Event(), threading.Event(), threading.Event()
+
+    def blocking_candidates(repo: pathlib.Path) -> set[str]:
+        started.set()
+        assert release.wait(10)
+        return set()
+
+    monkeypatch.setattr(workspace_scan, "pr_branch_candidates", blocking_candidates)
+    monkeypatch.setattr(git_repo, "interrupt_running_git", interrupted.set)
+    options = workspace_queue.Options(
+        domains=frozenset({workspace_queue.Domain.WORKTREES}),
+        root=tmp_path,
+        session_bases=(),
+        workers=1,
+        apply=False,
+        sizes=False,
+        delete_foreign_clones=False,
+        repo=tmp_path,
+        pr_source=workspace_gc._without_prs,
+    )
+
+    async def run_until_interrupted() -> None:
+        with pytest.raises(workspace_queue.QueueInterrupted):
+            await workspace_queue.run(options)
+
+    task = asyncio.create_task(run_until_interrupted())
+    try:
+        assert await asyncio.to_thread(started.wait, 10)
+        task.cancel()
+        assert await asyncio.to_thread(interrupted.wait, 10)
+        assert not task.done()
+    finally:
+        release.set()
+    await asyncio.wait_for(task, 10)
+
+
 async def test_scan_failure_drains_an_admitted_removal(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "output"
     bases = sorted([make_base(root, tmp_path / "gone-a"), make_base(root, tmp_path / "gone-b")])
