@@ -334,12 +334,15 @@ function ConversationBody({
           deliver={commands.deliver}
         />
       )}
-      <ModelActivityHint
-        at={lastModelActivityAt}
-        age={activityAge}
-        idleSince={activeTurn ? null : idleSince}
-        className="agentplane-thread-tail-model-activity"
-      />
+      <Stack className="agentplane-thread-tail-activity" gap={0}>
+        <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
+        <ModelActivityHint
+          at={lastModelActivityAt}
+          age={activityAge}
+          idleSince={activeTurn ? null : idleSince}
+          className="agentplane-thread-tail-model-activity"
+        />
+      </Stack>
     </Stack>
   );
 
@@ -382,13 +385,6 @@ function ConversationBody({
           onResumeSandbox={onResumeSandbox}
           onSubmit={commands.submitInput}
           onInterrupt={commands.interruptTurn}
-          status={
-            <AutosuspendHint
-              threadId={threadId}
-              hint={sandboxAutosuspend}
-              className="agentplane-composer-autosuspend-mobile"
-            />
-          }
         >
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             <Select
