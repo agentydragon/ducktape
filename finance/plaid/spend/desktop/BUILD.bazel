@@ -52,21 +52,27 @@ py_library(
     deps = [
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:pace_history_models",
         "@pypi//babel",
         "@pypi//dbus_next",
+        "@pypi//sparklines",
     ],
 )
 
 py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
+    data = ["__snapshots__/test_cli.ambr"],
+    uses_syrupy = True,
     deps = [
         ":cli",
         "//:conftest",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:pace_history_models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )
 
@@ -120,6 +126,7 @@ py_package(
         ":package_init",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:pace_history_models",
     ],
 )
 
@@ -142,6 +149,7 @@ py_wheel(
         "httpx2>=2.13.0",
         "Authlib>=1.8.0",
         "pydantic>=2.0",
+        "sparklines>=1.0.0",
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],

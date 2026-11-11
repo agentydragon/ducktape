@@ -21,7 +21,7 @@ from finance.plaid.spend.models import (
     TransactionPeriodSummary,
 )
 from finance.plaid.spend.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
-from finance.plaid.spend.pace_history import PaceHistory
+from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView, disabled_view

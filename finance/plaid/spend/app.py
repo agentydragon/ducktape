@@ -26,7 +26,7 @@ from finance.plaid.spend.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from finance.plaid.spend.pace_history import PaceHistory
+from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.portfolio import CoinbaseClient
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings

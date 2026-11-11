@@ -5581,6 +5581,10 @@ soupsieve==2.9.2 \
     --hash=sha256:4a55d8cf158a9c2e587fa4922f1bbb91d68ac829e2d6f25403a85747c71daf74 \
     --hash=sha256:8089a26fd974ca7a1f30276d3d8492ab266ab15af581642dfe8aa162e0c1c823
     # via beautifulsoup4
+sparklines==1.0.0 \
+    --hash=sha256:6d3d2cd7ad955b071c3f0abcb5e04662c65cc51ab287342ed2602f3b95576033 \
+    --hash=sha256:eee3ed5ac6dc954096ab092ce336941050eca790e2f33f85de65a4ea0a43cf74
+    # via ducktape (pyproject.toml)
 splitwise==3.0.0 \
     --hash=sha256:48049bc8c025224c7df6059b2d8def80c5cb1f9a210a5650d92a410b7706f6de \
     --hash=sha256:aaa956d3f65b0d9e716333afa612656b20f50010f10d9b8313e692f25f8b6a14
@@ -5743,6 +5747,10 @@ tenacity==9.1.4 \
     #   ducktape (pyproject.toml)
     #   inspect-ai
     #   redisvl
+termcolor==3.3.0 \
+    --hash=sha256:348871ca648ec6a9a983a13ab626c0acce02f515b9e1983332b17af7979521c5 \
+    --hash=sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5
+    # via sparklines
 testcontainers[postgres]==4.15.0 \
     --hash=sha256:085cde086337632e19002719460b7b80bbab2bdd51bb3ea04f77d0de96504706 \
     --hash=sha256:8796c14e76604031ad39cf0ed3b8e9806283a1fbf5270965c2b1c594caa31b74

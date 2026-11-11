@@ -4,8 +4,6 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel
-
 from finance.plaid.spend.allowance import (
     AccountingPolicy,
     AllowancePolicy,
@@ -20,30 +18,10 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
     round_minor_units,
 )
+from finance.plaid.spend.pace_history_models import PaceHistory, PaceHistoryPoint, PaceHistoryWindow
 from finance.plaid.spend.sustainability import AccountCoverage, AccountHistory
 
 HISTORY_DAYS = 30
-
-
-class PaceHistoryPoint(BaseModel):
-    date: date
-    observed_daily_minor_units: int | None
-
-
-class PaceHistoryWindow(BaseModel):
-    period_id: PeriodId
-    points: list[PaceHistoryPoint]
-
-
-class PaceHistory(BaseModel):
-    generated_at: datetime
-    time_zone: str
-    currency: str
-    status: Status
-    last_synced_at: datetime | None
-    daily_reference_minor_units: int
-    windows: list[PaceHistoryWindow]
-    issues: list[str]
 
 
 def pace_history(

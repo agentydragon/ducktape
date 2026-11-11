@@ -12,7 +12,10 @@ for the graphical session on opted-in hosts. The CLI works from a terminal in th
 panel extension.
 
 ```sh
-plaid-spend             # show flexible allowance and statement-cycle spend
+plaid-spend             # compact allowance, pace history and card summary
+plaid-spend --details   # full allowance and card details
+plaid-spend --pace-window 30d --history-days 14 --scale auto
+plaid-spend --no-sparkline  # do not request pace history
 plaid-spend --json      # print the API view as JSON
 plaid-spend status      # show daemon connection and sign-in state
 plaid-spend login       # start Authentik sign-in in the browser
@@ -24,7 +27,11 @@ From the repository, run the same CLI with:
 bazelisk run //finance/plaid/spend/desktop:plaid_spend_cli
 ```
 
-The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain
+The CLI sparkline shows daily points for the selected rolling average; its history span is 7, 14, or 30 days and
+its scale can start at zero or fit the data. Dots mark unknown coverage. In a terminal, points use the same green,
+yellow and red leash thresholds as the panel; `--color never` disables color and `--color always` forces it.
+The sparkline is unavailable if the daemon or server cannot provide history. `--json` retains the original view-only
+JSON and does not fetch history. The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain
 owned by the daemon and stored in Secret Service.
 
 The panel's **Customize panel…** menu opens preferences for independently showing and ordering the status icon,

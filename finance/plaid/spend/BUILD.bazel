@@ -12,7 +12,7 @@ py_library(
         ":configuration",
         ":models",
         ":oidc_principal",
-        ":pace_history",
+        ":pace_history_models",
         ":portfolio",
         ":service",
         ":settings",
@@ -48,7 +48,17 @@ py_library(
     srcs = ["pace_history.py"],
     deps = [
         ":allowance",
+        ":pace_history_models",
         ":sustainability",
+    ],
+)
+
+py_library(
+    name = "pace_history_models",
+    srcs = ["pace_history_models.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
+    deps = [
+        ":allowance",
         "@pypi//pydantic",
     ],
 )
@@ -61,6 +71,7 @@ py_library(
         ":configuration",
         ":models",
         ":pace_history",
+        ":pace_history_models",
         ":policy_queries",
         ":portfolio",
         ":portfolio_models",
@@ -168,7 +179,7 @@ py_test(
         ":conftest",
         ":models",
         ":oidc_principal",
-        ":pace_history",
+        ":pace_history_models",
         ":service",
         ":settings",
         ":sustainability",
