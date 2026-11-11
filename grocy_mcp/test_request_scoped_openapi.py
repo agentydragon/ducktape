@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 
-from mcp_infra.request_scoped_openapi import RequestScopedOpenAPIClients
+from grocy_mcp.request_scoped_openapi import RequestScopedOpenAPIClients
 
 _SPEC: dict[str, Any] = {
     "openapi": "3.1.0",

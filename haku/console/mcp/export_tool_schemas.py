@@ -30,9 +30,10 @@ import argparse
 import asyncio
 import json
 from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastmcp import Client, FastMCP
 from mcp_types import Tool
@@ -41,7 +42,6 @@ from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from haku.console.tools.routine import LaunchRoutineArguments, LaunchRoutineResult
-from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as google_calendar_tools
 
 GROCY_SF_SERVER_ID = "grocy-sf"
@@ -120,11 +120,9 @@ class McpToolSchemas:
     results: dict[str, Any]
 
 
-class _InertCollaborator:
-    """A tool dependency that proves schema reflection cannot perform real work."""
-
-    def __getattr__(self, name: str) -> Any:
-        raise AssertionError(f"MCP schema export unexpectedly accessed collaborator attribute {name!r}")
+def _no_grocy_client() -> AbstractAsyncContextManager[GrocyClient]:
+    """Schema reflection must never open a Grocy client."""
+    raise AssertionError("MCP schema export unexpectedly requested a Grocy client")
 
 
 def build_schema_servers() -> dict[str, FastMCP]:
@@ -133,11 +131,9 @@ def build_schema_servers() -> dict[str, FastMCP]:
     These remote tool schemas do not connect to their services.
     """
 
-    inert = _InertCollaborator()
     servers = {
         GROCY_SF_SERVER_ID: build_batch_tools_mcp(
-            ServerSettings(grocy_url="https://grocy.invalid"),
-            client_provider=borrowed_http_client_provider(cast(GrocyClient, inert)),
+            ServerSettings(grocy_url="https://grocy.invalid"), client_provider=_no_grocy_client
         )
     }
     # gmail/google_calendar build their own inert client from a None token.

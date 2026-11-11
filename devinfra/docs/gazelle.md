@@ -37,7 +37,7 @@ with <../../patches/rules_python_gazelle_ducktape.patch> applied:
    _recognition_ — it rejects same-name aliases and does not affect emitted loads.
 3. The parser migration substantially reduces parse warnings in the repository.
    The RC4 `bb run //devinfra:gazelle -- -mode=diff` check converges, with one
-   remaining parse warning for `mcp_infra/request_scoped_openapi.py`.
+   remaining parse warning for `grocy_mcp/request_scoped_openapi.py`.
 
 No root `map_kind py_binary py_library` directive: gazelle applies map_kind to
 existing rules too, rewriting hand-written binaries' kind.

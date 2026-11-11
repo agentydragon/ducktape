@@ -43,11 +43,11 @@ from python.runfiles import Runfiles
 from grocy_mcp.batch_tools import register_batch_tools
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.request_scoped_openapi import HTTPClientProvider, RequestScopedOpenAPIClients
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
 from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.authentik_auth.token_exchange import AuthentikTokenExchanger, build_authentik_backend_token_provider
 from mcp_infra.persistence import build_client_storage
-from mcp_infra.request_scoped_openapi import HTTPClientProvider, RequestScopedOpenAPIClients
 
 logger = logging.getLogger(__name__)
 

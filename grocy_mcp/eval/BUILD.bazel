@@ -35,8 +35,8 @@ py_library(
         ":result_types",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
+        "//grocy_mcp:request_scoped_openapi",
         "//grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
-        "//mcp_infra:request_scoped_openapi",
         "//util:net",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
