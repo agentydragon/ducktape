@@ -2,14 +2,18 @@
   "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "window_start_utc": "2026-11-11T07:20:00Z",
   "window_end_utc": "2026-11-12T07:20:00Z",
-  "published_at_utc": "2026-11-12T08:50:00.344557+00:00",
+  "published_at_utc": "2026-11-12T12:20:13.267094+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "624f59060b605015f3614555baeae27f5ee6f859",
-  "report_sha256": "39f5f10c9d832bbd2b7282becd6a168b3234ee6eb3d1172cd5799ad82eb10d36",
-  "evidence_sha256": "86ccf83262f7bd06bb4c698cc1b71bbd78623b3b6e87aaecbc2733867c44863f",
+  "previous_report_commit": "31971eb057e89cc1d579c5848e32d185a33c11a1",
+  "report_sha256": "9f9fa7694555d7de4dde7724ec888f86a8aa9dc7fd5dc62e0decd94d116ab8fb",
+  "evidence_sha256": "ad3068313b21dc8ace96099d94c9f3f94e4f0d9f221c14c475bd2ac65883051c",
   "visual_validation": "visual-validation.json",
   "evidence_schema_version": 3,
   "population": "159 distinct observed PR heads; 94 green proxies; earlier 100-head sample retained separately",
   "feedback_clock": "First PR workflow creation to latest visible successful required-gate completion; not push-to-auto-merge eligibility",
-  "sampling_limits": "Complete 72h run census. Latest 24h required-workflow job details, 100 time-spread earlier heads, final 90min all workflows. Non-atomic results; no older active-run sweep after pagination changed."
+  "sampling_limits": "Complete 72h run census. Latest 24h required-workflow job details, 100 time-spread earlier heads, final 90min all workflows. Non-atomic results; no older active-run sweep after pagination changed.",
+  "supplemental_followup_observed_at_utc": "2026-11-12T12:00:20Z",
+  "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
+  "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
+  "supplemental_followup_scope": "Selected Nov 12 interventions and PR status only; the original population window and rates are unchanged."
 }

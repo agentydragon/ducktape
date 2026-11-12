@@ -64037,5 +64037,132 @@
       }
     },
     "scope": "Only the unchanged evidence objects required by retained charts are embedded. The full original snapshot remains at the pinned report commit. Original Nov8-9 cohort and separately dated experiments are not a current-source comparison."
+  },
+  "followup_refresh": {
+    "observed_at_utc": "2026-11-12T12:00:20Z",
+    "population_refresh": {
+      "performed": false,
+      "retained_window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
+      "retained_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
+      "note": "This is a follow-up to selected intervention experiments and PR status only. No PR-head census, cohort distribution, or latency rate was collected again."
+    },
+    "workstreams": [
+      {
+        "id": "3",
+        "topic": "K3s fixture store reuse acceptance",
+        "pr_number": 15188,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15188",
+        "head_commit": "3d4d45e1ccf5e482dbb4c66bc7b386898bb16da5",
+        "status_at_observation": "Open; ready for review; all required exact-head CI checks green",
+        "policy": "Require the clean-stop marker, exact K3s binary, and 20 GB free headroom; fail closed if the store was dirty before start.",
+        "acceptance_invocation_id": "6f01ce0c-9b1e-495b-a2ea-dc995f6b80ee",
+        "acceptance_url": "https://app.buildbuddy.io/invocation/6f01ce0c-9b1e-495b-a2ea-dc995f6b80ee",
+        "acceptance": [
+          "Cold image import and warm reuse across fresh Kubernetes UIDs passed.",
+          "SIGKILL reset and K3s binary mismatch both forced a reset."
+        ],
+        "claim_limit": "Acceptance coverage validates safe reuse/reset conditions for retained content. Required exact-head CI is green, but this does not measure end-to-end CI speedup or prove deployment/rollout."
+      },
+      {
+        "id": "6",
+        "topic": "BuildBuddy client admission width",
+        "pr_number": 15842,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15842",
+        "merged_commit": "f9a0d6abc41ef81d3d51c52106ee155d501204dd",
+        "status_at_observation": "Merged; required CI green",
+        "tested_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
+        "command": "//agentplane/... --config=ci --nocache_test_results --keep_going",
+        "runs": [
+          {
+            "jobs": 50,
+            "invocation_id": "962a6b85-dfd8-45c3-9b92-5594c954d28f",
+            "bazel_elapsed_seconds": 602.7,
+            "pod_action_start_seconds": 100.1,
+            "pod_action_seconds": 502.4,
+            "targets_passed": 429,
+            "targets_total": 430,
+            "other_failure": "Runtime journal reopen failure",
+            "command": "bbr test //agentplane/... --config=ci --jobs=50 --nocache_test_results --keep_going",
+            "invocation_url": "https://app.buildbuddy.io/invocation/962a6b85-dfd8-45c3-9b92-5594c954d28f"
+          },
+          {
+            "jobs": 100,
+            "invocation_id": "221d60ab-b324-4cf9-9d74-aabeae174008",
+            "bazel_elapsed_seconds": 447.4,
+            "pod_action_start_seconds": 58.1,
+            "pod_action_seconds": 387.6,
+            "targets_passed": 429,
+            "targets_total": 430,
+            "pod_action_digest": "4fe9c5ca43e597870f353d4a143894ec1dbbfdb0c8f91463a2912e02804ca046",
+            "pod_provider_queue_seconds": 0.06,
+            "other_failure": "Browser fixture authentication ReadTimeout before browser/assertion setup",
+            "command": "bbr test //agentplane/... --config=ci --jobs=100 --nocache_test_results --keep_going",
+            "invocation_url": "https://app.buildbuddy.io/invocation/221d60ab-b324-4cf9-9d74-aabeae174008",
+            "pod_action_identity": "same action digest 4fe9c5ca43e597870f353d4a143894ec1dbbfdb0c8f91463a2912e02804ca046 as repeated-50 run; provider queue approximately 0.06 s"
+          },
+          {
+            "jobs": 50,
+            "invocation_id": "f8a5325b-f058-41ef-ab48-4e749420eb87",
+            "bazel_elapsed_seconds": 607.0,
+            "pod_action_start_seconds": 212.7,
+            "pod_action_seconds": 392.6,
+            "targets_passed": 429,
+            "targets_total": 430,
+            "pod_action_digest": "4fe9c5ca43e597870f353d4a143894ec1dbbfdb0c8f91463a2912e02804ca046",
+            "pod_provider_queue_seconds": 0.06,
+            "other_failure": "Known VM tool-OOM failure",
+            "command": "bbr test //agentplane/... --config=ci --jobs=50 --nocache_test_results --keep_going",
+            "invocation_url": "https://app.buildbuddy.io/invocation/f8a5325b-f058-41ef-ab48-4e749420eb87",
+            "pod_action_identity": "same action digest 4fe9c5ca43e597870f353d4a143894ec1dbbfdb0c8f91463a2912e02804ca046 as repeated-50 run; provider queue approximately 0.06 s"
+          }
+        ],
+        "interpretation": "The 100-job run admitted the selected Pod action earlier than the first 50-job run (58.1s versus 100.1s to action start). The repeat at 50 jobs reproduced nearly the same overall Bazel elapsed time (607.0s versus 602.7s), while Pod action execution varied from 502.4s to 387.6/392.6s. The last two Pod actions had the same action digest and about 0.06s provider queue. This one sequence isolates earlier client admission at 100 jobs, not a stable end-to-end saving.",
+        "claim_limit": "The three-run sequence supports earlier client admission for this workload, not a universal CI saving or a refreshed reliability rate. Remote bases moved; exact source/action identity mapping is documented in the merged note. The two repeated Pod actions share an action digest with approximately 0.06 s provider queue; do not infer stable worker placement or production cost savings.",
+        "command_template": "bbr test //agentplane/... --config=ci --jobs={50|100|50} --nocache_test_results --keep_going",
+        "source_action_identity_note_url": "https://github.com/agentydragon/ducktape/blob/f9a0d6abc41ef81d3d51c52106ee155d501204dd/devinfra/debug/2026_11_12_rbe_client_admission.md"
+      },
+      {
+        "id": "10",
+        "topic": "Same-source KVM versus managed TCG system-test pilot",
+        "pr_number": 15822,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15822",
+        "head_commit": "fc35c5adfe16b3a8af670c394ec0f34601fa7fb0",
+        "status_at_observation": "Open; all required exact-head CI checks green",
+        "tested_source_commit": "fc35c5adfe16b3a8af670c394ec0f34601fa7fb0",
+        "runs": [
+          {
+            "placement": "KVM canary",
+            "invocation_id": "8a86810b-64e9-4ff9-a82e-5cc2f95632a6",
+            "system_test_seconds": 262.3,
+            "requested_cpus": 4,
+            "stack_seconds": 128,
+            "scenario_seconds": 115
+          },
+          {
+            "placement": "Managed TCG",
+            "invocation_id": "a6804c8b-791f-4985-9812-5faa73a7e4a0",
+            "system_test_seconds": 474.5,
+            "compute_units": 8,
+            "stack_seconds": 125,
+            "scenario_seconds": 249
+          }
+        ],
+        "cleanup": "The owned canary, disk, PVC, PV and LINSTOR resources were removed; the production VM pool returned to 2/2 ready.",
+        "claim_limit": "The tested source SHA matched fc35c5adfe16b3a8af670c394ec0f34601fa7fb0 for both runs, but KVM canary and managed TCG used distinct Bazel targets/actions, resources (4 CPUs versus 8 compute units), and cleanup lifecycles. This bounded same-source pilot is not a cost-adjusted production CI speedup or permission to change production placement.",
+        "kvm_command_context": {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_canary",
+          "buildbuddy_command_snippet": "test/test-setup.sh agentplane/system_tests/x/vm_kvm/test_vm_kvm_canary",
+          "invocation_url": "https://app.buildbuddy.io/invocation/8a86810b-64e9-4ff9-a82e-5cc2f95632a6",
+          "action_digest": "d40baf2ed84542f14934c2de6dcdef8bc8b2696a1300e7671a196ea1327b0dab"
+        },
+        "managed_tcg_command_context": {
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "buildbuddy_command_snippet": "test/test-setup.sh agentplane/system_tests/suites/test_vm",
+          "invocation_url": "https://app.buildbuddy.io/invocation/a6804c8b-791f-4985-9812-5faa73a7e4a0",
+          "action_digest": "7b887f7e8a222e6d3e3ab9c49378ff8e7a59c40a89b0651ec01ca3e9699333a0"
+        },
+        "tested_source_commit_note": "Pilot provenance in pilot-run.json and PR #15822 validation record; KVM and managed TCG three-scenario suite runs used this same source commit."
+      }
+    ]
   }
 }

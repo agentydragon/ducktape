@@ -71,6 +71,7 @@
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
       const data = evidence.latest_refresh;
+      const followup = evidence.followup_refresh;
       const fmt = (s) =>
         s == null
           ? "Unobserved"
@@ -127,7 +128,9 @@
           ><${Stack} gap="xl">
             <header>
               <${Anchor} href="../">Ducktape reports<//
-              ><${Text} mt="md" c="dimmed">CI latency · 12 November 2026 UTC<//
+              ><${Text} mt="md" c="dimmed"
+                >CI latency · 11–12 November cohort · follow-ups through
+                ${followup.observed_at_utc}<//
               ><${Title} order=${1} my="sm"
                 >Routine feedback is short; Agentplane still waits on test work
                 and recovery<//
@@ -140,10 +143,11 @@
                 startup and scenario work, and the fresh failures that force
                 another full attempt.<//
               ><${Text} mt="sm" size="sm" c="dimmed"
-                ><${ManifestStamp} src="./manifest.json" /><br />Detailed heads:
-                11 Nov 07:20 → 12 Nov 07:20 UTC; results observed during
-                collection through 07:46:51 UTC. The start is workflow creation,
-                not a recovered push timestamp.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />The cohort
+                below remains 11 Nov 07:20 → 12 Nov 07:20 UTC, with results
+                observed through 07:46:51 UTC. Nov 12 intervention results are a
+                supplement; no head population was recollected. The start is
+                workflow creation, not a recovered push timestamp.<//
               >
             </header>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}
@@ -171,12 +175,13 @@
               ><//
             >
             <${Alert} title="Decision" color="blue"
-              >Keep the measured four-CPU KVM shape and the Pod suite’s current
-              reservation. The larger Pod proposal was closed after ownership
-              and ordering repairs. Continue the per-suite image split already
-              under review; test prepared infrastructure and VM placement
-              against the full graph. More KVM workers cannot shorten a managed
-              VM or Pod action.<//
+              >Keep the four-CPU KVM shape and the Pod suite’s current
+              reservation. The same-source KVM canary is faster in its bounded
+              three-scenario run, but uses different resources and cleanup, so
+              it does not establish a production CI saving. K3s store reuse
+              passed reset and invalidation acceptance; exact-head CI is pending
+              and the speedup is unmeasured. More KVM workers cannot shorten a
+              managed VM or Pod action.<//
             >
             <section id="cohorts">
               <${Title} order=${2}>What different PRs experience<//
@@ -543,18 +548,18 @@
                   ],
                   [
                     "2 · K3s fixture lifecycle",
-                    "Prepare versioned immutable infrastructure under an exclusive worker lease, retaining fresh mutable DB/PKI/workspaces and scenario-owned cleanup. Current setup repeats service/image/guest preparation across actions.",
-                    "Bigger design: unchanged-input cold/warm/dirty/incompatible/cancelled trials must prove reset and invalidation. Selected VM/Pod setup is 77–154s; that is an envelope, not removable work. Savings may move the bottleneck to scenarios or prerequisite construction. No deployed lifecycle changes authorized.",
+                    "The K3s store-reuse candidate now passes cold import, warm reuse across fresh Kubernetes UIDs, SIGKILL reset and binary-mismatch reset under clean-stop, exact-binary and 20 GB headroom rules. Keep mutable DB/PKI/workspaces fresh and cleanup scenario-owned.",
+                    "PR #15188 is open and ready for review with all required exact-head CI checks green. These are safety and reset results, not an end-to-end latency measurement. Selected VM/Pod setup is 77–154s; this envelope is not removable-work evidence. No deployed lifecycle change is authorized.",
                   ],
                   [
                     "3 · VM placement",
-                    "Compare TCG to KVM for the same three scenarios, including the real supervision and OOM paths. Provision an eligible size before a pilot; existing 10GB KVM target cannot fit 7GiB executor capacity.",
-                    "Historical 423→227s actions are a confounded architecture pilot, not a causal speedup. One managed invocation still ends on Pod, so isolated VM acceleration has zero conditional headroom there. Extra worker RAM/capacity and isolation/drain ownership are real recurring costs.",
+                    "The bounded three-scenario same-source pilot completed: KVM 262.3s versus managed TCG 474.5s. KVM used 4 CPUs; managed TCG used 8 compute units. Stack time was 128s / 125s; scenario time was 115s / 249s.",
+                    "PR #15822 remains open with required checks green. Different resources and cleanup prevent a cost-adjusted production CI claim. One managed invocation still ends on Pod, so isolated VM acceleration has zero conditional headroom there. Extra worker RAM/capacity and isolation/drain ownership remain recurring costs.",
                   ],
                   [
                     "Tail 1 · runtime/test contract",
-                    "The shared 256MiB cgroup can kill Codex after the tool. A server-survival guarantee requires a separate per-command memory boundary in execution supervision. Otherwise the aggregate-budget OOM scenario must assert documented backend loss and no replay, an explicit coverage decision.",
-                    "One current head spent 37m18s reaching green, with 17m31s between jobs. Two kernel victims explain its lost session; a fresh same-source pass confirms intermittency. A larger shared cap does not create isolation. No runtime or assertion change is implemented; the reliability report identifies ownership and validation.",
+                    "The observed 256 MiB shared cgroup can kill the tool and Codex exec-server in sequence. The pinned Codex 0.162.1 bundled exec-server exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; existing OOM and no-replay assertions remain unchanged. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate process/session/PTY/sandbox/filesystem architecture and ownership decision.",
+                    "The Nov 12 shared-cgroup incident killed the tool and then the exec-server, losing the native session. The audit of bundled Codex 0.162.1 found no per-command memory/cgroup placement or pre-exec controls. Runtime design PR #15800 and patch-dependent producer PR #15869 are closed; capability note PR #15883 merged. The current shared-cgroup setup does not guarantee exec-server survival from tool OOM. No runtime repair or change to the OOM/no-replay assertions is claimed.",
                   ],
                   [
                     "Retain / rejected",
@@ -582,9 +587,11 @@
                 adds versioned reset ownership and idle resource cost; KVM
                 requires an eligible larger worker and admission/drain
                 ownership. None yet has a validated four-minute end-to-end
-                forecast. The next high-value trial is equivalent cold/warm
-                fixture preparation with reset/invalidation proof, followed by
-                joint Pod/VM feedback measurement.<//
+                forecast. K3s store acceptance now covers cold/warm reuse, fresh
+                UIDs, forced reset and binary mismatch with exact-head CI green;
+                next measure matched full-graph feedback. The KVM canary needs
+                equivalent resource and cleanup accounting before a placement
+                change.<//
               >
               ${table(
                 [
@@ -607,6 +614,114 @@
                 heads cannot be added to CPU or worker seconds.<//
               >
             </section>
+            <${Stack} component="section" id="nov12-followups" gap="md" my="xl">
+              <${Title} order=${2}>Nov 12 intervention follow-up<//>
+              <${Text} component="p">
+                These selected experiments update intervention status only. The
+                latency population, source pin and 11–12 November observation
+                window above are unchanged. A faster action admission or pilot
+                does not equal a measured change in the full PR feedback cohort.
+              <//>
+              ${followup.workstreams.map((w) => {
+                const observed =
+                  w.id === "3"
+                    ? html`Cold import and warm reuse across fresh Kubernetes
+                        UIDs passed; SIGKILL and binary mismatch reset the
+                        store.
+                        <${Anchor} href=${w.acceptance_url}>Acceptance run<//>.`
+                    : w.id === "6"
+                      ? w.interpretation
+                      : `KVM canary ${n(w.runs[0].system_test_seconds)}s, stack ${w.runs[0].stack_seconds}s, scenarios ${w.runs[0].scenario_seconds}s; managed TCG ${n(w.runs[1].system_test_seconds)}s, stack ${w.runs[1].stack_seconds}s, scenarios ${w.runs[1].scenario_seconds}s. ${w.cleanup}`;
+                const runCards =
+                  w.id === "6"
+                    ? html`<${SimpleGrid}
+                        cols=${{ base: 1, md: 3 }}
+                        spacing="xs"
+                      >
+                        ${w.runs.map(
+                          (r) =>
+                            html`<${Paper}
+                              key=${r.invocation_id}
+                              withBorder
+                              p="sm"
+                            >
+                              <${Stack} gap=${4}>
+                                <${Text} fw=${600}>${r.jobs} jobs<//>
+                                <${Text} size="sm"
+                                  >${n(r.bazel_elapsed_seconds)}s Bazel; Pod
+                                  start ${n(r.pod_action_start_seconds)}s;
+                                  action ${n(r.pod_action_seconds)}s; provider
+                                  queue
+                                  ${r.pod_provider_queue_seconds == null ? "not observed" : `${r.pod_provider_queue_seconds.toFixed(2)}s`}.<//
+                                >
+                                <${Text} size="sm"
+                                  >${r.targets_passed}/${r.targets_total}
+                                  targets passed. Remaining failure:
+                                  ${r.other_failure}.<//
+                                >
+                                <${Anchor} href=${r.invocation_url}
+                                  >BuildBuddy invocation<//
+                                >
+                              <//>
+                            <//>`,
+                        )}
+                      <//>`
+                    : w.id === "10"
+                      ? html`<${SimpleGrid}
+                          cols=${{ base: 1, md: 2 }}
+                          spacing="xs"
+                        >
+                          ${w.runs.map(
+                            (r) =>
+                              html`<${Paper}
+                                key=${r.invocation_id}
+                                withBorder
+                                p="sm"
+                              >
+                                <${Stack} gap=${4}>
+                                  <${Text} fw=${600}
+                                    >${r.placement} ·
+                                    ${r.requested_cpus ? `${r.requested_cpus} CPUs` : `${r.compute_units} compute units`}<//
+                                  >
+                                  <${Text} size="sm"
+                                    >${n(r.system_test_seconds)}s total; stack
+                                    ${r.stack_seconds}s; scenarios
+                                    ${r.scenario_seconds}s.<//
+                                  >
+                                  <${Anchor}
+                                    href=${`https://app.buildbuddy.io/invocation/${r.invocation_id}`}
+                                    >BuildBuddy invocation<//
+                                  >
+                                <//>
+                              <//>`,
+                          )}
+                        <//>`
+                      : null;
+                return html`<${Paper} key=${w.id} withBorder p="md">
+                  <${Stack} gap="sm">
+                    <${Stack} gap=${4}>
+                      <${Anchor} fw=${600} href=${w.pr_url}
+                        >#${w.pr_number} · ${w.topic}<//
+                      >
+                      <${Text} size="sm" c="dimmed"
+                        >${w.status_at_observation}<//
+                      >
+                    <//>
+                    ${runCards}
+                    <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
+                      <${Stack} gap=${4}>
+                        <${Text} fw=${600} size="sm">Observed result<//>
+                        <${Text} size="sm">${observed}<//>
+                      <//>
+                      <${Stack} gap=${4}>
+                        <${Text} fw=${600} size="sm">What it establishes<//>
+                        <${Text} size="sm">${w.claim_limit}<//>
+                      <//>
+                    <//>
+                  <//>
+                <//>`;
+              })}
+            <//>
             <section id="spike">
               <${Title} order=${2}
                 >Bounded CRD-ordering spike: feasibility passed, speedup
