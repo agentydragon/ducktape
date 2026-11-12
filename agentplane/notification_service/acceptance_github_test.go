@@ -18,6 +18,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing" // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -197,8 +198,8 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	t.Cleanup(apiServer.Close)
 
 	dispatcher, history := &losingDispatcher{}, &journal{}
-	historyAddress := serveGRPC(t, func(server *grpc.Server) { historypb.RegisterHistoryServiceServer(server, history) })
-	dispatcherAddress := serveGRPC(t, func(server *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(server, dispatcher) })
+	historyAddress := notificationtesting.ServeGRPC(t, func(server *grpc.Server) { historypb.RegisterHistoryServiceServer(server, history) })
+	dispatcherAddress := notificationtesting.ServeGRPC(t, func(server *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(server, dispatcher) })
 	tune := func(c *config) {
 		c.GitHub = fixture.Settings(apiServer.URL)
 		c.GitHub.WebhookSecret = acceptanceWebhookKey

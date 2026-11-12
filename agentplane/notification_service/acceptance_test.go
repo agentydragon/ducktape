@@ -18,6 +18,7 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -264,12 +265,12 @@ func runnerEntry(cursor uint64, observation *eventpb.Event) *eventlogpb.EventEnt
 // the entries.
 func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseAndARestart(t *testing.T) {
 	mine, theirs := uuid.NewString(), uuid.NewString()
-	actionService := serveGRPC(t, func(server *grpc.Server) {
+	actionService := notificationtesting.ServeGRPC(t, func(server *grpc.Server) {
 		actionpb.RegisterActionServiceServer(server, ownedActions{owners: map[string]string{mine: sandboxName, theirs: otherName}})
 	})
 	dispatcher, history := &losingDispatcher{}, &journal{}
-	historyAddress := serveGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
-	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
+	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
+	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
 	peers := func(c *config) {
 		c.Actions.URL = "http://" + actionService
 		c.HistoryService.Target, c.SessionDispatcher.Target = historyAddress, dispatcherAddress
@@ -461,8 +462,8 @@ func grantSend(t *testing.T, account string) *policyapi.PolicyBinding {
 // the binding is gone the sender may send no more, while what it sent before stays the recipient's to read.
 func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgement(t *testing.T) {
 	dispatcher, history := &losingDispatcher{}, &journal{}
-	historyAddress := serveGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
-	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
+	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })
+	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })
 	service := start(t, func(c *config) {
 		c.HistoryService.Target, c.SessionDispatcher.Target = historyAddress, dispatcherAddress
 		c.NoticeDebounce.QuietSeconds = 0

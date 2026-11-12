@@ -31,8 +31,8 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -58,29 +58,6 @@ const (
 	testSession = "test-session"
 	webhookKey  = "test-webhook-secret-of-sixteen-or-more"
 )
-
-// serveGRPC serves a fake peer on a loopback port and returns its address.
-func serveGRPC(t *testing.T, register func(*grpc.Server)) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return listener.Addr().String()
-}
-
-// listingRunner is a Sandbox's runner, as the control Service reaches it.
-type listingRunner struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-}
-
-func (listingRunner) ListSessions(context.Context, *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: testSession}}}, nil
-}
 
 type testActionService struct {
 	actionpb.UnimplementedActionServiceServer
@@ -144,12 +121,14 @@ func restart(t *testing.T, tune func(*config)) running {
 		}
 		return path
 	}
-	actionAddress := serveGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
-	runnerAddress := serveGRPC(t, func(s *grpc.Server) { environmentruntimepb.RegisterEnvironmentRuntimeServer(s, listingRunner{}) })
-	historyAddress := serveGRPC(t, func(s *grpc.Server) {
+	actionAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
+	runnerAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+		environmentruntimepb.RegisterEnvironmentRuntimeServer(s, &notificationtesting.ListingRunner{Sessions: []string{testSession}})
+	})
+	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
 	})
-	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) {
+	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(s, openingDispatcher{})
 	})
 
