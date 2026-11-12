@@ -314,6 +314,10 @@ def generate_manifests(root: Path) -> None:
     flux_output.mkdir(parents=True, exist_ok=True)
     flux_app = App(outdir=str(flux_output))
     flux_chart = flux.kustomizations_chart(flux_app)
+    host_firewall_artifact = artifact("host-firewall", f"{HAND_WRITTEN_ROOT}/host-firewall")
+    flux.flux_kustomization(
+        flux_chart, "host-firewall", write_directory(root, host_firewall_artifact, siblings=["canary.yaml"])
+    )
     agentplane_crds_artifact = artifact("agentplane-crds", agentplane_crds.OUTPUT_DIR)
     agentplane_crds_kustomization = agentplane_crds.agentplane_crds(
         flux_chart, write_directory(root, agentplane_crds_artifact, siblings=CRD_FILES)
@@ -2153,6 +2157,7 @@ def generate_manifests(root: Path) -> None:
             haku_ui_image_webhook_artifact,
             haku_workloads_artifact,
             haku_workspaces_app_artifact,
+            host_firewall_artifact,
             haku_ci_artifact,
             headlamp_app_artifact,
             infra_drift_artifact,

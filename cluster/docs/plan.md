@@ -279,9 +279,9 @@ SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encr
 
 ### Firewall Hardening
 
-Restrict K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet
-(10250), Nebula (4242), and VXLAN (8472) to admin IPs and inter-node CIDRs.
-Keep 80/443/53 public.
+Inventory node ingress and canary the Cilium host firewall before expanding it.
+Keep the Kubernetes API (6443) public initially; consider tightening it after
+inventorying clients. Keep required public services and Nebula access working.
 
 ### OpenTofu State Backend
 
