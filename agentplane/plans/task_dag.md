@@ -179,10 +179,10 @@ its old ordering does not give it precedence over the selected tracks.
 work of the last week is [section 14](#14-identity-and-kubernetes-accounts-cutover): Sessions and
 workloads move from ServiceAccounts to Agentplane `Identity`s, expand → switch → contract. The
 Sandbox Identity implementation is merged in [#15742](https://github.com/agentydragon/ducktape/pull/15742)
-and [#15744](https://github.com/agentydragon/ducktape/pull/15744). This records source status only;
-the coordinated rollout and live acceptance are not verified here. `SANDBOX_IDENTITY_SPEC` points
-to their [rollout plan](sandbox_identity_rollout.md); the Session contract and wider cutover retain
-their separate gates. The launch decision in
+and [#15744](https://github.com/agentydragon/ducktape/pull/15744), and their
+[live acceptance and owned cleanup](../docs/sandbox_identity_cutover_2026_11_12/README.md) passed
+on 2026-11-12. `SANDBOX_IDENTITY_SPEC` retains the source-level verifier configuration cleanup;
+the Session contract and wider cutover retain their separate gates. The launch decision in
 [question 11](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits) is settled. The
 lanes below remain dispatchable in the order that makes the remaining cutover smaller and safer.
 
@@ -3121,8 +3121,8 @@ The implementation of [identities, workload authentication and Kubernetes accoun
 under the 2026-11-05 decisions. The identity kinds, grants, managed ServiceAccounts, impersonation,
 shared Identity lookups and workload authentication have landed in source. The Sandbox Identity
 switch implementation is merged in #15742 and #15744. This section tracks source-level dependencies;
-it does not assert which revisions, images or configuration are currently deployed. The coordinated
-rollout and live acceptance gates are in [the Sandbox Identity rollout plan](sandbox_identity_rollout.md).
+the accepted Sandbox rollout and deployed revisions are recorded in the
+[live evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md).
 The fan-in to system tests remains a sequencing hold, not permission to start them early.
 
 The target is one identity source with three credential forms (operator decision, 2026-11-10;
@@ -3157,7 +3157,7 @@ flowchart LR
     IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
     IDENTITY_DELETE_CREDENTIAL_GUARD[Follow-up: include name-only credential references]
     STANDING_WORKLOAD_IDENTITY -. #15450 permits UID-optional records .-> IDENTITY_DELETE_CREDENTIAL_GUARD
-    SANDBOX_IDENTITY_SPEC[Implementation merged; rollout and acceptance pending]
+    SANDBOX_IDENTITY_SPEC[Live accepted; verifier configuration cleanup pending]
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
     SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
@@ -3375,16 +3375,12 @@ Environment with `spec.identity` naming it; no Environment operation creates or 
 [#15239](https://github.com/agentydragon/ducktape/pull/15239) is superseded by the merged source
 changes and is not a rollout dependency.
 
-**Serving and partially accepted (2026-11-12, rollout owner):**
-[Live evidence](../debug/2026_11_12_sandbox_identity_cutover/README.md) records the deployed
-artifact/image revisions, Pod/VM credentials, in-Sandbox Kubernetes authorization, Codex and
-sampler tool turns, and suspend/resume. The proposed declarative holds were never applied.
-Operator-approved broker acceptance remains open: the Identity caller UI repair #15860 is merged
-and its code/visual checks passed, but the serving frontend still predates that repair.
-The [rollout plan](sandbox_identity_rollout.md) retains rollback and remaining acceptance steps;
-do not repeat its already-completed cutover sequence. Keep this node and its dependents open
-until the remaining acceptance and source/configuration check below are recorded.
-`IDENTITY_SYSTEM_TESTS` remains a separate gate.
+**Live rollout accepted (2026-11-12, rollout owner):**
+[Evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md) records serving revisions,
+Pod/VM credentials, in-Sandbox Kubernetes authorization, Codex and sampler tool turns,
+suspend/resume, real web approval of an Identity caller's broker launch, its exact-UID launcher
+read grant, and complete owned-resource cleanup with History retained. The proposed holds were
+never applied; the unused plan and patch are retired. `IDENTITY_SYSTEM_TESTS` remains a separate gate.
 
 The merged contract is: the controller requests an Identity-subject `WorkloadCredential` pinned to
 the live Identity UID; a Sandbox with no live Identity starts no workload, while a running
@@ -3402,20 +3398,19 @@ make `policy_namespace` required in `agentplane/llm_ingress/settings.py` and `co
 `agentplane/history_service/settings.py` and `config.go`, and
 `agentplane/runner_gateway/settings.py` and `config.go`; make `Identities` required by
 `agentplane/workload_identity/resolver.New` (`resolver/resolver.go`). These are existing cleanup
-tombstones in those sources, not work completed by #15742 or #15744. Before rolling forward or
-reopening Identity launches, verify the deployed binaries and rendered configuration supply the
-Identity namespace and resolver wiring; do not treat an optional default as evidence that every
-verifier is ready. Keep this compatibility item open until the source cleanup and
-artifact/configuration check are complete.
+tombstones in those sources, not work completed by #15742 or #15744. The accepted live checks and
+recorded serving configuration verify the Identity namespace and resolver paths; optional defaults
+are not that evidence. Keep this source cleanup open, and verify its required settings against the
+rendered configuration and serving binaries when it lands.
 
 The ServiceAccount principal remains in Session-facing storage and code until
 `SESSION_SA_PRINCIPAL_REMOVAL`. Existing Sessions whose recorded execution identity differs from a
-Sandbox's new identity cannot receive delivery; the rollout plan requires a fresh acceptance
-Session and preserves retained workspace data. The wider standing-workload, command-box and MCP
+Sandbox's new identity cannot receive delivery; acceptance used fresh Sessions and preserved
+retained workspace data. The wider standing-workload, command-box and MCP
 cutover remains in `IDENTITY_CUTOVER`.
 
-**Exit:** complete the rollout plan's live acceptance and source/configuration compatibility check,
-and record the source and deployed artifact/image revisions and results. `IDENTITY_SYSTEM_TESTS`
+**Remaining exit:** make the verifier configuration and resolver inputs required, validate the
+source changes, and record their serving artifact/configuration check. `IDENTITY_SYSTEM_TESTS`
 remains a separate gate before `IDENTITY_CUTOVER`; the Session-principal removal still depends on
 this node as shown in the graph.
 
@@ -3439,8 +3434,8 @@ its Identity; this node deletes the ServiceAccount side for Sessions:
   Sandbox-originated caller is always an Identity.
 
 Sessions from before the switch are retired rather than migrated to a different execution
-Identity. Follow the rollout plan's current inventory and preservation gates when deciding which
-Sessions and continuation state may be retired; its sampler-thread approval does not authorize
+Identity. Follow the recorded inventory and preservation scope in the
+[accepted rollout](../docs/sandbox_identity_cutover_2026_11_12/README.md); its sampler-thread approval does not authorize
 removing retained workspaces or other data. **Exit:** no Session-facing code path, column or wire
 field names a ServiceAccount, and the services' tests pass without one.
 
@@ -3833,14 +3828,12 @@ phase (section 14): expand → switch → contract leaves each transitional piec
   (`central_sampler/settings.py`, `settings.go`) go once no connection uses it. Review LLM ingress's
   `central_sampler_accounts` (trusted sampler producers attributing public Session IDs) then: the
   delegated Identity carries that attribution.
-- **`SANDBOX_IDENTITY_SPEC` (implementation merged; rollout and acceptance pending):** use
-  [`sandbox_identity_rollout.md`](sandbox_identity_rollout.md) after its mandatory read-only state
-  audit. Preserve any existing holds, record already-deployed revisions and evidence, and run only
-  the acceptance or release steps still outstanding. Required cleanup remains for `policy_namespace`
-  in LLM Ingress, History and Runner Gateway settings/config and `Identities` in
-  `workload_identity/resolver.New`; verify effective configuration and resolver wiring before
-  rollout or reopening launches. The earlier #15239 draft is superseded; source implementation
-  landed in #15742 and #15744.
+- **`SANDBOX_IDENTITY_SPEC` (live rollout accepted; required verifier inputs remain):**
+  [Live evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md) records accepted checks and
+  serving configuration. Required cleanup remains for `policy_namespace` in LLM Ingress, History
+  and Runner Gateway settings/config and `Identities` in `workload_identity/resolver.New`.
+  The superseded #15239 draft is closed; #15742 and #15744 are serving. Do not repeat the retired
+  cutover procedure or one-time migration.
 - **`ENVIRONMENT_LIFECYCLE_RULES` (blocked on `ENVIRONMENT_RULE_TYPE_DESIGN`):** branch
   `identity-consumers-environment-self-read-deferred` (closed
   [#15380](https://github.com/agentydragon/ducktape/pull/15380)'s code) is deleted once its

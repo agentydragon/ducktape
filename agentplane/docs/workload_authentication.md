@@ -18,7 +18,7 @@ projected-token headers before sending the request.
 
 The proxy verifies client TLS against the [workload CA](#the-workload-ca) and
 [resolves the peer](#how-a-verifier-resolves-a-peer) through its record before evaluating egress
-policy for the record's subject, the Sandbox's own ServiceAccount. No caller header supplies or
+policy for the record's subject, the Sandbox's bound Identity. No caller header supplies or
 overrides the subject. The proxy reads no Sandbox or Pod for it.
 
 The destination service independently verifies the client certificate against the workload CA and
@@ -28,6 +28,27 @@ per-service projected token audience. Finalization does not revoke a still-accep
 the record is owned by the Sandbox, so Runtime may finish its History seal until the binding is
 cleared or the Sandbox, and with it the record, is removed. See the [egress contract](../egress/SPEC.md) and
 [LLM ingress](../llm_ingress/README.md) for their route-specific behavior.
+
+## Sandbox rollout and recovery
+
+The [2026-11-12 Sandbox Identity cutover record](sandbox_identity_cutover_2026_11_12/README.md)
+contains the accepted live checks, exact serving revisions and owned-resource cleanup. Sandboxes use
+bound Identities, default Kubernetes ServiceAccounts with token automount disabled, and separately
+selected grants. Direct and caller-delegated Identity Session creation and Identity lifecycle control
+remain denied until explicit lifecycle grants exist; an operator-approved broker acts under its own
+platform authority.
+
+For a later roll, observe the `ducktape-flux` Kustomizations `agentplane-crds`, `agentplane-staging`
+and `agentplane-staging-delivery`, their ExternalArtifact revisions, Deployment generations and actual
+image IDs. Image pins are owned by the shared `flux-system/all-images` automation. A source merge,
+image publication and applied runtime are separate observations.
+
+Before a rollback, stop new work and inventory active Sandboxes, exact Identity/credential UIDs,
+retained History and workspace PVCs. Restore compatible schema, configuration, controller RBAC/watch
+behavior and images together; an old controller image with the restricted new Role cannot synchronize
+its old caches. Use the recorded pre-cutover snapshot as evidence, never as a blind restore over new
+Identity-bound work. Preserve new Sessions and workspaces and choose a forward repair or a reviewed
+rollback. The one-time migration was already completed and its script removed; do not rerun it.
 
 ## WorkloadCredentials
 
@@ -46,7 +67,7 @@ metadata:
   namespace: agentplane-staging
   ownerReferences: [{ kind: Sandbox, name: agent-123, uid: <sandbox-uid>, controller: true }]
 spec: # the Sandbox Controller's
-  subject: { serviceAccount: agent-123 }
+  subject: { identity: { name: agent-123, uid: <identity-uid> } }
   binding: { podUID: <pod-uid> } # or { vmiUID: <vmi-uid> }
   pod: { name: agent-123, uid: <pod-uid> } # the caller's Pod: the bound Pod, or a VMI's virt-launcher
 status: # the Policy Controller's
