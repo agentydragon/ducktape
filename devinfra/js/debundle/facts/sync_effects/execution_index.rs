@@ -6206,6 +6206,10 @@ pub(super) struct ExecutionIndex {
     past_await: bool,
     may_skip_await_depth: u32,
     conditional_depth: u32,
+    /// Additional expression contexts that may skip a nested member read.
+    /// Kept separate from `conditional_depth`, which controls existing
+    /// analyses with different admission rules.
+    may_skip_member_read_depth: u32,
     literal_depth: u32,
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
@@ -6359,6 +6363,9 @@ pub(super) struct ExecutionIndex {
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_calls: Vec<Vec<Call>>,
+    /// Top-level calls that syntax may skip even when an execution path
+    /// happens to evaluate them during abstract interpretation.
+    conditional_top_member_reads: BTreeSet<CallSite>,
     /// Per top-level owner, what `Callable::published_sources` lists for a
     /// callable: values whose parts reach a binding only as unknown.
     pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
@@ -6485,6 +6492,7 @@ impl Default for ExecutionIndex {
             past_await: false,
             may_skip_await_depth: 0,
             conditional_depth: 0,
+            may_skip_member_read_depth: 0,
             literal_depth: 0,
             factory_member_value_depth: 0,
             factory_callback_depth: 0,
@@ -6595,6 +6603,7 @@ impl Default for ExecutionIndex {
             owner_callable_prefix_effects: Vec::new(),
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
+            conditional_top_member_reads: BTreeSet::new(),
             top_published_sources: BTreeMap::new(),
             top_iterated_sources: BTreeMap::new(),
             original_statement_spans: Vec::new(),
@@ -9862,6 +9871,7 @@ impl ExecutionIndex {
             index.past_await = false;
             index.may_skip_await_depth = 0;
             index.conditional_depth = 0;
+            index.may_skip_member_read_depth = 0;
             index.literal_depth = 0;
             index.factory_member_value_depth = 0;
             index.factory_callback_depth = 0;
@@ -11205,6 +11215,12 @@ impl ExecutionIndex {
                 })
     }
 
+    pub(super) fn unconditionally_evaluated_member_read(&self, call: &Call) -> bool {
+        !self
+            .conditional_top_member_reads
+            .contains(&CallSite::from(call.span))
+    }
+
     pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
         self.original_statement_spans[owner.0]
     }
@@ -11647,6 +11663,12 @@ impl ExecutionIndex {
         }
         if self.current.is_some() && self.past_await {
             return;
+        }
+        if self.current.is_none()
+            && (self.conditional_depth > 0 || self.may_skip_member_read_depth > 0)
+            && call.kind == CallKind::LocalMemberRead
+        {
+            self.conditional_top_member_reads.insert(call.span.into());
         }
         if let Some(key) = self.current {
             self.callables.get_mut(&key).unwrap().calls.push(call);
@@ -13679,7 +13701,10 @@ impl Visit for ExecutionIndex {
 
     fn visit_assign_pat(&mut self, assignment: &AssignPat) {
         let Some(source) = self.destructuring_source.take() else {
-            assignment.visit_children_with(self);
+            assignment.left.visit_with(self);
+            self.may_skip_member_read_depth += 1;
+            assignment.right.visit_with(self);
+            self.may_skip_member_read_depth -= 1;
             return;
         };
         self.destructuring_source = Some(ValueExpr::Alternatives(
@@ -13689,7 +13714,9 @@ impl Visit for ExecutionIndex {
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = Some(source);
+        self.may_skip_member_read_depth += 1;
         assignment.right.visit_with(self);
+        self.may_skip_member_read_depth -= 1;
     }
 
     fn visit_for_head(&mut self, head: &ForHead) {
@@ -13860,11 +13887,18 @@ impl Visit for ExecutionIndex {
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
+        if matches!(
+            assignment.op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            self.may_skip_member_read_depth += 1;
+        }
         assignment.right.visit_with(self);
         if matches!(
             assignment.op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         ) {
+            self.may_skip_member_read_depth -= 1;
             self.past_await = before_assignment;
         }
         if !matches!(
@@ -14573,7 +14607,11 @@ impl Visit for ExecutionIndex {
                 .insert(member.span.lo.0);
         }
         let before = self.past_await;
+        // Computed keys and call arguments after `?.` may never execute.
+        // Conservatively mark the whole chain conditional for read receipts.
+        self.may_skip_member_read_depth += 1;
         chain.visit_children_with(self);
+        self.may_skip_member_read_depth -= 1;
         self.past_await = before;
         if let OptChainBase::Call(call) = chain.base.as_ref() {
             // Optional invocation can still execute arbitrary callee/receiver

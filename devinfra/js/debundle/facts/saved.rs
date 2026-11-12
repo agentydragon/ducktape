@@ -491,6 +491,8 @@ struct SavedSynchronousCalls<'a> {
     local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
     local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
     local_record_factory_purity: Cow<'a, Option<super::LocalRecordFactoryPurityCertificate>>,
+    #[serde(default)]
+    proven_private_own_field_reads: Cow<'a, [(SourceUnitOrdinal, swc_common::Span)]>,
     local_record_factory_heap_call: Option<swc_common::Span>,
     reads: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
     rebinds: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
@@ -547,6 +549,7 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedLocalRecordFactoryRejection::snapshot)
                 .collect(),
             local_record_factory_purity: Cow::Borrowed(&calls.local_record_factory_purity),
+            proven_private_own_field_reads: Cow::Borrowed(&calls.proven_private_own_field_reads),
             local_record_factory_heap_call: calls.local_record_factory_heap_call,
             reads: calls
                 .reads
@@ -646,6 +649,7 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedLocalRecordFactoryRejection::restore)
                 .collect(),
             local_record_factory_purity: self.local_record_factory_purity.into_owned(),
+            proven_private_own_field_reads: self.proven_private_own_field_reads.into_owned(),
             local_record_factory_heap_call: self.local_record_factory_heap_call,
             reads: self
                 .reads

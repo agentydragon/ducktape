@@ -131,8 +131,26 @@ pub(super) fn finalize(
         outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
         outcome.effects.non_assumed_heap_accesses = Default::default();
     }
-    outcome.effects.purity_disagreement =
-        queries.complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());
+    let proven_reads = if outcome.complete
+        && !outcome.unknown_call
+        && outcome.effects.precision_losses.is_empty()
+        && outcome.effects.uninitialized_reads.is_empty()
+    {
+        outcome
+            .effects
+            .proven_private_own_field_reads
+            .iter()
+            .filter_map(|(read_owner, span)| (*read_owner == owner).then_some(*span))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    outcome.effects.purity_disagreement = queries.complete_owner_purity(
+        owner,
+        outcome.effects.local_record_factory_purity.as_ref(),
+        &proven_reads,
+        observations.dependencies(),
+    );
     let mut prior_effect_owners = outcome.executed_owners.clone();
     prior_effect_owners.retain(|owner| {
         !state
