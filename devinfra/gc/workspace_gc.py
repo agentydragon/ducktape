@@ -25,7 +25,6 @@ beforehand and skips one that no longer qualifies: a worktree is re-classified, 
 still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
 Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
 Ignored files do not count in `git status` and Git deletes them when removing a worktree.
-Detached HEAD and reflog commits are retained under Git recovery refs before removal.
 `github_prs` owns GitHub access (PR state); the scan itself is network-free.
 """
 

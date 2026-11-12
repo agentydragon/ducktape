@@ -89,9 +89,8 @@ default is the only root.
 
 - `PRUNE`: clean of tracked and untracked changes, idle, and its work has landed in
   the main branch or its branch has a merged or closed PR. Detached commits qualify on
-  the same Git content and patch checks. `--prune` reclassifies before removal, preserves
-  detached HEAD and its worktree reflog commits under `refs/workspace-gc/recovery/`, and
-  rechecks HEAD. Git deletes ignored files. Checks and removal are not atomic.
+  the same Git content and patch checks. `--prune` reclassifies before removal and rechecks
+  detached HEAD. Git deletes ignored files. Checks and removal are not atomic.
 - `KEEP`: main or invoking checkout, uncommitted changes, open PR, or live process.
 - `REVIEW`: unmerged work or an undeterminable default branch or missing detached worktree.
 

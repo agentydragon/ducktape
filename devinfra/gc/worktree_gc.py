@@ -1,7 +1,7 @@
 """Classify and remove clean, idle worktrees whose work has landed.
 
-Ignored files do not prevent removal and Git deletes them. Detached commits are retained
-under refs/workspace-gc/recovery before removal. Inspection and removal are not atomic.
+Ignored files do not prevent removal and Git deletes them. Inspection and removal are
+not atomic.
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import enum
 import logging
 import os
-import re
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -259,21 +258,13 @@ def _classify_worktree(
     return review(ReviewWorktreeReason.UNMERGED)
 
 
-def _read_reflog(path: Path) -> str | None:
-    try:
-        return path.read_text()
-    except FileNotFoundError:
-        return None  # Reflogs can be disabled.
-
-
 def remove_worktree(
     repo: Path, path: Path, *, expected_branch: str | None = None, detached_head: str | None = None
 ) -> RemovalResult[Path]:
-    """Remove a worktree, preserving a proven detached commit under a durable ref.
+    """Remove a worktree after checking its checkout has not changed.
 
-    A direct caller cannot remove a detached checkout without supplying its proven HEAD.
-    Git refuses tracked and untracked changes but removes ignored files. Concurrent changes
-    between the final check and Git's removal remain a race.
+    A detached checkout requires its classified HEAD. Git refuses tracked and untracked
+    changes but removes ignored files. Checking HEAD and removing are not atomic.
     """
     try:
         path.lstat()
@@ -286,40 +277,7 @@ def remove_worktree(
         if pg.head_is_detached:
             if detached_head is None or str(pg.head.peel(pygit2.Commit).id) != detached_head:
                 return Skipped(path, "detached HEAD changed or was not proven safe for removal")
-            # The oldest entry's old OID is omitted by `git reflog show`; preserve
-            # both sides of each entry before Git deletes this worktree's reflog.
-            reflog_path = Path(
-                git(path, "rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD").stdout.strip()
-            )
-            reflog = _read_reflog(reflog_path)
-            commits = {detached_head}
-            for entry in (reflog or "").splitlines():
-                fields = entry.split(maxsplit=2)
-                if len(fields) < 3:
-                    raise ValueError("malformed worktree HEAD reflog")
-                for oid in fields[:2]:
-                    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid):
-                        raise ValueError("malformed worktree HEAD reflog object ID")
-                    if oid.strip("0"):
-                        commits.add(oid)
-            for commit in commits:
-                ref = f"refs/workspace-gc/recovery/{commit}"
-                created = git(repo, "update-ref", "--no-deref", ref, commit, "", check=False)
-                if created.returncode:
-                    symbolic = git(repo, "symbolic-ref", "-q", ref, check=False)
-                    existing = git(repo, "show-ref", "--verify", "--hash", ref, check=False)
-                    if symbolic.returncode == 0 or existing.returncode or existing.stdout.strip() != commit:
-                        return Failed(path, f"cannot create recovery ref {ref}: {created.stderr.strip()}")
         elif detached_head is not None or (expected_branch is not None and pg.head.shorthand != expected_branch):
-            return Skipped(path, "checked-out branch changed since classification")
-        # Reopen after creating the ref: the checkout may have changed during that operation.
-        pg = open_repo(path)
-        if detached_head is not None:
-            if not pg.head_is_detached or str(pg.head.peel(pygit2.Commit).id) != detached_head:
-                return Skipped(path, "detached HEAD changed before removal")
-            if _read_reflog(reflog_path) != reflog:
-                return Skipped(path, "detached HEAD reflog changed before removal")
-        elif pg.head_is_detached or (expected_branch is not None and pg.head.shorthand != expected_branch):
             return Skipped(path, "checked-out branch changed before removal")
     except INSPECTION_ERRORS as error:
         return Failed(path, f"cannot inspect worktree safety before removal: {error}")
@@ -344,7 +302,7 @@ def remove_if_still_prunable(
 ) -> RemovalResult[Path]:
     """Re-classify `worktree` now and remove it only if it is still prunable.
 
-    Recheck the current checkout and retain a detached commit before invoking Git.
+    Recheck the current checkout and detached HEAD before invoking Git.
     These checks are not atomic with removal.
     """
     fresh = classify_worktree(

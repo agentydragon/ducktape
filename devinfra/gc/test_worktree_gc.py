@@ -195,52 +195,17 @@ def test_worktree_inspection_failure_is_review(
     assert "unreadable Git state" in wg.describe_reason(result)
 
 
-def test_detached_landed_commit_is_removed_and_preserved(repo: GitRepo, proc: Path) -> None:
+def test_detached_landed_commit_is_removed(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     detached = GitRepo(path)
     _commit_detached(detached, "detached empty commit")
-    head = detached.rev("HEAD")
     result = _classify(repo, path, proc)
     assert isinstance(result, wg.PrunableWorktree)
     removal = wg.remove_if_still_prunable(
         repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
     )
     assert removal == Removed(path)
-    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
-
-
-def test_detached_reflog_commits_survive_removal(repo: GitRepo) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    _commit_detached(detached, "abandoned commit")
-    abandoned = detached.rev("HEAD")
-    detached.run("reset", "--hard", "main")
-    result = wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
-    assert result == Removed(path)
-    assert repo.rev(f"refs/workspace-gc/recovery/{abandoned}") == abandoned
-
-
-def test_detached_reflog_oldest_old_oid_survives(repo: GitRepo) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    _commit_detached(detached, "abandoned commit")
-    abandoned = detached.rev("HEAD")
-    detached.run("reset", "--hard", "main")
-    reflog = Path(detached.run("rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD").stdout.strip())
-    last_entry = reflog.read_text().splitlines()[-1]
-    assert last_entry.split()[0] == abandoned
-    reflog.write_text(last_entry + "\n")
-    assert abandoned not in detached.run("reflog", "show", "--format=%H", "HEAD").stdout
-    result = wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
-    assert result == Removed(path)
-    assert repo.rev(f"refs/workspace-gc/recovery/{abandoned}") == abandoned
 
 
 def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc: Path) -> None:
@@ -248,7 +213,6 @@ def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc:
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     detached = GitRepo(path)
     detached.commit("base", "1\n", "first change")
-    head = detached.rev("HEAD")
     repo.commit("base", "1\n", "same patch")
     repo.commit("base", "2\n", "subsequent change")
     result = _classify(repo, path, proc)
@@ -256,71 +220,16 @@ def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc:
     assert wg.remove_if_still_prunable(
         repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
     ) == Removed(path)
-    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
 
 
-def test_detached_head_change_during_preservation_stops_removal(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remove_worktree_skips_changed_detached_head(repo: GitRepo) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     detached = GitRepo(path)
-    real_git = wg.git
-    changed = False
-
-    def change_head(repo_path: Path, *args: str, **kwargs: bool) -> subprocess.CompletedProcess[str]:
-        nonlocal changed
-        result = real_git(repo_path, *args, **kwargs)
-        if args[0] == "update-ref" and not changed:
-            changed = True
-            _commit_detached(detached, "concurrent commit")
-        return result
-
-    monkeypatch.setattr(wg, "git", change_head)
-    result = wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
+    old_head = detached.rev("HEAD")
+    _commit_detached(detached, "new commit")
+    result = wg.remove_worktree(repo.path, path, detached_head=old_head)
     assert isinstance(result, Skipped)
-    assert path.exists()
-
-
-def test_detached_reflog_change_with_same_head_stops_removal(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    real_git = wg.git
-    changed = False
-
-    def change_head(repo_path: Path, *args: str, **kwargs: bool) -> subprocess.CompletedProcess[str]:
-        nonlocal changed
-        result = real_git(repo_path, *args, **kwargs)
-        if args[0] == "update-ref" and not changed:
-            changed = True
-            _commit_detached(detached, "transient commit")
-            detached.run("reset", "--hard", "main")
-        return result
-
-    monkeypatch.setattr(wg, "git", change_head)
-    result = wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
-    assert isinstance(result, Skipped)
-    assert "reflog changed" in result.reason
-    assert path.exists()
-
-
-def test_recovery_ref_collision_does_not_overwrite(repo: GitRepo) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    _commit_detached(detached, "landed empty commit")
-    head = detached.rev("HEAD")
-    other = repo.rev("main")
-    ref = f"refs/workspace-gc/recovery/{head}"
-    repo.run("update-ref", ref, other)
-    result = wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
-    assert isinstance(result, Failed)
-    assert repo.rev(ref) == other
     assert path.exists()
 
 
