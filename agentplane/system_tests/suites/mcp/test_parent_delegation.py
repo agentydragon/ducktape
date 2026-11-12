@@ -228,38 +228,12 @@ async def test_parent_session_delegates_through_the_action_cli(
     assert listed_action["name"] == "list"
     assert "limit" in listed_action["inputSchema"]["properties"]
 
-    page = await _submit(
-        parent,
-        model,
-        "environments",
-        "list",
-        {"limit": 100},
-        child_answers=child_answers,
-        guidance_marker=guidance_marker,
-        caller_identity_name=caller_identity_name,
-        caller_identity_uid=caller_identity_uid,
+    # Environment discovery is an operator lifecycle API. The parent Identity uses only
+    # the Session actions below after the operator provisions its child.
+    current = json_format.MessageToDict(
+        await client.get_environment(parent_view.target), preserving_proto_field_name=True
     )
-    items = page["items"]
-    descriptor = one(
-        item
-        for item in items
-        if item["target"]["namespace"] == parent_view.target.namespace
-        and item["target"]["name"] == parent_view.target.name
-        and item["target"]["uid"] == str(parent_view.target.uid)
-    )
-    target = descriptor["target"]
-
-    current = await _submit(
-        parent,
-        model,
-        "environments",
-        "get",
-        {"target": target},
-        child_answers=child_answers,
-        guidance_marker=guidance_marker,
-        caller_identity_name=caller_identity_name,
-        caller_identity_uid=caller_identity_uid,
-    )
+    target = current["target"]
     assert identity["metadata"]["name"] == caller_identity_name
     assert identity["metadata"]["uid"] == caller_identity_uid
     assert current["identity_name"] == caller_identity_name
