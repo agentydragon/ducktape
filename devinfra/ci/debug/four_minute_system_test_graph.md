@@ -33,6 +33,17 @@ single long queue does not identify an account quota or provider capacity
 limit. A four-minute design must test admission under comparable concurrent
 load as well as shorten the action graph.
 
+A contemporaneous control narrows the queue explanation: the first split-main
+TestRunner action was submitted at 22:39:46.619 UTC, while the original was
+still queued, and started at 22:39:46.644, about 25.7 milliseconds later.
+Its decoded action requested the same 4 compute units, 50 GB, Firecracker
+isolation, runner recycling key and input root. It then failed before pytest
+collection because of the malformed `-k` argument. That failure does not
+invalidate its admission clock. The two queue times rule out a universally
+full identical-platform queue at that instant or a simple first-in-first-out
+explanation; placement/affinity and provider scheduling decisions remain
+unobserved.
+
 The retained [2e817 Pod trace](https://app.buildbuddy.io/invocation/2e817264-db20-5c8e-82a1-5faf0bcc781e)
 records 111.01 seconds of stack setup, 430.44 summed seconds across 21
 case spans, and 30.25 seconds of cleanup. The longest individual case was
