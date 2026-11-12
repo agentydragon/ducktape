@@ -25,7 +25,6 @@ const (
 type contentMode string
 
 const (
-	contentModeNone   contentMode = ""
 	contentModeAbsent contentMode = "absent"
 	contentModeArray  contentMode = "array"
 	contentModeText   contentMode = "text"
@@ -40,24 +39,6 @@ type messageContent struct {
 	Fields      map[string]json.RawMessage `json:"fields"`
 	ContentMode contentMode                `json:"content_mode"`
 	Blocks      []storage.ContentID        `json:"blocks,omitempty"`
-	TextID      storage.ContentID          `json:"text_id,omitempty"`
-}
-
-// blockContent is the typed storage envelope for Anthropic content blocks. Large native scalar
-// values and nested tool-result content are references; all other provider fields stay raw JSON.
-type blockContent struct {
-	Type        BlockType                  `json:"type"`
-	Fields      map[string]json.RawMessage `json:"fields,omitempty"`
-	ScalarField string                     `json:"scalar_field,omitempty"`
-	ScalarID    storage.ContentID          `json:"scalar_id,omitempty"`
-	ContentMode contentMode                `json:"content_mode,omitempty"`
-	Blocks      []storage.ContentID        `json:"blocks,omitempty"`
-	Source      *imageSourceContent        `json:"source,omitempty"`
-}
-
-type imageSourceContent struct {
-	Fields map[string]json.RawMessage `json:"fields"`
-	DataID storage.ContentID          `json:"data_id"`
 }
 
 // requestContent removes the repetitive system prompt and tool definitions from a request
@@ -83,7 +64,7 @@ type requestMetadata struct {
 }
 
 // StoreRecord stores a native Anthropic message or response envelope as typed content rows.
-// Content blocks remain ordered, while their large text and image payloads deduplicate by value.
+// Complete content blocks deduplicate as units and remain in their original order.
 func StoreRecord(writer storage.ContentWriter, record json.RawMessage) (storage.ContentID, error) {
 	fields, err := decodeObject(record)
 	if err != nil {
@@ -107,16 +88,8 @@ func StoreRecord(writer storage.ContentWriter, record json.RawMessage) (storage.
 				content.Blocks = append(content.Blocks, id)
 			}
 			delete(fields, "content")
-		case isJSONString(raw):
-			id, err := storeString(writer, storage.ContentText, raw)
-			if err != nil {
-				return "", fmt.Errorf("store Anthropic message text: %w", err)
-			}
-			content.ContentMode = contentModeText
-			content.TextID = id
-			delete(fields, "content")
 		default:
-			// Preserve provider extensions whose content shape is not understood by this adapter.
+			// Scalar, null and extension forms stay inline; arrays reference whole blocks.
 			content.ContentMode = contentModeInline
 		}
 	}
@@ -140,12 +113,6 @@ func RestoreRecord(reader storage.ContentReader, id storage.ContentID) (json.Raw
 		if _, ok := fields["content"]; !ok {
 			return nil, fmt.Errorf("stored Anthropic message %s has inline content mode without content", id)
 		}
-	case contentModeText:
-		text, err := loadString(reader, content.TextID, storage.ContentText)
-		if err != nil {
-			return nil, fmt.Errorf("restore Anthropic message text: %w", err)
-		}
-		fields["content"] = text
 	case contentModeArray:
 		blocks := make([]json.RawMessage, 0, len(content.Blocks))
 		for index, blockID := range content.Blocks {
@@ -365,10 +332,6 @@ func ContentReferences(kind storage.ContentKind, payload json.RawMessage) ([]sto
 		}
 		switch content.ContentMode {
 		case contentModeAbsent, contentModeInline:
-		case contentModeText:
-			if err := appendRef(content.TextID, "text"); err != nil {
-				return nil, err
-			}
 		case contentModeArray:
 			if err := appendRefs(content.Blocks, "blocks"); err != nil {
 				return nil, err
@@ -399,118 +362,22 @@ func ContentReferences(kind storage.ContentKind, payload json.RawMessage) ([]sto
 		default:
 			return nil, fmt.Errorf("stored Anthropic request has unknown tools mode %q: %w", content.ToolsMode, protocol.ErrInvalid)
 		}
-	case ContentAnthropicText,
-		ContentAnthropicThinking,
-		ContentAnthropicRedactedThinking,
-		ContentAnthropicToolUse,
-		ContentAnthropicToolResult,
-		ContentAnthropicImage,
-		ContentAnthropicCompaction:
-		var block blockContent
-		if err := json.Unmarshal(payload, &block); err != nil {
-			return nil, fmt.Errorf("decode stored Anthropic block references: %w", err)
-		}
-		blockKind, _ := blockStorageKind(block.Type)
-		if blockKind != kind {
-			return nil, fmt.Errorf("stored Anthropic block type %q does not match kind %q: %w", block.Type, kind, protocol.ErrInvalid)
-		}
-		if block.ScalarID != "" {
-			if err := appendRef(block.ScalarID, "scalar"); err != nil {
-				return nil, err
-			}
-		}
-		switch block.ContentMode {
-		case contentModeNone, contentModeText:
-		case contentModeArray:
-			if err := appendRefs(block.Blocks, "blocks"); err != nil {
-				return nil, err
-			}
-		default:
-			return nil, fmt.Errorf("stored Anthropic block has unknown content mode %q: %w", block.ContentMode, protocol.ErrInvalid)
-		}
-		if block.Source != nil {
-			if err := appendRef(block.Source.DataID, "image data"); err != nil {
-				return nil, err
-			}
-		}
 	}
 	return refs, nil
 }
 
+// A native block is atomic: text, signatures, images and nested tool results stay
+// together. Sharing the complete block does not permit moving it in provider history.
 func storeBlock(writer storage.ContentWriter, raw json.RawMessage) (storage.ContentID, error) {
 	fields, err := decodeObject(raw)
 	if err != nil {
-		return "", fmt.Errorf("decode block: %w", err)
+		return "", fmt.Errorf("decode Anthropic block: %w", err)
 	}
-	typeValue := rawString(fields, "type")
-	typeName := BlockType(typeValue)
-	if typeName == "" {
-		return "", fmt.Errorf("Anthropic block has no type")
+	kind := blockStorageKind(BlockType(rawString(fields, "type")))
+	if kind == "" {
+		return "", fmt.Errorf("unsupported Anthropic content block: %w", protocol.ErrInvalid)
 	}
-	delete(fields, "type")
-	content := blockContent{Type: typeName, Fields: fields}
-	kind, scalarField := blockStorageKind(typeName)
-	if scalarField != "" {
-		if scalar, ok := fields[scalarField]; ok && isJSONString(scalar) {
-			payloadKind := storage.ContentText
-			if typeName == BlockRedactedThinking {
-				payloadKind = storage.ContentOpaque
-			}
-			id, err := storeString(writer, payloadKind, scalar)
-			if err != nil {
-				return "", fmt.Errorf("store %s payload: %w", typeName, err)
-			}
-			content.ScalarField = scalarField
-			content.ScalarID = id
-			delete(fields, scalarField)
-		}
-	}
-	if typeName == BlockImage {
-		if source, ok := fields["source"]; ok {
-			sourceFields, err := decodeObject(source)
-			if err == nil {
-				if data, ok := sourceFields["data"]; ok && isJSONString(data) {
-					id, err := storeString(writer, storage.ContentImageData, data)
-					if err != nil {
-						return "", fmt.Errorf("store Anthropic image data: %w", err)
-					}
-					delete(sourceFields, "data")
-					content.Source = &imageSourceContent{Fields: sourceFields, DataID: id}
-					delete(fields, "source")
-				}
-			}
-		}
-	}
-	if typeName == BlockToolResult {
-		if nested, ok := fields["content"]; ok {
-			switch {
-			case isJSONArray(nested):
-				var blocks []json.RawMessage
-				if err := json.Unmarshal(nested, &blocks); err != nil {
-					return "", fmt.Errorf("decode tool_result content: %w", err)
-				}
-				content.ContentMode = contentModeArray
-				content.Blocks = make([]storage.ContentID, 0, len(blocks))
-				for index, block := range blocks {
-					id, err := storeBlock(writer, block)
-					if err != nil {
-						return "", fmt.Errorf("store tool_result content block %d: %w", index, err)
-					}
-					content.Blocks = append(content.Blocks, id)
-				}
-				delete(fields, "content")
-			case isJSONString(nested):
-				id, err := storeString(writer, storage.ContentText, nested)
-				if err != nil {
-					return "", fmt.Errorf("store tool_result text: %w", err)
-				}
-				content.ContentMode = contentModeText
-				content.ScalarID = id
-				delete(fields, "content")
-			}
-		}
-	}
-	return putContent(writer, kind, content)
+	return writer.PutContent(kind, raw)
 }
 
 func restoreBlock(reader storage.ContentReader, id storage.ContentID) (json.RawMessage, error) {
@@ -521,99 +388,36 @@ func restoreBlock(reader storage.ContentReader, id storage.ContentID) (json.RawM
 	if err := storage.VerifyContent(stored); err != nil {
 		return nil, err
 	}
-	var block blockContent
-	if err := json.Unmarshal(stored.Payload, &block); err != nil {
+	fields, err := decodeObject(stored.Payload)
+	if err != nil {
 		return nil, fmt.Errorf("decode stored Anthropic block %s: %w", id, err)
 	}
-	expectedKind, scalarField := blockStorageKind(block.Type)
-	if stored.Kind != expectedKind {
-		return nil, fmt.Errorf("stored Anthropic block %s has type %q in kind %q", id, block.Type, stored.Kind)
+	blockType := BlockType(rawString(fields, "type"))
+	kind := blockStorageKind(blockType)
+	if kind == "" || stored.Kind != kind {
+		return nil, fmt.Errorf("stored Anthropic block %s has type %q in kind %q", id, blockType, stored.Kind)
 	}
-	fields := cloneFields(block.Fields)
-	if block.ScalarID != "" && block.ScalarField != "" {
-		payloadKind := storage.ContentText
-		if block.Type == BlockRedactedThinking {
-			payloadKind = storage.ContentOpaque
-		}
-		scalar, err := loadString(reader, block.ScalarID, payloadKind)
-		if err != nil {
-			return nil, fmt.Errorf("restore %s payload: %w", block.Type, err)
-		}
-		field := block.ScalarField
-		if field == "" {
-			field = scalarField
-		}
-		fields[field] = scalar
-	}
-	if block.Source != nil {
-		data, err := loadString(reader, block.Source.DataID, storage.ContentImageData)
-		if err != nil {
-			return nil, fmt.Errorf("restore Anthropic image data: %w", err)
-		}
-		sourceFields := cloneFields(block.Source.Fields)
-		sourceFields["data"] = data
-		source, err := json.Marshal(sourceFields)
-		if err != nil {
-			return nil, fmt.Errorf("encode Anthropic image source: %w", err)
-		}
-		fields["source"] = source
-	}
-	if block.Type == BlockToolResult && block.ContentMode != contentModeNone {
-		switch block.ContentMode {
-		case contentModeText:
-			text, err := loadString(reader, block.ScalarID, storage.ContentText)
-			if err != nil {
-				return nil, fmt.Errorf("restore tool_result text: %w", err)
-			}
-			fields["content"] = text
-		case contentModeArray:
-			children := make([]json.RawMessage, 0, len(block.Blocks))
-			for index, childID := range block.Blocks {
-				child, err := restoreBlock(reader, childID)
-				if err != nil {
-					return nil, fmt.Errorf("restore tool_result content block %d: %w", index, err)
-				}
-				children = append(children, child)
-			}
-			content, err := json.Marshal(children)
-			if err != nil {
-				return nil, fmt.Errorf("encode tool_result content: %w", err)
-			}
-			fields["content"] = content
-		default:
-			return nil, fmt.Errorf("stored tool_result has unknown content mode %q", block.ContentMode)
-		}
-	}
-	typeRaw, err := json.Marshal(block.Type)
-	if err != nil {
-		return nil, fmt.Errorf("encode Anthropic block type: %w", err)
-	}
-	fields["type"] = typeRaw
-	raw, err := json.Marshal(fields)
-	if err != nil {
-		return nil, fmt.Errorf("encode Anthropic block: %w", err)
-	}
-	return raw, nil
+	return protocol.CloneJSON(stored.Payload), nil
 }
 
-func blockStorageKind(blockType BlockType) (storage.ContentKind, string) {
+func blockStorageKind(blockType BlockType) storage.ContentKind {
 	switch blockType {
 	case BlockText:
-		return ContentAnthropicText, "text"
+		return ContentAnthropicText
 	case BlockThinking:
-		return ContentAnthropicThinking, "thinking"
+		return ContentAnthropicThinking
 	case BlockRedactedThinking:
-		return ContentAnthropicRedactedThinking, "data"
+		return ContentAnthropicRedactedThinking
 	case BlockToolUse:
-		return ContentAnthropicToolUse, ""
+		return ContentAnthropicToolUse
 	case BlockToolResult:
-		return ContentAnthropicToolResult, ""
+		return ContentAnthropicToolResult
 	case BlockImage:
-		return ContentAnthropicImage, ""
+		return ContentAnthropicImage
 	case BlockCompaction:
-		return ContentAnthropicCompaction, "content"
+		return ContentAnthropicCompaction
 	default:
-		return "", ""
+		return ""
 	}
 }
 

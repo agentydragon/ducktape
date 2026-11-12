@@ -39,7 +39,7 @@ func (store *memoryContentStore) GetContent(id storage.ContentID) (storage.Store
 	return content, nil
 }
 
-func TestStoreRecordRoundTripsAnthropicNativeBlocksAndDeduplicatesPayloads(t *testing.T) {
+func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *testing.T) {
 	record := json.RawMessage(`{
 		"id":"msg_native",
 		"type":"message",
@@ -74,41 +74,41 @@ func TestStoreRecordRoundTripsAnthropicNativeBlocksAndDeduplicatesPayloads(t *te
 	if len(storedMessage.Blocks) != 7 {
 		t.Fatalf("stored %d blocks, want 7", len(storedMessage.Blocks))
 	}
-	var textID, thinkingID storage.ContentID
-	for _, blockID := range storedMessage.Blocks {
+	var native struct {
+		Role    string            `json:"role"`
+		Content []json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(record, &native); err != nil {
+		t.Fatal(err)
+	}
+	for index, blockID := range storedMessage.Blocks {
 		block, err := store.GetContent(blockID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var content blockContent
-		if err := json.Unmarshal(block.Payload, &content); err != nil {
-			t.Fatal(err)
-		}
-		switch content.Type {
-		case BlockText:
-			textID = content.ScalarID
-		case BlockThinking:
-			thinkingID = content.ScalarID
-		}
+		assertAnthropicJSONEqual(t, native.Content[index], block.Payload)
 	}
-	if textID == "" || textID != thinkingID {
-		t.Fatalf("text/thinking payloads did not share storage.ContentText row: text=%s thinking=%s", textID, thinkingID)
+	if got := len(store.contents); got != 1+len(native.Content) {
+		t.Fatalf("stored %d rows, want one message and %d complete blocks", got, len(native.Content))
 	}
-	imageDataCount, opaqueCount := 0, 0
-	for _, content := range store.contents {
-		switch content.Kind {
-		case storage.ContentImageData:
-			imageDataCount++
-		case storage.ContentOpaque:
-			opaqueCount++
-		}
+	// The provider response and its request projection have different message envelopes
+	// but share the same complete blocks, including signed thinking and nested results.
+	projected, err := json.Marshal(native)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if imageDataCount != 1 {
-		t.Fatalf("stored %d image payload rows, want one shared row", imageDataCount)
+	projectedID, err := StoreRecord(store, projected)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if opaqueCount != 1 {
-		t.Fatalf("stored %d opaque continuation rows, want one", opaqueCount)
+	if projectedID == id || len(store.contents) != 2+len(native.Content) {
+		t.Fatalf("request projection did not share complete blocks: rows=%d", len(store.contents))
 	}
+	projectedRecord, err := RestoreRecord(store, projectedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnthropicJSONEqual(t, projected, projectedRecord)
 
 	restored, err := RestoreRecord(store, id)
 	if err != nil {
@@ -240,23 +240,16 @@ func TestRestoreRecordChecksReferencedContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var blockData blockContent
-	if err := json.Unmarshal(block.Payload, &blockData); err != nil {
-		t.Fatal(err)
-	}
-	textContent, ok := store.contents[blockData.ScalarID]
-	if !ok {
-		t.Fatalf("missing text payload %s", blockData.ScalarID)
-	}
-	delete(store.contents, blockData.ScalarID)
+	blockID := content.Blocks[0]
+	delete(store.contents, blockID)
 	if _, err := RestoreRecord(store, messageID); err == nil {
-		t.Fatal("RestoreRecord accepted a missing text dependency")
+		t.Fatal("RestoreRecord accepted a missing block")
 	}
-	store.contents[blockData.ScalarID] = textContent
-	textContent.Payload = json.RawMessage(`"tampered"`)
-	store.contents[blockData.ScalarID] = textContent
+	store.contents[blockID] = block
+	block.Payload = json.RawMessage(`{"type":"text","text":"tampered"}`)
+	store.contents[blockID] = block
 	if _, err := RestoreRecord(store, messageID); err == nil {
-		t.Fatal("RestoreRecord accepted a content hash mismatch")
+		t.Fatal("RestoreRecord accepted a block hash mismatch")
 	}
 }
 

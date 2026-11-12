@@ -39,87 +39,34 @@ func (memory *memoryContent) GetContent(id storage.ContentID) (storage.StoredCon
 	return content, nil
 }
 
-func TestStoreRecordDeduplicatesPartsAndPreservesProviderFields(t *testing.T) {
+func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testing.T) {
 	memory := newMemoryContent()
-	originals := [][]byte{
-		[]byte(`{"type":"reasoning","id":"rs_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"shared payload","provider_part_number":9007199254740993},{"type":"input_image","image_url":"data:image/png;base64,QUJDRA==","detail":"high"}],"summary":[{"type":"summary_text","text":"shared payload"}],"encrypted_content":"opaque-reasoning","provider_sequence":9007199254740993}`),
-		[]byte(`{"type":"custom_tool_call","call_id":"call_custom","name":"exec","input":"shared payload","provider_call_number":9007199254740993}`),
-		[]byte(`{"type":"function_call","call_id":"call_function","name":"exec","arguments":"shared payload"}`),
-		[]byte(`{"type":"function_call_output","call_id":"call_result","output":"shared payload"}`),
-		[]byte(`{"type":"message","role":"assistant","output":[{"type":"output_text","text":"shared payload"}]}`),
-		[]byte(`{"type":"message","role":"user","content":"shared payload"}`),
+	originals := []json.RawMessage{
+		json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"shared payload"}],"encrypted_content":"opaque-reasoning","provider_sequence":9007199254740993}`),
+		json.RawMessage(`{"type":"custom_tool_call","call_id":"call_custom","name":"exec","input":"shared payload","provider_call_number":9007199254740993}`),
+		json.RawMessage(`{"type":"function_call","call_id":"call_function","name":"exec","arguments":"{\"code\":\"shared payload\"}"}`),
+		json.RawMessage(`{"type":"function_call_output","call_id":"call_result","output":"shared payload"}`),
+		json.RawMessage(`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"shared payload","provider_part_number":9007199254740993},{"type":"input_image","image_url":"data:image/png;base64,QUJDRA==","detail":"high"}]}`),
+		json.RawMessage(`{"type":"message","role":"user","content":"shared payload"}`),
 	}
-	ids := make([]storage.ContentID, 0, len(originals))
-	for _, original := range originals {
+	for index, original := range originals {
 		id, err := StoreRecord(memory, original)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ids = append(ids, id)
+		assertResponsesJSONEqual(t, original, memory.byID[id].Payload)
 		roundTripped, err := RestoreRecord(memory, id)
 		if err != nil {
 			t.Fatal(err)
 		}
 		assertResponsesJSONEqual(t, original, roundTripped)
-	}
-
-	sharedID := findStringContent(t, memory, storage.ContentText, "shared payload")
-	var scalarMessage storedItem
-	mustUnmarshal(t, memory.byID[ids[len(ids)-1]].Payload, &scalarMessage)
-	if scalarMessage.ContentText == nil || *scalarMessage.ContentText != sharedID {
-		t.Fatal("scalar message content did not share text payload")
-	}
-	if got := countStringContent(memory, storage.ContentText, "shared payload"); got != 1 {
-		t.Fatalf("shared text content rows = %d, want one", got)
-	}
-	if got := countStringContent(memory, storage.ContentOpaque, "opaque-reasoning"); got != 1 {
-		t.Fatalf("opaque continuation rows = %d, want one", got)
-	}
-	if got := countStringContent(memory, storage.ContentImageData, "QUJDRA=="); got != 1 {
-		t.Fatalf("image data rows = %d, want one", got)
-	}
-
-	var reasoning storedItem
-	mustUnmarshal(t, memory.byID[ids[0]].Payload, &reasoning)
-	if reasoning.Content == nil || reasoning.Summary == nil || reasoning.EncryptedContent == nil {
-		t.Fatalf("reasoning record did not split its repeated content: %+v", reasoning)
-	}
-	for _, extracted := range []string{"content", "summary", "encrypted_content"} {
-		if _, found := reasoning.Envelope[extracted]; found {
-			t.Fatalf("extracted field %q remains in provider envelope", extracted)
+		repeatedID, err := StoreRecord(memory, original)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if string(reasoning.Envelope["provider_sequence"]) != "9007199254740993" {
-		t.Fatalf("provider numeric token changed in envelope: %s", reasoning.Envelope["provider_sequence"])
-	}
-	var textPart storedPart
-	mustUnmarshal(t, memory.byID[(*reasoning.Content)[0]].Payload, &textPart)
-	if textPart.Text == nil || *textPart.Text != sharedID {
-		t.Fatalf("text part did not use shared text row: %+v", textPart)
-	}
-	imageID := (*reasoning.Content)[1]
-	var imagePart storedPart
-	mustUnmarshal(t, memory.byID[imageID].Payload, &imagePart)
-	if imagePart.ImageData == nil || imagePart.ImageData.Prefix != "data:image/png;base64," {
-		t.Fatalf("image MIME/data URL prefix was not kept as metadata: %+v", imagePart)
-	}
-	if string(memory.byID[imageID].Payload) == "" || bytes.Contains(memory.byID[imageID].Payload, []byte("QUJDRA==")) {
-		t.Fatalf("image base64 was duplicated in its content-part row: %s", memory.byID[imageID].Payload)
-	}
-	var call storedItem
-	mustUnmarshal(t, memory.byID[ids[1]].Payload, &call)
-	if call.Input == nil || *call.Input != sharedID {
-		t.Fatalf("custom tool input did not share the text row: %+v", call)
-	}
-	var functionCall storedItem
-	mustUnmarshal(t, memory.byID[ids[2]].Payload, &functionCall)
-	if functionCall.Arguments == nil || *functionCall.Arguments != sharedID {
-		t.Fatalf("function arguments did not share the text row: %+v", functionCall)
-	}
-	var functionOutput storedItem
-	mustUnmarshal(t, memory.byID[ids[3]].Payload, &functionOutput)
-	if functionOutput.OutputText == nil || *functionOutput.OutputText != sharedID {
-		t.Fatalf("string tool output did not share the text row: %+v", functionOutput)
+		if repeatedID != id || len(memory.byID) != index+1 {
+			t.Fatalf("repeated item added storage: first=%s second=%s rows=%d", id, repeatedID, len(memory.byID))
+		}
 	}
 }
 
@@ -249,16 +196,10 @@ func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 		want    []storage.ContentID
 	}{
 		{
-			name:    "item",
+			name:    "native item fields are not storage references",
 			kind:    ContentOpenAIItem,
-			payload: `{"type":"message","envelope":{"provider_extension":{"ref":"ignored"}},"content_refs":["part-1","part-2"],"summary_refs":["summary-1"],"input_text_ref":"input-1","arguments_text_ref":"args-1","output_text_ref":"output-1","encrypted_content_ref":"opaque-1"}`,
-			want:    []storage.ContentID{"part-1", "part-2", "summary-1", "input-1", "args-1", "output-1", "opaque-1"},
-		},
-		{
-			name:    "content part",
-			kind:    ContentOpenAIContent,
-			payload: `{"type":"input_image","envelope":{"provider_extension":{"ref":"ignored"}},"text_ref":"text-1","image_data":{"field":"image_url","prefix":"data:image/png;base64,","ref":"image-1"}}`,
-			want:    []storage.ContentID{"text-1", "image-1"},
+			payload: `{"type":"message","role":"user","content":[{"type":"input_text","text":"prompt"}],"content_refs":["provider-owned"],"provider_extension":{"ref":"ignored"}}`,
+			want:    nil,
 		},
 		{
 			name:    "request profile",
@@ -267,8 +208,8 @@ func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 			want:    []storage.ContentID{"instructions-1", "tool-1", "tool-2"},
 		},
 		{
-			name:    "opaque kinds have no traversed refs",
-			kind:    storage.ContentOpaque,
+			name:    "tool definitions have no traversed refs",
+			kind:    ContentOpenAITool,
 			payload: `{"ref":"not-a-graph-edge"}`,
 			want:    nil,
 		},
@@ -326,20 +267,6 @@ func findStringContent(t *testing.T, memory *memoryContent, kind storage.Content
 	}
 	t.Fatalf("no %s row contains %q", kind, expected)
 	return ""
-}
-
-func countStringContent(memory *memoryContent, kind storage.ContentKind, expected string) int {
-	count := 0
-	for _, content := range memory.byID {
-		if content.Kind != kind {
-			continue
-		}
-		var value string
-		if err := json.Unmarshal(content.Payload, &value); err == nil && value == expected {
-			count++
-		}
-	}
-	return count
 }
 
 func mustUnmarshal(t *testing.T, raw []byte, target any) {

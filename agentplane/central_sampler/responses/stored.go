@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -13,39 +12,9 @@ import (
 
 const (
 	ContentOpenAIItem    storage.ContentKind = "openai_item"
-	ContentOpenAIContent storage.ContentKind = "openai_content"
 	ContentOpenAIRequest storage.ContentKind = "openai_request"
 	ContentOpenAITool    storage.ContentKind = "openai_tool"
 )
-
-// storedItem keeps provider-owned fields as RawMessages while splitting repeated
-// text and known content arrays into separately addressable content rows.
-type storedItem struct {
-	Type             ItemType                   `json:"type"`
-	Envelope         map[string]json.RawMessage `json:"envelope,omitempty"`
-	Content          *[]storage.ContentID       `json:"content_refs,omitempty"`
-	Summary          *[]storage.ContentID       `json:"summary_refs,omitempty"`
-	Output           *[]storage.ContentID       `json:"output_refs,omitempty"`
-	Input            *storage.ContentID         `json:"input_text_ref,omitempty"`
-	ContentText      *storage.ContentID         `json:"content_text_ref,omitempty"`
-	Arguments        *storage.ContentID         `json:"arguments_text_ref,omitempty"`
-	OutputText       *storage.ContentID         `json:"output_text_ref,omitempty"`
-	EncryptedContent *storage.ContentID         `json:"encrypted_content_ref,omitempty"`
-}
-
-type storedPart struct {
-	Raw       json.RawMessage            `json:"raw,omitempty"`
-	Type      *string                    `json:"type,omitempty"`
-	Envelope  map[string]json.RawMessage `json:"envelope,omitempty"`
-	Text      *storage.ContentID         `json:"text_ref,omitempty"`
-	ImageData *storedImageData           `json:"image_data,omitempty"`
-}
-
-type storedImageData struct {
-	Field  string            `json:"field"`
-	Prefix string            `json:"prefix"`
-	Ref    storage.ContentID `json:"ref"`
-}
 
 type storedRequestProfile struct {
 	Envelope         map[string]json.RawMessage `json:"envelope,omitempty"`
@@ -73,158 +42,41 @@ type requestProfileFields struct {
 	ParallelToolCall bool             `json:"parallel_tool_calls"`
 }
 
-// StoreRecord stores one native Responses item, removing every extracted field
-// from its provider envelope before writing the item row.
+// StoreRecord stores one complete native Responses item as the deduplication unit.
+// Its message parts, tool arguments and opaque continuation remain inline.
 func StoreRecord(writer storage.ContentWriter, record json.RawMessage) (storage.ContentID, error) {
 	if writer == nil {
 		return "", errors.New("nil content writer")
 	}
-	fields, err := rawObject(record)
-	if err != nil {
+	if err := validateStoredItem(record); err != nil {
 		return "", err
 	}
-	typeRaw, ok := fields["type"]
-	if !ok {
-		return "", fmt.Errorf("Responses item has no type: %w", protocol.ErrInvalid)
-	}
-	var itemType ItemType
-	if err := json.Unmarshal(typeRaw, &itemType); err != nil || itemType == "" {
-		return "", fmt.Errorf("Responses item has invalid type: %w", protocol.ErrInvalid)
-	}
-	delete(fields, "type")
-	stored := storedItem{Type: itemType}
-
-	for _, field := range []struct {
-		name string
-		dst  **storage.ContentID
-	}{{"input", &stored.Input}, {"arguments", &stored.Arguments}, {"content", &stored.ContentText}} {
-		if raw, present := fields[field.name]; present {
-			if value, isString := jsonString(raw); isString {
-				id, err := putString(writer, storage.ContentText, value)
-				if err != nil {
-					return "", err
-				}
-				*field.dst = &id
-				delete(fields, field.name)
-			}
-		}
-	}
-	if raw, present := fields["output"]; present {
-		if value, isString := jsonString(raw); isString {
-			id, err := putString(writer, storage.ContentText, value)
-			if err != nil {
-				return "", err
-			}
-			stored.OutputText = &id
-			delete(fields, "output")
-		} else if parts, isArray := jsonArray(raw); isArray {
-			refs, err := storeParts(writer, parts)
-			if err != nil {
-				return "", fmt.Errorf("store output parts: %w", err)
-			}
-			stored.Output = &refs
-			delete(fields, "output")
-		}
-	}
-	for _, field := range []struct {
-		name string
-		dst  **[]storage.ContentID
-	}{{"content", &stored.Content}, {"summary", &stored.Summary}} {
-		if raw, present := fields[field.name]; present {
-			if parts, isArray := jsonArray(raw); isArray {
-				refs, err := storeParts(writer, parts)
-				if err != nil {
-					return "", fmt.Errorf("store %s parts: %w", field.name, err)
-				}
-				*field.dst = &refs
-				delete(fields, field.name)
-			}
-		}
-	}
-	if raw, present := fields["encrypted_content"]; present {
-		if value, isString := jsonString(raw); isString {
-			id, err := putString(writer, storage.ContentOpaque, value)
-			if err != nil {
-				return "", err
-			}
-			stored.EncryptedContent = &id
-			delete(fields, "encrypted_content")
-		}
-	}
-	if len(fields) != 0 {
-		stored.Envelope = fields
-	}
-	payload, err := json.Marshal(stored)
-	if err != nil {
-		return "", err
-	}
-	return writer.PutContent(ContentOpenAIItem, payload)
+	return writer.PutContent(ContentOpenAIItem, record)
 }
 
-// RestoreRecord reconstructs one native Responses item and verifies every
-// referenced row before its bytes are exposed to the provider adapter.
+// RestoreRecord loads a complete native item without rebuilding its internal fields.
 func RestoreRecord(reader storage.ContentReader, id storage.ContentID) (json.RawMessage, error) {
 	payload, err := getPayload(reader, id, ContentOpenAIItem)
 	if err != nil {
 		return nil, err
 	}
-	return restoreRecordPayload(reader, id, payload)
-}
-
-func restoreRecordPayload(reader storage.ContentReader, id storage.ContentID, payload json.RawMessage) (json.RawMessage, error) {
-	var stored storedItem
-	if err := json.Unmarshal(payload, &stored); err != nil {
-		return nil, fmt.Errorf("decode stored Responses item %s: %w", id, err)
-	}
-	if stored.Type == "" {
-		return nil, fmt.Errorf("stored Responses item has no type: %w", protocol.ErrInvalid)
-	}
-	fields := cloneEnvelope(stored.Envelope)
-	if err := setField(fields, "type", stored.Type); err != nil {
+	if err := validateStoredItem(payload); err != nil {
 		return nil, err
 	}
-	for _, value := range []struct {
-		name string
-		ref  *storage.ContentID
-	}{{"input", stored.Input}, {"arguments", stored.Arguments}, {"output", stored.OutputText}, {"content", stored.ContentText}} {
-		if value.ref != nil {
-			text, err := restoreString(reader, *value.ref, storage.ContentText)
-			if err != nil {
-				return nil, fmt.Errorf("restore %s: %w", value.name, err)
-			}
-			if err := setField(fields, value.name, text); err != nil {
-				return nil, err
-			}
-		}
+	return payload, nil
+}
+
+func validateStoredItem(record json.RawMessage) error {
+	var item struct {
+		Type ItemType `json:"type"`
 	}
-	if stored.EncryptedContent != nil {
-		text, err := restoreString(reader, *stored.EncryptedContent, storage.ContentOpaque)
-		if err != nil {
-			return nil, fmt.Errorf("restore encrypted_content: %w", err)
-		}
-		if err := setField(fields, "encrypted_content", text); err != nil {
-			return nil, err
-		}
+	if err := json.Unmarshal(record, &item); err != nil {
+		return fmt.Errorf("decode Responses item: %w", err)
 	}
-	for _, value := range []struct {
-		name string
-		refs *[]storage.ContentID
-	}{{"content", stored.Content}, {"summary", stored.Summary}, {"output", stored.Output}} {
-		if value.refs != nil {
-			parts := make([]json.RawMessage, 0, len(*value.refs))
-			for _, partID := range *value.refs {
-				part, err := restorePart(reader, partID)
-				if err != nil {
-					return nil, fmt.Errorf("restore %s part: %w", value.name, err)
-				}
-				parts = append(parts, part)
-			}
-			if err := setField(fields, value.name, parts); err != nil {
-				return nil, err
-			}
-		}
+	if item.Type == "" {
+		return fmt.Errorf("Responses item has no type: %w", protocol.ErrInvalid)
 	}
-	return json.Marshal(fields)
+	return nil
 }
 
 // StoreRequest splits a native request into an immutable profile and ordered
@@ -322,10 +174,8 @@ func StoreRequestJSON(writer storage.ContentWriter, raw json.RawMessage) (profil
 	return profile, records, nil
 }
 
-// ContentReferences returns the child content IDs encoded by one of the three
-// Responses storage envelopes. It deliberately does not inspect provider JSON
-// kept in an envelope: only fields owned by these typed storage records are
-// graph edges.
+// ContentReferences returns a request profile's shared instructions and tools.
+// Native items and tool definitions are leaves; their provider fields are not references.
 func ContentReferences(kind storage.ContentKind, payload json.RawMessage) ([]storage.ContentID, error) {
 	var refs []storage.ContentID
 	add := func(id storage.ContentID) error {
@@ -337,55 +187,6 @@ func ContentReferences(kind storage.ContentKind, payload json.RawMessage) ([]sto
 	}
 
 	switch kind {
-	case ContentOpenAIItem:
-		var stored storedItem
-		if err := json.Unmarshal(payload, &stored); err != nil {
-			return nil, fmt.Errorf("decode stored Responses item references: %w", err)
-		}
-		if stored.Type == "" {
-			return nil, fmt.Errorf("stored Responses item has no type: %w", protocol.ErrInvalid)
-		}
-		for _, ids := range []*[]storage.ContentID{stored.Content, stored.Summary, stored.Output} {
-			if ids == nil {
-				continue
-			}
-			for _, id := range *ids {
-				if err := add(id); err != nil {
-					return nil, err
-				}
-			}
-		}
-		for _, id := range []*storage.ContentID{stored.Input, stored.Arguments, stored.OutputText, stored.ContentText, stored.EncryptedContent} {
-			if id != nil {
-				if err := add(*id); err != nil {
-					return nil, err
-				}
-			}
-		}
-	case ContentOpenAIContent:
-		var stored storedPart
-		if err := json.Unmarshal(payload, &stored); err != nil {
-			return nil, fmt.Errorf("decode stored Responses content references: %w", err)
-		}
-		if len(stored.Raw) != 0 {
-			if !json.Valid(stored.Raw) || stored.Type != nil || len(stored.Envelope) != 0 || stored.Text != nil || stored.ImageData != nil {
-				return nil, fmt.Errorf("stored raw Responses content part has extracted fields: %w", protocol.ErrInvalid)
-			}
-			if _, err := rawObject(stored.Raw); err == nil {
-				return nil, fmt.Errorf("stored raw Responses content part must be non-object JSON: %w", protocol.ErrInvalid)
-			}
-			return nil, nil
-		}
-		if stored.Text != nil {
-			if err := add(*stored.Text); err != nil {
-				return nil, err
-			}
-		}
-		if stored.ImageData != nil {
-			if err := add(stored.ImageData.Ref); err != nil {
-				return nil, err
-			}
-		}
 	case ContentOpenAIRequest:
 		var stored storedRequestProfile
 		if err := json.Unmarshal(payload, &stored); err != nil {
@@ -524,123 +325,6 @@ type requestWithTools struct {
 	Tools []json.RawMessage `json:"tools,omitempty"`
 }
 
-func storeParts(writer storage.ContentWriter, parts []json.RawMessage) ([]storage.ContentID, error) {
-	refs := make([]storage.ContentID, 0, len(parts))
-	for _, part := range parts {
-		payload, err := storePart(writer, part)
-		if err != nil {
-			return nil, err
-		}
-		refs = append(refs, payload)
-	}
-	return refs, nil
-}
-
-func storePart(writer storage.ContentWriter, raw json.RawMessage) (storage.ContentID, error) {
-	fields, err := rawObject(raw)
-	if err != nil {
-		if !json.Valid(raw) {
-			return "", err
-		}
-		payload, marshalErr := json.Marshal(storedPart{Raw: protocol.CloneJSON(raw)})
-		if marshalErr != nil {
-			return "", marshalErr
-		}
-		return writer.PutContent(ContentOpenAIContent, payload)
-	}
-	stored := storedPart{}
-	if typeRaw, present := fields["type"]; present {
-		if typeValue, ok := jsonString(typeRaw); ok {
-			stored.Type = &typeValue
-			delete(fields, "type")
-		}
-	}
-	if textRaw, present := fields["text"]; present {
-		if textValue, ok := jsonString(textRaw); ok {
-			id, err := putString(writer, storage.ContentText, textValue)
-			if err != nil {
-				return "", err
-			}
-			stored.Text = &id
-			delete(fields, "text")
-		}
-	}
-	for _, field := range []string{"image_url", "data"} {
-		if imageRaw, present := fields[field]; present {
-			if imageValue, ok := jsonString(imageRaw); ok {
-				if prefix, data, isDataURL := splitDataURL(imageValue); isDataURL {
-					id, err := putString(writer, storage.ContentImageData, data)
-					if err != nil {
-						return "", err
-					}
-					stored.ImageData = &storedImageData{Field: field, Prefix: prefix, Ref: id}
-					delete(fields, field)
-					break
-				}
-			}
-		}
-	}
-	if len(fields) != 0 {
-		stored.Envelope = fields
-	}
-	payload, err := json.Marshal(stored)
-	if err != nil {
-		return "", err
-	}
-	return writer.PutContent(ContentOpenAIContent, payload)
-}
-
-func restorePart(reader storage.ContentReader, id storage.ContentID) (json.RawMessage, error) {
-	payload, err := getPayload(reader, id, ContentOpenAIContent)
-	if err != nil {
-		return nil, err
-	}
-	var stored storedPart
-	if err := json.Unmarshal(payload, &stored); err != nil {
-		return nil, fmt.Errorf("decode stored Responses content part: %w", err)
-	}
-	if len(stored.Raw) != 0 {
-		if stored.Type != nil || len(stored.Envelope) != 0 || stored.Text != nil || stored.ImageData != nil {
-			return nil, fmt.Errorf("stored raw Responses content part has extracted fields: %w", protocol.ErrInvalid)
-		}
-		if _, err := rawObject(stored.Raw); err == nil {
-			return nil, fmt.Errorf("stored raw Responses content part must be non-object JSON: %w", protocol.ErrInvalid)
-		}
-		return protocol.CloneJSON(stored.Raw), nil
-	}
-	fields := cloneEnvelope(stored.Envelope)
-	if stored.Type != nil {
-		if err := setField(fields, "type", *stored.Type); err != nil {
-			return nil, err
-		}
-	}
-	if stored.Text != nil {
-		text, err := restoreString(reader, *stored.Text, storage.ContentText)
-		if err != nil {
-			return nil, fmt.Errorf("restore part text: %w", err)
-		}
-		if err := setField(fields, "text", text); err != nil {
-			return nil, err
-		}
-	}
-	if stored.ImageData != nil {
-		data, err := restoreString(reader, stored.ImageData.Ref, storage.ContentImageData)
-		if err != nil {
-			return nil, fmt.Errorf("restore image data: %w", err)
-		}
-		if !strings.HasPrefix(stored.ImageData.Prefix, "data:") || !strings.Contains(stored.ImageData.Prefix, ";base64,") {
-			return nil, fmt.Errorf("invalid stored image data prefix: %w", protocol.ErrInvalid)
-		}
-		if stored.ImageData.Field != "image_url" && stored.ImageData.Field != "data" {
-			return nil, fmt.Errorf("invalid stored image data field %q: %w", stored.ImageData.Field, protocol.ErrInvalid)
-		}
-		if err := setField(fields, stored.ImageData.Field, stored.ImageData.Prefix+data); err != nil {
-			return nil, err
-		}
-	}
-	return json.Marshal(fields)
-}
-
 func putString(writer storage.ContentWriter, kind storage.ContentKind, value string) (storage.ContentID, error) {
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -690,14 +374,6 @@ func rawObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	return fields, nil
 }
 
-func jsonString(raw json.RawMessage) (string, bool) {
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return "", false
-	}
-	return value, true
-}
-
 func jsonArray(raw json.RawMessage) ([]json.RawMessage, bool) {
 	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
 		return nil, false
@@ -707,41 +383,6 @@ func jsonArray(raw json.RawMessage) ([]json.RawMessage, bool) {
 		return nil, false
 	}
 	return values, true
-}
-
-func splitDataURL(value string) (prefix, data string, ok bool) {
-	if !strings.HasPrefix(value, "data:") {
-		return "", "", false
-	}
-	comma := strings.IndexByte(value, ',')
-	if comma < 0 {
-		return "", "", false
-	}
-	prefix = value[:comma+1]
-	if !strings.Contains(prefix, ";base64,") {
-		return "", "", false
-	}
-	return prefix, value[comma+1:], true
-}
-
-func cloneEnvelope(envelope map[string]json.RawMessage) map[string]json.RawMessage {
-	fields := make(map[string]json.RawMessage, len(envelope)+8)
-	for name, value := range envelope {
-		fields[name] = protocol.CloneJSON(value)
-	}
-	return fields
-}
-
-func setField(fields map[string]json.RawMessage, name string, value any) error {
-	if _, exists := fields[name]; exists {
-		return fmt.Errorf("stored Responses envelope duplicates extracted field %q: %w", name, protocol.ErrInvalid)
-	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	fields[name] = encoded
-	return nil
 }
 
 func setRawField(fields map[string]json.RawMessage, name string, value json.RawMessage) error {

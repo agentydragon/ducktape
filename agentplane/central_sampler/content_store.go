@@ -17,7 +17,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// contentStore interns only the provider records defined in storage.ContentKind.
+// contentStore persists the content records emitted by the provider codecs.
 // Pending rows are saved together in deterministic order before publishing any roots.
 type contentStore struct {
 	ctx     context.Context
@@ -106,11 +106,9 @@ func (s *contentStore) prefetch(ids []storage.ContentID) error {
 			var refs []storage.ContentID
 			var err error
 			switch content.Kind {
-			case responses.ContentOpenAIItem, responses.ContentOpenAIContent, responses.ContentOpenAIRequest:
+			case responses.ContentOpenAIRequest:
 				refs, err = responses.ContentReferences(content.Kind, content.Payload)
-			case anthropic.ContentAnthropicMessage, anthropic.ContentAnthropicText, anthropic.ContentAnthropicThinking,
-				anthropic.ContentAnthropicRedactedThinking, anthropic.ContentAnthropicToolUse, anthropic.ContentAnthropicToolResult,
-				anthropic.ContentAnthropicImage, anthropic.ContentAnthropicCompaction, anthropic.ContentAnthropicRequest:
+			case anthropic.ContentAnthropicMessage, anthropic.ContentAnthropicRequest:
 				refs, err = anthropic.ContentReferences(content.Kind, content.Payload)
 			}
 			if err != nil {

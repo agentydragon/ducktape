@@ -65,7 +65,16 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 				wrapped := func(content *contentStore, authoritative *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
 					authoritative.Instructions = &prefix
 					prepared, wire, err := preparation(content, authoritative, metadata)
-					if firstPromptID != "" {
+					if err != nil {
+						return prepared, wire, err
+					}
+					if firstPromptID == "" {
+						ids, err := content.loadContext(prepared.SourceContextID)
+						if err != nil || len(ids) == 0 {
+							t.Fatalf("load source prompt context: ids=%v err=%v", ids, err)
+						}
+						firstPromptID = string(ids[0])
+					} else {
 						for id := range content.pending {
 							if string(id) == firstPromptID {
 								t.Error("preparation repacked a retained prompt")
@@ -81,9 +90,6 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 				}
 				if turn == 0 {
 					firstID, firstWire = id, wire
-					if err := store.DB().QueryRowContext(t.Context(), `SELECT id FROM sampler_content WHERE kind='text' AND convert_from(payload,'UTF8')=$1`, string(protocol.MustJSON(prompt))).Scan(&firstPromptID); err != nil {
-						t.Fatal(err)
-					}
 				}
 				if !strings.Contains(string(wire), fmt.Sprintf("cell-%d", turn)) {
 					t.Fatalf("request omitted current execution state: %s", wire)

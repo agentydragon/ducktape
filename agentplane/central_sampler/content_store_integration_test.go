@@ -238,8 +238,11 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 	if got := tableRowCount(t, store, "sampler_context"); got != turns {
 		t.Fatalf("sampler_context rows=%d after %d append-only inputs, want linear count %d", got, turns, turns)
 	}
-	if got := contentRowCount(t, store, storage.ContentText); got != turns+1 {
-		t.Fatalf("text content rows=%d, want %d unique prompts plus one shared instruction", got, turns+1)
+	if got := contentRowCount(t, store, responses.ContentOpenAIItem); got != turns {
+		t.Fatalf("item content rows=%d, want %d complete unique prompt items", got, turns)
+	}
+	if got := contentRowCount(t, store, storage.ContentText); got != 1 {
+		t.Fatalf("instruction content rows=%d, want one shared instruction", got)
 	}
 	if got := contentRowCount(t, store, responses.ContentOpenAITool); got != 1 {
 		t.Fatalf("OpenAI tool content rows=%d, want one frozen shared definition", got)

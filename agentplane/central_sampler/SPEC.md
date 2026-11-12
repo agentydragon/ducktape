@@ -676,8 +676,12 @@ Session identities, conversation, effect-journal, process, command, evidence and
 Acceptance tests start the actual Go binary and inspect its database separately.
 
 `sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
-OpenAI items/content parts and Anthropic messages/content blocks. Shared text, base64 image data and
-opaque continuation strings have their own kinds; signatures and unknown provider fields survive.
+complete OpenAI items and Anthropic messages/content blocks. An OpenAI item retains its message
+parts, tool arguments/results, images and opaque reasoning inline. An Anthropic message references
+its ordered complete blocks; each block retains all text, signatures, image data and nested content
+inline. Content addressing shares these native units across requests and transcript/request views,
+without extracting their scalar fields or changing their order. Request profiles share system
+instructions and tool definitions separately; unknown provider fields survive.
 Content IDs hash the kind and standard-JSON payload with a versioned domain separator. Payloads are
 bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
 general JSON node format or serializer.
@@ -688,8 +692,8 @@ sampler-private `internal/storage` content reader/writer: typed IDs/kinds, stand
 content hashing and integrity checks. Shared storage imports neither provider nor semantic protocol
 packages and does not interpret provider payloads. The shared `protocol` package defines semantic
 contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
-authorization and request history. The shared table holds provider-specific JSON envelopes, not
-a universal message schema.
+authorization and request history. The shared table holds native item/block JSON and small
+provider-specific message/profile reference records, not a universal message schema.
 
 `sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
 shares the entire prior prefix. The conversation transcript retains the full native conversation

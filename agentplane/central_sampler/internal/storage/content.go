@@ -15,11 +15,9 @@ type (
 	ContentKind string
 )
 
-const (
-	ContentText      ContentKind = "text"
-	ContentImageData ContentKind = "image_data"
-	ContentOpaque    ContentKind = "opaque_continuation"
-)
+// ContentText holds reusable request instructions/system prompts, not scalar
+// fields extracted from native items or blocks.
+const ContentText ContentKind = "text"
 
 // Kinds are defined and validated by the codecs that own their payloads.
 func (kind ContentKind) Valid() bool { return kind != "" }
