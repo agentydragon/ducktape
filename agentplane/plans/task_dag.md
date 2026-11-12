@@ -1191,6 +1191,10 @@ Start by evaluating the bounded CLI experiment above before committing to the br
 local tool dispatch and storage choices are experimental, not decisions about service ownership,
 MCP exposure or migration. This decision and its full exit criteria do not gate that experiment.
 
+**Operator clarification, 2026-11-12:** authored threads are optional. Background agents can use
+other tools, inputs and outputs without a user-facing conversation object; the app can expose their
+relatively raw transcripts/logs. Do not make this component a prerequisite for running a Session.
+
 Recommendation for review: distinguish the authored conversation, harness continuation state and
 retained evidence of harness activity. Today's History conversation view is already a lossy
 projection and cannot resume a rollout; central-sampler evidence and native app-server observations

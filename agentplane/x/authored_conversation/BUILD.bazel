@@ -1,0 +1,136 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "main_bin",
+    main_module = "agentplane.x.authored_conversation.main",
+    deps = [":main"],
+)
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+    deps = [
+        ":settings",
+        ":store",
+        ":tools",
+        ":trace",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":agent",
+        ":settings",
+        ":store",
+        ":trace",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    deps = [
+        ":settings",
+        ":store",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "trace",
+    srcs = ["trace.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":agent",
+        ":settings",
+        ":store",
+        ":trace",
+        "@pypi//httpx2",
+        "@pypi//openai",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_agent",
+    srcs = ["test_agent.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":settings",
+        ":store",
+        ":trace",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_main",
+    srcs = ["test_main.py"],
+    deps = [
+        ":conftest",
+        ":main",
+        ":settings",
+        ":store",
+        "//:conftest",
+        "@pypi//httpx2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    srcs = ["test_store.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        ":store",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tools",
+    srcs = ["test_tools.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        ":store",
+        ":tools",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
