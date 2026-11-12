@@ -327,6 +327,13 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "settle-history" {
+		if err := runSettleHistory(ctx, os.Args[2:]); err != nil {
+			slog.Error("History settlement backfill stopped", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if slices.Contains(os.Args[1:], "--migrate-only") {
 		timeout, err := migrationOnlyTimeout()
 		if err != nil {

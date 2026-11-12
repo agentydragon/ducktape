@@ -72,6 +72,7 @@ go_library(
     srcs = [
         "config.go",
         "main.go",
+        "settle_history.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service",
     deps = [
@@ -80,6 +81,7 @@ go_library(
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service/api",
+        "//agentplane/history_service/backfill",
         "//agentplane/history_service/ingress",
         "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
@@ -96,6 +98,7 @@ go_library(
         "//agentplane/workload_auth/listener",
         "//agentplane/workload_identity/resolver",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
+        "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -141,7 +144,10 @@ oci_image(
 
 go_test(
     name = "config_test",
-    srcs = ["config_test.go"],
+    srcs = [
+        "config_test.go",
+        "settle_history_test.go",
+    ],
     embed = [":main_lib"],
     deps = [
         "//agentplane/testing/configtest",

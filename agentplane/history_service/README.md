@@ -198,9 +198,43 @@ journal keeps every entry. On by default; setting `ingress.settle_deltas` to fal
 stored entry, for debugging. Why and what it drops:
 [delta settlement ADR](../docs/adr_delta_settlement.md).
 
+### Historical settlement
+
+The same image supports `history-service settle-history --session UUID --dry-run` and `--apply`.
+Use `--all` instead of `--session UUID` to visit retained Sessions in recording order. Both the scope
+and mode are required. This command needs only `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`; it does
+not start the service, run migrations, restart runners or call providers.
+
+Each Session is scanned in pages of at most 128 entries / 1 MiB, with an oversized entry alone.
+The scan retains completion cursors and the last observation referencing each source cursor, not
+event bodies. Memory grows with the number of source references in one Session. Each eligible
+completion uses the ordinary settlement checks, including the 20,000-entry span limit. A later
+observation citing a chunk keeps that item's deltas. Dry runs use read-only transactions and log
+eligible rows and `pg_column_size(payload)` bytes; those exclude row/index overhead and unused space.
+
+Apply commits one completion per transaction, with a 30-second deadline and a 1-second lock timeout.
+It acquires the projection lease and locks the Session against appends. A changed prefix or a live
+projection lease stops that Session's pass; `--all` visits the other Sessions before exiting nonzero.
+Rerun after the Session quiets or the fold catches up. Earlier commits remain applied. Recorded
+settlements are skipped on rerun.
+The transaction removes the deltas and their projection evidence, records settlement metadata and
+cleanup ranges, and wakes History followers. Cleanup ranges correct readers already past the old
+completion; item bodies, checkpoints and stderr stay intact. A projector holding an old fetched
+page loses its lease fence and cannot restore deleted evidence.
+
+For staging, copy [the manual Job template](ops/settle-history-job.yaml), replace its image with the
+deployed History image containing this command, and create it with `kubectl create -f`.
+The template starts with a dry run of the measured reasoning Session. Inspect the Job's logs,
+then create a new Job with `--apply`. Verify History page/sequence reads, completion/stderr retention,
+and projection evidence before replacing the Session scope with `--all`. The Job uses the existing
+History ServiceAccount, network-policy label and database Secret; no new RBAC or permanent workload.
+It is not included in Flux. Kubernetes retries are safe; cancel by deleting the Job. Cancellation
+keeps already committed settlements. Reverting the code does not restore deleted chunk boundaries.
+Ordinary PostgreSQL vacuum makes freed space reusable; this command does not shrink relation files.
+
 ## Removed ranges
 
-A cleanup migration that deletes entries from `session_event` records their cursors in
+A cleanup that deletes entries from `session_event` records their cursors in
 `session_event_removed_range` and keeps nothing of their content, so a reader can tell a removed
 cursor from a missing one. Read pages report the ranges (`removed`) that intersect them, and
 observation pages fold them into `settled`; readers treat both as covered, and the fold treats

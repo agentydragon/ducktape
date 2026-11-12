@@ -1,6 +1,6 @@
 # ADR: settle streamed deltas out of stored history
 
-- **Status:** Accepted (operator, 2026-10-10 PDT) and implemented; on in testing and staging, and stored history settled
+- **Status:** Accepted (operator, 2026-10-10 PDT) and implemented; on in testing and staging
 - **Scope:** the History Service's raw log (`session_event`); the runner journal is unchanged
 - **Mechanism:** [History Service § Delta settlement](../history_service/README.md#delta-settlement)
 
@@ -52,6 +52,10 @@ settlement covers is accepted as already stored.
 
 ## Consequences
 
+- Historical settlement uses the same image's explicit
+  [`settle-history` maintenance command](../history_service/README.md#historical-settlement).
+  It preserves item bodies and coordinates projection evidence and late reader corrections;
+  recording settlements only when new completions arrive does not revisit retained items.
 - History stored before settlement was settled after the fact by a one-off Job, since deleted,
   with the operator's approval since it deletes stored history (2026-10-11, testing and
   staging; staging settled 45,785 items, 2.61 GB of payload). Deleting rows only frees space inside
