@@ -142,12 +142,12 @@ not additional gates for W1-W4:
   another text message, and user feedback on an agent answer. Observe whether the model naturally
   uses and understands reactions. Compare notifying it of a reaction with discovering one on a
   later read before choosing wakeup behavior or fixed emoji meanings.
-- **Editing past messages:** try a human correcting an earlier instruction and an agent revising
-  its own answer or summary. Keep the message ID stable and retain revisions so the trace can
-  distinguish what the model originally read from the thread's current content. Surface an edit
-  as new information; it does not retroactively rewrite model context or undo executed work.
-  Check whether the agent notices the revision and proceeds from the corrected conversation
-  without treating its stale context as the latest version.
+- **Editing past messages:** the CLI now supports revisioned edits by both participants. The first
+  [live revision probe](../debug/2026_11_12_authored_conversation_editing.md) showed Qwen and Luna
+  revising an existing answer after the human edited an earlier instruction; Luna also appended
+  an unnecessary acknowledgement. Next try edits during live work and rereading after a context
+  reset. Check whether the agent proceeds from the corrected conversation without treating stale
+  context as current, undoing effects, or replaying completed work.
 
 ## Evidence and stopping condition
 

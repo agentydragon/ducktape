@@ -87,3 +87,5 @@ natural participation by a live model.
 
 [Live prompting comparison](../../debug/2026_11_12_authored_conversation_prompting.md) records the
 original publication failures and the clearer interface explanation tested on Qwen and Luna.
+[Live editing probe](../../debug/2026_11_12_authored_conversation_editing.md) records both models
+revising an existing answer after a human edit, including Luna's unnecessary extra acknowledgement.
