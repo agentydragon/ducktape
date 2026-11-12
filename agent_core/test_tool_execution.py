@@ -26,8 +26,8 @@ from agent_core.testing.matchers import assert_function_call_output_structured, 
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.testing.openai_mock import NoopOpenAIClient, make_mock
 
 
@@ -58,6 +58,11 @@ class _RendezvousOutput(BaseModel):
     ok: bool
     tool: str
     args: dict[str, Any]
+
+
+class SendMessageInput(OpenAIStrictModeBaseModel):
+    mime: Literal["text/markdown", "text/plain"]
+    content: str
 
 
 @pytest.fixture

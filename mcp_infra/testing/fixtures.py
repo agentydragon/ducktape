@@ -12,7 +12,6 @@ import aiodocker
 import pytest
 
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
-from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace")) -> ContainerExecServerConfig:
@@ -32,8 +31,3 @@ async def async_docker_client():
         yield client
     finally:
         await client.close()
-
-
-@pytest.fixture
-def make_simple_mcp():
-    return _make_simple_mcp()
