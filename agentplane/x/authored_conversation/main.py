@@ -121,8 +121,13 @@ async def async_main(settings: Settings) -> None:
             },
         )
         reader = asyncio.StreamReader()
+        # connect_read_pipe sets O_NONBLOCK. Reopen rather than dup: terminal stdin
+        # can share an open file description (and flags) with stdout and stderr.
+        stdin = stack.enter_context(
+            await asyncio.to_thread(Path(f"/proc/self/fd/{sys.stdin.fileno()}").open, "rb", buffering=0)
+        )
         transport, _ = await asyncio.get_running_loop().connect_read_pipe(
-            lambda: asyncio.StreamReaderProtocol(reader), sys.stdin
+            lambda: asyncio.StreamReaderProtocol(reader), stdin
         )
         stack.callback(transport.close)
         print(f"[{settings.mode} mode; thread and trace in {settings.state_directory}]", flush=True)

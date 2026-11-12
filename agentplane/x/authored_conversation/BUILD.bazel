@@ -104,6 +104,7 @@ py_test(
         ":main",
         ":settings",
         ":store",
+        ":trace",
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//pytest_bazel",
