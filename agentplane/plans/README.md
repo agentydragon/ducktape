@@ -38,6 +38,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Session runtime model](session_runtime_model.md) — current environment component boundaries and
   agreed names/layout; future Session vocabulary for environment-bound
   native harnesses, central sampling, execution attachments and backend-specific constraints
+- [Authored conversation CLI experiment](authored_conversation_experiment.md) — our own loop with
+  Qwen through LiteLLM, a shared thread operated through tools, and bounded comparative win
+  conditions; the eventual history architecture remains open
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
