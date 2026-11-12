@@ -310,6 +310,7 @@ resource "local_file" "kubeconfig" {
 
 # Write talosconfig to file
 resource "local_file" "talosconfig" {
-  content  = data.talos_client_configuration.cluster.talos_config
-  filename = "${path.module}/talosconfig.yml"
+  content         = data.talos_client_configuration.cluster.talos_config
+  filename        = "${path.module}/talosconfig.yml"
+  file_permission = "0600"
 }
