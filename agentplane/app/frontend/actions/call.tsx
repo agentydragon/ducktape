@@ -8,7 +8,7 @@ import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/f
 import { JsonBlock } from "../text_block";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequest } from "../../../action_service/action_service_pb";
-import { actionArguments, actionCaller, actionIdentity, timestampText } from "./presentation";
+import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
 import {
   renderActionCall,
   renderActionLabel,
@@ -21,6 +21,8 @@ import {
  * timestamps. */
 function RequestAuditDetails({ request }: { request: ActionRequest }): JSX.Element {
   const caller = actionCaller(request);
+  const callerSummary = actionCallerSummary(caller);
+  const callerDetails = actionCallerDetails(caller);
   const createdAt = timestampText(request.createdAt);
   const decidedAt = timestampText(request.decision?.decidedAt);
   const startedAt = timestampText(request.execution?.startedAt);
@@ -29,7 +31,7 @@ function RequestAuditDetails({ request }: { request: ActionRequest }): JSX.Eleme
     <Disclosure
       summary={
         <Text component="span" size="xs" c="dimmed">
-          {caller.name} · <TimeAgo value={createdAt ?? ""} />
+          {callerSummary} · <TimeAgo value={createdAt ?? ""} />
         </Text>
       }
       keepMounted
@@ -40,7 +42,7 @@ function RequestAuditDetails({ request }: { request: ActionRequest }): JSX.Eleme
             Request <Code>{request.id}</Code>
           </Text>
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-            Requested by {serviceAccountKey(caller)}
+            Requested by {callerDetails}
           </Text>
           {decidedAt && (
             <Text size="xs" c="dimmed">
@@ -61,6 +63,30 @@ function RequestAuditDetails({ request }: { request: ActionRequest }): JSX.Eleme
       </DisclosureBody>
     </Disclosure>
   );
+}
+
+function actionCallerSummary(caller: ActionCaller): string {
+  switch (caller.kind) {
+    case "service-account":
+      return caller.account.name;
+    case "identity":
+      return `Identity ${caller.identity.name}`;
+    case "unknown":
+      return "Unknown caller";
+  }
+}
+
+function actionCallerDetails(caller: ActionCaller): string {
+  switch (caller.kind) {
+    case "service-account":
+      return caller.uid === undefined
+        ? serviceAccountKey(caller.account)
+        : `${serviceAccountKey(caller.account)} · UID ${caller.uid}`;
+    case "identity":
+      return `Identity ${caller.identity.name} · UID ${caller.identity.uid}`;
+    case "unknown":
+      return "an unknown caller";
+  }
 }
 
 /** Everything describing the call itself -- which Action, who asked for it and in what words, and

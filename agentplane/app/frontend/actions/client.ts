@@ -97,7 +97,17 @@ function validateExecution(value: Execution): void {
 
 function validateActionRequest(value: ActionRequest): ActionRequest {
   required(value.action, "ActionRequest.action");
-  required(value.caller, "ActionRequest.caller");
+  if (value.caller !== undefined && value.callerIdentity !== undefined) {
+    throw new Error("The Action Service returned an ActionRequest with multiple callers.");
+  }
+  if (value.callerIdentity !== undefined) {
+    if (value.callerIdentity.name === "") {
+      throw new Error("The Action Service returned an Identity caller without a name.");
+    }
+    if (value.callerIdentity.uid === "") {
+      throw new Error("The Action Service returned an Identity caller without a UID.");
+    }
+  }
   required(value.createdAt, "ActionRequest.created_at");
   required(value.updatedAt, "ActionRequest.updated_at");
   switch (value.state) {
