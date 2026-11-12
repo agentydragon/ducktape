@@ -257,7 +257,9 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		}
 	}
 	maps.Copy(methods, historyMethods)
-	pushRule := auth.AnyAccount(writerAuth)
+	// SPIFFE listeners admit authenticated workload SVIDs and only named sampler accounts by bearer.
+	// A bearer-only listener admits any ServiceAccount the writer resolver accepts in its namespaces.
+	pushRule := auth.AnySubject(writerAuth)
 	if c.RPC.Has(listener.SPIFFE) {
 		pushRule = auth.SVIDOrAccounts(writerAuth, c.Ingress.SamplerAccounts)
 	}

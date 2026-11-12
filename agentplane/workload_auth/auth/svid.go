@@ -51,20 +51,6 @@ func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identit
 	return &SVIDResolver{records: records}, nil
 }
 
-// Resolve authenticates a gRPC TLS peer whose record names a ServiceAccount, and refuses an
-// Identity subject: only ResolveSubject's callers serve one.
-func (r *SVIDResolver) Resolve(ctx context.Context) (Principal, error) {
-	subject, err := r.ResolveSubject(ctx)
-	if err != nil {
-		return Principal{}, err
-	}
-	principal, ok := subject.(Principal)
-	if !ok {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload SVID")
-	}
-	return principal, nil
-}
-
 // ResolveSubject authenticates a gRPC TLS peer. The listener must use the transport
 // package's workload server credentials, which verify its chain and client EKU.
 func (r *SVIDResolver) ResolveSubject(ctx context.Context) (Subject, error) {

@@ -170,13 +170,6 @@ type Resolver struct {
 	listenerAuth *listener.Config
 }
 
-// PrincipalResolver resolves the principal admitted by an AnyAccount rule.
-// Resolver implements it with Kubernetes TokenReview; service-owned resolvers may provide another
-// verified source while using the same method policy.
-type PrincipalResolver interface {
-	Resolve(context.Context) (Principal, error)
-}
-
 // SubjectResolver resolves the subject admitted by an AnySubject rule, a ServiceAccount or an
 // Identity. Resolver implements it; a service-owned resolver may provide another verified source.
 type SubjectResolver interface {

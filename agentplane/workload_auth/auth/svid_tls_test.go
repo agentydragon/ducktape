@@ -42,7 +42,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.AnyAccount(svids)}
+			methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.AnySubject(svids)}
 			server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 			handler := &svidHealth{expected: auth.Principal{Account: auth.Account{Namespace: sandbox.Namespace, Name: sandbox.Name}, ServiceAccountUID: accountUID(t, objects, sandbox), PodName: sandbox.Status.Incarnation.Name, PodUID: sandbox.Status.Incarnation.UID}}
 			healthpb.RegisterHealthServer(server, handler)
@@ -247,7 +247,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 	}
 	methods := auth.Methods{
 		healthpb.Health_Check_FullMethodName: admit(resolves),
-		healthpb.Health_List_FullMethodName:  auth.AnyAccount(resolves),
+		healthpb.Health_List_FullMethodName:  auth.ReviewedServiceAccount(resolves),
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	admissions := make(chan auth.Admission, 4)
@@ -276,7 +276,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 		t.Fatalf("Identity caller admitted as %#v, want %#v", got, identityWorkload.Subject)
 	}
 	if _, err := identityClient.List(t.Context(), &healthpb.HealthListRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("AnyAccount method admitted an Identity caller: %v", err)
+		t.Fatalf("ServiceAccount-only method admitted an Identity caller: %v", err)
 	}
 
 	if _, err := client(t, accountWorkload.URI).Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil {

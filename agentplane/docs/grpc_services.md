@@ -62,9 +62,10 @@ follows it; code that differs converges on it.
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
-  `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves,
-  `ReviewedServiceAccount` when a handler needs a verified ServiceAccount UID with an optional Pod
-  proof, `AnySubject` or `ReviewedServiceAccountOrIdentity` when it also serves Identity callers, read
+  `Rule` (`Accounts` for an allowlist, `AnySubject` for any workload subject a resolver authenticates,
+  `SVIDOrAccounts` for workload SVIDs plus a bearer account allowlist, `ReviewedServiceAccount` when a
+  handler needs a verified ServiceAccount UID with an optional Pod proof, `ReviewedServiceAccountOrIdentity`
+  when it also serves Identity callers, read
   with `auth.Admitted`, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
   refused before its credentials are resolved, so a new RPC is closed until its Rule is written. The package
   owning a servicer exports its `Methods`; the handler reads the admitted identity with
