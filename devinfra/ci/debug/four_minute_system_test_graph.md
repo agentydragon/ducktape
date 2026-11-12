@@ -26,8 +26,11 @@ A newer current-source Pod control then entered a different queue regime:
 its TestRunner action queued at 22:31:16.974 UTC, started on a worker at
 22:40:13.796 (536.82 seconds later), executed from 22:40:18.119 to
 22:46:24.758 (366.64 seconds), and completed worker output upload at
-22:46:27.929. The action's result blob was unavailable when checked, so
-these timestamps establish physical work, not its test verdict. The old
+22:46:27.929. Its exact-ID cached ExecuteResponse and JUnit establish that all
+21 cases passed; an earlier unavailable-verdict claim was a lookup and protobuf
+default-field interpretation error, corrected in the
+[recovery investigation](../../buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md).
+The Bazel invocation remains disconnected. The old
 0.06-second queue samples cannot be extrapolated to current load; this
 single long queue does not identify an account quota or provider capacity
 limit. A four-minute design must test admission under comparable concurrent
@@ -127,9 +130,9 @@ uses `630fd860` with an uncached test request. Its outer `bbr` stream later
 closed with `Internal: stream closed with task still claimed` after buffered
 TestRunner progress reached 592 seconds. The accepted outer execution later
 returned terminal status code 13 with that message and no successful
-ExecuteResponse. Both outer and inner invocations became `DISCONNECTED`;
-the inner physical TestRunner action has completion clocks but its result
-blob cannot be read. Neither a pass nor a Bazel gate verdict can be inferred.
+ExecuteResponse. Both outer and inner invocations became `DISCONNECTED`.
+The inner TestRunner's separate exact-ID response-cache lookup succeeds and
+its JUnit records 21 passing cases; this does not establish a Bazel gate verdict.
 This is remote observation/recovery overhead, separate from
 the physical critical-path timings above. A separate [Pod-tail split](https://app.buildbuddy.io/invocation/34d911a5-ebfa-4040-b7d7-b59ccd4880ec)
 uses that source plus a local patch, with both selected targets uncached. They
@@ -150,8 +153,9 @@ JUnit records exactly the intended security case. Its physical spans were
 101.57 seconds of setup, 22.16 seconds of case work, and 29.59 seconds of
 cleanup. The older run's corresponding case took about 91.7 seconds, so the
 case duration is unstable across these runs. The corrected main action later
-queued for about 0.064 seconds and executed for about 388.2 seconds, but its
-test verdict was not yet recovered at this refresh. Compared with the control's
+queued for about 0.064 seconds and executed for about 388.2 seconds. Its recovered
+ExecuteResponse and JUnit show 20 passing cases, exactly the control set minus
+the separately passed TLS case. Compared with the control's
 366.64 physical execution seconds, this is an uncontrolled process-time
 comparison across overlapping, differently selected actions. The TLS result
 establishes that the split case can pass in its own fresh stack, not a
@@ -161,8 +165,8 @@ The exact corrected spike is retained as a
 `f2078c91e574770b5be108aea1ada5ce03b6d404dcbf4aa9f925066a85b2bc80`,
 against `630fd860`. It adds an `args` passthrough to `k3s_suite`, leaves the
 main Pod target configured to select the other 20 declared cases, and adds
-one manual TLS-only target. The actual main action's JUnit/result is
-unavailable, so its test selection and verdict were not independently verified.
+one manual TLS-only target. The actual main action's recovered JUnit independently
+verifies that selection and verdict; its Bazel invocation remains disconnected.
 The initial failed action used an unquoted `-k` expression; the retained patch
 quotes that expression as one pytest argument. It is an experiment, not a
 proposed required-CI change.
