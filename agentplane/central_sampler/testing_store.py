@@ -61,28 +61,7 @@ def _content_references(kind: str, payload: dict[str, Any]) -> list[str]:
         assert value, f"empty {kind} content reference"
         refs.append(value)
 
-    if kind == "openai_item":
-        for field in ("content_refs", "summary_refs", "output_refs"):
-            values = payload.get(field, [])
-            assert isinstance(values, list)
-            for value in values:
-                add(value)
-        for field in (
-            "input_text_ref",
-            "arguments_text_ref",
-            "output_text_ref",
-            "content_text_ref",
-            "encrypted_content_ref",
-        ):
-            add(payload.get(field))
-    elif kind == "openai_content":
-        if "raw" not in payload:
-            add(payload.get("text_ref"))
-            image = payload.get("image_data")
-            if image is not None:
-                assert isinstance(image, dict)
-                add(image.get("ref"))
-    elif kind == "openai_request":
+    if kind == "openai_request":
         add(payload.get("instructions_ref"))
         for value in payload.get("tool_refs", []):
             add(value)
@@ -91,30 +70,12 @@ def _content_references(kind: str, payload: dict[str, Any]) -> list[str]:
         if mode == "array":
             for value in payload.get("blocks", []):
                 add(value)
-        elif mode == "text":
-            add(payload.get("text_id"))
     elif kind == "anthropic_request":
         if payload.get("system_mode") == "text":
             add(payload.get("system_id"))
         if payload.get("tools_mode") == "array":
             for value in payload.get("tools", []):
                 add(value)
-    elif kind in {
-        "anthropic_text",
-        "anthropic_thinking",
-        "anthropic_redacted_thinking",
-        "anthropic_tool_use",
-        "anthropic_tool_result",
-        "anthropic_image",
-        "anthropic_compaction",
-    }:
-        add(payload.get("scalar_id"))
-        for value in payload.get("blocks", []):
-            add(value)
-        source = payload.get("source")
-        if source is not None:
-            assert isinstance(source, dict)
-            add(source.get("data_id"))
     return refs
 
 
@@ -183,20 +144,7 @@ class Store:
             next_level: list[str] = []
             for content_id in level:
                 kind, payload = self._content_cache[content_id]
-                if kind in {
-                    "openai_item",
-                    "openai_content",
-                    "openai_request",
-                    "anthropic_message",
-                    "anthropic_request",
-                    "anthropic_text",
-                    "anthropic_thinking",
-                    "anthropic_redacted_thinking",
-                    "anthropic_tool_use",
-                    "anthropic_tool_result",
-                    "anthropic_image",
-                    "anthropic_compaction",
-                }:
+                if kind in {"openai_request", "anthropic_message", "anthropic_request"}:
                     assert isinstance(payload, dict), f"sampler content {content_id} is not an object"
                     next_level.extend(_content_references(kind, payload))
             level = list(dict.fromkeys(next_level))
@@ -207,73 +155,17 @@ class Store:
             assert kind == expected_kind, f"sampler content {content_id} has kind {kind}, expected {expected_kind}"
         return payload
 
-    def _restore_openai_part(self, content_id: str) -> Any:
-        part = self._content(content_id, "openai_content")
-        if "raw" in part:
-            return part["raw"]
-        result = dict(part.get("envelope", {}))
-        if "type" in part:
-            result["type"] = part["type"]
-        if "text_ref" in part:
-            result["text"] = self._content(part["text_ref"], "text")
-        image = part.get("image_data")
-        if image is not None:
-            result[image["field"]] = image["prefix"] + self._content(image["ref"], "image_data")
-        return result
-
-    def _restore_openai_record(self, content_id: str) -> dict[str, Any]:
-        item = self._content(content_id, "openai_item")
-        result = dict(item.get("envelope", {}))
-        result["type"] = item["type"]
-        for ref_field, native_field, expected_kind in (
-            ("input_text_ref", "input", "text"),
-            ("arguments_text_ref", "arguments", "text"),
-            ("output_text_ref", "output", "text"),
-            ("content_text_ref", "content", "text"),
-            ("encrypted_content_ref", "encrypted_content", "opaque_continuation"),
-        ):
-            if ref_field in item:
-                result[native_field] = self._content(item[ref_field], expected_kind)
-        for ref_field, native_field in (
-            ("content_refs", "content"),
-            ("summary_refs", "summary"),
-            ("output_refs", "output"),
-        ):
-            if ref_field in item:
-                result[native_field] = [self._restore_openai_part(ref) for ref in item[ref_field]]
-        return result
-
-    def _restore_anthropic_block(self, content_id: str) -> dict[str, Any]:
-        kind, block = self._content_cache[content_id]
-        result = dict(block.get("fields", {}))
-        block_type = block["type"]
-        if "scalar_id" in block:
-            expected = "opaque_continuation" if kind == "anthropic_redacted_thinking" else "text"
-            field = block.get("scalar_field") or {"anthropic_tool_result": "content"}.get(kind)
-            if field:
-                result[field] = self._content(block["scalar_id"], expected)
-        if "source" in block:
-            source = dict(block["source"].get("fields", {}))
-            source["data"] = self._content(block["source"]["data_id"], "image_data")
-            result["source"] = source
-        if kind == "anthropic_tool_result" and block.get("content_mode") == "array":
-            result["content"] = [self._restore_anthropic_block(ref) for ref in block.get("blocks", [])]
-        result["type"] = block_type
-        return result
-
     def _restore_anthropic_record(self, content_id: str) -> dict[str, Any]:
         message = self._content(content_id, "anthropic_message")
         result = dict(message.get("fields", {}))
         mode = message["content_mode"]
-        if mode == "text":
-            result["content"] = self._content(message["text_id"], "text")
-        elif mode == "array":
-            result["content"] = [self._restore_anthropic_block(ref) for ref in message.get("blocks", [])]
+        if mode == "array":
+            result["content"] = [dict(self._content(ref)) for ref in message.get("blocks", [])]
         return result
 
     def _restore_record(self, api: str, content_id: str) -> dict[str, Any]:
         if api == "responses":
-            return self._restore_openai_record(content_id)
+            return dict(self._content(content_id, "openai_item"))
         assert api == "anthropic_messages", f"unsupported sampler API {api}"
         return self._restore_anthropic_record(content_id)
 
