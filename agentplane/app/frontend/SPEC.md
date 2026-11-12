@@ -56,6 +56,12 @@ controller's first unmet barrier and its resource/process identity, available ad
 journal seal identity, acknowledgement cursor, and surfaced lifecycle error. When progress belongs
 to an older generation, it is labeled as last progress and its blocker and error are withheld.
 
+## Policy binding status
+
+A reader's refusal applies only to the binding generation it observed. A condition for another
+generation keeps the binding "Not yet judged" until readers catch up. A current refusal or a
+missing selected PolicySet still shows "Refused".
+
 ## Tool calls
 
 A lone tool call renders its compact tool summary directly. Only runs of multiple steps have an

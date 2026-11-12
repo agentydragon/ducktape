@@ -35,8 +35,12 @@ describe("bindingState", () => {
     expect(bindingState(binding("True", 1n), sets).kind).toBe("pending");
     expect(bindingState(binding("True"), sets).kind).toBe("ready");
   });
+  it.each([0n, 1n, 3n])("waits when a refusal judged a different generation (%s)", (generation) => {
+    expect(bindingState(binding("False", generation), sets).kind).toBe("pending");
+  });
   it("reports refused and missing sets", () => {
     expect(bindingState(binding("False"), sets).kind).toBe("refused");
+    expect(bindingState(binding("False", 1n), new Map()).kind).toBe("refused");
     expect(bindingState(binding("True"), new Map()).reasons).toContain(
       "PolicySet present is not present in the current view"
     );
