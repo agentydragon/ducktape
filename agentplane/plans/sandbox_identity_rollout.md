@@ -1,5 +1,9 @@
 # Sandbox Identity switch rollout
 
+**2026-11-12 status:** #15742 and #15744 are merged and serving. The proposed holds below were never applied.
+[Actual rollout and live evidence](../debug/2026_11_12_sandbox_identity_cutover/README.md) record the observed sequence and remaining
+operator approval UI defect. Treat the cutover steps below as the prepared plan, not instructions to repeat the migration.
+
 Prepared for the switch and its dependent cleanup. Remove this plan and its companion hold patch after live acceptance and
 move any lasting operational instructions to the owning service's documentation.
 

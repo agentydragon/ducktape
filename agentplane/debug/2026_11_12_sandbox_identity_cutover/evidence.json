@@ -1,0 +1,479 @@
+{
+  "release": {
+    "switch_pr": 15742,
+    "switch_merge": "642063435fcd7246e3b973a45de103264bdeb867",
+    "cleanup_pr": 15744,
+    "cleanup_merge": "004efb6317a3760fef668781e8d3fb3ba4cd63b9",
+    "push_ci": [43194005237, 43194719868],
+    "holds_applied": false,
+    "pre_launch_sandboxes": 0
+  },
+  "serving": {
+    "checked_at": "2026-11-12T10:24:45.529006+00:00",
+    "flux": [
+      {
+        "name": "agentplane-crds",
+        "generation": 4,
+        "observedGeneration": 4,
+        "suspended": false,
+        "applied": "latest@sha256:6c0ff8d152a2806e0b07e96f198e3d0dfc9ccf4b4a46836adea9823add1a22e4",
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-12T10:18:47Z",
+            "message": "Applied revision: latest@sha256:6c0ff8d152a2806e0b07e96f198e3d0dfc9ccf4b4a46836adea9823add1a22e4",
+            "observedGeneration": 4,
+            "reason": "ReconciliationSucceeded",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-12T10:18:47Z",
+            "message": "Health check passed in 136.777788ms",
+            "observedGeneration": 4,
+            "reason": "Succeeded",
+            "status": "True",
+            "type": "Healthy"
+          }
+        ]
+      },
+      {
+        "name": "agentplane-staging",
+        "generation": 62,
+        "observedGeneration": 62,
+        "suspended": false,
+        "applied": "latest@sha256:95b0815cf343ac51e40b9c4bc32726fdb6a595d7484c20d4edf5c5041f804cdc",
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-12T10:20:10Z",
+            "message": "Applied revision: latest@sha256:95b0815cf343ac51e40b9c4bc32726fdb6a595d7484c20d4edf5c5041f804cdc",
+            "observedGeneration": 62,
+            "reason": "ReconciliationSucceeded",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-12T10:20:10Z",
+            "message": "Health check passed in 5.05007002s",
+            "observedGeneration": 62,
+            "reason": "Succeeded",
+            "status": "True",
+            "type": "Healthy"
+          }
+        ]
+      },
+      {
+        "name": "agentplane-staging-delivery",
+        "generation": 3,
+        "observedGeneration": 3,
+        "suspended": false,
+        "applied": "latest@sha256:8cd7f6c0f9167ef9af56a156653a417868cde9d91859a4b4bddfb53f6e2ef20b",
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-12T10:21:14Z",
+            "message": "Applied revision: latest@sha256:8cd7f6c0f9167ef9af56a156653a417868cde9d91859a4b4bddfb53f6e2ef20b",
+            "observedGeneration": 3,
+            "reason": "ReconciliationSucceeded",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-12T10:21:14Z",
+            "message": "Health check passed in 395.791166ms",
+            "observedGeneration": 3,
+            "reason": "Succeeded",
+            "status": "True",
+            "type": "Healthy"
+          }
+        ]
+      }
+    ],
+    "deployments": [
+      {
+        "name": "actions",
+        "generation": 214,
+        "observedGeneration": 214,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20261112095553-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-action-service@sha256:04a6ece3249a5d699b26f0cc146d8b926ba6957525d2b64ce302a246c070c6d8"
+        ]
+      },
+      {
+        "name": "app",
+        "generation": 296,
+        "observedGeneration": 296,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-app:devel-20261112095610-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-app@sha256:f0a77a8d9e67dfca97267c92240a25cca0e7b93917f65eff0fcf03e9f054c5d6"
+        ]
+      },
+      {
+        "name": "central-sampler",
+        "generation": 151,
+        "observedGeneration": 151,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-central-sampler:devel-20261112092451-5d68c0f"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-central-sampler@sha256:d9097eb654c38205f06f5d1842c30151b7adf639ffae323d04ee8e466d00f79b"
+        ]
+      },
+      {
+        "name": "egress",
+        "generation": 145,
+        "observedGeneration": 145,
+        "desired": 3,
+        "ready": 3,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-egress-proxy:devel-20261112095106-6420634"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-egress-proxy@sha256:ac778b537b4301c0bcb8633e0f2e6e34375b36f3e2ea165697a4f867bff9ff7c"
+        ]
+      },
+      {
+        "name": "electric",
+        "generation": 2,
+        "observedGeneration": 2,
+        "desired": 1,
+        "ready": 1,
+        "images": [
+          "docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211"
+        ],
+        "image_ids": [
+          "docker.io/electricsql/electric@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211"
+        ]
+      },
+      {
+        "name": "frontend",
+        "generation": 156,
+        "observedGeneration": 156,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-frontend:devel-20261112095101-6420634"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-frontend@sha256:74502d2393c7228a9bd05f42fb0d7b2420a1b5aa05c73f4f7e1532734ae6d919"
+        ]
+      },
+      {
+        "name": "history-service",
+        "generation": 145,
+        "observedGeneration": 145,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-history-service:devel-20261112095549-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-history-service@sha256:59541826e62f856b1fa38dd559696a2fc7400567962c79da62a5479cdf667cfb"
+        ]
+      },
+      {
+        "name": "llm-ingress",
+        "generation": 95,
+        "observedGeneration": 95,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-llm-ingress:devel-20261112034024-27331cf"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-llm-ingress@sha256:98c6b254021f651d479e754cfaacbf15ea74754bca7824baec485ff7b2a36e1c"
+        ]
+      },
+      {
+        "name": "mcp-edge",
+        "generation": 101,
+        "observedGeneration": 101,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-mcp-edge:devel-20261112095103-6420634"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-mcp-edge@sha256:fe7e79496541755b23b4cab95d79a9fb303ee6b84747ee0a8a73244acb6fae74"
+        ]
+      },
+      {
+        "name": "notifications",
+        "generation": 207,
+        "observedGeneration": 207,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-notification-service:devel-20261112095544-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-notification-service@sha256:4a7df0de407b4db6ddcaa6d4876fa6e802d0e65e7692201d68d144473e43727f"
+        ]
+      },
+      {
+        "name": "policy-controller",
+        "generation": 69,
+        "observedGeneration": 69,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-policy-controller:devel-20261112095552-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-policy-controller@sha256:def58cc80d5528f6706642831262d48f8b0686c4e75d5b21987e855a756d1d89"
+        ]
+      },
+      {
+        "name": "runner-gateway",
+        "generation": 228,
+        "observedGeneration": 228,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261112095601-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-runner-gateway@sha256:39fb86ff0c40c14cc3a2be6073d1abefc70e6841430933b19a8b94968c63e4bb"
+        ]
+      },
+      {
+        "name": "sandbox-controller",
+        "generation": 98,
+        "observedGeneration": 98,
+        "desired": 2,
+        "ready": 2,
+        "images": ["git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:devel-20261112095548-004efb6"],
+        "image_ids": [
+          "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller@sha256:4b10839e84a819cfcdbfb5416d6ec00c0e6c026902c7ae25ca1670cce8f68df6"
+        ]
+      }
+    ],
+    "sandbox_schema_identity": {
+      "description": "Identity is who the Sandbox's workloads act as. It may be set, changed or cleared only while\nnothing runs, so an incarnation never changes identity; the next start acts as the new one.\n\"Nothing runs\" is the controller's last status report: never reconciled, or stopStage Stopped.",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["name"],
+      "type": "object"
+    },
+    "policySets_present": false
+  },
+  "pod": {
+    "name": "identity-cutover-pod-4ffacb44",
+    "identity_uid": "8e8ff4ee-1034-4c7d-9c66-91e1ebcf9726",
+    "binding_uid": "89b0ca8e-153d-4379-b19d-0f764cb4d5bb",
+    "policies": ["basic-identity", "inference-experiments", "k8s-account-shared-diagnostics"],
+    "target": {
+      "namespace": "agentplane-staging",
+      "name": "identity-cutover-pod-4ffacb44",
+      "uid": "ba7434ca-bd3b-487b-ae8d-30b2272d6b7f"
+    },
+    "pod_uid": "4955eac5-75d6-4db2-b99f-8ae953435730",
+    "credential_uid": "5feea80b-72fd-4a15-bb00-740199d25a90",
+    "ready": true,
+    "session_id": "c4294bc3-eafb-4025-9593-22f0fe02e53a",
+    "initial_pod_uid": "01fc572e-7b06-477d-a33c-922ad80f3585",
+    "sampler_session_id": "32897234-fbcb-439b-b934-d3ed05653725"
+  },
+  "vm": {
+    "name": "identity-cutover-vm-c2dc1771",
+    "identity_uid": "901b9273-2d9f-47a2-83ec-4e57e3c1f8cb",
+    "binding_uid": "7bd901c9-1f38-4898-8165-d20b0b262666",
+    "target": {
+      "namespace": "agentplane-staging",
+      "name": "identity-cutover-vm-c2dc1771",
+      "uid": "76648947-d6c1-4670-b75d-ac147aaf8546"
+    },
+    "vm_uid": "0d4f83ba-c045-43a9-947e-bc8d122ed375",
+    "vmi_uid": "451afca0-0e59-4149-be6c-3f6a4a9be7b7",
+    "pod_name": "virt-launcher-identity-cutover-vm-c2dc1771-8ds5j",
+    "pod_uid": "0064f8cb-56bf-4115-9ae3-e0f394365b6a",
+    "credential_uid": "8e639662-f548-4e67-95a0-86961082fcf3",
+    "ready": true,
+    "disposable_pvcs": [
+      {
+        "name": "identity-cutover-vm-c2dc1771-state",
+        "uid": "2a93d8c5-bf69-4b58-89ac-a61e0f071119"
+      },
+      {
+        "name": "identity-cutover-vm-c2dc1771-workspace",
+        "uid": "6165f00f-26ed-4b80-b1bb-e25eb40d7792"
+      }
+    ],
+    "separate_identity_survived_sandbox": true,
+    "cleaned": true,
+    "sandbox_deleted": true
+  },
+  "turns": [
+    {
+      "turn": 1,
+      "turn_id": "01a1cf44-ffdb-77c0-9b19-94915070bf62",
+      "command_id": "acceptance-turn-1",
+      "output": {
+        "output": "identity-cutover-tool-turn-1-c4294bc3\n",
+        "succeeded": true
+      },
+      "completion": {
+        "turnId": "01a1cf44-ffdb-77c0-9b19-94915070bf62",
+        "status": "TURN_STATUS_COMPLETED",
+        "error": "",
+        "interruptedByCommandId": "",
+        "endedByTeardown": false
+      },
+      "start_cursor": 10,
+      "end_cursor": 88
+    },
+    {
+      "turn": 2,
+      "turn_id": "01a1cf45-2d2f-7ba2-94c4-fa933b666e24",
+      "command_id": "acceptance-turn-2",
+      "output": {
+        "output": "identity-cutover-tool-turn-2-c4294bc3\n",
+        "succeeded": true
+      },
+      "completion": {
+        "turnId": "01a1cf45-2d2f-7ba2-94c4-fa933b666e24",
+        "status": "TURN_STATUS_COMPLETED",
+        "error": "",
+        "interruptedByCommandId": "",
+        "endedByTeardown": false
+      },
+      "start_cursor": 93,
+      "end_cursor": 151
+    },
+    {
+      "session_id": "c4294bc3-eafb-4025-9593-22f0fe02e53a",
+      "command_id": "pod-after-resume",
+      "turn_id": "01a1cf49-16a9-7f60-9f42-719ba09528d0",
+      "output": {
+        "output": "IDENTITY_RESUME_TOOL_OK",
+        "succeeded": true
+      },
+      "completion": {
+        "turnId": "01a1cf49-16a9-7f60-9f42-719ba09528d0",
+        "status": "TURN_STATUS_COMPLETED",
+        "error": "",
+        "interruptedByCommandId": "",
+        "endedByTeardown": false
+      },
+      "start_cursor": 168,
+      "end_cursor": 240
+    },
+    {
+      "session_id": "32897234-fbcb-439b-b934-d3ed05653725",
+      "command_id": "sampler-turn-1",
+      "turn_id": "sampler-turn-1",
+      "output": {
+        "output": "[{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 3.9 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"IDENTITY_SAMPLER_TOOL_FIRST\"},{\"type\":\"input_text\",\"text\":\"exit_code=0\"}]",
+        "succeeded": true
+      },
+      "completion": {
+        "turnId": "sampler-turn-1",
+        "status": "TURN_STATUS_COMPLETED",
+        "error": "",
+        "interruptedByCommandId": "",
+        "endedByTeardown": false
+      },
+      "start_cursor": 4,
+      "end_cursor": 495
+    },
+    {
+      "session_id": "32897234-fbcb-439b-b934-d3ed05653725",
+      "command_id": "sampler-turn-2",
+      "turn_id": "sampler-turn-2",
+      "output": {
+        "output": "[{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 1.0 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"IDENTITY_SAMPLER_TOOL_SECOND\"},{\"type\":\"input_text\",\"text\":\"exit_code=0\"}]",
+        "succeeded": true
+      },
+      "completion": {
+        "turnId": "sampler-turn-2",
+        "status": "TURN_STATUS_COMPLETED",
+        "error": "",
+        "interruptedByCommandId": "",
+        "endedByTeardown": false
+      },
+      "start_cursor": 497,
+      "end_cursor": 970
+    }
+  ],
+  "suspend_resume": {
+    "target": {
+      "namespace": "agentplane-staging",
+      "name": "identity-cutover-pod-4ffacb44",
+      "uid": "ba7434ca-bd3b-487b-ae8d-30b2272d6b7f"
+    },
+    "old_pod_uid": "01fc572e-7b06-477d-a33c-922ad80f3585",
+    "new_pod_uid": "4955eac5-75d6-4db2-b99f-8ae953435730",
+    "old_credential_id": "9fad53db135a366eb6d5054d7401516e",
+    "new_credential_id": "7396c0e69cc190eccf96c1e9fc611394",
+    "identity_subject": {
+      "identity": {
+        "name": "identity-cutover-pod-4ffacb44",
+        "uid": "8e8ff4ee-1034-4c7d-9c66-91e1ebcf9726"
+      }
+    }
+  },
+  "kubernetes_whoami": "system:serviceaccount:agentplane-staging-k8s-accounts:shared-diagnostics",
+  "kubernetes_read_exit": 0,
+  "kubernetes_forbidden": {
+    "exit": 0,
+    "http_status": 403,
+    "body": {
+      "kind": "Status",
+      "apiVersion": "v1",
+      "metadata": {},
+      "status": "Failure",
+      "message": "secrets \"identity-cutover-pod-4ffacb44-never-created\" is forbidden: User \"system:serviceaccount:agentplane-staging-k8s-accounts:shared-diagnostics\" cannot delete resource \"secrets\" in API group \"\" in the namespace \"agentplane-staging\"",
+      "reason": "Forbidden",
+      "details": {
+        "name": "identity-cutover-pod-4ffacb44-never-created",
+        "kind": "secrets"
+      },
+      "code": 403
+    },
+    "stderr": ""
+  },
+  "launch_refusals": [
+    {
+      "case": "missing",
+      "status": 400,
+      "body": "{\"code\":3, \"message\":\"Identity identity-not-present-89e80280 does not exist\", \"details\":[]}"
+    },
+    {
+      "case": "changed-existing",
+      "status": 409,
+      "body": "{\"code\":6, \"message\":\"identity-cutover-pod-4ffacb44\", \"details\":[]}"
+    }
+  ],
+  "direct_create_denied": {
+    "requested_session": "3f374a6d-1305-4469-87ca-40176fa23cb6",
+    "exit": 1,
+    "error": "{\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"an Identity caller cannot create a Session\",\"source\":\"service\",\"http_status\":null,\"reason\":null,\"retry_after_seconds\":null}}\ncommand terminated with exit code 1\n",
+    "child_absent": true
+  },
+  "delegated_create_denied": {
+    "requested_session": "3cc812c7-3413-411d-96e4-9dab83238481",
+    "exit": 12,
+    "request_id": "f7c790e0-7c45-4df3-a635-7e1c35821688",
+    "caller": {
+      "name": "identity-cutover-pod-4ffacb44",
+      "uid": "8e8ff4ee-1034-4c7d-9c66-91e1ebcf9726"
+    },
+    "decision": "VERDICT_ALLOW",
+    "state": "ACTION_STATE_FAILED",
+    "execution_error": {
+      "kind": "EXECUTION_ERROR_KIND_BACKEND_REFUSED",
+      "message": "Session Dispatcher refused the delegated caller"
+    },
+    "child_absent": true
+  },
+  "broker_request": {
+    "id": "ca00e722-ec5b-46a1-a6a5-2e103f2f82d8",
+    "arguments": {
+      "name": "identity-cutover-broker-5064d58b",
+      "template": "environment-tools",
+      "policy_sets": ["basic-identity", "k8s-account-shared-diagnostics"],
+      "launcher_grants": ["list_sessions"]
+    },
+    "caller": {
+      "name": "identity-cutover-pod-4ffacb44",
+      "uid": "8e8ff4ee-1034-4c7d-9c66-91e1ebcf9726"
+    },
+    "state": "ACTION_STATE_DECISION_PENDING",
+    "ui_error": "The Action Service omitted ActionRequest.caller."
+  },
+  "limits": [
+    "Identity/grants for root Pod/VM created by Kubernetes admin; app CreateEnvironment used the existing agent client authority, not browser operator OIDC.",
+    "UI Identity caller failure prevents live operator-approved broker acceptance.",
+    "Missing Identity and changed-name API refusals verified live; Identity replacement is covered by CI, not a destructive live replacement probe."
+  ]
+}

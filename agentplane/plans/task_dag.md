@@ -3388,6 +3388,15 @@ another Identity stops matching.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
+**Implementation merged and serving (2026-11-12):** switch #15742 and cleanup #15744 removed
+the Sandbox ServiceAccount path, `spec.policySets`, and the controller-created grant.
+[Live evidence and remaining acceptance](../debug/2026_11_12_sandbox_identity_cutover/README.md)
+cover Pod/VM credentials, in-Sandbox Kubernetes authorization, Codex and sampler tool turns, and
+suspend/resume. Operator-approved broker acceptance is still open because the frontend rejects
+Identity Action callers. The design notes below describe the original switch; do not redispatch
+the merged implementation. Direct and caller-delegated Identity Session creation remain denied
+until the separately tracked lifecycle grants.
+
 **Unblocked: question 11 is settled (operator, 2026-11-11)**: a launch is three separate
 operations, create the Identity, bind the launch's PolicySets to it, then `CreateEnvironment` naming it
 in `spec.identity`; no environment operation creates or deletes an Identity
