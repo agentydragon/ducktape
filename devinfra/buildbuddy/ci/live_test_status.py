@@ -20,6 +20,7 @@ from devinfra.buildbuddy.cli import CLIError, run as bbapi
 
 DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
+DEFAULT_GITHUB_SERVER_URL = "https://github.com"
 STATUS_CONTEXT = "BuildBuddy / Bazel ordinary tests (live)"
 STOP = Event()
 
@@ -63,6 +64,18 @@ def _target_url(invocation_id: str, base_url: str) -> str:
     return f"{base_url.rstrip('/')}/invocation/{urllib.parse.quote(invocation_id, safe='')}"
 
 
+def _workflow_run_url(repo: str) -> str:
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    missing = [name for name, value in (("GITHUB_RUN_ID", run_id), ("GITHUB_RUN_ATTEMPT", run_attempt)) if not value]
+    if missing:
+        raise APIError(f"missing environment variables: {', '.join(missing)}")
+    server_url = os.environ.get("GITHUB_SERVER_URL", DEFAULT_GITHUB_SERVER_URL).rstrip("/")
+    repository = urllib.parse.quote(repo, safe="/")
+    attempt = urllib.parse.quote(run_attempt, safe="")
+    return f"{server_url}/{repository}/actions/runs/{urllib.parse.quote(run_id, safe='')}/attempts/{attempt}"
+
+
 def _write_state(state_path: Path, state: str, description: str) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=state_path.parent, delete=False) as temp:
@@ -93,6 +106,7 @@ def _publish_status(
     state: str,
     description: str,
     state_path: Path,
+    target_url: str | None = None,
     github_api_url: str = DEFAULT_GITHUB_API_URL,
     buildbuddy_url: str = DEFAULT_BUILDBUDDY_URL,
 ) -> None:
@@ -102,7 +116,7 @@ def _publish_status(
     )
     body = {
         "state": state,
-        "target_url": _target_url(invocation_id, buildbuddy_url),
+        "target_url": target_url or _target_url(invocation_id, buildbuddy_url),
         "description": description[:140],
         "context": STATUS_CONTEXT,
     }
@@ -251,11 +265,22 @@ def _finish(args: argparse.Namespace) -> None:
             break
         time.sleep(2)
 
+    target_url = None
     if invocation is not None and invocation.get("invocationStatus") == "COMPLETE_INVOCATION_STATUS":
         success = bool(invocation.get("success"))
-        state = "success" if success else "failure"
-        description = "Bazel ordinary test invocation passed" if success else "Bazel ordinary test invocation failed"
-        if not success and previous and previous.get("state") == "failure":
+        if not success and args.remote_outcome == "success":
+            # Bazel can retry the test command with a new BuildBuddy invocation
+            # after a transient cache eviction. The completed CI step is
+            # authoritative, but this invocation remains a failed attempt.
+            state = "success"
+            description = "Bazel CI passed; initial test invocation failed"
+            target_url = _workflow_run_url(repo)
+        else:
+            state = "success" if success else "failure"
+            description = (
+                "Bazel ordinary test invocation passed" if success else "Bazel ordinary test invocation failed"
+            )
+        if not success and args.remote_outcome != "success" and previous and previous.get("state") == "failure":
             description = previous.get("description", description)
     elif invocation is not None and invocation.get("invocationStatus") == "DISCONNECTED_INVOCATION_STATUS":
         # A disconnect is transient; the Bazel step outcome is authoritative.
@@ -289,6 +314,7 @@ def _finish(args: argparse.Namespace) -> None:
             state=state,
             description=description,
             state_path=args.state_file,
+            target_url=target_url,
             github_api_url=args.github_api_url,
             buildbuddy_url=args.buildbuddy_url,
         )
