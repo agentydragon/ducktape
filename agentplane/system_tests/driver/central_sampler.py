@@ -9,7 +9,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from uuid import uuid4
 
-import yaml
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
@@ -20,6 +19,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -203,9 +203,11 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             caller_token = await _bound_token(cluster, core, "app", app, "session-dispatcher")
             reader_token = directory / "history-reader-token"
             reader_token.write_text(await _bound_token(cluster, core, "app", app, HISTORY_READER_AUDIENCE))
-            gateway_config = await core.read_namespaced_config_map("runner-gateway-settings", cluster.namespace)
-            policies = yaml.safe_load(gateway_config.data["settings.yaml"])["environment_default_policy_sets"]
             sandbox = "systest-central-" + uuid4().hex[:8]
+            # Entered before the Sandbox's cleanup, so it is deleted after the Sandbox that acts as it.
+            identity = await cleanup.enter_async_context(
+                scenario_identity(cluster, sandbox, list(LAUNCH_DEFAULT_POLICY_SETS))
+            )
             created = json.loads(
                 await cluster.kubectl(
                     "create",
@@ -217,7 +219,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                         "apiVersion": SANDBOX_API_VERSION,
                         "kind": "Sandbox",
                         "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                        "spec": {"template": template, "running": True, "policySets": policies},
+                        "spec": {"template": template, "running": True, "identity": {"name": identity}},
                     },
                 )
             )
