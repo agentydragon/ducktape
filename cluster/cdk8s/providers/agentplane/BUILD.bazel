@@ -47,7 +47,7 @@ py_library(
 py_library(
     name = "policy_binding",
     srcs = ["policy_binding.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//agentplane/crds:policybinding",
         "@pypi//cdk8s",
