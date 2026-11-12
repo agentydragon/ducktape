@@ -11165,6 +11165,23 @@ impl ExecutionIndex {
             .map(|(_, id)| id)
     }
 
+    /// A source binding used exactly once, at this member read. A second use
+    /// could alias, delete, redefine or publish the instance before the read.
+    pub(super) fn sole_binding_reference_at(&self, binding: &Id, span: Span) -> bool {
+        self.dynamic_scope_owners.is_empty()
+            && !self.reassigned_bindings.contains(binding)
+            && !self.binding_target_writes.contains(binding)
+            && !self.exported_bindings.contains(binding)
+            && !self.imported_bindings.contains(binding)
+            && self
+                .binding_declaration_writes
+                .get(binding)
+                .is_some_and(|writes| matches!(writes.as_slice(), [write] if write.direct_top_level && write.simple_identifier))
+            && self.binding_use_bounds.get(binding).is_some_and(|(first, last)| {
+                first == last && span.lo.0 <= *first && *first < span.hi.0
+            })
+    }
+
     pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
         self.original_statement_spans[owner.0]
     }

@@ -110,6 +110,10 @@ pub(super) struct ClassState {
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
     pub(super) private_constructor_result_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Bindings whose completed initializer returned a checked fresh instance
+    /// without publishing it. This is a binding certificate, not an identity
+    /// claim about the abstract Instance value shared by other allocations.
+    pub(super) private_fresh_instance_bindings: BTreeSet<Id>,
 }
 
 /// What the prefix has exposed to the host or to later owners.

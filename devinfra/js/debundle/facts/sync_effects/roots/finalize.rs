@@ -106,6 +106,13 @@ pub(super) fn finalize(
                 checked_owners: proof.checked_owners,
                 dependencies,
             });
+        if let [binding] = fact.declared.iter().collect::<Vec<_>>().as_slice() {
+            state
+                .world_mut()
+                .classes
+                .private_fresh_instance_bindings
+                .insert((*binding).clone());
+        }
     }
     state.world_mut().module.top_env = top_env;
     state.world_mut().module.top_captures = top_captures;

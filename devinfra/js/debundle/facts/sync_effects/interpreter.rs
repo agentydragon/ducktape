@@ -3692,6 +3692,47 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
+    /// A private fresh instance has not been reachable through any other
+    /// source use of its binding. Its checked class field remains an own data
+    /// slot, so a different accessor on the class cannot receive this value.
+    pub(super) fn private_own_field_read(
+        &self,
+        receiver: &ValueExpr,
+        property: Option<&str>,
+        span: Span,
+        values: &Values,
+    ) -> bool {
+        let (ValueExpr::Binding(binding), Some(property)) = (receiver, property) else {
+            return false;
+        };
+        if !self
+            .state
+            .world
+            .classes
+            .private_fresh_instance_bindings
+            .contains(binding)
+            || !self.inputs.index.sole_binding_reference_at(binding, span)
+            || !self.initialized_local_binding(binding)
+        {
+            return false;
+        }
+        let [AbstractValue::Instance(class, _, InstanceOrigin::Constructed)] =
+            values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return false;
+        };
+        self.inputs
+            .index
+            .class_values
+            .get(class)
+            .is_some_and(|facts| {
+                facts
+                    .instance_fields
+                    .get(property)
+                    .is_some_and(|value| !matches!(value, ValueExpr::Unknown))
+            })
+    }
+
     pub(super) fn ordinary_data_properties(
         &self,
         values: &Values,
