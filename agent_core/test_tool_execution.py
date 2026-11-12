@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Callable
 from typing import Any, Literal
 
 import pytest
@@ -85,8 +84,6 @@ def rendezvous_server() -> FastMCP:
 class ValidationServer(FastMCP):
     """FastMCP server with a tool that validates input strictly."""
 
-    send_message_tool: Callable[..., dict[str, Any]]
-
     def __init__(self):
         super().__init__("validator")
 
@@ -96,7 +93,7 @@ class ValidationServer(FastMCP):
                 raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
             return {"ok": True, "message": content}
 
-        self.send_message_tool = self.tool(output_schema=None)(send_message)
+        self.tool(output_schema=None)(send_message)
 
 
 @pytest.fixture
