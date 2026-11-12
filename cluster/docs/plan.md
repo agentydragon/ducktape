@@ -35,7 +35,9 @@ editing a route.
       its source addresses can be restricted after client paths are inventoried.
       Cilium's host policy matches Nebula source IPs on public interfaces too;
       verify or add underlay anti-spoofing before trusting those identities.
-      Host firewall enablement alone does not restrict satellite listeners.
+      Cilium IPv6 is disabled while optiplex has a global IPv6 address; verify
+      IPv6 exposure and implement IPv6 ingress protection independently. Host
+      firewall enablement alone does not restrict satellite listeners.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
       `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
