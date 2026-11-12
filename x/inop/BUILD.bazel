@@ -70,7 +70,6 @@ py_library(
     deps = [
         ":config",
         "//agent_core/testing:responses",
-        "//agent_core/testing/mcp:responses",
         "@pypi//pytest",
         "@rules_python//python/runfiles",
     ],

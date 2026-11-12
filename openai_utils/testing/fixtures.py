@@ -80,8 +80,8 @@ def mock_or_live(request, live_openai_model):
     Usage::
 
         async def test_foo(mock_or_live, ...):
-            @mock_or_live(MCPDecoratorMock)
-            def client(m: MCPDecoratorMock):
+            @mock_or_live(DecoratorMock)
+            def client(m: DecoratorMock):
                 yield
                 yield m.assistant_text("done")
 

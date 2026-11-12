@@ -8,6 +8,5 @@ from __future__ import annotations
 # - agent_core.testing.mcp.*: MCP-dependent testing utilities
 from agent_core.testing.fixtures import *  # noqa: F403
 from agent_core.testing.mcp.fixtures import *  # noqa: F403
-from agent_core.testing.mcp.responses import *  # noqa: F403
 from agent_core.testing.responses import *  # noqa: F403
 from openai_utils.testing.fixtures import *  # noqa: F403

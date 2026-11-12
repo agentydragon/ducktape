@@ -54,8 +54,6 @@ class ResponsesFactory(ItemFactory):
     """Convenience adapter response builders bound to a model name.
 
     Provides methods to build mock ResponsesResult objects for testing.
-    For the MCP-aware method mcp_tool_call, use MCPResponsesFactory from
-    agent_core.testing.mcp.responses.
     """
 
     def __init__(self, model: str):
@@ -115,8 +113,6 @@ class GeneratorMock(ItemFactory, Model):
     Model for use as a mock client.
 
     Subclass and override play() to provide the generator.
-    For MCP-aware methods,
-    use MCPDecoratorMock from agent_core.testing.mcp.responses.
     """
 
     model = "test-model"
@@ -200,4 +196,6 @@ def reasoning_model() -> str:
     return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
 
 
-# responses_factory fixture lives in agent_core.testing.mcp.responses (returns MCPResponsesFactory)
+@pytest.fixture(scope="session")
+def responses_factory(reasoning_model: str) -> ResponsesFactory:
+    return ResponsesFactory(reasoning_model)
