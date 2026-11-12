@@ -2171,8 +2171,8 @@ is insufficient: an inherited data value can retain an unrepresented callback.
 This assertion can override conservative prototype-mutation census blockers;
 it does not declare the factory pure or native identities intact.
 
-Admission requires a direct unary call of the selected stable top-level hoisted
-factory with a fresh literal data record. The canonical AST check excludes
+Top-level admission requires a direct unary call of the selected stable
+top-level hoisted factory with a fresh literal data record. The canonical AST check excludes
 assignment/sequence-wrapped records, spreads, computed keys, accessors,
 `__proto__`, duplicate keys, array holes and other eager calls. Nested dense
 arrays, literal values, inline callbacks, method definitions and independently
@@ -2210,6 +2210,22 @@ the conservative path records one typed reason in
 `synchronous_execution.local_record_factory_rejections`: the refused record
 shape with its outermost property, or the checked-proof condition that failed
 (with the constructor check for `constructor_proof`).
+
+A direct unary call of that annotated factory inside a local wrapper may use
+the same assertion at its nested call site. The selected runtime target must be
+the exact hoisted factory; the already evaluated argument must be the exact
+fresh, settled plain-data object checked by the canonical AST record check.
+Template substitutions in this nested form must be initialized primitive
+bindings, so coercion cannot invoke user code. The factory must have a
+source-checked return-only constructor body with no other calls or writes;
+additional nested `new` allocations must be inert. A conditional or indirect
+callee, accessor, spread, possible argument reentry, mutated class or escaped
+factory stays on the conservative path. The prototype assertion is scoped to
+that invocation and to its checked class and input object, and its consumed
+properties are reported for that call. The wrapper and argument evaluation,
+constructor lexical reads and heap effects, subsequent calls, and any
+publication remain in the ordinary execution and dependency analysis. This
+nested receipt does not issue the top-level call-site purity certificate.
 
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same

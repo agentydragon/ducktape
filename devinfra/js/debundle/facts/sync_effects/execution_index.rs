@@ -14263,8 +14263,7 @@ impl Visit for ExecutionIndex {
         if self.current.is_none() {
             self.ordinary_top_call_sites.insert(call.span.into());
         }
-        if self.current.is_none()
-            && let Callee::Expr(callee) = &call.callee
+        if let Callee::Expr(callee) = &call.callee
             && let Expr::Ident(factory) = callee.unwrap_parens()
             && self
                 .retained_record_factories
