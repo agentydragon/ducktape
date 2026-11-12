@@ -26,6 +26,7 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller, forward
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import (
     ENVIRONMENT_RUNTIME_CONTAINER,
     ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
@@ -46,6 +47,16 @@ def _retry_list_sessions_poll_error(error: BaseException) -> bool:
 
 @asynccontextmanager
 async def _sandbox(cluster: Cluster, name: str, policies: list[str]) -> AsyncIterator[str]:
+    # A replacement Sandbox of the same name gets its own Identity.
+    async with (
+        scenario_identity(cluster, f"{name}-{uuid4().hex[:6]}", policies) as identity,
+        _sandbox_as(cluster, name, identity) as uid,
+    ):
+        yield uid
+
+
+@asynccontextmanager
+async def _sandbox_as(cluster: Cluster, name: str, identity: str) -> AsyncIterator[str]:
     resource = json.loads(
         await cluster.kubectl(
             "create",
@@ -57,7 +68,7 @@ async def _sandbox(cluster: Cluster, name: str, policies: list[str]) -> AsyncIte
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
                 "metadata": {"name": name, "namespace": cluster.namespace},
-                "spec": {"template": POD_TEMPLATE, "running": True, "policySets": policies},
+                "spec": {"template": POD_TEMPLATE, "running": True, "identity": {"name": identity}},
             },
         )
     )
@@ -234,8 +245,6 @@ async def deployed_session_command_cannot_cross_deletion(
 ) -> None:
     artifact = undeclared_outputs_dir() / "session-deletion"
     artifact.mkdir()
-    settings = json.loads(await cluster.kubectl("get", "configmap", "runner-gateway-settings", "-o", "json"))
-    config = yaml.safe_load(settings["data"]["settings.yaml"])
     app, _, _ = await bound_caller(cluster, "app")
     deployment = json.loads(await cluster.kubectl("get", "deployment", "runner-gateway", "-o", "json"))
     environment = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
@@ -253,7 +262,7 @@ async def deployed_session_command_cannot_cross_deletion(
     persist()
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(scripted.case_scope())
-        uid = await stack.enter_async_context(_sandbox(cluster, name, config["environment_default_policy_sets"]))
+        uid = await stack.enter_async_context(_sandbox(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS)))
         spec = session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
                 environment_hosted=session_pb2.EnvironmentHostedPlacement(
@@ -470,9 +479,7 @@ async def deployed_session_command_cannot_cross_deletion(
         assert retry.session == retained.session
         evidence["retained_session_after_environment_deletion"] = True
         persist()
-        replacement = await stack.enter_async_context(
-            _sandbox(cluster, name, config["environment_default_policy_sets"])
-        )
+        replacement = await stack.enter_async_context(_sandbox(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS)))
         assert replacement != uid
         replacement_session = str(uuid4())
         replacement_spec = session_pb2.SessionSpec()

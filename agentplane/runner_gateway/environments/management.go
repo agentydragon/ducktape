@@ -50,7 +50,7 @@ func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.En
 			return nil, status.Error(codes.InvalidArgument, "launch origin requires caller and Action group")
 		}
 	}
-	return management.New(s.namespace, s.objects, s.defaultPolicySets, &identitypb.ServiceAccount{
+	return management.New(s.namespace, s.objects, &identitypb.ServiceAccount{
 		Namespace: account.Namespace, Name: account.Name,
 	})
 }

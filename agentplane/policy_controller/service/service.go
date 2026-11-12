@@ -114,7 +114,7 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 	if err := validSandboxName(target.Name); err != nil {
 		return nil, err
 	}
-	account, err := s.executionAccount(ctx, target)
+	identity, err := s.sandboxIdentity(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 			}},
 		},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.Subject{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()},
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
 			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
 		},
 	}
@@ -152,11 +152,11 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 		}
 		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be created")
 	}
-	// The owner reference carries the Sandbox UID, but PolicyBinding subjects name only a
-	// ServiceAccount. Recheck after create to catch a Sandbox or account replacement between the
-	// first read and the write. This is detection and cleanup, not an atomic cross-object fence.
-	currentAccount, err := s.executionAccount(ctx, target)
-	if err != nil || currentAccount.GetUid() != account.GetUid() {
+	// The owner reference carries the Sandbox UID, but the subject names the Identity by name only.
+	// Recheck after create to catch a Sandbox replacement, a rebind or an Identity replacement
+	// between the first read and the write. This is detection and cleanup, not an atomic fence.
+	current, err := s.sandboxIdentity(ctx, target)
+	if err != nil || current.UID != identity.UID {
 		s.cleanupCreatedBinding(ctx, binding)
 		if err != nil && status.Code(err) == codes.Unavailable {
 			return nil, err
@@ -198,7 +198,7 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if err := validSandboxName(target.Name); err != nil {
 		return nil, err
 	}
-	account, err := s.executionAccount(ctx, target)
+	identity, err := s.sandboxIdentity(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -227,8 +227,8 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 			return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Sandbox incarnation")
 		}
 	}
-	if binding.Spec.Subject.Namespace != account.GetAccount().GetNamespace() || binding.Spec.Subject.Name != account.GetAccount().GetName() {
-		return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another ServiceAccount")
+	if binding.Spec.Subject.Identity == nil || binding.Spec.Subject.Identity.Name != identity.Name {
+		return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Identity")
 	}
 	if binding.UID == "" || binding.ResourceVersion == "" {
 		return nil, status.Error(codes.Aborted, "PolicyBinding identity is unavailable; refresh the Sandbox policy view")
@@ -264,27 +264,35 @@ func validSandboxName(name string) error {
 	return nil
 }
 
-func (s *Service) executionAccount(ctx context.Context, target *identitypb.EnvironmentTarget) (*identitypb.ServiceAccountIdentity, error) {
+// sandboxIdentity is the live Identity the exact Sandbox incarnation acts as: the one its
+// spec.identity names. An operator grant on a Sandbox binds that Identity.
+func (s *Service) sandboxIdentity(ctx context.Context, target *identitypb.EnvironmentTarget) (*policyapi.Identity, error) {
 	view, err := s.sandboxes.Get(ctx, target.GetName())
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, status.Error(codes.NotFound, "Sandbox not found")
 		}
-		slog.ErrorContext(ctx, "PolicyService Sandbox identity read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Sandbox identity is unavailable")
+		slog.ErrorContext(ctx, "PolicyService Sandbox read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Sandbox is unavailable")
 	}
 	if view.Identity.GetUid() != target.GetUid() || view.Resource.DeletionTimestamp != nil {
 		return nil, status.Error(codes.NotFound, "Sandbox not found")
 	}
-	account, found, err := s.sandboxes.ExecutionAccount(ctx, target)
-	if err != nil {
-		slog.ErrorContext(ctx, "PolicyService Sandbox ServiceAccount read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Sandbox ServiceAccount is unavailable")
+	if view.Resource.Spec.Identity == nil {
+		return nil, status.Error(codes.FailedPrecondition, "Sandbox acts as no Identity")
 	}
-	if !found {
-		return nil, status.Error(codes.NotFound, "Sandbox not found")
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: view.Resource.Spec.Identity.Name}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.FailedPrecondition, "the Sandbox's Identity does not exist")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
 	}
-	return account, nil
+	if !identity.DeletionTimestamp.IsZero() {
+		return nil, status.Error(codes.FailedPrecondition, "the Sandbox's Identity is being deleted")
+	}
+	return identity, nil
 }
 
 func (s *Service) requireKnownPolicySets(ctx context.Context, names []string) error {

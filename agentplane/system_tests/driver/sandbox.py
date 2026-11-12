@@ -10,17 +10,19 @@ from datetime import datetime
 from types import TracebackType
 from typing import Any
 
+# gazelle:include_dep @pypi//protobuf
+import httpx
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
-
-# gazelle:include_dep @pypi//protobuf
 from opentelemetry import trace
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.vm import boot_rcu
 from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
@@ -98,6 +100,23 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 raise cleanup_error
             return False
 
+        launched_identities: list[dict[str, str]] = []
+
+        async def delete_launched_identities() -> None:
+            # After every Sandbox is released. Garbage collection removes a deleted Sandbox's
+            # WorkloadCredential shortly after, and the delete guard refuses while one acts as it.
+            for identity in reversed(launched_identities):
+                async for attempt in AsyncRetrying(
+                    retry=retry_if_exception_type(httpx.HTTPStatusError),
+                    stop=stop_after_delay(60),
+                    wait=wait_fixed(2),
+                    reraise=True,
+                ):
+                    with attempt:
+                        await client.delete_identity(identity)
+
+        # Registered first, so it runs after release_owned.
+        cleanup.push_async_callback(delete_launched_identities)
         cleanup.push_async_exit(release_owned)
 
         async def create(
@@ -116,17 +135,16 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
                 request = environment_service_pb2.CreateEnvironmentRequest(
-                    name=name,
-                    template=template,
-                    policy_sets=policies or [],
-                    inbox_tags=list(inbox_tags),
-                    bootstrap=bootstrap,
+                    name=name, template=template, inbox_tags=list(inbox_tags), bootstrap=bootstrap
                 )
                 if preset is not None:
                     request.preset = preset
                 if idle_suspend_after_seconds is not None:
                     request.idle_suspend_after.seconds = idle_suspend_after_seconds
-                created = await client.create_sandbox(request)
+                # The baseline sets a preset grants, beside the scenario's own: these launches use no preset.
+                sets = sorted({*LAUNCH_DEFAULT_POLICY_SETS, *(policies or [])})
+                created, identity = await client.launch_sandbox(request, sets)
+            launched_identities.append(identity)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
             owned.append((created.name, created.uid))
             try:

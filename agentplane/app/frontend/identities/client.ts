@@ -1,5 +1,9 @@
-import { fromJson } from "@bufbuild/protobuf";
-import type { Identity } from "../../../policy/v1/policy_service_pb";
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import {
+  CreateIdentityResponseSchema,
+  GrantIdentityPolicyBindingResponseSchema,
+  type Identity,
+} from "../../../policy/v1/policy_service_pb";
 import { ListSessionsResponseSchema, type Session } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { displayableError, fetchJson, fetchText, HttpError } from "../client";
 
@@ -86,4 +90,32 @@ export async function listIdentitySessions(): Promise<Session[]> {
     visited.add(token);
   } while (token);
   return sessions;
+}
+
+function policyPost(body: Record<string, JsonValue>): RequestInit {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+/** Creates an Identity in the policy namespace; its creator deletes it. */
+export async function createIdentity(name: string, description: string): Promise<Identity> {
+  const response = fromJson(
+    CreateIdentityResponseSchema,
+    await fetchJson("/upstream/policy/v1/identities", policyPost({ name, description }))
+  );
+  if (!response.identity?.identity?.uid || response.identity.identity.name !== name)
+    throw new Error("PolicyService returned an invalid created Identity");
+  return response.identity;
+}
+
+/** Binds PolicySets to exactly this Identity incarnation, in a binding the Identity owns. */
+export async function grantIdentityPolicyBinding(identity: Identity, policySets: string[]): Promise<void> {
+  const { name, uid } = identity.identity ?? {};
+  if (!name || !uid) throw new Error("Identity has no name and UID");
+  fromJson(
+    GrantIdentityPolicyBindingResponseSchema,
+    await fetchJson(
+      `/upstream/policy/v1/identities/${encodeURIComponent(name)}/policy-bindings`,
+      policyPost({ identityUid: uid, policySets })
+    )
+  );
 }

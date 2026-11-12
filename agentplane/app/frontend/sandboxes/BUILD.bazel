@@ -432,6 +432,7 @@ ts_library(
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend/identities:client",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",

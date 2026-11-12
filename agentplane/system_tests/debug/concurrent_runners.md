@@ -27,18 +27,22 @@ async def shared():
     async with environment() as env:
         yield env
 
+
 @pytest.fixture(params=["claude", "codex"])
 def harness(request):
     return request.param
+
 
 @pytest.fixture
 async def case(shared, harness):
     async with shared.case(harness) as client:
         yield client
 
+
 @pytest.mark.asyncio_cooperative
 async def test_pair(shared, harness, case):
     await shared.pair(harness, case)
+
 
 @pytest.mark.asyncio_cooperative
 async def test_second_pair(shared, harness, case):

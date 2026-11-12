@@ -1,7 +1,7 @@
 # Sandbox Controller
 
-Reconciles `Sandbox` into retained state and optional workspace PVCs, its own ServiceAccount and
-`PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
+Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
+`Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
 status. Each runner serves mTLS on its workload network, and the Runner Gateway connects to the
@@ -113,9 +113,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
-- **No Pod waits on its `PolicyBinding`'s readers.** Every reader fails closed, so a grant applied
-  after the Pod starts only refuses its first requests, as for a running Pod whose PolicySets
-  change; a gate would make every Sandbox depend on every reader, optional ones included.
+- **No Pod waits on its Identity's bindings' readers.** Every reader fails closed, so a grant applied
+  after the Pod starts only refuses its first requests, as for a running Pod whose
+  Identity's grants change; a gate would make every Sandbox depend on every reader, optional ones included.
 - **Gotcha:** agent-sandbox's `Sandbox`, which the cluster installs for other workloads, makes
   `kubectl get sandboxes` resolve to either kind; name ours as `sandboxes.agentplane.allegedly.works`.
 - Unit tests drive `Reconcile` against controller-runtime's fake client. The child-resource

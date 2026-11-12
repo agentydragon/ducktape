@@ -72,8 +72,22 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	spec := sandbox.Spec
 	if spec.Template != "test-template" || !spec.Running || !spec.WakeOnSend || spec.Bootstrap != "true" ||
 		spec.IdleSuspendAfter == nil || spec.IdleSuspendAfter.Duration != 10*time.Minute ||
-		!slices.Equal(spec.PolicySets, []string{testDefaultPolicy, testExtraPolicy}) || !slices.Equal(spec.InboxTags, []string{"test-tag"}) {
+		spec.Identity == nil || spec.Identity.Name != "test-worker" || !slices.Equal(spec.InboxTags, []string{"test-tag"}) {
 		t.Errorf("the Sandbox's spec is %+v", spec)
+	}
+	// The launch created the Identity the Sandbox acts as and granted it exactly the requested sets.
+	var identity policyapi.Identity
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &identity); err != nil {
+		t.Fatal(err)
+	}
+	var grant policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.identity"}, &grant); err != nil {
+		t.Fatal(err)
+	}
+	if grant.Spec.Subject.Identity == nil || grant.Spec.Subject.Identity.Name != "test-worker" ||
+		!slices.Equal(grant.Spec.PolicySets, []string{testExtraPolicy}) ||
+		len(grant.OwnerReferences) != 1 || grant.OwnerReferences[0].UID != identity.UID {
+		t.Errorf("the Identity grant is %+v owned by %v", grant.Spec, grant.OwnerReferences)
 	}
 
 	var binding policyapi.PolicyBinding
@@ -145,8 +159,8 @@ func TestALaunchWithoutGrantsWritesNone(t *testing.T) {
 	if err := kube.List(t.Context(), &bindings, client.InNamespace(f.namespace)); err != nil {
 		t.Fatal(err)
 	}
-	if len(sets.Items) != 2 || len(bindings.Items) != 0 {
-		t.Errorf("after a launch without grants there are %d PolicySets and %d PolicyBindings, want the fixture's 2 and none",
+	if len(sets.Items) != 2 || len(bindings.Items) != 1 || bindings.Items[0].Name != "test-worker.identity" {
+		t.Errorf("after a launch without grants there are %d PolicySets and %d PolicyBindings, want the fixture's 2 and the Identity's grant alone",
 			len(sets.Items), len(bindings.Items))
 	}
 }

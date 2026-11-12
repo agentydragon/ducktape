@@ -179,22 +179,17 @@ class PolicyObjects:
     async def create_binding(
         self, name: str, *, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_sets: list[str]
     ) -> str:
-        subject = {
-            "namespace": sandbox.execution_account.account.namespace,
-            "name": sandbox.execution_account.account.name,
-        }
+        subject = {"identity": {"name": sandbox.identity_name}}
         return await self._create(
             "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
         )
 
     async def ensure_basic_binding(self, sandbox: environment_service_pb2.EnvironmentDescriptor) -> None:
         inventory = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-        subject = sandbox.execution_account.account
         names = [
             binding["metadata"]["name"]
             for binding in inventory["items"]
-            if binding.get("spec", {}).get("subject", {}).get("namespace") == subject.namespace
-            and binding.get("spec", {}).get("subject", {}).get("name") == subject.name
+            if binding.get("spec", {}).get("subject", {}).get("identity", {}).get("name") == sandbox.identity_name
             and "basic" in binding.get("spec", {}).get("policySets", [])
         ]
         if not names:
@@ -209,7 +204,7 @@ class PolicyObjects:
     async def bind(
         self, sandbox: environment_service_pb2.EnvironmentDescriptor, name: str, auto_approve: list[dict[str, Any]]
     ) -> tuple[str, str]:
-        """One set bound to `sandbox`'s ServiceAccount, the binding ActionsReady: the set's and the
+        """One set bound to `sandbox`'s Identity, the binding ActionsReady: the set's and the
         binding's names."""
         suffix = uuid4().hex[:8]
         set_name = await self.create_policy_set(f"systest-{name}-{suffix}", auto_approve)

@@ -8,14 +8,12 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -25,9 +23,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -36,18 +34,16 @@ const maxBootstrapCharacters = 65_536
 
 // Access scopes Sandbox operations to one namespace, caller identity, and set of default policies.
 type Access struct {
-	namespace        string
-	objects          client.Client
-	reader           *sandboxreader.Reader
-	defaultPolicySet sets.Set[string]
-	caller           *identitypb.ServiceAccount
+	namespace string
+	objects   client.Client
+	reader    *sandboxreader.Reader
+	caller    *identitypb.ServiceAccount
 }
 
 // New creates access over one Sandbox namespace and caller identity.
 func New(
 	namespace string,
 	objects client.Client,
-	defaultPolicySets []string,
 	caller *identitypb.ServiceAccount,
 ) (*Access, error) {
 	if namespace == "" || objects == nil || caller == nil || caller.Namespace == "" || caller.Name == "" {
@@ -59,7 +55,7 @@ func New(
 	}
 	return &Access{
 		namespace: namespace, objects: objects, reader: reader,
-		defaultPolicySet: sets.New(defaultPolicySets...), caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+		caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 	}, nil
 }
 
@@ -93,12 +89,11 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 		return &identitypb.EnvironmentTarget{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
 	}
 
-	policySetNames := sets.List(a.defaultPolicySet.Clone().Insert(request.GetPolicySets()...))
-	if err := a.requirePolicySets(ctx, policySetNames); err != nil {
+	if err := a.requireIdentity(ctx, request.GetIdentity()); err != nil {
 		return nil, err
 	}
 
-	resource := sandboxForCreate(request, a.namespace, policySetNames, intent)
+	resource := sandboxForCreate(request, a.namespace, intent)
 	if err := a.objects.Create(ctx, resource); err != nil {
 		existing, retryErr := a.retry(ctx, request)
 		if retryErr != nil {
@@ -274,34 +269,17 @@ func (a *Access) beginTeardown(ctx context.Context, resource *sandboxapi.Sandbox
 	}
 }
 
-func (a *Access) requirePolicySets(ctx context.Context, names []string) error {
-	var sets policyapi.PolicySetList
-	if err := a.objects.List(ctx, &sets, client.InNamespace(a.namespace)); err != nil {
-		return fmt.Errorf("list PolicySets: %w", err)
-	}
-	known := make(map[string]bool, len(sets.Items))
-	for _, set := range sets.Items {
-		ownedBySandbox := false
-		for _, owner := range set.OwnerReferences {
-			if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
-				ownedBySandbox = true
-			}
+// requireIdentity checks that the Identity a new Sandbox will act as exists and is not being deleted.
+func (a *Access) requireIdentity(ctx context.Context, name string) error {
+	identity := &policyapi.Identity{}
+	if err := a.objects.Get(ctx, client.ObjectKey{Namespace: a.namespace, Name: name}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s does not exist", name)}
 		}
-		known[set.Name] = ownedBySandbox
+		return fmt.Errorf("read Identity: %w", err)
 	}
-	missing, reserved := make([]string, 0), make([]string, 0)
-	for _, name := range names {
-		if owned, ok := known[name]; !ok {
-			missing = append(missing, name)
-		} else if owned || strings.HasSuffix(name, ".launcher") {
-			reserved = append(reserved, name)
-		}
-	}
-	if len(missing) > 0 {
-		return &policy.UnknownPolicySetError{Names: missing, Kind: "PolicySet"}
-	}
-	if len(reserved) > 0 {
-		return &LauncherPolicySetError{Names: reserved}
+	if identity.DeletionTimestamp != nil {
+		return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s is being deleted", name)}
 	}
 	return nil
 }
@@ -360,7 +338,6 @@ func (a *Access) patchSpec(ctx context.Context, resource *sandboxapi.Sandbox, sp
 func sandboxForCreate(
 	request *environmentpb.CreateEnvironmentRequest,
 	namespace string,
-	policySets []string,
 	intent string,
 ) *sandboxapi.Sandbox {
 	annotations := map[string]string{sandboxapi.CreateIntentAnnotation: intent}
@@ -375,7 +352,7 @@ func sandboxForCreate(
 			Namespace: namespace, Name: request.GetName(), Annotations: annotations,
 		},
 		Spec: sandboxapi.SandboxSpec{
-			Template: request.GetTemplate(), Running: true, PolicySets: append([]string(nil), policySets...),
+			Template: request.GetTemplate(), Running: true, Identity: &sandboxapi.IdentityRef{Name: request.GetIdentity()},
 			WakeOnSend: request.GetWakeOnSend(), InboxTags: inboxTags, Bootstrap: request.GetBootstrap(),
 		},
 	}
@@ -395,6 +372,9 @@ func validateCreate(request *environmentpb.CreateEnvironmentRequest) error {
 	name := request.GetName()
 	if !validSandboxName(name) || len(name) > 57 || request.GetTemplate() == "" {
 		return &InvalidSandboxError{Reason: "valid name and template are required"}
+	}
+	if request.GetIdentity() == "" {
+		return &InvalidSandboxError{Reason: "the Identity the Environment acts as is required"}
 	}
 	if request.Preset != nil && !validLabelValue(request.GetPreset()) {
 		return &InvalidSandboxError{Reason: "preset must be a valid label value"}

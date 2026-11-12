@@ -132,7 +132,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
-		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}), DefaultPolicySets: []string{testDefaultPolicy},
+		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}),
 	})
 	if err != nil {
 		t.Fatal(err)

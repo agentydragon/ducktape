@@ -46,7 +46,13 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
                 if view.target.uid in opened.opened_sandbox_uids
             )
 
+        async def launch(
+            spec: environment_service_pb2.CreateEnvironmentRequest, policy_sets: list[str]
+        ) -> tuple[identity_pb2.EnvironmentTarget, dict[str, str]]:
+            return await create(spec), {"namespace": "test", "name": spec.name, "uid": str(uuid4())}
+
         client.create_sandbox.side_effect = create
+        client.launch_sandbox.side_effect = launch
         client.__aexit__.side_effect = close
         return cast(Client, client)
 

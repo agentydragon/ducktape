@@ -90,6 +90,7 @@ py_library(
     srcs = ["egress.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/driver:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/haku_ci:__pkg__",

@@ -10,7 +10,6 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/policy"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -58,9 +57,9 @@ func (c *assigningClient) Create(ctx context.Context, object client.Object, opti
 
 func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) {
 	t.Helper()
-	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objects...).Build()
+	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(append(objects, testAgent())...).Build()
 	objectsClient := &assigningClient{Client: underlying}
-	access, err := New(namespace, objectsClient, []string{"default-policy"}, &identitypb.ServiceAccount{
+	access, err := New(namespace, objectsClient, &identitypb.ServiceAccount{
 		Namespace: namespace, Name: "app",
 	})
 	if err != nil {
@@ -80,21 +79,20 @@ func testSandbox(name, uid string, mode sandboxapi.OperatingMode) *sandboxapi.Sa
 	}
 }
 
-func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
+func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
-		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "default-policy", Namespace: namespace}},
-		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "extra-policy", Namespace: namespace}},
+		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
 	caller := &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}
-	access, err := New(namespace, objects, []string{"default-policy", "default-policy"}, caller)
+	access, err := New(namespace, objects, caller)
 	if err != nil {
 		t.Fatal(err)
 	}
 	preset := "selected-preset"
 	request := &environmentpb.CreateEnvironmentRequest{
 		Name: "created-sandbox", Template: "pod-template", Bootstrap: "echo < start",
-		PolicySets: []string{"extra-policy"}, Preset: &preset, WakeOnSend: true,
+		Identity: "agent", Preset: &preset, WakeOnSend: true,
 		IdleSuspendAfter: durationpb.New(time.Minute), InboxTags: []string{"team-b", "team-a", "team-b"},
 	}
 	created, err := access.Create(context.Background(), request)
@@ -109,7 +107,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if stored.Spec.Template != request.Template || !stored.Spec.Running || !stored.Spec.WakeOnSend ||
-		fmt.Sprint(stored.Spec.PolicySets) != "[default-policy extra-policy]" ||
+		stored.Spec.Identity == nil || stored.Spec.Identity.Name != "agent" ||
 		fmt.Sprint(stored.Spec.InboxTags) != "[team-a team-b]" || stored.Spec.IdleSuspendAfter.Duration != time.Minute {
 		t.Fatalf("stored create spec = %#v", stored.Spec)
 	}
@@ -120,7 +118,7 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 	if err != nil || retry.GetUid() != created.GetUid() {
 		t.Fatalf("same Create retry = %#v, %v", retry, err)
 	}
-	otherCaller, err := New(namespace, objects, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "other"})
+	otherCaller, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,12 +127,13 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsUnknownPolicySetsAndInvalidRequests(t *testing.T) {
+func TestCreateRejectsAMissingIdentityAndInvalidRequests(t *testing.T) {
 	access, _ := newAccess(t)
-	_, err := access.Create(context.Background(), &environmentpb.CreateEnvironmentRequest{Name: "unknown-policy", Template: "pod"})
-	var unknown *policy.UnknownPolicySetError
-	if !errors.As(err, &unknown) || fmt.Sprint(unknown.Names) != "[default-policy]" {
-		t.Fatalf("Create with unknown default = %v", err)
+	for _, identity := range []string{"", "missing-agent"} {
+		_, err := access.Create(context.Background(), &environmentpb.CreateEnvironmentRequest{Name: "no-identity", Template: "pod", Identity: identity})
+		if !isInvalid(err) {
+			t.Fatalf("Create naming Identity %q = %v, want InvalidSandboxError", identity, err)
+		}
 	}
 	emptyPreset := ""
 	nonASCIIPreset := "ašb"
@@ -231,7 +230,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 	resource := testSandbox("replaceable", "old-uid", sandboxapi.OperatingModeRunning)
 	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build()
 	conflicts := &conflictOnceClient{Client: underlying}
-	access, err := New(namespace, conflicts, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, conflicts, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +243,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 
 	underlying = clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource.DeepCopy()).Build()
 	replacing := &replaceBeforeRetryClient{Client: underlying}
-	access, err = New(namespace, replacing, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err = New(namespace, replacing, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,15 +316,15 @@ func isInvalid(err error) bool {
 
 func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
 	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
-		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "default-policy", Namespace: namespace}},
+		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
-	access, err := New(namespace, objects, []string{"default-policy"}, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := &environmentpb.CreateEnvironmentRequest{
-		Name: "unicode-sandbox", Template: "pod", Bootstrap: "echo '<b>&amp;</b> snowman ☃ 😀'",
+		Name: "unicode-sandbox", Template: "pod", Identity: "agent", Bootstrap: "echo '<b>&amp;</b> snowman ☃ 😀'",
 	}
 	created, err := access.Create(context.Background(), request)
 	if err != nil {
@@ -372,14 +371,14 @@ func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
 // A create whose outcome the client never saw still lands; the caller's retry of it adopts that Sandbox.
 func TestCreateAdoptsItsOwnUncertainCreate(t *testing.T) {
 	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
-		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "default-policy", Namespace: namespace}},
+		testAgent(),
 	).Build()
 	objects := &lostCreateClient{assigningClient: assigningClient{Client: base}}
-	access, err := New(namespace, objects, []string{"default-policy"}, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := &environmentpb.CreateEnvironmentRequest{Name: "uncertain", Template: "pod"}
+	request := &environmentpb.CreateEnvironmentRequest{Name: "uncertain", Template: "pod", Identity: "agent"}
 	created, err := access.Create(context.Background(), request)
 	if err != nil || created.GetUid() != "created-1" {
 		t.Fatalf("Create after a lost response = %#v, %v", created, err)
@@ -436,7 +435,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 		{name: "same-name replacement after uncertain write", uncertain: true, replace: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).Build()
+			underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(testAgent()).Build()
 			assigning := &assigningClient{Client: underlying}
 			objects := &createOutcomeClient{Client: assigning}
 			objects.outcome = func(ctx context.Context, object client.Object) error {
@@ -457,11 +456,11 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 				}
 				return nil
 			}
-			access, err := New(namespace, objects, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+			access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			target, err := access.Create(t.Context(), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "pod"})
+			target, err := access.Create(t.Context(), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "pod", Identity: "agent"})
 			if test.uncertain && test.replace {
 				if target != nil || !isConflict(err) {
 					t.Fatalf("uncertain write with foreign replacement = %v, %v", target, err)
@@ -485,7 +484,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 }
 
 func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
-	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).Build()
+	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(testAgent()).Build()
 	objects := &createOutcomeClient{Client: &assigningClient{Client: underlying}}
 	objects.outcome = func(ctx context.Context, object client.Object) error {
 		if err := underlying.Delete(ctx, object); err != nil {
@@ -493,12 +492,17 @@ func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
 		}
 		return context.DeadlineExceeded
 	}
-	access, err := New(namespace, objects, nil, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := access.Create(t.Context(), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "pod"})
+	target, err := access.Create(t.Context(), &environmentpb.CreateEnvironmentRequest{Name: "created", Template: "pod", Identity: "agent"})
 	if target != nil || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("unreconciled uncertain write = %v, %v", target, err)
 	}
+}
+
+// testAgent is the Identity created Sandboxes act as.
+func testAgent() *policyapi.Identity {
+	return &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: namespace}, Spec: policyapi.IdentitySpec{Description: "Test agent"}}
 }
