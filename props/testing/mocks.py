@@ -2,8 +2,7 @@
 
 from collections.abc import Generator
 
-from agent_core.testing.mcp.responses import MCPDecoratorMock
-from agent_core.testing.responses import tool_roundtrip
+from agent_core.testing.responses import DecoratorMock, tool_roundtrip
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from util.exec.models import BaseExecResult
 from util.exec.subprocess import DirectExecArgs
@@ -20,7 +19,7 @@ def get_system_prompt_text(req: ResponsesRequest) -> str:
     return req.instructions or ""
 
 
-class SubprocessExecMock(MCPDecoratorMock):
+class SubprocessExecMock(DecoratorMock):
     """Mock for in-container subprocess exec (DirectToolProvider).
 
     Uses plain tool name ``exec`` matching DirectToolProvider registration

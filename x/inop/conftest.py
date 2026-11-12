@@ -5,8 +5,6 @@ from pathlib import Path
 import pytest
 from python.runfiles import Runfiles
 
-from agent_core.testing.mcp.responses import *  # noqa: F403
-
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core.testing.responses import *  # noqa: F403
 from x.inop.config import (

@@ -80,7 +80,6 @@ py_library(
         "//agent_core/testing:fixtures",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:fixtures",
-        "//agent_core/testing/mcp:responses",
         "//openai_utils/testing:fixtures",
     ],
 )

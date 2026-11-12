@@ -32,9 +32,6 @@ py_library(
     deps = [
         ":echo_server",
         "//agent_core/testing:responses",
-        "//mcp_infra/testing:naming",
         "//openai_utils:model",
-        "@pypi//pydantic",
-        "@pypi//pytest",
     ],
 )
