@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 py_binary(
     name = "demo_live_capture_bin",
     testonly = True,
-    main_module = "agentplane.capture.demo_live_capture",
+    main_module = "agentplane.native.capture.demo_live_capture",
     deps = [":demo_live_capture"],
 )
 
@@ -44,6 +44,7 @@ py_test(
     deps = [
         ":llm_recording_proxy",
         "//:conftest",
+        "//agentplane/native:conftest",
         "@pypi//pytest_bazel",
     ],
 )

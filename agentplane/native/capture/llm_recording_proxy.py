@@ -15,7 +15,12 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
 
-from agentplane.capture.records import ConnectionDroppedRecord, ProxyErrorRecord, RequestRecord, ResponseChunkRecord
+from agentplane.native.capture.records import (
+    ConnectionDroppedRecord,
+    ProxyErrorRecord,
+    RequestRecord,
+    ResponseChunkRecord,
+)
 
 _SAFE_HEADERS = {"content-type", "content-encoding", "accept", "user-agent"}
 _FORBIDDEN_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie"}

@@ -19,9 +19,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from agentplane.capture import codex_hook
-from agentplane.capture.llm_recording_proxy import recording_proxy
-from agentplane.capture.records import (
+from agentplane.native.capture import codex_hook
+from agentplane.native.capture.llm_recording_proxy import recording_proxy
+from agentplane.native.capture.records import (
     CaptureMetadata,
     ConnectionDroppedRecord,
     ProxyErrorRecord,

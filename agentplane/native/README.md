@@ -14,7 +14,7 @@ than failing, since the harness is the writer and a newer pin may add kinds. Inb
 parsed with `wire.parse_frame`; outbound frames are the models the drivers construct, serialized at
 the pipe.
 
-Three consumers: the live-capture probe in <../capture/README.md>, which runs a scenario against a
+Three consumers: the live-capture probe in <capture/README.md>, which runs a scenario against a
 real model; the [scripted harness tests](#scripted-harness-tests), which drive the same run facades
 against a loopback model the test controls; and Runtime in <../env/runtime/docs/session_protocol.md>, which reuses
 the frame constructors and launch configuration behind its harness-neutral protocol over its own
@@ -69,7 +69,7 @@ whether Agentplane should change its process or Session model. The open design q
 
 The [protocol roster](docs/protocol_roster.md) lists the protocol surfaces used or left unused by
 the fixtures; it does not claim every listed feature is tested. When a binary pin changes, use the
-[live-capture probe](../capture/README.md) for the scenario that fails, compare what the harness now
+[live-capture probe](capture/README.md) for the scenario that fails, compare what the harness now
 sends with the scripted expectations, and update the script. Capture logs are references for repair,
 never test inputs.
 
