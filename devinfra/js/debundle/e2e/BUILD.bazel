@@ -677,6 +677,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "map_entry_callbacks_test")
 
+debundle_e2e_test(
+    name = "map_literal_heap_test",
+    deps = [":graph_support"],
+)
+
 debundle_e2e_test(name = "from_entries_callback_storage_test")
 
 debundle_e2e_test(

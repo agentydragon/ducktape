@@ -577,6 +577,7 @@ fn analyze_chunk_with_policy_and_sync(
             fresh_freeze: &fresh_freeze_heap_proof,
             native_reads: &prepared_sync_index,
             native_facts: &native_facts,
+            shadowed: &shadowed,
         },
         &mut facts,
     );

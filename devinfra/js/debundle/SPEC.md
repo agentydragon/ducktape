@@ -398,6 +398,21 @@ construction source unit reports the consumed input references in
 configured inputs that the proof did not consume are not reported. Empty uses
 are omitted from JSON and default to empty when reading older reports.
 This adds no author flag or purity exemption.
+An exact direct top-level `X = new Map([[key, value], …])` initializer has a
+separate source-derived heap receipt when every entry is a dense two-element
+array of primitive literals. The Map and all entry arrays are fresh; no source
+expression between their creation and native iteration can mutate, escape or
+install accessors on them. The receipt requires an unshadowed, unreassigned
+global `Map`, no dynamic scope, and complete-program native-integrity evidence
+for the Map binding, `Map.prototype` and its adder, `Array.prototype`, and
+`%ArrayIteratorPrototype%`. It omits only this constructor's generic opaque
+heap read/write and argument-escape contribution. The collector still records
+the literal arrays' allocation cells, and ordinary binding, allocation,
+callback, purity and synchronous-execution analysis remains authoritative.
+Aliased/escaped iterables, sparse or spread entries, getters, nonprimitive
+entry expressions, nested calls and unsupported native slots retain the
+opaque path. The consumed native dependencies appear on that exact source unit
+in `heap_native_integrity_uses`.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
 ordering coverage.
