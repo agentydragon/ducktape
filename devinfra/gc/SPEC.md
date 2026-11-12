@@ -42,14 +42,9 @@ HEAD is eligible when its content or patches have landed on the default branch. 
 Git removes the worktree's HEAD and reflog; no recovery refs are created for them. Commits
 that are not reachable from surviving refs may eventually be garbage-collected.
 
-Re-listing worktrees and reclassification confirm that the checked-out branch and detached HEAD
-still match the scan. Inspection errors fail closed. A missing worktree directory is skipped;
-inspect `git worktree prune --dry-run --verbose` and prune only confirmed stale records.
-
-These checks are not atomic with `git worktree remove`. A concurrent detached commit created
-after the final check can still be lost; a concurrent branch change after the branch comparison
-can also invalidate the PR snapshot. Git's normal refusal to remove tracked or untracked changes
-remains the final guard for those classes of files.
+Workspace GC assumes no external modifications to workspace state during its run, including
+worktrees and their checked-out branches and HEADs. Git refuses tracked or untracked changes. A missing worktree directory is skipped; inspect
+`git worktree prune --dry-run --verbose` and prune only confirmed stale records.
 
 ## Interruption
 

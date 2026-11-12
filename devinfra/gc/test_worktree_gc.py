@@ -233,9 +233,7 @@ async def test_classified_detached_worktree_is_directly_removable(repo: GitRepo,
 
 
 async def _remove_detached(repo: GitRepo, worktree: Worktree) -> RemovalResult[Path]:
-    return await wg.remove_if_still_prunable(
-        repo.path, worktree, main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
+    return await wg.remove_worktree(repo.path, worktree.path)
 
 
 async def test_detached_ancestor_is_prunable(repo: GitRepo, proc: Path) -> None:
@@ -244,8 +242,6 @@ async def test_detached_ancestor_is_prunable(repo: GitRepo, proc: Path) -> None:
     item = await _classify(repo, path, proc)
     assert isinstance(item, wg.PrunableWorktree)
     assert item.reason is wg.PrunableWorktreeReason.CONTENT_IN_MAIN
-    head = item.worktree.head
-    assert head
     assert await _remove_detached(repo, item.worktree) == Removed(path)
     assert not repo.run("for-each-ref", "--format=%(refname)", "refs/workspace-gc/recovery/").stdout
 
@@ -284,16 +280,6 @@ async def test_detached_patch_landed_is_prunable(repo: GitRepo, proc: Path) -> N
     assert item.reason is wg.PrunableWorktreeReason.PATCHES_IN_MAIN
     assert await _remove_detached(repo, item.worktree) == Removed(path)
     assert not repo.run("for-each-ref", "--format=%(refname)", "refs/workspace-gc/recovery/").stdout
-
-
-async def test_detached_head_change_since_scan_is_skipped(repo: GitRepo, proc: Path) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    item = await _classify(repo, path, proc)
-    assert isinstance(item, wg.PrunableWorktree)
-    _commit_detached(GitRepo(path), "new work")
-    assert isinstance(await _remove_detached(repo, item.worktree), Skipped)
-    assert path.exists()
 
 
 async def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:
@@ -396,109 +382,6 @@ async def test_remove_worktree_skips_missing_directory_for_git_worktree_prune(re
     assert isinstance(result, Skipped)
     assert "prune its stale Git metadata separately" in result.reason
     assert any(item.path == wt.path for item in await git_repo.list_worktrees(repo.path))
-
-
-async def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> RemovalResult[Path]:
-    return await wg.remove_if_still_prunable(
-        repo.path,
-        Worktree(path=wt.path, branch="feature"),
-        main="main",
-        pr_states={},
-        main_path=repo.path,
-        active_path=None,
-        live_pids=live_pids,
-    )
-
-
-async def test_remove_if_still_prunable_removes_an_unchanged_tree(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-
-    assert (await _remove_if_still_prunable(repo, wt, live_pids=[])) == Removed(wt.path)
-    assert not wt.path.exists()
-
-
-async def test_remove_if_still_prunable_skips_a_tree_a_process_entered_since_the_scan(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-
-    result = await _remove_if_still_prunable(repo, wt, live_pids=[4242])
-
-    assert isinstance(result, Skipped)
-    assert wt.path.exists()
-
-
-async def test_remove_if_still_prunable_skips_a_tree_with_uncommitted_work_since_the_scan(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    (wt.path / "notes").write_text("new since the scan\n")
-
-    result = await _remove_if_still_prunable(repo, wt, live_pids=[])
-
-    assert isinstance(result, Skipped)
-    assert wt.path.exists()
-
-
-async def test_remove_if_still_prunable_skips_a_worktree_that_detached_after_the_scan(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    wt.commit("unique", "1\n", "unmerged")
-    wt.run("checkout", "--detach")
-    _commit_detached(wt, "detached empty commit")
-    detached_head = wt.rev("HEAD")
-    assert detached_head not in _surviving_ref_commits(repo)
-
-    result = await wg.remove_if_still_prunable(
-        repo.path,
-        Worktree(wt.path, "feature"),
-        main="main",
-        pr_states={"feature": PrInfo(1, PrState.MERGED)},
-        main_path=repo.path,
-        active_path=None,
-        live_pids=[],
-    )
-
-    assert isinstance(result, Skipped)
-    assert wt.path.exists()
-    assert wt.rev("HEAD") == detached_head
-
-
-async def test_remove_if_still_prunable_removes_ignored_file_added_after_scan(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, ".env")
-    assert isinstance(await _classify(repo, wt.path, proc), wg.PrunableWorktree)
-    local_env = wt.path / ".env"
-    local_env.write_text("new after scan\n")
-
-    result = await _remove_if_still_prunable(repo, wt, live_pids=[])
-
-    assert result == Removed(wt.path)
-    assert not wt.path.exists()
-
-
-async def test_remove_if_still_prunable_skips_when_branch_changes_during_revalidation(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    wt = repo.worktree("wt", "feature")
-    worktree = Worktree(wt.path, "feature")
-    pr_states = {"feature": PrInfo(13, PrState.MERGED)}
-    assert isinstance(
-        await wg.classify_worktree(
-            worktree, main="main", pr_states=pr_states, main_path=repo.path, active_path=None, live_pids=[]
-        ),
-        wg.PrunableWorktree,
-    )
-    classify = wg.classify_worktree
-
-    async def switch_branch_after_listing(*args: Any, **kwargs: Any) -> wg.Classification:
-        wt.run("switch", "-c", "new-open-pr")
-        return await classify(*args, **kwargs)
-
-    monkeypatch.setattr(wg, "classify_worktree", switch_branch_after_listing)
-
-    result = await wg.remove_if_still_prunable(
-        repo.path, worktree, main="main", pr_states=pr_states, main_path=repo.path, active_path=None, live_pids=[]
-    )
-
-    assert isinstance(result, Skipped)
-    assert "branch changed" in result.reason
-    assert wt.path.exists()
 
 
 _MAIN = "origin/test-main"

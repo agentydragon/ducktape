@@ -153,7 +153,7 @@ def test_worktree_pruning_starts_before_other_worktrees_finish_scanning(
     slow = checkout.worktree("z-slow", "landed-slow")
     removed = threading.Event()
     classify = worktree_gc.classify_worktree
-    remove = worktree_gc.remove_if_still_prunable
+    remove = worktree_gc.remove_worktree
 
     async def classify_with_block(worktree: git_repo.Worktree, **kwargs: Any) -> worktree_gc.Classification:
         if worktree.path == slow.path:
@@ -164,13 +164,13 @@ def test_worktree_pruning_starts_before_other_worktrees_finish_scanning(
 
     async def remove_and_signal(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
         result = await remove(*args, **kwargs)
-        if args[1].path == fast.path:
+        if args[1] == fast.path:
             assert not fast.path.exists()
             removed.set()
         return result
 
     monkeypatch.setattr(worktree_gc, "classify_worktree", classify_with_block)
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_and_signal)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", remove_and_signal)
     with pytest.raises(SystemExit) as exit_info:
         workspace_gc.main(["worktrees", "--repo", str(checkout.path), "--no-prs", "--prune", "--workers", "2"])
     assert exit_info.value.code == 0
@@ -500,14 +500,14 @@ async def test_interrupt_drains_admitted_worktree_removal(
     checkout = repo.clone("checkout")
     worktree = checkout.worktree("landed", "landed")
     started, release, stopped = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    remove = worktree_gc.remove_if_still_prunable
+    remove = worktree_gc.remove_worktree
 
     async def blocking_remove(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
         started.set()
         await release.wait()
         return await remove(*args, **kwargs)
 
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", blocking_remove)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", blocking_remove)
     options = workspace_run.Options(
         domains=frozenset({workspace_run.Domain.WORKTREES}),
         root=tmp_path,
@@ -1053,7 +1053,7 @@ async def test_worktree_removal_does_not_wait_for_foreign_clone_discovery(
     make_base(root, foreign.path)
     started, removed = asyncio.Event(), asyncio.Event()
     discover = foreign_clone_gc.discover_foreign_clones
-    remove = worktree_gc.remove_if_still_prunable
+    remove = worktree_gc.remove_worktree
 
     async def slow_discovery(*args: Any, **kwargs: Any) -> list[pathlib.Path]:
         started.set()
@@ -1068,7 +1068,7 @@ async def test_worktree_removal_does_not_wait_for_foreign_clone_discovery(
 
     monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
     monkeypatch.setattr(foreign_clone_gc, "discover_foreign_clones", slow_discovery)
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_after_discovery)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", remove_after_discovery)
     options = workspace_run.Options(
         domains=frozenset({workspace_run.Domain.WORKTREES, workspace_run.Domain.FOREIGN_CLONES}),
         root=root,
@@ -1228,7 +1228,7 @@ async def test_progress_counts_cache_entry_waiting_for_worktree_and_base_removal
     )
     link_external(base, "repo", entry)
     release = threading.Event()
-    remove = worktree_gc.remove_if_still_prunable
+    remove = worktree_gc.remove_worktree
 
     async def remove_after_waiting(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
         assert await asyncio.to_thread(release.wait, 10), "cache dependency was not reported as waiting"
@@ -1256,7 +1256,7 @@ async def test_progress_counts_cache_entry_waiting_for_worktree_and_base_removal
 
     monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
     monkeypatch.setattr(output_base_gc, "_TMP_ROOT", tmp_path / "elsewhere")
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_after_waiting)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", remove_after_waiting)
     observer = Observer()
     options = workspace_run.Options(
         domains=frozenset(
@@ -1324,10 +1324,10 @@ def test_skipped_worktree_keeps_its_branch_without_failing_the_run(
     root.mkdir()
     monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
 
-    async def skipped(_repo: pathlib.Path, item: git_repo.Worktree, **_kwargs: Any) -> RemovalResult[pathlib.Path]:
-        return Skipped(item.path, "became busy")
+    async def skipped(_repo: pathlib.Path, path: pathlib.Path) -> RemovalResult[pathlib.Path]:
+        return Skipped(path, "became busy")
 
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", skipped)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", skipped)
 
     with pytest.raises(SystemExit) as exit_info:
         workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
@@ -1345,7 +1345,7 @@ def test_scan_failure_reports_removals_that_already_completed(
     root = tmp_path / "output"
     root.mkdir()
     removed = threading.Event()
-    remove = worktree_gc.remove_if_still_prunable
+    remove = worktree_gc.remove_worktree
 
     async def remove_and_signal(*args: Any, **kwargs: Any) -> RemovalResult[pathlib.Path]:
         result = await remove(*args, **kwargs)
@@ -1357,7 +1357,7 @@ def test_scan_failure_reports_removals_that_already_completed(
         raise RuntimeError("branch scan failed")
 
     monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_and_signal)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", remove_and_signal)
     monkeypatch.setattr(branch_gc, "branch_holders", fail_scan)
     with pytest.raises(SystemExit) as exit_info:
         workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])

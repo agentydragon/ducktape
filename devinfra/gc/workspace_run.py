@@ -650,22 +650,11 @@ class Run:
         state.classification = item
         if isinstance(item, PrunableWorktree) and self.options.apply and Domain.WORKTREES in self.options.domains:
             with self._step("remove worktrees", item.worktree.path) as record:
-
-                async def remove() -> RemovalResult[Path]:
-                    live = await run_blocking(worktree_gc.processes_by_worktree, [item.worktree.path])
-                    return await worktree_gc.remove_if_still_prunable(
-                        facts.repo,
-                        item.worktree,
-                        main=item.main,
-                        pr_states=self.prs.states,
-                        main_path=facts.main_path,
-                        active_path=facts.active_path,
-                        live_pids=live.get(item.worktree.path, []),
-                    )
-
                 results: list[RemovalResult[Path]] = []
                 try:
-                    result = await self._mutate(remove(), item.worktree.path, results)
+                    result = await self._mutate(
+                        worktree_gc.remove_worktree(facts.repo, item.worktree.path), item.worktree.path, results
+                    )
                 finally:
                     if results:
                         state.removal = results[-1]

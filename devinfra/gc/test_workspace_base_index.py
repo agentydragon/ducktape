@@ -52,14 +52,14 @@ async def test_base_waits_only_for_unambiguous_resolved_worktree(
             state.resolved_workspace = resolve_counted(alias)
         inspected.set()
 
-    remove = worktree_gc.remove_if_still_prunable
+    remove = worktree_gc.remove_worktree
 
     async def remove_after_inspection(*args: Any, **kwargs: Any) -> RemovalResult[Path]:
         await asyncio.wait_for(inspected.wait(), 10)
         return await remove(*args, **kwargs)
 
     monkeypatch.setattr(workspace_run.Run, "_inspect_base", inspect_recorded)
-    monkeypatch.setattr(worktree_gc, "remove_if_still_prunable", remove_after_inspection)
+    monkeypatch.setattr(worktree_gc, "remove_worktree", remove_after_inspection)
     options = workspace_run.Options(
         domains=frozenset({workspace_run.Domain.WORKTREES, workspace_run.Domain.BASES}),
         root=root,

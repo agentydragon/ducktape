@@ -21,8 +21,9 @@ a repo-cache entry is unreferenced once the bases linking to it are gone):
 
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` scope the work to one domain.
-All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
-immediately before removing it, skipping one that changed.
+All use the PRUNE/KEEP/REVIEW model and are dry by default. Workspace state is assumed not to
+be modified externally during a run; output bases and repo-cache entries are also rechecked
+under their respective locks before removal.
 With a deletion flag, removals start while other items are being scanned; completed work can
 unlock further work. Findings describe each item as observed, not a single snapshot. The live
 display shows ready, running, dependency-waiting, and finished counts; each bar covers only work
@@ -34,8 +35,7 @@ Scans emit INFO progress to stderr as they inspect each worktree, branch, output
 batch, or requested size, so a large or slow item is identifiable before the final report.
 
 Git or filesystem failures inspecting a worktree, branch, or foreign clone produce `REVIEW`
-with the error, leaving that item intact while other items continue. This also applies during
-deletion revalidation. An existing directory with unreadable Git metadata is never treated as
+with the error, leaving that item intact while other items continue. An existing directory with unreadable Git metadata is never treated as
 a missing worktree. Failures that block the entire command exit nonzero with a diagnostic.
 An item skipped at deletion (it no longer qualifies, or its Bazel lock or the cache is busy) is
 reported as `SKIPPED` and does not change the exit status; a failed removal does.
@@ -93,11 +93,11 @@ default is the only root.
 
 - `PRUNE`: clean (no tracked or untracked changes), idle (not main/active, no process cwd'd inside),
   and its work has landed on the default branch, or its branch has a merged or closed PR.
-  `workspace-gc worktrees --prune` reclassifies before calling `git worktree remove` without
-  `--force`; Git deletes ignored files. Attached branches survive worktree removal. A detached
+  `workspace-gc worktrees --prune` calls `git worktree remove` without `--force`; Git deletes ignored files. Attached branches survive worktree removal. A detached
   HEAD with landed content or patches is eligible; Git removes its HEAD and reflog without
-  creating recovery refs. A branch or detached HEAD change during revalidation is
-  skipped. If the worktree directory is already missing, removal is skipped; review stale
+  creating recovery refs. The tool assumes no external modifications to workspace state during
+  its run, including worktrees and their checked-out branches and HEADs. If the worktree
+  directory is already missing, removal is skipped; review stale
   entries with `git worktree prune --dry-run --verbose` and prune only confirmed records.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
   changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
