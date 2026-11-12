@@ -1,251 +1,104 @@
 {
   "status": "PASSED",
   "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/6ebe45e3-561a-4d61-bed1-43d41c1d336c",
+  "invocation": "https://app.buildbuddy.io/invocation/04c8e734-4fed-4704-b250-0a0e282cdd21",
   "complete_test_case_count": 12,
-  "pytest_seconds": 97.69,
-  "total_capture_count": 164,
-  "reviewed_at_utc": "2026-11-12T09:25:29.391613+00:00",
-  "report_assets": [
+  "pytest_seconds": 192.949,
+  "reviewed_at_utc": "2026-11-12T12:20:16.548016+00:00",
+  "tested_assets": [
     {
-      "path": "latency/crd-ordering-spike.patch",
-      "sha256": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5"
+      "path": "latency/index.html",
+      "sha256": "82a6e60f958369d89b1a132aa1bee6ee5e4ceca32e5c501214e3cbe6f9f9f864"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "86ccf83262f7bd06bb4c698cc1b71bbd78623b3b6e87aaecbc2733867c44863f"
-    },
-    {
-      "path": "latency/evidence.md",
-      "sha256": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627"
-    },
-    {
-      "path": "latency/index.html",
-      "sha256": "39f5f10c9d832bbd2b7282becd6a168b3234ee6eb3d1172cd5799ad82eb10d36"
+      "sha256": "61383190203aa1b26ba14dd9b0a82d505d1f9199ae6ec7ec163d93ddf2c55f7b"
     },
     {
       "path": "latency/manifest.json",
-      "sha256": "74d39e4facceb3fd2b15bc5439392c7263ebf525cf9980560cbc0e57586dd4b3"
-    },
-    {
-      "path": "latency/resource-followup.js",
-      "sha256": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870"
-    },
-    {
-      "path": "latency/resource-timeline.png",
-      "sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e"
-    },
-    {
-      "path": "report.css",
-      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+      "sha256": "fa0adbfb3460b318eafa1e6ac6c735dc5190db011fda81b368ea5476bf5eb755"
     },
     {
       "path": "report.js",
       "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+    },
+    {
+      "path": "report.css",
+      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     }
   ],
-  "case_diagnostics": [
+  "published_assets": [
     {
-      "report": "latency",
-      "sha256": "39f5f10c9d832bbd2b7282becd6a168b3234ee6eb3d1172cd5799ad82eb10d36",
-      "theme": "dark",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "chart_names": [
-        "fresh-vm-phases",
-        "latest-class-feedback",
-        "latest-kvm-demand",
-        "resource-cpu-pairs",
-        "resource-fixture-pair"
-      ],
-      "pinned_css": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "live_theme_change": true,
-      "document_overflow": false,
-      "case": "dark-desktop-latency"
+      "path": "latency/index.html",
+      "sha256": "9f9fa7694555d7de4dde7724ec888f86a8aa9dc7fd5dc62e0decd94d116ab8fb"
     },
     {
-      "report": "latency",
-      "sha256": "39f5f10c9d832bbd2b7282becd6a168b3234ee6eb3d1172cd5799ad82eb10d36",
-      "theme": "dark",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "chart_names": [
-        "fresh-vm-phases",
-        "latest-class-feedback",
-        "latest-kvm-demand",
-        "resource-cpu-pairs",
-        "resource-fixture-pair"
-      ],
-      "pinned_css": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "live_theme_change": true,
-      "document_overflow": false,
-      "case": "dark-mobile-latency"
+      "path": "latency/evidence.json",
+      "sha256": "ad3068313b21dc8ace96099d94c9f3f94e4f0d9f221c14c475bd2ac65883051c"
     },
     {
-      "report": "latency",
-      "sha256": "39f5f10c9d832bbd2b7282becd6a168b3234ee6eb3d1172cd5799ad82eb10d36",
-      "theme": "light",
-      "viewport": {
-        "width": 1280,
-        "height": 900
-      },
-      "chart_names": [
-        "fresh-vm-phases",
-        "latest-class-feedback",
-        "latest-kvm-demand",
-        "resource-cpu-pairs",
-        "resource-fixture-pair"
-      ],
-      "pinned_css": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "live_theme_change": true,
-      "document_overflow": false,
-      "case": "light-desktop-latency"
+      "path": "report.js",
+      "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
     },
     {
-      "report": "latency",
-      "sha256": "39f5f10c9d832bbd2b7282becd6a168b3234ee6eb3d1172cd5799ad82eb10d36",
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "chart_names": [
-        "fresh-vm-phases",
-        "latest-class-feedback",
-        "latest-kvm-demand",
-        "resource-cpu-pairs",
-        "resource-fixture-pair"
-      ],
-      "pinned_css": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "live_theme_change": true,
-      "document_overflow": false,
-      "case": "light-mobile-latency"
+      "path": "report.css",
+      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     }
+  ],
+  "checks": [
+    "Desktop and mobile",
+    "Initial light and dark schemes",
+    "Live browser color preference change",
+    "Real pinned CDN CSS and modules",
+    "Populated charts and expandable controls",
+    "No document overflow or page/console errors"
   ],
   "manually_reviewed_screenshots": [
     {
       "case": "light-desktop-latency",
-      "checkpoint": "chart-latest-kvm-demand",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/2e0f7671294e61185849b798b5c0ca6a54e394c6a3d27b16b4378f70660dcfc4/14893",
-      "sha256": "2e0f7671294e61185849b798b5c0ca6a54e394c6a3d27b16b4378f70660dcfc4",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
-    },
-    {
-      "case": "light-desktop-latency",
-      "checkpoint": "chart-fresh-vm-phases",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/2994a3bd08373e64db6efba6b9262a0a4113392482f6f29cd1c892f2e1ce18d8/12991",
-      "sha256": "2994a3bd08373e64db6efba6b9262a0a4113392482f6f29cd1c892f2e1ce18d8",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
+      "checkpoint": "section-latency-nov12-followups",
+      "sha256": "eb0d930cbe7b08c1796732e0adea958937b898322b2374dac43a52bda26b61f9",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/eb0d930cbe7b08c1796732e0adea958937b898322b2374dac43a52bda26b61f9/194226",
+      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
     },
     {
       "case": "light-mobile-latency",
-      "checkpoint": "first-screen",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/c0562a5f8eca1524efe326dcf92ab9965e7624708fa134f488c6baa296369f72/76576",
-      "sha256": "c0562a5f8eca1524efe326dcf92ab9965e7624708fa134f488c6baa296369f72",
-      "review": "Inspected final screenshot"
-    },
-    {
-      "case": "dark-mobile-latency",
-      "checkpoint": "chart-resource-cpu-pairs",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/5e001af164038ab03f8ea95d066aa9b62a01e92143e84ff4dd10e2fb1ae2aa7e/10135",
-      "sha256": "5e001af164038ab03f8ea95d066aa9b62a01e92143e84ff4dd10e2fb1ae2aa7e",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
-    },
-    {
-      "case": "dark-mobile-latency",
-      "checkpoint": "chart-latest-class-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/8f9bdbd7cea2401de3b2438bb46d4afd07d6389201e92f07eab2001f9b696ddd/10868",
-      "sha256": "8f9bdbd7cea2401de3b2438bb46d4afd07d6389201e92f07eab2001f9b696ddd",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
-    },
-    {
-      "case": "dark-mobile-latency",
-      "checkpoint": "first-screen",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b685518d0014ec93892fe44bd6741e06a42461496eee5eb33d14a948b7927648/72745",
-      "sha256": "b685518d0014ec93892fe44bd6741e06a42461496eee5eb33d14a948b7927648",
-      "review": "Inspected final screenshot"
-    },
-    {
-      "case": "light-desktop-latency",
-      "checkpoint": "chart-latest-class-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/0d726697f8af926b39a353d34fae32d710238693943d07217c56121615965f43/13617",
-      "sha256": "0d726697f8af926b39a353d34fae32d710238693943d07217c56121615965f43",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
-    },
-    {
-      "case": "dark-mobile-latency",
-      "checkpoint": "chart-fresh-vm-phases",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/af0dad2250c20201fd5f02c4868b3d3bd692f1c35fa7f25756d4cb16a0ec0317/10516",
-      "sha256": "af0dad2250c20201fd5f02c4868b3d3bd692f1c35fa7f25756d4cb16a0ec0317",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
+      "checkpoint": "section-latency-nov12-followups",
+      "sha256": "f8b08f89b31759085994a70e29926f995f184fcaf59f2d8cad39d18a6118c570",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f8b08f89b31759085994a70e29926f995f184fcaf59f2d8cad39d18a6118c570/203699",
+      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
     },
     {
       "case": "dark-desktop-latency",
-      "checkpoint": "first-screen",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/bfec493a27cba953568b0d6302b4c55dfedff4a632131bfe398fdc356839f697/132225",
-      "sha256": "bfec493a27cba953568b0d6302b4c55dfedff4a632131bfe398fdc356839f697",
-      "review": "Inspected final screenshot"
+      "checkpoint": "section-latency-nov12-followups",
+      "sha256": "72c2c3c2c092af5d755bf6b742f703bac0ba7a8c1c152afd35f7850aa165e010",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/72c2c3c2c092af5d755bf6b742f703bac0ba7a8c1c152afd35f7850aa165e010/195622",
+      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
     },
     {
       "case": "dark-mobile-latency",
-      "checkpoint": "chart-latest-kvm-demand",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/2d7994cc5006ea6ef828df3d394e55be75fee5ec1ebd431fde28c922ec90c00d/8918",
-      "sha256": "2d7994cc5006ea6ef828df3d394e55be75fee5ec1ebd431fde28c922ec90c00d",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
-    },
-    {
-      "case": "light-desktop-latency",
-      "checkpoint": "first-screen",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f9bcfe3d417cc091fd043d975c3fb510c48655dd01d91c4f560ed9577328cb8c/136128",
-      "sha256": "f9bcfe3d417cc091fd043d975c3fb510c48655dd01d91c4f560ed9577328cb8c",
-      "review": "Inspected final screenshot"
-    },
-    {
-      "case": "light-desktop-latency",
-      "checkpoint": "chart-resource-cpu-pairs",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f52cf85b97a2c8bd39bac44be4837f11c16f90096b4e3495f4d41b54d6e1a166/13010",
-      "sha256": "f52cf85b97a2c8bd39bac44be4837f11c16f90096b4e3495f4d41b54d6e1a166",
-      "review": "Inspected final screenshot, or byte-identical to the manually inspected preceding passing capture"
+      "checkpoint": "section-latency-nov12-followups",
+      "sha256": "383442d07719c3762e70af044b5770f294444e5864f1bb798ea1fc8ec67d039b",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/383442d07719c3762e70af044b5770f294444e5864f1bb798ea1fc8ec67d039b/207722",
+      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
     }
   ],
-  "visual_review": {
-    "result": "Readable text and chart labels; populated current and retained charts; initial light/dark and live preference changes; no document overflow or page/console errors.",
-    "scope": "First screens in all four theme/viewport cases; selected current charts and historical phase/CPU charts; OOM and merged-gate table in light desktop and dark mobile, including native horizontal scrolling. Other captures were not all manually inspected.",
-    "mobile_tables": "Native horizontal scrolling preserves wide tables. Left/right captures intentionally show slices; a wide column can require further panning."
+  "review_scope": "All four follow-up section theme/viewport captures for this report were manually inspected. Existing charts and controls passed automated checks; not every unchanged screenshot was manually reviewed again.",
+  "input_semantics": "Published HTML is the pinned Prettier normalization of the tested HTML; published evidence is JSON-equivalent to tested evidence. Publication timestamp/hash metadata and this receipt were generated after capture. The report cohort/source window remains unchanged.",
+  "execution": {
+    "queue_seconds": 0.059896,
+    "execution_start_utc": "2026-11-12T12:03:40.392240Z",
+    "execution_complete_utc": "2026-11-12T12:06:53.341345Z",
+    "observation": "HTTPS metadata confirmed completion after log streaming stopped updating; no duplicate run."
   },
-  "input_semantics": "Report HTML, evidence, module, image, shared assets and input manifest hashes match the tested bytes. This receipt was written after review and is not loaded by the rendered pages.",
   "validation_iterations": [
     {
-      "invocation": "fdbc5b93-0763-4188-a07c-3accdefbcd5d",
-      "result": "Failed before page assertions; harness path/navigation checks corrected."
+      "invocation": "f9f53201-1715-42dd-bb1c-0c3da18fa188",
+      "result": "Failed template nesting; corrected."
     },
     {
-      "invocation": "2a853095-1a8d-4a3a-b866-6d7eadd662bb",
-      "result": "Detected reliability template nesting and historical chart-axis clipping; both repaired."
-    },
-    {
-      "invocation": "41cef202-c0e9-4a9e-94f2-c287ff08cb24",
-      "result": "12 cases passed; screenshot review then found summary spacing and merge-table header/readability issues, repaired before the final passing run."
+      "invocation": "3d671c3c-ddea-4cbc-b0c6-89466a983cad",
+      "result": "Passed; manual review found table header and mobile prose layout defects, replaced by responsive cards before final run."
     }
   ]
 }
