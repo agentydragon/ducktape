@@ -1,0 +1,66 @@
+diff --git a/agentplane/system_tests/k3s/defs.bzl b/agentplane/system_tests/k3s/defs.bzl
+index 639126a795..99d100ef18 100644
+--- a/agentplane/system_tests/k3s/defs.bzl
++++ b/agentplane/system_tests/k3s/defs.bzl
+@@ -190,7 +190,7 @@ image_manifest = rule(
+     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
+ )
+ 
+-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
++def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+     """Run one suite with fresh fixture state and the selected executor lifecycle.
+ 
+     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
+@@ -278,6 +278,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
+     py_test(
+         name = name,
+         size = "enormous",
++        args = args,
+         srcs = srcs,
+         main = main,
+         data = data,
+diff --git a/agentplane/system_tests/suites/BUILD.bazel b/agentplane/system_tests/suites/BUILD.bazel
+index 1e2939df8f..9e1a2bd131 100644
+--- a/agentplane/system_tests/suites/BUILD.bazel
++++ b/agentplane/system_tests/suites/BUILD.bazel
+@@ -53,12 +53,7 @@ k3s_suite(
+     ],
+ )
+ 
+-# Each target starts exactly one stack. Per-test clients and Sandbox cleanup remain isolated.
+-k3s_suite(
+-    name = "test_pod",
+-    srcs = ["test_pod.py"],
+-    stack = "pod",
+-    deps = [
++_POD_DEPS = [
+         ":pod_cases",
+         ":pod_runners",
+         "//:conftest",
+@@ -71,7 +66,25 @@ k3s_suite(
+         "@pypi//pytest",
+         "@pypi//pytest_asyncio",
+         "@pypi//pytest_bazel",
+-    ],
++]
++
++# Spike: run the long security case in an independent stack alongside the other cases.
++k3s_suite(
++    name = "test_pod",
++    srcs = ["test_pod.py"],
++    args = ["-k", "'not a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway'"],
++    stack = "pod",
++    deps = _POD_DEPS,
++)
++
++k3s_suite(
++    name = "test_pod_gateway_tls_spike",
++    srcs = ["test_pod.py"],
++    main = "test_pod.py",
++    args = ["-k", "a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway"],
++    stack = "pod",
++    tags = ["manual"],
++    deps = _POD_DEPS,
+ )
+ 
+ # This suite scales the Dispatcher and deletes controller Pods; it needs its own stack.
