@@ -198,7 +198,8 @@ exec uvicorn supervisor:app --host 0.0.0.0 --port 8080
 ## 4. k8s wiring (`cluster/k8s/haku/`)
 
 A single `haku-agent` Deployment (no worker/supervisor split), in `haku-sandbox`,
-non-root, behind `haku-egress-proxy`, scoped RBAC — same perimeter as today.
+non-root with scoped RBAC. Configure its access through the current Agentplane egress
+fence described in <../docs/security.md>; the retired Haku proxy is not available.
 
 ```yaml
 apiVersion: apps/v1
@@ -251,5 +252,5 @@ Plus a `Service` and a Forgejo webhook on `haku-state` → `POST /wake`.
 - Warm `message_history` (cost: re-send history each wake, mostly cache-read) vs.
   stateless re-orient (cost: re-read `haku-state` each wake; cheap — git is
   incremental via bookmarks). Default to stateless; git is the memory.
-- Read-only stays structural (mitmproxy egress + read-only creds + scoped RBAC) —
-  unchanged from today; the loop owning provider keys doesn't widen Haku's reach.
+- Specify and verify the loop's egress policy, read-only source credentials, and scoped
+  RBAC before deployment; do not assume the sketch inherits the existing perimeter.
