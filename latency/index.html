@@ -130,7 +130,7 @@
               <${Anchor} href="../">Ducktape reports<//
               ><${Text} mt="md" c="dimmed"
                 >CI latency · 11–12 November cohort · selected follow-ups
-                through 2026-11-12 22:55 UTC<//
+                through 2026-11-12 23:20 UTC<//
               ><${Title} order=${1} my="sm"
                 >Routine feedback is short; Agentplane still waits on test work
                 and recovery<//
@@ -620,7 +620,7 @@
                 >Later Nov 12: store reuse and the full graph<//
               >
               <${Text} component="p"
-                >These are selected observations through 22:55 UTC, not a new
+                >These are selected observations through 23:20 UTC, not a new
                 population or a before/after CI rate.${" "}
                 <${Anchor} href="evidence.json"
                   >Evidence and exact run identities<//
@@ -647,7 +647,7 @@
               <//>
               <${Paper} withBorder p="md">
                 <${Text} fw=${600}
-                  >Full graph, admission and missing verdicts<//
+                  >Full graph, admission and recovered action results<//
                 >
                 <${Text} component="p"
                   >The sampled last bottleneck changed from Pod to MCP Actions
@@ -666,12 +666,15 @@
                 >
                 <${Text} component="p"
                   >An isolated TLS case passed uncached in 188.771s. The control
-                  and corrected split-main actions finished physical work but
-                  lost their observers and have no recoverable test verdict;
-                  their uncontrolled timings do not establish complete coverage
-                  or a speedup. The next comparison needs scheduler-side
-                  admission evidence, recoverable results, and matched full-gate
-                  timing with case coverage and duplicate setup costs.${" "}
+                  and corrected split-main actions lost their observers, but
+                  their exact execution IDs recovered the TestRunner results:
+                  JUnit shows 21/21 control cases and 20/20 split-main cases
+                  passed, with the intended TLS case excluded from split-main.
+                  This corrects our earlier claim that the test verdicts were
+                  unavailable. Both Bazel invocations remain disconnected, so
+                  the results do not prove full-gate success or a speedup. The
+                  next comparison needs admission evidence and matched full-gate
+                  timing with duplicate setup costs.${" "}
                   <${Anchor}
                     href="https://github.com/agentydragon/ducktape/pull/15904"
                     >Graph and experiment follow-up<//

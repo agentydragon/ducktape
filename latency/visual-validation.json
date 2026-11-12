@@ -1,36 +1,36 @@
 {
   "status": "PASSED",
   "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/2dd76acb-2a1d-4b09-b007-aae5b032fefa",
+  "invocation": "https://app.buildbuddy.io/invocation/da2d88f3-f894-4a34-ae1b-55eeef5de9de",
   "case_count": 4,
-  "scope": "Four latency cases after link-spacing correction",
-  "reviewed_at_utc": "2026-11-12T23:13:18.708409+00:00",
+  "scope": "Latency pages, desktop/mobile, initial light/dark and preference change",
+  "reviewed_at_utc": "2026-11-12T23:28:33.519919+00:00",
   "tested_assets": [
     {
       "path": "latency/index.html",
-      "sha256": "718b67b324903bf09ccf7f406f929ed8f3caab5f7862a3acbc476030ccd4e9d3"
+      "sha256": "333720f1870d7e9600cd1693139963587ae499641513c4eaf05f7e96e3053585"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "9e442317ff5f56814fe7876601bf40da9a00cd8dc6cb2c271ab54f514dafd5b8"
+      "sha256": "4b76de2cc60dc9510906c196d352688de07a00d0d2ffa1b8a839392d5225d7d2"
     },
     {
       "path": "latency/manifest.json",
-      "sha256": "9fb9b94e99b92bf9ad03ada3b2490ef256e38e9078638db3490f27d17dd280ed"
+      "sha256": "e6ccad736e1024552be73d154e878069ff3edd8284c8970fae3c245f093cb4cd"
     }
   ],
   "published_assets": [
     {
       "path": "latency/index.html",
-      "sha256": "718b67b324903bf09ccf7f406f929ed8f3caab5f7862a3acbc476030ccd4e9d3"
+      "sha256": "333720f1870d7e9600cd1693139963587ae499641513c4eaf05f7e96e3053585"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "9e442317ff5f56814fe7876601bf40da9a00cd8dc6cb2c271ab54f514dafd5b8"
+      "sha256": "4b76de2cc60dc9510906c196d352688de07a00d0d2ffa1b8a839392d5225d7d2"
     },
     {
       "path": "latency/manifest.json",
-      "sha256": "57d8987219a9a9554957a439746d7a2be76c1fdff98b54716f9b17e05f98c5dc"
+      "sha256": "936c5f27f37387af4037582f5b061baba38f6f8462da3f00c71a81f607d66184"
     }
   ],
   "shared_assets": [
@@ -56,22 +56,22 @@
     {
       "case": "light-desktop-latency",
       "checkpoint": "section-latency-nov12-later",
-      "sha256": "2b3e27a2e8e7efbf72bb8e53c227d0271157c41984795feb8f7f80c63ba2a2b9"
+      "sha256": "f0942a4d5fa068da103eea6be757920748a84f4bfd3fbb851504122ce661c79d"
     },
     {
       "case": "light-mobile-latency",
       "checkpoint": "section-latency-nov12-later",
-      "sha256": "a103519c565db2b76ac0b90e339b754d98c7f3b93c747262e47b6cba0e76658f"
+      "sha256": "afa979c2d5527d9bb0495cdf3cde21d609944214eb6a6fd2f8a54e2f751a0a9e"
     },
     {
       "case": "dark-desktop-latency",
       "checkpoint": "section-latency-nov12-later",
-      "sha256": "f46d3a5800e0dff76a47381d1f684e981bbd4e8bf4ed7076755a479cd680dc7d"
+      "sha256": "ee9966fde008edd48ce4694c426e8a2396209a08b1ecb85f62784a6c61ccdf19"
     },
     {
       "case": "dark-mobile-latency",
       "checkpoint": "section-latency-nov12-later",
-      "sha256": "26d2b32875645084d41d8e72f0ef0a8a0875145b46838ecbd1b00ac0f5dfee23"
+      "sha256": "f077e1586fdca9a5582e6548fa81ca2d83c38df72b3764ac6950d25e17c1874d"
     }
   ]
 }

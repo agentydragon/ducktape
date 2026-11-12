@@ -5,7 +5,7 @@
 report snapshots. The CI reports are:
 
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
-  [source and observation window](latency/manifest.json). The Nov 12 selected-intervention supplements through 22:55 UTC preserve the 11–12 Nov population window and rates.
+  [source and observation window](latency/manifest.json). The Nov 12 selected-intervention supplements through 23:20 UTC preserve the 11–12 Nov population window and rates.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
   [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Nov 12 intervention dispositions through 22:55 UTC are supplemental; the original windows and rates remain unchanged.
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
