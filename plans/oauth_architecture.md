@@ -55,7 +55,8 @@ Keep the server image, static image, and live config independently deployable. E
 contracts over one rollout window: readers before writers for config, server API additions before
 frontend consumers, and removals only after every consumer has moved. CI should exercise the
 server against its current and next config shapes and the frontend against every supported server
-contract. Revisit `Recreate` so a failed replacement leaves the last serving version available.
+contract. The API and static Deployments now use rolling updates; retain a serving API replica
+when a replacement fails readiness.
 
 Acceptance:
 
@@ -144,6 +145,6 @@ or cleanup prerequisite.
   stale or superseded binding cannot authorize the mutation.
 - UI metadata comes from canonical joins and is treated as untrusted presentation. Secrets and raw
   OAuth material never enter API models, logs, traces, or test artifacts.
-- Release automation validates and promotes one server/static/config tuple.
+- CI validates the supported server/static/config combinations across independent rollouts.
 - Airlock changes prove credentials work only on intended route surfaces and anonymous provider
   initiation fails.
