@@ -1,4 +1,4 @@
-package centralsampler
+package codemode
 
 import (
 	"context"
@@ -21,7 +21,7 @@ func TestHostCloseKillsProcessGroupDescendants(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	host, err := StartHost(context.Background(), binary, filepath.Join(directory, "host.log"))
+	host, err := StartProcess(context.Background(), binary, filepath.Join(directory, "host.log"))
 	if err != nil {
 		t.Fatal(err)
 	}

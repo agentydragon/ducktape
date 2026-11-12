@@ -359,7 +359,6 @@ go_library(
         "executor_operations.go",
         "exporter.go",
         "head_tail_buffer.go",
-        "host.go",
         "image_preparation.go",
         "migration.go",
         "native_context.go",
@@ -398,6 +397,7 @@ go_library(
     deps = [
         ":sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",
@@ -469,6 +469,7 @@ go_test(
     deps = [
         ":sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",
@@ -507,7 +508,6 @@ go_test(
         "codemode_output_test.go",
         "codemode_protocol_test.go",
         "evidence_test.go",
-        "host_test.go",
         "image_preparation_test.go",
         "provider_authorization_test.go",
         "settings_fixture_test.go",
@@ -517,6 +517,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",

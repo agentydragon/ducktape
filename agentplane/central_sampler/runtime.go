@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -568,7 +570,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			}
 			if live == nil {
 				live, err = r.connectHost(ctx, sessionID, owner)
-				if errors.Is(err, errCodeHostInstanceChanged) {
+				if errors.Is(err, codemode.ErrHostInstanceChanged) {
 					continue
 				}
 				if err != nil {
@@ -689,7 +691,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 						}
 						if len(interrupts) == 0 || len(state.Cells) > 0 {
 							live, err = r.connectHost(ctx, sessionID, owner)
-							if errors.Is(err, errCodeHostInstanceChanged) {
+							if errors.Is(err, codemode.ErrHostInstanceChanged) {
 								continue
 							}
 							if err != nil {
@@ -925,7 +927,7 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	var cleanupErr error
 	delegatesPending := false
 	if live != nil {
-		delegatesPending = live.code.hasDelegates()
+		delegatesPending = live.code.HasDelegates()
 		live.executor.stopDispatch()
 		cells, cleanupErr = live.code.Interrupt(cleanupCtx)
 		var processErr error
@@ -1039,12 +1041,12 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		content, err := live.code.Execute(ctx, *call)
 		if err != nil {
-			var hostError *codeModeHostResponseError
-			if errors.As(err, &hostError) && hostError.phase == codeOperationResponsePhase {
-				content = []protocol.ContentPart{{Type: "input_text", Text: hostError.message}}
+			var hostError *codemode.ResponseError
+			if errors.As(err, &hostError) && hostError.Phase == codemode.OperationResponsePhase {
+				content = []protocol.ContentPart{{Type: "input_text", Text: hostError.Message}}
 				result := map[string]any{
 					"call_id": call.CallID, "output": content, "success": false,
-					"code_mode_host_response": hostError.evidence(),
+					"code_mode_host_response": hostError.Evidence(),
 				}
 				if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 					return "", err

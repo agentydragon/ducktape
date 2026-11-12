@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -362,10 +364,10 @@ func (f *drainFixture) peer(t *testing.T) *fakeCodeModePeer {
 
 func sendNestedExecCommand(t *testing.T, peer *fakeCodeModePeer, codeSession string, id int64) {
 	t.Helper()
-	if err := peer.send(codeFrame{
-		Type: codeDelegateRequest, ID: int64Pointer(id), SessionID: codeSession,
-		Request: &codeDelegate{Type: "tool/invoke", CellID: "cell-1", Invocation: codeToolInvocation{
-			CellID: "cell-1", ToolName: codeToolName{Name: "exec_command"}, ToolKind: "function", Input: json.RawMessage(`{"cmd":"true","yield_time_ms":10}`),
+	if err := peer.send(codemode.Frame{
+		Type: codemode.DelegateRequest, ID: int64Pointer(id), SessionID: codeSession,
+		Request: &codemode.Delegate{Type: "tool/invoke", CellID: "cell-1", Invocation: codemode.ToolInvocation{
+			CellID: "cell-1", ToolName: codemode.ToolName{Name: "exec_command"}, ToolKind: "function", Input: json.RawMessage(`{"cmd":"true","yield_time_ms":10}`),
 		}},
 	}); err != nil {
 		t.Fatal(err)
@@ -374,29 +376,29 @@ func sendNestedExecCommand(t *testing.T, peer *fakeCodeModePeer, codeSession str
 
 func yieldCell(t *testing.T, peer *fakeCodeModePeer, executeID int64) {
 	t.Helper()
-	started, err := json.Marshal(codeHostResponse{Type: "execution/started", CellID: "cell-1"})
+	started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "cell-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(executeID), Result: &codeWireResult{Status: "ok", Value: started}}); err != nil {
+	if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(executeID), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 		t.Fatal(err)
 	}
 	observation := json.RawMessage(`{"Yielded":{"cell_id":"cell-1","content_items":[]}}`)
-	if err := peer.send(codeFrame{Type: codeInitialResponse, ID: int64Pointer(executeID), Result: &codeWireResult{Status: "ok", Value: observation}}); err != nil {
+	if err := peer.send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(executeID), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func completeCell(t *testing.T, peer *fakeCodeModePeer, codeSession string, waitID int64) {
 	t.Helper()
-	completed, err := json.Marshal(codeHostResponse{
+	completed, err := json.Marshal(codemode.HostResponse{
 		Type: "wait/completed", SessionID: codeSession,
 		Outcome: json.RawMessage(`{"LiveCell":{"Result":{"cell_id":"cell-1","content_items":[{"type":"input_text","text":"done"}]}}}`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(waitID), Result: &codeWireResult{Status: "ok", Value: completed}}); err != nil {
+	if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(waitID), Result: &codemode.WireResult{Status: "ok", Value: completed}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -410,7 +412,7 @@ func receiveDelegateResponse(t *testing.T, peer *fakeCodeModePeer, id int64) {
 			var frame struct {
 				Type string `json:"type"`
 			}
-			if err := decodeProtocolObject(mustMarshalFields(t, fields), &frame); err != nil {
+			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
 				t.Fatal(err)
 			}
 			if frame.Type == "delegate/response" {

@@ -308,7 +308,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	})
 	peer := peers()[0]
 
-	if err := peer.sendNotification(1, code.sessionID, "cell-1", "between turns"); err != nil {
+	if err := peer.sendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
@@ -317,7 +317,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	}
 
 	startTurnForStore(t, store, session, owner, "turn")
-	if err := peer.sendNotification(2, code.sessionID, "cell-1", "progress"); err != nil {
+	if err := peer.sendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")
