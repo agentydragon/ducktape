@@ -36,6 +36,7 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
 | `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
 | `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
+| `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read       |
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
@@ -81,6 +82,30 @@ for VM image layout and lifecycle.
   [`pod_runners.py`](suites/pod_runners.py), [`pod_cases.py`](suites/pod_cases.py)).
 - Test markers must agree with the selected stack backend; deployment setup rejects scripted-model
   cases on the real-model stack and vice versa ([`system_test_target.py`](deployment/system_test_target.py)).
+
+### Abrupt Gateway loss
+
+`test_gateway_crash` must kill the exact Gateway process without orderly Lease release. Killing
+before scale-down allows kubelet to restart the container in the same Pod; the restarted Gateway
+can claim a new epoch and gracefully release it on scale-down. Kubernetes Pod status can still
+show the original container ID after the replacement has claimed the Lease.
+
+The fixture sends `SIGSTOP`, confirms the captured process is stopped, scales the Deployment to
+zero, waits for that Pod's deletion timestamp and pending `SIGTERM`, then sends `SIGKILL` to the same
+container ID. The pending signal shows kubelet has begun termination; the API timestamp alone
+cannot. An open process status file guards against PID reuse, and cleanup kills the stopped
+process even when an intermediate step fails. The original Lease UID, holder, epoch and
+no-ready-endpoint assertions remain required.
+
+The `gateway-crash-{before,process,terminating,deleted}.json` undeclared outputs retain the process
+and Lease phases. Read runtime logs alongside Pod status to identify restarts. The
+[old-ordering control](https://app.buildbuddy.io/invocation/28f0f32f-62f4-4055-be66-ea3f60d885b7)
+reproduced the missing holder after epoch `1` became `2`; the
+[repaired control](https://app.buildbuddy.io/invocation/17352c08-b9bb-4bd6-9676-32be63a8b4bb)
+retained epoch `1` through Pod deletion, with `SIGTERM` pending on the stopped original process,
+and passed the active read, exactly-once mutation and next-input checks. The
+[final helper CI run](https://app.buildbuddy.io/invocation/c6a1a753-6505-5820-9de8-9f0e39ab8372)
+also passed this scenario and retained both stopped and pending-signal process states.
 
 ## Model and egress evidence
 
