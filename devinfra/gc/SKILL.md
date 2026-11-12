@@ -23,9 +23,12 @@ unreferenced once the bases linking to it are gone):
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
 result, scoped to one domain.
-All use the PRUNE/KEEP/REVIEW model and are dry by default. The workspace must not change
-while workspace-gc runs: its checks and removals are not atomic. Ignored files do not block
-worktree removal; Git deletes them with the worktree.
+All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
+immediately before removing it, skipping (and exiting nonzero for) one that changed.
+The workspace must not change while workspace-gc runs: checks and removals are not atomic.
+Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
+them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
+anything you would miss.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
@@ -88,12 +91,19 @@ default is the only root.
 
 `workspace-gc worktrees` classifies each worktree; interpret it literally:
 
-- `PRUNE`: clean of tracked and untracked changes, idle, and its work has landed in
-  the main branch or its branch has a merged or closed PR. Detached commits qualify on
-  the same Git content and patch checks. `--prune` reclassifies before removal. Git deletes
-  ignored files.
-- `KEEP`: main or invoking checkout, uncommitted changes, open PR, or live process.
-- `REVIEW`: unmerged work or an undeterminable default branch or missing detached worktree.
+- `PRUNE`: clean, idle (not main/active, no process cwd'd inside), and its work is already
+  in the main branch — an ancestor, a squash/rebase-merge (merging into main is a no-op),
+  an empty branch, or a **merged GitHub PR** for its branch. Remove with
+  `workspace-gc worktrees --prune`: it re-classifies each worktree right before removing it, runs `git worktree remove` **without
+  `--force`** (so a tree that turned dirty is skipped), and **never deletes branches** —
+  the work stays reachable through them.
+- `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
+  changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
+  (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the
+  dirt is real work.
+- `REVIEW`: clean but has commits not in main and no merged PR, a detached HEAD with
+  unique commits, or an undeterminable default branch. Judge these yourself — inspect the
+  commits/PR and decide; removal must not make any commit unreachable.
 
 The PR cross-check uses `GITHUB_TOKEN` or `gh auth token`; pass `--no-prs` to classify on
 git signals only (offline). After pruning, re-run `git worktree prune --dry-run --verbose`
@@ -201,7 +211,7 @@ is deleted — that base re-fetches the repo, the same exposure Bazel's own GC a
 
 Handle these manually per situation instead of expanding the tool's deletion surface:
 
-- `REVIEW` worktrees (unmerged commits, missing upstreams) and open PRs;
+- `REVIEW` worktrees (unmerged commits, detached heads, missing upstreams) and open PRs;
 - stale directories that are not registered Git worktrees;
 - `REVIEW` output bases and failed GC quarantines;
 - nondefault output-base layouts and additional output-user-roots; and

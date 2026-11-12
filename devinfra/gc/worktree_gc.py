@@ -1,7 +1,20 @@
-"""Classify and remove clean, idle worktrees whose work has landed.
+"""Classify and safely remove local git worktrees whose work is already merged.
 
-Ignored files do not prevent removal and Git deletes them. The workspace must not change
-while workspace-gc is running; inspection and removal are not atomic.
+Mirrors output_base_gc's PRUNE/KEEP/REVIEW model. A worktree is prunable only when it is
+clean (no tracked *or* untracked changes), idle (not the main checkout, not the invoking
+worktree, no process cwd'd inside), and its work is already in the main branch —
+established by git (HEAD is an ancestor of main; merging HEAD into main is a no-op, which
+catches squash/rebase-merges; or the branch is empty) or by a merged or closed GitHub PR
+for its branch — a closed-not-merged PR means a human already decided not to land this
+work, and removing the worktree loses nothing since its branch (and any commits on it, even
+past the PR's head) stays reachable through the branch ref. Everything else is kept
+(dirty/active/live/open-PR) or reported for manual review (clean but unique unmerged work,
+detached HEAD with unique commits, undeterminable main).
+
+Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
+injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
+GitHub. `git worktree remove` refuses a dirty tree and deletes the working directory
+including read-only files (pygit2's `Worktree.prune()` does neither by default).
 """
 
 from __future__ import annotations
@@ -98,8 +111,8 @@ def describe_reason(item: Classification) -> str:
             return "uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case RetainedWorktree(reason=RetainedWorktreeReason.OPEN_PR, pr=PrInfo() as pr):
             return pr_phrase(pr)
-        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD):
-            return "detached HEAD commit reachability is not proven safe for removal"
+        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD, main=main):
+            return f"detached HEAD with commits not in {main}"
         case ReviewWorktree(reason=ReviewWorktreeReason.UNMERGED, main=main):
             return f"commits not in {main} and no merged PR"
         case _:
@@ -209,16 +222,12 @@ def _classify_worktree(
     try:
         path.lstat()
     except FileNotFoundError:
-        if worktree.branch is None:
-            return ReviewWorktree(worktree, ReviewWorktreeReason.DETACHED_HEAD, None, main)
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
     pg = pygit2.Repository(os.fspath(path))
-    worktree = Worktree(path, None if pg.head_is_detached else pg.head.shorthand)
     logger.info("Scanning worktree %s: reading Git status", path)
     status = _status(path)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
     activity = _last_activity(pg, path, status)
-    head = pg.head.peel(pygit2.Commit).id
 
     def keep(reason: RetainedWorktreeReason, *, pr: PrInfo | None = None, pid: int | None = None) -> RetainedWorktree:
         return RetainedWorktree(worktree, reason, activity, pr=pr, pid=pid)
@@ -248,21 +257,25 @@ def _classify_worktree(
         # caught separately by branch_gc, which does have to care (deleting a branch ref
         # is destructive).
         return prune(PrunableWorktreeReason.PR_LANDED, pr=pr)
-    if content_in_main(pg, head, main):
+    if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
         return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
-    if patches_landed_in_main(path, str(head), main):
+    # As in `branch_gc`: the shell-out only runs once the in-process test has already failed.
+    if patches_landed_in_main(path, "HEAD", main):
         return prune(PrunableWorktreeReason.PATCHES_IN_MAIN)
+    if worktree.branch is None:
+        return review(ReviewWorktreeReason.DETACHED_HEAD)
     return review(ReviewWorktreeReason.UNMERGED)
 
 
 def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
-    """Remove a worktree; Git refuses tracked and untracked changes but deletes ignored files."""
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        return Skipped(path, "worktree directory is missing; review and prune its stale Git metadata separately")
-    except OSError as error:
-        return Failed(path, f"cannot inspect worktree directory before removal: {error}")
+    """Remove one worktree with `git worktree remove` (never `--force`).
+
+    git refuses a tree with tracked changes or untracked files, so a tree that turned dirty
+    since the scan fails rather than losing work. It does not refuse ignored files: those are
+    deleted with the tree. The branch is left intact — its work stays reachable through it
+    (branch GC is a separate step). Use `remove_if_still_prunable` unless the caller has just
+    classified `path` itself.
+    """
     try:
         outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
     except (OSError, subprocess.SubprocessError) as error:
@@ -284,7 +297,8 @@ def remove_if_still_prunable(
 ) -> RemovalResult[Path]:
     """Re-classify `worktree` now and remove it only if it is still prunable.
 
-    Reclassification and removal are not atomic; the workspace must remain unchanged.
+    The scan that found it may be seconds old: a process may have entered the tree, or a
+    commit landed on a detached HEAD, which `git worktree remove` alone would not catch.
     """
     fresh = classify_worktree(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids

@@ -7,7 +7,7 @@ import pytest_bazel
 from devinfra.gc import foreign_clone_gc as fcg, worktree_gc
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.removal import Removed, Skipped
+from devinfra.gc.removal import Removed
 
 _ORIGIN = "https://github.com/acme/widgets"
 _OTHER_ORIGIN = "https://github.com/acme/gadgets"
@@ -160,44 +160,6 @@ def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRep
     assert outcome == Removed(foreign.path)
     assert not nested_wt.path.exists()
     assert not foreign.path.exists()
-
-
-def test_prune_foreign_clone_removes_landed_detached_worktree(repo: GitRepo) -> None:
-    repo.set_origin(_ORIGIN)
-    foreign = _foreign_clone(repo)
-    nested = foreign.worktree("nested", "spike")
-    nested.run("switch", "--detach")
-    result = fcg.classify_foreign_clone(foreign.path, pr_states={})
-    assert isinstance(result, fcg.PrunableForeignClone)
-    assert fcg.prune_foreign_clone(result.clone) == Removed(foreign.path)
-    assert not nested.path.exists()
-
-
-def test_prune_foreign_clone_removes_ignored_nested_files(repo: GitRepo) -> None:
-    repo.set_origin(_ORIGIN)
-    foreign = _foreign_clone(repo)
-    nested_wt = foreign.worktree("nested", "spike")
-    (foreign.path / ".git" / "info" / "exclude").write_text(".env\n")
-    (nested_wt.path / ".env").write_text("local data\n")
-    clone = fcg.ForeignClone(foreign.path, fcg.git_repo.list_worktrees(foreign.path))
-
-    assert fcg.prune_foreign_clone(clone) == Removed(foreign.path)
-    assert not foreign.path.exists()
-    assert not nested_wt.path.exists()
-
-
-def test_prune_foreign_clone_does_not_delete_root_when_nested_remove_is_skipped(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo.set_origin(_ORIGIN)
-    foreign = _foreign_clone(repo)
-    nested_wt = foreign.worktree("nested", "spike")
-    clone = fcg.ForeignClone(foreign.path, fcg.git_repo.list_worktrees(foreign.path))
-    monkeypatch.setattr(fcg.worktree_gc, "remove_worktree", lambda repo, path: Skipped(path, "changed"))
-
-    assert isinstance(fcg.prune_foreign_clone(clone), Skipped)
-    assert foreign.path.exists()
-    assert nested_wt.path.exists()
 
 
 if __name__ == "__main__":

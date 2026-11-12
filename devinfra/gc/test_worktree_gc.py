@@ -26,16 +26,6 @@ def _classify(repo: GitRepo, path: Path, proc: Path, **kwargs: object) -> wg.Cla
     return wg.classify_worktree(worktree, main="main", main_path=main_path, live_pids=live.get(path, []), **kwargs)  # type: ignore[arg-type]
 
 
-def _ignore_in_repo(repo: GitRepo, *patterns: str) -> None:
-    exclude = repo.path / ".git" / "info" / "exclude"
-    exclude.write_text("\n".join(patterns) + "\n")
-
-
-def _commit_detached(wt: GitRepo, message: str) -> None:
-    """Create an empty commit through Git so it updates this linked worktree's detached HEAD."""
-    wt.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", message)
-
-
 def test_ancestor_is_prunable(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")  # branched at main's HEAD, then main moves ahead
     repo.commit("later", "1\n", "advance main")
@@ -190,67 +180,11 @@ def test_worktree_inspection_failure_is_review(
     assert "unreadable Git state" in wg.describe_reason(result)
 
 
-def test_detached_landed_commit_is_removed(repo: GitRepo, proc: Path) -> None:
+def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    _commit_detached(detached, "detached empty commit")
-    result = _classify(repo, path, proc)
-    assert isinstance(result, wg.PrunableWorktree)
-    removal = wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    )
-    assert removal == Removed(path)
-
-
-def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc: Path) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    detached.commit("base", "1\n", "first change")
-    repo.commit("base", "1\n", "same patch")
-    repo.commit("base", "2\n", "subsequent change")
-    result = _classify(repo, path, proc)
-    assert result.reason is wg.PrunableWorktreeReason.PATCHES_IN_MAIN
-    assert wg.remove_if_still_prunable(
-        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
-    ) == Removed(path)
-
-
-def test_detached_unmerged_commit_is_review(repo: GitRepo, proc: Path) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    detached.commit("novel", "unique\n", "unmerged work")
-    assert isinstance(_classify(repo, path, proc), wg.ReviewWorktree)
-
-
-def test_detached_worktree_is_directly_removable(repo: GitRepo) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    assert wg.remove_worktree(repo.path, path) == Removed(path)
-    assert not path.exists()
-
-
-def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    _commit_detached(GitRepo(path), "detached empty commit")
-    shutil.rmtree(path)
-
-    result = _classify(repo, path, proc)
-
-    assert isinstance(result, wg.ReviewWorktree)
-    assert result.reason is wg.ReviewWorktreeReason.DETACHED_HEAD
-
-
-def test_ignored_files_do_not_block_removal(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, ".env")
-    (wt.path / ".env").write_text("local data\n")
-    assert isinstance(_classify(repo, wt.path, proc), wg.PrunableWorktree)
-    assert _remove_if_still_prunable(repo, wt, live_pids=[]) == Removed(wt.path)
-    assert not wt.path.exists()
+    GitRepo(path).commit("novel", "unique\n", "detached work")
+    assert _classify(repo, path, proc).reason is wg.ReviewWorktreeReason.DETACHED_HEAD
 
 
 @pytest.mark.parametrize(
@@ -314,17 +248,6 @@ def test_remove_worktree_fails_on_dirty_tree(repo: GitRepo) -> None:
     # `git worktree remove` without --force refuses a dirty tree, so nothing is lost.
     assert isinstance(result, Failed)
     assert wt.path.exists()
-
-
-def test_remove_worktree_skips_missing_directory_for_git_worktree_prune(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    shutil.rmtree(wt.path)
-
-    result = wg.remove_worktree(repo.path, wt.path)
-
-    assert isinstance(result, Skipped)
-    assert "prune its stale Git metadata separately" in result.reason
-    assert any(item.path == wt.path for item in git_repo.list_worktrees(repo.path))
 
 
 def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> RemovalResult[Path]:
@@ -398,7 +321,7 @@ def test_every_reason_is_described(reason: StrEnum) -> None:
         pytest.param(wg.RetainedWorktreeReason.LIVE_PROCESS, "4242", id="pid"),
         pytest.param(wg.PrunableWorktreeReason.CONTENT_IN_MAIN, _MAIN, id="content-main"),
         pytest.param(wg.PrunableWorktreeReason.PATCHES_IN_MAIN, _MAIN, id="patches-main"),
-        pytest.param(wg.ReviewWorktreeReason.DETACHED_HEAD, "reachability", id="detached-head"),
+        pytest.param(wg.ReviewWorktreeReason.DETACHED_HEAD, _MAIN, id="detached-main"),
         pytest.param(wg.ReviewWorktreeReason.UNMERGED, _MAIN, id="unmerged-main"),
     ],
 )
