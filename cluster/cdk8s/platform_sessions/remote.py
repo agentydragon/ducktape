@@ -219,7 +219,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         secret_name=f"{name}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        dns_names=[f"{name}.{NAMESPACE}.svc", _provider_dns(instance)],
+        dns_names=[_provider_dns(instance)],
     )
 
     k8s.KubePersistentVolumeClaim(
@@ -496,7 +496,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         metadata=ApiObjectMetadata(name="gateway", namespace=NAMESPACE),
         secret_name=f"{GATEWAY}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        dns_names=[f"{GATEWAY}.{NAMESPACE}.svc", _GATEWAY_DNS],
+        dns_names=[_GATEWAY_DNS],
     )
     provider_credentials = k8s.Volume(
         name="provider-credentials",
