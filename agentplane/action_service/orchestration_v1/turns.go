@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/session_client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,28 +42,9 @@ func resumeCursor(token string, ref contract.SandboxRef, sessionID string) (uint
 	return resume.Cursor, nil
 }
 
-type TurnToolCall struct {
-	ItemID string `json:"item_id"`
-	Name   string `json:"name"`
-}
-
-type TurnInput struct {
-	Text       string   `json:"text"`
-	CommandIDs []string `json:"command_ids"`
-}
-
-type Turn struct {
-	TurnID                string         `json:"turn_id"`
-	Input                 []TurnInput    `json:"input"`
-	ToolCalls             []TurnToolCall `json:"tool_calls"`
-	Status                *string        `json:"status,omitempty"`
-	Error                 *string        `json:"error,omitempty"`
-	FinalAssistantMessage *string        `json:"final_assistant_message,omitempty"`
-}
-
 type Turns struct {
-	Turns       []Turn `json:"turns"`
-	ResumeToken string `json:"resume_token"`
+	Turns       []sessionclient.TurnView `json:"turns"`
+	ResumeToken string                   `json:"resume_token"`
 }
 
 type TurnCompletion struct {
@@ -103,80 +84,27 @@ func (e *Executor) readTurns(ctx context.Context, args contract.ReadTurnsArgs) (
 	if err != nil {
 		return Turns{}, readError("History Service", err)
 	}
-	result := Turns{Turns: []Turn{}}
-	byID := map[string]int{}
-	items := map[string]eventpb.ItemKind{}
-	active := -1
-	type inputKey struct {
-		turn, message string
-		cursor        uint64
-	}
-	inputs := map[inputKey]int{}
+	result := Turns{Turns: []sessionclient.TurnView{}}
+	projection := sessionclient.TurnProjection{}
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
 			return Turns{}, readError("History Service", err)
 		}
 		for _, entry := range frame.GetEntries().GetEntries() {
-			event := entry.GetEvent()
-			switch observation := event.GetObservation().(type) {
-			case *eventpb.Event_TurnStarted:
-				id := observation.TurnStarted.GetTurnId()
-				if i, ok := byID[id]; ok {
-					active = i
-				} else {
-					active = len(result.Turns)
-					byID[id] = active
-					result.Turns = append(result.Turns, Turn{TurnID: id, Input: []TurnInput{}, ToolCalls: []TurnToolCall{}})
-				}
-				items = map[string]eventpb.ItemKind{}
-			case *eventpb.Event_HarnessUserMessageConfirmed:
-				confirmed := observation.HarnessUserMessageConfirmed
-				if i, ok := byID[confirmed.GetTurnId()]; ok {
-					key := inputKey{turn: confirmed.GetTurnId(), message: confirmed.GetHarnessMessageId()}
-					if key.message == "" {
-						key.cursor = entry.GetCursor()
-					}
-					index, replayed := inputs[key]
-					if !replayed {
-						index = len(result.Turns[i].Input)
-						inputs[key] = index
-						result.Turns[i].Input = append(result.Turns[i].Input, TurnInput{Text: confirmed.GetText(), CommandIDs: []string{}})
-					}
-					input := &result.Turns[i].Input[index]
-					for _, id := range confirmed.GetOriginCommandIds() {
-						if !slices.Contains(input.CommandIDs, id) {
-							input.CommandIDs = append(input.CommandIDs, id)
-						}
-					}
-				}
-			case *eventpb.Event_ItemStarted:
-				if active < 0 {
-					continue
-				}
-				item := observation.ItemStarted
-				items[item.GetItemId()] = item.GetKind()
-				if item.GetKind() == eventpb.ItemKind_ITEM_KIND_TOOL_CALL {
-					result.Turns[active].ToolCalls = append(result.Turns[active].ToolCalls, TurnToolCall{item.GetItemId(), item.GetToolName()})
-				}
-			case *eventpb.Event_ItemCompleted:
-				item := observation.ItemCompleted
-				if active >= 0 && items[item.GetItemId()] == eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT {
-					result.Turns[active].FinalAssistantMessage = new(item.GetText())
-				}
-			case *eventpb.Event_TurnCompleted:
-				completed := observation.TurnCompleted
-				if i, ok := byID[completed.GetTurnId()]; ok {
-					result.Turns[i].Status = new(completed.GetStatus().String())
-					if completed.GetError() != "" {
-						result.Turns[i].Error = new(completed.GetError())
-					}
-				}
-				active = -1
+			completed, err := projection.Add(entry)
+			if err != nil {
+				return Turns{}, readError("History Service", status.Error(codes.DataLoss, "retained History contains an incomplete turn projection"))
+			}
+			if completed != nil {
+				result.Turns = append(result.Turns, *completed)
 			}
 		}
 		switch frame.GetFrame().(type) {
 		case *historypb.FollowSessionResponse_CaughtUp:
+			if partial := projection.Partial(); partial != nil {
+				result.Turns = append(result.Turns, *partial)
+			}
 			result.ResumeToken = resumeToken(args.Sandbox, args.SessionID, frame.GetThroughCursor())
 			return result, nil
 		case *historypb.FollowSessionResponse_ReconnectRequired:
