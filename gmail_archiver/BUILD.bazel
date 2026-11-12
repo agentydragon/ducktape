@@ -57,7 +57,6 @@ py_wheel(
     distribution = "gmail_archiver",
     entry_points = {"console_scripts": ["gmail-archiver = gmail_archiver.main:app"]},
     python_requires = ">=3.14",
-    # The current Nix pin still requires ducktape-util; its input has a cleanup gate.
     requires = [
         "beautifulsoup4",
         "google-api-python-client",

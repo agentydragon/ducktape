@@ -658,9 +658,7 @@ rec {
       importsCheck = [ "devinfra.ws.cli" ];
       entrypointChecks = [ "ws" ];
       # SYNC: Requires-Dist in the currently pinned ws wheel.
-      # CLEANUP(added 2026-11-11): Remove ducktape-util once artifact-pins.json
-      # points to a ws wheel without `Requires-Dist: ducktape-util`.
-      propagatedBuildInputs = [ ducktape-util ] ++ (with python314Packages; [ typer ]);
+      propagatedBuildInputs = with python314Packages; [ typer ];
     }).overrideAttrs
       (old: {
         makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [
