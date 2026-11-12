@@ -208,7 +208,7 @@ async def _run_malformed_json_test(
     mcp_tool_provider_echo, recording_handler, *first_turn_calls: FunctionCallItem, parallel: bool = False
 ) -> tuple[str, list]:
     """Run tool calls and capture the agent's response and events."""
-    factory = ResponsesFactory("test-model")
+    factory = ResponsesFactory()
 
     async def handle_request(req: ResponsesRequest) -> ResponsesResult:
         if len(req.input) == 1:
