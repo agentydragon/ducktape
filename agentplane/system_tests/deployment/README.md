@@ -228,7 +228,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-VM stacks, `test_vm` and the opt-in `test_vm_manual`,
+VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
 (`rendered/local-model-vm.json`), so [`sandboxes.py`](../vm/sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
