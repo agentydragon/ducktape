@@ -203,7 +203,7 @@ CLIProxyAPI file logging spools streaming responses to temporary files; that is 
 capture evidence, not proof of credential sanitization, durable retention or Langfuse export.
 
 Ducktape already has body/chunk logging in `agentplane/llm_ingress/server.go` and a local
-`agentplane/capture/llm_recording_proxy.py`. They are candidates for reuse, not a complete
+`agentplane/native/capture/llm_recording_proxy.py`. They are candidates for reuse, not a complete
 multi-client logging service. Container/collector record-size limits and stream completion
 must be checked before claiming those logs meet the requirement.
 

@@ -1,4 +1,9 @@
-from agentplane.capture.llm_recording_proxy import _sse_event_name, _sse_frames, _sse_packet_matches, safe_headers
+from agentplane.native.capture.llm_recording_proxy import (
+    _sse_event_name,
+    _sse_frames,
+    _sse_packet_matches,
+    safe_headers,
+)
 
 
 def test_safe_headers_is_header_blind() -> None:

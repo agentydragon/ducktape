@@ -1,19 +1,19 @@
 # Live capture probe
 
-`//agentplane/capture:demo_live_capture_bin` runs one Claude or Codex scenario against a real model
+`//agentplane/native/capture:demo_live_capture_bin` runs one Claude or Codex scenario against a real model
 endpoint and records the whole exchange: the native stdio frames on both sides and the upstream
 LiteLLM request/response bodies, passed through a header-blind recording proxy that can drop the
 connection at a named SSE packet. It is a discovery tool for provider behavior. The scenarios and
-launch flags come from <../native/README.md>; the behavioral contract lives in the
-[scripted tests](../native/README.md#scripted-harness-tests), whose scripts are written and repaired
+launch flags come from <../README.md>; the behavioral contract lives in the
+[scripted tests](../README.md#scripted-harness-tests), whose scripts are written and repaired
 by reading these logs.
 
-The [historical harness model-metadata audit](../../model_catalog/debug/harness_model_metadata.md)
+The [historical harness model-metadata audit](../../../model_catalog/debug/harness_model_metadata.md)
 records cross-layer Claude/Codex and LiteLLM findings from these probes. Its versioned
 observations are investigation evidence, not the current Agentplane configuration contract.
 
 ```sh
-bazel run //agentplane/capture:demo_live_capture_bin -- \
+bb run //agentplane/native/capture:demo_live_capture_bin -- \
   --provider codex --scenario shell --binary /path/to/codex \
   --model cheap-model --endpoint http://litellm.example/v1 \
   --credential-file "$key_file" --workspace "$tmp/workspace" --output "$tmp/capture"
@@ -27,7 +27,7 @@ headers on later attempts); a loss happens only after that packet reached the na
 at an arbitrary socket boundary. The hooks scenarios register a hook on every event in the
 scenarios' `HOOK_EVENTS` and run the shell prompt, so PreToolUse fires: `hooks` allows the call,
 `hooks_deny` denies it with a reason. Claude's hooks are answered by the probe over stdio;
-Codex's run `codex_hook.py` as a shell command. What each harness offers: <../docs/hooks.md>.
+Codex's run `codex_hook.py` as a shell command. What each harness offers: <../../docs/hooks.md>.
 
 ## Output
 

@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest_bazel
 
-from agentplane.capture import codex_hook
+from agentplane.native.capture import codex_hook
 from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
