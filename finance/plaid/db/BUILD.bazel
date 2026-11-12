@@ -241,9 +241,12 @@ py_test(
     deps = [
         ":conftest",
         ":link_store",
+        ":models",
         "//:conftest",
         "//util:db_url",
         "//util/testing:postgres",
+        "@pypi//alembic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
