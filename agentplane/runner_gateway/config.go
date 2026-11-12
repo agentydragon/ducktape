@@ -32,32 +32,31 @@ type config struct {
 	// PolicyNamespace holds the Identities a workload SVID may name; empty refuses Identity callers.
 	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
 	// (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
-	PolicyNamespace              string                                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL        string                                   `mapstructure:"dispatcher_database_url"`
-	PodName                      string                                   `mapstructure:"pod_name"`
-	PodIP                        string                                   `mapstructure:"pod_ip"`
-	RunnerTokenFile              string                                   `mapstructure:"runner_token_file"`
-	Kubeconfig                   string                                   `mapstructure:"kubeconfig"`
-	KubernetesClientQPS          float32                                  `mapstructure:"kubernetes_client_qps"`
-	RPC                          listener.Config                          `mapstructure:"rpc"`
-	GatewayTLS                   *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls"`
-	ProxyPort                    int                                      `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate  string                                   `mapstructure:"runner_control_target_template"`
-	DispatcherAudience           string                                   `mapstructure:"dispatcher_audience"`
-	GatewayAudience              string                                   `mapstructure:"gateway_audience"`
-	EnvironmentReaders           []auth.Account                           `mapstructure:"environment_readers"`
-	EnvironmentManagers          []auth.Account                           `mapstructure:"environment_managers"`
-	EnvironmentLaunchers         []auth.Account                           `mapstructure:"environment_launchers"`
-	EnvironmentDefaultPolicySets []string                                 `mapstructure:"environment_default_policy_sets"`
-	DispatcherCallers            []auth.Account                           `mapstructure:"dispatcher_callers"`
-	Delegation                   *delegationConfig                        `mapstructure:"delegation"`
-	GatewayCallers               []auth.Account                           `mapstructure:"gateway_callers"`
-	WakeCallers                  []auth.Account                           `mapstructure:"wake_callers"`
-	OperatorCallers              []auth.Account                           `mapstructure:"operator_callers"`
-	ControllerAccount            *auth.Account                            `mapstructure:"sandbox_controller_account"`
-	QueueCap                     int                                      `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds            int                                      `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds         int                                      `mapstructure:"runner_request_timeout_seconds"`
+	PolicyNamespace             string                                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL       string                                   `mapstructure:"dispatcher_database_url"`
+	PodName                     string                                   `mapstructure:"pod_name"`
+	PodIP                       string                                   `mapstructure:"pod_ip"`
+	RunnerTokenFile             string                                   `mapstructure:"runner_token_file"`
+	Kubeconfig                  string                                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS         float32                                  `mapstructure:"kubernetes_client_qps"`
+	RPC                         listener.Config                          `mapstructure:"rpc"`
+	GatewayTLS                  *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls"`
+	ProxyPort                   int                                      `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate string                                   `mapstructure:"runner_control_target_template"`
+	DispatcherAudience          string                                   `mapstructure:"dispatcher_audience"`
+	GatewayAudience             string                                   `mapstructure:"gateway_audience"`
+	EnvironmentReaders          []auth.Account                           `mapstructure:"environment_readers"`
+	EnvironmentManagers         []auth.Account                           `mapstructure:"environment_managers"`
+	EnvironmentLaunchers        []auth.Account                           `mapstructure:"environment_launchers"`
+	DispatcherCallers           []auth.Account                           `mapstructure:"dispatcher_callers"`
+	Delegation                  *delegationConfig                        `mapstructure:"delegation"`
+	GatewayCallers              []auth.Account                           `mapstructure:"gateway_callers"`
+	WakeCallers                 []auth.Account                           `mapstructure:"wake_callers"`
+	OperatorCallers             []auth.Account                           `mapstructure:"operator_callers"`
+	ControllerAccount           *auth.Account                            `mapstructure:"sandbox_controller_account"`
+	QueueCap                    int                                      `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds           int                                      `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds        int                                      `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`

@@ -51,8 +51,8 @@ def test_gaffer_write_policies_are_finance_agent_only() -> None:
 
 def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: list[dict[str, Any]]) -> None:
     """The Haku preset covers every Action set the `haku-agent` binding names, plus Haku's one
-    write. The binding is the reviewed bundle; the preset is what a launch actually gets, because a
-    managed runner Pod runs as its own per-Sandbox ServiceAccount and never sees that binding."""
+    write. The binding is the reviewed bundle; a launch's Identity has its own binding, so the
+    preset spells out what that Sandbox receives."""
     binding = one(
         doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent"
     )

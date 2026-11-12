@@ -6,6 +6,7 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,8 +69,8 @@ func testIdentity(name string, uid types.UID) *policyapi.Identity {
 	}
 }
 
-// newIdentityReconciler is a controller in identity mode over a running Sandbox naming identity,
-// or no identity when it is empty.
+// newIdentityReconciler is a controller over a running Sandbox naming identity, or no identity when
+// it is empty.
 func newIdentityReconciler(t *testing.T, identity string, objects ...client.Object) (*Reconciler, client.Client) {
 	t.Helper()
 	r, c := newReconciler(t, true, append(objects, testTemplate("test-image:v1"))...)
@@ -160,6 +161,71 @@ func TestASandboxActingAsALiveIdentityRunsOnTheDefaultAccountWithItsCredential(t
 	want := workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: "test-agent", UID: testIdentityUID}}
 	if subject := recordSubject(t, c); !equality.Semantic.DeepEqual(subject, want) {
 		t.Errorf("WorkloadCredential subject = %+v, want %+v", subject, want)
+	}
+}
+
+func TestSandboxRevokesAServiceAccountCredentialBeforeIdentityStart(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: namespace,
+		Name:      sandboxName,
+		UID:       "uid-sandbox",
+	}}
+	legacy := &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      sandboxName,
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(
+				sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind),
+			)},
+		},
+		Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: sandboxName}},
+	}
+	r, c := newIdentityReconciler(t, "test-agent", legacy)
+
+	_, blocked, err := r.requestStartCredential(context.Background(), getSandbox(t, c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked == nil || blocked.reason != "IdentityChanged" {
+		t.Fatalf("requestStartCredential blocked = %v, want IdentityChanged", blocked)
+	}
+	if err := c.Get(context.Background(), sandboxKey, &workloadapi.WorkloadCredential{}); !apierrors.IsNotFound(err) {
+		t.Errorf("legacy WorkloadCredential = %v, want revoked before the Identity is requested", err)
+	}
+}
+
+func TestRunningSandboxReplacesLegacyServiceAccountCredentialWithoutRetargeting(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: namespace,
+		Name:      sandboxName,
+		UID:       "uid-sandbox",
+	}}
+	legacy := &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      sandboxName,
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(
+				sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind),
+			)},
+		},
+		Spec: workloadapi.WorkloadCredentialSpec{
+			Subject: workloadapi.Subject{ServiceAccount: sandboxName},
+			Binding: &workloadapi.Binding{PodUID: "legacy-pod-uid"},
+			Pod:     &workloadapi.PodRef{Name: sandboxName, UID: "legacy-pod-uid"},
+		},
+	}
+	r, c := newIdentityReconciler(t, "test-agent", testIdentity("test-agent", testIdentityUID), legacy)
+	sandbox = getSandbox(t, c)
+	before := readRecord(t, c, sandbox).Spec
+
+	_, changed, pending, err := r.requestIncarnationCredential(
+		context.Background(), sandbox, requester.Pod{Name: sandboxName, UID: "legacy-pod-uid"},
+	)
+	if err != nil || !changed || pending != nil {
+		t.Fatalf("requestIncarnationCredential = changed %v, pending %v, error %v; want changed with no request", changed, pending, err)
+	}
+	if after := readRecord(t, c, sandbox).Spec; !equality.Semantic.DeepEqual(after, before) {
+		t.Errorf("legacy WorkloadCredential spec changed in place: before %+v, after %+v", before, after)
 	}
 }
 

@@ -254,7 +254,6 @@ class RunnerGateway(Construct):
             "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
             "environment_managers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
             "environment_launchers": sorted(map(_account, environment_launchers)),
-            "environment_default_policy_sets": sorted(env.default_policy_sets),
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)

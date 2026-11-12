@@ -61,7 +61,7 @@ func credentialOwner(sandbox *sandboxapi.Sandbox) requester.Owner {
 }
 
 // requestStartCredential asks for the unbound credential the Sandbox's next incarnation starts
-// with. A record naming another identity is revoked first, since a record's subject changes only
+// with. A record naming another subject is revoked first, since a record's subject changes only
 // with a new binding.
 func (r *Reconciler) requestStartCredential(ctx context.Context, sandbox *sandboxapi.Sandbox) (requester.Issued, *unready, error) {
 	subject, changed, blocked, err := r.credentialSubject(ctx, sandbox, false)
@@ -69,15 +69,15 @@ func (r *Reconciler) requestStartCredential(ctx context.Context, sandbox *sandbo
 		return requester.Issued{}, blocked, err
 	}
 	if changed {
-		return requester.Issued{}, credentialPending("IdentityChanged", "the WorkloadCredential names an identity the Sandbox no longer names and is being revoked"),
+		return requester.Issued{}, credentialPending("IdentityChanged", "the WorkloadCredential subject differs from the Sandbox's Identity and is being revoked"),
 			r.Credentials.Revoke(ctx, credentialOwner(sandbox))
 	}
 	return r.requestCredential(ctx, sandbox, subject, nil)
 }
 
 // requestIncarnationCredential asks for the credential bound to the incarnation the Sandbox
-// accepts. changed says the incarnation acts as another identity than the Sandbox now names, and
-// must go instead.
+// accepts. changed says the incarnation's recorded subject differs from the Sandbox's Identity,
+// and must go instead.
 func (r *Reconciler) requestIncarnationCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, binding requester.Binding) (issued requester.Issued, changed bool, pending *unready, err error) {
 	subject, changed, _, err := r.credentialSubject(ctx, sandbox, true)
 	if err != nil || changed {
@@ -167,7 +167,7 @@ func (r *Reconciler) ensurePodRunnerCredential(ctx context.Context, sandbox *san
 		return w, nil, err
 	}
 	if changed {
-		return r.replaceStalePod(ctx, w, fmt.Sprintf("Pod %s acts as an identity its Sandbox no longer names", pod.Name))
+		return r.replaceStalePod(ctx, w, fmt.Sprintf("Pod %s has a credential subject its Sandbox no longer accepts", pod.Name))
 	}
 	if pending != nil {
 		// A pending reissue, such as a renewal, keeps the route of the incarnation already published.
@@ -292,7 +292,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		if err := r.haltVM(ctx, vm); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("VMI %s acts as an identity its Sandbox no longer names", vmi.Name)}, nil
+		return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("VMI %s has a credential subject its Sandbox no longer accepts", vmi.Name)}, nil
 	}
 	if pending != nil {
 		// A pending reissue, or naming the launcher, keeps the route of the accepted incarnation.

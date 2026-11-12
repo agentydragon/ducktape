@@ -32,7 +32,7 @@ import (
 
 const maxBootstrapCharacters = 65_536
 
-// Access scopes Sandbox operations to one namespace, caller identity, and set of default policies.
+// Access scopes Sandbox operations to one namespace and caller identity.
 type Access struct {
 	namespace string
 	objects   client.Client

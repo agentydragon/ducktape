@@ -44,10 +44,10 @@ func (r *Reconciler) identity(ctx context.Context, sandbox *sandboxapi.Sandbox) 
 }
 
 // credentialSubject is who the Sandbox's WorkloadCredential is requested for. An incarnation keeps
-// the subject its record already names: a running workload never changes identity, even when its
-// Identity goes. changed says the Sandbox now names another identity than the record, so a running
-// incarnation must be replaced, or an unbound record revoked before it is requested anew; blocked
-// says no incarnation may start.
+// the Identity its record already names: a running workload never changes identity, even when that
+// Identity goes. A non-Identity record is unsupported; changed says a running incarnation must be
+// replaced, or an unbound record revoked before it is requested anew. blocked says no incarnation
+// may start.
 func (r *Reconciler) credentialSubject(ctx context.Context, sandbox *sandboxapi.Sandbox, incarnation bool) (subject requester.Subject, changed bool, blocked *unready, err error) {
 	desired, missing, err := r.identity(ctx, sandbox)
 	if err != nil {
@@ -55,7 +55,9 @@ func (r *Reconciler) credentialSubject(ctx context.Context, sandbox *sandboxapi.
 	}
 	var record workloadapi.WorkloadCredential
 	var recorded requester.Subject
+	recordExists := false
 	if err := r.Objects.Get(ctx, client.ObjectKeyFromObject(sandbox), &record); err == nil && metav1.IsControlledBy(&record, sandbox) {
+		recordExists = true
 		recorded = recordedSubject(record.Spec.Subject)
 	} else if err != nil && !apierrors.IsNotFound(err) {
 		return nil, false, nil, err
@@ -63,22 +65,26 @@ func (r *Reconciler) credentialSubject(ctx context.Context, sandbox *sandboxapi.
 	switch {
 	case incarnation && recorded != nil:
 		return recorded, missing == nil && recorded != requester.Subject(desired), nil, nil
+	case incarnation && recordExists:
+		// A Sandbox credential must name an Identity. An owned record with another subject cannot
+		// authenticate this incarnation, so replace it instead of carrying a ServiceAccount subject.
+		return desired, true, nil, nil
 	case incarnation:
 		// The incarnation's record is gone, so its credential no longer verifies.
 		return desired, missing != nil, nil, nil
 	case missing != nil:
 		return nil, false, missing, nil
 	default:
-		return desired, recorded != nil && recorded != requester.Subject(desired), nil, nil
+		return desired, recordExists && (recorded == nil || recorded != requester.Subject(desired)), nil, nil
 	}
 }
 
-// recordedSubject is the subject a WorkloadCredential names, as a request names it.
+// recordedSubject recognizes the Identity subjects supported for Sandbox credentials.
 func recordedSubject(subject workloadapi.Subject) requester.Subject {
 	if subject.Identity != nil {
 		return requester.Identity{Name: subject.Identity.Name, UID: subject.Identity.UID}
 	}
-	return requester.ServiceAccount{Name: subject.ServiceAccount}
+	return nil
 }
 
 // owned is the metadata of an object named after the Sandbox and labeled with it.

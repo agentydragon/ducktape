@@ -5,8 +5,8 @@ egress proxy and the Action Service authenticate it by, and what the Kubernetes 
 authorizes. The CRD schema is generated from the Go `ServiceAccountRef` type under
 `agentplane/policy/api/v1alpha1`; this model is the Python representation of that wire value.
 
-Every sandbox runs as a ServiceAccount of its own, so a binding names no Sandbox and follows no Pod
-owner, and an agent hosted outside this cluster is a subject on the same terms as one inside it.
+ServiceAccount subjects remain useful for platform workloads and external callers. Sandbox workload
+permissions are attached to its named `Identity` instead of a Sandbox-owned ServiceAccount.
 """
 
 from __future__ import annotations

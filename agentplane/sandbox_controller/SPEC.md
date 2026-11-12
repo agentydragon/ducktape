@@ -179,7 +179,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   managed workspace declaration continue to use their own DataVolumes across stop/start.
 - The VM, its VMI and its virt-launcher Pod carry the Sandbox label. The controller does not set
   the launcher's ServiceAccount: KubeVirt sets one only from a volume the guest could read, so the
-  namespace's launcher admission sets the Sandbox's.
+  namespace's launcher admission sets the default account with token automount disabled.
 
 ## Firecracker
 
@@ -221,6 +221,9 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   whatever the template names. A VM's launcher runs the same way; the launcher admission
   authenticates it through the VM's owner chain and the Sandbox's `WorkloadCredential`.
 - Its `WorkloadCredential`'s subject is the Identity by name and UID, read live before each start.
+- A Sandbox-owned `WorkloadCredential` without an Identity subject is revoked before the next start;
+  a running Pod with such a record is replaced, and a running VM is halted. The controller never
+  falls back to a ServiceAccount subject.
 - A Sandbox naming no Identity, or one that does not exist or is being deleted, starts nothing and
   has no `WorkloadCredential`: `Running` is False with `IdentityMissing`, and with no workload
   `status.stopStage` is `Stopped`, so admission lets it be bound. An Identity appearing retries it.
@@ -233,8 +236,6 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   (`RunnerCredentialMismatch`), never resumed as the new identity; discarding the checkpoint for a
   cold start is not implemented yet.
 - A deleted Sandbox that must run once more to seal waits for a live Identity.
-- Sandboxes created before the switch keep their ServiceAccount and old `PolicyBinding` until they
-  are deleted; `migrate_to_identities.py` gives each an Identity and its grants.
 
 ## Control Service
 
@@ -268,10 +269,10 @@ A foreign same-name Service blocks new workload starts.
   Sandbox too.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
 - Nothing forces a seal: a Sandbox whose seal cannot complete is cleared by removing its finalizer by hand.
-- The Pod or VM and the Sandbox's ServiceAccount are owned by the Sandbox with `blockOwnerDeletion`, so
-  foreground propagation and namespace deletion remove them before the seal completes and the
-  unsealed tail of a Session's journal is lost; background propagation (the `kubectl` and
-  `DeleteSandbox` default) keeps them until the finalizer clears.
+- The Pod or VM is owned by the Sandbox with `blockOwnerDeletion`, so foreground propagation and
+  namespace deletion remove it before the seal completes and the unsealed tail of a Session's
+  journal is lost; background propagation (the `kubectl` and `DeleteSandbox` default) keeps it until
+  the finalizer clears.
 
 ## Status
 
