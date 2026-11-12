@@ -10,13 +10,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func requestIDs(requests []*action_servicepb.ActionRequest) []string {
@@ -203,4 +208,141 @@ func TestOnlyAnOperatorPassesTheGateToTheConnectionService(t *testing.T) {
 	}
 	_, err := s.connections.ListConnections(as(t, s.operatorToken), &connection_servicepb.ListConnectionsRequest{})
 	wantCode(t, "an operator's call", err, codes.Unimplemented)
+}
+
+func connectionContext(t *testing.T, ctx context.Context, actorToken string, envelope *delegationpb.Delegation) context.Context {
+	t.Helper()
+	encoded, err := auth.MarshalDelegation(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := metadata.Pairs("authorization", auth.DelegatedScheme+" "+actorToken)
+	md.Set(auth.DelegationMetadataKey, string(encoded))
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *testing.T) {
+	s := serve(t)
+	namespace := policyNamespace(s.policy)
+	identity := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: "connection-subject"},
+		Spec:       policyapi.IdentitySpec{Description: "external MCP test subject"},
+	}
+	if err := policyObjects.Create(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	actor := auth.Account{Namespace: testNamespace, Name: "test-mcp-edge"}
+	if err := setCallerLabel(t.Context(), actor, true); err != nil {
+		t.Fatal(err)
+	}
+	actorToken, err := kube.WorkloadToken(t.Context(), actor, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workloads, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityUIDs, err := auth.KubernetesIdentityUIDs(policyObjects, s.policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := []string{
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
+		action_servicepb.ActionService_ListActionRequests_FullMethodName,
+		action_servicepb.ActionService_WatchActionPolicy_FullMethodName,
+	}
+	rules := make(auth.Methods, len(methods))
+	for _, method := range methods {
+		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+	}
+	s.gate.connectionDelegation, err = rules.WithDelegation(methods, []auth.Delegator{{
+		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
+	}}, nil, identityUIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.gate.callers = s.index
+	eventually(t, "MCP edge Action caller label", func() bool { return s.index.Admits(actor) })
+	connectionID, grantID := uuid.NewString(), uuid.NewString()
+	connectionEnvelope := func(subject *identitypb.Identity) *delegationpb.Delegation {
+		return &delegationpb.Delegation{
+			EffectiveCaller: &delegationpb.Delegation_Identity{Identity: subject},
+			Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{
+				ConnectionId: connectionID, GrantId: grantID,
+			}},
+		}
+	}
+	identityRef := &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}
+	delegated := func(subject *identitypb.Identity) context.Context {
+		return connectionContext(t, t.Context(), actorToken, connectionEnvelope(subject))
+	}
+	request := envelope(t, "connection-identity-submit", "test-group", "test-action", map[string]any{"target": "test-target"})
+	if _, err := s.client.SubmitActionRequest(delegated(identityRef), request); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("an Identity with no PolicyBinding was admitted through the labeled actor: %v", err)
+	}
+
+	// The method allowlist is exact, and Connection provenance cannot turn an SA into the effective caller.
+	_, err = s.client.GetActionPolicy(delegated(identityRef), &action_servicepb.GetActionPolicyRequest{})
+	wantCode(t, "an Action method without Connection delegation", err, codes.Unauthenticated)
+	accountEnvelope := connectionEnvelope(identityRef)
+	accountEnvelope.EffectiveCaller = &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-caller"}, Uid: "test-uid-test-caller",
+	}}
+	_, err = s.client.ListActionRequests(connectionContext(t, t.Context(), actorToken, accountEnvelope), &action_servicepb.ListActionRequestsRequest{})
+	wantCode(t, "Connection provenance with an SA effective caller", err, codes.PermissionDenied)
+
+	set := namespace.policySet(t, "connection-subject-set", exactActions("other-group", "not-this-action"))
+	binding := &policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: "connection-subject-binding"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}}, PolicySets: []string{set.Name},
+		},
+	}
+	if err := policyObjects.Create(t.Context(), binding); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "Identity PolicyBinding", func() bool {
+		return s.index.AdmitsIdentity(auth.Identity{Name: identity.Name, UID: string(identity.UID)})
+	})
+	submitted, err := s.client.SubmitActionRequest(delegated(identityRef), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submitted.GetActionRequest().GetCallerIdentity().GetUid() != string(identity.UID) || submitted.GetActionRequest().GetCaller() != nil {
+		t.Fatalf("Action request was attributed to an SA instead of the effective Identity: %v", submitted.GetActionRequest())
+	}
+	listed, err := s.client.ListActionRequests(delegated(identityRef), &action_servicepb.ListActionRequestsRequest{})
+	if err != nil || len(listed.GetActionRequests()) != 1 {
+		t.Fatalf("Identity could not read its own request: response=%v err=%v", listed, err)
+	}
+	actorList, err := s.client.ListActionRequests(as(t, actorToken), &action_servicepb.ListActionRequestsRequest{})
+	if err != nil || len(actorList.GetActionRequests()) != 0 {
+		t.Fatalf("delegation fell back to the actor's ServiceAccount: response=%v err=%v", actorList, err)
+	}
+
+	streamContext, cancel := context.WithTimeout(delegated(identityRef), 12*time.Second)
+	defer cancel()
+	stream, err := s.client.WatchActionPolicy(streamContext, &action_servicepb.GetActionPolicyRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("initial Identity policy frame: %v", err)
+	}
+	if err := policyObjects.Delete(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	successor := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: identity.Name},
+		Spec:       policyapi.IdentitySpec{Description: "replacement Identity"},
+	}
+	if err := policyObjects.Create(t.Context(), successor); err != nil {
+		t.Fatal(err)
+	}
+	if string(successor.UID) == string(identity.UID) {
+		t.Fatal("test API server reused an Identity UID")
+	}
+	_, err = stream.Recv()
+	wantCode(t, "an open Action stream after same-name Identity replacement", err, codes.PermissionDenied)
 }

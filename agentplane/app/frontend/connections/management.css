@@ -1,4 +1,4 @@
-.agentplane-connection-account-select {
+.agentplane-connection-identity-select {
   width: 240px;
   max-width: 100%;
 }
@@ -7,18 +7,23 @@
   display: none;
 }
 
+.agentplane-connections > tbody > tr > td:first-child {
+  min-width: 14rem;
+}
+
 /* The name field pads its text for the hover background; reaching into the cell's own padding lines
    the name up with the IDs beneath it. */
 .agentplane-connection-name {
   margin-inline-start: calc(-1 * var(--mantine-spacing-xs));
 }
 
-/* A three-column table leaves neither a readable client nor a tappable account picker on phones. */
+/* A three-column table leaves neither a readable client nor a tappable Identity picker on phones. */
 @media (max-width: 48em) {
   .agentplane-connections,
   .agentplane-connections > tbody,
   .agentplane-connections > tbody > tr,
-  .agentplane-connections > tbody > tr > td {
+  .agentplane-connections > tbody > tr > td,
+  .agentplane-connections > tbody > tr > td:first-child {
     display: block;
     width: 100%;
   }
@@ -48,7 +53,7 @@
     display: block;
   }
 
-  .agentplane-connection-account-select {
+  .agentplane-connection-identity-select {
     width: 100%;
   }
 }

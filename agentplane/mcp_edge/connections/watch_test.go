@@ -93,7 +93,7 @@ func TestAWatchSendsEveryConnectionInBoundedChunksThenEachChange(t *testing.T) {
 	var want []string
 	for i := range snapshotChunk + 1 {
 		want = append(want, s.connect(t, fmt.Sprintf("test-connection-%d", i), start.Add(time.Duration(i)*time.Second),
-			&callerAccount, storedGrant{caller: callerAccount, status: grantActive}).String())
+			&callerIdentity, storedGrant{identity: &callerIdentity, status: grantActive}).String())
 	}
 	stream := s.watch(t, testOperator)
 	var got []string
@@ -116,15 +116,15 @@ func TestAWatchSendsEveryConnectionInBoundedChunksThenEachChange(t *testing.T) {
 	}
 	rebound := s.get(t, uuid.MustParse(want[5]))
 	if _, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
-		ConnectionId: rebound.GetId(), ExpectedVersion: 1, ServiceAccount: message(otherAccount),
+		ConnectionId: rebound.GetId(), ExpectedVersion: 1, Identity: identityMessage(otherIdentity),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := upsert(t, stream); got.GetId() != rebound.GetId() || *accountOf(got.GetBoundCaller()) != otherAccount {
+	if got := upsert(t, stream); got.GetId() != rebound.GetId() || got.GetBoundIdentity().GetName() != otherIdentity.Name {
 		t.Errorf("upsert %v, want the rebind of %s", got, rebound.GetId())
 	}
 	// A Connection the authorization server's code exchange creates.
-	created := s.allowed(t, callerAccount)
+	created := s.allowed(t, callerIdentity)
 	if err := s.activate(t, created, approver); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestAWatchSendsEveryConnectionInBoundedChunksThenEachChange(t *testing.T) {
 
 func TestAWatchEndsUnauthenticatedOnceItsBearerIsRefused(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-watched", callerAccount)
+	c := s.active(t, "test-watched", callerIdentity)
 	refused := s.watch(t, testOperator)
 	idle := s.watch(t, testOtherOperator)
 	snapshot(t, refused)
@@ -168,7 +168,7 @@ func TestDrainingRenewsAWatch(t *testing.T) {
 
 func TestAWatchOutlivesTheNotificationConnectionAndReadsWhatChangedUnannounced(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-watched", callerAccount)
+	c := s.active(t, "test-watched", callerIdentity)
 	stream := s.watch(t, testOperator)
 	snapshot(t, stream)
 	// A change no notification announces, then a dropped LISTEN connection: only the wakeup after it reconnects
@@ -188,7 +188,7 @@ func TestAWatchOutlivesTheNotificationConnectionAndReadsWhatChangedUnannounced(t
 
 func TestTheHTTPFacadeServesTheConnectionsAsJSON(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-over-http", callerAccount)
+	c := s.active(t, "test-over-http", callerIdentity)
 	call := func(method, path string, body []byte) *http.Response {
 		t.Helper()
 		request, err := http.NewRequestWithContext(as(t, testOperator), method, s.url+path, bytes.NewReader(body))

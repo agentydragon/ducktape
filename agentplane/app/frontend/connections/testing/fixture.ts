@@ -7,10 +7,10 @@ import {
   GrantStatus,
   type Connection,
 } from "../../../../mcp_edge/connection_service_pb";
-import { ServiceAccountSchema } from "../../../../proto/identity_pb";
+import { IdentitySchema } from "../../../../proto/identity_pb";
 
 export function sampleConnection(): Connection {
-  const personal = create(ServiceAccountSchema, { namespace: "agentplane-test", name: "personal" });
+  const personal = create(IdentitySchema, { name: "personal", uid: "30000000-0000-4000-8000-000000000001" });
   return create(ConnectionSchema, {
     id: "10000000-0000-4000-8000-000000000001",
     displayName: "Claude desktop",
@@ -22,7 +22,7 @@ export function sampleConnection(): Connection {
         id: "20000000-0000-4000-8000-000000000001",
         connectionId: "10000000-0000-4000-8000-000000000001",
         revision: 1,
-        caller: personal,
+        identity: personal,
         issuer: "https://actions.example.test",
         clientId: "registered-client-123",
         status: GrantStatus.ACTIVE,
@@ -30,6 +30,6 @@ export function sampleConnection(): Connection {
         activatedAt: timestampFromDate(new Date("2026-09-09T12:01:00Z")),
       }),
     ],
-    boundCaller: personal,
+    boundIdentity: personal,
   });
 }

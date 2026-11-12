@@ -105,7 +105,7 @@ func TestAnOutageAtAuthorizationIsAnsweredAsTemporary(t *testing.T) {
 // upstreamURL is where the operator's allow of the request sends the browser.
 func (h *harness) upstreamURL(t *testing.T, r request) string {
 	t.Helper()
-	return must(h.consent(t.Context(), h.authorizeURL(r, nil), testOperator, newConnection(callerAccount)))(t).GetRedirectUrl()
+	return must(h.consent(t.Context(), h.authorizeURL(r, nil), testOperator, newConnection(callerIdentity)))(t).GetRedirectUrl()
 }
 
 func TestTheCallbackSendsACodeOnlyForASignInOfThePinnedOperator(t *testing.T) {

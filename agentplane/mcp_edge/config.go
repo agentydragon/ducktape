@@ -8,7 +8,6 @@ import (
 	"math"
 	"net/url"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
@@ -29,33 +28,23 @@ type config struct {
 	ActionsTLS    *environment_runtime_transport.ClientTLS `mapstructure:"actions_tls" json:"actions_tls,omitempty"`
 	DatabaseURL   string                                   `mapstructure:"database_url" yaml:"database_url"`
 	ActionsTarget string                                   `mapstructure:"actions_target" yaml:"actions_target"`
-	// PolicyNamespace and ActionsTokenFile are accepted ahead of the MCP Identity cutover image.
+	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
 	PolicyNamespace  string `mapstructure:"policy_namespace" yaml:"policy_namespace"`
 	ActionsTokenFile string `mapstructure:"actions_token_file" yaml:"actions_token_file"`
 	Host             string `mapstructure:"host" yaml:"host"`
 	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
 	// OAuth and the metrics.
-	Port                           int      `mapstructure:"port" yaml:"port"`
-	HTTPPort                       int      `mapstructure:"http_port" yaml:"http_port"`
-	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
-	// MintableAccounts is the explicit ownership scope granted to this edge's TokenRequest RBAC.
-	MintableAccounts []auth.Account `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
-	// ConnectionIdentities is nil while Connections bind only to mintable_accounts.
-	ConnectionIdentities *connectionIdentities    `mapstructure:"connection_identities" yaml:"connection_identities"`
-	OperatorOIDC         api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
-	OAuth                *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
-	MaxWaitSeconds       float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
-	DirectWaitSeconds    float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
-}
-
-// connectionIdentities are the Identities a Connection may be bound to, as mintable_accounts are the ServiceAccounts.
-// Staged for IDENTITY_CUTOVER (agentplane/plans/task_dag.md), which sets it and makes the edge bind Connections to
-// these Identities; until then the edge validates it and nothing reads it.
-type connectionIdentities struct {
-	// PolicyNamespace holds the Identity objects.
-	PolicyNamespace string `mapstructure:"policy_namespace" yaml:"policy_namespace"`
-	// Names are Identity names in PolicyNamespace; duplicates name the same Identity.
-	Names []string `mapstructure:"names" yaml:"names"`
+	Port     int `mapstructure:"port" yaml:"port"`
+	HTTPPort int `mapstructure:"http_port" yaml:"http_port"`
+	// Legacy settings remain accepted for one rollout after their manifest values are removed. They do not authorize,
+	// resolve, or mint workload credentials and can be deleted after the Identity cutover is deployed.
+	LegacyCallerServiceAccountNamespaces []string                 `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
+	LegacyMintableAccounts               []string                 `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
+	LegacyConnectionIdentities           map[string]any           `mapstructure:"connection_identities" yaml:"connection_identities"`
+	OperatorOIDC                         api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
+	OAuth                                *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
+	MaxWaitSeconds                       float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
+	DirectWaitSeconds                    float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
@@ -104,20 +93,6 @@ func loadConfig() (config, error) {
 		}
 		sharedconfig.SetJSONLeaves(settings, "oauth", values, settingPrefix)
 	}
-	if raw := os.Getenv(settingPrefix + "CALLER_SERVICE_ACCOUNT_NAMESPACES"); raw != "" {
-		var namespaces []string
-		if err := json.Unmarshal([]byte(raw), &namespaces); err != nil {
-			return config{}, errors.New("caller_service_account_namespaces must be a JSON array")
-		}
-		settings.Set("caller_service_account_namespaces", namespaces)
-	}
-	if raw := os.Getenv(settingPrefix + "MINTABLE_ACCOUNTS"); raw != "" {
-		var accounts []string
-		if err := json.Unmarshal([]byte(raw), &accounts); err != nil {
-			return config{}, errors.New("mintable_accounts must be a JSON array")
-		}
-		settings.Set("mintable_accounts", accounts)
-	}
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
 		return config{}, errors.New("invalid MCP edge settings")
 	}
@@ -130,6 +105,9 @@ func (c config) validate() error {
 			return errors.New(required.name + " is required")
 		}
 	}
+	if len(validation.IsDNS1123Label(c.PolicyNamespace)) > 0 {
+		return errors.New("policy_namespace must be a namespace name")
+	}
 	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
 		if port < 1 || port > 65535 {
 			return errors.New(name + " must be between 1 and 65535")
@@ -137,25 +115,6 @@ func (c config) validate() error {
 	}
 	if c.Port == c.HTTPPort {
 		return errors.New("port and http_port must differ")
-	}
-	if len(c.CallerServiceAccountNamespaces) == 0 {
-		return errors.New("caller_service_account_namespaces must list at least one namespace")
-	}
-	for _, namespace := range c.CallerServiceAccountNamespaces {
-		if namespace == "" {
-			return errors.New("caller_service_account_namespaces contains an empty namespace")
-		}
-	}
-	for _, account := range c.MintableAccounts {
-		if account.Namespace == "" || account.Name == "" {
-			return errors.New("mintable_accounts requires namespace/name")
-		}
-		if !slices.Contains(c.CallerServiceAccountNamespaces, account.Namespace) {
-			return errors.New("mintable_accounts must be in a caller namespace")
-		}
-	}
-	if err := c.ConnectionIdentities.validate(); err != nil {
-		return err
 	}
 	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
 		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
@@ -168,8 +127,8 @@ func (c config) validate() error {
 	if c.OAuth == nil {
 		return nil
 	}
-	if len(c.MintableAccounts) == 0 {
-		return errors.New("mintable_accounts must list at least one account when oauth is enabled")
+	if strings.TrimSpace(c.ActionsTokenFile) == "" {
+		return errors.New("actions_token_file is required when oauth is enabled")
 	}
 	o := c.OAuth
 	for _, value := range []string{o.UpstreamClientID, o.UpstreamClientSecretFile, o.UpstreamSubject, o.ApprovingOperator.Issuer, o.ApprovingOperator.Subject} {
@@ -186,24 +145,6 @@ func (c config) validate() error {
 	issuer, _ := url.Parse(o.BaseURL)
 	if issuer.Path != "" || issuer.RawQuery != "" {
 		return errors.New("oauth.base_url must be an origin")
-	}
-	return nil
-}
-
-func (i *connectionIdentities) validate() error {
-	if i == nil {
-		return nil
-	}
-	if len(validation.IsDNS1123Label(i.PolicyNamespace)) > 0 {
-		return errors.New("connection_identities.policy_namespace must be a namespace name")
-	}
-	if len(i.Names) == 0 {
-		return errors.New("connection_identities.names must list at least one Identity")
-	}
-	for _, name := range i.Names {
-		if len(validation.IsDNS1123Subdomain(name)) > 0 {
-			return fmt.Errorf("connection_identities.names must be Identity object names: %q", name)
-		}
 	}
 	return nil
 }

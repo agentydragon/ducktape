@@ -338,6 +338,24 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 		return nil, err
 	}
 	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
+	if c.ConnectionDelegationActor != nil {
+		scheme := runtime.NewScheme()
+		if err := policyapi.AddToScheme(scheme); err != nil {
+			return nil, fmt.Errorf("register Policy API for delegated Identity checks: %w", err)
+		}
+		objects, err := client.New(d.Kube, client.Options{Scheme: scheme})
+		if err != nil {
+			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
+		}
+		identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+		if err != nil {
+			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
+		}
+		options.ConnectionDelegation, err = actionConnectionDelegation(workloads, *c.ConnectionDelegationActor, identities)
+		if err != nil {
+			return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
+		}
+	}
 	if c.RPC.Has(listener.SPIFFE) {
 		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces,
 			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
@@ -351,6 +369,35 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 		}
 	}
 	return api.NewGate(options), nil
+}
+
+// actionConnectionDelegation grants the MCP edge only the Action calls needed to serve a Connection. The actor's
+// own Action-audience token is still reviewed; this does not make it a privileged backend caller.
+func actionConnectionDelegation(
+	workloads *auth.Resolver, actor auth.Account, identities auth.IdentityUIDReader,
+) (auth.Methods, error) {
+	methods := []string{
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
+		action_servicepb.ActionService_ListActionRequests_FullMethodName,
+		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName,
+		action_servicepb.ActionService_GetActionRequest_FullMethodName,
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName,
+		action_servicepb.ActionService_WatchActionRequests_FullMethodName,
+		action_servicepb.ActionService_CancelActionRequest_FullMethodName,
+		action_servicepb.ActionService_ListActionRequestEvents_FullMethodName,
+		action_servicepb.ActionService_ListActionGroups_FullMethodName,
+		action_servicepb.ActionService_WatchActionGroups_FullMethodName,
+		action_servicepb.ActionService_GetAction_FullMethodName,
+		action_servicepb.ActionService_GetActionPolicy_FullMethodName,
+		action_servicepb.ActionService_WatchActionPolicy_FullMethodName,
+	}
+	rules := make(auth.Methods, len(methods))
+	for _, method := range methods {
+		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+	}
+	return rules.WithDelegation(methods, []auth.Delegator{{
+		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
+	}}, nil, identities)
 }
 
 // serve answers gRPC on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked

@@ -13,10 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// GetActionPolicy answers what an account's bindings auto-decide: the caller's own, or the named subject's. Any
-// workload may name any account. A service reader's exception covers requests only, so it reads policy as a workload
-// does, only while its ServiceAccount carries the caller label. An operator must name the account, and is also shown
-// each binding's diagnostics.
+// GetActionPolicy answers what a workload Identity's or ServiceAccount's bindings auto-decide, or the named
+// ServiceAccount's when supplied. An operator must name a ServiceAccount, and is also shown each binding's
+// diagnostics.
 func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
 	var own reader.Subject
 	viewer := policyview.Workload

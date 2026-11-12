@@ -318,12 +318,7 @@ def environment(
             orchestration_v1=OrchestrationProps(),
         ),
         mcp_edge=McpEdgeProps(
-            replicas=_ONE_REPLICA,
-            operator_oidc=operator_oidc,
-            caller_service_account_namespaces=frozenset({NAMESPACE}),
-            mintable_accounts=frozenset(),
-            oauth_secret_name=None,
-            hostname=None,
+            replicas=_ONE_REPLICA, operator_oidc=operator_oidc, oauth_secret_name=None, hostname=None
         ),
         vm_sandboxes=vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,

@@ -18,7 +18,6 @@ import { Verdict } from "../../../action_service/action_service_pb";
 import { GrantStatus } from "../../../mcp_edge/connection_service_pb";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 import { toJson } from "@bufbuild/protobuf";
-import { serviceAccountKey } from "./service_accounts";
 import { TimeAgo } from "../time_ago";
 import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./connection_service_client";
 
@@ -43,7 +42,7 @@ export function ConnectionConsent({
 }): JSX.Element {
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
   const [name, setName] = useState("");
-  const [account, setAccount] = useState("");
+  const [identityName, setIdentityName] = useState("");
   const [connectionId, setConnectionId] = useState("new");
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,8 +94,8 @@ export function ConnectionConsent({
     );
   }
 
-  const accounts = preview?.serviceAccounts ?? [];
-  const selectedAccount = accounts.find((candidate) => serviceAccountKey(candidate) === account);
+  const identities = preview?.identities ?? [];
+  const selectedIdentity = identities.find((candidate) => candidate.name === identityName);
   const existing = preview?.connections.find((connection) => connection.id === connectionId);
   return (
     <Paper withBorder p="lg" maw={760} w="100%" mx="auto">
@@ -165,15 +164,14 @@ export function ConnectionConsent({
                     </Text>
                     {existing.grants.map((grant) => (
                       <Text key={grant.id} size="sm" style={{ overflowWrap: "anywhere" }}>
-                        Acts as {serviceAccountKey(grant.caller!)} · {grantStatusLabel(grant.status)} · client{" "}
-                        {grant.clientId} · issuer {grant.issuer}
+                        Acts as {grant.identity?.name ?? legacyCaller(grant)} · {grantStatusLabel(grant.status)} ·
+                        client {grant.clientId} · issuer {grant.issuer}
                       </Text>
                     ))}
                     <Text size="sm">
-                      Fresh OAuth replaces this Connection’s authority with ServiceAccount {account || "(choose below)"}
-                      . Old grants are revoked when token exchange reserves the replacement, even if issuance then
-                      fails. Old tokens never switch ServiceAccount. History is preserved; already claimed work is not
-                      stopped.
+                      Fresh OAuth replaces this Connection’s authority with Identity {identityName || "(choose below)"}.
+                      Old grants are revoked when token exchange reserves the replacement, even if issuance then fails.
+                      History is preserved; already claimed work is not stopped.
                     </Text>
                     <Checkbox
                       label="I confirm replacing this Connection’s authority"
@@ -185,30 +183,30 @@ export function ConnectionConsent({
               )
             )}
             <NativeSelect
-              label="ServiceAccount"
-              name="service_account"
-              description="The labeled Kubernetes ServiceAccount this connection will act as."
+              label="Identity"
+              name="identity"
+              description="The live policy Identity this connection will act as."
               data={[
-                { value: "", label: "Choose a ServiceAccount" },
-                ...accounts.map((candidate) => ({
-                  value: serviceAccountKey(candidate),
-                  label: serviceAccountKey(candidate),
+                { value: "", label: "Choose an Identity" },
+                ...identities.map((candidate) => ({
+                  value: candidate.name,
+                  label: `${candidate.name} · UID ${candidate.uid}`,
                 })),
               ]}
-              value={account}
+              value={identityName}
               onChange={(event) => {
-                setAccount(event.currentTarget.value);
+                setIdentityName(event.currentTarget.value);
                 setConfirmed(false);
               }}
               required
             />
-            {accounts.length === 0 && (
-              <Text c="orange">No labeled caller ServiceAccounts exist. You can deny this request.</Text>
+            {identities.length === 0 && (
+              <Text c="orange">No live Identities exist in this policy namespace. You can deny this request.</Text>
             )}
             <Text size="sm">
-              Connections acting as the same ServiceAccount share its Action receipts. What it may do without an
-              operator is whatever PolicyBindings name it; everything else waits for human approval. Each submitted
-              Action records the specific client connection.
+              The selected Identity and its current UID are recorded as this Connection’s authority. What it may do
+              without an operator is whatever its PolicyBindings allow; everything else waits for human approval. Each
+              submitted Action records the specific client connection.
             </Text>
             <Group justify="flex-end">
               <Button
@@ -221,10 +219,10 @@ export function ConnectionConsent({
               </Button>
               <Button
                 disabled={
-                  submitting || !selectedAccount || (connectionId === "new" ? !name.trim() : !existing || !confirmed)
+                  submitting || !selectedIdentity || (connectionId === "new" ? !name.trim() : !existing || !confirmed)
                 }
                 onClick={() => {
-                  if (!selectedAccount) return;
+                  if (!selectedIdentity) return;
                   void decide({
                     verdict: "allow",
                     expectedVersion: preview.enrollment.version,
@@ -236,7 +234,7 @@ export function ConnectionConsent({
                           authorityChangeConfirmed: true,
                         }
                       : { kind: "new", displayName: name.trim() },
-                    serviceAccount: selectedAccount,
+                    identity: selectedIdentity,
                   });
                 }}
               >
@@ -248,6 +246,10 @@ export function ConnectionConsent({
       </Stack>
     </Paper>
   );
+}
+
+function legacyCaller(grant: { caller?: { namespace: string; name: string } }): string {
+  return grant.caller ? `${grant.caller.namespace}/${grant.caller.name} (historical)` : "legacy authority";
 }
 
 function grantStatusLabel(status: GrantStatus): string {

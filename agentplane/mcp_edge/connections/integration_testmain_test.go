@@ -51,9 +51,9 @@ const (
 )
 
 var (
-	callerAccount    = auth.Account{Namespace: "test-agentplane", Name: "test-caller"}
-	otherAccount     = auth.Account{Namespace: "test-agentplane", Name: "test-other-caller"}
-	unlabeledAccount = auth.Account{Namespace: "test-agentplane", Name: "test-unlabeled"}
+	callerIdentity      = auth.Identity{Name: "test-caller", UID: "uid-test-caller"}
+	otherIdentity       = auth.Identity{Name: "test-other-caller", UID: "uid-test-other-caller"}
+	unavailableIdentity = auth.Identity{Name: "test-unavailable", UID: "uid-test-unavailable"}
 )
 
 // testGate stands in for the Action Service's Gate, which admits only operators: it takes every call's bearer
@@ -91,42 +91,54 @@ func (g *testGate) refuse(subject string) {
 	g.refused[subject] = true
 }
 
-// testCallers is a view of the labeled ServiceAccounts that the test sets.
-type testCallers struct {
-	mu       sync.Mutex
-	accounts []auth.Account
-	stale    bool
+// testIdentities is the current policy namespace Identity view and direct UID reader the test sets.
+type testIdentities struct {
+	mu         sync.Mutex
+	identities []auth.Identity
+	uids       map[string]string
+	stale      bool
 }
 
-func (c *testCallers) CallerServiceAccounts() ([]auth.Account, bool) {
+func (c *testIdentities) ConnectionIdentities() ([]auth.Identity, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stale {
 		return nil, false
 	}
-	return slices.Clone(c.accounts), true
+	return slices.Clone(c.identities), true
 }
 
-func (c *testCallers) goStale() {
+func (c *testIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	uid, ok := c.uids[name]
+	return uid, ok, nil
+}
+
+func (c *testIdentities) goStale() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stale = true
 }
 
-// label makes the accounts the labeled ones, as the view sees labels added or removed.
-func (c *testCallers) label(accounts ...auth.Account) {
+// live makes the named Identities the picker can currently offer.
+func (c *testIdentities) live(identities ...auth.Identity) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.accounts = accounts
+	c.identities = identities
+	c.uids = make(map[string]string, len(identities))
+	for _, identity := range identities {
+		c.uids[identity.Name] = identity.UID
+	}
 }
 
 // served is the service over a database of its own, on a gRPC server with its HTTP facade.
 type served struct {
-	db      *sql.DB
-	store   *Store
-	gate    *testGate
-	callers *testCallers
-	client  pb.ConnectionServiceClient
+	db         *sql.DB
+	store      *Store
+	gate       *testGate
+	identities *testIdentities
+	client     pb.ConnectionServiceClient
 	// url is the base URL of the HTTP facade.
 	url string
 }
@@ -151,11 +163,14 @@ func serve(t *testing.T) *served {
 	draining, drain := context.WithCancel(context.Background())
 	t.Cleanup(drain)
 	s := &served{
-		db:      db,
-		gate:    &testGate{refused: map[string]bool{}, draining: draining, drain: drain},
-		callers: &testCallers{accounts: []auth.Account{callerAccount, otherAccount}},
+		db:   db,
+		gate: &testGate{refused: map[string]bool{}, draining: draining, drain: drain},
+		identities: &testIdentities{
+			identities: []auth.Identity{callerIdentity, otherIdentity},
+			uids:       map[string]string{callerIdentity.Name: callerIdentity.UID, otherIdentity.Name: otherIdentity.UID},
+		},
 	}
-	s.store = NewStore(db, s.callers)
+	s.store = NewStore(db, s.identities, s.identities)
 	server := grpc.NewServer()
 	pb.RegisterConnectionServiceServer(server, NewService(s.store, s.gate, updates))
 	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -200,10 +215,11 @@ func wantCode(t *testing.T, what string, err error, code codes.Code) {
 	}
 }
 
-// storedGrant is a grant as the authorization server stores it.
+// storedGrant is a grant as the authorization server stores it. caller is historical legacy attribution.
 type storedGrant struct {
-	caller auth.Account
-	status grantStatus
+	caller   auth.Account
+	identity *auth.Identity
+	status   grantStatus
 }
 
 // accountJSON is a ServiceAccount as the Python service writes it to a JSONB column.
@@ -211,20 +227,24 @@ func accountJSON(account auth.Account) string {
 	return fmt.Sprintf(`{"namespace": %q, "name": %q}`, account.Namespace, account.Name)
 }
 
+func identityJSON(identity auth.Identity) string {
+	return fmt.Sprintf(`{"name": %q, "uid": %q}`, identity.Name, identity.UID)
+}
+
 // connect stores a Connection created at the time, as the authorization server writes one: bound to the account (nil
 // leaves it unbound), at version 1, with the grants in revision order. An active grant was activated, and a revoked
 // one revoked, a minute after the Connection was created.
-func (s *served) connect(t *testing.T, name string, createdAt time.Time, bound *auth.Account, grants ...storedGrant) uuid.UUID {
+func (s *served) connect(t *testing.T, name string, createdAt time.Time, bound *auth.Identity, grants ...storedGrant) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
-	var boundCaller *string
+	var boundIdentity *string
 	if bound != nil {
-		document := accountJSON(*bound)
-		boundCaller = &document
+		document := identityJSON(*bound)
+		boundIdentity = &document
 	}
 	if _, err := s.db.ExecContext(t.Context(), `
-		INSERT INTO external_connection (id, display_name, bound_caller, binding_version, version, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, 0, 1, $4, $4)`, id, name, boundCaller, createdAt); err != nil {
+		INSERT INTO external_connection (id, display_name, bound_identity, identity_binding_required, binding_version, version, created_at, updated_at)
+		VALUES ($1, $2, $3::jsonb, false, 0, 1, $4, $4)`, id, name, boundIdentity, createdAt); err != nil {
 		t.Fatal(err)
 	}
 	later := createdAt.Add(time.Minute)
@@ -236,11 +256,20 @@ func (s *served) connect(t *testing.T, name string, createdAt time.Time, bound *
 		case grantRevoked:
 			revokedAt = &later
 		}
+		var callerDocument, identityDocument *string
+		if g.caller.Name != "" {
+			document := accountJSON(g.caller)
+			callerDocument = &document
+		}
+		if g.identity != nil {
+			document := identityJSON(*g.identity)
+			identityDocument = &document
+		}
 		if _, err := s.db.ExecContext(t.Context(), `
-			INSERT INTO external_connection_grant (id, connection_id, revision, original_caller, issuer, client_id,
+			INSERT INTO external_connection_grant (id, connection_id, revision, original_caller, original_identity, issuer, client_id,
 				status, created_at, activated_at, revoked_at)
-			VALUES ($1, $2, $3, $4::jsonb, 'https://test-actions.example', $5, $6, $7, $8, $9)`,
-			uuid.New(), id, i+1, accountJSON(g.caller), fmt.Sprintf("test-client-%d", i+1),
+			VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'https://test-actions.example', $6, $7, $8, $9, $10)`,
+			uuid.New(), id, i+1, callerDocument, identityDocument, fmt.Sprintf("test-client-%d", i+1),
 			g.status, createdAt, activatedAt, revokedAt); err != nil {
 			t.Fatal(err)
 		}
@@ -249,9 +278,9 @@ func (s *served) connect(t *testing.T, name string, createdAt time.Time, bound *
 }
 
 // active connects a Connection bound to the account through one active grant, created now.
-func (s *served) active(t *testing.T, name string, account auth.Account) *pb.Connection {
+func (s *served) active(t *testing.T, name string, identity auth.Identity) *pb.Connection {
 	t.Helper()
-	return s.get(t, s.connect(t, name, now(), &account, storedGrant{caller: account, status: grantActive}))
+	return s.get(t, s.connect(t, name, now(), &identity, storedGrant{identity: &identity, status: grantActive}))
 }
 
 func (s *served) get(t *testing.T, id uuid.UUID) *pb.Connection {

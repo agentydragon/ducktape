@@ -57,12 +57,16 @@ import {
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import { DurationSchema, TimestampSchema, ValueSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { SubjectSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
-import { ServiceAccountIdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
+import {
+  IdentitySchema as PrincipalIdentitySchema,
+  ServiceAccountIdentitySchema,
+  ServiceAccountSchema,
+} from "../../../proto/identity_pb";
 import {
   ConnectionSchema,
   GrantSchema,
   GrantStatus,
-  ListCallerServiceAccountsResponseSchema,
+  ListConnectionIdentitiesResponseSchema,
   type Connection,
 } from "../../../mcp_edge/connection_service_pb";
 import { OwnerReferenceSchema } from "../../../proto/kubernetes_pb";
@@ -514,6 +518,7 @@ let identities: Identity[] = [
 );
 
 let identityBindings: PolicyBinding[] = [
+  { name: "personal-kube-reader", identity: "personal", source: "operator", sets: ["kube-reader"] },
   {
     name: "git-origin-identity-github-public",
     identity: "git-origin-identity",
@@ -3012,13 +3017,17 @@ routes.push(
   ],
   [
     "GET",
-    /^\/upstream\/connections\/v1\/operator\/caller-service-accounts$/,
+    /^\/upstream\/connections\/v1\/operator\/connection-identities$/,
     () =>
       toJson(
-        ListCallerServiceAccountsResponseSchema,
-        create(ListCallerServiceAccountsResponseSchema, {
-          serviceAccounts: [
-            create(ServiceAccountSchema, { namespace: "agentplane-visual", name: "operator-assistant" }),
+        ListConnectionIdentitiesResponseSchema,
+        create(ListConnectionIdentitiesResponseSchema, {
+          identities: [
+            create(PrincipalIdentitySchema, { name: "personal", uid: "30000000-0000-4000-8000-000000000001" }),
+            create(PrincipalIdentitySchema, {
+              name: "operator-assistant",
+              uid: "30000000-0000-4000-8000-000000000003",
+            }),
           ],
         })
       ),
@@ -3339,12 +3348,13 @@ function retiredConnectionRows(): Connection[] {
       ...sample,
       id: "10000000-0000-4000-8000-000000000002",
       displayName: "Retired research client",
-      boundCaller: undefined,
+      boundIdentity: undefined,
       grants: sample.grants.map((grant) =>
         create(GrantSchema, {
           ...grant,
           id: "20000000-0000-4000-8000-000000000002",
           connectionId: "10000000-0000-4000-8000-000000000002",
+          identity: undefined,
           caller: create(ServiceAccountSchema, { namespace: "agentplane-visual", name: "retired" }),
           status: GrantStatus.REVOKED,
           revokedAt: timestampFromDate(new Date("2026-09-09T12:03:00Z")),

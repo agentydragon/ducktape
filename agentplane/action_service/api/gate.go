@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
@@ -47,6 +49,9 @@ type GateOptions struct {
 	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
 	Operators *OperatorVerifier
+	// ConnectionDelegation carries method-scoped authority for the MCP edge. Only the Action
+	// methods listed in this map may receive Connection provenance.
+	ConnectionDelegation auth.Methods
 	// AdditionalOperatorMethods names methods owned by another service that this Gate serves.
 	AdditionalOperatorMethods []string
 }
@@ -54,12 +59,13 @@ type GateOptions struct {
 // Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
 // bearer to the principal the call acts as, and answers a failed call with the status code that names its failure.
 type Gate struct {
-	workloads *auth.Resolver
-	svid      *auth.SVIDResolver
-	callers   Callers
-	readers   sets.Set[auth.Account]
-	operators *OperatorVerifier
-	methods   map[string]func(context.Context) (admission, error)
+	workloads            *auth.Resolver
+	svid                 *auth.SVIDResolver
+	callers              Callers
+	readers              sets.Set[auth.Account]
+	operators            *OperatorVerifier
+	connectionDelegation auth.Methods
+	methods              map[string]func(context.Context) (admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
 	draining context.Context
 	drain    context.CancelFunc
@@ -69,22 +75,23 @@ func NewGate(options GateOptions) *Gate {
 	draining, drain := context.WithCancel(context.Background())
 	g := &Gate{
 		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: sets.New(options.ReaderAccounts...), operators: options.Operators,
-		draining: draining, drain: drain,
+		connectionDelegation: options.ConnectionDelegation,
+		draining:             draining, drain: drain,
 	}
 	g.methods = map[string]func(context.Context) (admission, error){
-		action_servicepb.ActionService_SubmitActionRequest_FullMethodName:                    g.authenticate,
-		action_servicepb.ActionService_ListActionRequests_FullMethodName:                     g.authenticate,
-		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName:               g.authenticate,
-		action_servicepb.ActionService_GetActionRequest_FullMethodName:                       g.authenticate,
-		action_servicepb.ActionService_WatchActionRequest_FullMethodName:                     g.authenticate,
-		action_servicepb.ActionService_WatchActionRequests_FullMethodName:                    g.authenticate,
-		action_servicepb.ActionService_CancelActionRequest_FullMethodName:                    g.authenticate,
-		action_servicepb.ActionService_ListActionRequestEvents_FullMethodName:                g.authenticate,
-		action_servicepb.ActionService_ListActionGroups_FullMethodName:                       g.authenticate,
-		action_servicepb.ActionService_WatchActionGroups_FullMethodName:                      g.authenticate,
-		action_servicepb.ActionService_GetAction_FullMethodName:                              g.authenticate,
-		action_servicepb.ActionService_GetActionPolicy_FullMethodName:                        g.authenticate,
-		action_servicepb.ActionService_WatchActionPolicy_FullMethodName:                      g.authenticate,
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName:                    g.authenticateAction(action_servicepb.ActionService_SubmitActionRequest_FullMethodName),
+		action_servicepb.ActionService_ListActionRequests_FullMethodName:                     g.authenticateAction(action_servicepb.ActionService_ListActionRequests_FullMethodName),
+		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName:               g.authenticateAction(action_servicepb.ActionService_ListActionRequestHistory_FullMethodName),
+		action_servicepb.ActionService_GetActionRequest_FullMethodName:                       g.authenticateAction(action_servicepb.ActionService_GetActionRequest_FullMethodName),
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName:                     g.authenticateAction(action_servicepb.ActionService_WatchActionRequest_FullMethodName),
+		action_servicepb.ActionService_WatchActionRequests_FullMethodName:                    g.authenticateAction(action_servicepb.ActionService_WatchActionRequests_FullMethodName),
+		action_servicepb.ActionService_CancelActionRequest_FullMethodName:                    g.authenticateAction(action_servicepb.ActionService_CancelActionRequest_FullMethodName),
+		action_servicepb.ActionService_ListActionRequestEvents_FullMethodName:                g.authenticateAction(action_servicepb.ActionService_ListActionRequestEvents_FullMethodName),
+		action_servicepb.ActionService_ListActionGroups_FullMethodName:                       g.authenticateAction(action_servicepb.ActionService_ListActionGroups_FullMethodName),
+		action_servicepb.ActionService_WatchActionGroups_FullMethodName:                      g.authenticateAction(action_servicepb.ActionService_WatchActionGroups_FullMethodName),
+		action_servicepb.ActionService_GetAction_FullMethodName:                              g.authenticateAction(action_servicepb.ActionService_GetAction_FullMethodName),
+		action_servicepb.ActionService_GetActionPolicy_FullMethodName:                        g.authenticateAction(action_servicepb.ActionService_GetActionPolicy_FullMethodName),
+		action_servicepb.ActionService_WatchActionPolicy_FullMethodName:                      g.authenticateAction(action_servicepb.ActionService_WatchActionPolicy_FullMethodName),
 		operator_action_servicepb.OperatorActionService_DecideActionRequest_FullMethodName:   g.authenticateOperator,
 		operator_action_servicepb.OperatorActionService_WatchMcpServers_FullMethodName:       g.authenticateOperator,
 		operator_action_servicepb.OperatorActionService_StartMcpServerLinkage_FullMethodName: g.authenticateOperator,
@@ -112,7 +119,9 @@ func (g *Gate) Drain() { g.drain() }
 
 // admission is the principal a bearer proved.
 type admission struct {
-	principal store.ReadPrincipal
+	principal           store.ReadPrincipal
+	connectionDelegated bool
+	authContext         context.Context
 }
 
 type admissionKey struct{}
@@ -209,6 +218,24 @@ func (g *Gate) DrainingContext() context.Context { return g.draining }
 // Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
 // longer accepted as the principal the call was admitted as.
 func (g *Gate) Recheck(ctx context.Context) error {
+	if admitted(ctx).connectionDelegated {
+		if err := auth.RevalidateStream(ctx); err != nil {
+			return err
+		}
+		verified, err := auth.Admitted(ctx)
+		if err != nil {
+			return unauthenticated
+		}
+		delegated, ok := verified.(auth.DelegatedIdentityAdmission)
+		if !ok || !g.callers.Admits(delegated.Actor.Account) || !g.callers.AdmitsIdentity(delegated.EffectiveCaller) {
+			return unauthenticated
+		}
+		identity := store.IdentityPrincipal{Identity: store.Identity{Name: delegated.EffectiveCaller.Name, UID: delegated.EffectiveCaller.UID}}
+		if identity != admitted(ctx).principal {
+			return unauthenticated
+		}
+		return nil
+	}
 	current, err := g.authenticate(ctx)
 	if err != nil {
 		return err
@@ -217,6 +244,44 @@ func (g *Gate) Recheck(ctx context.Context) error {
 		return unauthenticated
 	}
 	return nil
+}
+
+// authenticateAction accepts Connection delegation only when the full Action RPC method has an
+// explicit delegation Rule. Direct workload/SVID authentication keeps the existing path.
+func (g *Gate) authenticateAction(method string) func(context.Context) (admission, error) {
+	return func(ctx context.Context) (admission, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		delegated := len(md.Get(auth.DelegationMetadataKey)) != 0
+		for _, value := range md.Get("authorization") {
+			delegated = delegated || strings.HasPrefix(value, auth.DelegatedScheme+" ")
+		}
+		if !delegated {
+			return g.authenticate(ctx)
+		}
+		if _, configured := g.connectionDelegation[method]; !configured {
+			return admission{}, unauthenticated
+		}
+		admittedContext, err := g.connectionDelegation.AdmitContext(ctx, method, 5*time.Second)
+		if err != nil {
+			return admission{}, err
+		}
+		verified, err := auth.Admitted(admittedContext)
+		if err != nil {
+			return admission{}, unauthenticated
+		}
+		delegatedAdmission, ok := verified.(auth.DelegatedIdentityAdmission)
+		if !ok || delegatedAdmission.Provenance.GetConnection() == nil ||
+			!g.callers.Admits(delegatedAdmission.Actor.Account) || !g.callers.AdmitsIdentity(delegatedAdmission.EffectiveCaller) {
+			return admission{}, unauthenticated
+		}
+		return admission{
+			principal: store.IdentityPrincipal{Identity: store.Identity{
+				Name: delegatedAdmission.EffectiveCaller.Name, UID: delegatedAdmission.EffectiveCaller.UID,
+			}},
+			connectionDelegated: true,
+			authContext:         admittedContext,
+		}, nil
+	}
 }
 
 // authenticateOperator resolves the bearer of a call only an operator may make: a workload's token is not
@@ -280,6 +345,9 @@ func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (ad
 	admitted, err := authenticate(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if admitted.authContext != nil {
+		ctx = admitted.authContext
 	}
 	return context.WithValue(ctx, admissionKey{}, admitted), nil
 }

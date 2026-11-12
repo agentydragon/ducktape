@@ -227,26 +227,36 @@ func (m Methods) UnaryInterceptor(admissionTimeout time.Duration) grpc.UnaryServ
 // StreamInterceptor admits streams and retains their caller revalidation boundary.
 func (m Methods) StreamInterceptor(admissionTimeout time.Duration) grpc.StreamServerInterceptor {
 	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
+		admitted, err := m.AdmitContext(stream.Context(), info.FullMethod, admissionTimeout)
 		if err != nil {
 			return err
 		}
-		if original, err := Admitted(admitted); err == nil {
-			revalidate := func(ctx context.Context) error {
-				current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-				if err != nil {
-					return err
-				}
-				identity, err := Admitted(current)
-				if err != nil || !sameAdmission(original, identity) {
-					return status.Error(codes.Unauthenticated, "stream caller changed")
-				}
-				return nil
-			}
-			admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
-		}
 		return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
 	}
+}
+
+// AdmitContext applies one method's Rule and retains the same credential revalidation boundary as a
+// server stream. A composed receiver may use it when admission is one part of a larger method gate.
+func (m Methods) AdmitContext(ctx context.Context, method string, admissionTimeout time.Duration) (context.Context, error) {
+	admitted, err := m.admit(ctx, method, admissionTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if original, err := Admitted(admitted); err == nil {
+		revalidate := func(ctx context.Context) error {
+			current, err := m.admit(ctx, method, admissionTimeout)
+			if err != nil {
+				return err
+			}
+			identity, err := Admitted(current)
+			if err != nil || !sameAdmission(original, identity) {
+				return status.Error(codes.Unauthenticated, "stream caller changed")
+			}
+			return nil
+		}
+		admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+	}
+	return admitted, nil
 }
 
 // admit is the context the call runs in once its Rule admits it.

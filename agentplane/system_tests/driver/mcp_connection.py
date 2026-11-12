@@ -80,7 +80,7 @@ async def _authorize(
     server: str,
     operator: httpx.AsyncClient,
     credentials: OperatorCredentials,
-    account: identity_pb2.ServiceAccount,
+    identity: identity_pb2.Identity,
     browser: httpx.AsyncClient,
     dex_browser: httpx.AsyncClient,
 ) -> AuthorizationCodeResult:
@@ -108,7 +108,7 @@ async def _authorize(
         handle=handle,
         expected_version=preview.version,
         allow=connection_service_pb2.EnrollmentAllow(
-            service_account=account,
+            identity=identity,
             new_connection=connection_service_pb2.NewConnection(display_name="Test external Session coordinator"),
         ),
     )
@@ -136,7 +136,7 @@ async def connected_session(
     server: str,
     operator: httpx.AsyncClient,
     credentials: OperatorCredentials,
-    account: identity_pb2.ServiceAccount,
+    identity: identity_pb2.Identity,
     ca_bundle: Path,
 ) -> AsyncIterator[ExternalMCPSession]:
     """Complete a fresh Connection grant, then yield its authenticated SDK Session.
@@ -174,7 +174,7 @@ async def connected_session(
                     server=server,
                     operator=operator,
                     credentials=credentials,
-                    account=account,
+                    identity=identity,
                     browser=browser,
                     dex_browser=dex_browser,
                 )

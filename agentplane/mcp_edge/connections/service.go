@@ -97,11 +97,15 @@ func displayName(name string) (string, error) {
 	return trimmed, nil
 }
 
-func parseAccount(field string, account *identitypb.ServiceAccount) (auth.Account, error) {
-	if account.GetNamespace() == "" || account.GetName() == "" {
-		return auth.Account{}, invalid("%s must set both namespace and name", field)
+func parseIdentity(field string, identity *identitypb.Identity) (auth.Identity, error) {
+	if identity.GetName() == "" || identity.GetUid() == "" {
+		return auth.Identity{}, invalid("%s must set both name and UID", field)
 	}
-	return auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
+	return auth.Identity{Name: identity.GetName(), UID: identity.GetUid()}, nil
+}
+
+func identityRef(identity auth.Identity) *identitypb.Identity {
+	return &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
 }
 
 func serviceAccount(account auth.Account) *identitypb.ServiceAccount {
@@ -131,20 +135,31 @@ func connectionView(c connection) (*pb.Connection, error) {
 		Id: c.id.String(), DisplayName: c.displayName, Version: c.version,
 		CreatedAt: timestamppb.New(c.createdAt), UpdatedAt: timestamppb.New(c.updatedAt),
 	}
-	if c.boundCaller != nil {
-		view.BoundCaller = serviceAccount(*c.boundCaller)
+	if c.legacyBoundCaller != nil {
+		view.LegacyBoundCaller = serviceAccount(*c.legacyBoundCaller)
 	}
+	if c.boundIdentity != nil {
+		view.BoundIdentity = identityRef(*c.boundIdentity)
+	}
+	view.IdentityBindingRequired = c.identityBindingRequired
 	for _, g := range c.grants {
 		grantStatus, known := grantStatuses[g.status]
 		if !known {
 			return nil, fmt.Errorf("%w: grant %s has status %q", errStored, g.id, g.status)
 		}
-		view.Grants = append(view.Grants, &pb.Grant{
+		apiGrant := &pb.Grant{
 			Id: g.id.String(), ConnectionId: g.connectionID.String(), Revision: g.revision,
-			Caller: serviceAccount(g.caller), Issuer: g.issuer, ClientId: g.clientID, Status: grantStatus,
+			Issuer: g.issuer, ClientId: g.clientID, Status: grantStatus,
 			CreatedAt:   timestamppb.New(g.createdAt),
 			ActivatedAt: timestamp(g.activatedAt), RevokedAt: timestamp(g.revokedAt),
-		})
+		}
+		if g.caller != nil {
+			apiGrant.Caller = serviceAccount(*g.caller)
+		}
+		if g.identity != nil {
+			apiGrant.Identity = identityRef(*g.identity)
+		}
+		view.Grants = append(view.Grants, apiGrant)
 	}
 	return view, nil
 }
@@ -160,16 +175,15 @@ func connectionViews(connections []connection) ([]*pb.Connection, error) {
 	return views, nil
 }
 
-// ListCallerServiceAccounts answers from the view of the callers, which must be current: a picker of accounts the
-// view cannot vouch for would offer ones every consent then refuses.
-func (s *Service) ListCallerServiceAccounts(ctx context.Context, _ *pb.ListCallerServiceAccountsRequest) (*pb.ListCallerServiceAccountsResponse, error) {
-	accounts, current := s.store.callers.CallerServiceAccounts()
+// ListConnectionIdentities answers from the Identity watch, which must be current before it offers a selection.
+func (s *Service) ListConnectionIdentities(ctx context.Context, _ *pb.ListConnectionIdentitiesRequest) (*pb.ListConnectionIdentitiesResponse, error) {
+	identities, current := s.store.identities.ConnectionIdentities()
 	if !current {
-		return nil, status.Error(codes.Unavailable, "the view of the caller ServiceAccounts is not current")
+		return nil, status.Error(codes.Unavailable, "the view of Connection Identities is not current")
 	}
-	response := &pb.ListCallerServiceAccountsResponse{}
-	for _, account := range accounts {
-		response.ServiceAccounts = append(response.ServiceAccounts, serviceAccount(account))
+	response := &pb.ListConnectionIdentitiesResponse{}
+	for _, identity := range identities {
+		response.Identities = append(response.Identities, identityRef(identity))
 	}
 	return response, nil
 }
@@ -233,11 +247,11 @@ func (s *Service) RebindConnection(ctx context.Context, request *pb.RebindConnec
 	if err := checkVersion("expected_version", request.GetExpectedVersion()); err != nil {
 		return nil, err
 	}
-	account, err := parseAccount("service_account", request.GetServiceAccount())
+	identity, err := parseIdentity("identity", request.GetIdentity())
 	if err != nil {
 		return nil, err
 	}
-	view, err := answer(s.store.rebind(ctx, id, request.GetExpectedVersion(), account))
+	view, err := answer(s.store.rebind(ctx, id, request.GetExpectedVersion(), identity))
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -280,11 +294,11 @@ func parseDecision(request *pb.DecideConnectionEnrollmentRequest) (decision, err
 	case *pb.DecideConnectionEnrollmentRequest_Deny:
 		return d, nil
 	case *pb.DecideConnectionEnrollmentRequest_Allow:
-		account, err := parseAccount("allow.service_account", choice.Allow.GetServiceAccount())
+		identity, err := parseIdentity("allow.identity", choice.Allow.GetIdentity())
 		if err != nil {
 			return decision{}, err
 		}
-		d.allow = &allowance{account: account}
+		d.allow = &allowance{identity: &identity}
 		switch connection := choice.Allow.GetConnection().(type) {
 		case *pb.EnrollmentAllow_NewConnection:
 			name, err := displayName(connection.NewConnection.GetDisplayName())

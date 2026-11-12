@@ -58,7 +58,10 @@ py_library(
 py_library(
     name = "identity",
     srcs = ["identity.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         "//agentplane/crds:identity",
         "//agentplane/crds:policybinding",

@@ -3,13 +3,14 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
 
 const testSettings = `database_url: postgres://edge
 actions_target: actions:8080
+policy_namespace: test-policy
+actions_token_file: /run/agentplane/action-token/token
 caller_service_account_namespaces: [test-callers]
 mintable_accounts: [test-callers/test-caller]
 operator_oidc:
@@ -55,61 +56,34 @@ func TestOAuthJSONNestedEnvironmentOverridesAndSingleDocument(t *testing.T) {
 	}
 }
 
-func TestIdentityCutoverSettingsAreOptionalAndAccepted(t *testing.T) {
+func TestLegacyWorkloadSettingsAreAcceptedWithoutConfiguringIdentityEligibility(t *testing.T) {
 	settingsFile(t, testSettings)
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PolicyNamespace != "" || c.ActionsTokenFile != "" {
-		t.Fatalf("unset Identity cutover settings = policy namespace %q, token file %q", c.PolicyNamespace, c.ActionsTokenFile)
+	if c.PolicyNamespace != "test-policy" || c.LegacyMintableAccounts[0] != "test-callers/test-caller" {
+		t.Fatalf("configuration = %+v", c)
 	}
-
-	settingsFile(t, testSettings+"policy_namespace: test-policy\nactions_token_file: /var/run/actions\n")
+	settingsFile(t, testSettings+"connection_identities:\n  policy_namespace: test-policy\n  names: [test-identity]\n")
 	c, err = loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PolicyNamespace != "test-policy" || c.ActionsTokenFile != "/var/run/actions" {
-		t.Fatalf("Identity cutover settings = policy namespace %q, token file %q", c.PolicyNamespace, c.ActionsTokenFile)
+	if c.LegacyConnectionIdentities["names"] == nil {
+		t.Fatalf("legacy settings were not accepted during rollout: %+v", c.LegacyConnectionIdentities)
 	}
 }
 
-func TestConnectionIdentities(t *testing.T) {
-	settingsFile(t, testSettings)
-	c, err := loadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.ConnectionIdentities != nil {
-		t.Fatalf("absent connection_identities parsed as %+v", c.ConnectionIdentities)
-	}
-
-	settingsFile(t, testSettings+"connection_identities:\n  policy_namespace: test-policy\n  names: [test-identity, test-other]\n")
-	c, err = loadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := c.ConnectionIdentities; got == nil || got.PolicyNamespace != "test-policy" ||
-		!slices.Equal(got.Names, []string{"test-identity", "test-other"}) {
-		t.Fatalf("connection_identities = %+v", got)
-	}
-}
-
-func TestConnectionIdentitiesRejectsIncompleteOrInvalid(t *testing.T) {
-	for name, block := range map[string]string{
-		"empty":             "connection_identities: {}\n",
-		"no namespace":      "connection_identities:\n  names: [test-identity]\n",
-		"no names":          "connection_identities:\n  policy_namespace: test-policy\n",
-		"empty names":       "connection_identities:\n  policy_namespace: test-policy\n  names: []\n",
-		"invalid namespace": "connection_identities:\n  policy_namespace: Test_Policy\n  names: [test-identity]\n",
-		"invalid name":      "connection_identities:\n  policy_namespace: test-policy\n  names: [\"\"]\n",
-		"unknown key":       "connection_identities:\n  policy_namespace: test-policy\n  names: [test-identity]\n  accounts: [x]\n",
+func TestPolicyNamespaceIsRequiredAndValidated(t *testing.T) {
+	for name, yaml := range map[string]string{
+		"missing":           strings.Replace(testSettings, "policy_namespace: test-policy\n", "", 1),
+		"invalid namespace": strings.Replace(testSettings, "test-policy", "Test_Policy", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			settingsFile(t, testSettings+block)
+			settingsFile(t, yaml)
 			if c, err := loadConfig(); err == nil {
-				t.Fatalf("accepted %+v", c.ConnectionIdentities)
+				t.Fatalf("accepted policy namespace in %+v", c)
 			}
 		})
 	}

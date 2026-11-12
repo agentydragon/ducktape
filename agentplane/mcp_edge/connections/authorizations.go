@@ -29,9 +29,10 @@ const (
 	refusedOperator    Refusal = "issuing operator does not match consent"
 	refusedClaimed     Refusal = "token exchange already claimed; restart authorization"
 	refusedChanged     Refusal = "Connection changed; restart authorization and review it again"
-	refusedCaller      Refusal = notLabeled
+	refusedCaller      Refusal = "Identity is missing or no longer current"
 	refusedGrant       Refusal = "grant is not authorized"
-	refusedUnbound     Refusal = "connection has no bound caller"
+	refusedUnbound     Refusal = "Connection requires an Identity binding"
+	refusedLegacy      Refusal = "legacy ServiceAccount binding requires operator Identity rebind"
 )
 
 // enrollmentWindow is how long an authorization has for consent, the upstream sign-in and the code exchange.
@@ -70,7 +71,7 @@ func (s *Store) CreateEnrollment(ctx context.Context, tx *sql.Tx, e NewEnrollmen
 
 // Activate turns the allowed enrollment into the active grant of the same id, once: it creates the Connection the
 // consent named, or replaces the authority of the one it reconnects, and claims the enrollment so it issues no
-// second grant. The consent must be live, decided by the approver, and for an account still labeled.
+// second grant. The consent must be live, decided by the approver, and its exact Identity must still be live.
 func (s *Store) Activate(ctx context.Context, tx *sql.Tx, id uuid.UUID, approver Operator) error {
 	e, err := lockEnrollmentWhere(ctx, tx, "id", id)
 	switch {
@@ -86,12 +87,19 @@ func (s *Store) Activate(ctx context.Context, tx *sql.Tx, id uuid.UUID, approver
 		return refusedOperator
 	case e.claimedAt != nil:
 		return refusedClaimed
-	case !s.labeled(e.allowed.account):
+	case e.allowed.identity == nil:
+		return refusedCaller
+	}
+	live, err := s.liveIdentity(ctx, *e.allowed.identity)
+	if err != nil {
+		return err
+	}
+	if !live {
 		return refusedCaller
 	}
 	activatedAt := now()
 	g := grant{
-		id: id, caller: e.allowed.account, issuer: e.issuer, clientID: e.clientID, status: grantActive,
+		id: id, identity: e.allowed.identity, issuer: e.issuer, clientID: e.clientID, status: grantActive,
 		createdAt: activatedAt, activatedAt: &activatedAt,
 	}
 	switch allowed := e.allowed.connection.(type) {
@@ -109,7 +117,8 @@ func (s *Store) Activate(ctx context.Context, tx *sql.Tx, id uuid.UUID, approver
 			if len(c.grants) > 0 {
 				g.revision = c.grants[len(c.grants)-1].revision + 1
 			}
-			c.boundCaller = &g.caller
+			c.boundIdentity = g.identity
+			c.identityBindingRequired = false
 			return true, insertGrant(ctx, tx, g)
 		})
 	case newConnection:
@@ -123,15 +132,19 @@ func (s *Store) Activate(ctx context.Context, tx *sql.Tx, id uuid.UUID, approver
 	return err
 }
 
-// createConnection creates the Connection of the grant, bound to the grant's account, with the grant as its first.
+// createConnection creates the Connection of the grant, bound to the grant's Identity, with the grant as its first.
 func createConnection(ctx context.Context, tx *sql.Tx, g grant, displayName string) error {
-	bound, err := encodeAccount(g.caller)
+	if g.identity == nil {
+		return refusedCaller
+	}
+	bound, err := encodeIdentity(*g.identity)
 	if err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO external_connection (id, display_name, bound_caller, binding_version, version, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, 0, 1, $4, $4)`, g.connectionID, displayName, bound, g.createdAt); err != nil {
+		INSERT INTO external_connection (id, display_name, bound_identity, identity_binding_required, binding_version,
+			version, created_at, updated_at)
+		VALUES ($1, $2, $3::jsonb, false, 0, 1, $4, $4)`, g.connectionID, displayName, bound, g.createdAt); err != nil {
 		return err
 	}
 	if err := insertGrant(ctx, tx, g); err != nil {
@@ -142,48 +155,67 @@ func createConnection(ctx context.Context, tx *sql.Tx, g grant, displayName stri
 
 // insertGrant stores a grant active, in a transaction that is never retried.
 func insertGrant(ctx context.Context, tx *sql.Tx, g grant) error {
-	caller, err := encodeAccount(g.caller)
+	if g.identity == nil {
+		return refusedCaller
+	}
+	identity, err := encodeIdentity(*g.identity)
 	if err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO external_connection_grant (id, connection_id, revision, original_caller, issuer, client_id, status,
+		INSERT INTO external_connection_grant (id, connection_id, revision, original_identity, issuer, client_id, status,
 			created_at, activated_at)
 		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)`,
-		g.id, g.connectionID, g.revision, caller, g.issuer, g.clientID, g.status, g.createdAt, g.activatedAt)
+		g.id, g.connectionID, g.revision, identity, g.issuer, g.clientID, g.status, g.createdAt, g.activatedAt)
 	return err
 }
 
-// ResolveGrant is the account the grant acts as now: its Connection's bound caller. Only an active grant of the issuer
-// and client resolves, and only while its Connection is bound to a labeled account.
-func (s *Store) ResolveGrant(ctx context.Context, tx *sql.Tx, id uuid.UUID, issuer, clientID string) (auth.Account, error) {
+// ResolvedGrant is a live OAuth grant and the exact Connection Identity it currently delegates.
+type ResolvedGrant struct {
+	ConnectionID uuid.UUID
+	GrantID      uuid.UUID
+	Identity     auth.Identity
+}
+
+// ResolveGrant resolves an active OAuth grant to its Connection's live Identity. Legacy ServiceAccount bindings are
+// retained for operator review but can never be returned as an effective caller.
+func (s *Store) ResolveGrant(ctx context.Context, tx *sql.Tx, id uuid.UUID, issuer, clientID string) (ResolvedGrant, error) {
 	var status grantStatus
 	var grantIssuer, grantClientID string
+	var connectionID uuid.UUID
 	var bound []byte
+	var identityBindingRequired bool
 	err := tx.QueryRowContext(
 		ctx, `
-		SELECT g.status, g.issuer, g.client_id, c.bound_caller
+		SELECT g.status, g.issuer, g.client_id, g.connection_id, c.bound_identity, c.identity_binding_required
 		FROM external_connection_grant g JOIN external_connection c ON c.id = g.connection_id
 		WHERE g.id = $1`, id,
-	).Scan(&status, &grantIssuer, &grantClientID, &bound)
+	).Scan(&status, &grantIssuer, &grantClientID, &connectionID, &bound, &identityBindingRequired)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return auth.Account{}, refusedGrant
+		return ResolvedGrant{}, refusedGrant
 	case err != nil:
-		return auth.Account{}, err
+		return ResolvedGrant{}, err
 	case status != grantActive || grantIssuer != issuer || grantClientID != clientID:
-		return auth.Account{}, refusedGrant
+		return ResolvedGrant{}, refusedGrant
 	case bound == nil:
-		return auth.Account{}, refusedUnbound
+		if identityBindingRequired {
+			return ResolvedGrant{}, refusedLegacy
+		}
+		return ResolvedGrant{}, refusedUnbound
 	}
-	account, err := decodeAccount(bound)
+	identity, err := decodeIdentity(bound)
 	if err != nil {
-		return auth.Account{}, err
+		return ResolvedGrant{}, err
 	}
-	if !s.labeled(account) {
-		return auth.Account{}, refusedCaller
+	live, err := s.liveIdentity(ctx, identity)
+	if err != nil {
+		return ResolvedGrant{}, err
 	}
-	return account, nil
+	if !live {
+		return ResolvedGrant{}, refusedCaller
+	}
+	return ResolvedGrant{ConnectionID: connectionID, GrantID: id, Identity: identity}, nil
 }
 
 // RevokeGrant revokes the grant unless it is revoked already; its Connection keeps its bound caller and its other

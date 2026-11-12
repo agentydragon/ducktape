@@ -65,27 +65,38 @@ const (
 )
 
 var (
-	callerAccount = workloadauth.Account{Namespace: "test-agentplane", Name: "test-caller"}
-	otherAccount  = workloadauth.Account{Namespace: "test-agentplane", Name: "test-other-caller"}
+	callerIdentity = workloadauth.Identity{Name: "test-caller", UID: "uid-test-caller"}
+	otherIdentity  = workloadauth.Identity{Name: "test-other-caller", UID: "uid-test-other-caller"}
 )
 
-// testCallers is a current view of the labeled ServiceAccounts that the test sets.
-type testCallers struct {
-	mu       sync.Mutex
-	accounts []workloadauth.Account
+// testIdentities is a current view of the eligible Identities that the test sets, and their direct UID reader.
+type testIdentities struct {
+	mu         sync.Mutex
+	identities []workloadauth.Identity
 }
 
-func (c *testCallers) CallerServiceAccounts() ([]workloadauth.Account, bool) {
+func (c *testIdentities) ConnectionIdentities() ([]workloadauth.Identity, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return slices.Clone(c.accounts), true
+	return slices.Clone(c.identities), true
 }
 
-// label makes the accounts the labeled ones.
-func (c *testCallers) label(accounts ...workloadauth.Account) {
+func (c *testIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.accounts = accounts
+	for _, identity := range c.identities {
+		if identity.Name == name {
+			return identity.UID, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// label makes the supplied Identity incarnations live.
+func (c *testIdentities) label(identities ...workloadauth.Identity) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.identities = identities
 }
 
 type operatorKey struct{}
@@ -329,7 +340,7 @@ func (d *documentServer) publish(path string, body []byte) string {
 // the ConnectionService, the upstream provider and a server of client metadata documents.
 type harness struct {
 	db          *sql.DB
-	callers     *testCallers
+	identities  *testIdentities
 	connections *connections.Service
 	upstream    *fakeUpstream
 	documents   *documentServer
@@ -353,14 +364,14 @@ func startWithResource(t *testing.T, resource func(*Server) http.Handler, config
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.Clone(t))
 	h := &harness{
-		db: db, callers: &testCallers{accounts: []workloadauth.Account{callerAccount, otherAccount}},
+		db: db, identities: &testIdentities{identities: []workloadauth.Identity{callerIdentity, otherIdentity}},
 		upstream: newFakeUpstream(t), documents: newDocumentServer(t),
 		browser: &http.Client{
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 			Timeout:       callDeadline,
 		},
 	}
-	store := connections.NewStore(db, h.callers)
+	store := connections.NewStore(db, h.identities, h.identities)
 	h.connections = connections.NewService(store, testGate{}, nil)
 	listener := httptest.NewUnstartedServer(nil)
 	h.url = "http://" + listener.Listener.Addr().String()
@@ -400,7 +411,7 @@ func whoami() http.Handler {
 		&mcp.StreamableHTTPOptions{Stateless: true})
 }
 
-func userID(account workloadauth.Account) string { return account.Namespace + "/" + account.Name }
+func userID(identity workloadauth.Identity) string { return identity.Name }
 
 // must fails the test on err. It takes t last, so a call's results can be its arguments: must(f())(t).
 func must[T any](value T, err error) func(*testing.T) T {
@@ -478,19 +489,19 @@ func (h *harness) follow(rawURL string) (string, error) {
 
 const consentPrefix = testConsentURL + "/#/connection-enrollments/"
 
-// newConnection allows a new Connection bound to the account.
-func newConnection(account workloadauth.Account) *pb.EnrollmentAllow {
+// newConnection allows a new Connection bound to the Identity.
+func newConnection(identity workloadauth.Identity) *pb.EnrollmentAllow {
 	return &pb.EnrollmentAllow{
-		ServiceAccount: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name},
+		Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID},
 		Connection: &pb.EnrollmentAllow_NewConnection{
 			NewConnection: &pb.NewConnection{DisplayName: "test-connection"},
 		},
 	}
 }
 
-// reconnection allows the Connection, as it is now, to be bound to the account.
-func reconnection(account workloadauth.Account, c *pb.Connection) *pb.EnrollmentAllow {
-	allow := newConnection(account)
+// reconnection allows the Connection, as it is now, to be bound to the Identity.
+func reconnection(identity workloadauth.Identity, c *pb.Connection) *pb.EnrollmentAllow {
+	allow := newConnection(identity)
 	allow.Connection = &pb.EnrollmentAllow_Reconnect{Reconnect: &pb.ReconnectConnection{
 		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(), AuthorityChangeConfirmed: true,
 	}}
@@ -546,10 +557,10 @@ func (h *harness) authorize(ctx context.Context, authorizeURL string, allow *pb.
 	return h.signIn(decided.GetRedirectUrl())
 }
 
-// fetcher is an MCP client's way through the browser: testOperator allows a new Connection bound to callerAccount.
+// fetcher is an MCP client's way through the browser: testOperator allows a new Connection bound to callerIdentity.
 func (h *harness) fetcher() auth.AuthorizationCodeFetcher {
 	return func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
-		location, err := h.authorize(ctx, args.URL, newConnection(callerAccount))
+		location, err := h.authorize(ctx, args.URL, newConnection(callerIdentity))
 		if err != nil {
 			return nil, err
 		}
@@ -582,10 +593,10 @@ func (h *harness) answerAt(t *testing.T, r request, rawURL string) url.Values {
 	return h.answer(t, r, must(url.Parse(must(h.follow(rawURL))(t)))(t))
 }
 
-// code is the code the client receives once testOperator allows a new Connection bound to callerAccount.
+// code is the code the client receives once testOperator allows a new Connection bound to callerIdentity.
 func (h *harness) code(t *testing.T, r request) string {
 	t.Helper()
-	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), newConnection(callerAccount)))(t))
+	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), newConnection(callerIdentity)))(t))
 	if answer.Get("code") == "" {
 		t.Fatalf("answer %v, want a code", answer)
 	}
@@ -687,11 +698,11 @@ func (h *harness) tokens(t *testing.T, clientID string) tokenAnswer {
 	return issued(t, "the exchange", h.exchange(t, r, h.code(t, r), nil))
 }
 
-func (h *harness) wantAdmitted(t *testing.T, what, token string, account workloadauth.Account) {
+func (h *harness) wantAdmitted(t *testing.T, what, token string, identity workloadauth.Identity) {
 	t.Helper()
 	info, err := h.server.VerifyBearer(t.Context(), token, nil)
-	if err != nil || info.UserID != userID(account) || !slices.Equal(info.Scopes, []string{scopeActions}) {
-		t.Errorf("%s: admitted %+v, %v; want %s", what, info, err, userID(account))
+	if err != nil || info.UserID != userID(identity) || !slices.Equal(info.Scopes, []string{scopeActions}) {
+		t.Errorf("%s: admitted %+v, %v; want %s", what, info, err, userID(identity))
 	}
 }
 

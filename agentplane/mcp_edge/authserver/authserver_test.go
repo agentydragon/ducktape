@@ -29,8 +29,8 @@ func (h *harness) connect(t *testing.T, handler auth.OAuthHandler) *mcp.ClientSe
 	return session
 }
 
-// wantCaller calls whoami, which must answer the account.
-func wantCaller(t *testing.T, what string, session *mcp.ClientSession, account workloadauth.Account) {
+// wantCaller calls whoami, which must answer the Identity name.
+func wantCaller(t *testing.T, what string, session *mcp.ClientSession, identity workloadauth.Identity) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
@@ -38,8 +38,8 @@ func wantCaller(t *testing.T, what string, session *mcp.ClientSession, account w
 	if err != nil {
 		t.Fatalf("%s: %v", what, err)
 	}
-	if text, _ := result.Content[0].(*mcp.TextContent); result.IsError || text == nil || text.Text != userID(account) {
-		t.Errorf("%s: answered %v, want %s", what, result.Content, userID(account))
+	if text, _ := result.Content[0].(*mcp.TextContent); result.IsError || text == nil || text.Text != userID(identity) {
+		t.Errorf("%s: answered %v, want %s", what, result.Content, userID(identity))
 	}
 }
 
@@ -53,16 +53,16 @@ func TestAnMCPClientAuthorizesByItsMetadataDocumentAndCallsAsTheBoundAccount(t *
 		RequestRefreshToken:      true,
 	}))(t)
 	session := h.connect(t, handler)
-	wantCaller(t, "a call after authorizing", session, callerAccount)
+	wantCaller(t, "a call after authorizing", session, callerIdentity)
 
 	c := h.only(t)
 	if _, err := h.connections.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
 		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(),
-		ServiceAccount: &identitypb.ServiceAccount{Namespace: otherAccount.Namespace, Name: otherAccount.Name},
+		Identity: &identitypb.Identity{Name: otherIdentity.Name, Uid: otherIdentity.UID},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	wantCaller(t, "a call after the rebind", session, otherAccount)
+	wantCaller(t, "a call after the rebind", session, otherIdentity)
 	token := must(must(handler.TokenSource(t.Context()))(t).Token())(t)
 	if token.RefreshToken == "" {
 		t.Errorf("the client holds no refresh token")
@@ -81,7 +81,7 @@ func TestAnMCPClientRegistersDynamicallyAndAuthorizes(t *testing.T) {
 		AuthorizationCodeFetcher: h.fetcher(),
 	}))(t)
 	session := h.connect(t, handler)
-	wantCaller(t, "a call after authorizing", session, callerAccount)
+	wantCaller(t, "a call after authorizing", session, callerIdentity)
 	// The client registered public: it never had a secret to send.
 	var method string
 	if err := h.db.QueryRowContext(t.Context(),

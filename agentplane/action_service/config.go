@@ -38,10 +38,11 @@ type config struct {
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
 	// them is refused.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
+	// ConnectionDelegationActor is the MCP edge's ServiceAccount, which may delegate a live Identity on the
+	// explicitly configured Action methods while preserving its own Action-audience token as the actor.
+	ConnectionDelegationActor *auth.Account `mapstructure:"connection_delegation_actor"`
 	// ReaderAccounts read every account's requests and change none, written `namespace/name` or as a mapping.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
-	// ConnectionDelegationActor is the Action workload that may present a Connection delegation.
-	ConnectionDelegationActor *auth.Account `mapstructure:"connection_delegation_actor"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
 	OperatorOIDC api.OperatorOIDCSettings `mapstructure:"operator_oidc"`
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
@@ -175,6 +176,18 @@ func (c *config) validate() error {
 	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
+	}
+	if c.ConnectionDelegationActor != nil {
+		if err := new(auth.Account).UnmarshalText([]byte(c.ConnectionDelegationActor.Namespace + "/" + c.ConnectionDelegationActor.Name)); err != nil {
+			return errors.New("connection_delegation_actor requires namespace and name")
+		}
+		allowed := false
+		for _, namespace := range c.CallerServiceAccountNamespaces {
+			allowed = allowed || namespace == c.ConnectionDelegationActor.Namespace
+		}
+		if !allowed {
+			return errors.New("connection_delegation_actor namespace must be in caller_service_account_namespaces")
+		}
 	}
 	if c.WebPush.Configured() {
 		if err := c.WebPush.Validate(); err != nil {

@@ -146,8 +146,13 @@ type callerActor struct {
 type policyView struct {
 	Synced        shown[bool]              `json:"synced,omitzero"`
 	AutoApproveIf shown[[]effectivePolicy] `json:"auto_approve_if,omitzero"`
-	Subject       shown[serviceAccount]    `json:"subject,omitzero"`
+	Subject       shown[any]               `json:"subject,omitzero"`
 	Bindings      shown[[]callerBinding]   `json:"bindings,omitzero"`
+}
+
+type policyIdentity struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
 }
 
 type effectivePolicy struct {
@@ -426,7 +431,11 @@ func (d *viewDecoder) policyView(policy *pb.CallerActionPolicy, fields []string)
 			}
 			view.AutoApproveIf = show(effective)
 		case "subject":
-			view.Subject = show(accountView(policy.GetSubject()))
+			if identity := policy.GetIdentity(); identity != nil {
+				view.Subject = show(any(policyIdentity{Name: identity.GetName(), UID: identity.GetUid()}))
+			} else {
+				view.Subject = show(any(accountView(policy.GetSubject())))
+			}
 		case "bindings":
 			bindings := make([]callerBinding, 0, len(policy.GetBindings()))
 			for _, binding := range policy.GetBindings() {

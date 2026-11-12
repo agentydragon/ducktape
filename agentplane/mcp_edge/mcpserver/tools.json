@@ -166,7 +166,7 @@
  {
   "name": "get_action_policy",
   "title": "Get Action Policy",
-  "description": "Read what bindings auto-decide for a target: your own (\"self\", the default), or a named\nServiceAccount. include_fields is a pure allowlist over subject (self-target only), synced,\nbindings, and auto_approve_if, defaulting to\nsubject/synced/bindings. Name auto_approve_if before request_action to learn which Actions and\narguments are approved without an operator -- each entry names the binding, set and index a\npolicy Decision's evidence names; a request matching nothing waits for one, and until synced is\ntrue nothing auto-decides. A target the service does not watch reads as no bindings. This never\nsubmits an Action and says nothing about past Decisions; read those with get_action_request.",
+  "description": "Read what bindings auto-decide for a target: your own (\"self\", the default), or a named\nServiceAccount. For \"self\", subject reports either the ServiceAccount or Identity that authenticated\nthis call. include_fields is a pure allowlist over subject (self-target only), synced, bindings, and\nauto_approve_if, defaulting to subject/synced/bindings. Name auto_approve_if before request_action\nto learn which Actions and arguments are approved without an operator -- each entry names the\nbinding, set and index a policy Decision's evidence names; a request matching nothing waits for one,\nand until synced is true nothing auto-decides. A target the service does not watch reads as no\nbindings. This never submits an Action and says nothing about past Decisions; read those with\nget_action_request.",
   "inputSchema": {
    "type": "object",
    "additionalProperties": false,

@@ -3,7 +3,8 @@
 The standalone `mcp-edge` binary is the external MCP endpoint and Connection/OAuth authority. It
 owns its PostgreSQL schema, serves the operator [`ConnectionService`](connection_service.proto)
 over gRPC and HTTP/JSON, and, when OAuth is configured, serves `/mcp` and the OAuth protocol routes.
-It calls the Action Service over gRPC using the currently bound, labeled ServiceAccount identity.
+It calls the Action Service over gRPC with its own projected workload token and a method-scoped,
+Connection-backed Identity delegation.
 The Action Service keeps upstream MCP linkage and CIMD, but does not serve external `/mcp`, OAuth,
 or ConnectionService endpoints.
 
@@ -30,37 +31,50 @@ instructions point to the guide reader, while detailed workflows stay out of sta
 
 The Connection API verifies the app's request-bound operator OIDC bearer independently of MCP
 OAuth. Each MCP request resolves its issued bearer through the current grant and Connection
-binding. The edge offers only ServiceAccounts both labeled as Action callers and named in
-`mintable_accounts`, its explicit TokenRequest scope. It reads the account's current UID and label from
-the caller informer (no live reads; an unhealthy view refuses every call), requests a token for that
-account with the Action Service's `agentplane-egress` audience and a requested ten minute lifetime, caches
-it per account and UID until 80% of its lifetime has passed, and sends it to Actions over gRPC. Actions
-independently reviews the token and current caller label. A watch rechecks the grant, binding, label and
-UID on a five second ticker, not per frame, so revocation latency is informer lag plus the ticker. The operator watch bounds waiting for each stream write to
-clear transport backpressure at five seconds; an exceeded bound ends `DEADLINE_EXCEEDED`. An idle
-drain sends `reconnect_required`; a drain during a write ends that stream without another frame. This
+binding. Consent and operator rebind choose a live Identity in the Action policy namespace and pin
+its exact Kubernetes UID. Resolution checks that UID directly; an unavailable, deleted or replaced
+Identity refuses the request. The operator-facing picker also requires a current Identity watch.
+
+For each admitted Action RPC, the edge sends its own projected `agentplane-egress` audience token
+plus typed Connection ID, grant ID and effective Identity provenance. Action middleware reviews the
+edge token and checks the live grant and Connection binding. Only the explicitly configured Action
+methods accept this provenance; it is not a general actor impersonation path. The edge does not
+request or cache tokens for other ServiceAccounts. It rechecks the grant, binding and Identity on
+each call and every five seconds while a stream is active; revocation latency is bounded by that
+interval plus the direct UID lookup. The operator watch bounds waiting for each stream write to clear
+transport backpressure at five seconds; an exceeded bound ends `DEADLINE_EXCEEDED`. An idle drain
+sends `reconnect_required`; a drain during a write ends that stream without another frame. This
 bound does not guarantee when a queued frame reaches the peer. Tool arguments never name the caller
-identity.
+Identity.
+
+Existing Connections bound to a ServiceAccount are retained for history but paused by the schema
+migration. No same-name Identity is inferred and no old bearer resolves until an operator explicitly
+rebinds the Connection to a live Identity. The migration retains Connection and grant IDs, consent
+and audit facts, revocation status, and the original ServiceAccount attribution. One existing
+external Connection is expected to pause until that operator action. Rolling back to an old image
+does not restore its authority: the retained `bound_caller` column is NULL and constrained against
+old-writer updates. Recovery after rollback requires a reviewed forward migration/rebind; there is
+no ServiceAccount fallback.
 
 ## Deployment contract
 
 `AGENTPLANE_MCP_EDGE_CONFIG_FILE` names the YAML settings file; `AGENTPLANE_MCP_EDGE_*`
 environment variables override scalar keys, with `__` for nested keys. `database_url` is required
 and can be supplied through `AGENTPLANE_MCP_EDGE_DATABASE_URL`. `actions_target` is the internal
-Action Service gRPC endpoint. `caller_service_account_namespaces` and `mintable_accounts` take JSON
-arrays in the environment; `mintable_accounts` entries are `namespace/name`. The optional
-`connection_identities` object, set only in the YAML file, names the `Identity` objects a Connection
-may be bound to: `policy_namespace` holds them and `names` lists at least one. When absent, Connections
-bind only to `mintable_accounts`; when present, both keys are required. The edge validates it but
-nothing reads it yet. `operator_oidc`
-requires the issuer, audience, JWKS URI and token profile used by the app's operator tokens.
+Action Service gRPC endpoint. OAuth deployments set `policy_namespace` to the namespace whose live
+Identities may be selected, and `actions_token_file` to the mounted projected Action audience token.
+The edge refuses use when required Identity state or the Action token is unavailable.
+`operator_oidc` requires the issuer, audience, JWKS URI and token profile used by the app's operator
+tokens. The old `caller_service_account_namespaces`, `mintable_accounts`, and
+`connection_identities` settings are accepted only as inert rollout fields; they do not select,
+authorize or mint identities and are removed from rendered settings. Remove their parser fields only
+after the rollout no longer uses old manifests.
 `oauth` is an optional JSON object in the environment, using the current OAuth Secret's keys; when
 absent, the Connection API remains available and the external protocol routes are absent. The
 secret's `upstream_client_secret_file` must be mounted at the path it names. The gRPC listener
 (`port`) defaults to `0.0.0.0:8080`; the HTTP listener (`http_port`: the facade, `/mcp`, OAuth and metrics) to
-`0.0.0.0:8081`. gRPC health uses the empty service for readiness
-and `livez` for liveness. Readiness requires PostgreSQL, its notification listener and a fresh
-caller label watch.
+`0.0.0.0:8081`. gRPC health uses the empty service for readiness and `livez` for liveness. Readiness
+requires PostgreSQL, its notification listener and a synchronized live Identity view.
 
 The published image is `agentplane-mcp-edge`, built from `//agentplane/mcp_edge:service_image`.
 The same binary embeds Goose migrations and applies them before serving. `mcp-edge --migrate-only`

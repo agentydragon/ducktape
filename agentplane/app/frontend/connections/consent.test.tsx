@@ -8,12 +8,12 @@ import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { Verdict } from "../../../action_service/action_service_pb";
 import {
   DecideConnectionEnrollmentResponseSchema,
-  ListCallerServiceAccountsResponseSchema,
+  ListConnectionIdentitiesResponseSchema,
   ListConnectionsResponseSchema,
   PreviewConnectionEnrollmentResponseSchema,
   type DecideConnectionEnrollmentResponse,
 } from "../../../mcp_edge/connection_service_pb";
-import { ServiceAccountSchema } from "../../../proto/identity_pb";
+import { IdentitySchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { ConnectionConsent } from "./consent";
 import type { ConsentPreview } from "./connection_service_client";
@@ -28,7 +28,7 @@ function preview(): ConsentPreview {
       expiresAt: timestampFromDate(new Date("2026-09-09T12:00:00Z")),
       version: 1n,
     }),
-    serviceAccounts: [create(ServiceAccountSchema, { namespace: "agentplane-test", name: "test-coder" })],
+    identities: [create(IdentitySchema, { name: "test-coder", uid: "30000000-0000-4000-8000-000000000002" })],
     connections: [],
   };
 }
@@ -36,7 +36,7 @@ function preview(): ConsentPreview {
 const ROOT = "/upstream/connections/v1/operator";
 const PREVIEW = `${ROOT}/connection-enrollments/opaque-handle/preview`;
 const DECISION = `${ROOT}/connection-enrollments/opaque-handle/decision`;
-const CALLERS = `${ROOT}/caller-service-accounts`;
+const CALLERS = `${ROOT}/connection-identities`;
 const CONNECTIONS = `${ROOT}/connections`;
 
 /** Answers the preview with `previewed` and a decision with `decided`; a `Response` answers as an
@@ -49,9 +49,9 @@ function serve(previewed: ConsentPreview | Response, decided?: DecideConnectionE
     }
     if (path === CALLERS) {
       return toJson(
-        ListCallerServiceAccountsResponseSchema,
-        create(ListCallerServiceAccountsResponseSchema, {
-          serviceAccounts: previewed instanceof Response ? [] : previewed.serviceAccounts,
+        ListConnectionIdentitiesResponseSchema,
+        create(ListConnectionIdentitiesResponseSchema, {
+          identities: previewed instanceof Response ? [] : previewed.identities,
         })
       );
     }
@@ -92,13 +92,13 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
-const TEST_CODER = { namespace: "agentplane-test", name: "test-coder" };
+const TEST_CODER = { name: "test-coder", uid: "30000000-0000-4000-8000-000000000002" };
 
-async function chooseServiceAccount(container: HTMLElement): Promise<void> {
-  const select = container.querySelector<HTMLSelectElement>('select[name="service_account"]');
-  if (!select) throw new Error("missing ServiceAccount select");
+async function chooseIdentity(container: HTMLElement): Promise<void> {
+  const select = container.querySelector<HTMLSelectElement>('select[name="identity"]');
+  if (!select) throw new Error("missing Identity select");
   await act(async () => {
-    select.value = "agentplane-test/test-coder";
+    select.value = "test-coder";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
@@ -120,17 +120,17 @@ describe("ConnectionConsent", () => {
       selection.value = connection.id;
       selection.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await chooseServiceAccount(container);
-    expect(container.textContent).toContain("Old tokens never switch ServiceAccount");
+    await chooseIdentity(container);
+    expect(container.textContent).toContain("Fresh OAuth replaces this Connection");
     expect(container.textContent).toContain("registered-client-123");
-    expect(container.textContent).toContain("Acts as agentplane-test/personal");
+    expect(container.textContent).toContain("Acts as personal");
     expect(button(container, "Authorize").disabled).toBe(true);
     const confirmation = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     if (!confirmation) throw new Error("missing authority confirmation");
     await act(async () => confirmation.click());
     expect(button(container, "Authorize").disabled).toBe(false);
-    // Changing the selected ServiceAccount requires reviewing the warning again.
-    await chooseServiceAccount(container);
+    // Changing the selected Identity requires reviewing the warning again.
+    await chooseIdentity(container);
     expect(button(container, "Authorize").disabled).toBe(true);
     await act(async () => confirmation.click());
     await decide(container, "Authorize", sent);
@@ -138,7 +138,7 @@ describe("ConnectionConsent", () => {
       {
         expectedVersion: "1",
         allow: {
-          serviceAccount: TEST_CODER,
+          identity: TEST_CODER,
           reconnect: {
             connectionId: connection.id,
             expectedVersion: "2",
@@ -150,7 +150,7 @@ describe("ConnectionConsent", () => {
     expect(container.textContent).toContain("Continue authorization");
   });
 
-  it("requires an explicit labeled ServiceAccount and continues only after authorization", async () => {
+  it("requires an explicit live Identity and continues only after authorization", async () => {
     const navigate = vi.fn();
     const sent = serve(
       preview(),
@@ -171,30 +171,30 @@ describe("ConnectionConsent", () => {
     expect(sent).toHaveLength(3);
     expect(container.textContent).toContain("registered-client-id");
     expect(container.textContent).toContain("https://client.test/oauth/callback");
-    expect(container.querySelector('option[value="agentplane-test/test-coder"]')).not.toBeNull();
+    expect(container.querySelector('option[value="test-coder"]')).not.toBeNull();
     expect(button(container, "Authorize").disabled).toBe(true);
-    await chooseServiceAccount(container);
+    await chooseIdentity(container);
     await act(async () => button(container, "Authorize").click());
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("https://idp.test/held-authorization"));
     expect(decisions(sent)).toEqual([
       {
         expectedVersion: "1",
         allow: {
-          serviceAccount: TEST_CODER,
+          identity: TEST_CODER,
           newConnection: { displayName: "Claude on wyrm2" },
         },
       },
     ]);
   });
 
-  it("can deny without a labeled ServiceAccount and never follows the client redirect", async () => {
+  it("can deny without a live Identity and never follows the client redirect", async () => {
     const navigate = vi.fn();
     const sent = serve(
-      { ...preview(), serviceAccounts: [] },
+      { ...preview(), identities: [] },
       create(DecideConnectionEnrollmentResponseSchema, { verdict: Verdict.DENY })
     );
     const container = await render(navigate);
-    expect(container.textContent).toContain("No labeled caller ServiceAccounts");
+    expect(container.textContent).toContain("No live Identities exist");
     await act(async () => button(container, "Deny").click());
     await vi.waitFor(() => expect(container.textContent).toContain("Connection denied"));
     expect(decisions(sent)).toEqual([{ expectedVersion: "1", deny: {} }]);
