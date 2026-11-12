@@ -8,6 +8,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
     newTag: main-20261108211932-d54cdf6 # {"$imagepolicy": "flux-system:platform-sessions-chatgpt:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-quest
-    newTag: main-20261108211932-d54cdf6 # {"$imagepolicy": "flux-system:platform-sessions-quest:tag"}
+    newTag: main-20261112090830-2e10534 # {"$imagepolicy": "flux-system:platform-sessions-quest:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-providers
     newTag: main-20261108211932-d54cdf6 # {"$imagepolicy": "flux-system:platform-sessions-providers:tag"}
