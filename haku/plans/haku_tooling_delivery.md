@@ -24,10 +24,10 @@ wrapper for its interpreter + `site-packages`). That works, but is the "which py
      A). Currently loosened to "any domain"; the operator intends to re-tighten. Mechanism:
      `network.allowedDomains` + the `anthropic-egress-control` proxy (see
      `devinfra/claude/web_env/docs/environment_discovery.md`).
-   - **(b) Cluster mitmproxy L7 allowlist** on `haku-sandbox` **and `haku-ci`** (the
+   - **(b) Agentplane egress policies** on `haku-sandbox` **and `haku-ci`** (the
      agent-authored build compute) — see [`../docs/security.md`](../docs/security.md) enforcement
-     inventory. Deliberately tight (Haku is assumed adversarial). This is the one the operator
-     does **not** want to loosen casually.
+     inventory for the namespace fences and identities. The policy remains a constraint on
+     delivery; do not assume new public destinations are reachable.
 
 2. **Bazel-at-runtime off-cluster is blocked at two layers — and no fetch trick rescues it.**
    Empirically confirmed 2026-07-21 from the (any-domain-loosened) web-home container:

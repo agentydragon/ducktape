@@ -78,7 +78,7 @@ infinity`), and `bbr build` then GHCR push plus Flux.
 ## k8s wiring (`cluster/k8s/haku/runtime/x/agent_framework/`) — operator-owned
 
 - **Deployment** `haku-agent` in `haku-sandbox`: two containers (loop, tools) sharing an
-  `emptyDir` at `/workspace`, non-root, behind `haku-egress-proxy`.
+  `emptyDir` at `/workspace`, non-root, subject to the `haku-sandbox` egress fence.
 - **haku-k8s kubeconfig** mounted in the loop (the existing JWT secret) so `run_command`
   can exec — reuses the existing `haku` RBAC.
 - **Valkey** with **AOF (`appendonly yes`, `everysec`) on a PVC** for durable history;
@@ -93,8 +93,9 @@ infinity`), and `bbr build` then GHCR push plus Flux.
 1. **Exec auth path**: the `haku-k8s` JWT via the `kubeapi` proxy (reuses existing wiring)
    vs. an in-cluster ServiceAccount bound to the `haku` perimeter (no public hop, new RBAC
    subjecting).
-2. **Egress**: the existing `haku-sandbox` mitmproxy policy, or additions for what the
-   tools container reaches.
+2. **Egress**: configure the loop and tools for the current Agentplane egress fence
+   (<../../../docs/security.md>); decide which account and policies each needs and verify
+   their access before deployment.
 3. **Model**: `HAKU_MODEL` and the virtual-key budget (summarization can use a cheaper
    `HAKU_SUMMARIZE_MODEL`).
 4. **Valkey**: dedicated vs. reuse; AOF; PVC size.
