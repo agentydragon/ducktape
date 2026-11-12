@@ -17,6 +17,9 @@ spec:
         - health
     # Nebula also carries clients that are not Kubernetes nodes. CIDR rules
     # cover those clients; the cluster entity above covers node identities.
+    # This matches the source IP on every device, not Nebula authentication.
+    # The public interface has rp_filter disabled; independently verify
+    # anti-spoofing before relying on this as an interface trust boundary.
     - fromCIDR:
         - 10.42.0.0/16
     # Public Gateway, SMTP, Forgejo SSH, GitLab SSH, Kubernetes and Talos APIs.

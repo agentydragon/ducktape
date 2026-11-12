@@ -33,6 +33,8 @@ editing a route.
       enforce on one worker before expanding to other workers and control planes.
       Keep public Kubernetes API access on TCP 6443 initially; revisit whether
       its source addresses can be restricted after client paths are inventoried.
+      Cilium's host policy matches Nebula source IPs on public interfaces too;
+      verify or add underlay anti-spoofing before trusting those identities.
       Host firewall enablement alone does not restrict satellite listeners.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
