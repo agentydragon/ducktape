@@ -34,6 +34,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
+- [Central Session contract](central_session_contract.md) — three decisions for review: opening a
+  central Session with zero Environments, optional Environment attachments, and inbox lifetime with
+  explicit Session deletion, each with alternatives, a recommendation and worked examples
 - [Session runtime model](session_runtime_model.md) — current environment component boundaries and
   agreed names/layout; future Session vocabulary for environment-bound
   native harnesses, central sampling, execution attachments and backend-specific constraints

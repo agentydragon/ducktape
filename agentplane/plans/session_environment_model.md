@@ -26,10 +26,12 @@ central Sessions, optional attachments, a central principal, native harness-stor
 mapping, inbox retention after Environment deletion, durable command-receipt reads after cleanup,
 or explicit Session deletion.
 
-**Still require design:** central Sessions with no required environment, optional attachment
-semantics and authorization, the central principal and its authority, notification/wake behavior,
-lifetime and retention after environment loss, and cross-store deletion and History semantics. The
-explicit [central Session environment-independence task](task_dag.md#central-session-environment-independence)
+**Drafted for review:** the zero-Environment creation contract, optional attachments and their
+authorization, and inbox lifetime with explicit Session deletion are one proposal with alternatives,
+recommendations and worked examples in the
+[central Session contract](central_session_contract.md); the central principal and its authority are
+settled (below). The explicit
+[central Session environment-independence task](task_dag.md#central-session-environment-independence)
 tracks these prerequisites and the later data-preserving migration.
 
 Decisions still needed include the Session/environment principal and privilege relationship;
@@ -600,18 +602,18 @@ a gap against the selected lifetime direction.
 ### Decision: Session and inbox lifetimes after environment deletion
 
 The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime
-together. The Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/store/claims.go)
-after confirming a missing or replaced destination, independently of Dispatcher's retained Session
-row. An inbox can therefore still retire when its environment disappears.
+together. The Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go)
+and, for a missing or replaced destination, [keeps the inbox and its subscriptions live](../notification_service/store/claims.go)
+while notice delivery waits for the exact original UID. What remains (delivery to a central Session
+with no Environment, explicit deletion, operator-only access) is drafted in the
+[central Session contract](central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion).
 
 The selected policy is an independent Session lifetime: deleting a native Session's required
 Environment leaves its Session addressable while the native harness is unavailable. History remains
-in its separate store and follows its own retention and read policy. Dispatcher already retains the
-Session row; the selected inbox/subscription retention is not implemented. Do not silently bind a replacement or claim native continuation
-without its actual state and a separately authorized recovery path.
-The intended inbox behavior is to keep subscriptions active and collect authorized events and
-messages while delivery is unavailable, but current Notification cleanup still retires stale
-destinations. Sustained collection efficiency can be revisited if costs warrant it. Central V1 still
+in its separate store and follows its own retention and read policy. Dispatcher retains the Session
+row and Notification keeps the inbox collecting while delivery is unavailable. Do not silently bind
+a replacement or claim native continuation without its actual state and a separately authorized
+recovery path. Sustained collection efficiency can be revisited if costs warrant it. Central V1 still
 requires its exact executor Environment; retained identity is not environment-independent execution.
 Explicit Session deletion, deletion of inbox contents and History, and subscription behavior after
 explicit deletion remain separate work. Suspension, an unavailable Runtime, and a deleted or
@@ -685,10 +687,10 @@ Explicit Session deletion is not implemented. The selected identity policy is th
 globally unique Session UUIDs and do not deliberately reuse them; Dispatcher has no permanent UUID
 marker or cross-database uniqueness check after a future explicit deletion. History remains a
 separate store with its own retention and can reject conflicting attribution, but it is not a
-Session-ID lifetime registry. Inboxes are not preserved and command receipts have no durable read
-after Environment cleanup. Their lifetime,
-authorization and reconciliation remain open under `SESSION_AND_INBOX_LIFETIME` and
-`SESSION_DELETION_FENCE`.
+Session-ID lifetime registry. Inboxes are preserved; command receipts have no durable read after
+Environment cleanup. Explicit deletion is drafted in the
+[central Session contract](central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion);
+receipt retention stays under `SESSION_DELETION_FENCE`.
 Do not infer that a missing Dispatcher record means historical evidence was deleted.
 
 <a id="wake"></a>
