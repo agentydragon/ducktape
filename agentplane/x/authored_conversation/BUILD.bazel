@@ -28,6 +28,7 @@ py_library(
         ":store",
         ":trace",
         "@pypi//openai",
+        "@pypi//pydantic",
     ],
 )
 

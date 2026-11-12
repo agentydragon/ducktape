@@ -15,7 +15,8 @@ Create a JSON configuration file, using an existing key with access to the chose
   "credential": { "kind": "environment", "name": "EXPERIMENT_API_KEY" },
   "workspace": "/absolute/path/to/scratch-workspace",
   "state_directory": "/absolute/path/to/run-state",
-  "mode": "authored"
+  "mode": "authored",
+  "request_timeout_seconds": 600
 }
 ```
 
@@ -23,6 +24,7 @@ Create a JSON configuration file, using an existing key with access to the chose
 directory, not an isolation boundary. Use a scratch copy for work that changes files. Credentials
 can instead use `{"kind": "file", "path": "/path/to/existing-key"}`. The config file is the only
 settings source; it rejects unknown keys. Credential contents are never added to the trace.
+The example allows ten minutes for a cold Ollama model to warm up; command deadlines are separate.
 
 ```bash
 bb run //agentplane/x/authored_conversation:main_bin -- --config /absolute/path/to/config.json

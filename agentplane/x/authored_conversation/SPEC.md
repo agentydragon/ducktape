@@ -39,6 +39,8 @@ and call/result items are retained in working context across requests. A respons
 ends a run only after newly arrived human input has been considered for announcement. A missing
 published reply after the latest announced input is reported as `missing_publication`; the CLI
 does not repair it with reminders or publish the model's private text.
+`completed` reports loop completion with a publication, not whether that publication answered the
+question well. The experiment's conversation review assesses that semantic condition.
 
 Step limits and incomplete provider responses produce explicit incomplete outcomes. API failures
 are recorded by category and surfaced to the operator. The loop does not retry failed requests or

@@ -7,6 +7,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 
 from openai import AsyncOpenAI, OpenAIError
+from pydantic import JsonValue, TypeAdapter
 
 from agentplane.x.authored_conversation.agent import Agent, RunResult
 from agentplane.x.authored_conversation.settings import Settings
@@ -113,7 +114,11 @@ async def async_main(settings: Settings) -> None:
         )
         agent = Agent(settings, client, store, trace, display)
         trace.record(
-            "session_started", data={"settings": settings.model_dump(mode="json"), "tools": agent.tools.schemas()}
+            "session_started",
+            data={
+                "settings": settings.model_dump(mode="json"),
+                "tools": TypeAdapter(JsonValue).validate_python(agent.tools.schemas()),
+            },
         )
         reader = asyncio.StreamReader()
         transport, _ = await asyncio.get_running_loop().connect_read_pipe(
