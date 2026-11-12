@@ -247,9 +247,9 @@ func TestTheServiceIsNotReadyWithoutThePolicyIndex(t *testing.T) {
 var testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 
 // allow submits action as caller and allows it.
-func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) uuid.UUID {
+func (r running) allow(t *testing.T, caller store.Owner, action store.ActionIdentity, arguments string) uuid.UUID {
 	t.Helper()
-	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller, ServiceAccountUID: "test-caller-uid"}, store.ActionRequestInput{
+	pending, err := r.store.Submit(t.Context(), caller, store.ActionRequestInput{
 		IdempotencyKey: "test-dispatched", Action: action, Arguments: json.RawMessage(arguments), Title: "test title",
 	}, store.Admission{RequestID: uuid.New()})
 	if err != nil {
@@ -266,7 +266,7 @@ func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.A
 // run submits action as caller, allows it, and returns the request once its Execution has ended.
 func (r running) run(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) store.ActionRequest {
 	t.Helper()
-	return r.ended(t, r.allow(t, caller, action, arguments))
+	return r.ended(t, r.allow(t, store.CallerPrincipal{Account: caller, ServiceAccountUID: "test-caller-uid"}, action, arguments))
 }
 
 // ended returns the request once its Execution has ended.
@@ -305,12 +305,20 @@ func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
 // A sandbox group's Action runs through the worker, holding its lease, to a box on the API server.
 func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	namespace := sandboxNamespace(t, kube, true)
+	objects := workloadCredentials(t)
+	live := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "box-" + uuid.NewString()},
+		Spec:       policyapi.IdentitySpec{Description: "command-box integration caller"},
+	}
+	if err := objects.Create(t.Context(), live); err != nil {
+		t.Fatal(err)
+	}
 	service := start(t, kube.Config, sandboxGroups(t, namespace, "null"))
-	caller := store.ServiceAccount{Namespace: namespace, Name: "test-caller"}
+	caller := store.IdentityPrincipal{Identity: store.Identity{Name: live.Name, UID: string(live.UID)}}
 	id := service.allow(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
 		`{"name": "test-box", "template": "test-template"}`)
 	// The box waits for its credential, which the Policy Controller and cert-manager would issue.
-	issuance := workloadidentitytesting.Issuance{Objects: workloadCredentials(t), CA: transporttesting.NewCA(t), Namespace: namespace}
+	issuance := workloadidentitytesting.Issuance{Objects: objects, CA: transporttesting.NewCA(t), Namespace: namespace}
 	var request store.ActionRequest
 	if err := wait.PollUntilContextTimeout(t.Context(), 50*time.Millisecond, callDeadline, true, func(ctx context.Context) (bool, error) {
 		issuance.Settle(t)
@@ -324,8 +332,16 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
 	pods, err := kube.Clientset.CoreV1().Pods(namespace).List(t.Context(), metav1.ListOptions{})
-	if err != nil || len(pods.Items) != 1 || pods.Items[0].Spec.ServiceAccountName != caller.Name {
-		t.Errorf("the namespace holds %v, %v; want one box running as the caller", pods, err)
+	if err != nil || len(pods.Items) != 1 || pods.Items[0].Spec.ServiceAccountName != "default" {
+		t.Fatalf("the namespace holds %v, %v; want one box using the tokenless default account", pods, err)
+	}
+	var records workloadapi.WorkloadCredentialList
+	if err := objects.List(t.Context(), &records, client.InNamespace(namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(records.Items) != 1 || records.Items[0].Spec.Subject.Identity == nil ||
+		records.Items[0].Spec.Subject.Identity.Name != live.Name || records.Items[0].Spec.Subject.Identity.UID != live.UID {
+		t.Fatalf("box credentials = %v; want the caller's exact Identity incarnation", records.Items)
 	}
 }
 
@@ -333,7 +349,7 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 func workloadCredentials(t *testing.T) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, workloadapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -400,7 +416,7 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	service := start(t, kube.Config, groups)
 	waitReady(t, service)
 
-	id := service.allow(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+	id := service.allow(t, store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"},
 		store.ActionIdentity{Group: "test-mcp", Name: "test_echo"}, `{}`)
 	var failures int32
 	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
