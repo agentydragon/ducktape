@@ -162,6 +162,17 @@ def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRep
     assert not foreign.path.exists()
 
 
+def test_prune_foreign_clone_removes_landed_detached_worktree(repo: GitRepo) -> None:
+    repo.set_origin(_ORIGIN)
+    foreign = _foreign_clone(repo)
+    nested = foreign.worktree("nested", "spike")
+    nested.run("switch", "--detach")
+    result = fcg.classify_foreign_clone(foreign.path, pr_states={})
+    assert isinstance(result, fcg.PrunableForeignClone)
+    assert fcg.prune_foreign_clone(result.clone) == Removed(foreign.path)
+    assert not nested.path.exists()
+
+
 def test_prune_foreign_clone_removes_ignored_nested_files(repo: GitRepo) -> None:
     repo.set_origin(_ORIGIN)
     foreign = _foreign_clone(repo)
