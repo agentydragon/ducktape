@@ -136,7 +136,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(integrationToken+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 10*time.Second, nil)
+	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 10*time.Second, nil, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}

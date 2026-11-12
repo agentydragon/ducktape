@@ -254,7 +254,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 	if err := os.WriteFile(tokenFile, []byte("delegated-test-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 2_000_000_000, nil)
+	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 2_000_000_000, nil, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}

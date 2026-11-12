@@ -526,6 +526,95 @@ func identityDelegationContext(t *testing.T, token string, identity auth.Identit
 	))
 }
 
+func connectionIdentityDelegationContext(t *testing.T, token string, identity auth.Identity) context.Context {
+	t.Helper()
+	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+		Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{
+			ConnectionId: "018f4e32-6632-7e7f-83dd-7f90ccf84f68", GrantId: "018f4e32-6632-7e7f-83dd-7f90ccf84f69",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+token, auth.DelegationMetadataKey, string(encoded),
+	))
+}
+
+func TestConnectionProvenanceRequiresAnExplicitIdentityDelegationMethod(t *testing.T) {
+	const policyNamespace = "test-connection-delegation-policies"
+	actor := auth.Account{Namespace: testNamespace, Name: "test-connection-actor"}
+	_, actorToken := workload(t, actor)
+	_, strangerToken := workload(t, auth.Account{Namespace: testNamespace, Name: "test-connection-stranger"})
+	actorAccount, err := api.ServiceAccount(t.Context(), actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "test-connection-identity", policyNamespace)
+	identity := auth.Identity{Name: named.Identity.Name, UID: string(named.Identity.UID)}
+	identities, err := auth.KubernetesIdentityUIDs(named.Objects, policyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := newResolver(t, api.TokenReviews(), auth.WithVerdictTTL(0))
+	accounts := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
+		return "", false, nil
+	})
+	rule, err := auth.ReviewedServiceAccountOrIdentity(resolver).AllowDelegationFrom([]auth.Delegator{{
+		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
+	}}, accounts, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{
+		healthpb.Health_Check_FullMethodName: rule,
+		healthpb.Health_Watch_FullMethodName: auth.ReviewedServiceAccountOrIdentity(resolver),
+	}
+	client, effective, admissions := serveAdmissionHealth(t, methods)
+	ctx := connectionIdentityDelegationContext(t, actorToken, identity)
+	if _, err := client.Check(ctx, &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatalf("Connection Identity delegation: %v", err)
+	}
+	got, ok := (<-admissions).(auth.DelegatedIdentityAdmission)
+	if !ok || got.Actor.Account != actor || got.Actor.ServiceAccountUID != string(actorAccount.UID) ||
+		got.EffectiveCaller != identity || got.Provenance.GetConnection().GetGrantId() != "018f4e32-6632-7e7f-83dd-7f90ccf84f69" {
+		t.Fatalf("Connection delegation admission = %#v", got)
+	}
+	select {
+	case effectiveCaller := <-effective:
+		t.Fatalf("Identity delegation exposed a ServiceAccount effective caller: %+v", effectiveCaller)
+	default:
+	}
+	if _, err := client.Check(connectionIdentityDelegationContext(t, strangerToken, identity), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("untrusted actor Connection delegation = %v, want PermissionDenied", err)
+	}
+	watch, err := client.Watch(ctx, &healthpb.HealthCheckRequest{})
+	if err == nil {
+		_, err = watch.Recv()
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Connection provenance reached a method without its explicit grant: %v", err)
+	}
+	wrongEffectiveCaller, err := auth.MarshalDelegation(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
+			Account: &identitypb.ServiceAccount{Namespace: actor.Namespace, Name: actor.Name}, Uid: string(actorAccount.UID),
+		}},
+		Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{
+			ConnectionId: "018f4e32-6632-7e7f-83dd-7f90ccf84f68", GrantId: "018f4e32-6632-7e7f-83dd-7f90ccf84f69",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongContext := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+actorToken, auth.DelegationMetadataKey, string(wrongEffectiveCaller),
+	))
+	if _, err := client.Check(wrongContext, &healthpb.HealthCheckRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Connection provenance with ServiceAccount effective caller = %v, want PermissionDenied", err)
+	}
+}
+
 // A trusted actor names an Identity: the method admits it as that exact live incarnation, separate
 // from the actor, only when its direct mode admits Identity callers and the actor holds the
 // separate Identity grant.

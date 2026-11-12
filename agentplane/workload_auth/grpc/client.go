@@ -42,10 +42,17 @@ func WithDelegation(ctx context.Context, envelope *delegation.Delegation) (conte
 	return context.WithValue(ctx, delegationContextKey{}, encoded), nil
 }
 
-// DialDelegated calls target using the destination-audience token at tokenPath and an explicit
-// per-call Delegation envelope. It has no ordinary Bearer interceptor and disables retries.
-// The token file is read for each RPC so projected-token rotation is observed.
-func DialDelegated(target, tokenPath string, timeout time.Duration, transport *environment_runtime_transport.ClientTLS) (*grpc.ClientConn, error) {
+// ClientInterceptors are call interceptors that construct the per-call delegation envelope. They are
+// composed after the timeout interceptor and share the same delegated per-RPC credentials.
+type ClientInterceptors struct {
+	Unary  grpc.UnaryClientInterceptor
+	Stream grpc.StreamClientInterceptor
+}
+
+// DialDelegated calls target using the destination-audience token at tokenPath and an explicit per-call Delegation
+// envelope. It has no ordinary Bearer interceptor and disables retries. The token file is read for each RPC so
+// projected-token rotation is observed.
+func DialDelegated(target, tokenPath string, timeout time.Duration, transport *environment_runtime_transport.ClientTLS, interceptors ClientInterceptors) (*grpc.ClientConn, error) {
 	if target == "" || tokenPath == "" || timeout <= 0 {
 		return nil, errors.New("target, token file and a positive timeout are required")
 	}
@@ -53,14 +60,22 @@ func DialDelegated(target, tokenPath string, timeout time.Duration, transport *e
 	if err != nil {
 		return nil, err
 	}
-	return grpc.NewClient(
-		target,
+	// Chain the fixed timeout first so caller interceptors always see the bounded context.
+	unaryInterceptors := []grpc.UnaryClientInterceptor{withTimeout(timeout)}
+	if interceptors.Unary != nil {
+		unaryInterceptors = append(unaryInterceptors, interceptors.Unary)
+	}
+	clientOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials),
 		observability.GRPCClientOption(),
 		grpc.WithPerRPCCredentials(delegatedCredentials{tokenPath: tokenPath}),
-		grpc.WithUnaryInterceptor(withTimeout(timeout)),
+		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
 		grpc.WithDisableRetry(),
-	)
+	}
+	if interceptors.Stream != nil {
+		clientOptions = append(clientOptions, grpc.WithChainStreamInterceptor(interceptors.Stream))
+	}
+	return grpc.NewClient(target, clientOptions...)
 }
 
 type delegatedCredentials struct{ tokenPath string }

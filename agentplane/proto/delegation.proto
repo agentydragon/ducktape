@@ -25,6 +25,7 @@ message Delegation {
   oneof provenance {
     ActionProvenance action = 5;
     SessionProvenance session = 6;
+    ConnectionProvenance connection = 7;
   }
 }
 
@@ -38,4 +39,12 @@ message ActionProvenance {
 // The central Session a sampler acts for: its canonical public UUID.
 message SessionProvenance {
   string session_id = 1;
+}
+
+// An external MCP Connection's existing, consented OAuth grant. The Connection and grant are
+// resolved again by the MCP edge for each request; these identifiers provide typed attribution
+// to the receiving Action method and do not confer authority by themselves.
+message ConnectionProvenance {
+  string connection_id = 1;
+  string grant_id = 2;
 }
