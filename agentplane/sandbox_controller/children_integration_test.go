@@ -33,6 +33,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -195,7 +196,9 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	}
 	mgr, err := ctrl.NewManager(controllerConfig, ctrl.Options{
 		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"}, HealthProbeBindAddress: "0",
-		Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: byObject},
+		// Both tests create the Sandbox controller in the same process.
+		Controller: ctrlconfig.Controller{SkipNameValidation: new(true)},
+		Cache:      cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: byObject},
 	})
 	if err != nil {
 		t.Fatal(err)
