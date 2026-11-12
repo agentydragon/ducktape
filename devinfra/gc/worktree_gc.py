@@ -9,8 +9,8 @@ active, and open-PR worktrees are kept; unique work is reported for review.
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
 GitHub. `git worktree remove` refuses tracked or untracked changes, but deletes ignored files.
-Detached HEAD and reflog commits are preserved under refs/workspace-gc/recovery/ before removal. The final
-HEAD check and removal are not atomic.
+Detached HEAD and reflog commits are preserved under refs/workspace-gc/recovery/ before
+removal. The final HEAD check and removal are not atomic.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from devinfra.gc.git_repo import (
     list_worktrees,
     open_repo,
     patches_landed_in_main,
+    reflog_oids,
 )
 from devinfra.gc.pull_request import PrInfo, PrLookup, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
@@ -315,8 +316,7 @@ async def _classify_worktree(
     if worktree.branch is None:
         assert head is not None
         head_oid = pygit2.Oid(hex=head)
-        main_oid = await run_blocking(lambda: pg.revparse_single(main).peel(pygit2.Commit).id)
-        if await run_blocking(lambda: pg.merge_base(main_oid, head_oid) == head_oid):
+        if await run_blocking(lambda: content_in_main(pg, head_oid, main)):
             return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
         if await patches_landed_in_main(path, head, main):
             return prune(PrunableWorktreeReason.PATCHES_IN_MAIN)
@@ -353,18 +353,21 @@ async def remove_worktree(repo: Path, path: Path, *, expected_detached_head: str
             current_head = await run_blocking(lambda: str(open_repo(path).head.peel(pygit2.Commit).id))
             if current_head != expected_detached_head:
                 return Skipped(path, "detached HEAD changed since classification")
-            # The deterministic ref also survives cancellation or a failed removal. Never
-            # overwrite another value; an existing matching ref is already sufficient.
-            recovery_ref = f"refs/workspace-gc-preserved/{current_head}"
-            logger.warning("Preserving detached commit at %s before removing %s", recovery_ref, path)
-            # Create only if absent, then verify even when an existing ref won the race.
-            await git(repo, "update-ref", recovery_ref, current_head, "", check=False, interruptible=False)
-            resolved = await git(repo, "rev-parse", "--verify", recovery_ref)
-            if resolved.stdout.strip() != current_head:
-                return Failed(path, f"cannot preserve detached HEAD at {recovery_ref}")
+            history = await reflog_oids(path, "HEAD", current_head)
+            if history is None:
+                return Failed(path, "cannot safely inventory detached HEAD reflog")
+            for oid in history:
+                recovery_ref = f"refs/workspace-gc/recovery/{oid}"
+                logger.warning("Preserving detached reflog commit at %s before removing %s", recovery_ref, path)
+                await git(repo, "update-ref", "--no-deref", recovery_ref, oid, "", check=False, interruptible=False)
+                resolved = await git(repo, "rev-parse", "--verify", recovery_ref)
+                if resolved.stdout.strip() != oid:
+                    return Failed(path, f"cannot preserve detached commit at {recovery_ref}")
             current = await run_blocking(lambda: open_repo(path))
             if not current.head_is_detached or str(current.head.peel(pygit2.Commit).id) != current_head:
-                return Skipped(path, f"HEAD changed; original commit preserved at {recovery_ref}")
+                return Skipped(path, "HEAD changed; captured commits remain under refs/workspace-gc/recovery/")
+            if await reflog_oids(path, "HEAD", current_head) != history:
+                return Skipped(path, "HEAD reflog changed; captured commits remain under refs/workspace-gc/recovery/")
         elif expected_detached_head is not None:
             return Skipped(path, "HEAD changed since classification")
     except INSPECTION_ERRORS as error:
