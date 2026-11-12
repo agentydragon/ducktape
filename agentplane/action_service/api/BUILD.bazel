@@ -78,6 +78,7 @@ go_test(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
+        "//agentplane/testing/yamltest",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
         "@in_gopkg_yaml_v3//:yaml_v3",

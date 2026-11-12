@@ -1,13 +1,13 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"reflect"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/yamltest"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
@@ -50,7 +50,7 @@ func TestCatalogViewsMatchTheirContractFixtures(t *testing.T) {
 		if !vector.Accepted {
 			t.Fatalf("%q has view expectations but is not accepted by Go", vector.Name)
 		}
-		groups, err := parseCatalog(asYAML(t, vector.Input))
+		groups, err := parseCatalog(yamltest.JSONInput(t, vector.Input))
 		if err != nil {
 			t.Fatalf("%q is marked accepted by Go but does not parse: %v", vector.Name, err)
 		}
@@ -113,20 +113,4 @@ func normalized(t *testing.T, value any) any {
 		t.Fatal(err)
 	}
 	return decoded
-}
-
-// asYAML decodes and re-encodes a JSON document so yaml.v3 receives Unicode code points rather than surrogate pairs.
-func asYAML(t *testing.T, document json.RawMessage) string {
-	t.Helper()
-	decoder := json.NewDecoder(bytes.NewReader(document))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		t.Fatal(err)
-	}
-	written, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(written)
 }
