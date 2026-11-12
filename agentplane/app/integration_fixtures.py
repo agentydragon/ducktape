@@ -153,7 +153,6 @@ async def namespace(api_server: KubernetesApiServer) -> SandboxNamespace:
 
 AUDIENCE = "agentplane-test"
 _AGENT = "test-agent"
-_STRANGER = "test-stranger"
 
 
 async def _bearer(api_server: KubernetesApiServer, account: ServiceAccountRef) -> dict[str, str]:
@@ -168,11 +167,6 @@ def agent(namespace: SandboxNamespace) -> str:
 @pytest.fixture
 async def agent_auth(api_server: KubernetesApiServer, namespace: SandboxNamespace) -> dict[str, str]:
     return await _bearer(api_server, namespace.account(_AGENT))
-
-
-@pytest.fixture
-async def stranger_auth(api_server: KubernetesApiServer, namespace: SandboxNamespace) -> dict[str, str]:
-    return await _bearer(api_server, namespace.account(_STRANGER))
 
 
 @pytest.fixture
