@@ -1,5 +1,7 @@
 # Staging PostgreSQL exhaustion and retained evidence
 
+Follow-up: [sampler cutover and live storage measurements, 2026-11-12](../central_sampler/debug/2026_11_12_native_storage_cutover.md).
+
 ## Incident, 2026-11-11
 
 At 09:53 UTC, History Service logged failed event pushes and stalled thread folds: PostgreSQL
