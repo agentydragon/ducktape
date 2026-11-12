@@ -4390,6 +4390,16 @@ execution, or an unsupported argument preserves the ordinary heap frontier.
 This receipt is independent of the call's purity certificate; later operations
 on retained values retain their own heap effects.
 
+A checked factory result kept in one private top-level binding may also retain
+its known own data field across a single direct member read in another
+top-level binding initializer. This requires that the receiver binding has no
+other reference, write, export, alias, or dynamic-scope use, and that the read
+executes eagerly once rather than inside a callable. Only that read avoids
+publishing the receiver through unrelated class accessors. A later or repeated
+read, a field deletion or redefinition, or a read of an actual accessor keeps
+the ordinary conservative effects. An abstract instance shape alone does not
+prove that an own field still exists.
+
 An annotated local constructor-factory call kept on the conservative path records
 its first typed refusal in `synchronous_execution.local_record_factory_rejections`.
 The identity checks distinguish a non-binding callee, a missing hoisted

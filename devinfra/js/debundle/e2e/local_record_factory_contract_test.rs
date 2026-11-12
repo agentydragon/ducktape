@@ -21,6 +21,243 @@ const COMPUTED_MUTATOR: &str = "function mutate(target, key, value) { target[key
 const PREFIX: &str = "const prefix = new globalThis.Date();\n";
 const LATER: &str = "const later = 42;\n";
 
+#[test]
+fn reading_a_constructed_own_field_does_not_publish_an_unrelated_getter_receiver() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get unrelated() { return this.record.callback(); }
+  search = () => this.record.callback();
+}
+
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+const searches = [first.search];
+const second = create({ callback: () => 2 });
+console.log(searches[0](), second.search());
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "factory",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                    ],
+                ),
+                logical_module("commands", &[Member::new("first"), Member::new("second")]),
+                logical_module("searches", &[Member::new("searches")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(execution.complete, "{execution:#?}");
+    assert_eq!(
+        execution.local_record_factory_uses.len(),
+        1,
+        "{execution:#?}"
+    );
+    let searches = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "searches")
+        })
+        .expect("searches source unit");
+    assert!(
+        !graph.edges.iter().any(|edge| {
+            edge.edge_kind == analysis_model::DepKind::Sequenced
+                && edge.source == second.id
+                && edge.target == searches.id
+        }),
+        "the private own-field read must not sequence the later factory: {:#?}",
+        graph.edges
+    );
+}
+
+#[test]
+fn replaced_own_field_keeps_getter_receiver_publication() {
+    for replace in [
+        "Object.defineProperty(first, 'search', { get() { globalThis.retained = this; return () => 1; } });",
+        "delete first.search;",
+        "delete ({ first }).first.search;",
+        "delete ({ [first]: 1, target: first }).target.search;",
+        "delete (() => first)().search;",
+        "globalThis.retained = first, delete globalThis.retained.search;",
+    ] {
+        let source = format!(
+            r#"class Holder {{
+  constructor(record) {{ this.record = record; }}
+  get search() {{ globalThis.retained = this; return () => 1; }}
+  search = () => this.record.callback();
+}}
+function create(record) {{ return new Holder(record); }}
+const first = create({{ callback: () => 1 }});
+{replace}
+const searches = [first.search];
+const second = create({{ callback: () => 2 }});
+console.log(searches[0](), second.search());
+"#
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                        Member::new("first"),
+                        Member::new("searches"),
+                        Member::new("second"),
+                    ],
+                    &[replace],
+                )],
+            )
+            .with_dataflow_aware_s_chain(),
+        );
+        assert_preserved_entry_output(&fixture, "1 2\n");
+        let graph = fixture.dependency_graph();
+        let second = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "second")
+            })
+            .expect("second source unit");
+        let execution = second
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report");
+        assert!(
+            !execution.local_record_factory_rejections.is_empty(),
+            "{replace}: {execution:#?}"
+        );
+    }
+}
+
+#[test]
+fn reading_an_inherited_getter_still_publishes_its_receiver() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get search() { globalThis.retained = this; return () => this.record.callback(); }
+}
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+const searches = [first.search];
+const second = create({ callback: () => 2 });
+console.log(searches[0](), second.search());
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("first"),
+                Member::new("searches"),
+                Member::new("second"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(
+        !execution.local_record_factory_rejections.is_empty(),
+        "{execution:#?}"
+    );
+}
+
+#[test]
+fn a_single_lexical_read_inside_a_function_can_run_after_its_field_exposes_this() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get search() { globalThis.retained = this; return () => this; }
+  search = () => this;
+}
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+function read() { return first.search; }
+const alias = read()();
+delete alias.search;
+const searches = [read()];
+const second = create({ callback: () => 2 });
+console.log(searches[0]() === alias, globalThis.retained === alias);
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Holder"),
+                    Member::new("create").with_retained_record_factory(),
+                    Member::new("first"),
+                    Member::new("read"),
+                    Member::new("alias"),
+                    Member::new("searches"),
+                    Member::new("second"),
+                ],
+                &["delete alias.search"],
+            )],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "true true\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(
+        !execution.local_record_factory_rejections.is_empty(),
+        "{execution:#?}"
+    );
+}
+
 const FRESH_RECORD: &str = r#"{
   execute: () => later,
   nested: { callback: function () { return later; }, enabled: true },
