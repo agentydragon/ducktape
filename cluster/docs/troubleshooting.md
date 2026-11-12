@@ -289,14 +289,25 @@ Grafana also has Loki as a datasource for interactive log exploration (Explore v
 
 ### Nix Cache
 
-```bash
-# Verify signing key
-cd terraform/main && tofu output nix_signing_public_key && cd -
+Attic architecture, credentials, and bootstrap: [Nix Binary Cache](nix_cache.md).
 
-# In-cluster connectivity
-kubectl run -it --rm debug --image=curlimages/curl:latest --restart=Never -- \
-  curl http://harmonia.nix-cache.svc.cluster.local:5000/nix-cache-info
-```
+For a NAR hash mismatch during substitution, compare the authenticated current
+narinfo's `NarHash` with the hash of the downloaded NAR after decompression,
+using the narinfo's compression metadata. If the current metadata and NAR agree
+but the client expects a different hash, append
+`--option narinfo-cache-positive-ttl 0 --option narinfo-cache-negative-ttl 0`
+to the affected Nix command. If the metadata and NAR disagree, investigate the
+cache response before retrying.
+
+This refreshes metadata for that client without deleting its local store or
+changing global Nix configuration. Other clients may have their own cached
+metadata and need the same refresh. In a November 2026 OpenVINO refill, the
+authenticated `main` narinfo and decompressed NAR agreed, and a fresh
+substitution succeeded with both TTLs set to zero. The previous metadata was
+not captured, so stale client metadata is a plausible cause, not a proven one;
+the check covered that path, not the full cache. An input-addressed output may
+also differ if its build is not reproducible, so a hash mismatch alone does not
+establish stale client metadata.
 
 ## A Failed Job Wedges Its Flux Kustomization
 
