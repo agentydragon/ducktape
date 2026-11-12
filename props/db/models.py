@@ -62,19 +62,6 @@ class StatsWithCI(BaseModel):
     lcb95: float | None
     ucb95: float | None
 
-    def scaled(self, divisor: float) -> StatsWithCI:
-        """Scale by divisor to convert counts to ratios. Mirrors PostgreSQL scale_stats()."""
-        if divisor == 0:
-            return StatsWithCI(n=self.n, mean=0.0, min=0.0, max=0.0, lcb95=None, ucb95=None)
-        return StatsWithCI(
-            n=self.n,
-            mean=self.mean / divisor,
-            min=self.min / divisor,
-            max=self.max / divisor,
-            lcb95=self.lcb95 / divisor if self.lcb95 is not None else None,
-            ucb95=self.ucb95 / divisor if self.ucb95 is not None else None,
-        )
-
 
 class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
     """Adapt psycopg2 register_composite() named tuples to StatsWithCI.
