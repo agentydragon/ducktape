@@ -40,7 +40,7 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 	if err != nil {
 		return nil, err
 	}
-	found, _, err := s.store.SessionStatus(ctx, s.namespace, sessionID, caller.owner, s.debounce, false, false)
+	found, _, err := s.store.SessionStatus(ctx, s.namespace, sessionID, &caller.owner, s.debounce, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -49,12 +49,10 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 		if err != nil {
 			return nil, store.ErrNotFound
 		}
-		switch owner := caller.owner.(type) {
-		case store.IdentityOwner:
-			if identity, ok := sessionidentity.Identity(response.GetSession(), sessionID, caller.sandbox); !ok || identity != owner.Identity {
-				return nil, store.ErrNotFound
-			}
+		if identity, ok := sessionidentity.Identity(response.GetSession(), sessionID, caller.sandbox); !ok || identity != caller.owner.Identity {
+			return nil, store.ErrNotFound
 		}
+
 		sandbox, err := s.sandbox(ctx, caller.sandbox)
 		if err != nil {
 			return nil, err
@@ -67,11 +65,11 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 }
 
 // inboxOwner is the store owner of a sessionOwner result: nil for the operator.
-func inboxOwner(caller *workload) store.Owner {
+func inboxOwner(caller *workload) *store.Owner {
 	if caller == nil {
 		return nil
 	}
-	return caller.owner
+	return &caller.owner
 }
 
 func (s *Notifications) GetInbox(ctx context.Context, request *pb.GetInboxRequest) (*pb.GetInboxResponse, error) {

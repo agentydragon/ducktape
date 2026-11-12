@@ -97,8 +97,11 @@ func TestSVIDListenerKeepsInboxOwnershipAndRejectsDeletedSandbox(t *testing.T) {
 	})
 	inboxes := store.New(service.db, defaultConfig().Quotas)
 	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
-	owner := store.IdentityOwner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}
-	if err := inboxes.OpenInbox(t.Context(), owner, ref, "svid-session"); err != nil {
+	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.db.ExecContext(t.Context(), `UPDATE inbox SET owner_uid = $2,
+		owner_identity_name = NULL, owner_identity_uid = NULL WHERE session_id = $1`, "svid-session", workload.Principal.ServiceAccountUID); err != nil {
 		t.Fatal(err)
 	}
 	for i, caller := range []workloadauthtesting.IdentityWorkload{workload, other} {
@@ -155,8 +158,7 @@ func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
 	})
 	inboxes := store.New(service.db, defaultConfig().Quotas)
 	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
-	owner := store.IdentityOwner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}
-	if err := inboxes.OpenInbox(t.Context(), owner, ref, "svid-identity-session"); err != nil {
+	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-identity-session"); err != nil {
 		t.Fatal(err)
 	}
 	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {

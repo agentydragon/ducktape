@@ -34,7 +34,7 @@ func TestSubscriptionCreationUsesTypedStorageAndEnforcesConstraints(t *testing.T
 	if err != nil || stored.ID != subscription.ID || !model.SourcesEqual(stored.Source, creation.Source) {
 		t.Fatalf("typed-only read = %+v, %v; want original subscription source %+v", stored, err, creation.Source)
 	}
-	if replay, err := g.Subscribe(t.Context(), g.owner, creation, nil, "test-account-uid"); err != nil || replay.ID != subscription.ID {
+	if replay, err := g.Subscribe(t.Context(), g.incarnation(), creation, nil); err != nil || replay.ID != subscription.ID {
 		t.Fatalf("idempotent replay = %+v, %v; want %s", replay, err, subscription.ID)
 	}
 	if got := countQuery(t, t.Context(), g.db, `SELECT count(*) FROM subscription WHERE inbox_id = $1`, subscription.InboxID); got != 1 {

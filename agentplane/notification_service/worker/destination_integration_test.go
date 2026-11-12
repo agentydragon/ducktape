@@ -207,7 +207,7 @@ func TestAFailedFirstLookupDoesNotStartStaleConfirmation(t *testing.T) {
 
 func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription, err := h.store.SubscribeAsIdentity(t.Context(), testOwner, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
 	}, nil)
@@ -275,7 +275,13 @@ func TestWorkerRetainsAnOwnerlessLegacyInboxWithoutReadingSources(t *testing.T) 
 	h := newHarness(t, debounce(0, 0))
 	subscription := h.subscribe(t, "legacy-owner")
 	h.exec(t, `UPDATE inbox SET owner_identity_name = NULL, owner_identity_uid = NULL WHERE id = $1`, subscription.InboxID)
-	h.step(t)
+	worked, err := h.worker.step(t.Context())
+	if err != nil || worked {
+		t.Fatalf("legacy inbox work = %v, %v; want no claim", worked, err)
+	}
+	if next, err := h.store.NextWorkAt(t.Context()); err != nil || next != nil {
+		t.Fatalf("legacy inbox work deadline = %v, %v; want none", next, err)
+	}
 	if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
 		t.Fatal("an unowned legacy inbox reached a source or runner")
 	}
@@ -286,8 +292,8 @@ func TestWorkerRetainsAnOwnerlessLegacyInboxWithoutReadingSources(t *testing.T) 
 	if row.lastCursor != 0 {
 		t.Fatalf("legacy inbox cursor changed: %d", row.lastCursor)
 	}
-	if got := row.deliveryError; got == nil || *got != "OwnerMismatchError" {
-		t.Fatalf("delivery error = %v, want OwnerMismatchError", got)
+	if row.deliveryError != nil {
+		t.Fatalf("legacy inbox delivery error changed: %v", row.deliveryError)
 	}
 	var ownerUID, identityName, identityUID sql.NullString
 	if err := h.db.QueryRowContext(t.Context(), `SELECT owner_uid, owner_identity_name, owner_identity_uid FROM inbox WHERE id = $1`, subscription.InboxID).
@@ -310,7 +316,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h := newHarness(t, debounce(0, 300))
 	identity := model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
-	subscription, err := h.store.SubscribeAsIdentity(t.Context(), identity, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",
 		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
 	}, nil)
@@ -321,7 +327,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h.addEvents(t, subscription, 1, 2)
 
 	h.step(t)
-	page, err := h.store.Read(t.Context(), store.IdentityOwner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
+	page, err := h.store.Read(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
 	if err != nil || page.Notice == nil || !page.Notice.Attempted || len(h.dispatcher.submitted()) != 1 {
 		t.Fatalf("the Identity's inbox %+v (%v), submitted %d; want one attempted notice", page, err, len(h.dispatcher.submitted()))
 	}

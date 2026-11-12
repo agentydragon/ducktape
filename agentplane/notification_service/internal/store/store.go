@@ -25,7 +25,7 @@ const InboxChannel = "agentplane_notification_inbox"
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
 type Quotas struct {
-	// InboxesPerAccount is the most inboxes one owning model.ServiceAccount retains for one Sandbox incarnation.
+	// InboxesPerAccount keeps its settings key while limiting inboxes per destination Sandbox incarnation.
 	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
 	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`
@@ -37,47 +37,19 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// TODO(SESSION_IDENTITY_AUTHZ): decide inbox ownership by the Session's Identity and its bindings,
-// not by the Sandbox incarnation the inbox was opened for (agentplane/plans/task_dag.md).
-//
-// Owner is who may read and manage an inbox: an AccountOwner or an IdentityOwner. Each pins the
-// subject incarnation and the Sandbox incarnation the inbox was opened for, so recreating either
-// resource does not transfer ownership.
-type Owner interface{ isOwner() }
-
-// AccountOwner is the ServiceAccount incarnation the Session executes as.
-type AccountOwner struct {
-	Account    model.ServiceAccount
-	AccountUID string
-	SandboxUID string
-}
-
-// IdentityOwner is the Identity incarnation the Dispatcher recorded the Session as executing as.
-// An Identity-owned inbox keeps `owner_namespace`/`owner_name`, which name the destination Sandbox
-// (the ServiceAccount is named after it), and `owner_identity_{name,uid}` say who owns it.
-type IdentityOwner struct {
+// Owner pins the Session's Identity and Sandbox incarnations. Recreating either resource does not
+// transfer its inboxes. The historical account columns never authorize an owner read or write.
+type Owner struct {
 	Identity   model.Identity
 	SandboxUID string
 }
 
-func (AccountOwner) isOwner()  {}
-func (IdentityOwner) isOwner() {}
-
 // ownerPredicate selects the inboxes of alias (an inbox table alias, a source constant) owner has
 // established, with bind parameters numbered from first.
 func ownerPredicate(owner Owner, alias string, first int) (string, []any) {
-	switch owner := owner.(type) {
-	case AccountOwner:
-		return fmt.Sprintf("%[1]sowner_namespace = $%[2]d AND %[1]sowner_name = $%[3]d AND %[1]sdestination_uid = $%[4]d AND %[1]sowner_uid = $%[5]d",
-				alias, first, first+1, first+2, first+3),
-			[]any{owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID}
-	case IdentityOwner:
-		return fmt.Sprintf("%[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d",
-				alias, first, first+1, first+2),
-			[]any{owner.SandboxUID, owner.Identity.Name, owner.Identity.UID}
-	default:
-		panic(fmt.Sprintf("unknown inbox owner %T", owner))
-	}
+	return fmt.Sprintf("%[1]sowner_uid IS NULL AND %[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d AND $%[2]d <> '' AND $%[3]d <> '' AND $%[4]d <> ''",
+			alias, first, first+1, first+2),
+		[]any{owner.SandboxUID, owner.Identity.Name, owner.Identity.UID}
 }
 
 // Errors the store distinguishes, one per gRPC status code a caller maps it to. Quota failures are *QuotaError.
@@ -114,7 +86,7 @@ type QuotaError struct {
 func (e *QuotaError) Error() string {
 	switch e.Quota {
 	case InboxesPerAccount:
-		return fmt.Sprintf("%d inboxes per owning model.ServiceAccount", e.Limit)
+		return fmt.Sprintf("%d inboxes per Sandbox incarnation", e.Limit)
 	case ActiveSubscriptionsPerInbox:
 		return fmt.Sprintf("%d active subscriptions per inbox", e.Limit)
 	case UnacknowledgedMessagesPerSender:

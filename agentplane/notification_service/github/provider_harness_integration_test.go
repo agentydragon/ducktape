@@ -136,10 +136,9 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 }
 
 var (
-	testOwner       = model.ServiceAccount{Namespace: "test", Name: "owner"}
 	testDestination = model.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
-	// testIncarnation is testOwner as the Sandbox testDestination names.
-	testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testDestination.UID}
+	// testIncarnation owns the inbox for the exact destination Sandbox.
+	testIncarnation = store.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
@@ -214,9 +213,9 @@ func (h *harness) follow(source model.GitHubSource, key string) store.Subscripti
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	subscription, err := h.store.Subscribe(h.t.Context(), testOwner, model.Subscribe{
+	subscription, err := h.store.Subscribe(h.t.Context(), testIncarnation, model.Subscribe{
 		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
-	}, &access, "test-account-uid")
+	}, &access)
 	if err != nil {
 		h.t.Fatal(err)
 	}

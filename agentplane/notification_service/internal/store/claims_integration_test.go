@@ -134,7 +134,7 @@ func TestClaimHoldsTheInboxForTheLease(t *testing.T) {
 	claim := f.claim(t)
 	after := time.Now()
 	requireEqual(t, claim.ID, subscription.InboxID)
-	requireEqual(t, claim.Owner, f.owner)
+	requireEqual(t, claim.Holder(), f.incarnation())
 	requireEqual(t, claim.DestinationRef, f.body("first").DestinationRef)
 	requireEqual(t, claim.SessionID, f.sessionID)
 

@@ -80,6 +80,7 @@ type fixture struct {
 	*Store
 	db         *sql.DB
 	owner      model.ServiceAccount
+	identity   model.Identity
 	sandboxUID string
 	sessionID  string
 }
@@ -98,7 +99,11 @@ func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 
 func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 	t.Helper()
-	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID, sessionID: uuid.NewString()}
+	return fixture{
+		Store: New(db, quotas), db: db, owner: newOwner(),
+		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+	}
 }
 
 func newOwner() model.ServiceAccount {
@@ -111,9 +116,10 @@ func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef,
 	f.exec(t, `
 		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), 'test-account-uid')`,
-		id, f.owner.Namespace, f.owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID)
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+			owner_identity_name, owner_identity_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
+		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
 	return id
 }
 
@@ -166,14 +172,17 @@ func testMergeabilityPayload(pullRequestNumber int64) storagecodec.MergeabilityP
 const testSandboxUID = "test-uid"
 
 // incarnation is the fixture's owner as its Sandbox incarnation.
-func (f fixture) incarnation() AccountOwner {
-	return AccountOwner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: f.sandboxUID}
+func (f fixture) incarnation() Owner {
+	return Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
 }
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
 func (f fixture) body(key string) model.Subscribe {
-	return sessionBody(key, f.sessionID)
+	body := sessionBody(key, f.sessionID)
+	body.DestinationRef.Namespace, body.DestinationRef.Name = f.owner.Namespace, f.owner.Name
+	body.DestinationRef.UID = f.sandboxUID
+	return body
 }
 
 // sessionBody is a creation for the given Session.
@@ -189,7 +198,9 @@ func sessionBody(key, sessionID string) model.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation model.Subscribe) Subscription {
 	t.Helper()
-	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid")
+	owner := f.incarnation()
+	owner.SandboxUID = creation.DestinationRef.UID
+	subscription, err := f.Subscribe(t.Context(), owner, creation, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

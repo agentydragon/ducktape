@@ -236,7 +236,7 @@ func TestSessionStatusRestrictsNamespaceAndCurrentOwner(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := f.body("status-owner")
 	sub := f.subscribe(t, creation)
-	read := func(namespace, session string, owner Owner) *InboxStatus {
+	read := func(namespace, session string, owner *Owner) *InboxStatus {
 		t.Helper()
 		got, _, err := f.SessionStatus(t.Context(), namespace, session, owner, statusDebounce, true, true)
 		if err != nil {
@@ -248,17 +248,17 @@ func TestSessionStatusRestrictsNamespaceAndCurrentOwner(t *testing.T) {
 		t.Fatalf("operator got %+v", got)
 	}
 	owner := f.incarnation()
-	if got := read("test-namespace", f.sessionID, owner); got == nil || got.Inbox.ID != sub.InboxID {
+	if got := read("test-namespace", f.sessionID, &owner); got == nil || got.Inbox.ID != sub.InboxID {
 		t.Fatalf("owner got %+v", got)
 	}
 	other := owner
-	other.Account = newOwner()
-	if got := read("test-namespace", f.sessionID, other); got != nil {
+	other.Identity = model.Identity{Name: "other-identity", UID: "other-identity-uid"}
+	if got := read("test-namespace", f.sessionID, &other); got != nil {
 		t.Fatalf("other account got %+v", got)
 	}
 	other = owner
 	other.SandboxUID = "replacement"
-	if got := read("test-namespace", f.sessionID, other); got != nil {
+	if got := read("test-namespace", f.sessionID, &other); got != nil {
 		t.Fatalf("replacement got %+v", got)
 	}
 	if got := read("other-namespace", f.sessionID, nil); got != nil {

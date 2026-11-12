@@ -43,7 +43,7 @@ const (
 var testOwner = model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 
 // testIncarnation is testOwner in the Sandbox incarnation the destinations name.
-var testIncarnation = store.IdentityOwner{Identity: testOwner, SandboxUID: testSandboxUID}
+var testIncarnation = store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -324,7 +324,7 @@ func destination() model.DestinationRef {
 
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store.Subscription {
 	t.Helper()
-	subscription, err := h.store.SubscribeAsIdentity(t.Context(), testOwner, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: model.ActionsSource{RequestID: request}, LifetimeDays: 7,
 	}, nil)

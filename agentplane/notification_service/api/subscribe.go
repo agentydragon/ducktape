@@ -43,7 +43,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 		if !ok || recorded != caller.identity || caller.sandbox != body.DestinationRef {
 			return store.Subscription{}, store.ErrNotFound
 		}
-		owner = store.IdentityOwner{Identity: caller.identity, SandboxUID: body.DestinationRef.UID}
+		owner = store.Owner{Identity: caller.identity, SandboxUID: body.DestinationRef.UID}
 	default:
 		panic(fmt.Sprintf("unknown actor %T", caller))
 	}
@@ -79,15 +79,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 	default:
 		return store.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
 	}
-	identityOwner, ok := owner.(store.IdentityOwner)
-	if !ok {
-		return store.Subscription{}, store.ErrNotFound
-	}
-	subscription, err := s.store.SubscribeAsIdentity(ctx, identityOwner.Identity, body, access)
-	if err != nil {
-		return store.Subscription{}, err
-	}
-	return subscription, nil
+	return s.store.Subscribe(ctx, owner, body, access)
 }
 
 // destination resolves the Sandbox the reference names to the exact incarnation, which must name the Identity
@@ -108,19 +100,15 @@ func (s *Notifications) destination(ctx context.Context, owner store.Owner, ref 
 	return view.Identity, nil
 }
 
-// sandboxRunsAs reads the live execution Identity for the exact Sandbox incarnation and compares
-// both UID and name. A reused Identity name cannot make a retained Session appear owned by its successor.
+// sandboxRunsAs resolves the live execution Identity for the exact Sandbox incarnation and compares
+// both name and UID. A same-name replacement cannot inherit a retained Session's authority.
 func (s *Notifications) sandboxRunsAs(ctx context.Context, view sandboxreader.View, owner store.Owner) (bool, error) {
-	switch owner := owner.(type) {
-	case store.IdentityOwner:
-		identity, found, err := s.sandboxes.ExecutionIdentity(ctx, view.Identity)
-		if err != nil {
-			return false, unavailable("sandbox execution Identity", err)
-		}
-		return found && identity != nil && identity.Name == owner.Identity.Name && identity.Uid == owner.Identity.UID, nil
-	default:
-		return false, nil
+	identity, found, err := s.sandboxes.ExecutionIdentity(ctx, view.Identity)
+	if err != nil {
+		return false, unavailable("sandbox execution Identity", err)
 	}
+	return found && identity != nil && owner.Identity.Name != "" && owner.Identity.UID != "" &&
+		identity.Name == owner.Identity.Name && identity.Uid == owner.Identity.UID, nil
 }
 
 // sandbox reads the Sandbox the reference names, which must be in the service's namespace and, when the reference

@@ -27,8 +27,7 @@ var ErrNoInbox = errors.New("the Session has no inbox yet")
 // Message is a message a workload sends to a Session's inbox.
 type Message struct {
 	Sender Sender
-	// Recipient owns the inbox: the ServiceAccount or, for a Session the Session authority recorded as
-	// executing as an Identity alone, the Identity incarnation the destination Session executes as.
+	// Recipient is the exact Identity and Sandbox incarnation the inbox belongs to.
 	Recipient      Owner
 	DestinationRef model.DestinationRef
 	SessionID      string
@@ -169,7 +168,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 	default:
 		panic(fmt.Sprintf("unknown message sender %T", sender))
 	}
-	if owner, ok := message.Recipient.(AccountOwner); ok && owner.AccountUID == "" {
+	if message.Recipient.Identity.Name == "" || message.Recipient.Identity.UID == "" || message.Recipient.SandboxUID == "" {
 		return SentMessage{}, ErrNotFound
 	}
 	digest := sha256.Sum256(payload)

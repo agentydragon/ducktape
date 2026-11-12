@@ -38,11 +38,11 @@ const (
 	testSandboxUID = "test-uid"
 )
 
-// testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
+// testOwner is retained ServiceAccount attribution on historical Action events.
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
-// testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+// testIncarnation owns the inboxes for this exact Sandbox incarnation.
+var testIncarnation = store.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -155,7 +155,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service := &fakeActionService{
-		request: &actionpb.ActionRequest{CallerUid: proto.String("test-account-uid"), Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
+		request: &actionpb.ActionRequest{CallerIdentity: &identitypb.Identity{Name: testIncarnation.Identity.Name, Uid: testIncarnation.Identity.UID}},
 	}
 	server := grpc.NewServer()
 	actionpb.RegisterActionServiceServer(server, service)
@@ -189,13 +189,13 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionSer
 
 func (f fixture) subscribe(t *testing.T) store.Subscription {
 	t.Helper()
-	subscription, err := f.store.Subscribe(t.Context(), testOwner, model.Subscribe{
+	subscription, err := f.store.Subscribe(t.Context(), testIncarnation, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: "test-key",
 		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
-	}, nil, "test-account-uid")
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,15 +338,21 @@ func TestReconcileReadsALongLogAPageAtATime(t *testing.T) {
 	}
 }
 
-func TestReconcileDoesNotFollowARequestOfAnotherAccount(t *testing.T) {
-	for name, caller := range map[string]*identitypb.ServiceAccount{
-		"another account":                    {Namespace: testNamespace, Name: "another-sandbox"},
-		"the same name in another namespace": {Namespace: "another-namespace", Name: testSandbox},
+func TestReconcileDoesNotFollowRequestsWithoutItsExactIdentity(t *testing.T) {
+	for name, caller := range map[string]*identitypb.Identity{
+		"another Identity":                {Name: "another-identity", Uid: "another-identity-uid"},
+		"same-name replacement":           {Name: testIncarnation.Identity.Name, Uid: "replacement-identity-uid"},
+		"retained ServiceAccount request": nil,
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			subscription := f.subscribe(t)
-			f.service.set(func(s *fakeActionService) { s.request.Caller = caller; s.eventCount = 3 })
+			f.service.set(func(s *fakeActionService) {
+				s.request.CallerIdentity = caller
+				s.request.Caller = &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+				s.request.CallerUid = proto.String("test-account-uid")
+				s.eventCount = 3
+			})
 
 			err := f.reconcile(t, f.claim(t))
 
@@ -363,7 +369,7 @@ func TestReconcileDoesNotFollowARequestOfAnotherAccount(t *testing.T) {
 	}
 }
 
-func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
+func TestEventsReturnsTheOwnersEventsAndRefusesAnotherIdentity(t *testing.T) {
 	f := newFixture(t)
 	f.service.set(func(s *fakeActionService) {
 		s.useEventOverride = true
@@ -371,7 +377,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	})
 	request := uuid.New()
 
-	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 1)
+	events, err := f.source.Events(t.Context(), testIncarnation, request, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +389,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), store.AccountOwner{Account: model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 0)
+	_, err = f.source.Events(t.Context(), store.Owner{Identity: model.Identity{Name: "another-identity", UID: "another-identity-uid"}, SandboxUID: testSandboxUID}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
@@ -409,7 +415,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 		}
 	})
 
-	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, uuid.New(), 0)
+	events, err := f.source.Events(t.Context(), testIncarnation, uuid.New(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,12 +620,12 @@ func sameJSON(t *testing.T, got, want string) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-func TestActionsRequireTheExactRecordedCallerUID(t *testing.T) {
-	for _, uid := range []string{"", "recreated-account-uid"} {
+func TestActionsRequireTheExactRecordedIdentityUID(t *testing.T) {
+	for _, uid := range []string{"", "replacement-identity-uid"} {
 		t.Run(uid, func(t *testing.T) {
 			f := newFixture(t)
 			subscription := f.subscribe(t)
-			f.service.set(func(s *fakeActionService) { s.request.CallerUid = &uid; s.eventCount = 3 })
+			f.service.set(func(s *fakeActionService) { s.request.CallerIdentity.Uid = uid; s.eventCount = 3 })
 			err := f.reconcile(t, f.claim(t))
 			requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 			for _, call := range f.service.log() {

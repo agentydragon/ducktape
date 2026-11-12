@@ -55,7 +55,7 @@ func newIsolatedGitHubFixture(t *testing.T) githubFixture {
 func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
 	t.Helper()
 	base := 1<<41 + rand.Int64N(1<<40)
-	ref := model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
+	ref := f.body("github-fixture").DestinationRef
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
 		inbox: f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
@@ -174,9 +174,9 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 		t.Fatal(err)
 	}
 	access := g.access()
-	subscription, err := g.Subscribe(t.Context(), g.owner, model.Subscribe{
+	subscription, err := g.Subscribe(t.Context(), g.incarnation(), model.Subscribe{
 		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key, Source: source, LifetimeDays: 7,
-	}, &access, "test-account-uid")
+	}, &access)
 	if err != nil {
 		t.Fatal(err)
 	}
