@@ -57,15 +57,6 @@ py_test(
 )
 
 py_library(
-    name = "policy_view",
-    srcs = ["policy_view.py"],
-    deps = [
-        ":models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "mcp_settings",
     srcs = ["mcp_settings.py"],
     visibility = [
