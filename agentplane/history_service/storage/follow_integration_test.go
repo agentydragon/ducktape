@@ -178,7 +178,7 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 	}
 	for _, settlement := range settlements {
 		if err := postgres.Transaction(t.Context(), db, sql.TxOptions{}, func(tx *sql.Tx) error {
-			return recordSettlement(t.Context(), tx, sessionID, settlement)
+			return RecordSettlement(t.Context(), tx, sessionID, settlement)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -209,7 +209,7 @@ func TestFollowPageBoundsSettlementsWhenKindsFilterOutCompletions(t *testing.T) 
 	for cursor := uint64(1); cursor <= FollowSettlementsLimit+1; cursor++ {
 		settled := &historypb.SettledDeltas{CompletionCursor: cursor}
 		if err := postgres.Transaction(t.Context(), db, sql.TxOptions{}, func(tx *sql.Tx) error {
-			return recordSettlement(t.Context(), tx, sessionID, settled)
+			return RecordSettlement(t.Context(), tx, sessionID, settled)
 		}); err != nil {
 			t.Fatal(err)
 		}

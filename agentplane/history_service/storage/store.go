@@ -494,8 +494,14 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		}
 		if s.settleDeltas {
 			for _, entry := range appended {
-				if err := settleCompletion(ctx, tx, sessionID, entry); err != nil {
+				settled, err := SettlementForCompletion(ctx, tx, sessionID, entry)
+				if err != nil {
 					return err
+				}
+				if settled != nil {
+					if err := RecordSettlement(ctx, tx, sessionID, settled); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -1033,12 +1039,12 @@ func observationNumber(entry *eventlogpb.EventEntry) int32 {
 // than read in one transaction.
 const settlementSpanLimit = 20_000
 
-// settleCompletion settles the item field the entry completes, if it completes one and its stored span
-// qualifies: it stores the settlement and deletes the entries in its ranges.
-func settleCompletion(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, completion *eventlogpb.EventEntry) error {
+// SettlementForCompletion checks the stored span ending at completion without changing history.
+// Callers applying its result must serialize with the Session's append path in the same transaction.
+func SettlementForCompletion(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, completion *eventlogpb.EventEntry) (*historypb.SettledDeltas, error) {
 	item := completionTarget(completion)
 	if item == nil {
-		return nil
+		return nil, nil
 	}
 	span := []*eventlogpb.EventEntry{completion}
 	var floor uint64
@@ -1046,10 +1052,10 @@ func settleCompletion(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, comp
 	for upper := completion.GetCursor(); !started || upper > floor; {
 		batch, err := entriesBefore(ctx, tx, sessionID, upper, 256)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if len(batch) == 0 || len(span)+len(batch) > settlementSpanLimit {
-			return nil
+			return nil, nil
 		}
 		for _, stored := range batch {
 			if started && stored.cursor < floor {
@@ -1064,10 +1070,7 @@ func settleCompletion(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, comp
 		upper = batch[len(batch)-1].cursor
 	}
 	slices.Reverse(span)
-	if settled := settle(span); settled != nil {
-		return recordSettlement(ctx, tx, sessionID, settled)
-	}
-	return nil
+	return settle(span), nil
 }
 
 type storedEntry struct {
@@ -1099,8 +1102,8 @@ func entriesBefore(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor 
 	return batch, rows.Err()
 }
 
-// recordSettlement stores settled and deletes the entries in its ranges.
-func recordSettlement(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, settled *historypb.SettledDeltas) error {
+// RecordSettlement stores settled and deletes the entries in its ranges.
+func RecordSettlement(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, settled *historypb.SettledDeltas) error {
 	payload, err := marshal(settled)
 	if err != nil {
 		return err

@@ -1,0 +1,53 @@
+# Manual maintenance only; this file is not included in Flux.
+# Replace the image with the deployed History image containing settle-history.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: history-settlement-
+  namespace: agentplane-staging
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 3600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: history-service
+    spec:
+      serviceAccountName: history-service
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: settle-history
+          image: git.allegedly.works/ducktape-ci/agentplane-history-service:replace-with-deployed-image
+          args:
+            - settle-history
+            - --session
+            - "58e5d7cc-8e45-46e8-bf7b-8e8a79b28d12"
+            - --dry-run
+          env:
+            - name: AGENTPLANE_HISTORY_SERVICE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-sandbox-service
+                  key: uri
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
