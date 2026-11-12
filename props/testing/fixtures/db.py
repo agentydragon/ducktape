@@ -6,7 +6,6 @@ a fresh PostgreSQL container, and each test gets its own isolated database.
 
 import os
 from collections.abc import AsyncGenerator, Generator
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -28,9 +27,6 @@ from util.testing.postgres import (
     force_drop_database_sync,
 )
 
-# Path to test specimens (git-tracked fixtures)
-TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
-
 
 def _test_model_config() -> PropsConfig:
     """Explicitly route every test model through the test-only fake upstream."""
@@ -43,12 +39,6 @@ def _test_model_config() -> PropsConfig:
             for model_id, metadata in MODEL_METADATA.items()
         ],
     )
-
-
-@pytest.fixture
-def test_specimens_base() -> Path:
-    """Path to test specimens directory (git-tracked fixtures)."""
-    return TEST_FIXTURES_PATH
 
 
 @pytest.fixture(scope="session")
