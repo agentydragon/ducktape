@@ -1,4 +1,4 @@
-# OVH Eco Kimsufi bare metal nodes (KS-5 control plane + KS-GAME workers, HIL)
+# OVH Eco Kimsufi bare metal nodes (HIL)
 #
 # Talos is installed via OVH rescue mode (netboot → dd image to disk).
 # No Packer/snapshot mechanism available for OVH bare metal.
@@ -107,6 +107,7 @@ locals {
       install_disk = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
       zone         = "hil-ovh"
       storage_tier = "ssd"
+      game_shield  = true
     }
     "ovh-ns104963" = {
       service_name = var.kimsufi_service_name_ks_game_1
@@ -114,6 +115,7 @@ locals {
       install_disk = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
       zone         = "hil-ovh"
       storage_tier = "ssd"
+      game_shield  = true
     }
     "ovh-ns1001419" = {
       service_name = var.kimsufi_service_name_sys1
@@ -709,10 +711,10 @@ resource "talos_machine_configuration_apply" "kimsufi_cp" {
 # OVH KS-GAME servers run the OVH Game Shield (anti-DDoS) which by default
 # drops UDP traffic that doesn't match a known game protocol signature.
 # Nebula's ix_psk0 handshake is not a known game protocol, so it gets dropped,
-# making these worker nodes unreachable via Nebula from external IPs (e.g.
+# making these nodes unreachable via Nebula from external IPs (e.g.
 # atlas at home). OVH→OVH traffic bypasses the Game Shield so k8s works fine.
 #
-# Fix: add a port 4242 / "other" rule to the game mitigation for each worker IP.
+# Add a port 4242 / "other" rule for each server with Game Shield.
 # The rule survives node reinstalls since it's a network-level OVH configuration.
 #
 # The OVH TF provider has no ovh_ip_game_mitigation resource, so we call the
@@ -725,7 +727,7 @@ resource "talos_machine_configuration_apply" "kimsufi_cp" {
 resource "null_resource" "ks_game_nebula_mitigation" {
   for_each = {
     for k, v in local.active_kimsufi_servers : k => data.ovh_dedicated_server.kimsufi[k].ip
-    if v.role == "worker"
+    if try(v.game_shield, false)
   }
 
   # Re-run if the server IP changes (rare) or on taint.
@@ -737,6 +739,6 @@ resource "null_resource" "ks_game_nebula_mitigation" {
       OVH_APP_SECRET   = data.sops_file.ovh_credentials.data["application_secret"]
       OVH_CONSUMER_KEY = data.sops_file.ovh_credentials.data["consumer_key"]
     }
-    command = "python3 ${path.module}/../../scripts/configure_game_mitigation.py ${each.value}"
+    command = "ovh-python ${path.module}/../../scripts/configure_game_mitigation.py ${each.value}"
   }
 }

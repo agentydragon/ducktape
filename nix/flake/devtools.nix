@@ -79,7 +79,11 @@ let
     pkgs.kubevirt # virtctl for KubeVirt VM consoles and lifecycle operations
     pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
     pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
-    pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
+    # Give the bootstrap provisioner a Python interpreter with the OVH client,
+    # independent of which other Python interpreter appears first on PATH.
+    (pkgs.writeShellScriptBin "ovh-python" ''
+      exec ${pkgs.python314.withPackages (ps: [ ps.ovh ])}/bin/python3 "$@"
+    '')
   ];
   # System libraries matching the RBE container image (devinfra/buildbuddy/images/rbe/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };

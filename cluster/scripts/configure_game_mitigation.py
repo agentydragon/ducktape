@@ -13,7 +13,7 @@ Requires OVH token permissions:
   POST /ip/*/game/*/rule
 
 Usage:
-  python3 configure_game_mitigation.py <ip> [<ip> ...]
+  ovh-python configure_game_mitigation.py <ip> [<ip> ...]
 
 Credentials are read from environment variables:
   OVH_APP_KEY, OVH_APP_SECRET, OVH_CONSUMER_KEY
