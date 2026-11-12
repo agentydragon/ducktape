@@ -2,6 +2,9 @@
 
 ## Agentplane
 
+- [ ] Diagnose recurring MCP gateway-crash Lease-owner assertion failures without weakening the
+      abrupt-crash/outage checks. Capture container restarts and Lease transitions between process
+      kill and scale-down; see <agentplane/system_tests/debug/gateway_crash_lease_release.md>.
 - [ ] Extend the Agentplane platform agent instructions once the interfaces are ready: explain
       subagent operation and safe lookup of past conversations without putting task-specific procedures
       in the shared prompt.
