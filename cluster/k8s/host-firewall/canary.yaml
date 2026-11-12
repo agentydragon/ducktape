@@ -12,6 +12,7 @@ spec:
       - key: linbit.com/hostname
         operator: In
         values:
+          - ovh-ns1001419
           - ovh-ns102453
           - ovh-ns103656
           - ovh-ns103711
