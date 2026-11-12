@@ -14,6 +14,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/session_client"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -369,7 +370,7 @@ func TestReadTurnsPreservesCommandOriginsWithoutReplayingInputs(t *testing.T) {
 		return stream.Send(&historypb.FollowSessionResponse{ThroughCursor: 4, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}
 	got := resultOf[Turns](f.attempt(t, f.caller, contract.ActionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})))
-	want := []TurnInput{{Text: "same text", CommandIDs: []string{"test-command-a", "test-command-b"}}, {Text: "same text", CommandIDs: []string{}}}
+	want := []sessionclient.TurnInput{{Text: "same text", CommandIDs: []sessionclient.OpaqueID{"test-command-a", "test-command-b"}}, {Text: "same text", CommandIDs: []sessionclient.OpaqueID{}}}
 	if len(got.Turns) != 1 || !reflect.DeepEqual(got.Turns[0].Input, want) {
 		t.Fatalf("turns = %+v; want input %+v", got.Turns, want)
 	}

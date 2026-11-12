@@ -12,8 +12,6 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -186,30 +184,6 @@ type HistoryCoverage struct {
 	Error         *SourceError         `json:"error,omitempty"`
 }
 
-// TurnInput records one retained harness input and the command IDs that contributed it. Dispatcher
-// accepts opaque command IDs, including inputs submitted outside the UUID-based delegation tools.
-type TurnInput struct {
-	Text       string     `json:"text"`
-	CommandIDs []OpaqueID `json:"command_ids"`
-}
-
-// TurnToolCall is the stable, compact part of an observed tool call.
-type TurnToolCall struct {
-	ItemID OpaqueID `json:"item_id"`
-	Name   string   `json:"name"`
-}
-
-// TurnView contains observed conversation inputs and tool calls plus terminal status only when a
-// matching TurnCompleted event exists. A turn ID remains opaque because providers own its shape.
-type TurnView struct {
-	TurnID                OpaqueID       `json:"turn_id"`
-	Input                 []TurnInput    `json:"input"`
-	ToolCalls             []TurnToolCall `json:"tool_calls"`
-	Status                *TurnStatus    `json:"status,omitempty"`
-	Error                 *string        `json:"error,omitempty"`
-	FinalAssistantMessage *string        `json:"final_assistant_message,omitempty"`
-}
-
 // TurnPage is a bounded page of compact retained turns.
 type TurnPage struct {
 	HistoryCoverage
@@ -288,7 +262,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		page.Error = sourceFailure(err)
 		return page, nil
 	}
-	projection := turnProjection{}
+	projection := TurnProjection{}
 	after := cursor.AfterCursor
 	lastComplete := cursor.AfterCursor
 	coveredThrough := cursor.AfterCursor
@@ -326,22 +300,16 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 			if entry.GetCursor() > cursor.Through {
 				break
 			}
-			if boundary := projection.startOfDifferentTurn(entry); boundary {
-				page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "retained History started a new turn before completing the prior turn"}
-				stop = true
-				break
-			}
-			if err := projection.add(entry); err != nil {
+			completed, err := projection.Add(entry)
+			if err != nil {
 				page.Error = &SourceError{Code: codes.DataLoss.String(), Message: "retained History contains an incomplete turn projection"}
 				stop = true
 				break
 			}
 			lastScanned = entry.GetCursor()
 			coveredThrough = lastScanned
-			if projection.completed != nil {
-				page.Turns = append(page.Turns, *projection.completed)
-				projection.completed = nil
-				projection.current = nil
+			if completed != nil {
+				page.Turns = append(page.Turns, *completed)
 				lastComplete = lastScanned
 				if uint32(len(page.Turns)) == request.Count {
 					if lastScanned < cursor.Through {
@@ -388,7 +356,9 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		page.ResumeToken = page.NextCursor
 	}
 	if page.Error != nil || page.NextCursor == "" && after >= cursor.Through {
-		page.Turns = append(page.Turns, projection.finishPartial()...)
+		if partial := projection.Partial(); partial != nil {
+			page.Turns = append(page.Turns, *partial)
+		}
 	}
 	return page, contextErr
 }
@@ -446,141 +416,6 @@ func decodeTurnPageCursor(token string, sessionID uuid.UUID) (turnPageCursor, er
 func encodeTurnPageCursor(cursor turnPageCursor) string {
 	data, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(data)
-}
-
-type turnProjection struct {
-	current   *TurnView
-	completed *TurnView
-	itemKinds map[OpaqueID]eventpb.ItemKind
-}
-
-func cloneTurn(turn TurnView) TurnView {
-	clone := turn
-	clone.Input = append([]TurnInput(nil), turn.Input...)
-	for i := range clone.Input {
-		clone.Input[i].CommandIDs = append([]OpaqueID(nil), turn.Input[i].CommandIDs...)
-	}
-	clone.ToolCalls = append([]TurnToolCall(nil), turn.ToolCalls...)
-	if turn.Status != nil {
-		value := *turn.Status
-		clone.Status = &value
-	}
-	if turn.Error != nil {
-		value := *turn.Error
-		clone.Error = &value
-	}
-	if turn.FinalAssistantMessage != nil {
-		value := *turn.FinalAssistantMessage
-		clone.FinalAssistantMessage = &value
-	}
-	return clone
-}
-
-func (p *turnProjection) startOfDifferentTurn(entry *eventlogpb.EventEntry) bool {
-	event := entry.GetEvent()
-	var turnID string
-	switch observation := event.GetObservation().(type) {
-	case *eventpb.Event_TurnStarted:
-		turnID = observation.TurnStarted.GetTurnId()
-	case *eventpb.Event_HarnessUserMessageConfirmed:
-		turnID = observation.HarnessUserMessageConfirmed.GetTurnId()
-	case *eventpb.Event_TurnCompleted:
-		turnID = observation.TurnCompleted.GetTurnId()
-	}
-	return p.current != nil && turnID != "" && string(p.current.TurnID) != turnID
-}
-
-func (p *turnProjection) finishPartial() []TurnView {
-	if p.current == nil {
-		return nil
-	}
-	turn := cloneTurn(*p.current)
-	p.current = nil
-	return []TurnView{turn}
-}
-
-func (p *turnProjection) add(entry *eventlogpb.EventEntry) error {
-	event := entry.GetEvent()
-	if event == nil {
-		return errors.New("event missing")
-	}
-	switch observation := event.GetObservation().(type) {
-	case *eventpb.Event_HarnessUserMessageConfirmed:
-		confirmed := observation.HarnessUserMessageConfirmed
-		if confirmed.GetTurnId() == "" {
-			return errors.New("input confirmation has no turn id")
-		}
-		current := p.ensure(confirmed.GetTurnId())
-		input := TurnInput{Text: confirmed.GetText()}
-		for _, commandID := range confirmed.GetOriginCommandIds() {
-			if commandID == "" {
-				return errors.New("input command id is empty")
-			}
-			input.CommandIDs = append(input.CommandIDs, OpaqueID(commandID))
-		}
-		if input.CommandIDs == nil {
-			input.CommandIDs = []OpaqueID{}
-		}
-		current.Input = append(current.Input, input)
-	case *eventpb.Event_TurnStarted:
-		turnID := observation.TurnStarted.GetTurnId()
-		if turnID == "" {
-			return errors.New("turn start has no id")
-		}
-		p.ensure(turnID)
-	case *eventpb.Event_ItemStarted:
-		item := observation.ItemStarted
-		if p.current != nil && item.GetItemId() != "" {
-			if p.itemKinds == nil {
-				p.itemKinds = map[OpaqueID]eventpb.ItemKind{}
-			}
-			p.itemKinds[OpaqueID(item.GetItemId())] = item.GetKind()
-		}
-		if item.GetKind() == eventpb.ItemKind_ITEM_KIND_TOOL_CALL {
-			if p.current == nil || item.GetItemId() == "" {
-				return errors.New("tool call has no observed turn")
-			}
-			p.current.ToolCalls = append(p.current.ToolCalls, TurnToolCall{ItemID: OpaqueID(item.GetItemId()), Name: item.GetToolName()})
-		}
-	case *eventpb.Event_ItemCompleted:
-		if text, ok := observation.ItemCompleted.GetOutcome().(*eventpb.ItemCompleted_Text); ok && p.itemKinds[OpaqueID(observation.ItemCompleted.GetItemId())] == eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT {
-			if p.current != nil {
-				p.current.FinalAssistantMessage = new(text.Text)
-			}
-		}
-	case *eventpb.Event_TurnCompleted:
-		completed := observation.TurnCompleted
-		if completed.GetTurnId() == "" {
-			return errors.New("turn completion has no id")
-		}
-		current := p.ensure(completed.GetTurnId())
-		statusValue, ok := turnStatus(completed.GetStatus())
-		if !ok {
-			return errors.New("turn completion has an unknown status")
-		}
-		current.Status = &statusValue
-		if completed.GetError() != "" {
-			current.Error = new(completed.GetError())
-		}
-		p.completed = current
-		p.itemKinds = nil
-	}
-	return nil
-}
-
-func (p *turnProjection) ensure(turnID string) *TurnView {
-	if p.current == nil {
-		p.current = &TurnView{TurnID: OpaqueID(turnID), Input: []TurnInput{}, ToolCalls: []TurnToolCall{}}
-		p.itemKinds = nil
-	}
-	return p.current
-}
-
-func turnStatus(status eventpb.TurnStatus) (TurnStatus, bool) {
-	if _, ok := eventpb.TurnStatus_name[int32(status)]; !ok || status == eventpb.TurnStatus_TURN_STATUS_UNSPECIFIED {
-		return "", false
-	}
-	return TurnStatus(status.String()), true
 }
 
 func addCoverageGaps(coverage *HistoryCoverage, ranges []*historypb.CursorRange, after, through uint64) {
