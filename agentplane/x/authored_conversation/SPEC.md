@@ -22,6 +22,8 @@ Human input commits before a run starts. Authored-mode notices identify new huma
 copying their bodies into context. Input arriving while a sample or tool is active is announced at
 the next sampling boundary, including before stopping after a final response. A notice does not
 claim that a message was read or addressed. One loop owns context at a time; reset requires idle.
+Terminal input setup preserves stdout/stderr flags, including when all three streams share a TTY,
+so large diagnostic events remain printable.
 
 `read_thread` returns ordered, bounded pages and an exclusive continuation cursor. `post_message`
 commits an agent message before displaying it and returns its ID; publication does not wake the
