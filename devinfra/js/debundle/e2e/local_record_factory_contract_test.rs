@@ -332,6 +332,32 @@ const NESTED_WRAPPER: &str = "function wrapper(label, execute) { return make({ n
 #[test]
 fn nested_record_factory_wrapper_preserves_a_split_cycle() {
     let source = nested_wrapper_source("", NESTED_FACTORY, NESTED_WRAPPER);
+    let split = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "command",
+                    &[
+                        Member::new("warmup"),
+                        Member::new("prefix"),
+                        Member::new("maybe"),
+                        Member::new("Policy"),
+                        Member::new("Command"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("wrapper"),
+                        Member::new("command"),
+                    ],
+                    &["maybe.record = 1;"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_eq!(split.translation_validation()["accepts"], true);
+    assert_preserved_entry_output(&split, "7\n");
+
     let members = [
         Member::new("warmup"),
         Member::new("prefix"),
@@ -376,31 +402,6 @@ fn nested_record_factory_wrapper_preserves_a_split_cycle() {
     assert!(!graph.edges.iter().any(|edge| {
         edge.source == command.id && edge.target == later.id && edge.constrains_init_order
     }));
-    let split = run_fixture(
-        FixtureOpts::new(
-            &source,
-            vec![
-                logical_module_with_anon(
-                    "command",
-                    &[
-                        Member::new("warmup"),
-                        Member::new("prefix"),
-                        Member::new("maybe"),
-                        Member::new("Policy"),
-                        Member::new("Command"),
-                        Member::new("make").with_retained_record_factory(),
-                        Member::new("wrapper"),
-                        Member::new("command"),
-                    ],
-                    &["maybe.record = 1;"],
-                ),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&split, "7\n");
-    assert_eq!(split.translation_validation()["accepts"], true);
 }
 
 fn assert_nested_wrapper_falls_back(source: &str, extra_anon: &[&str]) {
