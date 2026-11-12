@@ -1,5 +1,5 @@
-"""The Sandbox Controller (agentplane/sandbox_controller): it keeps each of the environment's own
-Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its Pod or VM."""
+"""The Sandbox Controller (agentplane/sandbox_controller) reconciles state and optional workspace
+PVCs, WorkloadCredentials and Pod or VM incarnations for Sandboxes using their referenced Identities."""
 
 from __future__ import annotations
 
