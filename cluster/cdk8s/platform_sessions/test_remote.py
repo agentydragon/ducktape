@@ -67,7 +67,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         assert {p["name"]: p["port"] for p in service["ports"]} == {"https": 8443, "grpc": 8444}
         assert connection["control_target"] == f"{host}:8444"
         assert host in resource("Certificate", name)["spec"]["dnsNames"]
-        monitor_name = f"{name}-provider" if instance == "quest" else name
+        monitor_name = f"{instance}-provider" if instance == "quest" else instance
         monitor = resource("PodMonitor", monitor_name)["spec"]
         assert monitor["selector"]["matchLabels"] == service["selector"]
         assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
