@@ -1555,3 +1555,7 @@ debundle_e2e_test(
     name = "call_initializer_seal_test",
     deps = [":graph_support"],
 )
+
+debundle_e2e_test(
+    name = "reduced_callback_cycle_test",
+)
