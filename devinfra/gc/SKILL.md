@@ -25,7 +25,7 @@ unreferenced once the bases linking to it are gone):
 result, scoped to one domain.
 All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
 immediately before removing it, skipping (and exiting nonzero for) one that changed.
-The workspace must not change while workspace-gc runs: checks and removals are not atomic.
+Do not modify the workspace concurrently while workspace-gc runs: checks and removals are not atomic.
 Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
 them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
 anything you would miss.

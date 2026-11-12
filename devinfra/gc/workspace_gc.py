@@ -20,7 +20,7 @@ run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an 
 object store is a bigger blast radius than anything else this tool does); it additionally
 needs `--delete-foreign-clones`.
 
-Nothing is removed without an explicit flag. The workspace must not change while this command
+Nothing is removed without an explicit flag. Do not modify the workspace concurrently while this command
 runs: checks and removals are not atomic. Each removal revalidates its candidate immediately
 beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
 still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
