@@ -44,6 +44,24 @@ func TestNativeContentMigrationRequiresMaintenanceAndStoppedWriters(t *testing.T
 	}
 }
 
+func TestNativeContentMigrationRefusesAmbiguousHistoricalProfiles(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	for _, intent := range []struct{ id, system string }{
+		{"00000000-0000-0000-0000-000000000011", "first system"},
+		{"00000000-0000-0000-0000-000000000012", "different system"},
+	} {
+		request := protocol.MustJSON(map[string]any{"kind": "sampling", "api": protocol.APIStyleAnthropicMessages, "body": map[string]any{"model": "fixture", "system": intent.system, "messages": []any{}}})
+		migrationExec(t, store.DB(), `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,0,$3,'{}')`, intent.id, session.ConversationID, request)
+	}
+	if err := migrateContentStore(t.Context(), store.DB()); err == nil {
+		t.Fatal("migration guessed a latest profile without dispatch evidence")
+	}
+	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_intent WHERE request ? 'body'`); count != 2 {
+		t.Fatalf("ambiguous legacy requests were rewritten: remaining=%d", count)
+	}
+}
+
 func TestLegacyDispatchSequencesUseBoundedJournalOrder(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")

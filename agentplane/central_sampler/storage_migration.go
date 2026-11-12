@@ -492,12 +492,9 @@ func migrateProviderRequests(ctx context.Context, db *sql.DB, batchSize int) err
 			}
 		}
 		fallbackCount := 0
-		dispatchCount := 0
 		for _, entry := range entries {
 			if !entry.hasDispatch {
 				fallbackCount++
-			} else {
-				dispatchCount++
 			}
 		}
 		if fallbackCount > 0 {
@@ -517,7 +514,7 @@ func migrateProviderRequests(ctx context.Context, db *sql.DB, batchSize int) err
 			}
 			return left.id < right.id
 		})
-		if fallbackCount > 0 && dispatchCount > 0 {
+		if fallbackCount > 0 {
 			if err := validateFallbackProfileOrder(ctx, db, conversationID, entries, fallbackCount); err != nil {
 				return err
 			}
@@ -657,7 +654,7 @@ func modelRequestOrderForConversation(ctx context.Context, db *sql.DB, conversat
 }
 
 func validateFallbackProfileOrder(ctx context.Context, db *sql.DB, conversationID string, entries []modelRequestOrder, fallbackCount int) error {
-	if fallbackCount <= 0 || fallbackCount >= len(entries) {
+	if fallbackCount <= 0 || len(entries) <= 1 {
 		return nil
 	}
 	lastDispatched := entries[len(entries)-1]
