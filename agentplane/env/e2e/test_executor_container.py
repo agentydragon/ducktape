@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import shlex
-import socket
 import textwrap
 from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
@@ -26,6 +24,7 @@ from agentplane.env.e2e.testing.fixtures import ModelEndpoint
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
+from agentplane.env.runtime.execution.companion.control import control_pb2, control_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
     CodexExecServerContainerStatus,
@@ -70,7 +69,7 @@ async def _wait_for_status(
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(30),
         wait=wait_fixed(0.1),
-        retry=retry_if_exception_type((OSError, AssertionError)),
+        retry=retry_if_exception_type((grpc.RpcError, AssertionError)),
         reraise=True,
     ):
         with attempt:
@@ -138,21 +137,6 @@ def _wait_for_executor_file(path: Path) -> None:
     ):
         with attempt:
             assert path.exists(), f"executor did not create {path}"
-
-
-def _claim_executor(path: Path, environment: dict[str, str]) -> tuple[socket.socket, dict[str, object]]:
-    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.settimeout(5)
-    connection.connect(str(path))
-    connection.sendall(json.dumps({"operation": "claim", "environment": environment}).encode() + b"\n")
-    response = bytearray()
-    while not response.endswith(b"\n"):
-        chunk = connection.recv(4096)
-        if not chunk:
-            connection.close()
-            raise ConnectionError("executor companion closed its claim connection")
-        response.extend(chunk)
-    return connection, json.loads(response)
 
 
 def _detached_command(marker: str) -> str:
@@ -325,17 +309,22 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: sessi
     companion = CodexExecServerContainer(url=url, socket=socket_path, container=container, health_port=0)
     with container:
         await asyncio.to_thread(_wait_for_executor_file, socket_path)
-        connection, status = await asyncio.to_thread(_claim_executor, socket_path, {"PATH": "/usr/bin:/bin"})
-        with connection:
-            assert status["owned"] is True
-            generation = status["generation"]
-            assert isinstance(generation, str)
+        async with grpc.aio.insecure_channel(
+            f"unix://{socket_path}", options=(("grpc.enable_retries", 0), ("grpc.use_local_subchannel_pool", 1))
+        ) as channel:
+            stub: control_pb2_grpc.CompanionControlAsyncStub = control_pb2_grpc.CompanionControlStub(channel)
+            claim = stub.Claim(control_pb2.ClaimRequest(environment={"PATH": "/usr/bin:/bin"}))
+            response = await asyncio.wait_for(claim.read(), timeout=5)
+            assert isinstance(response, control_pb2.ClaimResponse)
+            generation = response.generation
+            assert generation
             await asyncio.to_thread(_wait_for_executor_file, ready_path)
             pipe_holder_host_pid = await asyncio.to_thread(_wait_for_host_pid, companion, marker)
             exit_path.write_text("exit\n")
             await asyncio.wait_for(wait_for_exit(pipe_holder_host_pid), timeout=10)
             idle = await _wait_for_generation(socket_path, generation, owned=False)
             assert idle.generation != generation
+            assert await asyncio.wait_for(claim.read(), timeout=5) is grpc.aio.EOF
 
 
 async def test_process_output_resume_files_and_incarnation_fence(runner: RunningRunner, tmp_path: Path) -> None:

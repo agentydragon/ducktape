@@ -3,11 +3,41 @@
   '''
   Anthropic API
     Main org
-      Available balance: $123.45
-      Grant: $85.00 remaining · expires Jul 1
-      Promo grant: $25.00 remaining · expires May 1 · scope: Claude API (Sonnet), Claude Code
+      Available balance: $123
+      Grant: $85 remaining · expires Jul 1
+      Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet), Claude Code
     Secondary org
-      Available balance: $50.00
+      Available balance: $50
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_exhausted]
+  '''
+  Codex
+    Banked resets: 0
+    5h:  12% used  ↻ 1m
+    7d: 100% used  ↻ 1h  exhausted
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_ordinary]
+  '''
+  Codex
+    5h:  12% used  ↻ 1m
+    7d:  20% used  ↻ 1h
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_pending]
+  '''
+  Codex
+    Reset time passed · awaiting updated usage
+    5h:  12% used  ↻ awaiting update
+    7d: 100% used  ↻ 1h               exhausted
+  '''
+# ---
+# name: test_renders_shared_fixture[banked_resets_unknown]
+  '''
+  Codex
+    5h:  12% used  ↻ 1m
+    7d: 100% used  ↻ 1h  exhausted
   '''
 # ---
 # name: test_renders_shared_fixture[binding_summary]
@@ -29,7 +59,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance]
   '''
   Claude
-    Prepaid balance: $123.45
+    Available balance: $123
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -37,7 +67,7 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance_stale]
   '''
   Claude
-    Prepaid balance: $123.45 · stale 1h
+    Available balance: $123 · stale 1h
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
@@ -45,9 +75,17 @@
 # name: test_renders_shared_fixture[claude_prepaid_balance_unavailable]
   '''
   Claude
-    Prepaid balance: unavailable
+    Available balance: unavailable
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[claude_reset_grants]
+  '''
+  Claude
+    Fable resets: 2 remaining · expires Jan 29, 12:00
+    Full resets: 1 remaining · expires Feb 15 · paused
+    7d:  95% used  ↻ 2d  exhausts ~1d 17h before reset
   '''
 # ---
 # name: test_renders_shared_fixture[empty]
@@ -72,18 +110,23 @@
     7d:  36% used  ↻ 5d 21h  exhausts ~3d 21h before reset
   
   z.ai
-    Included quota exhausted
     1x burn — next 3x window in 18h
     5h: 100% used  ↻ 3h 1m   exhausted
     7d:  30% used  ↻ 1d 19h  leaves ~60% unused at reset
   '''
 # ---
+# name: test_renders_shared_fixture[extra_disabled_positive]
+  '''
+  Claude
+    Extra spend this month: $26 of $100 limit
+  '''
+# ---
 # name: test_renders_shared_fixture[extra_enabled_not_burning]
   '''
   Claude
+    Extra spend this month: $2,325 of $4,600 limit
     5h:   6% used  ↻ 2h      leaves ~90% unused at reset
     7d:   2% used  ↻ 5d      leaves ~93% unused at reset
-    Extra spend this month: $2,324.85 of $4,600 limit
   
   Codex
     5h:  30% used  ↻ 3h 30m  on pace
@@ -95,13 +138,21 @@
     7d:  25% used  ↻ 5d      leaves ~12% unused at reset
   '''
 # ---
+# name: test_renders_shared_fixture[extra_spend_fallback]
+  '''
+  Claude
+    Stale data · last observed 5m ago
+    Refresh failed · showing available data
+    Extra spend this month: $26 of $100 limit
+    5h: 100% used  ↻ 1h 55m
+  '''
+# ---
 # name: test_renders_shared_fixture[hot]
   '''
   Claude
-    Included quota exhausted · extra usage enabled
+    Extra spend this month: $3,142 of $5,000 limit · extra usage enabled
     5h:  50% used  ↻ 3h 30m  exhausts ~2h before reset
     7d: 100% used  ↻ 4d 21h  exhausted
-    Extra spend this month: $3,141.59 of $5,000 limit
   
   Codex
     Banked resets: 2 · next known expiry Sep 20 · 1 expiry unknown
@@ -113,12 +164,27 @@
     7d:  40% used  ↻ 4d 21h  exhausts ~1d 18h before reset
   '''
 # ---
+# name: test_renders_shared_fixture[multi_window_reset_pending]
+  '''
+  Claude
+    Reset time passed · awaiting updated usage
+    Extra spend this month: $26 of $100 limit
+    5h: 100% used  ↻ awaiting update
+    7d: 100% used  ↻ 23h 58m          exhausted
+  
+  Codex
+    Reset time passed · awaiting updated usage
+    Paid credits: 500 credits
+    5h: 100% used  ↻ awaiting update
+    7d: 100% used  ↻ 23h 58m          exhausted
+  '''
+# ---
 # name: test_renders_shared_fixture[observed_account_2026_11_04]
   '''
   Subscriptions
   
   Claude
-    Prepaid balance: $0.00
+    Available balance: $0
     7d:  96% used  ↻ 1d 15h  exhausts ~1d 9h before reset
   
   Codex
@@ -129,31 +195,30 @@
   API balances
   
   OpenAI API
-    Available balance: $557.42
-    Grant: $490.00 remaining · expires Dec 1
-    Grant: $17.16 remaining · expires Jan 1, 2027
-    Grant: $50.26 remaining · expires Feb 1, 2027
+    Available balance: $557
+    Grant: $490 remaining · expires Dec 1
+    Grant: $17 remaining · expires Jan 1, 2027
+    Grant: $50 remaining · expires Feb 1, 2027
   
   Anthropic API
     Wide-scope promo org
-      Available balance: $219.70
-      Grant: $21.75 remaining · expires Jul 1, 2027
-      Promo grant: $197.93 remaining · expires Nov 25
+      Available balance: $220
+      Grant: $22 remaining · expires Jul 1, 2027
+      Promo grant: $198 remaining · expires Nov 25
   '''
 # ---
 # name: test_renders_shared_fixture[openai_platform_credits]
   '''
   OpenAI API
-    Available balance: $125.75
-    Grant: $100.00 remaining · expires Feb 1
-    Grant: $25.75 remaining · expires Dec 1
+    Available balance: $126
+    Grant: $100 remaining · expires Feb 1
+    Grant: $26 remaining · expires Dec 1
   '''
 # ---
 # name: test_renders_shared_fixture[paid_credits]
   '''
   Codex
     Paid credits: 2,746 credits
-    Included quota exhausted · paid credits available
     Banked resets: 0
     5h: 100% used  ↻ 1h 30m  exhausted
     7d:  38% used  ↻ 3d 14h  leaves ~22% unused at reset
@@ -164,26 +229,26 @@
   Subscriptions
   
   Claude
-    Prepaid balance: $25.75
+    Available balance: $26
     5h:  45% used  ↻ 2h  leaves ~25% unused at reset
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   
   Codex
-    Banked resets: 3 · next known expiry Jan 29, 12:00 UTC · 1 expiry unknown
+    Banked resets: 3 · next known expiry Jan 29, 12:00 · 1 expiry unknown
     5h:  36% used  ↻ 2h  leaves ~40% unused at reset
     7d:  42% used  ↻ 4d  on pace
   
   API balances
   
   OpenAI API
-    Available balance: $60.00
-    Grant: $60.00 remaining · expires Jun 1
+    Available balance: $60
+    Grant: $60 remaining · expires Jun 1
   
   Anthropic API
     Shared org
-      Available balance: $75.00
-      Grant: $50.00 remaining · expires Jul 1
-      Promo grant: $25.00 remaining · expires May 1 · scope: Claude API (Sonnet)
+      Available balance: $75
+      Grant: $50 remaining · expires Jul 1
+      Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet)
   '''
 # ---
 # name: test_renders_shared_fixture[reset_credit_expiry_unavailable]
@@ -197,8 +262,8 @@
 # name: test_renders_shared_fixture[reset_pending]
   '''
   Codex
-    Paid credits: 2,746 credits
     Reset time passed · awaiting updated usage
+    Paid credits: 2,746 credits
     5h: 100% used  ↻ awaiting update
   '''
 # ---
@@ -207,8 +272,8 @@
   Claude
     Stale data · last observed 1d ago
     Refresh failed · showing available data
-    Prepaid balance: $123.45
     Reset time passed · awaiting updated usage
+    Available balance: $123
     5h:  35% used  ↻ awaiting update
     7d:  72% used  ↻ 4d 3h
   
@@ -224,8 +289,21 @@
   '''
   Claude
     Stale data · last observed 20m ago
-    Prepaid balance: $123.45
+    Available balance: $123
     5h:  45% used  ↻ 1h 40m
+  '''
+# ---
+# name: test_renders_shared_fixture[stale_paid_signals]
+  '''
+  Claude
+    Stale data · last observed 15m ago
+    Extra spend this month: $26 of $100 limit
+    5h: 100% used  ↻ 1h 45m
+  
+  Codex
+    Stale data · last observed 15m ago
+    Paid credits: 500 credits
+    5h: 100% used  ↻ 1h 45m
   '''
 # ---
 # name: test_renders_shared_fixture[tints]
@@ -247,5 +325,13 @@
   '''
   Codex
     visible (5h):  30% used  ↻ 45m  leaves ~65% unused at reset
+  '''
+# ---
+# name: test_renders_shared_fixture[zai_peak]
+  '''
+  z.ai
+    🔥 3x burn until 10:00 (2h) — GLM-5.3, GLM-5-Turbo
+    5h:  55% used  ↻ 2h  leaves ~8% unused at reset
+    7d:  40% used  ↻ 5d  exhausts ~2d before reset
   '''
 # ---

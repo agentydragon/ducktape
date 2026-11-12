@@ -21,9 +21,10 @@ use swc_ecma_ast::Id;
 #[derive(Clone, Copy)]
 pub(in crate::facts::sync_effects) enum CapturePolicy<'a> {
     /// The application prefix. Module bindings are read live at call time,
-    /// so creation captures nothing for them. A binding some closure writes,
-    /// or one past the capture budget, is unknown; a value only a nested
-    /// closure reads keeps its capabilities but not its exact value.
+    /// so creation captures nothing for them. A binding some closure writes
+    /// is unknown (its stores reach a cell or are published); a value past
+    /// the capture budget, or only a nested closure reads, keeps its
+    /// capabilities but not its exact value.
     Application {
         module_bindings: &'a FxHashSet<Id>,
         mutable: &'a BTreeSet<Id>,
@@ -33,7 +34,7 @@ pub(in crate::facts::sync_effects) enum CapturePolicy<'a> {
     Exact,
 }
 
-/// Captures beyond this many make the remaining snapshots unknown.
+/// Captures beyond this many keep only their values' capabilities.
 const CAPTURE_BUDGET: usize = 64;
 
 /// What the adapter admits about one closure creation.
@@ -64,7 +65,13 @@ pub(in crate::facts::sync_effects) fn lexical_captures(
         home_object: index.callable_home_object(callable),
         ..Default::default()
     };
-    for id in reads.iter().chain(body.rebinds.iter()) {
+    // A nested closure's write needs the cell as much as a read does.
+    let writes = index.nested_callable_writes.get(&callable);
+    for id in reads
+        .iter()
+        .chain(body.rebinds.iter())
+        .chain(writes.into_iter().flatten())
+    {
         if body.declared_locals.contains(id)
             || body.local_functions.contains_key(id)
             || body
@@ -90,18 +97,17 @@ pub(in crate::facts::sync_effects) fn lexical_captures(
         };
         let snapshot = match policy {
             CapturePolicy::Exact => values.clone(),
-            CapturePolicy::Application { mutable, .. }
-                if mutable.contains(id)
-                    || captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET =>
-            {
+            CapturePolicy::Application { mutable, .. } if mutable.contains(id) => {
                 Values::from([AbstractValue::Value(Value::Top)])
             }
             CapturePolicy::Application { .. }
-                if !body.reads.contains(id) && !body.rebinds.contains(id) =>
+                if captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET
+                    || (!body.reads.contains(id) && !body.rebinds.contains(id)) =>
             {
-                // A source-summary activation supplied a descendant-only
-                // value snapshot, not a live binding proof. Retain its
-                // capabilities while forfeiting its exact value.
+                // Past the budget, or for a descendant-only snapshot a
+                // source-summary activation supplied (not a live binding
+                // proof), retain the capabilities while forfeiting the
+                // exact value: unknown alone reaches no unescaped callable.
                 let mut possible = values.clone();
                 possible.insert(AbstractValue::Value(Value::Top));
                 possible

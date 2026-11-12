@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"net"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,12 +31,6 @@ type callerHealth struct {
 	callers    chan auth.Principal
 	effective  chan *auth.ServiceAccountPrincipal
 	admissions chan auth.Admission
-}
-
-type principalResolverFunc func(context.Context) (auth.Principal, error)
-
-func (resolve principalResolverFunc) Resolve(ctx context.Context) (auth.Principal, error) {
-	return resolve(ctx)
 }
 
 func (h callerHealth) record(ctx context.Context) {
@@ -83,10 +78,10 @@ func serveAdmissionHealth(t *testing.T, methods auth.Methods) (healthpb.HealthCl
 func delegationContext(t *testing.T, token string, caller auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
-		},
-		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+		}},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -195,117 +190,6 @@ func TestAnAccountsRuleWithNoAccountsAdmitsNobody(t *testing.T) {
 	both(t, bearing(t, token), client, codes.PermissionDenied)
 }
 
-func TestAnAnyAccountRuleAdmitsEveryAccountItsResolverServes(t *testing.T) {
-	stranger := auth.Account{Namespace: testNamespace, Name: "test-stranger"}
-	_, strangerToken := workload(t, stranger)
-	_, outsiderToken := workload(t, auth.Account{Namespace: "test-elsewhere", Name: "test-app"})
-	rule := auth.AnyAccount(newResolver(t, api.TokenReviews()))
-	client, callers := serveHealth(t, auth.Methods{
-		healthpb.Health_Check_FullMethodName: rule, healthpb.Health_Watch_FullMethodName: rule,
-	}, 0)
-	both(t, bearing(t, ""), client, codes.Unauthenticated)
-	both(t, bearing(t, outsiderToken), client, codes.Unauthenticated)
-	both(t, bearing(t, strangerToken), client, codes.OK)
-	for range 2 {
-		if caller := <-callers; caller.Account != stranger {
-			t.Errorf("handler saw caller %+v, want %v", caller, stranger)
-		}
-	}
-}
-
-func TestAnAnyAccountRuleUsesItsPrincipalResolverResult(t *testing.T) {
-	// A Sandbox-name-only source has no ServiceAccount or Pod UID to infer.
-	want := auth.Principal{
-		Account: auth.Account{Namespace: "test-namespace", Name: "test-sandbox"},
-		PodName: "test-sandbox",
-	}
-	rule := auth.AnyAccount(principalResolverFunc(func(context.Context) (auth.Principal, error) {
-		return want, nil
-	}))
-	client, callers := serveHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule}, 0)
-	if _, err := client.Check(bearing(t, "test-source-token"), &healthpb.HealthCheckRequest{}); err != nil {
-		t.Fatalf("resolved principal call: %v", err)
-	}
-	if got := <-callers; got != want {
-		t.Fatalf("handler saw principal %+v, want %+v", got, want)
-	}
-}
-
-func TestAnAnyAccountSourceErrorDoesNotRunTheHandler(t *testing.T) {
-	var calls atomic.Int32
-	rule := auth.AnyAccount(principalResolverFunc(func(context.Context) (auth.Principal, error) {
-		calls.Add(1)
-		return auth.Principal{}, status.Error(codes.Unavailable, "test principal source unavailable")
-	}))
-	client, callers := serveHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule}, 0)
-	if _, err := client.Check(bearing(t, "test-source-token"), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("source failure returned %v", err)
-	}
-	if got := calls.Load(); got != 1 {
-		t.Fatalf("principal source called %d times, want once", got)
-	}
-	select {
-	case caller := <-callers:
-		t.Fatalf("handler ran after source failure with caller %+v", caller)
-	default:
-	}
-}
-
-func TestMissingAnyAccountSourceFailsClosedBeforeTheHandler(t *testing.T) {
-	client, callers := serveHealth(t, auth.Methods{
-		healthpb.Health_Check_FullMethodName: auth.AnyAccount(nil),
-	}, 0)
-	if _, err := client.Check(bearing(t, "test-source-token"), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("missing principal source returned %v", err)
-	}
-	select {
-	case caller := <-callers:
-		t.Fatalf("handler ran without a principal source with caller %+v", caller)
-	default:
-	}
-}
-
-func TestNonTokenPrincipalResolverCannotDelegateOrResolveDelegationMetadata(t *testing.T) {
-	var calls atomic.Int32
-	rule := auth.AnyAccount(principalResolverFunc(func(context.Context) (auth.Principal, error) {
-		calls.Add(1)
-		return auth.Principal{}, nil
-	}))
-	reader := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
-		return "test-uid", true, nil
-	})
-	if _, err := rule.AllowDelegationFrom([]auth.Delegator{{
-		Account: auth.Account{Namespace: testNamespace, Name: "test-actions"}, CallerNamespaces: []string{testNamespace},
-	}}, reader); err == nil {
-		t.Fatal("a non-TokenReview source enabled delegation")
-	}
-	client, callers := serveHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule}, 0)
-	delegated := delegationContext(t, "test-actor-token", auth.Account{Namespace: testNamespace, Name: "test-caller"}, "test-caller-uid")
-	if _, err := client.Check(delegated, &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("delegation metadata returned %v", err)
-	}
-	if got := calls.Load(); got != 0 {
-		t.Fatalf("principal source called %d times for delegation metadata", got)
-	}
-	select {
-	case caller := <-callers:
-		t.Fatalf("handler ran for delegation metadata with caller %+v", caller)
-	default:
-	}
-}
-
-func TestTokenReviewAnyAccountRuleCanStillEnableDelegation(t *testing.T) {
-	reader := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
-		return "test-uid", true, nil
-	})
-	_, err := auth.AnyAccount(newResolver(t, api.TokenReviews())).AllowDelegationFrom([]auth.Delegator{{
-		Account: auth.Account{Namespace: testNamespace, Name: "test-actions"}, CallerNamespaces: []string{testNamespace},
-	}}, reader)
-	if err != nil {
-		t.Fatalf("TokenReview AnyAccount rule could not enable delegation: %v", err)
-	}
-}
-
 func TestHealthMethodsNeedNoBearer(t *testing.T) {
 	client, callers := serveHealth(t, auth.HealthMethods(), 0)
 	both(t, bearing(t, ""), client, codes.OK)
@@ -342,13 +226,13 @@ func TestMethodsWithDelegationRequiresUniqueServedMethodsAndAnIdentityReader(t *
 			wantErr: `delegated method "` + healthpb.Health_Watch_FullMethodName + `" is not served`,
 		},
 		{
-			name: "missing identity reader", names: []string{method},
-			wantErr: `delegated method "` + method + `": ServiceAccount reader and delegators are required`,
+			name: "missing ServiceAccount reader", names: []string{method},
+			wantErr: `delegated method "` + method + `": delegator may assert ServiceAccounts, but the receiver resolves none`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			delegators := []auth.Delegator{delegator}
-			_, err := methods.WithDelegation(test.names, delegators, test.reader)
+			_, err := methods.WithDelegation(test.names, delegators, test.reader, nil)
 			if err == nil || err.Error() != test.wantErr {
 				t.Fatalf("WithDelegation error = %v, want %q", err, test.wantErr)
 			}
@@ -393,7 +277,7 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 		healthpb.Health_Watch_FullMethodName: auth.ReviewedServiceAccount(resolver),
 	}.WithDelegation([]string{healthpb.Health_Check_FullMethodName}, []auth.Delegator{{
 		Account: actor, CallerNamespaces: []string{testNamespace},
-	}}, reader)
+	}}, reader, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +343,7 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 	missingAccount := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
 		return "", false, nil
 	})
-	missingRule, err := auth.ReviewedServiceAccount(resolver).AllowDelegationFrom([]auth.Delegator{{Account: actor, CallerNamespaces: []string{testNamespace}}}, missingAccount)
+	missingRule, err := auth.ReviewedServiceAccount(resolver).AllowDelegationFrom([]auth.Delegator{{Account: actor, CallerNamespaces: []string{testNamespace}}}, missingAccount, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +353,7 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 	}
 	outside, err := auth.ReviewedServiceAccount(resolver).AllowDelegationFrom([]auth.Delegator{{
 		Account: actor, CallerNamespaces: []string{"different-namespace"},
-	}}, reader)
+	}}, reader, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +372,7 @@ func TestReviewedServiceAccountDelegationKeepsActorAndEffectiveCallerSeparate(t 
 	})
 	unavailableRule, err := auth.ReviewedServiceAccount(resolver).AllowDelegationFrom([]auth.Delegator{{
 		Account: actor, CallerNamespaces: []string{testNamespace},
-	}}, unavailableReader)
+	}}, unavailableReader, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +426,7 @@ func TestDelegationUsesTheConfiguredListenerModeAndMethodGrant(t *testing.T) {
 			healthpb.Health_Watch_FullMethodName: auth.ReviewedServiceAccount(resolver),
 		}.WithDelegation([]string{healthpb.Health_Check_FullMethodName}, []auth.Delegator{{
 			Account: actor, CallerNamespaces: []string{testNamespace},
-		}}, reader)
+		}}, reader, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -624,4 +508,152 @@ func TestCallerRefusesACallNoAccountRuleAdmitted(t *testing.T) {
 	if _, err := auth.Caller(context.Background()); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Caller without an admission: %v", err)
 	}
+}
+
+func identityDelegationContext(t *testing.T, token string, identity auth.Identity) context.Context {
+	t.Helper()
+	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+token, auth.DelegationMetadataKey, string(encoded),
+	))
+}
+
+// A trusted actor names an Identity: the method admits it as that exact live incarnation, separate
+// from the actor, only when its direct mode admits Identity callers and the actor holds the
+// separate Identity grant.
+func TestDelegatedIdentityIsAdmittedOnlyAsItsLiveIncarnation(t *testing.T) {
+	const policyNamespace = "test-delegation-policies"
+	actor := auth.Account{Namespace: testNamespace, Name: "test-identity-actions"}
+	accountsOnly := auth.Account{Namespace: testNamespace, Name: "test-account-actions"}
+	_, actorToken := workload(t, actor)
+	_, accountsOnlyToken := workload(t, accountsOnly)
+	_, strangerToken := workload(t, auth.Account{Namespace: testNamespace, Name: "test-untrusted-actor"})
+	actorAccount, err := api.ServiceAccount(t.Context(), actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "test-delegated-identity", policyNamespace)
+	identity := auth.Identity{Name: named.Identity.Name, UID: string(named.Identity.UID)}
+	identities, err := auth.KubernetesIdentityUIDs(named.Objects, policyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
+		return "", false, nil
+	})
+	resolver := newResolver(t, api.TokenReviews(), auth.WithVerdictTTL(0))
+	methods, err := auth.Methods{
+		healthpb.Health_Check_FullMethodName: auth.ReviewedServiceAccountOrIdentity(resolver),
+		healthpb.Health_Watch_FullMethodName: auth.ReviewedServiceAccount(resolver),
+	}.WithDelegation([]string{healthpb.Health_Check_FullMethodName, healthpb.Health_Watch_FullMethodName}, []auth.Delegator{
+		{Account: actor, IdentityCallers: true},
+		{Account: accountsOnly, CallerNamespaces: []string{testNamespace}},
+	}, accounts, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, effective, admissions := serveAdmissionHealth(t, methods)
+
+	if _, err := client.Check(identityDelegationContext(t, actorToken, identity), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatalf("delegated Identity call: %v", err)
+	}
+	admitted, ok := (<-admissions).(auth.DelegatedIdentityAdmission)
+	if !ok || admitted.EffectiveCaller != identity || admitted.Actor.Account != actor ||
+		admitted.Actor.ServiceAccountUID != string(actorAccount.UID) || !admitted.Actor.IsPodBound() ||
+		admitted.Provenance.GetIdentity().GetName() != identity.Name {
+		t.Fatalf("delegated Identity admission = %#v, want %v acting for %v", admitted, actor, identity)
+	}
+	select {
+	case got := <-effective:
+		t.Fatalf("a delegated Identity read as the ServiceAccount effective caller %v", got)
+	default:
+	}
+
+	refused := func(t *testing.T, ctx context.Context, want codes.Code) {
+		t.Helper()
+		if _, err := client.Check(ctx, &healthpb.HealthCheckRequest{}); status.Code(err) != want {
+			t.Fatalf("Check = %v, want %v", err, want)
+		}
+		select {
+		case got := <-admissions:
+			t.Fatalf("refused delegation reached the handler as %#v", got)
+		default:
+		}
+	}
+	t.Run("an actor without the Identity grant", func(t *testing.T) {
+		refused(t, identityDelegationContext(t, accountsOnlyToken, identity), codes.PermissionDenied)
+	})
+	t.Run("an actor without a delegation grant", func(t *testing.T) {
+		refused(t, identityDelegationContext(t, strangerToken, identity), codes.PermissionDenied)
+	})
+	t.Run("a method admitting no Identity caller", func(t *testing.T) {
+		watch, err := client.Watch(identityDelegationContext(t, actorToken, identity), &healthpb.HealthCheckRequest{})
+		if err == nil {
+			_, err = watch.Recv()
+		}
+		if status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("Watch = %v, want PermissionDenied", err)
+		}
+	})
+	t.Run("a stale UID", func(t *testing.T) {
+		refused(t, identityDelegationContext(t, actorToken, auth.Identity{Name: identity.Name, UID: uuid.NewString()}), codes.PermissionDenied)
+	})
+	t.Run("a missing Identity", func(t *testing.T) {
+		refused(t, identityDelegationContext(t, actorToken, auth.Identity{Name: "test-absent-identity", UID: uuid.NewString()}), codes.PermissionDenied)
+	})
+	t.Run("a same-named successor", func(t *testing.T) {
+		if err := named.Objects.Delete(t.Context(), named.Identity); err != nil {
+			t.Fatal(err)
+		}
+		successor := &policyapi.Identity{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: identity.Name},
+			Spec:       policyapi.IdentitySpec{Description: "successor of " + identity.Name},
+		}
+		if err := named.Objects.Create(t.Context(), successor); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, identityDelegationContext(t, actorToken, identity), codes.PermissionDenied)
+		if _, err := client.Check(identityDelegationContext(t, actorToken, auth.Identity{Name: successor.Name, UID: string(successor.UID)}), &healthpb.HealthCheckRequest{}); err != nil {
+			t.Fatalf("delegated call for the successor incarnation: %v", err)
+		}
+		if got, ok := (<-admissions).(auth.DelegatedIdentityAdmission); !ok || got.EffectiveCaller.UID != string(successor.UID) {
+			t.Fatalf("successor admission = %#v", got)
+		}
+	})
+	t.Run("an unreadable Identity", func(t *testing.T) {
+		outage := identityUIDReaderFunc(func(context.Context, string) (string, bool, error) {
+			return "", false, errors.New("test Identity API outage")
+		})
+		rule, err := auth.ReviewedServiceAccountOrIdentity(resolver).AllowDelegationFrom(
+			[]auth.Delegator{{Account: actor, IdentityCallers: true}}, accounts, outage,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outageClient, _, _ := serveAdmissionHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule})
+		if _, err := outageClient.Check(identityDelegationContext(t, actorToken, identity), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unavailable {
+			t.Fatalf("Identity API failure = %v, want Unavailable", err)
+		}
+	})
+	t.Run("an Identity grant needs a receiver resolving Identities", func(t *testing.T) {
+		if _, err := auth.ReviewedServiceAccountOrIdentity(resolver).AllowDelegationFrom(
+			[]auth.Delegator{{Account: actor, IdentityCallers: true}}, accounts, nil,
+		); err == nil {
+			t.Fatal("an Identity grant was configured on a receiver that resolves no Identity")
+		}
+	})
+}
+
+type identityUIDReaderFunc func(context.Context, string) (string, bool, error)
+
+func (read identityUIDReaderFunc) GetIdentityUID(ctx context.Context, name string) (string, bool, error) {
+	return read(ctx, name)
 }

@@ -36,8 +36,8 @@ route-specific cache headers.
 - `tool_arguments_field.tsx` / `tool_result_field.tsx` — argument / result rendering: per-server
   widget (`tool_rendering/<server>/{requests,responses}.tsx`, result over the unwrapped
   `CallToolResult`) else raw JSON (result: detailed only).
-- `icons.tsx` — wrappers over **per-icon `@tabler` subpath imports, never the barrel** (OOMs
-  esbuild on RBE at ~8.7 GB); ambient types in `tabler_icons.d.ts`.
+- `icons.tsx` — shell icon defaults and renderer icon exports from **per-icon `@tabler` subpath
+  imports, never the barrel** (OOMs esbuild on RBE at ~8.7 GB); ambient types in `tabler_icons.d.ts`.
 - `periodic_refresh.ts` — shared 30 s polling interval for Settings resources.
 - `index.html` — docroot template; `spa_bundle(fingerprint = True)` rewrites placeholders to hashed
   JS/CSS/logo URLs under `/_console/assets/`.

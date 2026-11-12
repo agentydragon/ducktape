@@ -10,7 +10,7 @@ import { createAppQueryClient } from "../query";
 import { ActionCall } from "./call";
 import { ActionState, Verdict, type ActionGroup, type ActionRequest } from "../../../action_service/action_service_pb";
 import { timestampText } from "./presentation";
-import { decideAction, followActionRequests, getAction, listActionGroups } from "./client";
+import { decideActionById, followActionRequests, getAction, listActionGroups } from "./client";
 
 export function actionRequestQuery(requestId: string): ReturnType<typeof queryOptions<ActionRequest>> {
   return queryOptions<ActionRequest>({
@@ -209,7 +209,7 @@ export function useActionRequests(enabled = true): {
   async function decideRequest(request: ActionRequest, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
-      const updated = await decideAction(request, verdict);
+      const updated = await decideActionById(request.id, request.version, verdict);
       const current = requestsRef.current;
       const next = current.map((item) => (item.id === updated.id && updated.version >= item.version ? updated : item));
       requestsRef.current = next;

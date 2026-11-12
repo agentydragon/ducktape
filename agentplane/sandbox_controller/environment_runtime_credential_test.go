@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/issuer"
@@ -87,7 +88,7 @@ func issueCredential(t *testing.T, c client.Client, sandbox client.ObjectKey) {
 func requestIssued(t *testing.T, r *Reconciler, sandbox *sandboxapi.Sandbox, binding requester.Binding) requester.Issued {
 	t.Helper()
 	for range 2 {
-		issued, pending, err := r.requestCredential(context.Background(), sandbox, binding)
+		issued, pending, err := r.requestCredential(context.Background(), sandbox, requester.Identity{Name: defaultTestIdentity, UID: testIdentityUID}, binding)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +104,7 @@ func requestIssued(t *testing.T, r *Reconciler, sandbox *sandboxapi.Sandbox, bin
 func newCredentialReconciler(t *testing.T, objects ...client.Object) (*Reconciler, client.Client) {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, kubevirtv1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, kubevirtv1.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -114,13 +115,13 @@ func newCredentialReconciler(t *testing.T, objects ...client.Object) (*Reconcile
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).
 		WithStatusSubresource(&sandboxapi.Sandbox{}, &workloadapi.WorkloadCredential{}).
-		WithObjects(objects...).
+		WithObjects(append(objects, credentialTestIdentity())...).
 		WithInterceptorFuncs(interceptor.Funcs{Create: fakeCertManagerCreate}).Build()
 	return &Reconciler{Client: c, Objects: c, Credentials: testRequester(t, c)}, c
 }
 
 func credentialTestSandbox() *sandboxapi.Sandbox {
-	return &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}, Spec: sandboxapi.SandboxSpec{Running: true}}
+	return &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}, Spec: sandboxapi.SandboxSpec{Running: true, Identity: &sandboxapi.IdentityRef{Name: defaultTestIdentity}}}
 }
 
 func readRecord(t *testing.T, c client.Client, sandbox *sandboxapi.Sandbox) *workloadapi.WorkloadCredential {
@@ -235,7 +236,7 @@ func credentialTestVM(sandbox *sandboxapi.Sandbox, id, acceptedVMI string, strat
 	return &kubevirtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vm-uid",
-			Annotations: map[string]string{RunnerCredentialIDAnnotation: id, RunnerCredentialVMIUIDAnnotation: acceptedVMI},
+			Annotations: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id, RunnerCredentialVMIUIDAnnotation: acceptedVMI},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: "Sandbox", Name: sandbox.Name, UID: sandbox.UID, Controller: new(true),
 			}},
@@ -247,7 +248,7 @@ func credentialTestVM(sandbox *sandboxapi.Sandbox, id, acceptedVMI string, strat
 func credentialTestVMI(sandbox *sandboxapi.Sandbox, uid types.UID, id string) *kubevirtv1.VirtualMachineInstance {
 	return &kubevirtv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: uid,
-		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: id},
+		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id},
 	}}
 }
 
@@ -369,7 +370,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(vm), &gotVM); err != nil {
 		t.Fatal(err)
 	}
-	newID := gotVM.Annotations[RunnerCredentialIDAnnotation]
+	newID := gotVM.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	if newID == old.ID || newID != w.credential.ID || !validRunnerCredentialID(newID) {
 		t.Fatalf("restart did not rotate the old VMI's credential: %q, workload %q", newID, w.credential.ID)
 	}
@@ -476,7 +477,7 @@ func TestPodWithARotatedCredentialIsReplaced(t *testing.T) {
 func runnerCredentialTestPod(uid types.UID, id string) *corev1.Pod {
 	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: "sandboxes", Name: "test", UID: uid,
-		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: id},
+		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id},
 	}}
 }
 
@@ -500,8 +501,8 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 	// the Sandbox, pointing at another generation.
 	sandbox := credentialTestSandbox()
 	sandbox.Annotations = map[string]string{
-		RunnerCredentialIDAnnotation:         "fedcba9876543210fedcba9876543210",
-		RunnerCredentialLastVMIUIDAnnotation: "vmi-other",
+		sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "fedcba9876543210fedcba9876543210",
+		RunnerCredentialLastVMIUIDAnnotation:               "vmi-other",
 	}
 	r, c := newCredentialReconciler(t, sandbox)
 	issued := requestIssued(t, r, sandbox, nil)
@@ -522,4 +523,11 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 	if got := getRunnerCredential(t, c, sandbox); got != *current.Status.RunnerCredential {
 		t.Fatalf("status binding changed to %#v", got)
 	}
+}
+
+// credentialTestIdentity is the Identity credentialTestSandbox acts as, in its namespace.
+func credentialTestIdentity() *policyapi.Identity {
+	identity := testIdentity(defaultTestIdentity, testIdentityUID)
+	identity.Namespace = "sandboxes"
+	return identity
 }

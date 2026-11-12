@@ -4665,6 +4665,15 @@ spec:
         reclaimPolicy: Retain
         volumeBindingMode: WaitForFirstConsumer
       - allowVolumeExpansion: true
+        name: piraeus-ssd-local-delete
+        parameters:
+          linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
+          linstor.csi.linbit.com/mountOpts: discard
+          linstor.csi.linbit.com/placementCount: "1"
+          linstor.csi.linbit.com/storagePool: ssd
+        reclaimPolicy: Delete
+        volumeBindingMode: WaitForFirstConsumer
+      - allowVolumeExpansion: true
         name: piraeus-hdd-local
         parameters:
           linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"

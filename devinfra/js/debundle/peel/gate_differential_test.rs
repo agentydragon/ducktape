@@ -8,7 +8,7 @@
 //! `post_assignment` is built by an independent reference projection
 //! over the kernel's public class-membership surface.
 //!
-//! `check_merge_boolean` routes through the index's tier ladder, so
+//! `merge_preserves_invariants` routes through the index's tier ladder, so
 //! the harness asserts **strict equality** on every
 //! precondition-passing query. Every comparison also asserts per-tier
 //! skip soundness against the ladder's decision so a ladder bug

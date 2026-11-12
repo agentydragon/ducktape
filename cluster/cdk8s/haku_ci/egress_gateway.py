@@ -1,5 +1,6 @@
 """haku-ci's door to Agentplane egress: a shared relay in the haku-ci namespace that presents one
-standing SVID to the egress proxy for every runner.
+standing SVID to the egress proxy for every runner, acting as the `haku-ci-egress` Identity of the
+policy namespace.
 
 A relay rather than a per-Pod sidecar because the build steps run inside rootless dind, whose
 slirp4netns network cannot reach the runner Pod's loopback; job containers reach a cluster
@@ -25,6 +26,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -49,8 +51,9 @@ def service(namespace: str) -> ServiceRef:
     )
 
 
-def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> None:
-    """The relay for `clients` (the runner Pods), in their namespace, and its admission to the proxy."""
+def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> Identity:
+    """The relay for `clients` (the runner Pods), in their namespace, its admission to the proxy, and
+    the Identity its SVID acts as, which the relay's PolicyBinding names."""
     namespace = clients.namespace
     gateway = service(namespace)
     proxy = egress.proxy(env.namespace)
@@ -61,10 +64,16 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> None:
             name=NAME,
             namespace=namespace,
             annotations={
-                "description": "The subject haku-ci's builds reach the public internet as (PolicyBinding haku-ci-egress)."
+                "description": "The account the relay runs as; its SVID acts as the haku-ci-egress Identity in agentplane-staging."
             },
         ),
         automount_token=False,
+    )
+    identity = Identity(
+        scope,
+        "haku-ci-egress-identity",
+        metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+        description="haku-ci's builds, through its egress relay.",
     )
     WorkloadCredential(
         scope,
@@ -74,7 +83,7 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> None:
             namespace=namespace,
             annotations={"description": "The SVID haku-ci's egress relay presents to the egress proxy."},
         ),
-        subject=account,
+        subject=identity,
     )
     forgejo_images_creds_external_secret(scope, "haku-ci-egress-pull-credentials", namespace=namespace)
     settings = SettingsFile(
@@ -211,3 +220,4 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> None:
         endpoint_selector=proxy.pods.selector,
         ingress=[gateway.pods.admit(proxy.pod_port)],
     )
+    return identity

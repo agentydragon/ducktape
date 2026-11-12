@@ -12,8 +12,15 @@ go_library(
     ],
     deps = [
         "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/execution/companion/control:control_go_proto",
         "//agentplane/env/runtime/supervision",
+        "//agentplane/grpc/streaming",
         "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -25,8 +32,14 @@ pid1_go_test(
         "main_test.go",
     ],
     embed = [":executor"],
+    race = "on",
     deps = [
         "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/execution/companion/control:control_go_proto",
         "//agentplane/env/runtime/supervision",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
     ],
 )

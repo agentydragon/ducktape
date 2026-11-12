@@ -37,6 +37,40 @@ func TestSandboxPodViewIncludesEmptyStatus(t *testing.T) {
 	}
 }
 
+func TestViewProjectsSandboxIdentity(t *testing.T) {
+	resource := testSandbox("agent", "sandbox-uid", sandboxapi.OperatingModeSuspended)
+	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "reader"}
+	view, err := View(resource, nil)
+	if err != nil || view.IdentityName == nil || view.GetIdentityName() != "reader" {
+		t.Fatalf("View identity = %q, %v; want reader", view.GetIdentityName(), err)
+	}
+	resource.Spec.Identity = nil
+	view, err = View(resource, nil)
+	if err != nil || view.IdentityName != nil {
+		t.Fatalf("View unbound identity = %q, %v; want empty", view.GetIdentityName(), err)
+	}
+}
+
+func TestViewProjectsOptionalIdentityName(t *testing.T) {
+	resource := testSandbox("worker", "sandbox-uid", sandboxapi.OperatingModeRunning)
+	withoutIdentity, err := View(resource, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutIdentity.IdentityName != nil {
+		t.Fatalf("identity name without spec.identity = %q; want absent", withoutIdentity.GetIdentityName())
+	}
+
+	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "visual-agent"}
+	withIdentity, err := View(resource, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withIdentity.IdentityName == nil || withIdentity.GetIdentityName() != "visual-agent" {
+		t.Fatalf("identity name = %v; want visual-agent", withIdentity.IdentityName)
+	}
+}
+
 func TestSandboxPodViewPreservesOwnerReferences(t *testing.T) {
 	controller := true
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{

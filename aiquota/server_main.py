@@ -48,7 +48,6 @@ def main() -> None:
             password=settings.clickhouse_password.get_secret_value(),
             database=settings.clickhouse_database,
             raw_table=settings.clickhouse_raw_table,
-            windows_table=settings.clickhouse_windows_table,
         )
         history_collector = HistoryCollector(
             service, sink, interval=timedelta(seconds=settings.history_interval_seconds), metrics=metrics

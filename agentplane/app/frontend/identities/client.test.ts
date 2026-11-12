@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { IdentitySchema } from "../../../policy/v1/policy_service_pb";
-import { deleteIdentity } from "./client";
+import { deleteIdentity, listIdentitySessions } from "./client";
 
 const identity = create(IdentitySchema, { identity: { namespace: "fake-policies", name: "fake agent", uid: "uid-1" } });
 afterEach(() => vi.unstubAllGlobals());
@@ -57,4 +57,29 @@ it.each([
 ])("reports any other failure", async (response, error) => {
   answer(response);
   expect(await deleteIdentity(identity)).toEqual({ case: "failed", error });
+});
+
+it("reads every Session page before deciding an identity has no Session references", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        sessions: [{ sessionId: "first", identity: { name: "fake agent", uid: "uid-1" } }],
+        nextPageToken: "next",
+      })
+    )
+    .mockResolvedValueOnce(
+      Response.json({ sessions: [{ sessionId: "second", identity: { name: "other", uid: "uid-2" } }] })
+    );
+  vi.stubGlobal("fetch", fetch);
+  expect((await listIdentitySessions()).map((session) => session.sessionId)).toEqual(["first", "second"]);
+  expect(fetch.mock.calls[1]?.[0]).toContain("pageToken=next");
+});
+
+it("refuses a repeated Session page token instead of assuming the inventory is complete", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(async () => Response.json({ sessions: [], nextPageToken: "repeat" }))
+  );
+  await expect(listIdentitySessions()).rejects.toThrow("repeated a Session page token");
 });

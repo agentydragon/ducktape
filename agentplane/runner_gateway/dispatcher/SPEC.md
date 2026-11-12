@@ -28,8 +28,9 @@ It scopes existing Sessions and existing environments; it does not create enviro
 ## Delegated callers
 
 - An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,
-  and the exact full RPC method names that accept delegated calls. It does not inherit `dispatcher_callers` or
-  `wake_callers`; the latter remains a separate trusted automatic-wake broker grant.
+  whether it may assert Identities (`identity_callers`, which requires `policy_namespace`), and the exact full RPC
+  method names that accept delegated calls. It does not inherit `dispatcher_callers` or `wake_callers`; the latter
+  remains a separate trusted automatic-wake broker grant.
 - Shared workload-auth middleware admits the Actions token only on the configured Dispatcher and EnvironmentService methods and rechecks the effective caller's current ServiceAccount UID
   before the handler runs. Direct and delegated calls both use the typed `EffectiveCaller` admission. Missing or replaced
   ServiceAccounts fail closed, and backend lookup failures return `UNAVAILABLE`.
@@ -42,6 +43,12 @@ It scopes existing Sessions and existing environments; it does not create enviro
   Action request and execution UUIDs are correlation fields only. Existing Session IDs, command IDs and domain request
   equality remain the reconciliation keys; a retry returns the original attribution and cannot duplicate an effect or
   rewrite its admission evidence.
+- A delegated Identity caller is authorized exactly as that Identity's own workload: it reads, writes, cancels and
+  watches only Sessions recorded with its exact Identity incarnation, which middleware checked against the live
+  Identity. It never opens a Session (`CreateSession` is `PERMISSION_DENIED`); its queued work requests a wake as
+  the Identity, under the rule below. Its dispatch rows record the Identity, the actor's ServiceAccount and Pod and
+  the Action correlation in columns of their own, which a replica predating them reads as unattributed.
+  EnvironmentService admits no Identity caller, delegated or direct.
 - No credentials or Action lease token are persisted. The Gateway performs no Actions or app lookup. Delegation does not
   alter the Runner transport boundary below.
 
@@ -81,20 +88,32 @@ It scopes existing Sessions and existing environments; it does not create enviro
   only after reading the exact Sandbox UID and verifying the ServiceAccount's controlling OwnerReference names
   that Sandbox UID. The bind is conditional and cannot overwrite a UID already recorded.
 - Dispatcher is the authority for the Identity a Session executes as. Every new opening also records the
-  Identity its Sandbox names in `spec.identity`, read live with its UID, beside (never instead of) the execution
-  ServiceAccount; a Sandbox naming an absent Identity cannot open a Session (`FAILED_PRECONDITION`). Dispatcher
+  Identity its Sandbox names in `spec.identity`, read live with its UID, beside the execution ServiceAccount;
+  a Sandbox naming an absent Identity cannot open a Session (`FAILED_PRECONDITION`). A Sandbox naming an
+  Identity whose managed ServiceAccount is absent opens Identity-run Sessions, which record the Identity and
+  no ServiceAccount: only privileged and Identity callers open them, and placement and delivery check only the
+  Identity. Dispatcher
   passes both to the runtime or central sampler when it places the Session. Placement and command delivery
   require the Sandbox to still name that exact Identity incarnation, or none for a Session recorded with none;
-  otherwise the work fails `execution_identity_changed`, so an Identity changed while the Sandbox was stopped
-  strands its Sessions rather than re-attributing them.
+  otherwise the work fails `execution_identity_changed`. EnvironmentService identity changes hold an
+  exclusive per-Sandbox PostgreSQL advisory lock and refuse if any retained Session on that exact
+  Sandbox UID names a different Identity name or UID. `CreateSession` holds the shared lock and
+  rechecks the Sandbox and acting Identity after acquiring it. Direct Kubernetes patches outside
+  EnvironmentService can still change a stopped Sandbox and strand Sessions; the CRD's CEL rule
+  only enforces the stopped condition. Because Dispatcher has no terminal Session lifecycle,
+  all retained rows are references, including failed or historical rows.
+  `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
+  `Session.execution_identity`, the execution ServiceAccount.
 - An Identity caller (a workload SVID naming an Identity, admitted only once the Gateway's optional
-  `policy_namespace` is set) is never privileged. Its new `CreateSession` must target a Sandbox whose
-  `spec.identity` currently names its exact Identity incarnation (name and UID) and whose managed
-  ServiceAccount exists. It reads, writes, cancels and watches only Sessions whose recorded execution
+  `policy_namespace` is set) is never privileged and creates no Session (`PermissionDenied`), even on a
+  Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit grant, not acting as the Identity. It reads, writes, cancels and watches only Sessions whose recorded execution
   Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
   require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor, in
-  columns separate from ServiceAccount attribution. Its queued work never requests a wake: lifecycle wake
-  authority is still decided by ServiceAccount.
+  columns separate from ServiceAccount attribution. Its queued work requests an automatic wake as the Identity,
+  which the lifecycle manager authorizes exactly as the Sandbox's own ServiceAccount's: the target Sandbox
+  must act as that live Identity incarnation and its `resumePolicy.allowOwnServiceAccount` must permit its
+  own principal to resume it. Messaging between Sessions of one Identity, and the wake it causes, is implied;
+  a direct resume or wake request by an Identity still has no rule type and is refused.
 - Legacy openings whose owner columns are NULL stay distinct from new/pending rows. The current owner of a
   same-named ServiceAccount is not retroactively granted those Sessions.
 
@@ -131,8 +150,8 @@ It scopes existing Sessions and existing environments; it does not create enviro
   a native Runtime. This check is not an atomic fence against deletion after the read; managed
   quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
-  rechecks the target UID, the retained effective caller's current ServiceAccount UID, and current `resumePolicy` before
-  requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
+  rechecks the target UID, the retained effective caller's current ServiceAccount UID (for an Identity caller, that
+  the Sandbox acts as that live Identity incarnation), and current `resumePolicy` before requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
   wake only; it does not grant explicit resume authority or override `SuspendedBy=Requested`. Dispatcher actors and
   admission-time eligibility are never substitutes for the effective caller's current authority.
 - A queued opening denied wake for its creator does not suppress an authorized queued input or unattended

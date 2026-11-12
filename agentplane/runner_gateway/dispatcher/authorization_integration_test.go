@@ -204,10 +204,10 @@ func delegatedAuthorityContext(
 ) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
-		},
-		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+		}},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -243,7 +243,7 @@ func authorityClientWithDelegation(
 	})
 	methods, err := MethodsWithDelegation(resolver, auth.Delegator{
 		Account: actor, CallerNamespaces: []string{effective.Namespace},
-	}, reader, delegatedMethods)
+	}, reader, nil, delegatedMethods)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(auth.AnyAccount(svids))
+	methods := Methods(auth.AnySubject(svids))
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
 	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)

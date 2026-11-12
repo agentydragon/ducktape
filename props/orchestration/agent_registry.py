@@ -13,7 +13,6 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime
 from types import TracebackType
 from uuid import UUID, uuid4
 
@@ -145,27 +144,6 @@ class GraderPodInfo:
     phase: PodPhase
 
 
-@dataclass
-class AgentRunView:
-    """Unified view of an agent run from DB."""
-
-    agent_run_id: UUID
-    image_digest: str
-    model: str
-    status: AgentRunStatus
-    created_at: datetime
-
-    @classmethod
-    def from_orm(cls, run: AgentRun) -> AgentRunView:
-        return cls(
-            agent_run_id=run.agent_run_id,
-            image_digest=run.image_digest,
-            model=run.model,
-            status=run.status,
-            created_at=run.created_at,
-        )
-
-
 class AgentRegistry:
     """Own the executor and collectors; containers own their agent loops.
 
@@ -228,13 +206,6 @@ class AgentRegistry:
             async with sem:
                 yield
 
-    async def _pull_image(self, oci_ref: str) -> str:
-        """Return the runtime image ID for a fully qualified authority/repository@digest.
-
-        `oci_ref` is produced by `build_oci_reference()`.
-        """
-        return await self._executor.ensure_image(oci_ref)
-
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve a tag via the registry proxy using DB credentials for HTTP basic auth.
 
@@ -292,7 +263,7 @@ class AgentRegistry:
         annotations: dict[str, str] | None = None,
     ) -> ContainerHandle:
         """Ensure image, create DB role, create and start an agent container."""
-        image_id = await self._pull_image(image)
+        image_id = await self._executor.ensure_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
 
         creds = await ensure_agent_role(self._db_config, agent_run_id)
@@ -696,13 +667,6 @@ class AgentRegistry:
         self._create_run(prepared)
         self._spawn_background_run(prepared, timeout_seconds=timeout_seconds)
         return prepared.agent_run_id
-
-    def get(self, run_id: UUID) -> AgentRunView | None:
-        with self._db.session() as session:
-            db_run = session.get(AgentRun, run_id)
-            if not db_run:
-                return None
-            return AgentRunView.from_orm(db_run)
 
     async def start_snapshot_grader(
         self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str

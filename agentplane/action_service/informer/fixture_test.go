@@ -4,24 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/httptransport"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -64,7 +64,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	prefix := fmt.Sprintf("test-%d", fixtures.Add(1))
 	f := &fixture{
-		t: t, faults: &failingPaths{failing: map[string]bool{}, open: map[string][]io.Closer{}},
+		t: t, faults: &failingPaths{failing: map[string]bool{}},
 		policy: prefix + "-policy", callers: prefix + "-callers", moreCallers: prefix + "-more-callers", elsewhere: prefix + "-elsewhere",
 	}
 	for _, namespace := range []string{f.policy, f.callers, f.moreCallers, f.elsewhere} {
@@ -98,14 +98,7 @@ func (f *fixture) start() {
 // eventually waits for the condition; on giving up, it reports what each of lastSeen says.
 func (f *fixture) eventually(what string, condition func() bool, lastSeen ...func() string) {
 	f.t.Helper()
-	err := wait.PollUntilContextTimeout(context.Background(), 20*time.Millisecond, time.Minute, true,
-		func(context.Context) (bool, error) { return condition(), nil })
-	if err != nil {
-		for _, seen := range lastSeen {
-			f.t.Error(seen())
-		}
-		f.t.Fatalf("gave up waiting for %s", what)
-	}
+	eventually.Eventually(f.t, what, condition, lastSeen...)
 }
 
 func (f *fixture) available() bool { return f.index.Health.Available() }
@@ -140,7 +133,7 @@ func (f *fixture) serviceAccount(account auth.Account, label string) *corev1.Ser
 		f.t.Fatal(err)
 	}
 	if label != "" {
-		created.Labels = map[string]string{CallerLabel: label}
+		created.Labels = map[string]string{callers.ServiceAccountLabelKey: label}
 		f.update(created)
 	}
 	return created
@@ -195,12 +188,11 @@ func (f *fixture) eventuallyActionsReady(name string, accept func(*metav1.Condit
 type failingPaths struct {
 	mu      sync.Mutex
 	failing map[string]bool
-	// open holds each watch's response body by path, so failing a path can cut the watches already open under it.
-	open map[string][]io.Closer
+	open    httptransport.WatchStreams[string]
 }
 
 func (p *failingPaths) wrap(next http.RoundTripper) http.RoundTripper {
-	return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	return httptransport.RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		p.mu.Lock()
 		failing := false
 		for prefix := range p.failing {
@@ -212,9 +204,7 @@ func (p *failingPaths) wrap(next http.RoundTripper) http.RoundTripper {
 		}
 		response, err := next.RoundTrip(request)
 		if err == nil && request.URL.Query().Get("watch") == "true" {
-			p.mu.Lock()
-			p.open[request.URL.Path] = append(p.open[request.URL.Path], response.Body)
-			p.mu.Unlock()
+			p.open.Add(request.URL.Path, response.Body)
 		}
 		return response, err
 	})
@@ -225,24 +215,11 @@ func (p *failingPaths) wrap(next http.RoundTripper) http.RoundTripper {
 func (p *failingPaths) fail(prefix string) (restore func()) {
 	p.mu.Lock()
 	p.failing[prefix] = true
-	var cut []io.Closer
-	for path, bodies := range p.open {
-		if strings.HasPrefix(path, prefix) {
-			cut = append(cut, bodies...)
-			delete(p.open, path)
-		}
-	}
 	p.mu.Unlock()
-	for _, body := range cut {
-		_ = body.Close()
-	}
+	p.open.CloseMatching(func(path string) bool { return strings.HasPrefix(path, prefix) })
 	return func() {
 		p.mu.Lock()
 		delete(p.failing, prefix)
 		p.mu.Unlock()
 	}
 }
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }

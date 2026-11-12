@@ -42,3 +42,25 @@ func AccountUID(session *dispatcherpb.Session, sessionID string, ref model.Desti
 	}
 	return identity.GetUid(), nil
 }
+
+// Identity is the Identity incarnation the Session authority recorded this exact Session placement as
+// executing as; ok is false when it recorded none or the placement is another Sandbox's.
+func Identity(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) (identity model.Identity, ok bool) {
+	target := Target(session, sessionID)
+	recorded := session.GetIdentity()
+	if target == nil || target.GetName() != ref.Name || target.GetUid() != ref.UID ||
+		recorded.GetName() == "" || recorded.GetUid() == "" {
+		return model.Identity{}, false
+	}
+	return model.Identity{Name: recorded.GetName(), UID: recorded.GetUid()}, true
+}
+
+// IdentityRun is the Identity incarnation the Session authority recorded this exact Session placement
+// as executing as with no ServiceAccount, its Sandbox having had none; ok is false for any Session
+// that records a ServiceAccount, records no Identity, or is another Sandbox's.
+func IdentityRun(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) (identity model.Identity, ok bool) {
+	if session.GetExecutionIdentity() != nil {
+		return model.Identity{}, false
+	}
+	return Identity(session, sessionID, ref)
+}

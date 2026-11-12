@@ -42,9 +42,10 @@ type SandboxCatalog interface {
 }
 
 // WakeRequester shares the lifecycle owner's live authorization, guarded mutation and budget
-// path with explicit resume. Dispatcher supplies only the retained effective sender identity.
+// path with explicit resume. Dispatcher supplies only the retained effective sender: the
+// ServiceAccount or Identity a row is attributed to.
 type WakeRequester interface {
-	RequestWake(context.Context, *lifecycle.Target, *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error)
+	RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error)
 }
 
 type DeliveryRunner interface {
@@ -421,6 +422,8 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		if account.GetUid() != expected.GetUid() || expected.GetUid() == "" {
 			return w.failExecutionIdentity(ctx, principalSession, head, owner)
 		}
+	}
+	if principalSession != nil && principalSession.recordsExecution() {
 		identity, found, err := w.executionIdentity(ctx, sandbox)
 		if err != nil {
 			return err
@@ -469,13 +472,15 @@ func (w *DeliveryWorker) executionIdentity(ctx context.Context, sandbox SandboxS
 // session recorded: an Identity changed while the Sandbox was stopped strands the Session rather
 // than re-attributing it.
 func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *Session, sandbox SandboxSnapshot) (bool, error) {
-	account, found, err := w.executionAccount(ctx, sandbox)
-	if err != nil {
-		return false, err
-	}
-	if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(session.ExecutionPrincipal) ||
-		session.ExecutionPrincipal.GetUid() == "" || account.GetUid() != session.ExecutionPrincipal.GetUid() {
-		return false, nil
+	if session.ExecutionPrincipal != nil {
+		account, found, err := w.executionAccount(ctx, sandbox)
+		if err != nil {
+			return false, err
+		}
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(session.ExecutionPrincipal) ||
+			session.ExecutionPrincipal.GetUid() == "" || account.GetUid() != session.ExecutionPrincipal.GetUid() {
+			return false, nil
+		}
 	}
 	identity, found, err := w.executionIdentity(ctx, sandbox)
 	if err != nil {
@@ -628,7 +633,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if claimed == nil {
 		return false
 	}
-	if session != nil && session.ExecutionPrincipal != nil {
+	if session != nil && session.recordsExecution() {
 		current, identityErr := w.executionCurrent(ctx, session, sandbox)
 		if identityErr != nil {
 			w.retryStorage(ctx, func() error {
@@ -702,7 +707,7 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 	if claimed == nil {
 		return false
 	}
-	if session.ExecutionPrincipal != nil {
+	if session.recordsExecution() {
 		current, identityErr := w.executionCurrent(ctx, session, sandbox)
 		if identityErr != nil {
 			w.retryStorage(ctx, func() error {

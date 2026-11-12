@@ -410,6 +410,16 @@ async def test_sandbox_policy(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
     await expect(view.page.get_by_role("img", name="Refused")).to_have_count(1)
     await expect(view.page.get_by_role("img", name="Not yet judged")).to_have_count(1)
+    stale = view.page.get_by_role("row").filter(has_text="ready-sandbox-stale-refusal")
+    await expect(stale.get_by_role("img", name="Not yet judged")).to_be_visible()
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_policy_stale_refusal_hover(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
+    await view.page.get_by_role("img", name="Not yet judged").hover()
+    await expect(view.page.get_by_role("tooltip")).to_contain_text("judged generation 1")
     await view.capture(target=view.page.locator("#app"))
 
 

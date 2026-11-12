@@ -38,6 +38,8 @@ spec:
         - env:
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
               value: agentplane-staging
+            - name: AGENTPLANE_RUNNER_GATEWAY_POLICY_NAMESPACE
+              value: agentplane-staging
             - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
               value: /var/run/secrets/agentplane-runner-gateway/token
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
@@ -259,9 +261,6 @@ data:
       - agentplane-staging/app
     environment_launchers:
       - agentplane-staging/actions
-    environment_default_policy_sets:
-      - basic
-      - inference-experiments
     gateway_callers:
       - agentplane-staging/app
       - agentplane-staging/notifications
@@ -454,6 +453,7 @@ data:
       actor: agentplane-staging/actions
       caller_namespaces:
         - agentplane-staging
+      identity_callers: true
       methods:
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
@@ -564,6 +564,12 @@ rules:
       - agentplane.allegedly.works
     resources:
       - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
     verbs:
       - get
   - apiGroups:

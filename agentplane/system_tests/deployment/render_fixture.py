@@ -13,6 +13,7 @@ from pathlib import Path
 from agentplane.system_tests.deployment import fixture_chart
 from agentplane.system_tests.deployment.rendered_fixture import (
     MODEL_PLACEHOLDERS,
+    OPERATOR_TOKEN_KEY_PLACEHOLDER,
     PLACEHOLDERS,
     Backend,
     BrowserService,
@@ -40,6 +41,8 @@ def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: 
             placeholders.append(model_placeholder)
     if mcp is not None:
         placeholders.extend(asdict(mcp).values())
+    if fixture.operator_tokens is not None:
+        placeholders.append(OPERATOR_TOKEN_KEY_PLACEHOLDER)
     if missing := [placeholder for placeholder in placeholders if placeholder not in text]:
         raise ValueError(f"{fixture.backend=} renders without {missing=}")
     path.write_text(text)
@@ -70,8 +73,10 @@ def _render(
             )
         ],
         mcp_fixtures=None,
+        operator_tokens=fixture_chart.OPERATOR_TOKENS,
         objects=fixture_chart.objects(
             **asdict(PLACEHOLDERS),
+            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER,
             models=models,
             vm_sandboxes=vm_sandboxes,
             firecracker_sandboxes=firecracker_sandboxes,

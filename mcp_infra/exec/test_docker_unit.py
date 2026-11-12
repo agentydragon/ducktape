@@ -249,10 +249,10 @@ def test_launcher_json_config_sets_container_creation_options(monkeypatch) -> No
 @pytest.mark.parametrize("path", ["/init", "/foo/bar/baz.txt", "/some/path.txt"])
 def test_file_uri_template_matches_paths_with_slashes(path: str) -> None:
     """The wildcard must retain absolute paths, including nested slashes."""
-    for uri in (f"file://{path}", ContainerExecServer.file_uri(path)):
-        result = match_uri_template(uri, FILE_RESOURCE_URI_TEMPLATE)
-        assert result is not None
-        assert result["path"] == path
+    uri = f"file://{path}"
+    result = match_uri_template(uri, FILE_RESOURCE_URI_TEMPLATE)
+    assert result is not None
+    assert result["path"] == path
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "observe_input.go",
         "results.go",
+        "turns.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/session_client",
     deps = [

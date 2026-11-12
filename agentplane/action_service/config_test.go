@@ -44,8 +44,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
-		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
+	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
 	}
 }
@@ -137,14 +136,11 @@ func TestThePolicySettingsAreRead(t *testing.T) {
   auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]
 policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
-github_visibility:
-  api_base_url: http://github.test.invalid/api
-`, settingPrefix+"GITHUB_VISIBILITY__CACHE_TTL_SECONDS=0.5")
+`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PolicyNamespace != "test-policies" || !slices.Equal(c.CallerServiceAccountNamespaces, []string{"test-callers", "test-more-callers"}) ||
-		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "http://github.test.invalid/api", CacheTTLSeconds: 0.5}) {
+	if c.PolicyNamespace != "test-policies" || !slices.Equal(c.CallerServiceAccountNamespaces, []string{"test-callers", "test-more-callers"}) {
 		t.Errorf("settings: %+v", c)
 	}
 }
@@ -226,15 +222,13 @@ mcp_servers:
 
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
-		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
-		"unknown listener key":    strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
-		"missing listener":        strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
-		"no audience":             strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
-		"no caller namespaces":    strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
-		"no policy namespace":     strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
-		"negative visibility TTL": requiredFile + "github_visibility: {cache_ttl_seconds: -1}\n",
-		"unknown visibility key":  requiredFile + "github_visibility: {token: never-print-this}\n",
-		"reader of a word":        requiredFile + "reader_accounts: [never-print-this]\n",
+		"unknown key":          requiredFile + "test_unknown_setting: never-print-this\n",
+		"unknown listener key": strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
+		"missing listener":     strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
+		"no audience":          strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
+		"no caller namespaces": strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
+		"no policy namespace":  strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
+		"reader of a word":     requiredFile + "reader_accounts: [never-print-this]\n",
 		"operator issuer without its audience": requiredFile + `operator_oidc:
   issuer: https://never-print-this.test.example/
   jwks_uri: https://issuer.test.example/jwks/
@@ -251,7 +245,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
   token_profile: never-print-this
 `,
 		"action group":                       requiredFile + strings.Replace(testActionGroups, "server_id: test-group", "server_id: never-print-this", 1),
-		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
 		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
 		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
 		"executor kind":                      requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: never-print-this", 1),

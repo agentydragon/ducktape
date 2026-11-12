@@ -693,7 +693,7 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
     assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
 
 
-async def test_explicit_recovery_resets_javascript_session_after_host_loss(
+async def test_host_loss_settles_and_resets_javascript_session(
     store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     host_logs = undeclared_outputs_dir() / "recovery-host-loss"
@@ -725,30 +725,14 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
             assert (
                 await turn_completed(stub, request.session_id, "recover-start")
             ).status == event_pb2.TURN_STATUS_FAILED
+            # The restarted host has a new instance, so the work scan selects the blocked Session
+            # and its next owner settles the lost cell without an operator.
             async for attempt in _store_retries():
                 with attempt:
-                    blocked = await stub.GetSession(
+                    settled = await stub.GetSession(
                         sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                     )
-                    assert blocked.blocked, f"{blocked=}"
-                    assert await store.released_generation(request.session_id) is not None
-
-            recovery = sampler_pb2.RecoverSessionRequest(
-                session_id=request.session_id,
-                expected_cursor=blocked.attached.last_cursor,
-                operator_note="Inspected the live cell and boundary evidence; recreate in-memory state before continuing.",
-                replacement_incarnation_uid="reviewed-replacement-incarnation",
-            )
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
-            assert rejected.value.code() == grpc.StatusCode.PERMISSION_DENIED
-
-            recovered = await stub.RecoverSession(recovery, metadata=METADATA)
-            assert not recovered.blocked
-            assert recovered.attached.last_cursor > blocked.attached.last_cursor
-            assert recovered.expected_incarnation_uid == "reviewed-replacement-incarnation"
-            assert recovered.executor == blocked.executor
-            assert await store.released_generation(request.session_id) is not None
+                    assert not settled.blocked, f"{settled=}"
             abandoned = [
                 intent
                 for intent in await store.intents()
@@ -759,6 +743,19 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                 intent.result is not None and intent.result.get("automatic_replay") is False for intent in abandoned
             )
 
+            # Operator recovery stays authenticated and has nothing left to recover.
+            recovery = sampler_pb2.RecoverSessionRequest(
+                session_id=request.session_id,
+                expected_cursor=settled.attached.last_cursor,
+                operator_note="Nothing to review; the loss settled on its own.",
+            )
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
+            assert rejected.value.code() == grpc.StatusCode.PERMISSION_DENIED
+            with pytest.raises(grpc.aio.AioRpcError) as nothing_to_recover:
+                await stub.RecoverSession(recovery, metadata=METADATA)
+            assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="continue-after-recovery", text="Continue safely."
@@ -768,9 +765,8 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
             async with await endpoint.next() as exchange:
                 prompt = json.dumps(exchange.request.body["input"])
                 assert "faulted-cell" in prompt
-                assert "not replayed" in prompt.lower()
+                assert "replayed" in prompt
                 assert "store()/load()" in prompt
-                assert "new JavaScript session" in prompt
                 assert "live-cell handles are unavailable" in prompt
                 await exchange.send(
                     *response_stream(

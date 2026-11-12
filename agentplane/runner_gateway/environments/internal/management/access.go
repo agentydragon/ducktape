@@ -8,14 +8,12 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -25,29 +23,27 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const maxBootstrapCharacters = 65_536
 
-// Access scopes Sandbox operations to one namespace, caller identity, and set of default policies.
+// Access scopes Sandbox operations to one namespace and caller identity.
 type Access struct {
-	namespace        string
-	objects          client.Client
-	reader           *sandboxreader.Reader
-	defaultPolicySet sets.Set[string]
-	caller           *identitypb.ServiceAccount
+	namespace string
+	objects   client.Client
+	reader    *sandboxreader.Reader
+	caller    *identitypb.ServiceAccount
 }
 
 // New creates access over one Sandbox namespace and caller identity.
 func New(
 	namespace string,
 	objects client.Client,
-	defaultPolicySets []string,
 	caller *identitypb.ServiceAccount,
 ) (*Access, error) {
 	if namespace == "" || objects == nil || caller == nil || caller.Namespace == "" || caller.Name == "" {
@@ -59,7 +55,7 @@ func New(
 	}
 	return &Access{
 		namespace: namespace, objects: objects, reader: reader,
-		defaultPolicySet: sets.New(defaultPolicySets...), caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
+		caller: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
 	}, nil
 }
 
@@ -83,24 +79,23 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
-	intent, err := createIntent(request, a.caller)
+	intent, err := encodeCreateIntent(request, a.caller)
 	if err != nil {
 		return nil, &InvalidSandboxError{Reason: "create request cannot be recorded"}
 	}
-	if existing, err := a.retry(ctx, request.GetName(), intent); err != nil {
+	if existing, err := a.retry(ctx, request); err != nil {
 		return nil, err
 	} else if existing != nil {
 		return &identitypb.EnvironmentTarget{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
 	}
 
-	policySetNames := sets.List(a.defaultPolicySet.Clone().Insert(request.GetPolicySets()...))
-	if err := a.requirePolicySets(ctx, policySetNames); err != nil {
+	if err := a.requireIdentity(ctx, request.GetIdentity()); err != nil {
 		return nil, err
 	}
 
-	resource := sandboxForCreate(request, a.namespace, policySetNames, intent)
+	resource := sandboxForCreate(request, a.namespace, intent)
 	if err := a.objects.Create(ctx, resource); err != nil {
-		existing, retryErr := a.retry(ctx, request.GetName(), intent)
+		existing, retryErr := a.retry(ctx, request)
 		if retryErr != nil {
 			return nil, retryErr
 		}
@@ -165,6 +160,59 @@ func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, valu
 	})
 }
 
+// ResolveIdentity pins the name chosen by the operator to its current incarnation for the
+// Dispatcher guard. A change between this read and the patch is refused by SetIdentity.
+func (a *Access) ResolveIdentity(ctx context.Context, name string) (*identitypb.Identity, error) {
+	if name == "" {
+		return nil, nil
+	}
+	identity := &policyapi.Identity{}
+	err := a.objects.Get(ctx, types.NamespacedName{Namespace: a.namespace, Name: name}, identity)
+	if client.IgnoreNotFound(err) != nil {
+		return nil, fmt.Errorf("read Identity %s: %w", name, err)
+	}
+	if err != nil || identity.UID == "" || identity.DeletionTimestamp != nil {
+		return nil, &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s is unavailable", name)}
+	}
+	return &identitypb.Identity{Name: name, Uid: string(identity.UID)}, nil
+}
+
+// SetIdentity patches only spec.identity on the selected stopped Sandbox. The caller holds the
+// Dispatcher's exclusive per-Sandbox admission lock until this patch returns.
+func (a *Access) SetIdentity(ctx context.Context, name, uid string, expected *identitypb.Identity) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		resource, err := a.incarnation(ctx, name, uid)
+		if err != nil {
+			return err
+		}
+		if resource.DeletionTimestamp != nil {
+			return &SandboxTearingDownError{Name: name}
+		}
+		if resource.Status.OperatingMode != "" && resource.Status.StopStage != sandboxapi.StopStageStopped {
+			return &IdentityChangeRunningError{Name: name}
+		}
+		if expected != nil {
+			current, err := a.ResolveIdentity(ctx, expected.GetName())
+			if err != nil {
+				return err
+			}
+			if current.GetUid() != expected.GetUid() {
+				return &SandboxConflictError{Name: "Identity changed; refresh and try again"}
+			}
+		}
+		if expected == nil {
+			if resource.Spec.Identity == nil {
+				return nil
+			}
+			return a.patchSpec(ctx, resource, map[string]any{"identity": nil})
+		}
+		if resource.Spec.Identity != nil && resource.Spec.Identity.Name == expected.GetName() {
+			return nil
+		}
+		return a.patchSpec(ctx, resource, map[string]any{"identity": map[string]string{"name": expected.GetName()}})
+	})
+}
+
 // Delete begins teardown of the exact current Sandbox. Running Sandboxes are refused; repeated
 // requests against a Sandbox already deleting are idempotent.
 func (a *Access) Delete(ctx context.Context, name, uid string) error {
@@ -221,39 +269,25 @@ func (a *Access) beginTeardown(ctx context.Context, resource *sandboxapi.Sandbox
 	}
 }
 
-func (a *Access) requirePolicySets(ctx context.Context, names []string) error {
-	var sets policyapi.PolicySetList
-	if err := a.objects.List(ctx, &sets, client.InNamespace(a.namespace)); err != nil {
-		return fmt.Errorf("list PolicySets: %w", err)
-	}
-	known := make(map[string]bool, len(sets.Items))
-	for _, set := range sets.Items {
-		ownedBySandbox := false
-		for _, owner := range set.OwnerReferences {
-			if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
-				ownedBySandbox = true
-			}
+// requireIdentity checks that the Identity a new Sandbox will act as exists and is not being deleted.
+func (a *Access) requireIdentity(ctx context.Context, name string) error {
+	identity := &policyapi.Identity{}
+	if err := a.objects.Get(ctx, client.ObjectKey{Namespace: a.namespace, Name: name}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s does not exist", name)}
 		}
-		known[set.Name] = ownedBySandbox
+		return fmt.Errorf("read Identity: %w", err)
 	}
-	missing, reserved := make([]string, 0), make([]string, 0)
-	for _, name := range names {
-		if owned, ok := known[name]; !ok {
-			missing = append(missing, name)
-		} else if owned || strings.HasSuffix(name, ".launcher") {
-			reserved = append(reserved, name)
-		}
-	}
-	if len(missing) > 0 {
-		return &policy.UnknownPolicySetError{Names: missing, Kind: "PolicySet"}
-	}
-	if len(reserved) > 0 {
-		return &LauncherPolicySetError{Names: reserved}
+	if identity.DeletionTimestamp != nil {
+		return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s is being deleted", name)}
 	}
 	return nil
 }
 
-func (a *Access) retry(ctx context.Context, name, intent string) (*sandboxapi.Sandbox, error) {
+// retry returns the Sandbox an earlier identical create by this caller made, nil when the name is free, and a
+// conflict when the name is taken by anything else.
+func (a *Access) retry(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*sandboxapi.Sandbox, error) {
+	name := request.GetName()
 	resource, err := a.read(ctx, name)
 	if err != nil {
 		var missing *SandboxNotFoundError
@@ -262,7 +296,7 @@ func (a *Access) retry(ctx context.Context, name, intent string) (*sandboxapi.Sa
 		}
 		return nil, err
 	}
-	if resource.DeletionTimestamp != nil || resource.Annotations[sandboxapi.CreateIntentAnnotation] != intent {
+	if resource.DeletionTimestamp != nil || !sameIntent(resource.Annotations[sandboxapi.CreateIntentAnnotation], request, a.caller) {
 		return nil, &SandboxConflictError{Name: name}
 	}
 	return resource, nil
@@ -304,7 +338,6 @@ func (a *Access) patchSpec(ctx context.Context, resource *sandboxapi.Sandbox, sp
 func sandboxForCreate(
 	request *environmentpb.CreateEnvironmentRequest,
 	namespace string,
-	policySets []string,
 	intent string,
 ) *sandboxapi.Sandbox {
 	annotations := map[string]string{sandboxapi.CreateIntentAnnotation: intent}
@@ -319,7 +352,7 @@ func sandboxForCreate(
 			Namespace: namespace, Name: request.GetName(), Annotations: annotations,
 		},
 		Spec: sandboxapi.SandboxSpec{
-			Template: request.GetTemplate(), Running: true, PolicySets: append([]string(nil), policySets...),
+			Template: request.GetTemplate(), Running: true, Identity: &sandboxapi.IdentityRef{Name: request.GetIdentity()},
 			WakeOnSend: request.GetWakeOnSend(), InboxTags: inboxTags, Bootstrap: request.GetBootstrap(),
 		},
 	}
@@ -337,8 +370,11 @@ func validateCreate(request *environmentpb.CreateEnvironmentRequest) error {
 		return &InvalidSandboxError{Reason: "valid name and template are required"}
 	}
 	name := request.GetName()
-	if !validSandboxName(name) || len(name) > 57 || request.GetTemplate() == "" {
+	if !sandboxapi.IsValidSandboxName(name) || request.GetTemplate() == "" {
 		return &InvalidSandboxError{Reason: "valid name and template are required"}
+	}
+	if request.GetIdentity() == "" {
+		return &InvalidSandboxError{Reason: "the Identity the Environment acts as is required"}
 	}
 	if request.Preset != nil && !validLabelValue(request.GetPreset()) {
 		return &InvalidSandboxError{Reason: "preset must be a valid label value"}
@@ -362,24 +398,6 @@ func validateIdleSuspendAfter(value *durationpb.Duration) error {
 	return nil
 }
 
-func validSandboxName(value string) bool {
-	if len(value) == 0 || len(value) > 57 {
-		return false
-	}
-	if !isLowerAlphaNumeric(value[0]) || !isLowerAlphaNumeric(value[len(value)-1]) {
-		return false
-	}
-	for _, character := range value {
-		if character > 0x7f {
-			return false
-		}
-		if !isLowerAlphaNumeric(byte(character)) && character != '-' {
-			return false
-		}
-	}
-	return true
-}
-
 func validLabelValue(value string) bool {
 	if value == "" || len(value) > 63 {
 		return false
@@ -398,64 +416,53 @@ func validLabelValue(value string) bool {
 	return true
 }
 
-func isLowerAlphaNumeric(value byte) bool {
-	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
-}
-
 func isAlphaNumeric(value byte) bool {
 	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
-func createIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
+// createIntent is the receipt a create records on its Sandbox: the caller and the request it made.
+// The encoding needs only to be decodable; retries are matched by sameIntent, never by its bytes.
+type createIntent struct {
+	Caller  intentCaller    `json:"caller"`
+	Request json.RawMessage `json:"request"`
+}
+
+type intentCaller struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
+	// Proto field names, as receipts have always spelled them and readers of the annotation expect.
 	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
 	if err != nil {
 		return "", err
 	}
-	var requestValue any
-	if err := json.Unmarshal(requestJSON, &requestValue); err != nil {
-		return "", err
-	}
-	value := map[string]any{
-		"caller":  map[string]any{"name": caller.GetName(), "namespace": caller.GetNamespace()},
-		"request": requestValue,
-	}
-	return pythonJSON(value)
-}
-
-func pythonJSON(value any) (string, error) {
-	encoded, err := json.Marshal(value)
+	encoded, err := json.Marshal(createIntent{
+		Caller:  intentCaller{Namespace: caller.GetNamespace(), Name: caller.GetName()},
+		Request: requestJSON,
+	})
 	if err != nil {
 		return "", err
 	}
-	// Python's json.dumps(sort_keys=True, separators=(",", ":")) sorts map keys and escapes
-	// non-ASCII characters. Go also escapes HTML by default, while Python does not.
-	var raw any
-	if err := json.Unmarshal(encoded, &raw); err != nil {
-		return "", err
+	return string(encoded), nil
+}
+
+// sameIntent reports whether recorded is a create by caller of request. A receipt that does not decode is
+// someone else's.
+func sameIntent(recorded string, request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) bool {
+	var intent createIntent
+	if err := json.Unmarshal([]byte(recorded), &intent); err != nil {
+		return false
 	}
-	var buffer strings.Builder
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(raw); err != nil {
-		return "", err
+	if intent.Caller.Namespace != caller.GetNamespace() || intent.Caller.Name != caller.GetName() {
+		return false
 	}
-	canonical := strings.TrimSuffix(buffer.String(), "\n")
-	var ascii strings.Builder
-	for _, character := range canonical {
-		if character <= 0x7f {
-			ascii.WriteRune(character)
-			continue
-		}
-		if character <= 0xffff {
-			fmt.Fprintf(&ascii, `\u%04x`, character)
-			continue
-		}
-		character -= 0x10000
-		high := rune(0xd800 + (character >> 10))
-		low := rune(0xdc00 + (character & 0x3ff))
-		fmt.Fprintf(&ascii, `\u%04x\u%04x`, high, low)
+	var recordedRequest environmentpb.CreateEnvironmentRequest
+	if err := protojson.Unmarshal(intent.Request, &recordedRequest); err != nil {
+		return false
 	}
-	return ascii.String(), nil
+	return proto.Equal(&recordedRequest, request)
 }
 
 func uniqueSorted(values []string) []string {

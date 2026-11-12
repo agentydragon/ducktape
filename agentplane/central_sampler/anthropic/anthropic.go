@@ -31,8 +31,8 @@ func PreviousMessageID(context *Context) string {
 	if context == nil {
 		return ""
 	}
-	for i := len(context.Messages) - 1; i >= 0; i-- {
-		fields := messageFields(context.Messages[i])
+	for i := len(context.messages) - 1; i >= 0; i-- {
+		fields := messageFields(context.messages[i])
 		if roleOf(fields) == RoleAssistant && stopReasonOf(fields) != StopCompaction {
 			return rawString(fields, "id")
 		}
@@ -130,6 +130,9 @@ func BuildRequest(params RequestParams, config Config, previousMessageID string)
 	if params.Instructions != nil && *params.Instructions != "" {
 		system += "\n\n" + *params.Instructions
 	}
+	// TODO(SAMPLER_STABLE_PROVIDER_PREFIX in plans/task_dag.md): the exec tool is rendered from
+	// current code, so a rollout that edits it makes Anthropic reject replayed signed thinking
+	// ("The tools list differs from the one this block was created with").
 	body := Request{
 		Model: params.Model, MaxTokens: config.MaxTokens, System: system, Messages: messages, Stream: true, Thinking: config.Thinking,
 		Tools: []Tool{{Name: "exec", Description: params.Tools.Description, InputSchema: schema, Strict: config.StrictToolInput, EagerInputStreaming: config.EagerInputStreaming}},

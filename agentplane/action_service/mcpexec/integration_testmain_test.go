@@ -123,6 +123,14 @@ func unavailableFor(reason action_servicepb.McpUnavailableReason, detail func(st
 	}
 }
 
+// unavailableAndRetryingFor waits until an unavailable group's retry metadata has been published too.
+func unavailableAndRetryingFor(reason action_servicepb.McpUnavailableReason, detail func(string) bool) func(*catalog.Group) bool {
+	unavailable := unavailableFor(reason, detail)
+	return func(g *catalog.Group) bool {
+		return unavailable(g) && g.Health.RetryAt != nil && g.Health.Failures > 0
+	}
+}
+
 func anyDetail(string) bool { return true }
 
 // executorTiming is the Python service's but for a shorter lifecycle bound, so that a test of a step that never

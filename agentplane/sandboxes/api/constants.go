@@ -30,8 +30,8 @@ const (
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080
 	// EnvironmentRuntimeServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
-	EnvironmentRuntimeServicePort     = 9090
-	EnvironmentRuntimeCredentialLabel = "agentplane.allegedly.works/environment-runtime-credential"
+	EnvironmentRuntimeServicePort           = 9090
+	EnvironmentRuntimeCredentialMetadataKey = "agentplane.allegedly.works/environment-runtime-credential"
 )
 
 // ControlServiceTargetTemplate is the default target used by both the controller and dispatcher.

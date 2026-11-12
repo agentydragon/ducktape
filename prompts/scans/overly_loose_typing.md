@@ -70,7 +70,7 @@ async def get_cached_response_payload(self, key: str) -> OpenAIResponse | None:
 
 ```python
 # BAD: Accepts both dict and str "for convenience"
-def make_item_tool_call(
+def build_tool_call(
     *,
     call_id: str,
     name: str,
@@ -91,24 +91,24 @@ def make_item_tool_call(
 
    ```python
    # Don't do this:
-   make_item_tool_call(name="foo", arguments=json_string)  # Pass pre-serialized
+   build_tool_call(name="foo", arguments=json_string)  # Pass pre-serialized
 
    # Do this instead:
    args_dict = json.loads(json_string)
-   make_item_tool_call(name="foo", arguments=args_dict)  # Explicit
+   build_tool_call(name="foo", arguments=args_dict)  # Explicit
    ```
 
 2. **If caller has dict** → They pass it directly
 
    ```python
-   make_item_tool_call(name="foo", arguments={"key": "value"})
+   build_tool_call(name="foo", arguments={"key": "value"})
    ```
 
 3. **API should be clear about what it wants**:
 
    ```python
    # GOOD: Clear, unambiguous API
-   def make_item_tool_call(
+   def build_tool_call(
        *,
        call_id: str,
        name: str,
@@ -118,7 +118,7 @@ def make_item_tool_call(
        return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
 
    # If you really have JSON string, deserialize it at call site:
-   make_item_tool_call(
+   build_tool_call(
        call_id="abc",
        name="foo",
        arguments=json.loads(json_string)  # Caller's responsibility

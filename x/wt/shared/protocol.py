@@ -325,27 +325,6 @@ class BranchAheadBehind(BaseModel):
     behind: int
 
 
-# Aggregated worktree (wire format = internal format)
-# Daemon config (discriminated unions)
-class GitstatusdAvailable(BaseModel):
-    """gitstatusd binary found and working."""
-
-    model_config = {"frozen": True}
-    type: Literal["available"] = "available"
-    path: str
-
-
-class GitstatusdUnavailable(BaseModel):
-    """gitstatusd binary not found or not working."""
-
-    model_config = {"frozen": True}
-    type: Literal["unavailable"] = "unavailable"
-    error: str
-
-
-GitstatusdConfig = GitstatusdAvailable | GitstatusdUnavailable
-
-
 class StatusResult(BaseModel):
     """Git/PR status data for a worktree.
 

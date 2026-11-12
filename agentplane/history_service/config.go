@@ -37,8 +37,12 @@ type config struct {
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
 	Kubeconfig            string          `mapstructure:"kubeconfig"`
-	Ingress               ingressConfig   `mapstructure:"ingress"`
-	FoldConcurrency       int             `mapstructure:"fold_concurrency"`
+	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity writers.
+	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+	//   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	PolicyNamespace string        `mapstructure:"policy_namespace"`
+	Ingress         ingressConfig `mapstructure:"ingress"`
+	FoldConcurrency int           `mapstructure:"fold_concurrency"`
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
 	FoldPageSize             int     `mapstructure:"fold_page_size"`
 	FoldIntervalSeconds      float64 `mapstructure:"fold_interval_s"`
@@ -50,7 +54,10 @@ type config struct {
 type delegationConfig struct {
 	Actor            auth.Account `mapstructure:"actor"`
 	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
-	Methods          []string     `mapstructure:"methods"`
+	// IdentityCallers lets the actor assert Identities in policy_namespace, a grant separate from
+	// caller_namespaces. It requires policy_namespace.
+	IdentityCallers bool     `mapstructure:"identity_callers"`
+	Methods         []string `mapstructure:"methods"`
 }
 
 // ingressConfig is the runner journal's authorization and storage policy. Its RPC shares the service listener.
@@ -60,6 +67,11 @@ type ingressConfig struct {
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
 	// Only these service identities may announce centrally hosted Sessions. Empty disables the mode.
 	SamplerAccounts []auth.Account `mapstructure:"sampler_accounts"`
+	// SamplerIdentityCallers lets the sampler accounts push as delegating actors for the Identity a
+	// central Session executes as, which is then retained as verified rather than relayed. A grant
+	// of its own, separate from announcing central Sessions; it requires policy_namespace and the
+	// SPIFFE listener, the one on which Push admits Identity writers.
+	SamplerIdentityCallers bool `mapstructure:"sampler_identity_callers"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`
@@ -113,11 +125,17 @@ func (c *config) validate() error {
 		return errors.New("reader_accounts must list at least one ServiceAccount")
 	}
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
-		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
-		return errors.New("delegation requires an actor, caller namespaces and methods")
+		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
+	}
+	if c.Delegation != nil && c.Delegation.IdentityCallers && c.PolicyNamespace == "" {
+		return errors.New("delegation.identity_callers requires policy_namespace")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
+	}
+	if c.Ingress.SamplerIdentityCallers && (c.PolicyNamespace == "" || len(c.Ingress.SamplerAccounts) == 0 || !c.RPC.Has(listener.SPIFFE)) {
+		return errors.New("ingress.sampler_identity_callers requires policy_namespace, ingress.sampler_accounts and a spiffe rpc listener")
 	}
 	for _, audience := range []string{c.TokenAudience, c.Ingress.TokenAudience} {
 		if !c.RPC.AllowsBearerAudience(audience) {

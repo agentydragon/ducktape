@@ -176,22 +176,25 @@ The `kubernetes-inspection-reads` PolicySet auto-approves `kubernetes_admin`'s r
 bindings and the Haku preset. They run as the operator's cluster-admin passthrough identity but
 return only metrics; every other `kubernetes_admin` Action stays manual.
 
-Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts and their own
-preset selections, which an operator may replace. Kubernetes access is also distinct
-from Forgejo credentials, egress policies, and Actions approvals; this profile does not
-change those authorities.
+Agentplane-managed Haku launches use an Identity with their own preset selections, which an
+operator may replace. Their Kubernetes access uses the Haku account granted by that preset.
+This is distinct from Forgejo credentials, egress policies, and Actions approvals; this profile
+does not change those authorities.
 
 ### Agentplane-managed Sandbox grants
 
-Agentplane creates a distinct ServiceAccount for each managed Sandbox, and the Sandbox
-Controller binds it to the `PolicySet`s its `spec.policySets` names with one `PolicyBinding`
-the Sandbox owns ([model](../../agentplane/docs/adr_policy_sets.md)). The sets are
-Flux-rendered from the grant catalog in `cluster/cdk8s/agentplane/staging_config.py`
-and `cluster/cdk8s/agent_access_profiles.py`; presets supply the default set names for a launch,
-and the operator can replace them, including with none. The Policy Controller keeps the native
-RoleBindings and ClusterRoleBindings of the bound sets' Kubernetes rules
-([contract](../../agentplane/policy_controller/SPEC.md)). A set edit therefore reaches every
-bound Sandbox, and deleting a Sandbox deletes its binding and the native bindings it granted.
+Launch callers create a Sandbox Identity and grant the PolicySets explicitly selected for
+its launch through Identity-owned `PolicyBinding`s
+([model](../../agentplane/docs/adr_policy_sets.md)). Staging presets select Identity-compatible
+action/egress sets and the shared and per-preset account use sets; the preset account's
+`ServiceAccountGrant` supplies its Kubernetes roles. The sets are Flux-rendered from the grant
+catalog in `cluster/cdk8s/agentplane/staging_config.py` and `cluster/cdk8s/agent_access_profiles.py`;
+the operator can replace preset selections, including with none. While the catalog is mixed,
+original assignable PolicySets retain their native Kubernetes rules for standing ServiceAccount
+bindings, but Sandbox Identity selections exclude those rules. The Policy Controller keeps the
+native RoleBindings and ClusterRoleBindings of applicable bound sets
+([contract](../../agentplane/policy_controller/SPEC.md)). Deleting a Sandbox leaves its separate
+Identity and launch grants intact; deleting the Identity deletes those grants.
 
 Each environment chart separately materializes the Policy Controller workload, its assignable
 PolicySets, and the controller's RBAC. The same assignable grant references produce both the
@@ -241,16 +244,24 @@ An agent reaches an account only through an `egress` rule naming the account's
 of `KubernetesRoleSet`s, or it is a temporary `ManagedServiceAccount`
 ([Policy Controller SPEC](../../agentplane/policy_controller/SPEC.md#serviceaccount-grants)).
 
-**Staging today renders the namespace and the Role but no accounts.** `Environment.identity_catalog`
-is off, so Sandboxes act as their own ServiceAccount, and the assignable `PolicySet`s above carry the
-Kubernetes rules. With the switch on (`staging.environment(identity_catalog=True)`, which the
-manifest and RBAC tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`,
-`haku-agent`, `haku-ui`, `public-coder-openclaw`), each assignable set's Kubernetes rules become a
-same-named `KubernetesRoleSet`, and the catalog adds these accounts. Each is a ServiceAccount, a
-Flux-owned grant, a credential and a one-rule use set `k8s-account-<name>`:
+**The staging chart renders shared and per-preset accounts even while `identity_catalog` is off.**
+The new Sandbox Identity launch config explicitly selects the shared diagnostics use set and the
+preset's own `k8s-account-<preset>` use set; that preset account's `ServiceAccountGrant` holds the
+Kubernetes roles that launch grants used to carry directly. Its PolicySets include only
+Identity-supported rules. In this mixed catalog, the original `basic` and mixed Coinbase/Plaid
+PolicySets remain available to standing ServiceAccount callers, while presets use `basic-identity`
+and pure-egress `*-identity` variants. That keeps the projected ServiceAccount token route and
+native Kubernetes rules out of Identity launch selections without changing standing callers'
+authority. The rendered contract does not by itself prove that the launch change has rolled out.
 
-- `shared-diagnostics`, with the `shared-diagnostics` role set. Its use set joins the environment's
-  default sets, the reach `basic` gives through the Sandbox's own ServiceAccount today.
+With the catalog switch on (`staging.environment(identity_catalog=True)`, which manifest and RBAC
+tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`, `haku-agent`,
+`public-coder-openclaw`; `haku-ui` and `haku-ci-egress` already do, catalog or not), and each
+assignable set's Kubernetes rules become a same-named `KubernetesRoleSet`. The chart emits a
+ServiceAccount, Flux-owned grant, credential and one-rule use set `k8s-account-<name>` for each:
+
+- `shared-diagnostics`, with the `shared-diagnostics` role set. Its use set joins each launch's
+  defaults; it gives every Sandbox Identity shared read-only Kubernetes access.
 - One per managed preset (`public-coder`, `finance-agent`, `haku`), holding the role sets that
   preset's launch grants plus cluster diagnostics, so each agent has one `kubectl` identity
   (operator, 2026-11-09). A launch binds the preset's use set and the egress halves of its sets.

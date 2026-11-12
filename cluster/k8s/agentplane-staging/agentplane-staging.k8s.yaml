@@ -453,7 +453,7 @@ spec:
         enabled: false
   storage:
     resizeInUseVolumes: true
-    size: 16Gi
+    size: 24Gi
     storageClass: piraeus-ssd-local
 ---
 apiVersion: postgresql.cnpg.io/v1
@@ -1389,6 +1389,12 @@ rules:
       - workloadcredentials
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1436,6 +1442,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    policy_namespace: agentplane-staging
     central_sampler_accounts:
       - agentplane-staging/central-sampler
     log_llm_requests: true
@@ -1452,6 +1459,10 @@ data:
               source: pod_name
             - key: agentplane.pod_uid
               source: pod_uid
+            - key: agentplane.identity
+              source: identity
+            - key: agentplane.identity_uid
+              source: identity_uid
       baggage:
         - key: litellm.metadata.spend_logs_metadata.agentplane.namespace
           source: namespace
@@ -1461,6 +1472,10 @@ data:
           source: pod_name
         - key: litellm.metadata.spend_logs_metadata.agentplane.pod_uid
           source: pod_uid
+        - key: litellm.metadata.spend_logs_metadata.agentplane.identity
+          source: identity
+        - key: litellm.metadata.spend_logs_metadata.agentplane.identity_uid
+          source: identity_uid
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
     rpc:
       listen_address: 0.0.0.0:8080
@@ -1945,12 +1960,6 @@ rules:
       - workloadcredentials
     verbs:
       - get
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1977,12 +1986,6 @@ rules:
       - agentplane.allegedly.works
     resources:
       - workloadcredentials
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
     verbs:
       - get
 ---
@@ -2178,6 +2181,30 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
+  name: basic-identity
+  namespace: agentplane-staging
+spec:
+  rules:
+    - policy:
+        actions:
+          environments:
+            - get
+            - list
+            - resume
+          sessions:
+            - cancel_input
+            - create
+            - get
+            - interrupt_turn
+            - observe_input
+            - read_turns
+            - submit_input
+        type: exact_actions
+      type: action_auto_approve
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
   name: basic
   namespace: agentplane-staging
 spec:
@@ -2221,9 +2248,11 @@ spec:
         - dl.google.com
         - files.pythonhosted.org
         - ftp.gnu.org
+        - gcr.io
         - ghcr.io
         - go.dev
         - index.crates.io
+        - mirror.gcr.io
         - nixos.org
         - nodejs.org
         - pkg-containers.githubusercontent.com
@@ -2237,6 +2266,14 @@ spec:
       methods:
         - GET
         - HEAD
+      type: egress
+    - hosts:
+        - storage.googleapis.com
+      methods:
+        - GET
+        - HEAD
+      paths:
+        - /proxy-golang-org-prod/**
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -2652,6 +2689,12 @@ rules:
       - workloadcredentials
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2894,6 +2937,7 @@ data:
       - namespace: agentplane-staging
         name: notifications
     token_audience: agentplane-history-service
+    policy_namespace: agentplane-staging
     ingress:
       token_audience: agentplane-runner-ingress
       writer_namespaces:
@@ -2901,11 +2945,13 @@ data:
       sampler_accounts:
         - namespace: agentplane-staging
           name: central-sampler
+      sampler_identity_callers: true
       settle_deltas: true
     delegation:
       actor: agentplane-staging/actions
       caller_namespaces:
         - agentplane-staging
+      identity_callers: true
       methods:
         - /agentplane.history_service.HistoryService/ReadSessionEvents
         - /agentplane.history_service.HistoryService/FollowSession
@@ -4084,7 +4130,9 @@ data:
         title: Public coder
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - packages
           - github-agentydragon-agent
           - github-clone
@@ -4095,9 +4143,7 @@ data:
           - github-identity-reads
           - ssh-reads
           - sandbox-self
-          - shared-diagnostics
-          - public-inventory
-          - cluster-diagnostics
+          - k8s-account-public-coder
           - ducktape-pr-failed-jobs
           - send-to-public-coder
         inbox_tags:
@@ -4113,7 +4159,9 @@ data:
         title: Haku
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - forgejo-haku
           - packages
           - google-readonly
@@ -4136,11 +4184,9 @@ data:
           - ssh-reads
           - kubernetes-inspection-reads
           - ducktape-pr-failed-jobs
-          - shared-diagnostics
-          - cluster-diagnostics
-          - haku-sandbox-write
-          - coinbase
-          - plaid-diagnostics
+          - coinbase-identity
+          - plaid-diagnostics-identity
+          - k8s-account-haku
           - send-to-haku
         inbox_tags:
           - haku
@@ -4150,7 +4196,9 @@ data:
         title: Finance agent
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - packages
           - aiquota-read
           - forgejo-finance-agent
@@ -4162,12 +4210,9 @@ data:
           - github-identity-reads
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
-          - shared-diagnostics
-          - public-inventory
-          - cluster-diagnostics
-          - coinbase
-          - spend-policy-config
-          - plaid-diagnostics
+          - coinbase-identity
+          - plaid-diagnostics-identity
+          - k8s-account-finance-agent
           - ducktape-pr-failed-jobs
           - send-to-finance-agent
         inbox_tags:
@@ -4178,7 +4223,9 @@ data:
         title: Public coder / ducktape
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - packages
           - github-agentydragon-agent
           - github-clone
@@ -4189,9 +4236,7 @@ data:
           - github-identity-reads
           - ssh-reads
           - sandbox-self
-          - shared-diagnostics
-          - public-inventory
-          - cluster-diagnostics
+          - k8s-account-public-coder
           - ducktape-pr-failed-jobs
           - send-to-public-coder
         inbox_tags:
@@ -5541,9 +5586,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5570,9 +5612,6 @@ spec:
               - key: "{{ vmOwner.uid }}"
                 operator: NotEquals
                 value: "{{vm.metadata.uid}}"
-              - key: "{{ sandbox.uid || '' }}"
-                operator: NotEquals
-                value: "{{account.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0].uid || 'none'}}"
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
@@ -5624,7 +5663,7 @@ spec:
               - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
                 operator: NotEquals
                 value: 0
-        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a Sandbox, which also controls the ServiceAccount of the same name.
+        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a live Sandbox whose WorkloadCredential accepted its VMI.
     - context:
         - name: vmiOwner
           variable:
@@ -5654,9 +5693,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5676,7 +5712,7 @@ spec:
             automountServiceAccountToken: false
             imagePullSecrets:
               - name: forgejo-images-creds
-            serviceAccountName: "{{account.metadata.name}}"
+            serviceAccountName: default
             volumes:
               - configMap:
                   name: launcher-relay-egress-sidecar
@@ -5801,9 +5837,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5864,9 +5897,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5943,9 +5973,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5965,7 +5992,7 @@ spec:
             any:
               - key: "{{ request.object.spec.serviceAccountName }}"
                 operator: NotEquals
-                value: "{{account.metadata.name}}"
+                value: default
               - key: "{{ request.object.spec.automountServiceAccountToken }}"
                 operator: NotEquals
                 value: false
@@ -6597,16 +6624,6 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-  - apiGroups:
-      - ""
-    resources:
       - services
     verbs:
       - get
@@ -6627,14 +6644,11 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - policybindings
+      - identities
     verbs:
       - get
       - list
       - watch
-      - create
-      - patch
-      - delete
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -7236,7 +7250,9 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - packages
                   - github-agentydragon-agent
                   - github-clone
@@ -7247,9 +7263,7 @@ data:
                   - github-identity-reads
                   - ssh-reads
                   - sandbox-self
-                  - shared-diagnostics
-                  - public-inventory
-                  - cluster-diagnostics
+                  - k8s-account-public-coder
                   - ducktape-pr-failed-jobs
                   - send-to-public-coder
                 inbox_tags:
@@ -7293,7 +7307,9 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - forgejo-haku
                   - packages
                   - google-readonly
@@ -7316,11 +7332,9 @@ data:
                   - ssh-reads
                   - kubernetes-inspection-reads
                   - ducktape-pr-failed-jobs
-                  - shared-diagnostics
-                  - cluster-diagnostics
-                  - haku-sandbox-write
-                  - coinbase
-                  - plaid-diagnostics
+                  - coinbase-identity
+                  - plaid-diagnostics-identity
+                  - k8s-account-haku
                   - send-to-haku
                 inbox_tags:
                   - haku
@@ -7348,7 +7362,9 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - packages
                   - aiquota-read
                   - forgejo-finance-agent
@@ -7360,12 +7376,9 @@ data:
                   - github-identity-reads
                   - ssh-reads
                   - gaffer-private-branch-and-pr-creation
-                  - shared-diagnostics
-                  - public-inventory
-                  - cluster-diagnostics
-                  - coinbase
-                  - spend-policy-config
-                  - plaid-diagnostics
+                  - coinbase-identity
+                  - plaid-diagnostics-identity
+                  - k8s-account-finance-agent
                   - ducktape-pr-failed-jobs
                   - send-to-finance-agent
                 inbox_tags:
@@ -7501,7 +7514,9 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - packages
                   - github-agentydragon-agent
                   - github-clone
@@ -7512,9 +7527,7 @@ data:
                   - github-identity-reads
                   - ssh-reads
                   - sandbox-self
-                  - shared-diagnostics
-                  - public-inventory
-                  - cluster-diagnostics
+                  - k8s-account-public-coder
                   - ducktape-pr-failed-jobs
                   - send-to-public-coder
                 inbox_tags:
@@ -7691,6 +7704,7 @@ rules:
     resources:
       - identities
     verbs:
+      - get
       - list
       - watch
   - apiGroups:
@@ -7777,6 +7791,14 @@ rules:
     verbs:
       - get
       - create
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
+      - create
+      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -7900,9 +7922,9 @@ spec:
           - policysets
           - policybindings
   validations:
-    - expression: (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher')
-      message: A launcher grant is owned by one Sandbox and named for it.
-    - expression: request.resource.resource != 'policybindings' || object.spec.policySets == [object.metadata.name]
+    - expression: (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher' && (request.resource.resource != 'policybindings' || !has(object.spec.subject.identity))) || (request.resource.resource == 'policybindings' && size(variables.owners) == 2 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher' && variables.owners[1].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[1].kind == 'Identity' && variables.owners[1].uid != '' && has(object.spec.subject.identity) && object.spec.subject.identity.name == variables.owners[1].name) || (request.resource.resource == 'policybindings' && size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Identity' && object.metadata.name == variables.owners[0].name + '.identity' && has(object.spec.subject.identity) && object.spec.subject.identity.name == variables.owners[0].name)
+      message: A launcher grant is owned by its Sandbox, with an Identity caller pinned as a second owner for an Identity subject; a launch's Identity grant is owned by that Identity, named for it and binds only it.
+    - expression: request.resource.resource != 'policybindings' || variables.owners[0].kind == 'Identity' || object.spec.policySets == [object.metadata.name]
       message: A launcher grant's PolicyBinding binds only its own PolicySet.
     - expression: request.resource.resource != 'policysets' || (size(variables.owners) == 1 && object.spec.rules.all(r, (r.type == 'session_inbox_access' && has(r.operations) && r.operations == ['send_message'] && has(r.targets) && !has(r.targets.inboxTags) && !has(r.targets.allSandboxes) && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has(r.targets.sandboxes[0].uid) && r.targets.sandboxes[0].name == variables.owners[0].name && r.targets.sandboxes[0].uid == variables.owners[0].uid) || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema' && r.policy.actions.all(group, group == 'orchestration_v1' && r.policy.actions[group].all(action, action in ['create_session', 'submit_input', 'interrupt_turn', 'change_model', 'change_reasoning_effort', 'get_session', 'list_sessions', 'read_turns', 'wait_for_turn'])) && has(r.policy.schema) && r.policy.schema.all(key, key in ['type', 'required', 'properties']) && has(r.policy.schema.type) && r.policy.schema.type == 'object' && has(r.policy.schema.required) && r.policy.schema.required == ['sandbox'] && has(r.policy.schema.properties) && r.policy.schema.properties.all(key, key == 'sandbox') && has(r.policy.schema.properties.sandbox) && r.policy.schema.properties.sandbox.all(key, key == 'const') && 'const' in r.policy.schema.properties.sandbox && r.policy.schema.properties.sandbox['const'].all(key, key in ['name', 'uid']) && 'name' in r.policy.schema.properties.sandbox['const'] && 'uid' in r.policy.schema.properties.sandbox['const'] && r.policy.schema.properties.sandbox['const'].name == variables.owners[0].name && r.policy.schema.properties.sandbox['const'].uid == variables.owners[0].uid)))
       message: A launcher grant's rules name only its Sandbox, by name and UID, and only orchestration_v1 Actions.
@@ -9157,57 +9179,81 @@ spec:
               protocol: TCP
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: haku-ui
+  namespace: agentplane-staging
+spec:
+  description: Haku's operator UI, haku-anki and haku-jupyter, in haku-sandbox.
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-ui's egress sidecar presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-ui
   namespace: haku-sandbox
 spec:
   subject:
-    serviceAccount: haku-ui
+    identity:
+      name: haku-ui
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-anki's egress sidecar presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-anki
   namespace: haku-sandbox
 spec:
   subject:
-    serviceAccount: haku-ui
+    identity:
+      name: haku-ui
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-jupyter's egress sidecar presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-jupyter
   namespace: haku-sandbox
 spec:
   subject:
-    serviceAccount: haku-ui
+    identity:
+      name: haku-ui
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   annotations:
-    description: The subject haku-ci's builds reach the public internet as (PolicyBinding haku-ci-egress).
+    description: The account the relay runs as; its SVID acts as the haku-ci-egress Identity in agentplane-staging.
   name: haku-ci-egress
   namespace: haku-ci
 automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: haku-ci-egress
+  namespace: agentplane-staging
+spec:
+  description: haku-ci's builds, through its egress relay.
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-ci's egress relay presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-ci-egress
   namespace: haku-ci
 spec:
   subject:
-    serviceAccount: haku-ci-egress
+    identity:
+      name: haku-ci-egress
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -9860,6 +9906,16 @@ spec:
     - {}
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: cluster-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterRole: cluster-diagnostics-reader
+      type: cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: cluster-diagnostics
@@ -9868,6 +9924,20 @@ spec:
   rules:
     - clusterRole: cluster-diagnostics-reader
       type: kubernetes_cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: coinbase
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: claude-ai-coinbase-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9891,6 +9961,33 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
+  name: coinbase-identity
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.coinbase.com
+      methods:
+        - GET
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: haku-sandbox-write
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - haku-sandbox
+      role:
+        kind: Role
+        name: haku-sandbox-admin
+      type: role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
   name: haku-sandbox-write
   namespace: agentplane-staging
 spec:
@@ -9901,6 +9998,20 @@ spec:
         kind: Role
         name: haku-sandbox-admin
       type: kubernetes_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: plaid-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - plaid-mcp
+      role:
+        kind: Role
+        name: plaid-finance-diagnostics-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9944,6 +10055,51 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
+  name: plaid-diagnostics-identity
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: public-inventory
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterRole: public-coder-agent-cluster-metadata-reader
+      type: cluster_role_binding
+    - clusterRole: public-coder-agent-node-reader
+      type: cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
   name: public-inventory
   namespace: agentplane-staging
 spec:
@@ -9952,6 +10108,20 @@ spec:
       type: kubernetes_cluster_role_binding
     - clusterRole: public-coder-agent-node-reader
       type: kubernetes_cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: sandbox-tool-config
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: agentplane-sandbox-tool-config-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9966,6 +10136,112 @@ spec:
         kind: Role
         name: agentplane-sandbox-tool-config-reader
       type: kubernetes_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - activitywatch
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-logs
+      type: role_binding
+    - namespaces:
+        - activitywatch
+        - agent-sandbox-system
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - public-coder-agent
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-metadata
+      type: role_binding
+    - namespaces:
+        - clickhouse
+      role:
+        kind: Role
+        name: agent-clickhouse-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - haku-console
+      role:
+        kind: Role
+        name: agent-haku-console-metadata-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: agent-public-coder-extended-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - ducktape-flux
+      role:
+        kind: Role
+        name: ducktape-flux-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: public-coder-agent-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10074,6 +10350,20 @@ spec:
       type: kubernetes_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: spend-policy-config
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - plaid-mcp
+      role:
+        kind: Role
+        name: plaid-spend-finance-config-reader
+      type: role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: spend-policy-config
@@ -10086,6 +10376,221 @@ spec:
         kind: Role
         name: plaid-spend-finance-config-reader
       type: kubernetes_role_binding
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: Read-only namespace diagnostics every agent may use.
+  name: shared-diagnostics
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+  serviceAccount:
+    name: shared-diagnostics
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/shared-diagnostics ServiceAccount: Read-only namespace diagnostics every agent may use. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-shared-diagnostics for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: shared-diagnostics
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-shared-diagnostics
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The 'public-coder' preset's Kubernetes identity.
+  name: public-coder
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: public-coder
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+    - public-inventory
+    - cluster-diagnostics
+  serviceAccount:
+    name: public-coder
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-public-coder
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/public-coder ServiceAccount: The 'public-coder' preset's Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-public-coder for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: public-coder
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-public-coder
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-public-coder
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The 'finance-agent' preset's Kubernetes identity.
+  name: finance-agent
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: finance-agent
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+    - public-inventory
+    - cluster-diagnostics
+    - coinbase
+    - spend-policy-config
+    - plaid-diagnostics
+  serviceAccount:
+    name: finance-agent
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-finance-agent
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/finance-agent ServiceAccount: The 'finance-agent' preset's Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-finance-agent for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: finance-agent
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-finance-agent
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-finance-agent
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The 'haku' preset's Kubernetes identity.
+  name: haku
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: haku
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+    - cluster-diagnostics
+    - haku-sandbox-write
+    - coinbase
+    - plaid-diagnostics
+  serviceAccount:
+    name: haku
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-haku
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/haku ServiceAccount: The 'haku' preset's Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-haku for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: haku
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-haku
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10458,6 +10963,7 @@ rules:
       - list
       - watch
       - delete
+      - create
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -11937,7 +12443,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: What haku-ui (haku-sandbox) may reach and have auto-approved.
+    description: What Haku's standing workloads (haku-sandbox), acting as this Identity, may reach and have auto-approved.
   name: haku-ui
   namespace: agentplane-staging
 spec:
@@ -11947,8 +12453,8 @@ spec:
     - ankiweb-sync
     - haku-notebook-fetch
   subject:
-    name: haku-ui
-    namespace: haku-sandbox
+    identity:
+      name: haku-ui
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -11984,15 +12490,15 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: What haku-ci's builds (haku-ci namespace) may reach.
+    description: What haku-ci's builds (haku-ci namespace), acting as this Identity, may reach.
   name: haku-ci-egress
   namespace: agentplane-staging
 spec:
   policySets:
     - haku-ci-build-fetch
   subject:
-    name: haku-ci-egress
-    namespace: haku-ci
+    identity:
+      name: haku-ci-egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding

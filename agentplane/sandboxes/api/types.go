@@ -116,8 +116,9 @@ type SandboxSpec struct {
 	// Omitted is false so older Sandbox manifests keep automatic wake disabled.
 	// +kubebuilder:default=false
 	WakeOnSend bool `json:"wakeOnSend,omitempty"`
-	// ResumePolicy controls whether the exact live execution ServiceAccount may request resume.
-	// Omitted policy and fields default to deny.
+	// ResumePolicy controls whether the Sandbox's own principal, its exact live execution
+	// ServiceAccount or the Identity it acts as, may request resume. Omitted policy and fields
+	// default to deny.
 	ResumePolicy *ResumePolicy `json:"resumePolicy,omitempty"`
 	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
 	// differs from the generation it was suspended at.
@@ -134,10 +135,6 @@ type SandboxSpec struct {
 	// nothing runs, so an incarnation never changes identity; the next start acts as the new one.
 	// "Nothing runs" is the controller's last status report: never reconciled, or stopStage Stopped.
 	Identity *IdentityRef `json:"identity,omitempty"`
-	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
-	// +listType=set
-	// +kubebuilder:validation:items:MinLength=1
-	PolicySets []string `json:"policySets,omitempty"`
 	// InboxTags are the groups the Sandbox's Session inboxes take messages as: a `session_inbox_access` rule
 	// targeting one of them covers the Sandbox while it holds the tag.
 	// +listType=set
@@ -155,10 +152,11 @@ type IdentityRef struct {
 	Name string `json:"name"`
 }
 
-// ResumePolicy contains independent explicit-resume permissions for an ordinary execution account.
+// ResumePolicy contains independent resume permissions for the Sandbox's own principal.
 type ResumePolicy struct {
 	// AllowOwnServiceAccount permits the Sandbox's exact live execution ServiceAccount to request
-	// resume while the Sandbox is idle-suspended. It does not authorize overriding a requested stop.
+	// resume while the Sandbox is idle-suspended, and queued work of the Identity the Sandbox acts
+	// as to wake it then. It does not authorize overriding a requested stop.
 	// +kubebuilder:default=false
 	// +kubebuilder:validation:Optional
 	AllowOwnServiceAccount bool `json:"allowOwnServiceAccount,omitempty"`

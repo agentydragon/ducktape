@@ -37,6 +37,7 @@ def render(output: Path) -> None:
         mcp_fixtures=McpFixtures(
             dex_host=fixture_chart.DEX_HOST,
             operator_secret=mcp_fixture_chart.OPERATOR_SECRET,
+            operator_token_grant=mcp_fixture_chart.OPERATOR_TOKEN_GRANT,
             mcp_edge_service=edge_service.name,
             mcp_edge_port=edge_service.port.number,
             app_service=app_service.name,

@@ -41,7 +41,7 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
         try:
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT to_regclass('dispatch') IS NOT NULL"))
-                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 16
+                assert conn.scalar(text(f"SELECT max(version_id) FROM {_VERSION}")) == 17
         finally:
             engine.dispose()
 

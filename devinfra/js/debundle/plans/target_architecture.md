@@ -148,7 +148,7 @@ a fixpoint. What the work so far showed:
   do not, with accepted splits that diverge under Node
   ([§ Known open problems](#known-open-problems)).
 
-**Summary-based (candidate).** One inclusion-based points-to and call-graph
+**Summary-based (built, retired).** One inclusion-based points-to and call-graph
 fixpoint over the chunk, flow- and path-insensitive inside function bodies;
 one effect summary per function, computed once and instantiated at call sites;
 one escaped set that every unmodelled flow feeds and every unknown call may
@@ -176,10 +176,50 @@ may call at initialization.
   every conflict today's analysis models and refuses the audit's unsound
   shapes.
 
-**Decision rule.** Adopt the summary-based producer if, with bounded
-refinements (call-site sensitivity for small helpers, existing premises as
-axioms on summaries), the real specs keep their modules and the cost target is
-met. Otherwise keep the execution-based producer: bound havoc reach,
+**Statement-class (measured candidate).** The points-to form above was built
+report-only and retired: 65–120 s and 3–5 GB per large chunk, and it did not
+converge on the largest one. What replaced it under `x/summary_effects/` does
+no value tracking. It classes each top-level statement as a pure definition,
+contained (allocates and touches only what it allocates), confined to one
+target, or impure; keeps impure statements in mutual order; and lets an impure
+statement conflict with a definition only if the definition is reachable by
+mention from something that escaped earlier in source order. Program-wide
+derivations (allocators, bundler helpers, string-constant exports, a census of
+writes to language-defined globals, split by constructor side and prototype
+side) and the spec's declared premises supply the rest. Measured on each
+spec's emitted order, with only the premises the spec declares:
+
+| Spec                                  | Largest authored component        | Time per chunk |
+| ------------------------------------- | --------------------------------- | -------------- |
+| Public corpus, committed spec         | none (0 unproven pairs)           | ~2 s           |
+| Public corpus, one module per group   | 4 and 23 modules (two chunks)     | ~2 s           |
+| Private A, main chunk (2,177 modules) | 82                                | 7 s            |
+| Private B, six largest chunks         | 104, 34, then 9 or fewer          | 8–10 s         |
+| Private C, main chunk                 | 5, on a synchronous require cycle | 14 s           |
+| Private D, E                          | none                              | seconds        |
+
+- **Against the yardsticks.** The execution-based engine takes about 17
+  minutes on private A's main chunk and its effect verdict leaves most of the
+  stress assignment in one component. The cost target is met with room.
+- **What the residue is.** On A, 18 impure statements tie the 82 modules; on
+  B, two statements tie all 104. None of the sampled ties is order-dependent.
+  Each is one of a few shapes: a read-only expression statement, member reads
+  of a table that is passed around but never mutated, a nested literal read,
+  the TypeScript enum form, a formatter called with literals, an imported
+  namespace-export helper, and a handful of local callees that need a declared
+  premise.
+- **Soundness evidence so far.** It refuses all 129 Node-divergent fixtures
+  and all 79 orders the current engine refuses in the e2e suite; every
+  acceptance rule added has a refused sibling that Node shows order-dependent.
+  It has not had an independent review, and it runs only as a report.
+- **Preconditions it relies on.** No top-level `await` in the program; no
+  direct `eval` or `with` in a split chunk; every static import resolves
+  (unseen dynamically imported chunks run in a later job); a chunk on a
+  synchronous import cycle gets no cross-chunk derivations.
+
+**Decision rule.** Adopt the statement-class producer if, with bounded
+refinements (shape rules with refused siblings, existing premises as axioms),
+the real specs keep their modules and the cost target is met. Otherwise keep the execution-based producer: bound havoc reach,
 model the vendor interop callees, apply the fewer-opaque-events changes and
 the monotone delta (<analysis_performance.md>), and finish the kernel
 migration.
@@ -188,7 +228,7 @@ migration.
 decides, the effect verdict reports) and two evaluators (the flat lane and
 the kernel, joined per statement by attempt-and-rewind), with old paths kept
 because the legacy gate reads them. The unsound shapes found so far sit in
-those seams. Adopting the summary-based producer ends the migration by
+those seams. Adopting the statement-class producer ends the migration by
 replacement: its sets are complete for every statement, so the flip needs no
 coverage rows, and the flat lane, the kernel lanes, attempt-and-rewind and
 the legacy gate are deleted after it. Keeping the execution-based producer
@@ -274,7 +314,20 @@ replay of the canonical inputs in gaffer-private.
   unknown value missed their effects. Fixes apply one rule at every such
   site: a value is dropped from a tracked set only after it has been escaped.
   The probes are the regression suite; see
-  <convergence_landing.md> § Replan for the landing order.
+  <convergence_landing.md> § Replan for the landing order. Still open after
+  the iterator-site and receiver series:
+  - `arguments`, `new.target` and a `super` home object read by a truncated
+    remainder (no accepted-divergent shape found yet); `super` does not mark
+    a method as reading `this`.
+  - Prototype chains built by `Object.create` or `Object.setPrototypeOf`; only
+    a literal `__proto__` chain is followed for accessors.
+  - The kernel lane's own `for`-`of` and destructuring over non-native values
+    are unaudited.
+  - Precision gaps, all refused: `({ ...gen() })`; an `Object.assign` copy of
+    an uncalled effect, including a config merge
+    `Object.assign({}, defaults, { a: 1 })`; a `this`-reading method or
+    accessor on an object holding an uncalled effect (`api.size()`), whose
+    receiver is published.
 - **Callback-effect provenance.** The unknown global-property dispatch defect
   is fixed; the separate dense-array callback-promotion route is still an
   unproven candidate. Canonical attribution needs per-call target/contributor

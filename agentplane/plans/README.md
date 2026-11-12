@@ -44,8 +44,11 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   the target (one `Identity`, three credential forms), what the identity cutover still changes
   (Sandboxes naming an Identity, the proxy and services keying on it, identity lifetimes and UI) and
-  its open questions; the kinds, grants, impersonation
-  and the catalog behind its switch have landed
+  its open questions; the kinds, grants, impersonation, the catalog and the services' Identity
+  admission have landed, and the switch waits on its open question 11
+- [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
+  worked examples for explicit environment lifecycle grants to Identities, with the operator's
+  remaining questions
 - [Workload identity lifecycle](workload_identity_lifecycle.md) — the Kubernetes-token and
   ServiceAccount-bound paths left on Agentplane APIs, and open questions on backend callers and the
   app's token

@@ -6,11 +6,36 @@ package agentplane.proto;
 import "agentplane/proto/identity.proto";
 
 // Payload of agentplane-delegation-bin gRPC metadata: the authenticated service
-// asserts this RPC serves the caller's Action request/execution. The receiver
-// must trust that service to delegate and authorize caller normally; the IDs
-// provide audit correlation, not approval proof.
+// asserts this RPC serves the named caller. The receiver must trust that
+// service to delegate and authorize the caller normally; the provenance
+// provides audit correlation, not approval proof.
 message Delegation {
-  ServiceAccountIdentity caller = 1;
-  string action_request_id = 2;
-  string action_execution_id = 3;
+  // The caller the RPC acts for. A receiver that predates `identity` reads an
+  // envelope naming one as having no caller and refuses it.
+  oneof effective_caller {
+    ServiceAccountIdentity caller = 1;
+    // An Identity in the receiver's policy namespace, by name and the UID of
+    // the incarnation the actor recorded.
+    Identity identity = 4;
+  }
+  reserved 2, 3;
+  reserved "action_request_id", "action_execution_id";
+  // Exactly one profile names the durable record the actor serves. A receiver
+  // that predates a profile reads the envelope as having none and refuses it.
+  oneof provenance {
+    ActionProvenance action = 5;
+    SessionProvenance session = 6;
+  }
+}
+
+// The Action Service's admitted request and execution records.
+message ActionProvenance {
+  string request_id = 1;
+  // The existing execution record's ID, never its lease token.
+  string execution_id = 2;
+}
+
+// The central Session a sampler acts for: its canonical public UUID.
+message SessionProvenance {
+  string session_id = 1;
 }

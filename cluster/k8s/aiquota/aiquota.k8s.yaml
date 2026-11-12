@@ -172,6 +172,7 @@ spec:
               scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 20
+            timeoutSeconds: 5
           name: aiquota-api
           ports:
             - containerPort: 8080

@@ -1968,7 +1968,7 @@ fn promote_at_init_calls(
     //    and the source unit itself when the unresolved call carries an
     //    inline function expression. At-init callers inherit these
     //    roots transitively through the call graph and expand them
-    //    via [`UnresolvedCallFallback`].
+    //    through the source-unit read closure.
     let fallback_roots_of = |sources: &BTreeSet<Id>,
                              inline_fn: bool,
                              self_source_unit: SourceUnitId|
@@ -2128,10 +2128,17 @@ fn promote_at_init_calls(
     //    target's module is redundant with the already-recorded
     //    R -> callee-module edge. See [`EdgeRole`].
     //
-    //    Statements whose at-init calls can't all be resolved take
-    //    the conservative fallback in addition: see
-    //    [`UnresolvedCallFallback`].
-    let mut fallback: Option<UnresolvedCallFallback> = None;
+    //    Statements whose at-init calls can't all be resolved also take
+    //    the conservative fallback. Any function value an unresolved call
+    //    invokes must have reached it through a mentioned binding (callee,
+    //    arguments or computed keys) or an inline function expression. Each
+    //    such root expands through the full source-unit read graph; every
+    //    reachable unit contributes its lazy reads and rebinds at any depth.
+    //    Values from other chunks and dynamic global/property stashes may not
+    //    resolve to one callable (see docs/design.md, "At-init call promotion").
+    //    Fallback edges use the caller as their callee source unit, so neither
+    //    projection drops them for a precisely known callee in another module.
+    let mut fallback: Option<SourceUnitReadClosure> = None;
     let mut fallback_eager_uses = BTreeMap::new();
     for stmt in facts {
         if let Some(synchronous) = &stmt.synchronous_calls {
@@ -2295,7 +2302,7 @@ fn promote_at_init_calls(
             if scc_needs_caller_values[scc_idx] {
                 // Include the caller itself (inline callback bodies and
                 // local aliases) and every chunk binding it reads (argument
-                // values). UnresolvedCallFallback then closes over their
+                // values). The fallback then closes over their
                 // lazy bodies. This is deliberately conservative until a
                 // parameter's specific value can be proven.
                 fallback_roots.insert(caller);
@@ -2339,9 +2346,11 @@ fn promote_at_init_calls(
         if fallback_roots.is_empty() {
             continue;
         }
-        let fallback = fallback.get_or_insert_with(|| UnresolvedCallFallback::build(facts));
+        let fallback =
+            fallback.get_or_insert_with(|| SourceUnitReadClosure::new_synchronous(facts));
         for root in fallback_roots {
-            let (closure_reads, closure_rebinds) = fallback.closures_for(SourceUnitOrdinal(root.0));
+            let (closure_reads, closure_rebinds) =
+                fallback.lazy_effects_for_source_unit(SourceUnitOrdinal(root.0));
             // Rebind targets get an *order* constraint only (EagerUse,
             // not EagerRebind): assignment to a TDZ-locked binding
             // throws until its statement runs, so the target must
@@ -2385,48 +2394,6 @@ fn promote_at_init_calls(
         ));
     }
     fallback_eager_uses
-}
-
-/// Conservative fallback for at-init calls promotion can't resolve
-/// (member calls, IIFEs, aliases, tagged templates, calls into
-/// functions whose own bodies contain such calls).
-///
-/// Premise: whatever function value an unresolvable at-init call
-/// invokes, it must have reached the call site through one of the
-/// bindings the call expression mentions (callee root, arguments,
-/// computed keys) or through an inline function expression at the
-/// call. Each such "root" source unit is expanded to the **full lazy
-/// closure** of every source unit reachable from it through the chunk's
-/// read graph: edges `O → source unit(b)` for every chunk binding `b` the
-/// source unit `O` reads (eagerly or lazily), with every reachable source unit
-/// contributing its `reads.lazy` / `rebinds.lazy` at any nesting
-/// depth. The caller statement then eagerly depends on every
-/// collected target.
-///
-/// Documented residual preconditions (see docs/design.md "At-init
-/// call promotion" → Limitations): values from other chunks and dynamic
-/// global/property stashes may not resolve to a single callable. Local
-/// assignments, parameters, returns and static object properties are
-/// followed by the shared chunk value-flow pass before this fallback.
-///
-/// Fallback-only edges carry `EdgeRole::PromotedAtInit` with
-/// `callee_source_unit = caller`, so neither projection view ever drops
-/// them — there is no precisely-known callee module whose evaluation
-/// could make the constraint redundant.
-struct UnresolvedCallFallback {
-    closure: SourceUnitReadClosure,
-}
-
-impl UnresolvedCallFallback {
-    fn build(facts: &[StatementFacts]) -> Self {
-        Self {
-            closure: SourceUnitReadClosure::new(facts),
-        }
-    }
-
-    fn closures_for(&self, source_unit: SourceUnitOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
-        self.closure.lazy_effects_for_source_unit(source_unit)
-    }
 }
 
 #[cfg(test)]

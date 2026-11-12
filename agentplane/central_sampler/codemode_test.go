@@ -631,7 +631,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Archive)
+	items := responsesItems(t, conversation.Transcript)
 	if conversation.Pending != nil || len(items) < 2 {
 		t.Fatalf("rejected exec left pending work or no output: pending=%+v items=%+v", conversation.Pending, items)
 	}
@@ -687,7 +687,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items = responsesItems(t, conversation.Archive)
+	items = responsesItems(t, conversation.Transcript)
 	if output := items[len(items)-1]; output.CallID != nextCall.CallID || len(output.Output) < 2 || output.Output[len(output.Output)-1].Text != "retained" {
 		t.Fatalf("next exec did not run through the retained logical session: %+v", output)
 	}
@@ -727,7 +727,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			items := responsesItems(t, conversation.Archive)
+			items := responsesItems(t, conversation.Transcript)
 			output := items[len(items)-1]
 			if !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host operation returned an error" {
 				t.Fatalf("%s error output=%+v", test.name, output)
@@ -916,13 +916,13 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 		},
 		RPCTimeoutSeconds: 2,
 	}
-	runtime := NewRuntime(store, settings)
+	runtime := NewRuntime(store, settings, manager)
 	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
 }
 
 func appendModelToolCall(t *testing.T, store *Store, owner Owner, call protocol.ToolInvocation) {
 	t.Helper()
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -979,6 +979,8 @@ type fakeCodeOperationRequest struct {
 	sessionID string
 }
 
+// receiveCodeOperationRequest returns the next request for method; an empty sessionID matches
+// any logical session, which lets a test learn the ID the host manager allocated.
 func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID, method string) fakeCodeOperationRequest {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
@@ -1003,7 +1005,7 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 			if err := decodeProtocolObject(envelope.Request, &request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Method == method && request.SessionID == sessionID {
+			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
 				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID}
 			}
 		case <-deadline:

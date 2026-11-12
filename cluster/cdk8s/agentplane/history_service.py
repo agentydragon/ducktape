@@ -96,6 +96,8 @@ class HistoryService(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
                 ),
+                # An Identity writer's SVID names its Identity, read live in the policy namespace.
+                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
@@ -117,17 +119,21 @@ class HistoryService(Construct):
                 if env.central_sampler is not None
                 else ()
             ),
+            sampler_identity_callers=env.central_sampler is not None,
             settle_deltas=env.settle_deltas,
         )
         content = {
             "reader_accounts": sorted(callers, key=lambda reader: (reader.namespace, reader.name)),
             "token_audience": TOKEN_AUDIENCE,
+            "policy_namespace": env.namespace,
             "ingress": ingress_settings,
         }
         if delegation_actor is not None:
             content["delegation"] = {
                 "actor": f"{delegation_actor.namespace}/{delegation_actor.name}",
                 "caller_namespaces": [env.namespace],
+                # Session delegation names an Identity in policy_namespace as the effective caller.
+                "identity_callers": True,
                 "methods": [
                     "/agentplane.history_service.HistoryService/ReadSessionEvents",
                     "/agentplane.history_service.HistoryService/FollowSession",

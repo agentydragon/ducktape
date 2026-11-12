@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
-	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -46,8 +45,6 @@ type config struct {
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// GitHubVisibility is the unauthenticated GitHub lookup behind `github_public_repository` policies.
-	GitHubVisibility gitHubVisibility `mapstructure:"github_visibility"`
 	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
 	WebPush push.Settings `mapstructure:"web_push"`
 	// ActionGroups is read from the file alone; see settingsFile.
@@ -76,19 +73,9 @@ type peer struct {
 	TLS                   *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 }
 
-type gitHubVisibility struct {
-	APIBaseURL string `mapstructure:"api_base_url"`
-	// CacheTTLSeconds is how long one repository's confirmed visibility is reused before GitHub is asked again.
-	CacheTTLSeconds float64 `mapstructure:"cache_ttl_seconds"`
-}
-
 func defaultConfig() config {
 	return config{
-		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
-		GitHubVisibility: gitHubVisibility{
-			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
-		},
-		ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
+		OperatorOIDC: api.DefaultOperatorOIDCSettings(), ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
 	}
 }
 
@@ -186,9 +173,6 @@ func (c *config) validate() error {
 	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
-	}
-	if c.GitHubVisibility.CacheTTLSeconds < 0 {
-		return errors.New("github_visibility.cache_ttl_seconds must not be negative")
 	}
 	if c.WebPush.Configured() {
 		if err := c.WebPush.Validate(); err != nil {

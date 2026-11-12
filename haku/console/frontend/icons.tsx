@@ -1,26 +1,28 @@
 // Tabler icons via **per-icon subpath imports** — never `import { … } from "@tabler/icons-react"`
 // (the barrel OOMs esbuild on RBE at ~8.7 GB). Types for the
-// `.mjs` subpaths come from the ambient declaration in `tabler_icons.d.ts`. Thin wrappers keep a
-// stable local name + a consistent glyph size; callers can still override via props.
-import IconAlertTriangle from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
-import IconBell from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
-import IconCalendarEvent from "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs";
+// `.mjs` subpaths come from the ambient declaration in `tabler_icons.d.ts`. Shell icons default
+// to 20px; renderer-only icons are re-exported directly and sized by their callers.
+
 import IconCamera from "@tabler/icons-react/dist/esm/icons/IconCamera.mjs";
 import IconChecklist from "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs";
-import IconCircleCheck from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHome from "@tabler/icons-react/dist/esm/icons/IconHome.mjs";
-import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
-import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
-import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
-import IconRepeat from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
-import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import type { JSX, ComponentProps } from "react";
 
 import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon_data";
+
+export { default as SyncErrorIcon } from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
+export { default as SyncCurrentIcon } from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs";
+export { default as BellIcon } from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
+export { default as UsersIcon } from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
+export { default as CalendarIcon } from "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs";
+export { default as RepeatIcon } from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
+export { default as MailIcon } from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
+export { default as ListIcon } from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
+export { default as ListDetailsIcon } from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 
 type TablerIconProps = ComponentProps<typeof IconChecklist>;
 
@@ -32,16 +34,6 @@ export function ChecklistIcon(props: TablerIconProps): JSX.Element {
 /** Home — selects the persistent Haku UI frame. */
 export function HomeIcon(props: TablerIconProps): JSX.Element {
   return <IconHome size={20} {...props} />;
-}
-
-/** Check in a circle — a tool call that finished OK. */
-export function SyncCurrentIcon(props: TablerIconProps): JSX.Element {
-  return <IconCircleCheck size={20} {...props} />;
-}
-
-/** Warning triangle — a tool call that failed. */
-export function SyncErrorIcon(props: TablerIconProps): JSX.Element {
-  return <IconAlertTriangle size={20} {...props} />;
 }
 
 /** Close — dismisses a shell drawer or popover. */
@@ -69,54 +61,19 @@ export function ClockIcon(props: TablerIconProps): JSX.Element {
   return <IconClock size={20} {...props} />;
 }
 
-/** Bell — a calendar event's reminders field. */
-export function BellIcon(props: TablerIconProps): JSX.Element {
-  return <IconBell size={20} {...props} />;
-}
-
-/** People — a calendar event's attendees field. */
-export function UsersIcon(props: TablerIconProps): JSX.Element {
-  return <IconUsers size={20} {...props} />;
-}
-
-/** Calendar — a non-primary target calendar. */
-export function CalendarIcon(props: TablerIconProps): JSX.Element {
-  return <IconCalendarEvent size={20} {...props} />;
-}
-
-/** Repeat arrows — a calendar event's recurrence rule. */
-export function RepeatIcon(props: TablerIconProps): JSX.Element {
-  return <IconRepeat size={20} {...props} />;
-}
-
-/** Envelope — a Gmail draft's recipients / a thread list. */
-export function MailIcon(props: TablerIconProps): JSX.Element {
-  return <IconMail size={20} {...props} />;
-}
-
-/** Plain list — the "Brief" (compact) side of a card's detail toggle. */
-export function ListIcon(props: TablerIconProps): JSX.Element {
-  return <IconList size={20} {...props} />;
-}
-
-/** List with detail lines — the "Full" (detailed) side of a card's detail toggle. */
-export function ListDetailsIcon(props: TablerIconProps): JSX.Element {
-  return <IconListDetails size={20} {...props} />;
-}
-
 // Gmail's and Google Calendar's official multicolor app icons, which are not Tabler glyphs and so
-// don't fit the wrapper pattern above. Their data URIs (brand_icon_data.ts) are generated at build
+// do not come from Tabler. Their data URIs (brand_icon_data.ts) are generated at build
 // time by BUILD.bazel's data_uri_module over the SVGs MODULE.bazel fetches, so the bundle stays
 // self-contained with no runtime fetch to google.com. Used only to mark a link that opens in that
 // app, where a generic mail/calendar glyph would be ambiguous.
 
-/** Gmail's own multicolor icon — marks a link that opens Gmail, unlike `MailIcon` above. */
+/** Gmail's own multicolor icon — marks a link that opens Gmail, unlike the generic mail glyph. */
 export function GmailIcon({ size = 20 }: { size?: number }): JSX.Element {
   return <img src={GMAIL_ICON_DATA_URI} alt="" width={size} height={size} style={{ display: "block" }} />;
 }
 
 /** Google Calendar's own multicolor icon — marks a link that opens Google Calendar, unlike
- * `CalendarIcon` above. */
+ * the generic calendar glyph. */
 export function GoogleCalendarIcon({ size = 20 }: { size?: number }): JSX.Element {
   return <img src={GOOGLE_CALENDAR_ICON_DATA_URI} alt="" width={size} height={size} style={{ display: "block" }} />;
 }

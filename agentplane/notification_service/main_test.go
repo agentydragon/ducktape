@@ -31,8 +31,8 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -41,12 +41,10 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -56,34 +54,10 @@ const (
 	callDeadline = 30 * time.Second
 
 	sandboxName = "test-sandbox"
-	sandboxUID  = "test-sandbox-uid"
 	otherName   = "test-other"
 	testSession = "test-session"
 	webhookKey  = "test-webhook-secret-of-sixteen-or-more"
 )
-
-// serveGRPC serves a fake peer on a loopback port and returns its address.
-func serveGRPC(t *testing.T, register func(*grpc.Server)) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return listener.Addr().String()
-}
-
-// listingRunner is a Sandbox's runner, as the control Service reaches it.
-type listingRunner struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-}
-
-func (listingRunner) ListSessions(context.Context, *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: testSession}}}, nil
-}
 
 type testActionService struct {
 	actionpb.UnimplementedActionServiceServer
@@ -147,12 +121,14 @@ func restart(t *testing.T, tune func(*config)) running {
 		}
 		return path
 	}
-	actionAddress := serveGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
-	runnerAddress := serveGRPC(t, func(s *grpc.Server) { environmentruntimepb.RegisterEnvironmentRuntimeServer(s, listingRunner{}) })
-	historyAddress := serveGRPC(t, func(s *grpc.Server) {
+	actionAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
+	runnerAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+		environmentruntimepb.RegisterEnvironmentRuntimeServer(s, &notificationtesting.ListingRunner{Sessions: []string{testSession}})
+	})
+	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
 	})
-	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) {
+	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(s, openingDispatcher{})
 	})
 
@@ -171,13 +147,11 @@ func restart(t *testing.T, tune func(*config)) running {
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	deps := kubeDeps{
-		Reviews: kube.TokenReviews(),
-		Sandboxes: clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
-			&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID}},
-		).Build(),
-		Policies: apiConfig,
+	sandboxes, err := client.New(apiConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
 	}
+	deps := kubeDeps{Reviews: kube.TokenReviews(), Sandboxes: sandboxes, Policies: apiConfig}
 	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -185,12 +159,6 @@ func restart(t *testing.T, tune func(*config)) running {
 	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if c.RPC.Has(listener.SPIFFE) {
-		deps.Sandboxes, err = client.New(apiConfig, client.Options{Scheme: scheme})
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)

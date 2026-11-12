@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"time"
 
 	"google.golang.org/grpc"
@@ -21,7 +22,6 @@ const (
 	// The zero Rule refuses every caller, so a Rule left unset fails closed.
 	ruleRefuse ruleKind = iota
 	rulePublic
-	ruleAnyAccount
 	ruleAccounts
 	ruleSVIDOrAccounts
 	ruleReviewedServiceAccount
@@ -31,32 +31,25 @@ const (
 
 // Rule is who may call one gRPC method.
 type Rule struct {
-	kind              ruleKind
-	resolver          *Resolver
-	principalResolver PrincipalResolver
-	subjectResolver   SubjectResolver
-	accounts          sets.Set[Account]
-	delegation        *delegationPolicy
+	kind            ruleKind
+	resolver        *Resolver
+	subjectResolver SubjectResolver
+	accounts        sets.Set[Account]
+	delegation      *delegationPolicy
 }
 
 // Public admits a call without reading its bearer. Only the standard health service is public: Kubernetes
 // probes carry no bearer.
 func Public() Rule { return Rule{kind: rulePublic} }
 
-// AnyAccount admits the principal its resolver proves. The handler reads it with Caller. Only a TokenReview
-// Resolver also supports delegated calls.
-func AnyAccount(principalResolver PrincipalResolver) Rule {
-	resolver, isTokenReview := principalResolver.(*Resolver)
-	if isTokenReview && resolver == nil {
-		principalResolver = nil
-	}
-	return Rule{kind: ruleAnyAccount, resolver: resolver, principalResolver: principalResolver}
+// Accounts admits a caller whose bearer the resolver reviews for one of the listed accounts. An empty list admits nobody.
+func Accounts(resolver *Resolver, accounts []Account) Rule {
+	return Rule{kind: ruleAccounts, resolver: resolver, accounts: sets.New(accounts...)}
 }
 
-// Accounts admits a caller proving, by a bearer resolver reviews, one of accounts. No accounts admits nobody.
 // AnySubject admits any workload this resolver authenticates, a ServiceAccount or an Identity
-// subject. A ServiceAccount caller is admitted as AnyAccount admits it; an Identity caller only as
-// an IdentityAdmission, so the handler must read Admitted. Only a TokenReview Resolver also supports
+// subject. A ServiceAccount caller is admitted with a Principal; an Identity caller only as an
+// IdentityAdmission, so the handler must read Admitted. Only a TokenReview Resolver also supports
 // delegated calls.
 func AnySubject(subjectResolver SubjectResolver) Rule {
 	resolver, isTokenReview := subjectResolver.(*Resolver)
@@ -66,12 +59,9 @@ func AnySubject(subjectResolver SubjectResolver) Rule {
 	return Rule{kind: ruleAnySubject, resolver: resolver, subjectResolver: subjectResolver}
 }
 
-func Accounts(resolver *Resolver, accounts []Account) Rule {
-	return Rule{kind: ruleAccounts, resolver: resolver, accounts: sets.New(accounts...)}
-}
-
 // SVIDOrAccounts admits a verified Sandbox SVID, or a bearer for one of the
-// listed accounts. The resolver must be bound to the listener's allowed modes.
+// listed accounts. The resolver must be bound to the listener's allowed modes. An SVID naming an
+// Identity is admitted as AnySubject admits it, so the handler must read Admitted.
 func SVIDOrAccounts(resolver *Resolver, accounts []Account) Rule {
 	rule := Accounts(resolver, accounts)
 	rule.kind = ruleSVIDOrAccounts
@@ -100,10 +90,12 @@ type Methods map[string]Rule
 
 // WithDelegation returns a copy of m that admits delegation only for the named full RPC methods.
 // Every method must already have an authenticated direct Rule; delegations preserve that direct mode.
+// identities is nil for a receiver that resolves no Identity (see AllowDelegationFrom).
 func (m Methods) WithDelegation(
 	methodNames []string,
 	delegators []Delegator,
 	serviceAccounts ServiceAccountUIDReader,
+	identities IdentityUIDReader,
 ) (Methods, error) {
 	methods := make(Methods, len(m))
 	maps.Copy(methods, m)
@@ -117,7 +109,7 @@ func (m Methods) WithDelegation(
 		if !ok {
 			return nil, fmt.Errorf("delegated method %q is not served", method)
 		}
-		rule, err := rule.AllowDelegationFrom(delegators, serviceAccounts)
+		rule, err := rule.AllowDelegationFrom(delegators, serviceAccounts, identities)
 		if err != nil {
 			return nil, fmt.Errorf("delegated method %q: %w", method, err)
 		}
@@ -149,8 +141,8 @@ func WithCaller(ctx context.Context, principal Principal) context.Context {
 	return context.WithValue(ctx, callerKey{}, principal)
 }
 
-// Caller is the principal an AnyAccount or Accounts Rule admitted the call as. A call no such Rule admitted is
-// refused as unauthenticated.
+// Caller is the ServiceAccount principal an account rule admitted. A call no such Rule admitted is
+// refused as unauthenticated; Identity callers are read with Admitted.
 func Caller(ctx context.Context) (Principal, error) {
 	principal, ok := ctx.Value(callerKey{}).(Principal)
 	if !ok {
@@ -184,6 +176,10 @@ func sameAdmission(a, b Admission) bool {
 	case DelegatedAdmission:
 		second, ok := b.(DelegatedAdmission)
 		return ok && first.Actor == second.Actor && sameServiceAccountIdentity(first.EffectiveCaller, second.EffectiveCaller) &&
+			proto.Equal(first.Provenance, second.Provenance)
+	case DelegatedIdentityAdmission:
+		second, ok := b.(DelegatedIdentityAdmission)
+		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&
 			proto.Equal(first.Provenance, second.Provenance)
 	case IdentityAdmission:
 		second, ok := b.(IdentityAdmission)
@@ -263,11 +259,11 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAnyAccount, ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount, ruleReviewedServiceAccountOrIdentity, ruleAnySubject:
+	case ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount, ruleReviewedServiceAccountOrIdentity, ruleAnySubject:
 	default:
 		return nil, errMethodNotAllowed
 	}
-	if rule.kind == ruleAnyAccount && rule.principalResolver == nil || rule.kind == ruleAnySubject && rule.subjectResolver == nil {
+	if rule.kind == ruleAnySubject && rule.subjectResolver == nil {
 		return nil, errMethodNotAllowed
 	}
 	resolveContext := ctx
@@ -291,7 +287,14 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	var principal Principal
 	var err error
 	if rule.kind == ruleSVIDOrAccounts && rule.resolver.usesSVID(resolveContext) {
-		principal, err = rule.resolver.Resolve(resolveContext)
+		var subject Subject
+		if subject, err = rule.resolver.ResolveSubject(resolveContext); err != nil {
+			return nil, err
+		}
+		if identity, ok := subject.(IdentityPrincipal); ok {
+			return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
+		}
+		principal = subject.(Principal)
 	} else if rule.kind == ruleAccounts || rule.kind == ruleSVIDOrAccounts {
 		principal, err = rule.resolver.RequireAccount(resolveContext, rule.accounts)
 	} else if rule.kind == ruleReviewedServiceAccount || rule.kind == ruleReviewedServiceAccountOrIdentity {
@@ -326,8 +329,6 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
 		}
 		principal = subject.(Principal)
-	} else {
-		principal, err = rule.principalResolver.Resolve(resolveContext)
 	}
 	if err != nil {
 		return nil, err
@@ -335,6 +336,16 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	caller := serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)
 	callerContext := withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal})
 	return WithCaller(callerContext, principal), nil
+}
+
+// httpMethodName keys the one Rule AdmitRequest applies; an HTTP request has no gRPC method name.
+const httpMethodName = "/http"
+
+// AdmitRequest admits an HTTP request by this Rule exactly as the interceptors admit an RPC, from
+// its Authorization header, its base64 delegation header and its verified TLS peer. The returned
+// context carries the same typed Admitted result and, for a direct ServiceAccount, Caller.
+func (r Rule) AdmitRequest(request *http.Request, admissionTimeout time.Duration) (context.Context, error) {
+	return Methods{httpMethodName: r}.admit(requestContext(request), httpMethodName, admissionTimeout)
 }
 
 // admittedStream is a stream whose context carries the admitted principal.

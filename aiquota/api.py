@@ -92,6 +92,7 @@ class SnapshotFeed:
         return self._snapshot
 
     async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
+        # Non-forced calls let the source's cache decide whether to poll providers.
         # Calls that were already waiting when a refresh began share its result,
         # including forced collector calls. A later forced call starts a new
         # provider poll as requested.
@@ -103,11 +104,6 @@ class SnapshotFeed:
             self._fetch_revision += 1
             await self.publish(snapshot)
             return snapshot
-
-    async def ensure_current(self) -> QuotaSnapshot:
-        # Let the source's existing 120-second cache decide whether reconnects
-        # need a provider refresh; the feed still coalesces concurrent misses.
-        return await self.fetch()
 
     async def publish(self, snapshot: QuotaSnapshot) -> int:
         async with self._condition:
@@ -135,7 +131,7 @@ class SnapshotFeed:
             return SnapshotSubscription(token, self._revision, self._snapshot)
 
     async def open_subscription(self) -> SnapshotSubscription:
-        await self.ensure_current()
+        await self.fetch()
         return await self.subscribe_current()
 
     async def close_subscription(self, token: int) -> None:
@@ -179,7 +175,19 @@ class SnapshotFeed:
 
 
 def _next_view_transition(snapshot: QuotaSnapshot) -> datetime | None:
-    changes = [provider.burn.changes_at for provider in to_view(snapshot.quotas).providers if provider.burn is not None]
+    now = datetime.now(UTC)
+    providers = to_view(snapshot.quotas, now).providers
+    changes = [provider.burn.changes_at for provider in providers if provider.burn is not None]
+    for provider in providers:
+        result = provider.display.result
+        if result is None:
+            continue
+        for grant in result.claude_reset_grants or []:
+            changes.extend(
+                transition
+                for transition in (grant.starts_at, grant.expires_at)
+                if transition is not None and transition > now
+            )
     return min(changes) if changes else None
 
 
@@ -576,7 +584,7 @@ def create_app(
 
     @app.get("/v1/events", dependencies=[Depends(_require_api_auth)])
     async def events(request: Request) -> StreamingResponse:
-        await feed.ensure_current()
+        await feed.fetch()
 
         async def event_stream() -> AsyncIterator[bytes]:
             subscription = await feed.subscribe_current()

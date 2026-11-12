@@ -36,12 +36,6 @@ pub fn simple_assign_target(target: &SimpleAssignTarget) -> Option<SimpleWriteTa
     }
 }
 
-/// Return a simple binding or member update target, normalizing only
-/// parentheses and TypeScript wrappers that erase at runtime.
-pub fn simple_update_target(target: &Expr) -> Option<SimpleWriteTarget<'_>> {
-    simple_write_target_expr(target)
-}
-
 /// Strip syntax that does not change the runtime target expression.
 pub fn transparent_target_expr(expression: &Expr) -> &Expr {
     match expression {
@@ -55,7 +49,9 @@ pub fn transparent_target_expr(expression: &Expr) -> &Expr {
     }
 }
 
-fn simple_write_target_expr(target: &Expr) -> Option<SimpleWriteTarget<'_>> {
+/// Return a simple binding or member target from an expression, normalizing
+/// only parentheses and TypeScript wrappers that erase at runtime.
+pub fn simple_write_target_expr(target: &Expr) -> Option<SimpleWriteTarget<'_>> {
     match transparent_target_expr(target) {
         Expr::Ident(binding) => Some(SimpleWriteTarget::Binding(binding.to_id())),
         Expr::Member(member) => Some(SimpleWriteTarget::Member(member)),

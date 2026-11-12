@@ -30,8 +30,8 @@ var errGitHubDisabled = errors.New("GitHub provider is disabled")
 var errSandboxMissing = errors.New("destination Sandbox not found")
 
 var (
-	// errSendDenied is a message to a Sandbox no current grant of the sender covers.
-	errSendDenied = errors.New("no session_inbox_access rule bound to this ServiceAccount allows send_message to the Sandbox")
+	// errSendDenied is a message to a Session of another Identity, in a Sandbox no current grant of the sender covers.
+	errSendDenied = errors.New("the Session is not of the sender's Identity, and no session_inbox_access rule bound to the sender allows send_message to its Sandbox")
 	// errSendPolicyUnavailable is a send while the service's view of the grants is not current: before its first
 	// read of them, or once a watch has fallen behind.
 	errSendPolicyUnavailable = errors.New("the service's view of send grants is not current")

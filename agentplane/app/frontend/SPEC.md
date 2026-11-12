@@ -1,9 +1,39 @@
 # Agentplane frontend
 
+## Environment identity
+
+The Sandbox Status tab shows the currently requested `spec.identity` name. Only a Sandbox whose
+controller-reported stop stage is `Stopped` shows the identity selector and change button. Changing
+or clearing it warns that the next identity can read files earlier agents left in the same
+workspace. The app sends an exact namespace/name/UID target to EnvironmentService through its
+authenticated facade and displays its admission refusal message. The "Retained identity record"
+reads the current Sandbox-owned WorkloadCredential on demand and offers an explicit refresh. An
+empty record is not historical proof: older credentials are revoked, and the UI says this is not
+a complete history. The new-environment identity picker awaits the open creation-contract question.
+
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
 Sandbox availability, an unconfirmed Session creation, Session materialization in progress, or model availability.
+When creating a Thread on an existing Sandbox, the form shows that Sandbox's Identity and current
+Identity bindings read-only. It distinguishes an unassigned Identity from a missing Identity resource,
+and keeps policy-watch loading and failures visible.
+
+## Sandbox deletion and identity cleanup
+
+The Sandbox list and page offer an independent identity-cleanup choice in the delete dialog when the
+selected Sandbox names an Identity. The choice starts off and is unavailable for a Flux-owned Identity,
+an incomplete or unhealthy Sandbox/Policy watch, a failed Session inventory, or any other Sandbox,
+Session, or unowned PolicyBinding still naming that Identity. Deleting the Sandbox alone remains
+available. A selected cleanup waits for the Sandbox to disappear from the live inventory before
+deleting the Identity, and shows a refusal or error with a retry action if cleanup cannot finish.
+
+The browser's paginated Session scan and live watches are advisory, not an atomic reference snapshot.
+The Policy Controller also rejects its known PolicyBinding and WorkloadCredential references, but
+currently does not enforce Sandbox or Session references at DeleteIdentity admission. A concurrent
+new Sandbox or Session reference can race cleanup; launch and delivery must fail closed if the named
+Identity no longer exists. Default-on cleanup requires an agreed app-minted origin marker, which is
+not yet present on Identities.
 
 ## Thread names
 
@@ -25,6 +55,12 @@ controller's published stage. When progress belongs to the desired generation, i
 controller's first unmet barrier and its resource/process identity, available admission count,
 journal seal identity, acknowledgement cursor, and surfaced lifecycle error. When progress belongs
 to an older generation, it is labeled as last progress and its blocker and error are withheld.
+
+## Policy binding status
+
+A reader's refusal applies only to the binding generation it observed. A condition for another
+generation keeps the binding "Not yet judged" until readers catch up. A current refusal or a
+missing selected PolicySet still shows "Refused".
 
 ## Tool calls
 

@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -222,9 +224,9 @@ type ServiceAccount policyapi.ServiceAccountRef
 // bindings whose subject is that name, only while the live Identity of that name has that UID.
 //
 // UID fencing protects stale principals: a credential of a deleted incarnation gains nothing from a
-// same-named successor. It does not end a binding. A binding's lifetime comes from its
-// ownerReference to its Identity, which the app and Dispatcher must set, so garbage collection
-// deletes an agent's bindings with the Identity.
+// same-named successor. An Identity owner reference also pins a binding to that incarnation,
+// so a successor gains nothing from a stale binding before garbage collection. A declarative
+// binding without an Identity owner follows the subject name.
 //
 // The WorkloadCredential resolver yields Identity subjects (agentplane/docs/workload_authentication.md,
 // "How a verifier resolves a peer"). The egress proxy and the Action Service look them up; the other
@@ -288,7 +290,7 @@ func (i *Index[R]) naming(subject Subject) []string {
 	var names []string
 	now := i.now()
 	for name, binding := range i.bindings {
-		if i.names(binding.Spec.Subject, subject) && policyapi.Live(binding.Spec.ExpiresAt, now) {
+		if i.names(binding, subject) && policyapi.Live(binding.Spec.ExpiresAt, now) {
 			names = append(names, name)
 		}
 	}
@@ -297,13 +299,22 @@ func (i *Index[R]) naming(subject Subject) []string {
 }
 
 // names reports whether a binding's subject is the lookup's.
-func (i *Index[R]) names(bound policyapi.Subject, subject Subject) bool {
+func (i *Index[R]) names(binding policyapi.PolicyBinding, subject Subject) bool {
+	bound := binding.Spec.Subject
 	switch subject := subject.(type) {
 	case ServiceAccount:
 		return bound.Identity == nil && bound.Namespace == subject.Namespace && bound.Name == subject.Name
 	case Identity:
 		live, ok := i.identities[subject.Name]
-		return bound.Identity != nil && bound.Identity.Name == subject.Name && ok && live == subject.UID
+		if bound.Identity == nil || bound.Identity.Name != subject.Name || !ok || live != subject.UID {
+			return false
+		}
+		// An Identity owner pins this binding while garbage collection is pending, including
+		// bindings also owned by a Sandbox. Declarative unowned bindings still follow the name.
+		return !slices.ContainsFunc(binding.OwnerReferences, func(owner metav1.OwnerReference) bool {
+			return strings.HasPrefix(owner.APIVersion, policyapi.SchemeGroupVersion.Group+"/") &&
+				owner.Kind == "Identity" && owner.Name == subject.Name && owner.UID != subject.UID
+		})
 	default:
 		panic(fmt.Sprintf("unknown subject %T", subject))
 	}

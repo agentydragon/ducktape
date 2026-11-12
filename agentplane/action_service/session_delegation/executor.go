@@ -76,18 +76,11 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 }
 
 func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	caller, ok := request.Caller.(store.ServiceAccountCaller)
-	if !ok {
-		// The delegation envelope names a ServiceAccount, as the Session APIs authorize by one.
-		// TODO: refuse an Identity caller at submission, so no operator approves a doomed request.
-		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT,
-			"Session delegation forwards a calling ServiceAccount, and this request's caller is not one"), nil
-	}
-	delegated, err := e.delegatedContext(ctx, request, caller)
+	delegated, err := e.delegatedContext(ctx, request)
 	if err != nil {
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE, err.Error()), nil
 	}
-	result, err := e.dispatch(delegated, request, caller.Account.Namespace)
+	result, err := e.dispatch(delegated, request)
 	var refused *refusal
 	var resumeOutcome *resumeOutcomeError
 	switch {
@@ -104,25 +97,42 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	}
 }
 
-func (e *Executor) delegatedContext(ctx context.Context, request store.ExecutionRequest, caller store.ServiceAccountCaller) (context.Context, error) {
-	if caller.UID == nil || strings.TrimSpace(*caller.UID) == "" {
-		return nil, errors.New("the admitted caller ServiceAccount UID was not recorded")
+// delegatedContext names the request's recorded caller, a ServiceAccount or an Identity incarnation, as
+// the effective caller of every backend call.
+func (e *Executor) delegatedContext(ctx context.Context, request store.ExecutionRequest) (context.Context, error) {
+	if request.RequestID == uuid.Nil || request.ExecutionID == uuid.Nil {
+		return nil, errors.New("the Action correlation identity is incomplete")
 	}
-	if caller.Account.Namespace == "" || caller.Account.Name == "" || request.RequestID == uuid.Nil || request.ExecutionID == uuid.Nil {
-		return nil, errors.New("the admitted caller or Action correlation identity is incomplete")
-	}
-	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+	envelope := &delegationpb.Delegation{Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{
+		RequestId: request.RequestID.String(), ExecutionId: request.ExecutionID.String(),
+	}}}
+	switch caller := request.Caller.(type) {
+	case store.ServiceAccountCaller:
+		if caller.UID == nil || strings.TrimSpace(*caller.UID) == "" {
+			return nil, errors.New("the admitted caller ServiceAccount UID was not recorded")
+		}
+		if caller.Account.Namespace == "" || caller.Account.Name == "" {
+			return nil, errors.New("the admitted caller identity is incomplete")
+		}
+		envelope.EffectiveCaller = &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name},
 			Uid:     *caller.UID,
-		},
-		ActionRequestId:   request.RequestID.String(),
-		ActionExecutionId: request.ExecutionID.String(),
+		}}
+	case store.IdentityCaller:
+		if caller.Identity.Name == "" || caller.Identity.UID == "" {
+			return nil, errors.New("the admitted caller Identity is incomplete")
+		}
+		envelope.EffectiveCaller = &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{
+			Name: caller.Identity.Name, Uid: caller.Identity.UID,
+		}}
+	default:
+		return nil, errors.New("the request was recorded for a kind of caller this release does not know")
 	}
 	return workloadgrpc.WithDelegation(ctx, envelope)
 }
 
-func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest, callerNamespace string) (any, error) {
+func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (any, error) {
+	caller := request.Caller
 	switch request.Action.Name {
 	case contract.ActionListEnvironments:
 		args, err := e.inputs.ListEnvironments.Decode(request.Arguments)
@@ -143,7 +153,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest,
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
+		if err := validateTargetNamespace(caller, args.Target); err != nil {
 			return nil, err
 		}
 		response, err := e.environment.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
@@ -161,7 +171,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest,
 	case "get":
 		switch e.group {
 		case contract.GroupEnvironments:
-			return e.getEnvironment(ctx, request, callerNamespace)
+			return e.getEnvironment(ctx, request)
 		case contract.GroupSessions:
 			return e.getSession(ctx, request)
 		default:
@@ -172,7 +182,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest,
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
+		if err := validateTargetNamespace(caller, args.Target); err != nil {
 			return nil, err
 		}
 		harness, err := args.Spec.Harness.Proto()
@@ -207,7 +217,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest,
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
+		if err := validateTargetNamespace(caller, args.Target); err != nil {
 			return nil, err
 		}
 		response, err := e.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
@@ -291,7 +301,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest,
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
+		if err := validateTargetNamespace(caller, args.Target); err != nil {
 			return nil, err
 		}
 		response, err := e.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
@@ -306,12 +316,12 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest,
 	}
 }
 
-func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRequest, callerNamespace string) (any, error) {
+func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRequest) (any, error) {
 	args, err := e.inputs.GetEnvironment.Decode(request.Arguments)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
+	if err := validateTargetNamespace(request.Caller, args.Target); err != nil {
 		return nil, err
 	}
 	getRequest := &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{
@@ -350,8 +360,11 @@ type sessionSnapshotResult struct {
 	ReadError *sessionclient.SourceError `json:"read_error,omitempty"`
 }
 
-func validateTargetNamespace(callerNamespace string, target contract.TargetRef) error {
-	if target.Namespace != callerNamespace {
+// validateTargetNamespace keeps a ServiceAccount caller to its own namespace's environments. An
+// Identity has no namespace: the backend scopes it to what is recorded with its Identity.
+func validateTargetNamespace(caller store.Caller, target contract.TargetRef) error {
+	account, ok := caller.(store.ServiceAccountCaller)
+	if ok && target.Namespace != account.Account.Namespace {
 		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "target.namespace must match the authenticated caller namespace")
 	}
 	return nil

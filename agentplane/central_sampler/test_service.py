@@ -55,6 +55,9 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             update={"reasoning_efforts": {"high"}}
         )
         config.models["compatible-model"] = config.models["test-model"].model_copy(update={"reasoning_efforts": {""}})
+        config.models["other-provider-model"] = config.models["test-model"].model_copy(
+            update={"provider_model": "other-test-model"}
+        )
         config.models["standard-model"] = ModelConfig(
             connection="provider",
             provider_model="standard-provider-model",
@@ -87,6 +90,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                     ("unknown-model", grpc.StatusCode.INVALID_ARGUMENT),
                     ("restricted-model", grpc.StatusCode.INVALID_ARGUMENT),
                     ("standard-model", grpc.StatusCode.FAILED_PRECONDITION),
+                    ("other-provider-model", grpc.StatusCode.FAILED_PRECONDITION),
                 ):
                     with pytest.raises(grpc.aio.AioRpcError) as rejected:
                         await stub.ChangeModel(
@@ -143,8 +147,47 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                         timeout=10,
                     )
                 assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-                await exchange.send(*response_stream([Message("done")], model="test-model").events)
+                await exchange.send(
+                    *response_stream(
+                        [
+                            Reasoning("A retained summary.", encrypted_content="fixture-model-bound-reasoning"),
+                            Message("done"),
+                        ],
+                        model="test-model",
+                    ).events
+                )
             assert (await turn_completed(stub, SESSION_ID, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.ChangeModel(
+                    environment_runtime_pb2.ChangeModelRequest(
+                        session_id=request.session_id, command_id="after-reasoning", model="other-provider-model"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+            assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+            # A route alias for the same provider model still accepts retained continuation.
+            await stub.ChangeModel(
+                environment_runtime_pb2.ChangeModelRequest(
+                    session_id=request.session_id, command_id="same-provider-model", model="test-model"
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            await stub.SubmitInput(
+                environment_runtime_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="continue", text="Continue with the same model."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                assert exchange.request.body["model"] == "test-model"
+                assert [
+                    item["encrypted_content"] for item in exchange.request.body["input"] if item["type"] == "reasoning"
+                ] == ["fixture-model-bound-reasoning"]
+                await exchange.send(*response_stream([Message("continued")], model="test-model").events)
+            assert (await turn_completed(stub, SESSION_ID, "continue")).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_session_store_survives_idle_turns_and_is_separate_between_sessions(
@@ -491,7 +534,7 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
     assert summaries == ["Weighing the answer."]
 
 
-async def test_restart_never_replays_unresolved_provider_intent(
+async def test_restart_abandons_cut_provider_request_and_resamples(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
@@ -517,26 +560,24 @@ async def test_restart_never_replays_unresolved_provider_intent(
                 intent_id = intents[0].id
                 await active.aclose()
         async with service(config) as stub:
+            # The successor abandons the cut request without committing its stream and samples
+            # again; the abandoned request itself is never re-sent.
+            async with await endpoint.next() as exchange:
+                await exchange.send(*response_stream([Message("resampled")], model="test-model").events)
             terminal = await turn_completed(stub, SESSION_ID, "lost")
-            assert terminal.status == event_pb2.TURN_STATUS_FAILED
+            assert terminal.status == event_pb2.TURN_STATUS_COMPLETED
             snapshot = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
-            assert snapshot.blocked
+            assert not snapshot.blocked
             assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == receipt
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="new", text="Must not replay"
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
-                )
-            assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-        intents = await store.intents()
-        assert len(intents) == 1
-        assert intents[0].id == intent_id
-        assert intents[0].result is None
+        snapshots = {intent.id: intent for intent in await store.intents()}
+        assert len(snapshots) == 2
+        abandoned = snapshots[intent_id].result
+        assert abandoned is not None
+        assert abandoned["status"] == "abandoned"
+        assert abandoned["output_committed"] is False
+        assert abandoned["automatic_replay"] is False
 
 
 async def test_interrupt_admission_survives_unavailable_executor(
@@ -595,7 +636,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
             assert outcome.outcome == sampler_pb2.COMMAND_OUTCOME_UNKNOWN
 
 
-async def test_restart_cannot_reconstruct_live_javascript(
+async def test_restart_settles_live_javascript_and_continues(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
@@ -629,31 +670,137 @@ async def test_restart_cannot_reconstruct_live_javascript(
                 await exchange.send(*response_stream([Message("cell remains live")], model="test-model").events)
             await turn_completed(stub, SESSION_ID, "yielded")
         async with service(config) as stub:
+            # The new host cannot reconstruct the cell; the resident driver that picks the Session
+            # up abandons it with a recorded loss and the Session stays usable.
             stream = stub.FollowEvents(
                 sampler_pb2.FollowEventsRequest(session_id=request.session_id, follow=True), metadata=METADATA
             )
             try:
                 async with asyncio.timeout(10):
                     async for frame in stream:
-                        if frame.entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_BLOCKED:
+                        progress = frame.entry.event.execution_progress
+                        if (
+                            progress.kind == event_pb2.ExecutionProgress.KIND_CODE_HOST_LOSS
+                            and progress.phase == event_pb2.ExecutionProgress.PHASE_COMMITTED
+                        ):
                             break
             finally:
                 stream.cancel()
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
-            assert session.blocked
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+            assert not session.blocked
+            await stub.SubmitInput(
+                environment_runtime_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="lost-cell", text="Continue after host loss"
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                assert "store()/load() values has been lost" in json.dumps(exchange.request.body)
+                await exchange.send(
+                    *response_stream([Message("continued without the cell")], model="test-model").events
+                )
+            assert (await turn_completed(stub, SESSION_ID, "lost-cell")).status == event_pb2.TURN_STATUS_COMPLETED
+            intents = [intent for intent in await store.intents() if intent.request.get("kind") == "cell"]
+            assert len(intents) == 1
+
+
+async def test_exited_process_with_open_output_yields_and_preserves_late_output(
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        release = tmp_path / "release-late-output"
+        request = create_request(tmp_path)
+        async with service(config) as stub:
+            try:
+                await stub.CreateSession(request, metadata=METADATA, timeout=10)
                 await stub.SubmitInput(
                     environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="lost-cell", text="Continue after host loss"
+                        session_id=request.session_id, command_id="start-open-output", text="Run the command."
                     ),
                     metadata=METADATA,
                     timeout=10,
                 )
-            assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-            intents = [intent for intent in await store.intents() if intent.request.get("kind") == "cell"]
-            assert len(intents) == 1
+                async with await endpoint.next() as exchange:
+                    command = f"(while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf late-output) & printf early-output"
+                    arguments = {"cmd": command, "yield_time_ms": 1000}
+                    await exchange.send(
+                        *response_stream(
+                            [
+                                CustomToolCall(
+                                    "start", "exec", f"text(await tools.exec_command({json.dumps(arguments)}));"
+                                )
+                            ],
+                            model="test-model",
+                        ).events
+                    )
+                async with await endpoint.next() as exchange:
+                    outputs = [
+                        item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                    ]
+                    result = json.loads(outputs[-1]["output"][1]["text"])
+                    process_id = result["session_id"]
+                    assert result["exit_code"] == 0
+                    assert result["output"] == "early-output"
+                    await exchange.send(*response_stream([Message("The command exited.")], model="test-model").events)
+                assert (
+                    await turn_completed(stub, request.session_id, "start-open-output")
+                ).status == event_pb2.TURN_STATUS_COMPLETED
+
+                # The periodic Session work scan must not become process/read polling.
+                await asyncio.sleep(0.3)
+                before = sum(intent.request.get("method") == "process/read" for intent in await store.intents())
+                await asyncio.sleep(1.3)
+                after = sum(intent.request.get("method") == "process/read" for intent in await store.intents())
+                assert after == before
+
+                release.write_text("")
+                async for attempt in AsyncRetrying(stop=stop_after_delay(5), wait=wait_fixed(0.05), reraise=True):
+                    with attempt:
+                        process = await store.process(process_id)
+                        assert process is not None
+                        assert process.status == "exited_unread"
+                        assert process.buffered_output == b"late-output"
+
+                await stub.SubmitInput(
+                    environment_runtime_pb2.SubmitInputRequest(
+                        session_id=request.session_id, command_id="read-late-output", text="Read the late output."
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                async with await endpoint.next() as exchange:
+                    arguments = {"session_id": process_id, "yield_time_ms": 1}
+                    await exchange.send(
+                        *response_stream(
+                            [
+                                CustomToolCall(
+                                    "read", "exec", f"text(await tools.write_stdin({json.dumps(arguments)}));"
+                                )
+                            ],
+                            model="test-model",
+                        ).events
+                    )
+                async with await endpoint.next() as exchange:
+                    outputs = [
+                        item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                    ]
+                    result = json.loads(outputs[-1]["output"][1]["text"])
+                    assert result["output"] == "late-output"
+                    assert result["exit_code"] == 0
+                    assert "session_id" not in result
+                    await exchange.send(*response_stream([Message("Late output read.")], model="test-model").events)
+                assert (
+                    await turn_completed(stub, request.session_id, "read-late-output")
+                ).status == event_pb2.TURN_STATUS_COMPLETED
+            finally:
+                release.touch()
 
 
 async def test_unpolled_process_exit_releases_capacity_and_retains_output(

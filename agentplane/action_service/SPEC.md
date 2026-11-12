@@ -111,8 +111,10 @@ while that Identity of that UID exists, and a watch rechecks it before every fra
 a service reader. It is recorded by name and UID on its requests and cancellation events, and owns,
 reads, cancels and spends idempotency keys by incarnation: a later Identity of the same name shares
 nothing with it, as it shares none of its bindings. Its policy is the bindings naming its Identity.
-Executors that act as the calling ServiceAccount (`orchestration_v1` launches,
-`session_delegation`) refuse an Identity's request with `caller_not_service_account`; MCP groups
+`orchestration_v1` launches, which act as the calling ServiceAccount, refuse an Identity's request
+with `caller_not_service_account`. `session_delegation` forwards it as that Identity incarnation,
+which Dispatcher and History authorize as the Identity's own workload; the Environment Service
+admits no Identity caller and refuses it, and Dispatcher refuses its `sessions/create`. MCP groups
 run it, and a `pod` group gives it boxes of its own. A request a newer release recorded for a caller kind this one does not know names no
 caller in its receipt, is no workload's, and the executors that act as the caller refuse it.
 
@@ -324,13 +326,14 @@ Pod with that credential's Secret mounted into its egress sidecar alone, and the
 which accepts that credential ID. A box made from a template without a sidecar mounts nothing.
 The record is the box Pod's controller owner. A ServiceAccount caller's box runs as it, and the
 record's own owner is the account's controller (a Session Sandbox), else the account. An Identity
-caller's box runs on the namespace's `default` ServiceAccount, and its record names and is owned by
-the Identity incarnation; since an owner reference cannot cross namespaces, only a group of the
-policy namespace serves an Identity, and any other refuses it with `caller_not_local`. Boxes are
-found by their caller's labels: a later Identity of the same name, or a same-named account, reaches
-none of them. Dispose deletes the record before the Pod, so the
-box's SVID stops resolving before the Pod has stopped; garbage collection of the Sandbox, account or
-Identity removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
+caller's box runs on the group namespace's `default` ServiceAccount, in any group namespace, and its
+record names the Identity incarnation and has no owner: acting as an Identity confers no authority
+over a box's lifecycle, so the box lives until it is disposed of, and deleting the Identity only
+revokes its SVID. Boxes are found by their caller's labels: a later Identity of the same name, or a
+same-named account, reaches none of them, and its create of a box of the same name is refused while
+that box exists. Dispose deletes the record before the Pod, so the
+box's SVID stops resolving before the Pod has stopped; garbage collection of a ServiceAccount caller's
+Sandbox or account removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
 resolves against it.
 
 ## Orchestration Actions (v1)

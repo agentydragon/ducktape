@@ -1,7 +1,8 @@
 //! The record-factory assertion supplies only the prototype premises for the
 //! existing checked private-constructor proof.
 
-use debundle_e2e_graph_support::FixtureGraphExt;
+use analysis::execution_evidence::ExecutionPrecisionLossReason;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 const HOLDER: &str = r#"class Holder {
@@ -20,6 +21,380 @@ const FACTORY: &str = "function create(record) { return new Holder(record, () =>
 const COMPUTED_MUTATOR: &str = "function mutate(target, key, value) { target[key] = value; }\n";
 const PREFIX: &str = "const prefix = new globalThis.Date();\n";
 const LATER: &str = "const later = 42;\n";
+
+#[test]
+fn fresh_local_class_own_field_read_has_pure_value() {
+    let source = r#"class Box {
+  constructor(record) { this.record = record; }
+  value = () => this.record.callback();
+}
+
+function make(record) { return new Box(record); }
+console.log('early');
+const first = make({ callback: () => 1 });
+const readers = [first.value];
+const later = readers;
+console.log(later.length, later[0]());
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "factory",
+                &[
+                    Member::new("Box"),
+                    Member::new("make").with_retained_record_factory(),
+                ],
+            ),
+            logical_module("commands", &[Member::new("first")]),
+            logical_module("readers", &[Member::new("readers")]),
+            logical_module_with_anon(
+                "early_late",
+                &[Member::new("later")],
+                &["console.log('early');"],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "early\n1 1\n");
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/readers.js",
+        &["readers"],
+        &[],
+    );
+    let graph = fixture.dependency_graph();
+    let readers = node_declaring(&graph, "readers");
+    assert!(readers.purity.is_pure(), "{:?}", readers.purity);
+}
+
+#[test]
+fn private_own_field_purity_refuses_mutation_getters_escape_and_skipped_reads() {
+    let cases = [
+        (
+            "const changed = first.value = () => 8;",
+            "[first.value]",
+            "8\n",
+        ),
+        (
+            "const changed = Object.defineProperty(first, 'value', { get() { return () => 9; } });",
+            "[first.value]",
+            "9\n",
+        ),
+        (
+            "const changed = delete first.value;",
+            "[first.value]",
+            "9\n",
+        ),
+        (
+            "const changed = (globalThis.saved = first, globalThis.saved.value = () => 8);",
+            "[first.value]",
+            "8\n",
+        ),
+        (
+            "const changed = (() => { const invoke = f => f(first); invoke(x => { delete x.value; }); return 1; })();",
+            "[first.value]",
+            "9\n",
+        ),
+        (
+            "const changed = Date.now() < 0;",
+            "changed ? [first.value] : []",
+            "0\n",
+        ),
+        (
+            "const changed = Date.now() < 0;",
+            "changed && [first.value]",
+            "0\n",
+        ),
+        (
+            "let changed = Date.now() < 0;",
+            "changed &&= [first.value]",
+            "0\n",
+        ),
+        ("const changed = null;", "changed?.[first.value]", "0\n"),
+        (
+            "let changed;",
+            "({ changed = first.value } = { changed: [] })",
+            "0\n",
+        ),
+    ];
+    for (prefix, read, expected) in cases {
+        let source = format!(
+            r#"class Box {{
+  constructor(record) {{ this.record = record; }}
+  get value() {{ return () => 9; }}
+  value = () => this.record.callback();
+}}
+function make(record) {{ return new Box(record); }}
+const first = make({{ callback: () => 1 }});
+{prefix}
+const readers = {read};
+console.log(typeof readers?.[0] === 'function' ? readers[0]() : 0);
+"#
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("Box"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("first"),
+                        Member::new("changed"),
+                        Member::new("readers"),
+                    ],
+                    &[],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let graph = fixture.dependency_graph();
+        let readers = node_declaring(&graph, "readers");
+        assert!(
+            !readers.purity.is_pure(),
+            "{prefix} / {read}: {:?}",
+            readers.purity
+        );
+    }
+}
+#[test]
+fn reading_a_constructed_own_field_does_not_publish_an_unrelated_getter_receiver() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get unrelated() { return this.record.callback(); }
+  search = () => this.record.callback();
+}
+
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+const searches = [first.search];
+const second = create({ callback: () => 2 });
+console.log(searches[0](), second.search());
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "factory",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                    ],
+                ),
+                logical_module("commands", &[Member::new("first"), Member::new("second")]),
+                logical_module("searches", &[Member::new("searches")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(execution.complete, "{execution:#?}");
+    assert_eq!(
+        execution.local_record_factory_uses.len(),
+        1,
+        "{execution:#?}"
+    );
+    let searches = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "searches")
+        })
+        .expect("searches source unit");
+    assert!(
+        !graph.edges.iter().any(|edge| {
+            edge.edge_kind == analysis_model::DepKind::Sequenced
+                && edge.source == second.id
+                && edge.target == searches.id
+        }),
+        "the private own-field read must not sequence the later factory: {:#?}",
+        graph.edges
+    );
+}
+
+#[test]
+fn replaced_own_field_keeps_getter_receiver_publication() {
+    for replace in [
+        "Object.defineProperty(first, 'search', { get() { globalThis.retained = this; return () => 1; } });",
+        "delete first.search;",
+        "delete ({ first }).first.search;",
+        "delete ({ [first]: 1, target: first }).target.search;",
+        "delete (() => first)().search;",
+        "globalThis.retained = first, delete globalThis.retained.search;",
+    ] {
+        let source = format!(
+            r#"class Holder {{
+  constructor(record) {{ this.record = record; }}
+  get search() {{ globalThis.retained = this; return () => 1; }}
+  search = () => this.record.callback();
+}}
+function create(record) {{ return new Holder(record); }}
+const first = create({{ callback: () => 1 }});
+{replace}
+const searches = [first.search];
+const second = create({{ callback: () => 2 }});
+console.log(searches[0](), second.search());
+"#
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                        Member::new("first"),
+                        Member::new("searches"),
+                        Member::new("second"),
+                    ],
+                    &[replace],
+                )],
+            )
+            .with_dataflow_aware_s_chain(),
+        );
+        assert_preserved_entry_output(&fixture, "1 2\n");
+        let graph = fixture.dependency_graph();
+        let second = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "second")
+            })
+            .expect("second source unit");
+        let execution = second
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report");
+        assert!(
+            !execution.local_record_factory_rejections.is_empty(),
+            "{replace}: {execution:#?}"
+        );
+    }
+}
+
+#[test]
+fn reading_an_inherited_getter_still_publishes_its_receiver() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get search() { globalThis.retained = this; return () => this.record.callback(); }
+}
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+const searches = [first.search];
+const second = create({ callback: () => 2 });
+console.log(searches[0](), second.search());
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("first"),
+                Member::new("searches"),
+                Member::new("second"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(
+        !execution.local_record_factory_rejections.is_empty(),
+        "{execution:#?}"
+    );
+}
+
+#[test]
+fn a_single_lexical_read_inside_a_function_can_run_after_its_field_exposes_this() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get search() { globalThis.retained = this; return () => this; }
+  search = () => this;
+}
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+function read() { return first.search; }
+const alias = read()();
+delete alias.search;
+const searches = [read()];
+const second = create({ callback: () => 2 });
+console.log(searches[0]() === alias, globalThis.retained === alias);
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Holder"),
+                    Member::new("create").with_retained_record_factory(),
+                    Member::new("first"),
+                    Member::new("read"),
+                    Member::new("alias"),
+                    Member::new("searches"),
+                    Member::new("second"),
+                ],
+                &["delete alias.search"],
+            )],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "true true\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(
+        !execution.local_record_factory_rejections.is_empty(),
+        "{execution:#?}"
+    );
+}
 
 const FRESH_RECORD: &str = r#"{
   execute: () => later,
@@ -60,6 +435,479 @@ const ACYCLIC_COMMAND_IMPORTER: &str = r#"import { command } from "./provider.js
 export const observed = command.run();
 console.log(observed);
 "#;
+
+fn nested_wrapper_source(pre_factory: &str, factory: &str, wrapper: &str) -> String {
+    let callbacks = vec!["() => 0"; 65].join(", ");
+    format!(
+        r#"const warmup = JSON.stringify([{callbacks}]);
+const prefix = new globalThis.Date();
+const maybe = globalThis.unknownObject || {{}};
+maybe.record = 1;
+class Policy {{}}
+class Command {{
+  constructor(record, policy) {{
+    this.record = record;
+    this.policy = policy;
+    this.weight = record.weight ?? 0;
+  }}
+  run() {{ return this.record.execute(); }}
+}}
+{pre_factory}
+{factory}
+{wrapper}
+const command = wrapper("x", () => later);
+const later = command ? 7 : 0;
+console.log(command.run());
+export {{ command, later }};
+"#
+    )
+}
+
+const NESTED_FACTORY: &str = "function make(record) { return new Command(record, new Policy()); }";
+const NESTED_WRAPPER: &str = "function wrapper(label, execute) { return make({ name: `Create ${label}`, execute, weight: 0 }); }";
+
+#[test]
+fn nested_record_factory_wrapper_preserves_a_split_cycle() {
+    let source = nested_wrapper_source("", NESTED_FACTORY, NESTED_WRAPPER);
+    let split = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "command",
+                    &[
+                        Member::new("warmup"),
+                        Member::new("prefix"),
+                        Member::new("maybe"),
+                        Member::new("Policy"),
+                        Member::new("Command"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("wrapper"),
+                        Member::new("command"),
+                    ],
+                    &["maybe.record = 1;"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_eq!(split.translation_validation()["accepts"], true);
+    assert_preserved_entry_output(&split, "7\n");
+
+    let members = [
+        Member::new("warmup"),
+        Member::new("prefix"),
+        Member::new("maybe"),
+        Member::new("Policy"),
+        Member::new("Command"),
+        Member::new("make").with_retained_record_factory(),
+        Member::new("wrapper"),
+        Member::new("command"),
+        Member::new("later"),
+    ];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "all",
+                &members,
+                &["maybe.record = 1;"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let graph = fixture.dependency_graph();
+    let command = node_declaring(&graph, "command");
+    let later = node_declaring(&graph, "later");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(execution.complete, "{execution:#?}");
+    assert!(
+        execution.local_record_factory_uses.iter().any(|use_| {
+            use_.factory_binding == "make"
+                && use_
+                    .prototype_properties
+                    .iter()
+                    .any(|property| property == "record")
+        }),
+        "{execution:#?}"
+    );
+    assert!(!graph.edges.iter().any(|edge| {
+        edge.source == command.id && edge.target == later.id && edge.constrains_init_order
+    }));
+}
+
+fn assert_nested_wrapper_falls_back(source: &str, extra_anon: &[&str]) {
+    let mut anon = vec!["maybe.record = 1;"];
+    anon.extend_from_slice(extra_anon);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("warmup"),
+                    Member::new("prefix"),
+                    Member::new("maybe"),
+                    Member::new("Policy"),
+                    Member::new("Command"),
+                    Member::new("make").with_retained_record_factory(),
+                    Member::new("wrapper"),
+                    Member::new("command"),
+                    Member::new("later"),
+                ],
+                &anon,
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let graph = fixture.dependency_graph();
+    let command = node_declaring(&graph, "command");
+    let later = node_declaring(&graph, "later");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(!execution.complete, "{execution:#?}");
+    assert!(
+        execution.local_record_factory_uses.is_empty(),
+        "{execution:#?}"
+    );
+    assert!(
+        execution.precision_losses.iter().any(|loss| matches!(
+            &loss.reason,
+            ExecutionPrecisionLossReason::UnsupportedConstruction { .. }
+        )),
+        "{execution:#?}"
+    );
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == command.id && edge.target == later.id && edge.constrains_init_order
+    }));
+}
+
+#[test]
+fn nested_record_factory_refuses_effects_and_unchecked_targets() {
+    let mutation = nested_wrapper_source(
+        "",
+        "function make(record) { globalThis.side = 1; return new Command(record, new Policy()); }",
+        NESTED_WRAPPER,
+    );
+    assert_nested_wrapper_falls_back(&mutation, &[]);
+
+    let conditional_body = nested_wrapper_source(
+        "",
+        "function make(record) { if (globalThis.flag) return new Command(record, new Policy()); return new Command(record, new Policy()); }",
+        NESTED_WRAPPER,
+    );
+    assert_nested_wrapper_falls_back(&conditional_body, &[]);
+
+    let setter_statement = "Object.defineProperty(Command.prototype, 'record', { set(value) { this._record = value; }, get() { return this._record; } });";
+    let setter = nested_wrapper_source(setter_statement, NESTED_FACTORY, NESTED_WRAPPER);
+    assert_nested_wrapper_falls_back(&setter, &[setter_statement]);
+
+    let reentry = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute) { return make({ name: label, execute: globalThis.read ? globalThis.read(execute) : execute, weight: 0 }); }",
+    );
+    assert_nested_wrapper_falls_back(&reentry, &[]);
+
+    let conditional_target = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute) { const selected = globalThis.flag ? make : make; return selected({ name: label, execute, weight: 0 }); }",
+    );
+    assert_nested_wrapper_falls_back(&conditional_target, &[]);
+
+    let unknown_template = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute) { return make({ name: `Create ${globalThis.label}`, execute, weight: 0 }); }",
+    );
+    assert_nested_wrapper_falls_back(&unknown_template, &[]);
+}
+
+#[test]
+fn nested_record_factory_reports_each_reused_class_premise() {
+    let source = r#"const maybe = globalThis.unknownObject || {};
+maybe.record = 1;
+class Command {
+  constructor(record) { this.record = record; }
+  run() { return this.record.execute(); }
+}
+function make(record) { return new Command(record); }
+function first(execute) { return make({ execute }); }
+function second(execute) { return make({ execute }); }
+const pair = [first(() => later), second(() => later)];
+const later = pair ? 7 : 0;
+console.log(pair[0].run() + pair[1].run());
+export { pair, later };
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("maybe"),
+                Member::new("Command"),
+                Member::new("make").with_retained_record_factory(),
+                Member::new("first"),
+                Member::new("second"),
+                Member::new("pair"),
+                Member::new("later"),
+            ],
+            &["maybe.record = 1;"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "14\n");
+    let graph = fixture.dependency_graph();
+    let pair = node_declaring(&graph, "pair");
+    let execution = pair
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert_eq!(
+        execution.local_record_factory_uses.len(),
+        2,
+        "{execution:#?}"
+    );
+    assert!(
+        execution.local_record_factory_uses.iter().all(|use_| {
+            use_.factory_binding == "make"
+                && use_
+                    .prototype_properties
+                    .iter()
+                    .any(|property| property == "record")
+        }),
+        "{execution:#?}"
+    );
+}
+
+#[test]
+fn independent_retained_arrays_do_not_create_a_constructor_heap_frontier() {
+    let source = r#"class Empty {}
+class Holder {
+  constructor(record, checker) { this.record = record; this.checker = checker; this.size = record.size ?? 0; }
+  size;
+  run() { return this.record.callback(); }
+}
+function create(record) { return new Holder(record, new Empty()); }
+const shared = [0];
+const first = create({ size: 1, items: [1], callback: () => shared.push(1) });
+const second = create({ size: 2, items: [2], callback: () => shared.push(2) });
+console.log(first.size, second.size, first.run(), second.run(), shared.join(','));
+export { first, second, shared };
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "framework",
+                    &[
+                        Member::new("Empty"),
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                    ],
+                ),
+                logical_module("first", &[Member::new("first")]),
+                logical_module("second", &[Member::new("second")]),
+                logical_module("shared", &[Member::new("shared")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1 2 2 3 0,1,2\n");
+    let graph = fixture.dependency_graph();
+    let ordinal = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("named source unit")
+            .id
+            .clone()
+    };
+    for result in ["first", "second"] {
+        let heap = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == ordinal(result))
+            .and_then(|node| node.synchronous_execution.as_ref())
+            .and_then(|execution| execution.heap_frontier.as_ref())
+            .expect("literal allocations keep heap evidence");
+        assert!(!heap.own_at_init.opaque, "{result}: {heap:#?}");
+        assert_eq!(heap.own_at_init.reads.count, 0, "{result}: {heap:#?}");
+        assert_eq!(heap.own_at_init.writes.count, 0, "{result}: {heap:#?}");
+        assert!(
+            heap.own_at_init.allocations.count > 0,
+            "{result}: {heap:#?}"
+        );
+        assert!(
+            !heap.composed_synchronous_calls.opaque,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.composed_synchronous_calls.reads.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.composed_synchronous_calls.writes.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.non_assumed_heap_accesses.reads.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert_eq!(
+            heap.non_assumed_heap_accesses.writes.count, 0,
+            "{result}: {heap:#?}"
+        );
+        assert!(
+            !graph
+                .edges
+                .iter()
+                .any(|edge| edge.edge_kind == analysis_model::DepKind::Sequenced
+                    && edge.source == ordinal(result)
+                    && edge.target == ordinal("shared")),
+            "retaining a callback is not a read or write of the captured array: {:#?}",
+            graph.edges
+        );
+    }
+}
+
+#[test]
+fn later_reader_can_share_module_with_a_captured_array() {
+    let source = r#"class Empty {}
+class Holder {
+  constructor(record, checker) { this.record = record; this.checker = checker; this.size = record.size ?? 0; }
+  size;
+  run() { return this.record.callback(); }
+}
+function create(record) { return new Holder(record, new Empty()); }
+const shared = [0];
+const first = create({ size: 1, items: [1], callback: () => shared.push(1) });
+const second = create({ size: 2, items: [2], callback: () => shared.push(2) });
+const after = first.size;
+console.log(after, second.size, first.run(), second.run(), shared.join(','));
+export { first, second, shared, after };
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "framework",
+                    &[
+                        Member::new("Empty"),
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                    ],
+                ),
+                logical_module("first", &[Member::new("first")]),
+                logical_module("second", &[Member::new("second")]),
+                logical_module("shared", &[Member::new("shared"), Member::new("after")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1 2 2 3 0,1,2\n");
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+    for module in ["first", "second", "shared"] {
+        assert!(
+            fixture
+                .out_root
+                .join(format!("static/app/modules/{module}.js"))
+                .is_file(),
+            "missing emitted {module} module"
+        );
+    }
+}
+
+#[test]
+fn argument_mutation_keeps_its_heap_edge_beside_a_checked_call() {
+    let source = r#"class Holder {
+  constructor(record) { this.items = record.items; }
+}
+function create(record) { return new Holder(record); }
+const shared = [0];
+function mutateSharedArray() { shared.push(1); return [1]; }
+const first = create({ items: mutateSharedArray() });
+const second = create({ items: [2] });
+console.log(shared.join(','), first.items[0], second.items[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("shared"),
+                Member::new("mutateSharedArray"),
+                Member::new("first"),
+                Member::new("second"),
+            ],
+            &["console.log(shared.join(','), first.items[0], second.items[0]);"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "0,1 1 2\n");
+    let graph = fixture.dependency_graph();
+    let node = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("named source unit")
+    };
+    let first_heap = node("first")
+        .synchronous_execution
+        .as_ref()
+        .and_then(|execution| execution.heap_frontier.as_ref())
+        .expect("the nested call retains its heap effects");
+    assert!(first_heap.own_at_init.opaque, "{first_heap:#?}");
+    assert!(
+        first_heap.composed_synchronous_calls.writes.count > 0,
+        "{first_heap:#?}"
+    );
+    assert!(
+        first_heap.non_assumed_heap_accesses.writes.count > 0,
+        "{first_heap:#?}"
+    );
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|edge| edge.edge_kind == analysis_model::DepKind::Sequenced
+                && edge.source == node("first").id
+                && edge.target == node("shared").id),
+        "the nested mutation must remain ordered after the shared array: {:#?}",
+        graph.edges
+    );
+    assert!(
+        !graph
+            .edges
+            .iter()
+            .any(|edge| edge.edge_kind == analysis_model::DepKind::Sequenced
+                && edge.source == node("second").id
+                && edge.target == node("shared").id),
+        "the independent checked call must not inherit the first call's heap effects: {:#?}",
+        graph.edges
+    );
+}
 
 fn exported_record_factory_modules(callback_statements: &[&str]) -> Vec<LogicalModuleEntry> {
     let callback_bindings = [
@@ -441,7 +1289,7 @@ fn escaped_class_members_report_the_first_global_member_write() {
 }
 
 #[test]
-fn incomplete_terminal_forwarding_does_not_publish_the_called_factory() {
+fn terminal_forwarding_keeps_nested_factory_results_private() {
     let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => {} });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     let fixture = forwarding_fixture(FACTORY, before_command, &[]);
     let graph = fixture.dependency_graph();
@@ -459,24 +1307,16 @@ fn incomplete_terminal_forwarding_does_not_publish_the_called_factory() {
             .synchronous_execution
             .as_ref()
             .expect("synchronous execution");
+        assert!(execution.complete, "{binding}: {execution:#?}");
+        assert!(
+            execution.precision_losses.is_empty(),
+            "{binding}: {execution:#?}"
+        );
         if binding == "command" {
             assert!(node.purity.is_pure(), "{:?}", node.purity);
-            assert!(execution.complete, "{execution:#?}");
             assert_eq!(
                 execution.local_record_factory_uses.len(),
                 1,
-                "{execution:#?}"
-            );
-        } else {
-            assert!(!execution.complete, "{execution:#?}");
-            assert!(!execution.precision_losses.is_empty());
-            assert!(
-                !matches!(
-                    execution.binding_effect_authority,
-                    Some(
-                        analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { .. }
-                    )
-                ),
                 "{execution:#?}"
             );
         }
@@ -524,9 +1364,17 @@ fn forwarding_fixture(
 #[test]
 fn nonterminal_forwarding_retains_publication_from_the_caller_suffix() {
     let before_command = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
-    assert_forwarding_factory_refused(
-        &forwarding_fixture(FACTORY, before_command, &[]),
-        Some("first"),
+    let private = forwarding_fixture(FACTORY, before_command, &[]);
+    let graph = private.dependency_graph();
+    let command = node_declaring(&graph, "command");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert_eq!(
+        execution.local_record_factory_uses.len(),
+        1,
+        "{execution:#?}"
     );
     let publishing_suffix = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); globalThis.retained = create; return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
     assert_forwarding_factory_refused(&forwarding_fixture(FACTORY, publishing_suffix, &[]), None);

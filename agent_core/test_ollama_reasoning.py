@@ -32,7 +32,7 @@ async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recordin
         yield
         yield [m.make_item_reasoning(), m.assistant_text("$1,504")]
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=client,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
@@ -49,11 +49,11 @@ async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recordin
 
     res = await agent.run()
 
-    assert res.text, "Agent produced no text response"
+    assert res, "Agent produced no text response"
     reasoning = [item for item in agent.to_openai_messages() if isinstance(item, ReasoningItem)]
     for r in reasoning:
         print(f"Reasoning: {r}")
-    print(f"Answer: {res.text}")
+    print(f"Answer: {res}")
     assert reasoning, "Expected at least one ReasoningItem from thinking model"
 
 

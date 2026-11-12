@@ -110,11 +110,10 @@ def anthropic_settings(
 
 
 def body_of(intent: IntentSnapshot) -> dict[str, Any]:
-    body = intent.request.get("body")
-    assert isinstance(body, dict), "provider dispatch did not retain its structured request body"
-    wire = intent.request.get("wire_request")
-    assert isinstance(wire, str), "provider dispatch did not retain the serialized wire request"
-    assert json.loads(wire) == body, "stored wire request differs from the structured request"
+    body = intent.body
+    assert isinstance(body, dict), "provider request was not reconstructed from stored content"
+    assert "body" not in intent.request
+    assert "wire_request" not in intent.request
     return body
 
 

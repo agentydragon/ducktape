@@ -47,4 +47,10 @@ message InvocationExport {
   Arguments requested_patterns = 7;
   Arguments explicit_cmd_line = 8;
   optional string commit_sha = 9;
+  // Started.uuid identifies the actual attempt; --invocation_id can name an earlier retry.
+  optional string invocation_id = 10;
+  optional string parent_invocation_id = 11;
+  // ChildInvocationsConfigured order; empty or duplicate child IDs invalidate the export.
+  repeated string child_invocation_ids = 12;
+  optional string exit_code_name = 13;
 }

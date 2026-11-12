@@ -1,0 +1,80 @@
+### callback leaked by an earlier statement writes a binding
+let state = 0; function second() { state = 1; } globalThis.cb = second;
+globalThis.cb();
+const seen = state;
+console.log(seen);
+### closure leaked by an earlier statement reads a later definition
+let out; globalThis.cb = () => later;
+out = globalThis.cb();
+var later = 1;
+console.log(out);
+### leaked through an object
+let out; const o = { f: () => later }; globalThis.o = o;
+out = globalThis.o.f();
+var later = 1;
+console.log(out);
+### leaked through a chain of function declarations
+let out; function a() { return b(); } function b() { return later; } globalThis.a = a;
+out = globalThis.a();
+var later = 1;
+console.log(out);
+### leaked through an assigned binding
+let out; let slot; function set() { slot = () => later; } set();
+out = slot();
+var later = 1;
+console.log(out);
+### class method reads a later definition
+let out; class K { m() { return later; } }
+out = new K().m();
+var later = 1;
+console.log(out);
+### definition reads a definition
+let unused;
+var a = 1;
+var b = a;
+console.log(b);
+### object literal reads a definition
+let unused;
+var a = 1;
+var o = { a };
+console.log(o.a);
+### leaked through an array
+let out; const fs = [() => later]; globalThis.fs = fs;
+out = globalThis.fs[0]();
+var later = 1;
+console.log(out);
+### getter defined by a pure definition
+let out; const o = { get v() { return later; } };
+out = o.v;
+var later = 1;
+console.log(out);
+### function-valued definition observed through typeof
+let out; const g = () => typeof f;
+out = g();
+var f = function () {};
+console.log(out);
+### leaked through a closure chain of arrows
+let out; const f2 = () => typeof late; const h = () => f2(); globalThis.h = h;
+out = globalThis.h();
+var late = 1;
+console.log(out);
+### class declaration in its temporal dead zone
+let out;
+try { out = new K().constructor.name; } catch { out = "tdz"; }
+class K {}
+console.log(out);
+### leaked by export-like registration then invoked by an unrelated call
+let out; const registry = []; const add = (f) => (registry.push(f), f); const one = add(() => later);
+out = registry[0]();
+var later = 1;
+console.log(out);
+### definition aliasing a binding an impure statement assigns
+let x = 0; function bump() { x = 1; }
+bump();
+const y = x;
+console.log(y);
+### closure captured by a default parameter
+let out; const run = (f = () => later) => f();
+out = run();
+var later = 1;
+console.log(out);

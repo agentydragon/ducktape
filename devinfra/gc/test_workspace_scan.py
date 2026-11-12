@@ -93,7 +93,7 @@ def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinf
     assert isinstance(worktrees[prunable_wt], PrunableWorktree)
     assert isinstance(worktrees[kept_wt], RetainedWorktree)
 
-    branches = {item.branch.name: item for item in scan.branches}
+    branches = {item.branch: item for item in scan.branches}
     # Held by a prunable worktree → eligible, with the worktree recorded for apply ordering.
     assert isinstance(branches["merged"], PrunableBranch)
     assert branches["merged"].checkout == prunable_wt

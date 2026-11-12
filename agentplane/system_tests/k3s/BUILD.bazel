@@ -197,5 +197,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
     ],
 )

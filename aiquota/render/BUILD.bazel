@@ -54,12 +54,16 @@ py_library(
 py_test(
     name = "test_tmux",
     srcs = ["test_tmux.py"],
+    data = ["//aiquota/testing:fixtures"],
     deps = [
         ":tmux_lib",
         ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
+        "//aiquota/testing:quota_fixtures",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

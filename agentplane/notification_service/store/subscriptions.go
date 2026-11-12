@@ -225,6 +225,16 @@ func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *Gi
 // access is the repository access a GitHub subscription was authorized under, which the caller has just read from
 // GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
 func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body model.Subscribe, access *GitHubAccessKey, ownerUID string) (Subscription, error) {
+	return s.subscribe(ctx, AccountOwner{Account: owner, AccountUID: ownerUID, SandboxUID: body.DestinationRef.UID}, body, access)
+}
+
+// SubscribeAsIdentity is Subscribe for a Session the Session authority recorded as executing as owner
+// alone, with no ServiceAccount: the inbox it creates is owned by that Identity incarnation.
+func (s *Store) SubscribeAsIdentity(ctx context.Context, owner model.Identity, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
+	return s.subscribe(ctx, IdentityOwner{Identity: owner, SandboxUID: body.DestinationRef.UID}, body, access)
+}
+
+func (s *Store) subscribe(ctx context.Context, owner Owner, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
 	if err := body.Validate(); err != nil {
 		return Subscription{}, err
 	}
@@ -243,7 +253,7 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 				return err
 			}
 		}
-		inbox, err := s.ensureInbox(ctx, tx, owner, body.DestinationRef, body.SessionID, ownerUID)
+		inbox, err := s.ensureInbox(ctx, tx, owner, body.DestinationRef, body.SessionID)
 		if err != nil {
 			return err
 		}
@@ -323,11 +333,11 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 // ListSubscriptions returns the owner's subscriptions in ID order after afterID, at most 128.
 func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uuid.UUID) ([]Subscription, error) {
 	viewedAt := now()
+	predicate, args := ownerPredicate(owner, "i.", 2)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE i.owner_namespace = $1 AND i.owner_name = $2
-			AND i.destination_uid = $3 AND s.id > $4 AND i.owner_uid = $5
-		ORDER BY s.id LIMIT 128`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, startAfter(afterID), owner.AccountUID)
+		WHERE s.id > $1 AND `+predicate+`
+		ORDER BY s.id LIMIT 128`, append([]any{startAfter(afterID)}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -353,11 +363,10 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 
 // GetSubscription returns one of the owner's subscriptions.
 func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) (Subscription, error) {
+	predicate, args := ownerPredicate(owner, "i.", 2)
 	subscription, err := scanSubscription(s.db.QueryRowContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3
-			AND i.destination_uid = $4 AND i.owner_uid = $5`,
-		id, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID), now())
+		WHERE s.id = $1 AND `+predicate, append([]any{id}, args...)...), now())
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}

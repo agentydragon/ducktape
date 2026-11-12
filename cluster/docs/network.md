@@ -173,6 +173,27 @@ setting is false. Reverting git or updating only the ConfigMap does not change
 existing agents' startup flags.
 Recheck any production Services opted in since enablement.
 
+## Cilium host firewall
+
+The Cilium Helm values enable the host firewall datapath for future host
+policies. This setting alone does not select nodes or restrict ingress; ordinary
+Pod NetworkPolicies do not protect host-network listeners. Host policies must
+cover the actual devices and traffic paths, including Nebula and the public
+interface. Check `cilium-dbg status` on each node for the enabled devices.
+
+Cilium values are applied through OpenTofu and agents rolled sequentially as
+described above. Before rolling, check for existing host policies and establish
+an out-of-band recovery path. Verify the own-node Gateway probe, public ingress,
+Nebula, Kubernetes API, and storage connectivity after each agent. Disconnected
+nodes remain unverified until they reconnect.
+
+Cilium's per-endpoint policy audit mode does not survive an agent restart. A
+host policy selected during an agent restart may therefore be enforced before
+its audit is complete. See the [Cilium host firewall guide](https://docs.cilium.io/en/v1.19/security/host-firewall/)
+for policy auditing and emergency recovery. Do not reintroduce Talos ingress
+rules without resolving the own-node Gateway failure documented in
+<lessons_learned/2026_09_25_own_node_gateway_ct_invalid.md>.
+
 ## Caveat: roaming nodes
 
 A 1420 Nebula TUN MTU plus 60 bytes of measured IPv4 Nebula overhead yields a

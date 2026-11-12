@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 	"time"
@@ -37,7 +38,8 @@ const (
 	sessionWork = `(ss.setup_state=$2
 		OR EXISTS(SELECT 1 FROM sampler_command cmd WHERE cmd.session_id=ss.id AND cmd.outcome=$3)
 		OR EXISTS(SELECT 1 FROM sampler_cell cell WHERE cell.conversation_id=c.id AND cell.status='live')
-		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned')))`
+		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned'))
+		OR EXISTS(SELECT 1 FROM sampler_intent intent WHERE intent.conversation_id=c.id AND intent.result IS NULL))`
 )
 
 type rowScanner interface {
@@ -100,23 +102,28 @@ func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 }
 
 func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	rows, err := tx.QueryContext(ctx, `SELECT record FROM sampler_conversation_item WHERE conversation_id=$1 ORDER BY ordinal`, conversation.ID)
+	store := newContentStore(ctx, tx)
+	var err error
+	conversation.Transcript, err = store.loadNativeContext(conversation.API, conversation.transcriptContextID, conversation.transcriptControl)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	var records []json.RawMessage
-	for rows.Next() {
-		var record json.RawMessage
-		if err := rows.Scan(&record); err != nil {
+	if len(conversation.activeControl) > 0 {
+		conversation.ActiveContext, err = store.loadNativeContext(conversation.API, conversation.activeContextID, conversation.activeControl)
+	}
+	if err == nil {
+		conversation.storedContexts = map[protocol.Context]contextCheckpoint{conversation.Transcript: {Head: conversation.transcriptContextID, Count: conversation.Transcript.RecordCount()}}
+		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
+		if err := conversation.restoreExecutionSnapshot(conversation.Transcript, conversation.transcriptControl); err != nil {
 			return err
 		}
-		records = append(records, record)
+		if conversation.ActiveContext != nil {
+			conversation.storedContexts[conversation.ActiveContext] = contextCheckpoint{Head: conversation.activeContextID, Count: conversation.ActiveContext.RecordCount()}
+			if err := conversation.restoreExecutionSnapshot(conversation.ActiveContext, conversation.activeControl); err != nil {
+				return err
+			}
+		}
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	conversation.Archive, err = decodeNativeRecords(conversation.API, records)
 	return err
 }
 
@@ -156,19 +163,22 @@ func fenceOwner(ctx context.Context, tx *sql.Tx, owner Owner) error {
 
 func scanConversation(row rowScanner) (*Conversation, error) {
 	var (
-		conversation  Conversation
-		owner         sql.NullString
-		lease         sql.NullTime
-		pending       []byte
-		executor      sql.NullString
-		contextItems  []byte
-		instructions  sql.NullString
-		contextTokens sql.NullInt64
-		shell         sql.NullString
-		environment   []byte
+		conversation      Conversation
+		owner             sql.NullString
+		lease             sql.NullTime
+		pending           []byte
+		executor          sql.NullString
+		transcriptID      sql.NullString
+		activeID          sql.NullString
+		transcriptControl []byte
+		activeControl     []byte
+		instructions      sql.NullString
+		contextTokens     sql.NullInt64
+		shell             sql.NullString
+		environment       []byte
 	)
 	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
-		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
+		&conversation.Stopped, &executor, &transcriptID, &activeID, &transcriptControl, &activeControl, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
 		return nil, err
 	}
 	if shell.Valid {
@@ -200,17 +210,15 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	if conversation.Pending, err = decodePendingIntent(pending); err != nil {
 		return nil, err
 	}
-	if len(contextItems) != 0 && !bytes.Equal(contextItems, []byte("null")) {
-		conversation.ActiveContext, err = decodeNativeContext(conversation.API, contextItems)
-		if err != nil {
-			return nil, err
-		}
-	}
+	conversation.transcriptContextID = transcriptID.String
+	conversation.activeContextID = activeID.String
+	conversation.transcriptControl = transcriptControl
+	conversation.activeControl = activeControl
 	return &conversation, nil
 }
 
 const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
-	executor_session, context, instructions, context_tokens, executor_shell, environment_context, api`
+	executor_session, transcript_context_id, active_context_id, transcript_control, active_control, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	row, err := scanConversation(tx.QueryRowContext(ctx,
@@ -327,6 +335,10 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	if err != nil {
 		return nil, err
 	}
+	wire, err = encodeStoredEvent(wire)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_event(session_id,sequence,entry) VALUES($1,$2,$3)`, session.ID, session.Cursor, wire); err != nil {
 		return nil, err
 	}
@@ -434,7 +446,7 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			instructions = sessioninstructions.Compose(*platformInstructions, request.GetSessionId(), instructions)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
-			executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`,
+			executor_session,transcript_control,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,'{}',$2,NULL,$3)`,
 			conversationID, instructions, api); err != nil {
 			return err
 		}
@@ -529,9 +541,79 @@ const (
 	codeHostUndispatchedCall = "The JavaScript host was lost before this call was dispatched. No JavaScript cell or executor operation was started for this call. Prior store()/load() values are unavailable; recreate required state in a new exec cell."
 )
 
-// ReconcileCodeHostLoss runs before any next model step. It clears a stale host marker only
-// after recording the state loss under the current owner fence. Pending model calls are failed
-// with exact call IDs only when no admitted effect or live handle could have dispatched them.
+// lostIntent is an unresolved intent that no owner can finish any more.
+type lostIntent struct {
+	ID         string
+	Generation int
+	Kind       IntentKind
+	// Operation names what was dispatched: the nested tool name, the executor method, or the
+	// model call ID of a cell.
+	Operation string
+}
+
+func (intent lostIntent) describe() string {
+	if intent.Operation == "" {
+		return fmt.Sprintf("%s intent %s", intent.Kind, intent.ID)
+	}
+	return fmt.Sprintf("%s %s (intent %s)", intent.Kind, intent.Operation, intent.ID)
+}
+
+// lostIntents lists the unresolved intents, oldest first, with what each dispatched.
+func lostIntents(ctx context.Context, tx *sql.Tx, conversationID string) ([]lostIntent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id::text,generation,request,request->'tool_name'->>'name',request->>'method' FROM sampler_intent
+		WHERE conversation_id=$1 AND result IS NULL ORDER BY id FOR UPDATE`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var intents []lostIntent
+	for rows.Next() {
+		var intent lostIntent
+		var requestWire []byte
+		var toolName, method sql.NullString
+		if err := rows.Scan(&intent.ID, &intent.Generation, &requestWire, &toolName, &method); err != nil {
+			return nil, err
+		}
+		request, err := decodeIntentRequest(requestWire)
+		if err != nil {
+			return nil, err
+		}
+		intent.Kind = request.Kind
+		switch {
+		case toolName.Valid:
+			intent.Operation = toolName.String
+		case method.Valid:
+			intent.Operation = method.String
+		default:
+			intent.Operation = request.callID()
+		}
+		intents = append(intents, intent)
+	}
+	return intents, rows.Err()
+}
+
+func lostCellCallMessage(nested []lostIntent) string {
+	message := "The JavaScript host was lost while this cell was running. The cell did not finish and its handle is gone."
+	if len(nested) > 0 {
+		names := make([]string, 0, len(nested))
+		for _, intent := range nested {
+			names = append(names, intent.describe())
+		}
+		message += " Calls it dispatched whose outcome is unknown: " + strings.Join(names, ", ") + "."
+	}
+	return message + " Nothing was replayed; remote effects may have occurred. Prior store()/load() values and live-cell handles are unavailable; recreate required state in a new exec cell."
+}
+
+// ReconcileCodeHostLoss runs before any next model step. When the recorded JavaScript host is
+// not this runtime's, or an older owner generation left an intent or cell unresolved, it settles
+// that work under the current owner fence instead of blocking: every unresolved intent is
+// abandoned as an unknown remote outcome, live cells and process handles are abandoned with their
+// retained cursor and output, pending model tool calls get truthful outputs paired to their exact
+// call IDs, the JavaScript epoch advances and a model-visible notice is appended. Nothing is
+// replayed; the turn then continues so the model decides. A Session blocked on this state is
+// unblocked in the same transaction. With nothing lost, the stale host marker is cleared with the
+// notice as before; unrelated (non-model) tool calls stay with their ordinary dispatcher and the
+// notice follows once they settle.
 func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instanceID string, encoding protocol.ExecEncoding) (bool, error) {
 	if _, err := uuid.Parse(instanceID); err != nil {
 		return false, protocol.ErrInvalid
@@ -546,40 +628,126 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err := tx.QueryRowContext(ctx, `SELECT code_host_instance::text FROM sampler_conversation WHERE id=$1`, conversation.ID).Scan(&previous); err != nil {
 			return err
 		}
-		if !previous.Valid || previous.String == instanceID {
+		hostLost := previous.Valid && previous.String != instanceID
+		// An older generation is fenced out, so its unresolved intents and live cells can never
+		// settle on their own; a same-generation host failure likewise orphans them.
+		var staleWork bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL AND generation<$2)
+			OR EXISTS(SELECT 1 FROM sampler_cell WHERE conversation_id=$1 AND status='live' AND generation<$2)`, conversation.ID, owner.Generation).Scan(&staleWork); err != nil {
+			return err
+		}
+		if !hostLost && !staleWork {
 			return nil
-		}
-		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
-		if err != nil {
-			return err
-		}
-		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
-		if err != nil {
-			return err
-		}
-		liveProcess, err := hasLiveProcess(ctx, tx, conversation.ID)
-		if err != nil {
-			return err
-		}
-		if conversation.Pending != nil || unresolved || liveCell || liveProcess {
-			return &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect; explicit recovery is required"}
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		calls, err := conversation.Archive.PendingCalls()
+		// A block an owner recorded on the host that still serves the Session is a reviewed
+		// decision (an uncommitted provider stream, an interrupt with unconfirmed handles); only
+		// a lost host or lost owner settles it without an operator. See the
+		// TODO(SAMPLER_INTENT_LEASES) in settleFailure for the design that retires that block.
+		if !hostLost && session.Blocked {
+			return nil
+		}
+		intents, err := lostIntents(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		// Leave unrelated tool calls to their normal dispatcher. Once they settle, the
-		// next iteration adds the notice before sampling. Failed volatile calls already
+		var reconciliation *eventpb.Event
+		if conversation.Pending != nil && conversation.Pending.Kind == PendingIntentSampling {
+			reconciliation, err = samplingReconciliation(ctx, tx, session, conversation.Pending.ID)
+			if err != nil {
+				return err
+			}
+		}
+		abandonedIntents := make([]map[string]any, 0, len(intents))
+		var nested []lostIntent
+		lostCellCalls := map[string]bool{}
+		for _, intent := range intents {
+			var linked *eventpb.Event
+			if intent.Kind == IntentSampling && conversation.Pending != nil && intent.ID == conversation.Pending.ID {
+				linked = reconciliation
+			}
+			if err := s.abandonIntent(ctx, tx, owner, conversation, session, intent.ID, intent.Kind, linked); err != nil {
+				return err
+			}
+			switch intent.Kind {
+			case IntentTool, IntentExecutor:
+				nested = append(nested, intent)
+			case IntentCell:
+				lostCellCalls[intent.Operation] = true
+			}
+			abandonedIntents = append(abandonedIntents, map[string]any{"id": intent.ID, "kind": intent.Kind, "operation": intent.Operation, "generation": intent.Generation})
+		}
+		cellRows, err := tx.QueryContext(ctx, `UPDATE sampler_cell SET status='abandoned' WHERE conversation_id=$1 AND status='live' RETURNING id`, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var abandonedCells []string
+		for cellRows.Next() {
+			var id string
+			if err := cellRows.Scan(&id); err != nil {
+				cellRows.Close()
+				return err
+			}
+			abandonedCells = append(abandonedCells, id)
+		}
+		if err := cellRows.Err(); err != nil {
+			cellRows.Close()
+			return err
+		}
+		cellRows.Close()
+		for _, id := range abandonedCells {
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_CELL, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{}); err != nil {
+				return err
+			}
+		}
+		processRows, err := tx.QueryContext(ctx, `UPDATE sampler_process SET status='abandoned'
+			WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') RETURNING `+processColumns, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var abandonedProcesses []map[string]any
+		for processRows.Next() {
+			process, err := scanProcess(processRows)
+			if err != nil {
+				processRows.Close()
+				return err
+			}
+			abandonedProcesses = append(abandonedProcesses, map[string]any{
+				"process_id": process.ID, "after_seq": process.AfterSequence, "exit_code": process.ExitCode, "remote_outcome": NestedUnknown,
+				"automatic_replay": false, "buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,
+			})
+		}
+		if err := processRows.Err(); err != nil {
+			processRows.Close()
+			return err
+		}
+		processRows.Close()
+		for _, evidence := range abandonedProcesses {
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, evidence["process_id"].(string), eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, evidence); err != nil {
+				return err
+			}
+		}
+		settled := len(intents) > 0 || len(abandonedCells) > 0 || len(abandonedProcesses) > 0
+		conversation.Pending = nil
+
+		calls, err := conversation.Transcript.PendingCalls()
+		if err != nil {
+			return err
+		}
+		// Leave unrelated tool calls to their normal dispatcher. Failed volatile calls already
 		// carry the loss message in their exact paired output.
 		for _, call := range calls {
 			if !call.IsModelTool(encoding) {
 				break
 			}
-			output := []protocol.ContentPart{{Type: "input_text", Text: codeHostUndispatchedCall}}
+			text := codeHostUndispatchedCall
+			if lostCellCalls[call.CallID] {
+				text = lostCellCallMessage(nested)
+			}
+			output := []protocol.ContentPart{{Type: "input_text", Text: text}}
 			if err := conversation.appendToolResult(call, output); err != nil {
 				return err
 			}
@@ -594,13 +762,23 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			}
 			changed = true
 		}
-		remaining, err := conversation.Archive.PendingCalls()
+		remaining, err := conversation.Transcript.PendingCalls()
 		if err != nil {
 			return err
 		}
-		if len(remaining) == 0 {
+		// With nothing settled, the notice waits for unrelated calls so it precedes the next
+		// sample; settled work resets the JavaScript session now, so its notice cannot wait.
+		if len(remaining) == 0 || settled {
+			notice := codeHostLossNotice
+			if len(nested) > 0 {
+				names := make([]string, 0, len(nested))
+				for _, intent := range nested {
+					names = append(names, intent.describe())
+				}
+				notice += " Calls abandoned with unknown outcome: " + strings.Join(names, ", ") + "."
+			}
 			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: codeHostLossNotice}})
+				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
 			}); err != nil {
 				return err
 			}
@@ -608,11 +786,26 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				return err
 			}
 			if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_CODE_HOST_LOSS, eventpb.ExecutionProgress_PHASE_COMMITTED, map[string]any{
-				"previous_instance": previous.String, "next_instance": instanceID, "javascript_state_reset": true, "automatic_replay": false,
+				"previous_instance": previous.String, "next_instance": instanceID, "host_lost": hostLost, "stale_generation_work": staleWork,
+				"javascript_state_reset": true, "automatic_replay": false, "remote_outcome": NestedUnknown,
+				"abandoned_intents": abandonedIntents, "abandoned_cells": abandonedCells, "abandoned_processes": abandonedProcesses,
+				"unblocked": session.Blocked,
 			}); err != nil {
 				return err
 			}
 			changed = true
+		}
+		if session.Blocked {
+			session.Blocked, session.BlockedReason = false, nil
+			if err := persistSession(ctx, tx, session); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if settled {
+			slog.Info("central sampler settled lost JavaScript host work", "session_id", session.ID, "conversation_id", conversation.ID,
+				"generation", owner.Generation, "host_lost", hostLost, "stale_generation_work", staleWork, "abandoned_intents", len(intents),
+				"abandoned_cells", len(abandonedCells), "abandoned_processes", len(abandonedProcesses), "previous_instance", previous.String, "instance", instanceID)
 		}
 		if changed {
 			return updateConversation(ctx, tx, conversation)
@@ -620,6 +813,44 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		return nil
 	})
 	return changed, err
+}
+
+// abandonIntent settles one unresolved intent as an unknown remote outcome that is never replayed
+// and records the abandonment; a sampling reconciliation, when given, is appended linked to it.
+func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+	intentID string, kind IntentKind, reconciliation *eventpb.Event,
+) error {
+	abandoned := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
+	if kind == IntentSampling || kind == IntentCompaction {
+		abandoned["provider_completion_unknown"] = true
+		abandoned["output_committed"] = false
+	}
+	wire, err := marshal(abandoned)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1 AND result IS NULL`, intentID, wire)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return protocol.ErrPrecondition
+	}
+	sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
+	if err != nil {
+		return err
+	}
+	if reconciliation != nil {
+		reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
+		if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RecoverSession abandons one blocked runtime or sampling boundary after an operator has inspected
@@ -748,7 +979,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			if len(unresolved) != 1 || unresolved[0].kind != IntentSampling || liveCell || liveProcess {
 				return protocol.ErrPrecondition
 			}
-			calls, err := conversation.Archive.PendingCalls()
+			calls, err := conversation.Transcript.PendingCalls()
 			if err != nil {
 				return err
 			}
@@ -763,41 +994,13 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
-			abandonedIntent := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
-			if intent.kind == IntentSampling {
-				abandonedIntent["provider_completion_unknown"] = true
-				abandonedIntent["output_committed"] = false
-			}
-			wire, err := marshal(abandonedIntent)
-			if err != nil {
+			if err := s.abandonIntent(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation, session, intent.id, intent.kind, reconciliation); err != nil {
 				return err
-			}
-			result, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1 AND result IS NULL`, intent.id, wire)
-			if err != nil {
-				return err
-			}
-			updated, err := result.RowsAffected()
-			if err != nil {
-				return err
-			}
-			if updated != 1 {
-				return protocol.ErrPrecondition
-			}
-			sources, err := s.recordEvidenceWithSources(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
-				session, intent.id, intent.kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandonedIntent)
-			if err != nil {
-				return err
-			}
-			if reconciliation != nil {
-				reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
-				if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
-					return err
-				}
 			}
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
 		}
 
-		calls, err := conversation.Archive.PendingCalls()
+		calls, err := conversation.Transcript.PendingCalls()
 		if err != nil {
 			return err
 		}
@@ -1007,7 +1210,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			admission = &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(entryBytes, admission); err != nil {
+			if err := decodeStoredEvent(entryBytes, admission); err != nil {
 				return err
 			}
 			return notifyWork(ctx, tx)
@@ -1093,7 +1296,7 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		return nil, err
 	}
 	entry := &eventlogpb.EventEntry{}
-	if err := proto.Unmarshal(wire, entry); err != nil {
+	if err := decodeStoredEvent(wire, entry); err != nil {
 		return nil, err
 	}
 	response := &samplerpb.GetCommandResponse{Admission: entry, Outcome: samplerpb.CommandOutcome(outcome)}
@@ -1119,7 +1322,7 @@ func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) 
 			return nil, err
 		}
 		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
+		if err := decodeStoredEvent(wire, entry); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -1176,18 +1379,26 @@ func (s *Store) PendingSessionIDs(ctx context.Context, target, after string, lim
 	return ids, rows.Err()
 }
 
-func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int) ([]string, error) {
+// RecoverableSessions lists unowned Sessions with pending work. A blocked Session is included
+// only when its recorded JavaScript host is not instanceID: the owner that claims it settles the
+// lost work in ReconcileCodeHostLoss and unblocks it, so a wedge never outlives the host that
+// caused it, while a block recorded on the host still serving the Session waits for its operator.
+func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int, instanceID string) ([]string, error) {
 	if limit <= 0 {
+		return nil, protocol.ErrInvalid
+	}
+	if _, err := uuid.Parse(instanceID); err != nil {
 		return nil, protocol.ErrInvalid
 	}
 	if exclude == nil {
 		exclude = []string{}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
-		WHERE ss.blocked=FALSE AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
+		WHERE (ss.blocked=FALSE OR c.code_host_instance IS NOT NULL AND c.code_host_instance<>$5::uuid)
+		AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
 		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(sessionpb.SetupState_SETUP_STATE_RUNNING),
-		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit)
+		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit, instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -1302,19 +1513,19 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 		return "", protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	archive, err := newNativeContext(api)
+	transcript, err := newNativeContext(api)
 	if err != nil {
 		return "", err
 	}
-	if err := archive.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
+	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
 		return "", err
 	}
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
-   executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
+   executor_session,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err
 		}
-		return appendConversationItems(ctx, tx, &Conversation{ID: id, API: api, Archive: archive})
+		return updateConversation(ctx, tx, &Conversation{ID: id, API: api, Transcript: transcript})
 	})
 	return id, err
 }
@@ -1359,16 +1570,27 @@ func (s *Store) pgError(err error) error {
 }
 
 func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	if err := appendConversationItems(ctx, tx, conversation); err != nil {
+	store := newContentStore(ctx, tx)
+	transcriptID, err := store.storeConversationContext(conversation, conversation.Transcript)
+	if err != nil {
 		return err
 	}
-	var contextItems any
-	var err error
+	transcriptControl, err := conversation.contextControl(conversation.Transcript)
+	if err != nil {
+		return err
+	}
+	var activeControl any
+	var activeID string
 	if conversation.ActiveContext != nil {
-		contextItems, err = json.Marshal(conversation.ActiveContext)
+		activeID, err = store.storeConversationContext(conversation, conversation.ActiveContext)
 		if err != nil {
 			return err
 		}
+		control, err := conversation.contextControl(conversation.ActiveContext)
+		if err != nil {
+			return err
+		}
+		activeControl = []byte(control)
 	}
 	pending, err := marshal(conversation.Pending)
 	if err != nil {
@@ -1383,30 +1605,11 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
-		context=$5,context_tokens=$6,executor_shell=$7,environment_context=$8 WHERE id=$1`, conversation.ID,
-		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), contextItems, contextTokens,
+		transcript_context_id=$5,active_context_id=$6,transcript_control=$7,active_control=$8,
+		context_tokens=$9,executor_shell=$10,environment_context=$11 WHERE id=$1`, conversation.ID,
+		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), nullableContextID(transcriptID), nullableContextID(activeID), []byte(transcriptControl), activeControl, contextTokens,
 		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
-}
-
-func appendConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	records, err := conversation.Archive.Records()
-	if err != nil {
-		return err
-	}
-	var stored int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(ordinal),0) FROM sampler_conversation_item WHERE conversation_id=$1`, conversation.ID).Scan(&stored); err != nil {
-		return err
-	}
-	if stored > len(records) {
-		return fmt.Errorf("conversation record store has %d records, memory has %d", stored, len(records))
-	}
-	for index := stored; index < len(records); index++ {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record) VALUES($1,$2,$3)`, conversation.ID, index+1, []byte(records[index])); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func nullableJSON(value string) any {
@@ -1416,18 +1619,15 @@ func nullableJSON(value string) any {
 	return value
 }
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (string, error) {
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, prepare requestPreparation) (string, []byte, error) {
 	kind := request.Kind
 	if !kind.valid() {
-		return "", protocol.ErrInvalid
+		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	requestWire, err := marshal(request)
-	if err != nil {
-		return "", err
-	}
+	var wire []byte
 	var conversation *Conversation
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		var err error
 		conversation, err = lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -1439,8 +1639,26 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (
 		if conversation.Pending != nil {
 			return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
 		}
+		if request.ProviderRequest != nil {
+			if prepare == nil || request.API != conversation.API {
+				return protocol.ErrInvalid
+			}
+			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+			if err != nil {
+				return err
+			}
+			request.ProviderRequest = &prepared
+			wire = rendered
+		}
+		requestWire, err := marshal(request)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
 			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+			return err
+		}
+		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
 			return err
 		}
 		conversation.Pending = &PendingIntent{ID: id, Kind: kind}
@@ -1451,9 +1669,12 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 	})
-	return id, err
+	if err != nil {
+		return "", nil, err
+	}
+	return id, wire, nil
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
@@ -1590,16 +1811,13 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context) (string, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, prepare requestPreparation) (string, []byte, error) {
 	if request.Kind != PendingIntentCompaction {
-		return "", protocol.ErrInvalid
+		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	requestWire, err := marshal(request)
-	if err != nil {
-		return "", err
-	}
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	var wire []byte
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -1627,7 +1845,25 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		if unresolved {
 			return &protocol.UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
 		}
+		if request.ProviderRequest != nil {
+			if prepare == nil || request.API != conversation.API {
+				return protocol.ErrInvalid
+			}
+			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+			if err != nil {
+				return err
+			}
+			request.ProviderRequest = &prepared
+			wire = rendered
+		}
+		requestWire, err := marshal(request)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+			return err
+		}
+		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
 			return err
 		}
 		conversation.Pending = &PendingIntent{ID: id, Kind: PendingIntentCompaction}
@@ -1638,9 +1874,12 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 	})
-	return id, err
+	if err != nil {
+		return "", nil, err
+	}
+	return id, wire, nil
 }
 
 func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context) error {
@@ -1686,6 +1925,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		}
 		conversation.EnvironmentContext = &environment
 		conversation.ActiveContext = replacement
+		conversation.activeContextID = ""
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
@@ -1989,7 +2229,7 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 	// Queue the notice against that call so it is appended after its tool result. This
 	// preserves Anthropic's tool_result ordering while keeping the notice durable in the
 	// same transaction as session retirement. With no pending call, append it directly.
-	pendingCalls, err := conversation.Archive.PendingCalls()
+	pendingCalls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return err
 	}
@@ -2650,6 +2890,13 @@ func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string
 		if err != nil {
 			return err
 		}
+		if commandID == nil {
+			// execute can fail before NextCommand returns the durable active command (for
+			// example, while reconciling a lost code host during successor startup).
+			// Settle that command from Session state so an already-confirmed input is not
+			// failed again by blockQueue.
+			commandID = session.ActiveCommand
+		}
 		return s.settleFailure(ctx, tx, owner, conversation, session, commandID, failure)
 	})
 }
@@ -2726,6 +2973,10 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	}
 	var knownFailure *protocol.KnownFailureError
 	known := errors.As(failure, &knownFailure) && knownFailure != nil
+	// TODO(SAMPLER_INTENT_LEASES): this terminal block (owner alive, provider failure or
+	// unconfirmed interrupt cleanup) goes away once sampling attempts are leased and a lapsed
+	// lease is reconciled with backoff (DAG section 5). Until then only a lost host or lost owner
+	// settles it automatically (ReconcileCodeHostLoss); otherwise RecoverSession.
 	session.Blocked = !known || conversation.Pending != nil || unresolved || liveCell || liveProcess
 	session.ActiveCommand = nil
 	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold
@@ -3114,6 +3365,38 @@ func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionStat
 	return state, err
 }
 
+// LiveWork counts the handles and intents that a successor on another host would block on.
+type LiveWork struct {
+	LiveCells         int
+	LiveProcesses     int
+	UnresolvedIntents int
+	// Pending reports an unresolved provider, compaction or cell intent pointer.
+	Pending bool
+}
+
+// KeepsOwner reports whether a draining owner must keep serving: an effect in flight always, a
+// live cell or process handle only while the turn that can settle it is active.
+func (w LiveWork) KeepsOwner(turnActive bool) bool {
+	return w.UnresolvedIntents > 0 || w.Pending || turnActive && (w.LiveCells > 0 || w.LiveProcesses > 0)
+}
+
+func (s *Store) LiveWork(ctx context.Context, owner Owner) (LiveWork, error) {
+	var work LiveWork
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		work.Pending = conversation.Pending != nil
+		return tx.QueryRowContext(ctx, `SELECT
+			(SELECT count(*) FROM sampler_cell WHERE conversation_id=$1 AND status='live'),
+			(SELECT count(*) FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned')),
+			(SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL)`, conversation.ID).
+			Scan(&work.LiveCells, &work.LiveProcesses, &work.UnresolvedIntents)
+	})
+	return work, err
+}
+
 func (s *Store) CheckLiveCells(ctx context.Context, owner Owner, runtimeAvailable bool) error {
 	state, err := s.ExecutionState(ctx, owner)
 	if err != nil {
@@ -3461,7 +3744,7 @@ func setCommandOutcome(ctx context.Context, tx *sql.Tx, sessionID, commandID str
 }
 
 func settlePendingCalls(conversation *Conversation, message func(protocol.ToolInvocation) string) ([]map[string]any, error) {
-	calls, err := conversation.Archive.PendingCalls()
+	calls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return nil, err
 	}

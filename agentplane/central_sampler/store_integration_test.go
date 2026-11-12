@@ -202,7 +202,7 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); err != nil {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
@@ -236,18 +236,18 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	first, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); !errors.As(err, new(*protocol.UnknownEffectError)) {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("pending intent was replayable: %v", err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
 	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	second, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if !conversation.Stopped || conversation.Pending != nil {
 		t.Fatalf("rejection left conversation live or pending: stopped=%v pending=%v", conversation.Stopped, conversation.Pending)
 	}
-	items := responsesItems(t, conversation.Archive)
+	items := responsesItems(t, conversation.Transcript)
 	if len(items) != 2 || items[1].Type != responses.ItemCustomToolOutput {
 		t.Fatalf("unstarted call output was not durably settled: %#v", items)
 	}
@@ -303,7 +303,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "fixture-old-process", false); err != nil {
 		t.Fatal(err)
 	}
-	sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cellIntent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall})
+	cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,12 +342,8 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contextItems, err := json.Marshal(conversation.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET context=$2::jsonb WHERE id=$1`,
-		session.ConversationID, contextItems); err != nil {
+	conversation.ActiveContext = conversation.Context()
+	if err := store.transaction(t.Context(), func(tx *sql.Tx) error { return updateConversation(t.Context(), tx, conversation) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -464,9 +460,9 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	archive := responsesItems(t, retained.Archive)
-	if len(archive) != 3 || archive[1].Type != responses.ItemCustomToolOutput || archive[1].CallID != call.CallID || archive[2].Role != "developer" {
-		t.Fatalf("provider history was not completed with a matching aborted output: %#v", archive)
+	transcript := responsesItems(t, retained.Transcript)
+	if len(transcript) != 3 || transcript[1].Type != responses.ItemCustomToolOutput || transcript[1].CallID != call.CallID || transcript[2].Role != "developer" {
+		t.Fatalf("provider history was not completed with a matching aborted output: %#v", transcript)
 	}
 	active := responsesItems(t, retained.Context())
 	if len(active) != 3 || active[1].CallID != call.CallID || active[2].Role != "developer" {
@@ -481,7 +477,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +489,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "other-process", false); err != nil {
 		t.Fatal(err)
 	}
-	cellIntent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall})
+	cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +531,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Archive)
+	items := responsesItems(t, conversation.Transcript)
 	if conversation.Pending != nil || len(items) != 3 || items[1].CallID != call.CallID {
 		t.Fatalf("unsettled call: %+v", conversation)
 	}
@@ -619,7 +615,7 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +704,7 @@ func TestStoreRecoverSessionRejectsSamplingWithOtherUnresolvedEffect(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); err != nil {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
@@ -736,7 +732,7 @@ func TestStoreRecoverSessionRejectsSamplingPendingWithWrongIntentKind(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +775,7 @@ func TestStoreRecoverSessionRejectsCompactionAndSetupBoundaries(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentKind(kind)}); err != nil {
+				if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentKind(kind)}, nil); err != nil {
 					t.Fatal(err)
 				}
 				if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("unknown outcome")); err != nil {
@@ -830,7 +826,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, previous, encoding); err != nil || changed {
 				t.Fatalf("same-host use emitted loss: changed=%v err=%v", changed, err)
 			}
-			intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -862,7 +858,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if calls, err := conversation.Archive.PendingCalls(); err != nil || len(calls) != 0 {
+			if calls, err := conversation.Transcript.PendingCalls(); err != nil || len(calls) != 0 {
 				t.Fatalf("unpaired pending tool call after loss: calls=%v err=%v", calls, err)
 			}
 			contextWire, err := json.Marshal(conversation.Context())
@@ -886,7 +882,86 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 	}
 }
 
-func TestStoreCodeHostLossKeepsUnknownEffectBlocked(t *testing.T) {
+// The state staging Session d05a1f28 was left in: blocked by an earlier owner on host loss with
+// one unresolved nested intent and nothing live. A later runtime must pick it up, settle it and
+// unblock it without an operator.
+func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	logged := captureLogs(t)
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := uuid.NewString()
+	if err := store.StampCodeHostInstance(t.Context(), owner, previous); err != nil {
+		t.Fatal(err)
+	}
+	intentID, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil || !blocked.Blocked {
+		t.Fatalf("fixture is not blocked: blocked=%v err=%v", blocked.Blocked, err)
+	}
+	successor := uuid.NewString()
+	if recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, previous); err != nil || len(recoverable) != 0 {
+		t.Fatalf("the host that blocked the Session re-selected it: %v err=%v", recoverable, err)
+	}
+	recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, successor)
+	if err != nil || len(recoverable) != 1 || recoverable[0] != session.ID {
+		t.Fatalf("blocked Session with a lost host was not selected: %v err=%v", recoverable, err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, protocol.ExecEncodingFreeform); err != nil || !changed {
+		t.Fatalf("host loss with an unresolved intent did not settle: changed=%v err=%v", changed, err)
+	}
+	settled := logged("central sampler settled lost JavaScript host work")
+	if settled["session_id"] != session.ID || settled["abandoned_intents"] != int64(1) || settled["host_lost"] != true {
+		t.Fatalf("settlement record=%v", settled)
+	}
+	result, err := intentResultForDB(t, store, intentID)
+	if err != nil || result["status"] != string(IntentResultAbandoned) || result["remote_outcome"] != string(NestedUnknown) || result["automatic_replay"] != false {
+		t.Fatalf("abandoned intent result=%v err=%v", result, err)
+	}
+	work, err := store.LiveWork(t.Context(), newOwner)
+	if err != nil || work != (LiveWork{}) {
+		t.Fatalf("live work after settlement=%+v err=%v", work, err)
+	}
+	unblocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil || unblocked.Blocked || unblocked.BlockedReason != nil {
+		t.Fatalf("settlement left the Session blocked: %+v err=%v", unblocked, err)
+	}
+	conversation, err := store.Read(t.Context(), newOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextWire, err := json.Marshal(conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending != nil || !bytes.Contains(contextWire, []byte("process/start")) || !bytes.Contains(contextWire, []byte("store()/load() values has been lost")) {
+		t.Fatalf("continuation lacks the abandonment notice: pending=%v context=%s", conversation.Pending, contextWire)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, protocol.ExecEncodingFreeform); err != nil || changed {
+		t.Fatalf("settlement repeated: changed=%v err=%v", changed, err)
+	}
+	if recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, successor); err != nil || len(recoverable) != 0 {
+		t.Fatalf("settled idle Session still selected: %v err=%v", recoverable, err)
+	}
+}
+
+func TestStoreCodeHostLossAbandonsLiveProcessHandleWithRetainedEvidence(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
@@ -896,11 +971,115 @@ func TestStoreCodeHostLossKeepsUnknownEffectBlocked(t *testing.T) {
 	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
+	if err := store.RegisterModelProcess(t.Context(), owner, "lost-process", 77, false); err != nil {
 		t.Fatal(err)
 	}
-	if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, uuid.NewString(), protocol.ExecEncodingFreeform); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
-		t.Fatalf("unresolved executor effect was auto-settled: changed=%v err=%v", changed, err)
+	if err := store.ProcessResult(t.Context(), owner, "lost-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "lost-process", 5, []byte("partial output"), false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingFreeform); err != nil || !changed {
+		t.Fatalf("host loss with a live handle did not settle: changed=%v err=%v", changed, err)
+	}
+	process, err := store.Process(t.Context(), successor, "lost-process")
+	if err != nil || process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "partial output" {
+		t.Fatalf("abandoned handle lost its evidence: %+v err=%v", process, err)
+	}
+	work, err := store.LiveWork(t.Context(), successor)
+	if err != nil || work != (LiveWork{}) {
+		t.Fatalf("live work after settlement=%+v err=%v", work, err)
+	}
+}
+
+// A sampling request cut by the drain deadline leaves its intent pending under the old
+// generation; the successor abandons the partial stream without committing output and samples
+// again, which is not an external effect.
+func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T) {
+	// "blocked": an earlier release of this service failed the turn on the pending intent and
+	// blocked the Session; the host marker is NULL because no cell ever ran.
+	for _, blocked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("blocked=%v", blocked), func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+				CommandId: "cut", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
+			}, "fixture-account", nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+				t.Fatal(err)
+			}
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				activeCommand := "cut"
+				if err := store.FailExecution(t.Context(), owner, session.ID, &activeCommand, errors.New("provider stream interrupted")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := store.Release(t.Context(), owner); err != nil {
+				t.Fatal(err)
+			}
+			instance := uuid.NewString()
+			recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, instance)
+			if err != nil || blocked != (len(recoverable) == 0) {
+				t.Fatalf("work scan selection: blocked=%v recoverable=%v err=%v", blocked, recoverable, err)
+			}
+			successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform)
+			if err != nil || changed == blocked {
+				t.Fatalf("stale pending sampling settlement: blocked=%v changed=%v err=%v", blocked, changed, err)
+			}
+			if blocked {
+				// The block was recorded on the host still serving the Session: a reviewed
+				// decision that only an operator, or losing that host, settles.
+				still, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+				if err != nil || !still.Blocked {
+					t.Fatalf("same-host block was cleared: blocked=%v err=%v", still.Blocked, err)
+				}
+				return
+			}
+			result, err := intentResultForDB(t, store, intentID)
+			if err != nil || result["status"] != string(IntentResultAbandoned) || result["output_committed"] != false || result["provider_completion_unknown"] != true {
+				t.Fatalf("abandoned sampling result=%v err=%v", result, err)
+			}
+			conversation, err := store.Read(t.Context(), successor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conversation.Pending != nil {
+				t.Fatalf("pending pointer survived settlement: %+v", conversation.Pending)
+			}
+			settled, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+			if err != nil || settled.Blocked {
+				t.Fatalf("Session still blocked after settlement: blocked=%v err=%v", settled.Blocked, err)
+			}
+			command, err := store.NextCommand(t.Context(), successor, session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if command == nil || command.ID != "cut" {
+				t.Fatalf("successor cannot resume the command to resample: command=%+v", command)
+			}
+		})
 	}
 }
 
@@ -951,7 +1130,7 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -974,14 +1153,14 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	calls, err := conversation.Archive.PendingCalls()
+	calls, err := conversation.Transcript.PendingCalls()
 	if err != nil || len(calls) != 1 || calls[0].CallID != call.CallID {
 		t.Fatalf("unrelated call changed: calls=%v err=%v", calls, err)
 	}
 	// The normal dispatcher can settle this call independently. The notice follows
 	// after pairing, before any subsequent sampling step.
 	notDispatched := false
-	toolIntent, err := store.Begin(t.Context(), successor, IntentRequest{Kind: PendingIntentCell, Call: &calls[0], Dispatched: &notDispatched})
+	toolIntent, _, err := store.Begin(t.Context(), successor, IntentRequest{Kind: PendingIntentCell, Call: &calls[0], Dispatched: &notDispatched}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1148,11 +1327,11 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context())
+	intent, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}}}
+	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}})
 	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}
@@ -1314,7 +1493,7 @@ func TestAcknowledgeIncompleteInterruptPersistsBlockingIntent(t *testing.T) {
 	if conversation.Pending == nil || conversation.Pending.Kind != PendingIntentInterrupt {
 		t.Fatalf("incomplete interrupt did not persist a blocking intent: %v", conversation.Pending)
 	}
-	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); !errors.As(err, new(*protocol.UnknownEffectError)) {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("incomplete interrupt allowed a new effect: %v", err)
 	}
 }
@@ -1439,7 +1618,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1487,7 +1666,7 @@ func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 				t.Fatal(err)
 			}
-			intent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+			intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1516,7 +1695,7 @@ func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			recoverable, err := store.RecoverableSessions(t.Context(), nil, 1)
+			recoverable, err := store.RecoverableSessions(t.Context(), nil, 1, uuid.NewString())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1538,15 +1717,16 @@ func TestRecoverableSessionsUsesBoundedRotatingPages(t *testing.T) {
 		sessions = append(sessions, openSessionForStore(t, store, "prepare workspace"))
 	}
 	excluded := []string{sessions[0].ID}
-	first, err := store.RecoverableSessions(t.Context(), excluded, 1)
+	instance := uuid.NewString()
+	first, err := store.RecoverableSessions(t.Context(), excluded, 1, instance)
 	if err != nil || len(first) != 1 || first[0] == sessions[0].ID {
 		t.Fatalf("bounded recovery page=%v err=%v", first, err)
 	}
-	second, err := store.RecoverableSessions(t.Context(), append(excluded, first[0]), 1)
+	second, err := store.RecoverableSessions(t.Context(), append(excluded, first[0]), 1, instance)
 	if err != nil || len(second) != 1 || second[0] == first[0] || second[0] == sessions[0].ID {
 		t.Fatalf("recovery did not advance within bound: %v err=%v", second, err)
 	}
-	wrapped, err := store.RecoverableSessions(t.Context(), nil, 1)
+	wrapped, err := store.RecoverableSessions(t.Context(), nil, 1, instance)
 	if err != nil || len(wrapped) != 1 {
 		t.Fatalf("recovery did not yield bounded wraparound page: %v err=%v", wrapped, err)
 	}
@@ -1562,8 +1742,16 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record) VALUES($1,1,$2::jsonb)`, session.ConversationID,
-		`{"type":"reasoning","provider_id":9007199254740993}`); err != nil {
+	if err := store.transaction(t.Context(), func(tx *sql.Tx) error {
+		conversation, err := lockOwner(t.Context(), tx, owner)
+		if err != nil {
+			return err
+		}
+		if err := conversation.Transcript.AppendRecords([]json.RawMessage{json.RawMessage(`{"type":"reasoning","provider_id":9007199254740993}`)}); err != nil {
+			return err
+		}
+		return updateConversation(t.Context(), tx, conversation)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	intentID, err := store.RecordNested(t.Context(), owner, IntentTool, map[string]any{"opaque_id": json.Number("9007199254740993"), "call": map[string]any{"call_id": "stored-call"}})
@@ -1591,7 +1779,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	afterItems := responsesItems(t, afterConversation.Archive)
+	afterItems := responsesItems(t, afterConversation.Transcript)
 	retainedItem, err := protocol.DecodeJSONValue(afterItems[0].Raw)
 	if err != nil {
 		t.Fatal(err)
@@ -1721,12 +1909,13 @@ func TestSessionEventAppendNotifiesTransactionally(t *testing.T) {
 
 func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 	for _, test := range []struct {
-		name               string
-		failure            error
-		wantActive         samplerpb.CommandOutcome
-		wantQueued         samplerpb.CommandOutcome
-		wantQueueError     bool
-		wantReasonContains string
+		name                 string
+		failure              error
+		failWithNilCommandID bool
+		wantActive           samplerpb.CommandOutcome
+		wantQueued           samplerpb.CommandOutcome
+		wantQueueError       bool
+		wantReasonContains   string
 	}{
 		{
 			name:       "known failure",
@@ -1747,6 +1936,15 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			wantQueued:         samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
 			wantQueueError:     true,
 			wantReasonContains: "unexpected EOF while reading provider stream",
+		},
+		{
+			name:                 "successor fails before loading durable active command",
+			failure:              errors.New("code host reconciliation failed"),
+			failWithNilCommandID: true,
+			wantActive:           samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN,
+			wantQueued:           samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
+			wantQueueError:       true,
+			wantReasonContains:   "code host reconciliation failed",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -1769,7 +1967,11 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			if err != nil || active == nil || active.ID != "active-input" {
 				t.Fatalf("active command=%v err=%v", active, err)
 			}
-			if err := store.FailExecution(t.Context(), owner, session.ID, &active.ID, test.failure); err != nil {
+			var localCommandID *string
+			if !test.failWithNilCommandID {
+				localCommandID = &active.ID
+			}
+			if err := store.FailExecution(t.Context(), owner, session.ID, localCommandID, test.failure); err != nil {
 				t.Fatal(err)
 			}
 
@@ -1878,7 +2080,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	admitInput(t, store, session.ID, "after-model", "next turn text")
 	// A running cell's unresolved intent still reports the input, so its observation can yield, but
 	// the input only joins once the intent has an outcome.
-	intent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
+	intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1918,7 +2120,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 		}
 		return string(encoded)
 	}
-	items := responsesItems(t, conversation.Archive)
+	items := responsesItems(t, conversation.Transcript)
 	if got, want := normalized(items[len(items)-1]), normalized(expected); got != want {
 		t.Fatalf("last conversation item=%s, want %s", got, want)
 	}

@@ -86,7 +86,7 @@ class CommandSandbox(Construct):
         super().__init__(scope, id)
         self.image_pull_secret_name = image_pull_secret_name
         self.sidecar_resources = sidecar_resources
-        mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         rules = platform_routes.egress_rules(env.namespace)
         # A box runs as its caller's ServiceAccount, whose Kubernetes-audience token the proxy
         # substitutes for the API server credential; the identity catalog renders no such credential.

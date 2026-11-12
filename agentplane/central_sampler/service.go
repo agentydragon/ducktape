@@ -223,6 +223,38 @@ func (s *Sampler) GetSession(ctx context.Context, r *samplerpb.GetSessionRequest
 	return description, samplerError(ctx, err)
 }
 
+func (s *Sampler) ReadProviderRequest(r *samplerpb.ReadProviderRequestRequest, stream grpc.ServerStreamingServer[samplerpb.ReadProviderRequestResponse]) error {
+	ctx, cancel, principal, err := s.admitted(stream.Context())
+	if err != nil {
+		cancel()
+		return err
+	}
+	defer cancel()
+
+	request, err := s.Store.LoadProviderRequest(ctx, r.GetSessionId(), principal.ServiceAccountUID, r.GetRequestId())
+	if err != nil {
+		return samplerError(ctx, err)
+	}
+	metadata := &samplerpb.ReadProviderRequestMetadata{
+		RequestId: request.RequestID,
+		Method:    request.Method, Url: request.URL, Headers: nonAuthProviderRequestHeaders(request.Headers),
+	}
+	if err := stream.Send(&samplerpb.ReadProviderRequestResponse{Item: &samplerpb.ReadProviderRequestResponse_Metadata{Metadata: metadata}}); err != nil {
+		return err
+	}
+	for offset := 0; offset < len(request.Body); offset += maxProviderRequestBodyChunkSize {
+		if ctx.Err() != nil {
+			return samplerError(ctx, ctx.Err())
+		}
+		end := min(offset+maxProviderRequestBodyChunkSize, len(request.Body))
+		chunk := request.Body[offset:end]
+		if err := stream.Send(&samplerpb.ReadProviderRequestResponse{Item: &samplerpb.ReadProviderRequestResponse_BodyChunk{BodyChunk: chunk}}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Sampler) ListSessions(ctx context.Context, r *samplerpb.ListSessionsRequest) (*samplerpb.ListSessionsResponse, error) {
 	ctx, cancel, principal, err := s.admitted(ctx)
 	defer cancel()

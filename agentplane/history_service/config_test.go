@@ -68,19 +68,64 @@ func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 		requiredFile + "delegation: {actor: test-agentplane/actions}\n",
 		requiredFile + "delegation: {actor: test-agentplane/actions, caller_namespaces: [], methods: [x]}\n",
 		requiredFile + "delegation: {actor: malformed, caller_namespaces: [test-agentplane], methods: [x]}\n",
+		// Asserting Identities needs the policy namespace they are read in.
+		requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n",
 	} {
 		if _, err := loadTestConfig(t, incomplete); err == nil {
 			t.Fatalf("accepted incomplete or malformed delegation setting: %s", incomplete)
 		}
 	}
+	identityOnly, err := loadTestConfig(t, requiredFile+"policy_namespace: test-policies\ndelegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n")
+	if err != nil || !identityOnly.Delegation.IdentityCallers || len(identityOnly.Delegation.CallerNamespaces) != 0 {
+		t.Fatalf("an Identity-only delegation grant: %+v %v", identityOnly.Delegation, err)
+	}
+}
+
+// The sampler's grant to push as a delegating actor for a Session's Identity is its own setting,
+// and needs what Push admitting Identity writers needs: the policy namespace and the SPIFFE listener.
+func TestSamplerIdentityCallersNeedsSamplerAccountsThePolicyNamespaceAndTheSPIFFEListener(t *testing.T) {
+	const granted = `rpc:
+  listen_address: 0.0.0.0:8080
+  tls: {cert_file: /test/tls.crt, key_file: /test/tls.key}
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [test-history-service, test-runner-ingress]
+    - mode: spiffe
+      ca_file: /test/workload-ca.crt
+reader_accounts:
+  - test-agentplane/test-app
+token_audience: test-history-service
+policy_namespace: test-policies
+ingress:
+  token_audience: test-runner-ingress
+  writer_namespaces: [test-agentplane]
+  sampler_accounts: [test-agentplane/test-sampler]
+  sampler_identity_callers: true
+`
+	c, err := loadTestConfig(t, granted)
+	if err != nil || !c.Ingress.SamplerIdentityCallers || len(c.Ingress.SamplerAccounts) != 1 {
+		t.Fatalf("sampler delegation grant: %+v %v", c.Ingress, err)
+	}
+	for name, incomplete := range map[string]string{
+		"no policy namespace": strings.Replace(granted, "policy_namespace: test-policies\n", "", 1),
+		"no sampler accounts": strings.Replace(granted, "  sampler_accounts: [test-agentplane/test-sampler]\n", "", 1),
+		"a bearer-only listener": strings.Replace(strings.Replace(granted, "  tls: {cert_file: /test/tls.crt, key_file: /test/tls.key}\n", "", 1),
+			"    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n", "", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, incomplete); err == nil {
+				t.Fatalf("accepted the sampler delegation grant without its prerequisites:\n%s", incomplete)
+			}
+		})
+	}
 }
 
 func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
-	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
+	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\npolicy_namespace: test-policies\n", settingPrefix+"FOLD_CONCURRENCY=7")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 {
+	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 || c.PolicyNamespace != "test-policies" {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 	c, err = loadTestConfig(t, strings.Replace(requiredFile, "  writer_namespaces", "  settle_deltas: false\n  writer_namespaces", 1))

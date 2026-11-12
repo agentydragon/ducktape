@@ -37,7 +37,7 @@ reason and linked evidence without replaying an uncertain operation.
 
 ## Running
 
-Build `//agentplane/central_sampler:main_bin`. Supply a JSON file matching
+Build `//agentplane/central_sampler/cmd:main_bin`. Supply a JSON file matching
 [`Settings`](settings.go), then run the binary with `--config PATH` to serve. Use a PostgreSQL URL
 (`postgresql://`). Startup applies Goose migrations before opening the service database connection
 or starting workers. Baseline 11 creates the current schema on an empty database and adopts fully upgraded
@@ -47,6 +47,14 @@ migrating with the previous image.
 For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` and pass
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
+
+Migration 13 resets **all sampler-owned staging data**: Sessions/conversations, contexts, intents,
+commands, events, History export checkpoints, process/cell bookkeeping, interrupts and notifications.
+Stop old sampler replicas before upgrading, then create new Sessions. History's database and executor
+storage are unchanged. This is one transactional SQL migration; subsequent starts preserve new data.
+To roll back, stop the sampler and restore its pre-cutover database backup with the previous image,
+or recreate its database using that image and start fresh. An image-only rollback cannot read the
+new schema.
 
 `//agentplane/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its
@@ -69,7 +77,11 @@ sending a process-termination request. Pinned Codex 0.166.0 keeps a detached nat
 to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
 durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure
-`gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
+`executor_reconnect_timeout_seconds` (120 seconds by default) to bound attempts to resume a
+retained native session during a Gateway outage, independently of the first-open and typed RPC
+timeouts. An outage longer than the exec-server's detached-session lifetime can return a definitive
+native loss response when Gateway recovers; the sampler then records a model notice before later work.
+Set `gateway_target` to `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
 it selects the Gateway replica holding that Runner's observation Lease. A load-balanced Gateway
 Service is unsuitable when there are multiple replicas. Fixed targets support single-process
 fixtures. Templates accept DNS-label executor names and only these two placeholders. A fixed
@@ -119,7 +131,9 @@ container limits stop meeting the production resource contract.
 - Gateway `central_sampler` configures one gRPC target and rotating caller token file. Its separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner serves inside the Sandbox. Default
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
-  account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
+  account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity. With
+  `ingress.sampler_identity_callers`, History also admits the sampler pushing a Session's journal
+  as a delegating actor for the Identity the Session executes as ([SPEC.md](SPEC.md#identity-and-admission)).
 - The app's `HARNESS_CENTRAL_SAMPLER` offer maps to the `central_sampler_v1` placement and offers
   **Central sampler** alongside Codex and Claude. App and Actions callers do not supply service names
   or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
@@ -130,6 +144,10 @@ container limits stop meeting the production resource contract.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.
+  A Responses connection with `auth.type: agentplane_ingress` (its `credential_file` the projected
+  workload token) is Agentplane's LLM ingress: the sampler samples a Session executing as an
+  Identity as a delegating actor for it, which the ingress attributes the call to given
+  `central_sampler_identity_callers`. `bearer` connections are never delegated to.
 
 Readiness for the first open still requires a running executor. Binding is fixed to the Sandbox UID. After suspend/resume or replacement of its execution Pod,
 initialization can adopt the authenticated new incarnation, abandon old execution handles, and

@@ -17,11 +17,13 @@ from aiquota.api import (
     QuotaAPIService,
     SnapshotFeed,
     _CapturingClientFactory,
+    _next_view_transition,
     create_app,
 )
 from aiquota.config import Config
 from aiquota.models import (
     AllQuotas,
+    ClaudeResetGrant,
     FetchError,
     FetchSuccess,
     ProviderFetch,
@@ -30,6 +32,7 @@ from aiquota.models import (
     QuotaWindow,
     RawUpstreamResponse,
 )
+from aiquota.providers.claude import USAGE_URL
 from aiquota.render.view_model import AllQuotasView
 from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
@@ -75,6 +78,19 @@ class FakeFetcher:
     async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
         self.calls += 1
         return self.snapshot
+
+
+def test_reset_grant_expiry_schedules_view_refresh() -> None:
+    now = datetime.now(UTC)
+    expiry = now + timedelta(minutes=1)
+    result = FetchSuccess(
+        claude_reset_grants=[ClaudeResetGrant(label="Fable resets", remaining=1, original=1, expires_at=expiry)]
+    )
+    quotas = AllQuotas(
+        fetched_at=now,
+        providers=[ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=now, result=result))],
+    )
+    assert _next_view_transition(QuotaSnapshot(quotas=quotas, raw_responses={})) == expiry
 
 
 @pytest_asyncio.fixture
@@ -216,7 +232,13 @@ async def test_prepaid_balance_raw_capture_does_not_replace_claude_usage_raw(cli
 async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(monkeypatch: pytest.MonkeyPatch) -> None:
     org_uuid = "123e4567-e89b-12d3-a456-426614174000"
     balance_url = f"https://api.anthropic.com/api/oauth/organizations/{org_uuid}/prepaid/credits"
-    usage_body = {"five_hour": {"utilization": 10}}
+    usage_body = {
+        "five_hour": {"utilization": 10},
+        "cedar_ember": {
+            "eligible": True,
+            "grants": [{"resets_left": 2, "resets_total": 2, "clears": [], "gives_back_weekly": True}],
+        },
+    }
     profile_body = {"organization": {"uuid": org_uuid}}
     balance_body = {
         "currency": "USD",
@@ -230,7 +252,7 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(mo
     async def handler(request: httpx.Request) -> httpx.Response:
         requested_urls.append(str(request.url))
         bodies = {
-            "https://api.anthropic.com/api/oauth/usage": usage_body,
+            USAGE_URL: usage_body,
             "https://api.anthropic.com/api/oauth/profile": profile_body,
             balance_url: balance_body,
         }
@@ -254,16 +276,15 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(mo
 
     snapshot = await service.fetch(force_refresh=True)
 
-    assert set(requested_urls) == {
-        "https://api.anthropic.com/api/oauth/usage",
-        "https://api.anthropic.com/api/oauth/profile",
-        balance_url,
-    }
+    assert set(requested_urls) == {USAGE_URL, "https://api.anthropic.com/api/oauth/profile", balance_url}
     assert set(snapshot.raw_responses) == {"claude", "claude_prepaid_balance"}
     assert snapshot.raw_responses["claude"].body == usage_body
     assert snapshot.raw_responses["claude_prepaid_balance"].body == balance_body
     output = snapshot.quotas.providers[0].last_output.result
     assert isinstance(output, FetchSuccess)
+    assert output.claude_reset_grants is not None
+    assert output.claude_reset_grants[0].remaining == 2
+    assert output.claude_reset_grants[0].label == "Fable resets"
     assert output.prepaid_balance is not None
     assert output.prepaid_balance.model_dump() == {
         "kind": "available",

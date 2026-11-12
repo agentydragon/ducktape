@@ -100,6 +100,8 @@ def test_agentplane_header_metadata_is_promoted_to_otel_baggage() -> None:
     agentplane_metadata = {
         "agentplane.namespace": "agentplane-test",
         "agentplane.service_account": "agentplane-test-runtime",
+        "agentplane.identity": "test-agent-identity",
+        "agentplane.identity_uid": "00000000-0000-4000-8000-000000000003",
         "agentplane.pod_name": "agentplane-test-7f9c8",
         "agentplane.pod_uid": "00000000-0000-4000-8000-000000000001",
         "agentplane.session_id": "00000000-0000-4000-8000-000000000002",
@@ -140,6 +142,8 @@ def test_agentplane_header_metadata_is_promoted_to_otel_baggage() -> None:
         "litellm.metadata.requester_ip_address": "192.0.2.42",
         "litellm.metadata.spend_logs_metadata.agentplane.namespace": "agentplane-test",
         "litellm.metadata.spend_logs_metadata.agentplane.service_account": "agentplane-test-runtime",
+        "litellm.metadata.spend_logs_metadata.agentplane.identity": "test-agent-identity",
+        "litellm.metadata.spend_logs_metadata.agentplane.identity_uid": "00000000-0000-4000-8000-000000000003",
         "litellm.metadata.spend_logs_metadata.agentplane.pod_name": "agentplane-test-7f9c8",
         "litellm.metadata.spend_logs_metadata.agentplane.pod_uid": "00000000-0000-4000-8000-000000000001",
         "litellm.metadata.spend_logs_metadata.agentplane.session_id": "00000000-0000-4000-8000-000000000002",

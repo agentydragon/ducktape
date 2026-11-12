@@ -272,7 +272,10 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "effect_tv_conditional_logical_test",
-    deps = [":graph_support"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(
@@ -673,6 +676,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "map_entry_callbacks_test")
+
+debundle_e2e_test(
+    name = "map_literal_heap_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(name = "from_entries_callback_storage_test")
 
@@ -1500,6 +1508,15 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
+
+debundle_e2e_test(
+    name = "bounded_async_callback_fallback_test",
+    saved_analysis_tools = True,
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
 
 debundle_e2e_test(name = "callback_future_availability_test")
 

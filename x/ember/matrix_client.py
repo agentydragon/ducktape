@@ -112,7 +112,7 @@ class MatrixClient:
         self._room_status = {}
         self._aggregate_status = ConversationStatus()
         self._client = await self._create_client()
-        self._control_rooms = await self._initialise_control_rooms()
+        self._control_rooms = await self._fetch_joined_rooms()
         self._since = self._load_since_token()
 
         rooms_display = ", ".join(sorted(str(room) for room in self._control_rooms)) or "(none)"
@@ -179,9 +179,6 @@ class MatrixClient:
         if self._client is None:  # pragma: no cover - defensive
             raise RuntimeError("Matrix client not initialised")
         return self._client
-
-    async def _initialise_control_rooms(self) -> set[RoomID]:
-        return await self._fetch_joined_rooms()
 
     async def _fetch_joined_rooms(self) -> set[RoomID]:
         try:

@@ -165,6 +165,7 @@ class RunnerGateway(Construct):
             field: checked_value(Settings, field, value)
             for field, value in {
                 "sandbox_namespace": namespace,
+                "policy_namespace": namespace,
                 "runner_token_file": _RUNNER_TOKEN_FILE,
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
@@ -253,7 +254,6 @@ class RunnerGateway(Construct):
             "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
             "environment_managers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
             "environment_launchers": sorted(map(_account, environment_launchers)),
-            "environment_default_policy_sets": sorted(env.default_policy_sets),
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
@@ -282,6 +282,8 @@ class RunnerGateway(Construct):
             content["delegation"] = {
                 "actor": _account(delegation_actor),
                 "caller_namespaces": [namespace],
+                # Session delegation names an Identity in policy_namespace as the effective caller.
+                "identity_callers": True,
                 "methods": [
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
@@ -418,6 +420,10 @@ class RunnerGateway(Construct):
                 ),
                 # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
                 RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+                # One Role covers both reads because the Sandbox namespace is the policy namespace: a
+                # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
+                # `spec.identity` names one beside it (Sandbox namespace).
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],

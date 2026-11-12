@@ -12,16 +12,16 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/httptransport"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,7 +68,7 @@ type faults struct {
 	held    map[watchhealth.Kind]chan struct{}
 	failing map[watchhealth.Kind]bool
 	expired map[watchhealth.Kind]bool
-	open    map[watchhealth.Kind][]io.Closer
+	open    httptransport.WatchStreams[watchhealth.Kind]
 	// lists counts how many times each kind was read in full, by LIST or by a streaming list.
 	lists map[watchhealth.Kind]int
 	// patches counts the writes to each binding's status.
@@ -78,17 +78,13 @@ type faults struct {
 func newFaults() *faults {
 	return &faults{
 		held: map[watchhealth.Kind]chan struct{}{}, failing: map[watchhealth.Kind]bool{},
-		expired: map[watchhealth.Kind]bool{}, open: map[watchhealth.Kind][]io.Closer{},
-		lists: map[watchhealth.Kind]int{}, patches: map[string]int{},
+		expired: map[watchhealth.Kind]bool{},
+		lists:   map[watchhealth.Kind]int{}, patches: map[string]int{},
 	}
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
-
 func (f *faults) wrap(next http.RoundTripper) http.RoundTripper {
-	return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	return httptransport.RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		if request.Method == http.MethodPatch {
 			f.mu.Lock()
 			f.patches[path.Base(path.Dir(request.URL.Path))]++
@@ -127,9 +123,7 @@ func (f *faults) wrap(next http.RoundTripper) http.RoundTripper {
 		}
 		response, err := next.RoundTrip(request)
 		if err == nil && watching {
-			f.mu.Lock()
-			f.open[kind] = append(f.open[kind], response.Body)
-			f.mu.Unlock()
+			f.open.Add(kind, response.Body)
 		}
 		return response, err
 	})
@@ -163,13 +157,7 @@ func (f *faults) fail(kind watchhealth.Kind) (restore func()) {
 
 // sever cuts the watches kind has open, as a lost connection does.
 func (f *faults) sever(kind watchhealth.Kind) {
-	f.mu.Lock()
-	streams := f.open[kind]
-	delete(f.open, kind)
-	f.mu.Unlock()
-	for _, stream := range streams {
-		_ = stream.Close()
-	}
+	f.open.Close(kind)
 }
 
 // expire makes the next watch of kind resuming from a version answer that it is too old.
@@ -234,11 +222,7 @@ func (f *fixture) start() {
 
 func (f *fixture) eventually(what string, condition func() bool) {
 	f.t.Helper()
-	err := wait.PollUntilContextTimeout(context.Background(), 20*time.Millisecond, time.Minute, true,
-		func(context.Context) (bool, error) { return condition(), nil })
-	if err != nil {
-		f.t.Fatalf("gave up waiting for %s", what)
-	}
+	eventually.Eventually(f.t, what, condition)
 }
 
 func (f *fixture) create(object client.Object) {

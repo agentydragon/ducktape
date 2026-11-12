@@ -96,7 +96,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__CA_FILE` and
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__SERVER_URI`; a partial TLS configuration is refused.
 - Before starting a new workload, the controller requests the Sandbox's `WorkloadCredential`, named
-  after and controlled by the Sandbox, with the Sandbox's own ServiceAccount as subject and no
+  after and controlled by the Sandbox, with the Identity the Sandbox acts as as subject and no
   binding, and waits until the Policy Controller has issued it
   ([workload credentials](../docs/workload_authentication.md#workloadcredentials)). The leaf URI SAN
   is `spiffe://agentplane/<namespace>/<Sandbox name>/<credential-id>`, with digital-signature,
@@ -179,7 +179,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   managed workspace declaration continue to use their own DataVolumes across stop/start.
 - The VM, its VMI and its virt-launcher Pod carry the Sandbox label. The controller does not set
   the launcher's ServiceAccount: KubeVirt sets one only from a volume the guest could read, so the
-  namespace's launcher admission sets the Sandbox's.
+  namespace's launcher admission sets the default account with token automount disabled.
 
 ## Firecracker
 
@@ -213,16 +213,29 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 
 - `spec.identity` names an `Identity` in the Sandbox's namespace. Admission lets it be set, changed
   or cleared only while nothing runs: before the controller's first status report, or at
-  `status.stopStage: Stopped`. The controller does not read it yet; the bullets below are what it
-  does today.
-- Every Sandbox gets a ServiceAccount of its name, which its Pods run as, replacing the template's.
-- While `spec.policySets` names PolicySets, the Sandbox has one `PolicyBinding` of its name binding
-  that account to exactly those sets, with no expiry. Clearing the list deletes it. Other bindings
-  for the same account, such as runtime grants, are left alone.
-- Both are owned by the Sandbox, so deleting the Sandbox revokes them.
-- A Pod does not wait for the binding's readers to apply it: a grant that lands after the Pod
-  starts only means its early requests are refused.
-- A ServiceAccount or `PolicyBinding` of the Sandbox's name that it does not own starts nothing.
+  `status.stopStage: Stopped`.
+- A Sandbox acts as the live `Identity` its `spec.identity` names. The controller creates no
+  ServiceAccount and no `PolicyBinding` for it; what it may do comes from the Identity's bindings,
+  which a launch creates before the Sandbox (`CreateEnvironment` names the Identity).
+- Its Pods run as the namespace's `default` ServiceAccount with `automountServiceAccountToken: false`,
+  whatever the template names. A VM's launcher runs the same way; the launcher admission
+  authenticates it through the VM's owner chain and the Sandbox's `WorkloadCredential`.
+- Its `WorkloadCredential`'s subject is the Identity by name and UID, read live before each start.
+- A Sandbox-owned `WorkloadCredential` without an Identity subject is revoked before the next start;
+  a running Pod with such a record is replaced, and a running VM is halted. The controller never
+  falls back to a ServiceAccount subject.
+- A Sandbox naming no Identity, or one that does not exist or is being deleted, starts nothing and
+  has no `WorkloadCredential`: `Running` is False with `IdentityMissing`, and with no workload
+  `status.stopStage` is `Stopped`, so admission lets it be bound. An Identity appearing retries it.
+- A running incarnation keeps the subject its record names: deleting its Identity does not stop it,
+  and the next start is refused with `IdentityMissing`. An incarnation whose record names another
+  identity than `spec.identity` now does, which admission lets through only when a status report
+  lags a start, is replaced (`RunnerCredentialMismatch`); an unbound record naming another identity
+  is revoked first (`IdentityChanged`), so the next start has a fresh credential ID.
+- A suspended Firecracker launcher whose identity changed is held with its checkpoint
+  (`RunnerCredentialMismatch`), never resumed as the new identity; discarding the checkpoint for a
+  cold start is not implemented yet.
+- A deleted Sandbox that must run once more to seal waits for a live Identity.
 
 ## Control Service
 
@@ -256,10 +269,10 @@ A foreign same-name Service blocks new workload starts.
   Sandbox too.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
 - Nothing forces a seal: a Sandbox whose seal cannot complete is cleared by removing its finalizer by hand.
-- The Pod or VM and the Sandbox's ServiceAccount are owned by the Sandbox with `blockOwnerDeletion`, so
-  foreground propagation and namespace deletion remove them before the seal completes and the
-  unsealed tail of a Session's journal is lost; background propagation (the `kubectl` and
-  `DeleteSandbox` default) keeps them until the finalizer clears.
+- The Pod or VM is owned by the Sandbox with `blockOwnerDeletion`, so foreground propagation and
+  namespace deletion remove it before the seal completes and the unsealed tail of a Session's
+  journal is lost; background propagation (the `kubectl` and `DeleteSandbox` default) keeps it until
+  the finalizer clears.
 
 ## Status
 
@@ -272,7 +285,8 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 `RunnerCredentialPending`, `RunnerCredentialMismatch`, a pending WorkloadCredential's reason
 (`Requested`, `RecordConflict`, `PredecessorDeleting`, or the Policy Controller's `Ready`
 reason such as `CertificatePending`),
-`VMIStopping`, `IncarnationUnpublished`, `ServiceAccountConflict`, `PolicyBindingConflict`,
+`VMIStopping`, `IncarnationUnpublished`,
+`IdentityMissing`, `IdentityChanged`,
 `PodConflict` or `VMConflict`
 (a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
 dispatch on typed status fields.

@@ -32,6 +32,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -113,7 +114,7 @@ type lifecycleWakeBudget struct {
 
 func (b lifecycleWakeBudget) ReserveWakeAttempt(
 	ctx context.Context,
-	caller *lifecycle.ServiceAccountIdentity,
+	caller lifecycle.WakeBudgetKey,
 	sandboxUID string,
 	generation int64,
 ) (time.Duration, error) {
@@ -197,6 +198,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		return err
+	}
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
@@ -242,7 +246,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return err
 	}
 	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
-		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
+		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...),
+		IdentityChanges: store,
 	})
 	if err != nil {
 		return err
@@ -350,7 +355,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, environments.Methods(dispatcherAuth))
 	if c.Delegation != nil {
-		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
+		delegator := auth.Delegator{
+			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
+		}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
 			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
 			if apierrors.IsNotFound(err) {
@@ -361,7 +368,13 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader)
+		var identityReader auth.IdentityUIDReader
+		if c.PolicyNamespace != "" {
+			if identityReader, err = auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace); err != nil {
+				return err
+			}
+		}
+		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader, identityReader)
 		if err != nil {
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}
@@ -391,7 +404,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()
-	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
+	observersStopped := make(chan struct{})
+	go func() {
+		defer close(observersStopped)
+		reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx))
+	}()
 
 	// Serving once the gRPC listener accepts calls.
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -407,6 +424,13 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
 	graceful.Stop(closing, server)
+	// Observer shutdown closes direct Runner connections before releasing their
+	// fenced Leases. Keep the process alive for that bounded handoff.
+	select {
+	case <-observersStopped:
+	case <-time.After(10 * time.Second):
+		slog.Warn("Runner observers did not finish before Gateway shutdown")
+	}
 	return result
 }
 

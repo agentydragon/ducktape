@@ -36,7 +36,7 @@ _ACCOUNTS_NAMESPACE = kubernetes_accounts_namespace(_NAMESPACE)
 class Rendering:
     resources: list[dict[str, Any]]
     rbac: Rbac
-    # Preset -> the policy sets a launch of it holds, the environment defaults included.
+    # Preset -> the policy sets a launch of it holds.
     launches: dict[str, list[str]]
     # Flux PolicyBinding name -> its spec.
     bindings: dict[str, dict[str, Any]]
@@ -74,14 +74,13 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
             one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == name)["data"][key]
         )
 
-    defaults = config_map("runner-gateway-settings", "settings.yaml")["environment_default_policy_sets"]
     presets = config_map("app-config", "config.yaml")["sandbox_presets"]
     bindings = [doc for doc in docs if doc["kind"] == "PolicyBinding"]
     assert len({doc["metadata"]["name"] for doc in bindings}) == len(bindings)
     return Rendering(
         resources=docs,
         rbac=Rbac(docs),
-        launches={name: list(dict.fromkeys([*defaults, *spec["policy_sets"]])) for name, spec in presets.items()},
+        launches={name: list(dict.fromkeys(spec["policy_sets"])) for name, spec in presets.items()},
         bindings={doc["metadata"]["name"]: doc["spec"] for doc in bindings},
     )
 
@@ -306,11 +305,12 @@ def test_no_holder_gains_access_on_the_switch(
         for preset in identity_rendering.launches
     }
     for name, before in serviceaccount_rendering.bindings.items():
-        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch.
+        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch; a
+        # binding already on an Identity (the standing workloads') has no account of its own.
         subject = before["subject"]
-        today = serviceaccount_rendering.binding(name) | serviceaccount_rendering.rbac.identity(
-            "ServiceAccount", subject["name"], subject["namespace"]
-        )
+        today = serviceaccount_rendering.binding(name)
+        if "identity" not in subject:
+            today |= serviceaccount_rendering.rbac.identity("ServiceAccount", subject["name"], subject["namespace"])
         gained[f"binding {name}"] = uncovered(identity_rendering.binding(name), today)
     assert {holder: sorted(map(str, permissions)) for holder, permissions in gained.items() if permissions} == {}
 

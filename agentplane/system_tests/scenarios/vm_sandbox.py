@@ -221,10 +221,7 @@ async def vm_sandbox_turn(
     start = rules_output.find("{")
     assert start >= 0, rules_turn.transcript
     rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
-    assert rules["subject"] == {
-        "namespace": view.execution_account.account.namespace,
-        "name": view.execution_account.account.name,
-    }, rules_turn.transcript
+    assert rules["identity"] == {"name": view.identity_name}, rules_turn.transcript
     notifications_turn = await agent.run_shell(
         model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
     )

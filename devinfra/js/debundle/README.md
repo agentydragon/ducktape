@@ -204,8 +204,8 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   callback evidence (<SPEC.md#exact-initializer-call-effect-inputs>);
   `commuting_statements` certifies two selected source units as order-independent
   during initialization (<SPEC.md> § Commuting statements).
-- **Input-chunk admission**: every materialized chunk is screened for A1 (top-level
-  `eval`), A3 (dynamic `import(...)`), A5 (`import.meta`) before quotient/lowering
+- **Input-chunk admission**: every materialized chunk is screened for A1 (direct `eval`,
+  and top-level indirect `eval`), A3 (dynamic `import(...)`), A5 (`import.meta`) before quotient/lowering
   (`chunk_analysis/chunk_admission.rs`); audited corpora disable checks with
   `chunk_analysis_options.<chunk>.admission_overrides` (<docs/design.md>
   § Conditions on the input chunk).

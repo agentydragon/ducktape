@@ -9,10 +9,11 @@ locals {
   # Keyed by host name; the Nebula IP is the mesh roster's (local.nebula_hosts, nebula.tf).
   home_node_provisioning = {
     optiplex = {
-      install_disk = "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
-      disk_serial  = "AS9CN54631CA0CT13"
-      region       = "home"
-      zone         = "home-lan"
+      install_disk          = "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
+      disk_serial           = "AS9CN54631CA0CT13"
+      region                = "home"
+      zone                  = "home-lan"
+      host_firewall_profile = "home"
       # A fixed LAN address beside the DHCP lease, below the AT&T gateway's DHCP pool
       # (docs/home_lan.md). The home switch and gateway send their syslog here. Keep in sync with
       # HOME_LAN.optiplex and .network in cluster/cdk8s/home_lan.py.
@@ -83,10 +84,11 @@ locals {
             }]
           })
           nodeLabels = {
-            "topology.kubernetes.io/region"         = node.region
-            "topology.kubernetes.io/zone"           = node.zone
-            "storage.allegedly.works/tier"          = "ssd"
-            "storage.allegedly.works/piraeus-ready" = "true"
+            "network.allegedly.works/host-firewall-profile" = node.host_firewall_profile
+            "topology.kubernetes.io/region"                 = node.region
+            "topology.kubernetes.io/zone"                   = node.zone
+            "storage.allegedly.works/tier"                  = "ssd"
+            "storage.allegedly.works/piraeus-ready"         = "true"
           }
           kernel = {
             modules = local.drbd_kernel_modules

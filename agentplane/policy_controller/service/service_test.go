@@ -158,18 +158,10 @@ func binding(name, subject string, sets ...string) *policyapi.PolicyBinding {
 }
 
 func testSandbox(name, uid string) *sandboxapi.Sandbox {
-	return &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID(uid)}}
-}
-
-func testExecutionAccount(name, sandboxUID, accountUID string) *corev1.ServiceAccount {
-	controller := true
-	return &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "policies", Name: name, UID: types.UID(accountUID),
-		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
-			Name: name, UID: types.UID(sandboxUID), Controller: &controller,
-		}},
-	}}
+	return &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID(uid)},
+		Spec:       sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: "agent-" + name}},
+	}
 }
 
 func policySet(name string) *policyapi.PolicySet {
@@ -179,7 +171,7 @@ func policySet(name string) *policyapi.PolicySet {
 func TestPolicyWritesAreRestrictedToTheConfiguredWriterAccount(t *testing.T) {
 	api, _, _ := fixture(
 		t,
-		testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), policySet("base"),
+		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
 	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "alice"), grant); status.Code(err) != codes.PermissionDenied {
@@ -194,7 +186,7 @@ func TestPolicyWritesAreRestrictedToTheConfiguredWriterAccount(t *testing.T) {
 func TestEmptyWriterAllowlistDeniesPolicyWrites(t *testing.T) {
 	api, _, _ := fixtureWithWriters(
 		t, nil,
-		testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), policySet("base"),
+		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
 	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), grant); status.Code(err) != codes.PermissionDenied {
@@ -209,7 +201,7 @@ func TestEmptyWriterAllowlistDeniesPolicyWrites(t *testing.T) {
 func TestGrantCreatesBindingForExactSandboxIncarnation(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
-		testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), policySet("base"),
+		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	expiresAt := timestamppb.New(time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC))
 	created, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
@@ -222,7 +214,7 @@ func TestGrantCreatesBindingForExactSandboxIncarnation(t *testing.T) {
 	if binding.GetIdentity().GetNamespace() != "policies" || binding.GetIdentity().GetName() != "worker-00001" || binding.GetIdentity().GetUid() != "generated-1" {
 		t.Fatalf("created identity = %v", binding.GetIdentity())
 	}
-	if binding.GetSpec().GetSubject().GetNamespace() != "policies" || binding.GetSpec().GetSubject().GetName() != "worker" ||
+	if binding.GetSpec().GetSubject().GetIdentity().GetName() != "agent-worker" || binding.GetSpec().GetSubject().GetNamespace() != "" ||
 		len(binding.GetSpec().GetPolicySets()) != 1 || binding.GetSpec().GetPolicySets()[0] != "base" ||
 		binding.GetSpec().GetExpiresAt() == nil || !binding.GetSpec().GetExpiresAt().AsTime().Equal(expiresAt.AsTime()) {
 		t.Fatalf("created binding spec = %v", binding.GetSpec())
@@ -241,7 +233,7 @@ func TestGrantCreatesBindingForExactSandboxIncarnation(t *testing.T) {
 func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
-		testSandbox("worker", "sandbox-current"), testExecutionAccount("worker", "sandbox-current", "account-uid"), policySet("base"),
+		testSandbox("worker", "sandbox-current"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	call := func(uid string, sets ...string) error {
 		_, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
@@ -251,6 +243,11 @@ func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
 	}
 	if err := call("sandbox-replaced", "base"); status.Code(err) != codes.NotFound {
 		t.Fatalf("stale Sandbox UID grant: %v", err)
+	}
+	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
+		SandboxNamespace: "policies", SandboxName: "Upper", SandboxUid: "sandbox-current", PolicySets: []string{"base"},
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("grant with invalid Sandbox name: %v", err)
 	}
 	for _, sets := range [][]string{nil, {"missing"}, {"base", "base"}, {""}} {
 		if err := call("sandbox-current", sets...); status.Code(err) != codes.InvalidArgument {
@@ -269,19 +266,21 @@ func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
 func TestGrantDetectsSandboxReplacementAfterCreateAndCleansUp(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
-		testSandbox("worker", "sandbox-old"), testExecutionAccount("worker", "sandbox-old", "account-old"), policySet("base"),
+		testSandbox("worker", "sandbox-old"), testIdentity("agent-worker", nil), policySet("base"),
 	)
 	kube.beforeCreate = func() error {
 		if err := kube.WithWatch.Delete(context.Background(), testSandbox("worker", "sandbox-old")); err != nil {
 			return err
 		}
-		if err := kube.WithWatch.Delete(context.Background(), testExecutionAccount("worker", "sandbox-old", "account-old")); err != nil {
+		if err := kube.WithWatch.Delete(context.Background(), testIdentity("agent-worker", nil)); err != nil {
 			return err
 		}
 		if err := kube.WithWatch.Create(context.Background(), testSandbox("worker", "sandbox-new")); err != nil {
 			return err
 		}
-		return kube.WithWatch.Create(context.Background(), testExecutionAccount("worker", "sandbox-new", "account-new"))
+		successor := testIdentity("agent-worker", nil)
+		successor.UID, successor.ResourceVersion = "uid-agent-worker-successor", ""
+		return kube.WithWatch.Create(context.Background(), successor)
 	}
 	_, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-old", PolicySets: []string{"base"},
@@ -304,7 +303,7 @@ func TestGrantDetectsSandboxReplacementAfterCreateAndCleansUp(t *testing.T) {
 
 func operatorBinding(sandboxUID string) *policyapi.PolicyBinding {
 	operator := binding("operator-grant", "worker", "base")
-	operator.Spec.Subject = policyapi.Subject{Namespace: "policies", Name: "worker"}
+	operator.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "agent-worker"}}
 	controller, blockOwnerDeletion := false, false
 	operator.OwnerReferences = []metav1.OwnerReference{{
 		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: "worker", UID: types.UID(sandboxUID),
@@ -316,7 +315,7 @@ func operatorBinding(sandboxUID string) *policyapi.PolicyBinding {
 func TestRevokeSandboxBindingUsesUIDResourceVersionPreconditions(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
-		testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), operatorBinding("sandbox-uid"),
+		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), operatorBinding("sandbox-uid"),
 	)
 	_, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), &policypb.RevokeSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "operator-grant", BindingUid: "uid-operator-grant",
@@ -344,7 +343,7 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 		{name: "stale binding uid", binding: func() *policyapi.PolicyBinding { return operatorBinding("sandbox-uid") }, bindingUID: "another-binding-uid"},
 		{name: "Flux owned", binding: func() *policyapi.PolicyBinding {
 			item := operatorBinding("sandbox-uid")
-			item.Labels = map[string]string{"kustomize.toolkit.fluxcd.io/name": "agentplane-staging"}
+			item.Labels = map[string]string{policyapi.FluxKustomizationNameLabel: "agentplane-staging"}
 			return item
 		}, bindingUID: "uid-operator-grant"},
 		{name: "Sandbox controller owned", binding: func() *policyapi.PolicyBinding {
@@ -353,9 +352,9 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 			return item
 		}, bindingUID: "uid-operator-grant"},
 		{name: "another Sandbox incarnation", binding: func() *policyapi.PolicyBinding { return operatorBinding("sandbox-old") }, bindingUID: "uid-operator-grant"},
-		{name: "another ServiceAccount", binding: func() *policyapi.PolicyBinding {
+		{name: "another Identity", binding: func() *policyapi.PolicyBinding {
 			item := operatorBinding("sandbox-uid")
-			item.Spec.Subject.Name = "other"
+			item.Spec.Subject.Identity.Name = "other"
 			return item
 		}, bindingUID: "uid-operator-grant"},
 		{name: "resourceVersion changed during delete", binding: func() *policyapi.PolicyBinding { return operatorBinding("sandbox-uid") }, bindingUID: "uid-operator-grant", conflict: true},
@@ -363,7 +362,7 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			api, kube, _ := fixture(
 				t,
-				testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), test.binding(),
+				testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), test.binding(),
 			)
 			kube.forceDeleteConflict = test.conflict
 			_, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), &policypb.RevokeSandboxPolicyBindingRequest{
@@ -617,7 +616,7 @@ func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 }
 
 func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
-	flux := map[string]string{"kustomize.toolkit.fluxcd.io/name": "fake-kustomization"}
+	flux := map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}
 	api, kube, _ := fixture(t, testIdentity("git-origin-identity", flux))
 	stream, err := api.WatchIdentities(tokenContext(t, "app"), &policypb.WatchIdentitiesRequest{})
 	if err != nil {
@@ -629,7 +628,7 @@ func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
 	}
 	got := first.GetSnapshot().GetIdentities()
 	if len(got) != 1 || got[0].GetIdentity().GetName() != "git-origin-identity" || got[0].GetSpec().GetDescription() != "Fake agent git-origin-identity" ||
-		got[0].GetLabels()["kustomize.toolkit.fluxcd.io/name"] != "fake-kustomization" {
+		got[0].GetLabels()[policyapi.FluxKustomizationNameLabel] != "fake-kustomization" {
 		t.Fatalf("snapshot = %v", got)
 	}
 	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
@@ -749,7 +748,7 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
 		referenced, identityBinding("standing-grant", "referenced-identity", nil), identityBinding("stale-owner", "referenced-identity", previous),
-		testIdentity("git-origin-identity", map[string]string{"kustomize.toolkit.fluxcd.io/name": "fake-kustomization"}),
+		testIdentity("git-origin-identity", map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}),
 	)
 	for _, tc := range []struct {
 		name    string
@@ -780,5 +779,71 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	}
 	if len(identities.Items) != 2 {
 		t.Fatalf("refused deletes removed identities: %v", identities.Items)
+	}
+}
+
+func TestCreateIdentityCreatesAnUnownedIdentityOnce(t *testing.T) {
+	api, kube, _ := fixture(t)
+	created, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "Agent of launch a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.GetIdentity().GetIdentity().GetName() != "launch-a" || created.GetIdentity().GetSpec().GetDescription() != "Agent of launch a" {
+		t.Fatalf("created = %v", created)
+	}
+	var stored policyapi.Identity
+	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: "launch-a"}, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.OwnerReferences) != 0 {
+		t.Fatalf("Identity owners = %v, want none", stored.OwnerReferences)
+	}
+	if _, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "again"}); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("second create: %v", err)
+	}
+	if _, err := api.CreateIdentity(tokenContext(t, "app"), &policypb.CreateIdentityRequest{Name: "launch-b"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("create without description: %v", err)
+	}
+	if _, err := api.CreateIdentity(tokenContext(t, "alice"), &policypb.CreateIdentityRequest{Name: "launch-c", Description: "x"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("non-writer create: %v", err)
+	}
+}
+
+func TestGrantIdentityPolicyBindingIsOwnedByTheExactIdentity(t *testing.T) {
+	identity := testIdentity("launch-a", nil)
+	api, kube, _ := fixture(t, identity, policySet("base"))
+	granted, err := api.GrantIdentityPolicyBinding(tokenContext(t, "app"), &policypb.GrantIdentityPolicyBindingRequest{
+		IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"base"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored policyapi.PolicyBinding
+	if err := kube.Get(context.Background(), client.ObjectKey{Namespace: "policies", Name: granted.GetBinding().GetIdentity().GetName()}, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Spec.Subject.Identity == nil || stored.Spec.Subject.Identity.Name != "launch-a" || stored.Spec.Subject.Namespace != "" {
+		t.Fatalf("subject = %+v", stored.Spec.Subject)
+	}
+	if !ownedBy(stored.OwnerReferences, identity.UID) {
+		t.Fatalf("owners = %+v, want the Identity", stored.OwnerReferences)
+	}
+	// Owned, so it does not hold the Identity against deletion.
+	if _, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "launch-a", Uid: "uid-launch-a"}); err != nil {
+		t.Fatalf("delete with only owned grants: %v", err)
+	}
+}
+
+func TestGrantIdentityPolicyBindingRefusesAnotherIncarnationAndUnknownSets(t *testing.T) {
+	api, _, _ := fixture(t, testIdentity("launch-a", nil), policySet("base"))
+	for name, request := range map[string]*policypb.GrantIdentityPolicyBindingRequest{
+		"stale UID":   {IdentityName: "launch-a", IdentityUid: "uid-previous", PolicySets: []string{"base"}},
+		"missing":     {IdentityName: "launch-z", IdentityUid: "uid-launch-z", PolicySets: []string{"base"}},
+		"unknown set": {IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"nope"}},
+		"no sets":     {IdentityName: "launch-a", IdentityUid: "uid-launch-a"},
+	} {
+		if _, err := api.GrantIdentityPolicyBinding(tokenContext(t, "app"), request); err == nil {
+			t.Errorf("%s: granted", name)
+		}
 	}
 }

@@ -60,7 +60,7 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
     label: str = "independent"
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        return frozenset(self._level_specs_by_level_key())
+        return frozenset(self.by_level_key())
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
         # PE-bundle emission is a CompositeModel + PE-provider job.
@@ -92,7 +92,7 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
 
         # `historical.series_names` are typed LevelSeriesKeys; match them directly against
         # the typed level-spec map (a series the provider doesn't model isn't present → None).
-        spec_by_series = self._level_specs_by_level_key()
+        spec_by_series = self.by_level_key()
         mus: list[float] = []
         sigmas: list[float] = []
         for series in historical.series_names:
@@ -105,9 +105,3 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         sd_arr = jnp.asarray(np.asarray(sigmas, dtype=np.float32))
         cov_arr = jnp.diag(sd_arr**2)
         return dist.MultivariateNormal(mean_arr, covariance_matrix=cov_arr)
-
-    def _level_specs_by_level_key(self) -> dict[LevelSeriesKey, ScalarSeriesSpec]:
-        """The provider's level specs keyed by their typed `LevelSeriesKey` — the role
-        projections unioned into one map, for `emittable_level_keys` and `predictive`."""
-
-        return self.by_level_key()

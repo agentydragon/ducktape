@@ -3,6 +3,7 @@
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
 # gazelle:exclude test_visual_identities.py
+# gazelle:exclude test_visual_environment_identity.py
 # gazelle:exclude test_visual_history_layout.py
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
@@ -662,8 +663,9 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:thread_list",
-        "//agentplane/app/frontend/threads:thread_view_recorder_tools",
+        "//agentplane/app/frontend/threads:thread_view_recorder",
         "//util/frontend:resize_handle",
+        "//util/frontend/transcript:history_recorder_tools",
     ],
 )
 
@@ -1060,6 +1062,12 @@ agentplane_visual_test(
     name = "visual_identities",
     src = "test_visual_identities.py",
     title = "Agentplane: identities",
+)
+
+agentplane_visual_test(
+    name = "visual_environment_identity",
+    src = "test_visual_environment_identity.py",
+    title = "Agentplane: environment identity",
 )
 
 agentplane_visual_test(

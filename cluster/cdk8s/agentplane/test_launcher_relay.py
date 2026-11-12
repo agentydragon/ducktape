@@ -1,5 +1,5 @@
 """The launcher relay policy in the real Kyverno CLI. The CLI loads no API reads, so the test supplies
-the VMI, VirtualMachine, Sandbox, WorkloadCredential and ServiceAccount the policy would read; the ownership checks still run."""
+the VMI, VirtualMachine, Sandbox and WorkloadCredential the policy would read; the ownership checks still run."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -108,7 +108,6 @@ def policy_file(
     *,
     vm_uid: str,
     vm_owner_kind: str,
-    account_owner_uid: str,
     vmi_volumes: list[dict] | None,
     vmi_filesystems: list[dict] | None,
     credential_kind: str = "VM",
@@ -156,18 +155,15 @@ def policy_file(
                 "name": "sandbox-a",
                 "ownerReferences": [owner(f"{GROUP}/{VERSION}", "Sandbox", record_owner_uid)],
             },
-            "spec": {"subject": {"serviceAccount": "sandbox-a"}, "binding": {"vmiUID": binding_vmi_uid}},
+            "spec": {
+                "subject": {"identity": {"name": "agent-a", "uid": "agent-uid"}},
+                "binding": {"vmiUID": binding_vmi_uid},
+            },
             "status": {
                 "credentialID": record_credential_id,
                 "secretName": f"svid-sandbox-a-{record_credential_id}",
                 "acceptedBinding": {"vmiUID": accepted_vmi_uid},
             },
-        },
-        "account": {
-            "metadata": {
-                "name": "sandbox-a",
-                "ownerReferences": [owner(f"{GROUP}/{VERSION}", "Sandbox", account_owner_uid)],
-            }
         },
     }
     for rule in policy["spec"]["rules"]:
@@ -203,7 +199,6 @@ def apply(
     operation: str = "CREATE",
     vm_uid: str = "vm-uid",
     vm_owner_kind: str = "Sandbox",
-    account_owner_uid: str = "sb-uid",
     vmi_volumes: tuple[dict, ...] | None = (),
     vmi_filesystems: tuple[dict, ...] | None = (),
     credential_kind: str = "VM",
@@ -225,7 +220,6 @@ def apply(
             policy,
             vm_uid=vm_uid,
             vm_owner_kind=vm_owner_kind,
-            account_owner_uid=account_owner_uid,
             vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
             vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
             credential_kind=credential_kind,
@@ -254,7 +248,7 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert second.mutated_resources == first.mutated_resources
 
     spec = mutated["spec"]
-    assert spec["serviceAccountName"] == "sandbox-a"
+    assert spec["serviceAccountName"] == "default"
     assert spec["automountServiceAccountToken"] is False
     assert spec["imagePullSecrets"] == [{"name": "relay-test-pull"}]
     assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME]
@@ -520,7 +514,6 @@ def test_omitted_vmi_arrays_have_no_eligible_daemon(
         pytest.param({"username": "system:serviceaccount:attacker:creator"}, id="not-kubevirt"),
         pytest.param({"vm_uid": "replaced-vm"}, id="stale-vm"),
         pytest.param({"vm_owner_kind": "NotASandbox"}, id="vm-not-a-sandbox"),
-        pytest.param({"account_owner_uid": "other-sandbox"}, id="account-of-another-sandbox"),
         pytest.param(
             {"vmi_volumes": ({"name": "sa", "serviceAccount": {"serviceAccountName": "x"}},)}, id="guest-token"
         ),

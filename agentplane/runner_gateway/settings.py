@@ -32,6 +32,9 @@ class DelegationSettings(BaseModel):
     caller_namespaces: tuple[str, ...] = Field(
         min_length=1, description="Namespaces whose caller identity Actions may assert."
     )
+    identity_callers: bool = Field(
+        default=False, description="Whether Actions may assert an Identity in policy_namespace as the effective caller."
+    )
     methods: tuple[str, ...] = Field(
         min_length=1, description="Exact full RPC method names served by the Runner Gateway that admit delegation."
     )
@@ -94,9 +97,6 @@ class Settings(YamlFileSettings):
     environment_launchers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="Direct Pod-bound Action brokers authorized to create Environments."
     )
-    environment_default_policy_sets: Set[str] = Field(
-        default_factory=frozenset, description="PolicySets applied to newly created Environments."
-    )
     delegation: DelegationSettings | None = Field(
         default=None,
         description="Independent Actions delegation trust; does not grant direct or privileged caller access.",
@@ -141,6 +141,12 @@ class Settings(YamlFileSettings):
     def validate_operator_callers(self) -> Settings:
         if self.operator_callers and not self.operator_callers <= self.dispatcher_callers:
             raise ValueError("operator_callers must be a subset of dispatcher_callers")
+        return self
+
+    @model_validator(mode="after")
+    def identity_callers_need_policy_namespace(self) -> Settings:
+        if self.delegation is not None and self.delegation.identity_callers and self.policy_namespace is None:
+            raise ValueError("delegation.identity_callers requires policy_namespace")
         return self
 
     @model_validator(mode="after")

@@ -52,7 +52,7 @@
 //! `O(α)`–`O(|Δ|)`, and tier 3 runs the shared scoped
 //! `EsmEvaluationSimulator` only for merges that land the target in a
 //! constraining-edge-bearing multi-module I-SCC. The boolean hot path
-//! (`check_merge_boolean`) and the evidence-producing diagnostic path
+//! (`merge_preserves_invariants`) and the evidence-producing diagnostic path
 //! (`would_be_cycles_after_contract`) are the same evaluation — one
 //! entry point, two output shapes — so the gate cannot drift from the
 //! materializer's verdict. Per committed contract, the kernel applies
@@ -634,7 +634,10 @@ impl QuotientGraph {
     /// building verdicts. `would_be_cycles_after_contract` is the
     /// same evaluation with evidence materialization enabled.
     pub fn merge_preserves_invariants(&self, c1: ClassId, c2: ClassId) -> bool {
-        self.check_merge_boolean(c1, c2)
+        if self.check_merge_preconditions(c1, c2).is_err() {
+            return false;
+        }
+        self.ladder_decision_for_merge(c1, c2).accepts()
     }
 
     /// Diagnostic: what violations would the merge create or surface?
@@ -642,7 +645,7 @@ impl QuotientGraph {
     /// (touching the post-merge module). Returns `Some(evidence)`
     /// otherwise.
     ///
-    /// Same predicate as the boolean gate (`check_merge_boolean`):
+    /// Same predicate as the boolean gate (`merge_preserves_invariants`):
     /// the ladder decides, and only on a reject does this path
     /// materialize source_unit-level evidence through the index's
     /// non-mutating overlay verdict — one entry point, two output
@@ -880,21 +883,6 @@ impl QuotientGraph {
         Ok(())
     }
 
-    /// Hot-path boolean gate used by the greedy candidate loop.
-    ///
-    /// This deliberately avoids `would_be_cycles_after_contract`'s
-    /// evidence materialization. On large corpora, most rejected
-    /// candidates only need a yes/no answer; constructing
-    /// `CycleEvidence` routes through the full realizability verdict,
-    /// simulator, and source_unit-module diagnostic translation. The ladder
-    /// answers the same predicate with the evidence elided.
-    fn check_merge_boolean(&self, c1: ClassId, c2: ClassId) -> bool {
-        if self.check_merge_preconditions(c1, c2).is_err() {
-            return false;
-        }
-        self.ladder_decision_for_merge(c1, c2).accepts()
-    }
-
     fn check_merge_preconditions(&self, c1: ClassId, c2: ClassId) -> Result<(), ContractRejected> {
         if c1 == c2 {
             return Err(ContractRejected::SameClass);
@@ -979,7 +967,7 @@ impl QuotientGraph {
     /// `realizability_cycles_after_contract` computes and routes it
     /// through the index's ladder instead of the evidence-producing
     /// verdict. This is the production boolean gate —
-    /// `check_merge_boolean` and `would_be_cycles_after_contract`
+    /// `merge_preserves_invariants` and `would_be_cycles_after_contract`
     /// both decide through it; with `DEBUNDLE_GATE_ORACLE` set every
     /// query is cross-checked against the pure reference predicate.
     ///
@@ -1492,22 +1480,6 @@ fn mergeable_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool 
     true
 }
 
-/// Run the greedy contraction loop to convergence. Returns the
-/// sequence of (c1, c2) contractions in the order they were applied.
-/// Each returned pair uses canonical (lower, higher) ClassId order —
-/// the surviving class is always the lower of the two.
-///
-/// Driver: lazy priority-queue candidate enumeration. The PQ is
-/// initialized once over all cross-class pairs; each contract pushes
-/// fresh entries for the winner's new neighborhood and pop-time
-/// staleness checks re-rank entries whose coupling has drifted. See
-/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm and
-/// `testing::greedy_merge_to_convergence_full_scan` for the byte-equal
-/// reference driver the tests compare it against.
-pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
-    greedy_merge_to_convergence_lazy_pq(q)
-}
-
 // ---------------------------------------------------------------------
 // Lazy priority-queue greedy driver.
 //
@@ -1621,10 +1593,19 @@ fn repush_affected_neighborhood(
     }
 }
 
-/// Lazy-PQ greedy driver. Its output is byte-identical to
-/// `testing::greedy_merge_to_convergence_full_scan`. See
-/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm.
-fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
+/// Run the greedy contraction loop to convergence. Returns the
+/// sequence of (c1, c2) contractions in the order they were applied.
+/// Each returned pair uses canonical (lower, higher) ClassId order —
+/// the surviving class is always the lower of the two.
+///
+/// Driver: lazy priority-queue candidate enumeration. The PQ is
+/// initialized once over all cross-class pairs; each contract pushes
+/// fresh entries for the winner's new neighborhood and pop-time
+/// staleness checks re-rank entries whose coupling has drifted. See
+/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm and
+/// `testing::greedy_merge_to_convergence_full_scan` for the byte-equal
+/// reference driver the tests compare it against.
+pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
     let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
     let mut heap = initialize_candidate_queue(q);
     loop {

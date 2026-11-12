@@ -27,6 +27,22 @@ editing a route.
 
 ## Next Actions
 
+- [ ] **Complete host firewall hardening.** Cilium host ingress policies are
+      enforced on all seven Talos nodes. Keep public Kubernetes API access on
+      TCP 6443 initially; revisit source restrictions after client paths are
+      inventoried. Cilium's host policy matches Nebula source IPs on public
+      interfaces too; verify or add underlay anti-spoofing before trusting
+      those identities. Cilium IPv6 is disabled while host IPv6 is enabled;
+      verify IPv6 exposure and implement IPv6 ingress protection independently.
+      Canary binding the LINSTOR satellite to its Nebula address (including
+      startup when Nebula is unavailable); verify controller connectivity and
+      storage health before rolling the change across nodes.
+- [ ] **Converge the retired Proxmox CSI role.** The bootstrap plan proposes
+      deleting `proxmox_virtual_environment_role.persistent["csi"]`, but
+      `prevent_destroy` blocks it. Check remaining Proxmox ACL references and
+      retain or retire the role through a reviewed state transition without
+      removing the protection from persistent auth. Then review a full plan,
+      including the obsolete Nebula certificate-generation state records.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
       `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
@@ -272,9 +288,8 @@ SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encr
 
 ### Firewall Hardening
 
-Restrict K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet
-(10250), Nebula (4242), and VXLAN (8472) to admin IPs and inter-node CIDRs.
-Keep 80/443/53 public.
+Cilium host ingress policies cover the Talos nodes. Outstanding source-spoofing,
+IPv6 and public Kubernetes API work is tracked in Next Actions above.
 
 ### OpenTofu State Backend
 

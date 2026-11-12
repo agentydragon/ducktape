@@ -31,6 +31,11 @@ service EnvironmentService {
   rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
   }
+  // Reports only the currently retained Sandbox-owned WorkloadCredential. Prior records are
+  // revoked on stop and cannot provide a complete identity history.
+  rpc GetEnvironmentIdentityRecord(GetEnvironmentRequest) returns (EnvironmentIdentityRecord) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}:identity-record"};
+  }
   // Sends the current snapshot, then updated snapshots of the exact target. Intermediate
   // states may be coalesced; reconnecting starts a fresh observation without an event cursor.
   rpc WatchEnvironment(WatchEnvironmentRequest) returns (stream WatchEnvironmentResponse) {
@@ -51,17 +56,21 @@ service EnvironmentService {
   rpc SetEnvironmentIdleSuspend(SetEnvironmentIdleSuspendRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:idle-suspend" body: "*"};
   }
+  rpc SetEnvironmentIdentity(SetEnvironmentIdentityRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:identity" body: "*"};
+  }
 }
 
 // The app resolves presets before sending this complete Environment request. The preset itself is only a label.
 message CreateEnvironmentRequest {
   string name = 1;
   string template = 2;
-  reserved 3, 4, 5, 6;
-  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
+  reserved 3, 4, 5, 6, 8;
+  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults", "policy_sets";
   string bootstrap = 7;
-  // PolicySet names to bind, beside the EnvironmentService defaults.
-  repeated string policy_sets = 8;
+  // The Identity the Environment acts as, by name; it must exist. A launch creates the Identity and
+  // grants it PolicySets before this call (PolicyService CreateIdentity, GrantIdentityPolicyBinding).
+  string identity = 14;
   // The app's preset this Environment was made from, recorded as a label; the controller never resolves it.
   optional string preset = 9;
   // Whether an incoming message may resume this Environment after suspension.
@@ -76,9 +85,11 @@ message CreateEnvironmentRequest {
 }
 
 message EnvironmentLaunchOrigin {
+  // Exactly one caller variant is required. The broker remains the authenticated platform actor.
   agentplane.proto.ServiceAccount caller = 1;
   string action_group = 2;
   repeated string launcher_grants = 3;
+  agentplane.proto.Identity caller_identity = 4;
 }
 
 message ListEnvironmentTemplatesResponse {
@@ -97,6 +108,12 @@ message SetEnvironmentWakeOnSendRequest {
 message SetEnvironmentIdleSuspendRequest {
   agentplane.proto.EnvironmentTarget target = 1;
   google.protobuf.Duration idle_suspend_after = 2;
+}
+
+message SetEnvironmentIdentityRequest {
+  agentplane.proto.EnvironmentTarget target = 1;
+  // Empty clears spec.identity. The Identity is resolved by name in the Sandbox namespace.
+  string identity_name = 2;
 }
 
 message ListEnvironmentsRequest {
@@ -130,6 +147,11 @@ message EnvironmentChunk {
 message GetEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
   agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message EnvironmentIdentityRecord {
+  // Present only when the current Sandbox-owned WorkloadCredential acts as an Identity.
+  agentplane.proto.Identity identity = 1;
 }
 
 message WatchEnvironmentRequest {
@@ -257,6 +279,8 @@ message EnvironmentDescriptor {
   EnvironmentObservedState observed_state = 29;
   EnvironmentActions actions = 30;
   KubernetesDiagnostics kubernetes_diagnostics = 31;
+  // The optional Identity named by Sandbox.spec.identity; this is a requested binding, not usage proof.
+  optional string identity_name = 32;
 }
 
 message ResumeEnvironmentRequest {

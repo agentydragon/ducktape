@@ -11,7 +11,7 @@ use analysis_projection::AnalysisSpec;
 use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
-use final_global_resolution::{GlobalResolutionSources, assess_final_global_resolution};
+use final_global_resolution::GlobalResolutionSources;
 use gate::{CandidateRelocationAssessmentReport, UnmatchedSpecClaim};
 use graph_provenance::{
     CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
@@ -774,9 +774,6 @@ fn run_prepared_transform(
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
     let candidate = candidate_draft.finalize()?;
-    // Report-only input; reconstruction consumes the candidate below.
-    let global_use_elisions = candidate.global_use_elisions().clone();
-
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
 
@@ -816,6 +813,7 @@ fn run_prepared_transform(
     // accepted-program output is written. Diagnostic reports may already exist.
     let validated_plan = ReconstructionPlan::new(
         candidate,
+        global_resolution_sources,
         unmatched_spec_claims,
         spec.emit_browser_harness.as_ref(),
         VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
@@ -824,23 +822,15 @@ fn run_prepared_transform(
     let emission_files = validated_plan.files();
     let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
 
-    // Report-only: the legacy gate and final validation above stay the
-    // acceptance authority.
     if !dry_run
         && !suppress_reports
         && let Some(report_dir) = &report_out_dir
     {
-        let global_resolution = assess_final_global_resolution(
-            &global_resolution_sources,
-            emission_files.files(),
-            excluded_chunk_ids,
-            &global_use_elisions,
-        );
         fs::create_dir_all(report_dir)
             .with_context(|| format!("create report directory {}", report_dir.display()))?;
         artifact::reports::write_json(
             report_dir.join(GLOBAL_RESOLUTION_REPORT),
-            &global_resolution,
+            validated_plan.global_resolution(),
         )?;
     }
 

@@ -42,7 +42,6 @@ py_library(
         ":truncation_utils",
         "//openai_utils:model",
         "//openai_utils:model_metadata",
-        "//openai_utils:text_extraction",
         "//x/inop/engine:models",
         "//x/inop/io:logging_utils",
     ],

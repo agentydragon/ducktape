@@ -124,10 +124,6 @@ func (p *Process) ID() string                           { return p.process.ID() 
 func (p *Process) Process() *supervision.ManagedProcess { return p.process }
 func (p *Process) PID() int                             { return p.process.PID() }
 func (p *Process) Running() bool                        { return p.process.Running() }
-func (p *Process) WriteLine(ctx context.Context, frame string) error {
-	return p.process.WriteLine(ctx, frame)
-}
-
 func (p *Process) RegisterSent(host *Attachment, frame json.RawMessage) error {
 	return p.router.Sent(host, frame)
 }

@@ -228,16 +228,16 @@ func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(replacement.Items) != 2 || replacement.Items[0].Type != ItemMessage || replacement.Items[0].Role != "user" || replacement.Items[1].Type != ItemCompaction {
-		t.Fatalf("compacted context has unexpected boundary items: %+v", replacement.Items)
+	if len(replacement.items) != 2 || replacement.items[0].Type != ItemMessage || replacement.items[0].Role != "user" || replacement.items[1].Type != ItemCompaction {
+		t.Fatalf("compacted context has unexpected boundary items: %+v", replacement.items)
 	}
-	if got := string(replacement.Items[1].Raw); got != string(records[0]) {
+	if got := string(replacement.items[1].Raw); got != string(records[0]) {
 		t.Fatalf("opaque compaction record changed: %s", got)
 	}
 }
 
 func TestValidateCompactionRejectsUnusableSummary(t *testing.T) {
-	original := &Context{Items: []Item{{Type: ItemMessage, Role: "user", Content: json.RawMessage(`"long original context"`)}}}
+	original := &Context{items: []Item{{Type: ItemMessage, Role: "user", Content: json.RawMessage(`"long original context"`)}}}
 	for _, records := range [][]json.RawMessage{
 		{},
 		{[]byte(`{"type":"message","role":"assistant","content":"not a compaction"}`)},
@@ -327,7 +327,7 @@ func TestDialectAndExecEncodingAreIndependent(t *testing.T) {
 					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
 				}))
 				defer server.Close()
-				if _, err := Sample(context.Background(), server.Client(), server.URL, "fixture", body, config, nil, nil, false); err != nil {
+				if _, err := Sample(context.Background(), server.Client(), server.URL, "Bearer fixture", encoded, config, nil, nil, false); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -350,7 +350,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
 		t.Fatal(err)
 	}
-	items := state.Items
+	items := state.items
 	body, err := BuildRequest(RequestParams{Model: "fixture", Attribution: protocol.SessionAttribution{SessionID: "session"}, Items: items, Tools: testToolSurface(protocol.ExecEncodingJSON)}, Config{Dialect: DialectStandard}, protocol.ExecEncodingJSON)
 	if err != nil {
 		t.Fatal(err)
@@ -462,8 +462,8 @@ func TestContextRejectsMarkersAndUnknownRecordsAtomically(t *testing.T) {
 			if err == nil {
 				t.Fatalf("accepted non-native type %q", typeName)
 			}
-			if len(state.Items) != 1 {
-				t.Fatalf("failed append partially mutated context: %+v", state.Items)
+			if len(state.items) != 1 {
+				t.Fatalf("failed append partially mutated context: %+v", state.items)
 			}
 		})
 	}
@@ -495,8 +495,8 @@ func TestContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
 	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "async"}}); err != nil {
 		t.Fatal(err)
 	}
-	if state.Items[2].Type != ItemFunctionOutput || state.Items[3].Type != ItemFunctionOutput {
-		t.Fatalf("tool outputs=%+v", state.Items[2:])
+	if state.items[2].Type != ItemFunctionOutput || state.items[3].Type != ItemFunctionOutput {
+		t.Fatalf("tool outputs=%+v", state.items[2:])
 	}
 	if err := state.CheckSettled(); err != nil {
 		t.Fatalf("repeated async output left call unsettled: %v", err)
@@ -517,7 +517,7 @@ func TestContextUsesCustomOutputForFreeformCalls(t *testing.T) {
 	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := state.Items[1].Type; got != ItemCustomToolOutput {
+	if got := state.items[1].Type; got != ItemCustomToolOutput {
 		t.Fatalf("freeform result type=%s, want %s", got, ItemCustomToolOutput)
 	}
 }
@@ -542,8 +542,8 @@ func TestContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 			if err := state.AppendRecords(records); err == nil {
 				t.Fatalf("accepted invalid call/output pairing: %s", test.name)
 			}
-			if len(state.Items) != 0 {
-				t.Fatalf("failed pairing check partially mutated context: %+v", state.Items)
+			if len(state.items) != 0 {
+				t.Fatalf("failed pairing check partially mutated context: %+v", state.items)
 			}
 		})
 	}
@@ -567,15 +567,13 @@ func TestContextTerminalAndAdapterOnlyState(t *testing.T) {
 	if err := state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "recovery notice"}}); err != nil {
 		t.Fatal(err)
 	}
-	if state.Items[1].Type != ItemMessage || state.Items[1].Role != "developer" || state.TurnComplete() {
-		t.Fatalf("notice did not become a non-terminal developer message: %+v", state.Items[1])
+	if state.items[1].Type != ItemMessage || state.items[1].Role != "developer" || state.TurnComplete() {
+		t.Fatalf("notice did not become a non-terminal developer message: %+v", state.items[1])
 	}
 	if err := state.ChangeEffort("high"); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendExecutionState(&protocol.ExecutionState{Cells: []protocol.ActiveCell{{ID: "live"}}}); err != nil {
-		t.Fatal(err)
-	}
+
 	if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"message","role":"assistant","content":[]}`)}); err != nil {
 		t.Fatal(err)
 	}

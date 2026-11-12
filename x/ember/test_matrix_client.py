@@ -42,14 +42,14 @@ async def test_matrix_client_send_text_message(tmp_path: Path, monkeypatch: pyte
     async def fake_create_client(self: MatrixClient) -> FakeAsyncClient:  # Test mock narrows return type
         return fake_client
 
-    async def fake_initialise_control_rooms(self: MatrixClient) -> set[str]:
+    async def fake_fetch_joined_rooms(self: MatrixClient) -> set[str]:
         return set()
 
     async def fake_sync_loop(self: MatrixClient) -> None:  # pragma: no cover - exercised via task
         await asyncio.sleep(0)
 
     monkeypatch.setattr(MatrixClient, "_create_client", fake_create_client, raising=False)
-    monkeypatch.setattr(MatrixClient, "_initialise_control_rooms", fake_initialise_control_rooms, raising=False)
+    monkeypatch.setattr(MatrixClient, "_fetch_joined_rooms", fake_fetch_joined_rooms, raising=False)
     monkeypatch.setattr(MatrixClient, "_sync_loop", fake_sync_loop, raising=False)
 
     monkeypatch.setenv("MATRIX_BASE_URL", "https://matrix.test")

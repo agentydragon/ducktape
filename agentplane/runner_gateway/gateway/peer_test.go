@@ -42,10 +42,10 @@ func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.Secu
 			vmi.OwnerReferences[0].APIVersion = "other.example/v1"
 		},
 		"missing credential": func(_ *sandboxapi.Sandbox, _ *corev1.Pod, vmi *kubevirtv1.VirtualMachineInstance, _ *kubevirtv1.VirtualMachine) {
-			delete(vmi.Labels, sandboxapi.EnvironmentRuntimeCredentialLabel)
+			delete(vmi.Labels, sandboxapi.EnvironmentRuntimeCredentialMetadataKey)
 		},
 		"stale credential": func(_ *sandboxapi.Sandbox, _ *corev1.Pod, vmi *kubevirtv1.VirtualMachineInstance, _ *kubevirtv1.VirtualMachine) {
-			vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = "new-credential"
+			vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = "new-credential"
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -60,15 +60,15 @@ func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.Secu
 			vmi := &kubevirtv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{
 				Name: sandbox.Name, Namespace: sandbox.Namespace, UID: "vmi-uid",
 				OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(vm, kubevirtv1.VirtualMachineGroupVersionKind)},
-				Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.EnvironmentRuntimeCredentialLabel: "current-credential"},
+				Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "current-credential"},
 			}}
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "launcher", Namespace: sandbox.Namespace, UID: "launcher-uid",
 					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(vmi, kubevirtv1.VirtualMachineInstanceGroupVersionKind)},
-					Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.EnvironmentRuntimeCredentialLabel: "untrusted-launcher-label"},
+					Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "untrusted-launcher-label"},
 				},
-				Spec:   corev1.PodSpec{ServiceAccountName: sandbox.Name},
+				Spec:   corev1.PodSpec{ServiceAccountName: "default"},
 				Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "192.0.2.90", Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 			}
 			change(sandbox, pod, vmi, vm)

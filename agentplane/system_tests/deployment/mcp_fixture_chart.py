@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import bcrypt
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from cdk8s import ApiObjectMetadata, Chart
 from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, ServiceAccount, Volume
 from constructs import Construct
@@ -16,10 +17,12 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_servers, mcp_servers
-from agentplane.system_tests.deployment.rendered_fixture import McpInputs, Models
+from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs, Models
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s.agentplane import actions
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
+from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
+from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, PolicySet
 
 DEX_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-dex:unset"
 MCP_EVERYTHING_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset"
@@ -30,7 +33,7 @@ _TRUST_BUNDLE = "test-fixture-ca"
 _TRUST_BUNDLE_KEY = "ca-certificates.crt"
 _TRUST_BUNDLE_DIR = "/etc/test-fixture-ca"
 _MCP_EDGE_TEST_CALLER = "mcp-edge-test-caller"
-DELEGATION_SANDBOX_NAME = "systest-delegation-caller"
+_MCP_EDGE_TEST_POLICY = "mcp-edge-test-caller-session-delegation"
 _OPERATOR = dex.Operator(email="test-operator@k3s-fixture.invalid", username="test-operator", user_id="test-operator")
 _OPERATOR_PASSWORD = "test-k3s-operator-password"
 _MCP_EDGE_LOGIN = dex.StaticClient(
@@ -38,12 +41,21 @@ _MCP_EDGE_LOGIN = dex.StaticClient(
     name="Test MCP edge OAuth",
     redirect_uri=f"{fixture_chart.MCP_EDGE_HTTP_SERVICE.url}/auth/callback",
 )
+OPERATOR_TOKEN_GRANT = DexPasswordGrant(
+    issuer=fixture_chart.DEX_ISSUER,
+    client_id=fixture_chart.APP_CLIENT_ID,
+    client_secret=fixture_chart.APP_CLIENT_SECRET,
+    username=_OPERATOR.email,
+    password=_OPERATOR_PASSWORD,
+)
 
 
 def objects(
     *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs
 ) -> list[dict[str, Any]]:
-    env = fixture_chart.environment(vm_sandboxes=False, models=models, app_origin=mcp.app_origin, central_sampler=True)
+    env = fixture_chart.environment(
+        vm_sandboxes=False, models=models, operator_token_key=None, app_origin=mcp.app_origin, central_sampler=True
+    )
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
     actions_config = replace(
         env.actions,
@@ -69,14 +81,9 @@ def objects(
     )
     mcp_edge_config = replace(
         env.mcp_edge,
-        # The Sandbox controller creates and labels the delegation caller's ServiceAccount. It is
-        # deliberately absent from this chart so the OAuth fixture exercises that owner boundary.
-        mintable_accounts=frozenset(
-            {
-                ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER),
-                ServiceAccountRef(namespace=NAMESPACE, name=DELEGATION_SANDBOX_NAME),
-            }
-        ),
+        # OAuth consent binds to this standing caller, whose exact Session-delegation actions are
+        # separately granted below. It is not a Sandbox credential or an Identity alias.
+        mintable_accounts=frozenset({ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER)}),
         oauth_secret_name=_MCP_EDGE_OAUTH_SECRET,
     )
     env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
@@ -95,6 +102,22 @@ def objects(
         "mcp-edge-test-caller",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE, labels={CALLER_LABEL: "true"}),
         automount_token=False,
+    )
+    # Keep external MCP's test-only caller within the exact old same-principal action surface. The
+    # identity-owned Sandbox in test_delegation is a different principal, so these grants let the
+    # test exercise backend isolation instead of failing before delegation at Action admission.
+    PolicySet(
+        fixture.chart,
+        "mcp-edge-test-caller-session-delegation",
+        metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_POLICY, namespace=NAMESPACE),
+        rules=[AutoApproveIf.exact_actions(actions={"environments": ["list", "get"], "sessions": ["create"]})],
+    )
+    PolicyBinding(
+        fixture.chart,
+        "mcp-edge-test-caller-session-delegation-binding",
+        metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
+        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER),
+        policy_sets=[_MCP_EDGE_TEST_POLICY],
     )
     _add_mcp_fixtures(
         fixture.chart,

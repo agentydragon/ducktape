@@ -17,6 +17,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+const blockedInputFailureReason = "session blocked by unresolved effects"
+
 // silentObservations advance the projection without a row.
 var silentObservations = map[string]bool{
 	"native": true, "harness_stderr": true, "debug_checkpoint": true, "journal_reopened": true,
@@ -575,6 +577,17 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 		f.recordEvidence(cursor, entry)
 	case "command_failed":
 		failed := event.GetCommandFailed()
+		summary, err := f.command(failed.GetCommandId())
+		if err != nil {
+			return err
+		}
+		if summary.Operation == commandpb.Operation_OPERATION_SUBMIT_INPUT && summary.Input != nil &&
+			summary.Outcome == historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED &&
+			summary.OutcomeCursor != nil && *summary.OutcomeCursor < cursor && failed.GetReason() == blockedInputFailureReason {
+			// A later blocked-queue failure does not undo an input already confirmed by the harness.
+			f.recordEvidence(summary.AdmissionCursor, entry)
+			return nil
+		}
 		return f.settle(entry, failed.GetCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED, proto.String(failed.GetReason()))
 	case "command_noop":
 		noop := event.GetCommandNoop()

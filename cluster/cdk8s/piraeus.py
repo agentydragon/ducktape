@@ -27,8 +27,10 @@ CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
 _SSD_LOCAL = "piraeus-ssd-local"
 _HDD_LOCAL = "piraeus-hdd-local"
+# Disposable, strict-local SSD for rebuildable worker cache/work data.
+SSD_LOCAL_DELETE = "piraeus-ssd-local-delete"
 # One copy with no remote access: the volume lives on one node's storage pool.
-NODE_LOCAL_STORAGE_CLASSES = {_SSD_LOCAL, _HDD_LOCAL}
+NODE_LOCAL_STORAGE_CLASSES = {_SSD_LOCAL, _HDD_LOCAL, SSD_LOCAL_DELETE}
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
 # Controller Pods can run on any prepared OVH node.
 _CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
@@ -635,6 +637,20 @@ def cluster_chart(app: App) -> Chart:
                 {
                     "name": _SSD_LOCAL,
                     "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
+                        "linstor.csi.linbit.com/storagePool": "ssd",
+                        "linstor.csi.linbit.com/placementCount": "1",
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+                    },
+                },
+                {
+                    # BuildBuddy executor work disks only contain rebuildable cache data.
+                    # Delete the local LINSTOR volume with its PVC so scale-down frees SSD.
+                    "name": SSD_LOCAL_DELETE,
+                    "reclaimPolicy": "Delete",
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {

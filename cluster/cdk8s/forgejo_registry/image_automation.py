@@ -68,6 +68,7 @@ IMAGES = (
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",
+    "crossplane-provider-buildbuddy",
     "environment-tools",
     "forgejo-token-rotation",
     "github-graphql-rate-exporter",

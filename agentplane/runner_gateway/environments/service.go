@@ -10,12 +10,14 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/view"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,7 +44,7 @@ type Service struct {
 	readers                sets.Set[auth.Account]
 	managers               sets.Set[auth.Account]
 	launchers              sets.Set[auth.Account]
-	defaultPolicySets      []string
+	identityChanges        IdentityChangeGuard
 	collectionAuthInterval time.Duration
 }
 
@@ -64,16 +66,23 @@ func New(
 	return &Service{
 		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
 		lifecycle: lifecycleManager, readers: readers, managers: management.Managers,
-		launchers: management.Launchers, defaultPolicySets: slices.Clone(management.DefaultPolicySets),
+		launchers:              management.Launchers,
+		identityChanges:        management.IdentityChanges,
 		collectionAuthInterval: auth.DefaultVerdictTTL,
 	}, nil
 }
 
 // ManagementOptions grants mutation authority independently of inventory and resume grants.
 type ManagementOptions struct {
-	Managers          sets.Set[auth.Account]
-	Launchers         sets.Set[auth.Account]
-	DefaultPolicySets []string
+	Managers        sets.Set[auth.Account]
+	Launchers       sets.Set[auth.Account]
+	IdentityChanges IdentityChangeGuard
+}
+
+// IdentityChangeGuard serializes a Sandbox patch with Dispatcher Session admission and rejects
+// retained Sessions of a different Identity incarnation.
+type IdentityChangeGuard interface {
+	ChangeSandboxIdentity(context.Context, string, *identitypb.Identity, func() error) error
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
@@ -82,17 +91,19 @@ type ManagementOptions struct {
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(resolver)
 	return auth.Methods{
-		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName:  rule,
-		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName:         rule,
-		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:          rule,
-		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:         rule,
-		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:            rule,
-		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:          rule,
-		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName:         rule,
-		environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName:        rule,
-		environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName:         rule,
-		environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName:  rule,
-		environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName: rule,
+		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName:     rule,
+		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName:            rule,
+		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:             rule,
+		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:            rule,
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:               rule,
+		environmentpb.EnvironmentService_GetEnvironmentIdentityRecord_FullMethodName: rule,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:             rule,
+		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName:            rule,
+		environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName:           rule,
+		environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName:            rule,
+		environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName:     rule,
+		environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName:    rule,
+		environmentpb.EnvironmentService_SetEnvironmentIdentity_FullMethodName:       rule,
 	}
 }
 
@@ -241,6 +252,31 @@ func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.Get
 	return descriptor, err
 }
 
+func (s *Service) GetEnvironmentIdentityRecord(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentIdentityRecord, error) {
+	if _, err := s.GetEnvironment(ctx, request); err != nil {
+		return nil, err
+	}
+	target := request.GetTarget()
+	record := &workloadapi.WorkloadCredential{}
+	err := s.objects.Get(ctx, types.NamespacedName{Namespace: target.GetNamespace(), Name: target.GetName()}, record)
+	if apierrors.IsNotFound(err) {
+		return &environmentpb.EnvironmentIdentityRecord{}, nil
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "Environment credential read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Environment credential is unavailable")
+	}
+	for _, owner := range record.OwnerReferences {
+		if owner.APIVersion == api.GroupVersion.String() && owner.Kind == api.SandboxKind && owner.Name == target.GetName() && string(owner.UID) == target.GetUid() && owner.Controller != nil && *owner.Controller {
+			if acting := record.Spec.Subject.Identity; acting != nil {
+				return &environmentpb.EnvironmentIdentityRecord{Identity: &identitypb.Identity{Name: acting.Name, Uid: string(acting.UID)}}, nil
+			}
+			break
+		}
+	}
+	return &environmentpb.EnvironmentIdentityRecord{}, nil
+}
+
 // getEnvironment returns both the full caller-authorized snapshot and the currently reported Pod
 // name so a watch can observe that exact projection without following a stale incarnation.
 func (s *Service) getEnvironment(
@@ -337,6 +373,10 @@ func (s *Service) revalidateDescriptor(
 	} else {
 		descriptor.ExecutionAccount = nil
 	}
+	descriptor.IdentityName = nil
+	if current.Resource.Spec.Identity != nil {
+		descriptor.IdentityName = &current.Resource.Spec.Identity.Name
+	}
 	return execution, found, true, nil
 }
 
@@ -380,7 +420,7 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if object.Status.OperatingMode == api.OperatingModeSuspended {
-			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, caller)
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.AccountWakeCaller{Account: caller})
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
 			}

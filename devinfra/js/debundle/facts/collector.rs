@@ -931,7 +931,7 @@ impl Visit for StatementFactsCollector {
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         record_update_target(&node.arg, self);
-        let simple_target = binding_targets::simple_update_target(&node.arg);
+        let simple_target = binding_targets::simple_write_target_expr(&node.arg);
         if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref()
             && let Expr::Ident(root) = binding_targets::transparent_target_expr(&member.obj)
         {

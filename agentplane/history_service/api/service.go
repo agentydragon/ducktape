@@ -1,8 +1,10 @@
 // Package api serves the History Service's HistoryService gRPC API: the reads of retained Session history and
 // of its folded Threads, raw entry follows and summary change watches.
 //
-// Methods admits only the configured callers, each proving a ServiceAccount by a bearer reviewed on that call
-// (agentplane/docs/grpc_services.md): a public Session UUID is not itself authority to read a transcript.
+// Methods admits a ServiceAccount proving itself by a bearer reviewed on that call
+// (agentplane/docs/grpc_services.md), or a workload SVID naming an Identity, which reads the Sessions
+// retained as executing as that Identity incarnation: a public Session UUID is not itself authority to read
+// a transcript.
 package api
 
 import (
@@ -48,10 +50,11 @@ type Options struct {
 	WatchLease time.Duration
 }
 
-// Methods admits a reviewed ServiceAccount to the read API. The handler scopes ordinary callers to
-// their retained execution principal and keeps the configured Pod-bound backend readers explicit.
+// Methods admits a reviewed ServiceAccount or an Identity SVID to the read API. The handler scopes
+// ordinary callers to their retained execution principal or Identity and keeps the configured
+// Pod-bound backend readers explicit.
 func Methods(resolver *auth.Resolver) auth.Methods {
-	rule := auth.ReviewedServiceAccount(resolver)
+	rule := auth.ReviewedServiceAccountOrIdentity(resolver)
 	return auth.Methods{
 		historypb.HistoryService_ReadSessionEvents_FullMethodName:        rule,
 		historypb.HistoryService_FollowSession_FullMethodName:            rule,
@@ -71,10 +74,11 @@ func MethodsWithDelegation(
 	resolver *auth.Resolver,
 	delegator auth.Delegator,
 	serviceAccounts auth.ServiceAccountUIDReader,
+	identities auth.IdentityUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
 	methods, err := Methods(resolver).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts, identities,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated History methods: %w", err)
@@ -95,6 +99,22 @@ func (s *Service) Drain() { s.drain() }
 
 // serve runs read under the request timeout.
 func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// An Identity reads the Sessions recorded with its exact incarnation, whether its own workload
+	// called or a trusted platform component acts for it.
+	switch identity := admission.(type) {
+	case auth.IdentityAdmission:
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID,
+		})), nil
+	case auth.DelegatedIdentityAdmission:
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
+		})), nil
+	}
 	caller, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return nil, err
@@ -102,10 +122,6 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 	account := caller.GetAccount()
 	if account == nil || account.GetNamespace() == "" || account.GetName() == "" || caller.GetUid() == "" {
 		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
-	}
-	admission, err := auth.Admitted(ctx)
-	if err != nil {
-		return nil, err
 	}
 	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
 		if s.readerAccounts.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}) {

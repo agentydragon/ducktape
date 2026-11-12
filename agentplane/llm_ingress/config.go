@@ -66,7 +66,13 @@ type modelConfig struct {
 }
 
 type config struct {
-	CentralSamplerAccounts          []string `mapstructure:"central_sampler_accounts"`
+	// CentralSamplerAccounts may claim a central Session (`x-agentplane-session-id`) on their own
+	// bearer calls.
+	CentralSamplerAccounts []string `mapstructure:"central_sampler_accounts"`
+	// CentralSamplerIdentityCallers lets those accounts also call as delegating actors for an
+	// Identity in policy_namespace, which the call is then attributed to. It is a grant of its own:
+	// claiming a Session never implies asserting an Identity.
+	CentralSamplerIdentityCallers   bool     `mapstructure:"central_sampler_identity_callers"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
 	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity callers.
 	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
@@ -147,6 +153,9 @@ func validateConfig(c *config) error {
 	}
 	if c.PolicyNamespace != "" && !attributesIdentity(c.Attribution) {
 		return errors.New("policy_namespace requires every attribution output to carry the identity claim")
+	}
+	if c.CentralSamplerIdentityCallers && (c.PolicyNamespace == "" || len(c.CentralSamplerAccounts) == 0) {
+		return errors.New("central_sampler_identity_callers requires policy_namespace and central_sampler_accounts")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err

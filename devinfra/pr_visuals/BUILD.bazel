@@ -108,6 +108,15 @@ filegroup(
 )
 
 py_library(
+    name = "comment_publishing",
+    srcs = ["comment_publishing.py"],
+    deps = [
+        ":github_comment",
+        "@pypi//pygithub",
+    ],
+)
+
+py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
@@ -120,8 +129,10 @@ py_library(
         ":artifacts",
         ":check_run",
         ":collection",
+        ":comment_publishing",
         ":gallery",
         ":github_comment",
+        ":image_storage",
         ":metadata",
         ":pull_request",
         ":render_common",
@@ -131,6 +142,7 @@ py_library(
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//pygithub",
+        "@pypi//types_boto3_s3",
     ],
 )
 
@@ -185,7 +197,9 @@ py_test(
     deps = [
         ":artifacts",
         ":collection",
+        ":comment_publishing",
         ":github_comment",
+        ":image_storage",
         ":metadata",
         ":publisher",
         ":pull_request",
@@ -195,8 +209,10 @@ py_test(
         "//devinfra/testing:output_writer",
         "@pypi//botocore",
         "@pypi//pillow",
+        "@pypi//pygithub",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_boto3_s3",
     ],
 )
 
@@ -402,5 +418,17 @@ py_test(
         "//:conftest",
         "@pypi//pillow",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "image_storage",
+    srcs = ["image_storage.py"],
+    deps = [
+        ":artifacts",
+        ":render_common",
+        "@pypi//botocore",
+        "@pypi//pillow",
+        "@pypi//types_boto3_s3",
     ],
 )

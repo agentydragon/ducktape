@@ -415,3 +415,55 @@ func TestIdentitySubjectGetsNoNativeBindings(t *testing.T) {
 		t.Fatalf("natives for an identity subject = %v", got)
 	}
 }
+
+func TestIdentityBindingWithoutKubernetesRulesIsReady(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		name := "all sets present"
+		if missing {
+			name = "missing set"
+		}
+		t.Run(name, func(t *testing.T) {
+			r, c := newReconciler(t, nil, namespaceReader, nodeReader)
+			reconcileOnce(t, r)
+			if got := nativeScopes(t, c); !maps.Equal(got, granted) {
+				t.Fatalf("initial natives = %v", got)
+			}
+			var set policyapi.PolicySet
+			if err := c.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: "test-diagnostics"}, &set); err != nil {
+				t.Fatal(err)
+			}
+			set.Spec.Rules = []policyapi.Rule{
+				{Type: "egress", Hosts: []string{"example.com"}},
+				{Type: "action_auto_approve", Policy: &policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"test": {"read"}}}},
+				{Type: "session_inbox_access", Operations: []string{"send_message"}, Targets: &policyapi.SandboxTargets{AllSandboxes: true}},
+			}
+			if err := c.Update(context.Background(), &set); err != nil {
+				t.Fatal(err)
+			}
+			var binding policyapi.PolicyBinding
+			if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+				t.Fatal(err)
+			}
+			binding.Generation = 2
+			binding.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
+			if missing {
+				binding.Spec.PolicySets = append(binding.Spec.PolicySets, "missing")
+			}
+			if err := c.Update(context.Background(), &binding); err != nil {
+				t.Fatal(err)
+			}
+			reconcileOnce(t, r)
+			got := condition(t, c)
+			wantStatus, wantReason := metav1.ConditionTrue, "Applied"
+			if missing {
+				wantStatus, wantReason = metav1.ConditionFalse, policyapi.PolicySetUnavailable
+			}
+			if got.Status != wantStatus || got.Reason != wantReason || got.ObservedGeneration != 2 {
+				t.Fatalf("condition = %+v, want %s/%s for generation 2", got, wantStatus, wantReason)
+			}
+			if got := nativeScopes(t, c); len(got) != 0 {
+				t.Fatalf("natives after switching to an Identity = %v", got)
+			}
+		})
+	}
+}

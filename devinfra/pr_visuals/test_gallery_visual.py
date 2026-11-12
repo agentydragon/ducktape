@@ -14,9 +14,9 @@ from playwright.async_api import expect
 
 from devinfra.pr_visuals.metadata import ReviewResult
 from devinfra.pr_visuals.publisher import (
-    DownloadedAsset,
-    DownloadedVariant,
-    DownloadedVisualTest,
+    CollectedAsset,
+    CollectedVariant,
+    CollectedVisualTest,
     build_bundle,
     target_slug,
 )
@@ -54,8 +54,8 @@ def _sample_png(size: tuple[int, int], label: str | None = None) -> bytes:
     return stream.getvalue()
 
 
-def _asset_key(path: str) -> DownloadedAsset:
-    return DownloadedAsset(f"gallery/test_visual.py::{path}", None, "screenshot", path.removesuffix(".png"), [])
+def _asset_key(path: str) -> CollectedAsset:
+    return CollectedAsset(f"gallery/test_visual.py::{path}", None, "screenshot", path.removesuffix(".png"), [])
 
 
 def _result(
@@ -79,22 +79,22 @@ def _add_test(
     candidate: dict[str, bytes],
     baseline: dict[str, bytes],
     unstable: dict[str, bytes] | None = None,
-) -> DownloadedVisualTest:
+) -> CollectedVisualTest:
     slug = target_slug(label, repository="agentydragon/ducktape")
     source = root / slug
     source.mkdir(parents=True)
-    assets: list[DownloadedAsset] = []
+    assets: list[CollectedAsset] = []
     for path, body in candidate.items():
         image = source / path
         image.write_bytes(body)
         base = _asset_key(path)
         results = [_result(1, shard=shard) for shard in (1, 2, 3)] if unstable and path in unstable else [_result(1)]
-        variants = [DownloadedVariant(image, hashlib.sha256(body).hexdigest(), results)]
+        variants = [CollectedVariant(image, hashlib.sha256(body).hexdigest(), results)]
         if unstable and path in unstable:
             other = source / f"variant-{path}"
             other.write_bytes(unstable[path])
             variants.append(
-                DownloadedVariant(
+                CollectedVariant(
                     other,
                     hashlib.sha256(unstable[path]).hexdigest(),
                     [
@@ -106,7 +106,7 @@ def _add_test(
                     ],
                 )
             )
-        assets.append(DownloadedAsset(base.case_id, None, "screenshot", base.label, variants))
+        assets.append(CollectedAsset(base.case_id, None, "screenshot", base.label, variants))
 
     baseline_assets = []
     for path, body in baseline.items():
@@ -115,7 +115,7 @@ def _add_test(
         baseline_objects[f"assets/{digest}.png"] = body
         baseline_assets.append(
             {
-                "path": asset.path,
+                "path": asset.review_filename,
                 "label": asset.label,
                 "case_id": asset.case_id,
                 "checkpoint": None,
@@ -131,7 +131,7 @@ def _add_test(
     }
     prefix = f"reviews-test-outputs/{BASE_SHA}/tests/{slug}/"
     baseline_objects[f"{prefix}metadata.json"] = json.dumps(metadata).encode()
-    return DownloadedVisualTest(label, slug, title, assets, "gallery", [])
+    return CollectedVisualTest(label, slug, title, assets, "gallery", [])
 
 
 def _gallery_bundle(tmp_path: Path) -> tuple[Path, str]:
@@ -243,8 +243,8 @@ async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path) -
 
         await view.page.goto(detail_url, wait_until="load")
         await expect(view.page.get_by_role("heading", name="Mixed dimensions and statuses")).to_be_visible()
-        landscape_pair = view.page.locator(f'figure[id="{_asset_key("dashboard.png").path}"] .pair')
-        slider = view.page.locator(f'figure[id="{_asset_key("dashboard.png").path}"] img-comparison-slider')
+        landscape_pair = view.page.locator(f'figure[id="{_asset_key("dashboard.png").review_filename}"] .pair')
+        slider = view.page.locator(f'figure[id="{_asset_key("dashboard.png").review_filename}"] img-comparison-slider')
         await expect(slider).to_be_visible()
         await expect(slider.locator('img[slot="first"]')).to_have_attribute("alt", "dashboard before")
         await expect(slider.locator('img[slot="second"]')).to_have_attribute("alt", "dashboard after")
@@ -252,11 +252,11 @@ async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path) -
         await view.page.get_by_text("View before and after separately").click()
         await expect(landscape_pair.locator(":scope > div").nth(0)).to_contain_text("Before")
         await expect(landscape_pair.locator(":scope > div").nth(1)).to_contain_text("After")
-        dimension_change = view.page.locator(f'figure[id="{_asset_key("portrait.png").path}"]')
+        dimension_change = view.page.locator(f'figure[id="{_asset_key("portrait.png").review_filename}"]')
         await expect(dimension_change.get_by_role("note")).to_contain_text("dimensions changed")
         await expect(dimension_change.locator("img-comparison-slider")).to_have_count(0)
         await expect(dimension_change.locator(".sample-frame img")).to_have_count(2)
-        unstable_asset = view.page.locator(f'figure[id="{_asset_key("new-portrait.png").path}"]')
+        unstable_asset = view.page.locator(f'figure[id="{_asset_key("new-portrait.png").review_filename}"]')
         await expect(unstable_asset).to_contain_text("unstable across runs")
         await expect(unstable_asset).to_contain_text("run 1 · shards 1-3 · attempt 1 · config 12345678")
         await expect(unstable_asset).to_contain_text("run 2 · shard 1 · attempt 1 · config 87654321")
@@ -273,7 +273,7 @@ async def test_generated_gallery_layout(visual: VisualHarness, tmp_path: Path) -
 
     async with visual.open(viewport=Viewport(width=412, height=915), trace_checkpoint="mobile") as view:
         await view.page.goto(detail_url, wait_until="load")
-        columns = await view.page.locator(f'figure[id="{_asset_key("dashboard.png").path}"] .pair').evaluate(
+        columns = await view.page.locator(f'figure[id="{_asset_key("dashboard.png").review_filename}"] .pair').evaluate(
             "pair => getComputedStyle(pair).gridTemplateColumns.split(' ').length"
         )
         assert columns == 1

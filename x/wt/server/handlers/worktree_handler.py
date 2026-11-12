@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 
 from x.wt.server.rpc import RpcError, ServiceDependencies, Stream, rpc
-from x.wt.server.services import WorktreeIndexService
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from x.wt.shared.protocol import (
@@ -143,10 +143,10 @@ async def worktree_delete(deps: ServiceDependencies, params: WorktreeDeleteParam
     return WorktreeDeleteResult(wtid=params.wtid, success=True, message=f"Deleted worktree {worktree_name}")
 
 
-def _resolve_worktree_name_to_info(index: WorktreeIndexService, name: str) -> DiscoveredWorktree | None:
-    if name == MAIN_WORKTREE_DISPLAY_NAME and index.main():
-        return index.main()
-    return index.get_by_name(name)
+def _resolve_worktree_name_to_info(index: WorktreeIndex, name: str) -> DiscoveredWorktree | None:
+    if name == MAIN_WORKTREE_DISPLAY_NAME and index.main:
+        return index.main
+    return index.by_name.get(name)
 
 
 @rpc.method("worktree_identify", params=WorktreeIdentifyParams)

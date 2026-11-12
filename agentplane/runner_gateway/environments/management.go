@@ -46,11 +46,14 @@ func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.En
 		if _, ok := s.launchers[account]; !ok {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
 		}
-		if origin.GetCaller().GetNamespace() == "" || origin.GetCaller().GetName() == "" || origin.GetActionGroup() == "" {
-			return nil, status.Error(codes.InvalidArgument, "launch origin requires caller and Action group")
+		account, identity := origin.GetCaller(), origin.GetCallerIdentity()
+		validAccount := account != nil && account.GetNamespace() != "" && account.GetName() != ""
+		validIdentity := identity != nil && identity.GetName() != "" && identity.GetUid() != ""
+		if origin.GetActionGroup() == "" || !(validAccount && identity == nil || validIdentity && account == nil) {
+			return nil, status.Error(codes.InvalidArgument, "launch origin requires exactly one complete caller and Action group")
 		}
 	}
-	return management.New(s.namespace, s.objects, s.defaultPolicySets, &identitypb.ServiceAccount{
+	return management.New(s.namespace, s.objects, &identitypb.ServiceAccount{
 		Namespace: account.Namespace, Name: account.Name,
 	})
 }
@@ -152,6 +155,30 @@ func (s *Service) SetEnvironmentIdleSuspend(ctx context.Context, request *enviro
 	return &emptypb.Empty{}, nil
 }
 
+func (s *Service) SetEnvironmentIdentity(ctx context.Context, request *environmentpb.SetEnvironmentIdentityRequest) (*emptypb.Empty, error) {
+	access, err := s.manager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	name, uid, err := s.mutationTarget(request.GetTarget())
+	if err != nil {
+		return nil, err
+	}
+	if s.identityChanges == nil {
+		return nil, status.Error(codes.Unavailable, "Session identity admission is unavailable")
+	}
+	identity, err := access.ResolveIdentity(ctx, request.GetIdentityName())
+	if err != nil {
+		return nil, managementError(ctx, err)
+	}
+	if err := s.identityChanges.ChangeSandboxIdentity(ctx, uid, identity, func() error {
+		return access.SetIdentity(ctx, name, uid, identity)
+	}); err != nil {
+		return nil, managementError(ctx, err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
 func managementError(ctx context.Context, err error) error {
 	var missing *management.SandboxNotFoundError
 	var invalid *management.InvalidSandboxError
@@ -159,8 +186,10 @@ func managementError(ctx context.Context, err error) error {
 	var launcherPolicy *management.LauncherPolicySetError
 	var conflict *management.SandboxConflictError
 	var running *management.SandboxRunningError
+	var identityRunning *management.IdentityChangeRunningError
 	var unknown *management.SandboxModeUnknownError
 	var teardown *management.SandboxTearingDownError
+	var sessions interface{ ConflictingSessionIDs() []string }
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return status.FromContextError(err).Err()
@@ -172,9 +201,11 @@ func managementError(ctx context.Context, err error) error {
 		return managementRefusal(codes.InvalidArgument, "LAUNCHER_POLICY_SET", err.Error())
 	case errors.As(err, &invalid):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.As(err, &sessions), apierrors.IsInvalid(err):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.As(err, &conflict), apierrors.IsAlreadyExists(err):
 		return status.Error(codes.AlreadyExists, err.Error())
-	case errors.As(err, &running), errors.As(err, &unknown), errors.As(err, &teardown), apierrors.IsConflict(err):
+	case errors.As(err, &running), errors.As(err, &identityRunning), errors.As(err, &unknown), errors.As(err, &teardown), apierrors.IsConflict(err):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	default:
 		slog.ErrorContext(ctx, "environment management failed", "error", err)

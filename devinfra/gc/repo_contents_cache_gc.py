@@ -9,8 +9,9 @@ them, and every Bazel command holds a shared lock on `gc_lock` for its whole dur
 GC takes it exclusively).
 
 Bazel's GC is age-based only (`--repo_contents_cache_gc_max_age`) and runs on an idle
-server; it never asks whether an entry is referenced. This scanner does: an entry no output
-base the joint scan knows about links to is prunable. Deletion takes `gc_lock` exclusively,
+server; it never asks whether an entry is referenced. This scanner does: an entry that no
+known output base links to is prunable, but only when every known base's
+`external/` directory and links were inspectable. Deletion takes `gc_lock` exclusively,
 so no command can be fetching into the cache — or linking a base to an entry — while one
 goes, and removes an entry the way Bazel's GC does (recorded inputs first, then the
 directory into `_trash/`), so an interruption leaves nothing a later Bazel GC won't finish.
@@ -98,6 +99,7 @@ class ReviewEntryReason(enum.StrEnum):
     NESTED_MOUNT = enum.auto()  # `detail` is the mount point
     CANNOT_STAT = enum.auto()  # `detail` is the OS error
     CANNOT_LIST = enum.auto()
+    INCOMPLETE_REFERENCE_SCAN = enum.auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +122,31 @@ class ReviewEntry(Review):
 
 
 type EntryInspection = PrunableEntry | RetainedEntry | ReviewEntry
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceScanFailure:
+    path: Path
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceInventory:
+    referrers: dict[Path, frozenset[Path]]
+    failures: tuple[ReferenceScanFailure, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not self.failures
+
+    @property
+    def failure_detail(self) -> str:
+        if not self.failures:
+            raise ValueError("complete reference inventory has no failure detail")
+        first = self.failures[0]
+        other_failures = len(self.failures) - 1
+        suffix = f" ({other_failures} other inspection failure(s))" if other_failures else ""
+        return f"reference inventory is incomplete at {first.path}: {first.detail}{suffix}"
 
 
 def entry_path(inspection: EntryInspection) -> Path:
@@ -184,37 +211,67 @@ def inventory(contents: Path, *, uid: int, points: set[Path]) -> list[CacheEntry
     return items
 
 
-def references(bases: Iterable[Path], contents: Path) -> dict[Path, set[Path]]:
+def references(bases: Iterable[Path], contents: Path) -> ReferenceInventory:
     """Cache entry (its contents dir) -> the output bases whose `external/` links to it.
 
-    One `readlink` per link, never followed further: the link target *is* the reference, and
-    a dangling one simply matches nothing in the inventory. Bazel writes the target through
-    `--repo_contents_cache` as configured, which may reach `contents` (resolved) through a
-    symlinked prefix, so the target's hash directory is resolved before comparing. A base
-    whose `external/` cannot be listed contributes nothing and is logged — the module
-    docstring's blind spot.
+    Missing `external/` directories, vanished entries, and genuine non-symlink entries are
+    harmless. Every other listing, link, or path-resolution failure makes the inventory
+    incomplete: a caller must not call an entry unreferenced based on a partial scan. Bazel
+    writes targets through `--repo_contents_cache` as configured, which may reach `contents`
+    (resolved) through a symlinked prefix, so the target's hash directory is resolved before
+    comparing.
     """
     referrers: dict[Path, set[Path]] = {}
     resolved_hash_dirs: dict[Path, Path] = {}
+    failures: list[ReferenceScanFailure] = []
+
+    def record_failure(path: Path, detail: str) -> None:
+        logger.warning("Cannot inspect %s; repo-cache references are unknown: %s", path, detail)
+        failures.append(ReferenceScanFailure(path, detail))
+
     for base in bases:
         external = base / "external"
         try:
             children = list(external.iterdir())
-        except FileNotFoundError:
-            continue  # never fetched anything
+        except FileNotFoundError as error:
+            # A missing path has no links. If it still exists, however, it may be a broken
+            # symlink or a directory that disappeared while it was being scanned.
+            try:
+                external.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as stat_error:
+                record_failure(external, stat_error.strerror or str(stat_error))
+            else:
+                record_failure(external, error.strerror or str(error))
+            continue
         except OSError as error:
-            logger.warning("Cannot list %s; its repo-cache references are unknown: %s", external, error.strerror)
+            record_failure(external, error.strerror or str(error))
             continue
         for child in children:
             try:
                 target = child.readlink()
-            except OSError:
-                continue  # a repo fetched in place, a marker file, or a link that just vanished
+            except FileNotFoundError:
+                continue  # the entry vanished after the directory listing
+            except OSError as error:
+                if error.errno == errno.EINVAL:
+                    continue  # Linux readlink reports EINVAL for an existing non-symlink entry
+                record_failure(child, error.strerror or str(error))
+                continue
             target = external / target  # a no-op for an absolute target
-            hash_dir = resolved_hash_dirs.setdefault(target.parent, target.parent.resolve())
+            hash_dir = resolved_hash_dirs.get(target.parent)
+            if hash_dir is None:
+                try:
+                    hash_dir = target.parent.resolve()
+                except OSError as error:
+                    record_failure(child, error.strerror or str(error))
+                    continue
+                resolved_hash_dirs[target.parent] = hash_dir
             if hash_dir.parent == contents:
                 referrers.setdefault(hash_dir / target.name, set()).add(base)
-    return referrers
+    return ReferenceInventory(
+        referrers={path: frozenset(bases) for path, bases in referrers.items()}, failures=tuple(failures)
+    )
 
 
 def scan_repo_contents_cache(
@@ -226,7 +283,8 @@ def scan_repo_contents_cache(
     progress: ProgressSink = NULL_PROGRESS,
 ) -> list[EntryInspection]:
     """Classify every entry against `bases`: the joint scan's verdict on every output base
-    whose `external/` may link into this cache (the root's and the session-env ones)."""
+    whose `external/` may link into this cache (the root's and the session-env ones). Entries
+    are REVIEW when any base's reference inventory is incomplete."""
     uid = os.getuid() if uid is None else uid
     try:
         contents = contents.resolve(strict=True)
@@ -235,7 +293,7 @@ def scan_repo_contents_cache(
         return []
     points = mount_points(mountinfo_path=mountinfo_path)
     items = inventory(contents, uid=uid, points=points)
-    referrers = references((base.path for base in bases), contents)
+    reference_inventory = references((base.path for base in bases), contents)
     prunable_bases = {base.path for base in bases if isinstance(base, PrunableBase)}
     logger.info("Classifying %d repo-cache entries against %d output bases", len(items), len(bases))
     if items:
@@ -245,8 +303,12 @@ def scan_repo_contents_cache(
         inspection: EntryInspection
         if isinstance(item, ReviewEntry):
             inspection = item
+        elif not reference_inventory.complete:
+            inspection = ReviewEntry(
+                item.contents, ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN, detail=reference_inventory.failure_detail
+            )
         else:
-            linked_from = frozenset(referrers.get(item.contents, ()))
+            linked_from = reference_inventory.referrers.get(item.contents, frozenset())
             if not linked_from:
                 inspection = PrunableEntry(item)
             elif linked_from <= prunable_bases:
@@ -308,8 +370,9 @@ def trash_prunable_entries(
 
     Revalidation runs under the lock against a fresh listing of the bases (the root's plus
     `session_bases`, which the caller globbed moments before) and a fresh link pass over
-    them: an entry some base linked to since the scan, or whose directory was replaced, is
-    skipped. Removal mirrors Bazel's GC — recorded inputs first, so no command can pick the
+    them: an entry some base linked to since the scan, an incomplete reference inventory, or
+    a replaced directory is skipped. Removal mirrors Bazel's GC — recorded inputs first, so no
+    command can pick the
     entry up, then the directory renamed into `_trash/` — and the trash is emptied after the
     lock is released, as Bazel does; an interruption leaves at worst trash Bazel's next GC
     empties.
@@ -321,7 +384,7 @@ def trash_prunable_entries(
     try:
         with _gc_lock(contents):
             base_paths = [base for base, _ in list_output_bases(output_user_root, session_bases=session_bases)]
-            referrers = references(base_paths, contents)
+            reference_inventory = references(base_paths, contents)
             points = mount_points(mountinfo_path=mountinfo_path)
             for index, candidate in enumerate(candidates, start=1):
                 path = candidate.entry.contents
@@ -333,8 +396,13 @@ def trash_prunable_entries(
                 if fresh.identity != candidate.entry.identity:
                     results.append(Skipped(path, "entry was replaced since the scan"))
                     continue
-                if path in referrers:
-                    results.append(Skipped(path, f"now referenced by {len(referrers[path])} output base(s)"))
+                if path in reference_inventory.referrers:
+                    results.append(
+                        Skipped(path, f"now referenced by {len(reference_inventory.referrers[path])} output base(s)")
+                    )
+                    continue
+                if not reference_inventory.complete:
+                    results.append(Skipped(path, reference_inventory.failure_detail))
                     continue
                 trash = contents / _TRASH / uuid.uuid4().hex
                 try:
@@ -410,6 +478,8 @@ def describe_reason(inspection: RetainedEntry | ReviewEntry) -> str:
             return f"cannot stat entry: {detail}"
         case ReviewEntry(reason=ReviewEntryReason.CANNOT_LIST, detail=str() as detail):
             return f"cannot list cache directory: {detail}"
+        case ReviewEntry(reason=ReviewEntryReason.INCOMPLETE_REFERENCE_SCAN, detail=str() as detail):
+            return detail
         case _:
             raise ValueError(f"{inspection=} lacks the detail its reason cites")
 

@@ -41,7 +41,7 @@ AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), 
 _MODELS_CLAIM = "models"
 _SSD_MODELS_CLAIM = "qwen38-iq4"
 DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
-_AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
+_AUTH_PROXY_CONFIG_MAP = "auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
 _SETUP_SCRIPT = "setup-gpt-oss-v2.sh"
 _LINK_SCRIPT = "link-ssd-models.sh"

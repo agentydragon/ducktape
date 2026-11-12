@@ -123,6 +123,9 @@ impl Executor<'_, '_> {
                 self.closure_captures(*key, captures),
             )]),
             ValueExpr::Alloc(kind, site) => {
+                if *kind == Kind::Class {
+                    self.escape_class_captures(*site, env, captures);
+                }
                 Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
             }
             ValueExpr::ObjectLiteral(key, properties) => {
@@ -311,11 +314,39 @@ impl Executor<'_, '_> {
                             ));
                         }
                         AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
-                            if !self.state.world.object_properties_are_settled(object_id) {
-                                values.insert(AbstractValue::Value(Value::Top));
-                                continue;
-                            }
-                            if !self.payload_lookup_is_data(object_id, property.as_deref()) {
+                            // Unknown alone reaches no unescaped callable: an
+                            // unsettled object or a non-data lookup still holds
+                            // the values stored to it, beside what unknown code
+                            // or an accessor adds.
+                            if !self.state.world.object_properties_are_settled(object_id)
+                                || !self.payload_lookup_is_data(object_id, property.as_deref())
+                            {
+                                if let Some(properties) = self
+                                    .state
+                                    .world
+                                    .surface
+                                    .prefix_object_properties
+                                    .get(&object_id)
+                                {
+                                    match property {
+                                        Some(property) => {
+                                            for key in [Some(property.clone()), None] {
+                                                values.extend(
+                                                    properties
+                                                        .get(&key)
+                                                        .into_iter()
+                                                        .flatten()
+                                                        .cloned(),
+                                                );
+                                            }
+                                        }
+                                        None => values.extend(
+                                            properties
+                                                .values()
+                                                .flat_map(|found| found.iter().cloned()),
+                                        ),
+                                    }
+                                }
                                 values.insert(AbstractValue::Value(Value::Top));
                                 continue;
                             }

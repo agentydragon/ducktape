@@ -22,6 +22,13 @@ func (e *SandboxRunningError) Error() string {
 	return fmt.Sprintf("sandbox %s is running; suspend it before deleting it", e.Name)
 }
 
+// IdentityChangeRunningError means the controller has not reported a stopped workload.
+type IdentityChangeRunningError struct{ Name string }
+
+func (e *IdentityChangeRunningError) Error() string {
+	return fmt.Sprintf("sandbox %s: spec.identity changes only while nothing runs", e.Name)
+}
+
 // SandboxModeUnknownError means the controller has not reported a usable operating mode.
 type SandboxModeUnknownError struct{ Name string }
 

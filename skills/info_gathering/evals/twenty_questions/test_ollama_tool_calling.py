@@ -31,7 +31,7 @@ async def test_text_completion(mock_or_live, recording_handler) -> None:
         yield
         yield m.assistant_text("The capital of France is Paris.")
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=provider,
         client=client,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
@@ -41,8 +41,8 @@ async def test_text_completion(mock_or_live, recording_handler) -> None:
 
     res = await agent.run()
 
-    assert res.text, "Agent produced no text response"
-    print(f"Response: {res.text}")
+    assert res, "Agent produced no text response"
+    print(f"Response: {res}")
 
 
 async def test_tool_calling(mock_or_live, recording_handler) -> None:
@@ -61,7 +61,7 @@ async def test_tool_calling(mock_or_live, recording_handler) -> None:
         yield m.tool_call("lookup_capital", {"country": "France"})
         yield m.assistant_text("The capital of France is Paris.")
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=provider,
         client=client,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
@@ -71,8 +71,8 @@ async def test_tool_calling(mock_or_live, recording_handler) -> None:
 
     res = await agent.run()
 
-    assert res.text, "Agent produced no text response"
-    print(f"Response: {res.text}")
+    assert res, "Agent produced no text response"
+    print(f"Response: {res}")
 
 
 if __name__ == "__main__":

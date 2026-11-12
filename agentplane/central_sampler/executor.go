@@ -44,8 +44,11 @@ type Executor struct {
 	lostSessionConfirmed bool
 	processMu            sync.Mutex
 	processLocks         map[string]*sync.Mutex
+	processChangesMu     sync.Mutex
+	processChanged       chan struct{}
 	rpcTimeout           time.Duration
 	initializeTimeout    time.Duration
+	reconnectTimeout     time.Duration
 	lifetime             context.Context
 	sessionStream        executorSessionStream
 	sessionCancel        context.CancelFunc
@@ -106,6 +109,7 @@ func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Sessio
 		environment: map[string]string{"AGENTPLANE_SESSION_ID": session.ID}, processLocks: map[string]*sync.Mutex{},
 		rpcTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
 		initializeTimeout: settings.ExecutorInitializeTimeout(),
+		reconnectTimeout:  settings.ExecutorReconnectTimeout(),
 		workspacePrepared: session.WorkspacePrepared,
 	}
 	state, err := store.ExecutionState(ctx, owner)
@@ -440,13 +444,18 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 			}
 		}
 		lock.Unlock()
+		e.signalProcessChange()
 		return "", 0, nil, err
 	}
 	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessRunning, nil, false); err != nil {
 		lock.Unlock()
+		e.signalProcessChange()
 		return "", 0, nil, err
 	}
-	return processID, sessionID, lock.Unlock, nil
+	return processID, sessionID, func() {
+		lock.Unlock()
+		e.signalProcessChange()
+	}, nil
 }
 
 // envPolicy makes processes inherit the executor's environment, as wrapped Codex's do: Codex's
@@ -480,6 +489,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	var after *uint64
 	observed := newHeadTailBuffer(unifiedExecOutputMaxBytes)
 	for {
+		changed := e.processChanges()
 		pageCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		result, err := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: 1000, ObservedOutput: observed})
 		cancel()
@@ -511,6 +521,13 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 			}
 			return *exitCode, nil
 		}
+		if len(chunks) == 0 {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-changed:
+			}
+		}
 	}
 }
 
@@ -530,7 +547,10 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	}
 	lock := e.processLock(process.ID)
 	lock.Lock()
-	defer lock.Unlock()
+	defer func() {
+		lock.Unlock()
+		e.signalProcessChange()
+	}()
 	// Revalidate under the lock: the number may have been released and reused meanwhile.
 	process, err = e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
 	if errors.Is(err, protocol.ErrMissing) {
@@ -550,7 +570,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 			if plan.chars != interruptInput {
 				return nil, &toolError{"write_stdin failed: " + stdinClosedMessage}
 			}
-			if process.Status == protocol.ProcessRunning {
+			if process.Status == protocol.ProcessRunning && process.ExitCode == nil {
 				if err := e.dispatchInput(ctx, func() error {
 					_, err := executorRPC[executorEmpty](ctx, e, executorMethodProcessSignal, executorSignal{ProcessID: process.ID, Signal: "interrupt"})
 					return err
@@ -558,7 +578,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 					return nil, err
 				}
 			}
-		} else if process.Status == protocol.ProcessRunning {
+		} else if process.Status == protocol.ProcessRunning && process.ExitCode == nil {
 			// A write to an exited terminal is moot; the poll below reports the exit.
 			if err := e.dispatchInput(ctx, func() error {
 				result, err := executorRPC[executorWriteResult](ctx, e, executorMethodProcessWrite, executorWrite{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()})
@@ -608,6 +628,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		return nil, err
 	}
 	after := process.AfterSequence
+	exitCode := process.ExitCode
 	if process.Status == protocol.ProcessExitedUnread {
 		if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessExited, process.ExitCode, true); err != nil {
 			return nil, err
@@ -616,9 +637,18 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 	}
 	start := time.Now()
 	deadline := start.Add(time.Duration(yieldMS) * time.Millisecond)
+	yield := func() (*processObservation, error) {
+		if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessRunning, exitCode, true); err != nil {
+			return nil, err
+		}
+		return &processObservation{output: output, exitCode: exitCode, wallTime: time.Since(start).Seconds()}, nil
+	}
 	for {
+		changed := e.processChanges()
 		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
-		pageCtx, cancel := context.WithTimeout(ctx, time.Duration(waitMS+eRPCSlackMS)*time.Millisecond)
+		attemptTimeout := time.Duration(waitMS+eRPCSlackMS) * time.Millisecond
+		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(attemptTimeout))
+		pageCtx = context.WithValue(pageCtx, executorReadAttemptTimeoutKey{}, attemptTimeout)
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS, ObservedOutput: output})
 		cancel()
 		if rpcErr != nil {
@@ -651,6 +681,9 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			seq := result.NextSeq - 1
 			after = &seq
 		}
+		if result.Exited && result.ExitCode != nil {
+			exitCode = result.ExitCode
+		}
 		if result.uncertain() {
 			return nil, &executorTransportError{
 				method: executorMethodProcessRead, phase: "observation", processID: processID,
@@ -664,11 +697,20 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			}
 			return &processObservation{output: output, exitCode: result.ExitCode, exited: true, wallTime: time.Since(start).Seconds()}, nil
 		}
-		if !result.Exited && !time.Now().Before(deadline) {
-			if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessRunning, nil, true); err != nil {
-				return nil, err
+		if !time.Now().Before(deadline) {
+			return yield()
+		}
+		if len(result.Chunks) == 0 {
+			timer := time.NewTimer(time.Until(deadline))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-changed:
+				timer.Stop()
+			case <-timer.C:
+				return yield()
 			}
-			return &processObservation{output: output, wallTime: time.Since(start).Seconds()}, nil
 		}
 	}
 }
@@ -707,7 +749,8 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, err
 		}
-		pageCtx, cancel := context.WithTimeout(ctx, timeout)
+		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(timeout))
+		pageCtx = context.WithValue(pageCtx, executorReadAttemptTimeoutKey{}, timeout)
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536, ObservedOutput: readOutput})
 		cancel()
 		if rpcErr != nil {
@@ -793,7 +836,8 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 		chunks := result.Chunks
 		output := result.output()
 		afterValue := result.NextSeq
-		if len(chunks) > 0 || result.Exited {
+		newExit := result.Exited && result.ExitCode != nil && (row.ExitCode == nil || *row.ExitCode != *result.ExitCode)
+		if len(chunks) > 0 || result.drained() || newExit {
 			seq := uint64(0)
 			if afterValue > 0 {
 				seq = uint64(afterValue - 1)
@@ -858,6 +902,27 @@ func (e *Executor) processLock(id string) *sync.Mutex {
 		e.processLocks[id] = &sync.Mutex{}
 	}
 	return e.processLocks[id]
+}
+
+// processChanges broadcasts executor stream changes to foreground readers and the idle driver.
+// The channel is replaced after every change, so a subscriber can take a snapshot before reading
+// and cannot miss a notification that races that read.
+func (e *Executor) processChanges() <-chan struct{} {
+	e.processChangesMu.Lock()
+	defer e.processChangesMu.Unlock()
+	if e.processChanged == nil {
+		e.processChanged = make(chan struct{})
+	}
+	return e.processChanged
+}
+
+func (e *Executor) signalProcessChange() {
+	e.processChangesMu.Lock()
+	defer e.processChangesMu.Unlock()
+	if e.processChanged != nil {
+		close(e.processChanged)
+	}
+	e.processChanged = make(chan struct{})
 }
 
 func shellQuote(value string) string {

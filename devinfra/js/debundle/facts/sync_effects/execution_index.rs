@@ -9,10 +9,10 @@ use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
 use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
-    LexicalClassHeritage, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
-    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
-    static_property_name,
+    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
+    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
+    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
+    object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
@@ -36,6 +36,7 @@ use crate::facts::at_init_fallback::{
 use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
+use crate::facts::collector::UnresolvedCallSourceCollector;
 use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
@@ -631,8 +632,18 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 }
 
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
+    let mut heritage_inputs = UnresolvedCallSourceCollector::default();
+    if let Some(heritage) = class.super_class.as_deref() {
+        heritage.visit_with(&mut heritage_inputs);
+    }
     let mut facts = ClassValueFacts {
         super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
+        super_class_inputs: heritage_inputs.idents,
+        super_class_inputs_incomplete: heritage_inputs.inline_fn,
+        discarded_heritage_call: class
+            .super_class
+            .as_deref()
+            .and_then(DiscardedHeritageCall::collect),
         lexical_heritage: class
             .super_class
             .as_deref()
@@ -1031,6 +1042,106 @@ pub(super) struct Parameter {
     pub(super) binding: Option<Id>,
     pub(super) bindings: BTreeSet<Id>,
     pub(super) default: Option<ValueExpr>,
+    /// A pattern parameter's bindings as projections of its incoming value,
+    /// bound to `pattern_source()`, and whether some binding receives a part
+    /// of it only as unknown.
+    pub(super) pattern_assignments: Vec<(Id, ValueExpr)>,
+    pub(super) pattern_loses_values: bool,
+    /// The pattern destructures an array, so binding it runs the iterator
+    /// protocol on the incoming value (or on a part of it).
+    pub(super) pattern_iterates: bool,
+    /// Some array pattern below the root iterates a part of the incoming
+    /// value, or a default, which no source tracks.
+    pub(super) pattern_iterates_part: bool,
+    /// Defaults below the root that supply a value an array pattern
+    /// iterates.
+    pub(super) iterated_defaults: Vec<ValueExpr>,
+}
+
+/// The binding a pattern parameter's projections read its incoming value
+/// from. No source identifier can spell it.
+pub(super) fn pattern_source() -> Id {
+    ("\u{0}pattern_source".into(), Default::default())
+}
+
+/// Whether destructuring `pattern` gives some binding a part of the value
+/// only as unknown: an array element, a rest, or a computed key.
+fn pattern_loses_values(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Ident(_) => false,
+        Pat::Assign(assign) => pattern_loses_values(&assign.left),
+        Pat::Object(object) => object.props.iter().any(|property| match property {
+            ObjectPatProp::KeyValue(property) => {
+                static_property_name(&property.key).is_none()
+                    || pattern_loses_values(&property.value)
+            }
+            ObjectPatProp::Assign(_) => false,
+            ObjectPatProp::Rest(_) => true,
+        }),
+        Pat::Array(_) | Pat::Rest(_) | Pat::Expr(_) | Pat::Invalid(_) => true,
+    }
+}
+
+/// Whether destructuring `pattern` runs the iterator protocol on the value
+/// or on a part of it.
+fn pattern_iterates(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => false,
+        Pat::Assign(assign) => pattern_iterates(&assign.left),
+        Pat::Rest(rest) => pattern_iterates(&rest.arg),
+        Pat::Object(object) => object.props.iter().any(|property| match property {
+            ObjectPatProp::KeyValue(property) => pattern_iterates(&property.value),
+            ObjectPatProp::Assign(_) => false,
+            ObjectPatProp::Rest(rest) => pattern_iterates(&rest.arg),
+        }),
+        Pat::Array(_) => true,
+    }
+}
+
+/// Whether destructuring `pattern` iterates a part of the value, or a
+/// default, rather than the value itself: an array pattern below the root.
+fn pattern_iterates_part(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Array(array) => array.elems.iter().flatten().any(pattern_iterates),
+        Pat::Assign(assign) => pattern_iterates_part(&assign.left),
+        Pat::Object(_) | Pat::Rest(_) => pattern_iterates(pattern),
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => false,
+    }
+}
+
+/// The defaults below the root of `pattern` that supply a value an array
+/// pattern iterates: `[[x] = mk()]`, `{ a: [x] = mk() }`.
+fn iterated_defaults<'a>(pattern: &'a Pat, defaults: &mut Vec<&'a Expr>) {
+    match pattern {
+        Pat::Array(array) => {
+            for element in array.elems.iter().flatten() {
+                collect_iterated_default(element, defaults);
+            }
+        }
+        Pat::Object(object) => {
+            for property in &object.props {
+                match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        collect_iterated_default(&property.value, defaults)
+                    }
+                    ObjectPatProp::Rest(rest) => collect_iterated_default(&rest.arg, defaults),
+                    ObjectPatProp::Assign(_) => {}
+                }
+            }
+        }
+        Pat::Assign(assign) => iterated_defaults(&assign.left, defaults),
+        Pat::Rest(rest) => iterated_defaults(&rest.arg, defaults),
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => {}
+    }
+}
+
+fn collect_iterated_default<'a>(pattern: &'a Pat, defaults: &mut Vec<&'a Expr>) {
+    if let Pat::Assign(assign) = pattern
+        && pattern_iterates(&assign.left)
+    {
+        defaults.push(&assign.right);
+    }
+    iterated_defaults(pattern, defaults);
 }
 
 impl Parameter {
@@ -1041,25 +1152,46 @@ impl Parameter {
             .into_iter()
             .map(|(binding, _)| binding)
             .collect();
-        match pattern {
-            Pat::Ident(binding) => Self {
-                binding: Some(binding.id.to_id()),
-                bindings,
-                default: None,
-            },
-            Pat::Assign(assign) => Self {
-                binding: match assign.left.as_ref() {
+        let (binding, default, destructured) = match pattern {
+            Pat::Ident(binding) => (Some(binding.id.to_id()), None, None),
+            Pat::Assign(assign) => (
+                match assign.left.as_ref() {
                     Pat::Ident(binding) => Some(binding.id.to_id()),
                     _ => None,
                 },
-                bindings,
-                default: Some(ValueExpr::from_expr(&assign.right)),
-            },
-            _ => Self {
-                binding: None,
-                bindings,
-                default: None,
-            },
+                Some(ValueExpr::from_expr(&assign.right)),
+                Some(assign.left.as_ref()),
+            ),
+            _ => (None, None, Some(pattern)),
+        };
+        let mut pattern_assignments = Vec::new();
+        let pattern_iterates = destructured.is_some_and(pattern_iterates);
+        let pattern_iterates_part = destructured.is_some_and(pattern_iterates_part);
+        let mut defaults = Vec::new();
+        if let Some(destructured) = destructured {
+            iterated_defaults(destructured, &mut defaults);
+        }
+        let iterated_defaults = defaults.into_iter().map(ValueExpr::from_expr).collect();
+        let pattern_loses_values = match destructured.filter(|_| binding.is_none()) {
+            Some(destructured) => {
+                collect_pattern_assignments(
+                    destructured,
+                    &ValueExpr::Binding(pattern_source()),
+                    &mut pattern_assignments,
+                );
+                pattern_loses_values(destructured)
+            }
+            None => false,
+        };
+        Self {
+            binding,
+            bindings,
+            default,
+            pattern_assignments,
+            pattern_loses_values,
+            pattern_iterates,
+            pattern_iterates_part,
+            iterated_defaults,
         }
     }
 }
@@ -1348,6 +1480,22 @@ pub(super) struct Callable {
     /// declarator without an initializer outside a `for`-`in`/`of` head, and
     /// every `var` (hoisted). `local_assignments` never contributes that value.
     pub(super) undefined_before_assignment: BTreeSet<Id>,
+    /// Bindings a `for`-`in`/`of` head of this callable writes. No
+    /// `local_assignments` entry records the elements a head binding takes.
+    pub(super) head_bindings: BTreeSet<Id>,
+    /// Values whose parts reach a binding only as unknown: `for`-`of`
+    /// iterables, initializers of destructuring that loses values, thrown
+    /// values (a `catch` parameter) and yielded values (a generator's
+    /// consumer).
+    pub(super) published_sources: Vec<ValueExpr>,
+    /// Operands this callable runs the iterator protocol on: `for`-`of`
+    /// iterables, array-destructured values, spread operands and `yield*`
+    /// operands. Over anything but a proven native iterable, the protocol
+    /// calls user code (`[Symbol.iterator]`, `next`).
+    pub(super) iterated_sources: Vec<ValueExpr>,
+    /// Bindings an update expression (`x++`) of this callable writes; neither
+    /// `rebinds` nor `local_assignments` records them.
+    pub(super) update_targets: BTreeSet<Id>,
     hoisted_vars: BTreeSet<Id>,
     lexical_declarations: BTreeMap<Id, LocalBinding>,
     pub(super) self_binding: Option<Id>,
@@ -1366,10 +1514,76 @@ pub(super) struct Callable {
     pub(super) callback_result_writes: Vec<CallbackResultWrite>,
     pub(super) dynamic_property_effect: bool,
     pub(super) dynamic_property_receivers: Vec<ValueExpr>,
+    /// Receivers of member targets in this body's destructuring assignments.
+    pub(super) destructuring_member_receivers: Vec<ValueExpr>,
     pub(super) implicit_capture: bool,
     pub(super) opaque: bool,
     pub(super) generator: bool,
     pub(super) may_fall_through: bool,
+}
+
+impl Callable {
+    /// The bindings this callable's own scope declares, parameters included.
+    pub(super) fn own_bindings(&self) -> BTreeSet<&Id> {
+        self.declared_locals
+            .iter()
+            .chain(&self.pattern_locals)
+            .chain(&self.hoisted_vars)
+            .chain(self.lexical_declarations.keys())
+            .chain(self.local_functions.keys())
+            .chain(&self.self_binding)
+            .chain(self.params.iter().flat_map(|parameter| &parameter.bindings))
+            .collect()
+    }
+
+    /// Every binding this callable writes: assignments of any operator and
+    /// destructuring targets (`rebinds`), loop heads and updates.
+    pub(super) fn writes(&self) -> impl Iterator<Item = &Id> {
+        self.rebinds
+            .iter()
+            .chain(&self.head_bindings)
+            .chain(&self.update_targets)
+    }
+
+    /// Bindings an enclosing scope declares that this callable writes.
+    pub(super) fn captured_writes(&self) -> BTreeSet<&Id> {
+        let own = self.own_bindings();
+        self.writes()
+            .filter(|binding| !own.contains(binding))
+            .collect()
+    }
+
+    /// Bindings an enclosing scope declares that this callable reads.
+    pub(super) fn captured_reads(&self) -> BTreeSet<&Id> {
+        let own = self.own_bindings();
+        self.reads
+            .iter()
+            .filter(|binding| !own.contains(binding))
+            .collect()
+    }
+
+    /// Locals whose value an earlier assignment of this callable reads
+    /// although a later one assigns them: a loop, or a call between, can
+    /// carry the later value to the earlier read. Returns the readers'
+    /// targets and the locals they read.
+    pub(super) fn reads_before_assignment(&self) -> (BTreeSet<&Id>, BTreeSet<Id>) {
+        let mut readers = BTreeSet::new();
+        let mut sources = BTreeSet::new();
+        for (position, (target, value)) in self.local_assignments.iter().enumerate() {
+            let mut read = BTreeSet::new();
+            value.bindings(&mut read);
+            for binding in read {
+                if self.local_assignments[position..]
+                    .iter()
+                    .any(|(assigned, _)| *assigned == binding)
+                {
+                    readers.insert(target);
+                    sources.insert(binding);
+                }
+            }
+        }
+        (readers, sources)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -1597,6 +1811,10 @@ impl Default for Callable {
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
             undefined_before_assignment: BTreeSet::new(),
+            head_bindings: BTreeSet::new(),
+            published_sources: Vec::new(),
+            iterated_sources: Vec::new(),
+            update_targets: BTreeSet::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
             self_binding: None,
@@ -1612,6 +1830,7 @@ impl Default for Callable {
             callback_result_writes: Vec::new(),
             dynamic_property_effect: false,
             dynamic_property_receivers: Vec::new(),
+            destructuring_member_receivers: Vec::new(),
             implicit_capture: false,
             opaque: false,
             generator: false,
@@ -5987,10 +6206,16 @@ pub(super) struct ExecutionIndex {
     past_await: bool,
     may_skip_await_depth: u32,
     conditional_depth: u32,
+    /// Additional expression contexts that may skip a nested member read.
+    /// Kept separate from `conditional_depth`, which controls existing
+    /// analyses with different admission rules.
+    may_skip_member_read_depth: u32,
     literal_depth: u32,
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
     pub(super) callables: BTreeMap<u32, Callable>,
+    /// Functions whose call cannot inspect or retain any argument.
+    inert_argument_functions: BTreeSet<u32>,
     pub(super) callable_spans: BTreeMap<u32, Span>,
     immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
@@ -6011,6 +6236,29 @@ pub(super) struct ExecutionIndex {
     pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) class_bindings: BTreeMap<u32, Id>,
     pub(super) class_spans: BTreeMap<u32, Span>,
+    /// The `extends` expression of each class that has one.
+    pub(super) class_heritage_spans: BTreeMap<u32, Span>,
+    /// Object literals with a getter or setter that reads `this`: a member
+    /// read or write that may run it hands it the receiver.
+    pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    /// The non-null `__proto__` expression of each object literal with one.
+    pub(super) literal_prototypes: BTreeMap<u32, ValueExpr>,
+    /// Constructors, methods and accessors of every class: they run as class
+    /// members, not as values the class body creates.
+    pub(super) class_member_callables: BTreeSet<u32>,
+    /// The constructors among `class_member_callables`.
+    pub(super) class_constructors: BTreeSet<u32>,
+    /// Per class, the spans that run at construction or class creation and
+    /// can store values on the instance or the class: the constructor,
+    /// field initializers and static blocks.
+    pub(super) class_store_regions: BTreeMap<u32, Vec<Span>>,
+    /// The getters and setters (static or not) each class declares.
+    class_accessors: BTreeMap<u32, Vec<u32>>,
+    /// Classes declaring a getter or setter that reads `this`.
+    pub(super) this_reading_accessor_classes: BTreeSet<u32>,
+    /// Receivers of member targets in destructuring assignments, per
+    /// top-level owner; a callable's own are on `Callable`.
+    pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
     pub(super) private_empty_set_sites: BTreeMap<u32, (Span, Id)>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
@@ -6061,6 +6309,10 @@ pub(super) struct ExecutionIndex {
     prototype_calls: Vec<Call>,
     prototype_field_writes: Vec<(SourceUnitOrdinal, Option<u32>, Span, PropertyKeyExpr)>,
     pub(super) prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
+    /// Per callable, the bindings it or a callable nested in it writes
+    /// (assignment and destructuring targets, loop heads, updates). A closure
+    /// must capture a cell for each so a nested writer reaches the owner.
+    pub(super) nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     pub(super) property_key_declarations: BTreeSet<Id>,
@@ -6070,6 +6322,9 @@ pub(super) struct ExecutionIndex {
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
     binding_use_bounds: BTreeMap<Id, (u32, u32)>,
+    /// Every identifier reference by source position, sorted: what the
+    /// unexecuted remainder of a truncated operation can read.
+    ident_references: Vec<(u32, Id)>,
     top_const_declarations: BTreeSet<Id>,
     direct_top_level_var_declaration: bool,
     direct_top_level_const_declaration: bool,
@@ -6108,6 +6363,15 @@ pub(super) struct ExecutionIndex {
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_calls: Vec<Vec<Call>>,
+    /// Top-level calls that syntax may skip even when an execution path
+    /// happens to evaluate them during abstract interpretation.
+    conditional_top_member_reads: BTreeSet<CallSite>,
+    /// Per top-level owner, what `Callable::published_sources` lists for a
+    /// callable: values whose parts reach a binding only as unknown.
+    pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
+    /// Per top-level owner, what `Callable::iterated_sources` lists for a
+    /// callable.
+    pub(super) top_iterated_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
@@ -6228,10 +6492,12 @@ impl Default for ExecutionIndex {
             past_await: false,
             may_skip_await_depth: 0,
             conditional_depth: 0,
+            may_skip_member_read_depth: 0,
             literal_depth: 0,
             factory_member_value_depth: 0,
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
+            inert_argument_functions: BTreeSet::new(),
             callable_spans: BTreeMap::new(),
             immediate_anonymous_callers: BTreeMap::new(),
             inline_callback_entries: BTreeMap::new(),
@@ -6247,6 +6513,15 @@ impl Default for ExecutionIndex {
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
             class_spans: BTreeMap::new(),
+            class_heritage_spans: BTreeMap::new(),
+            class_member_callables: BTreeSet::new(),
+            class_constructors: BTreeSet::new(),
+            class_store_regions: BTreeMap::new(),
+            class_accessors: BTreeMap::new(),
+            this_reading_accessor_classes: BTreeSet::new(),
+            top_destructuring_member_receivers: Vec::new(),
+            this_reading_accessor_objects: BTreeSet::new(),
+            literal_prototypes: BTreeMap::new(),
             private_empty_set_sites: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             top_const_bindings: BTreeSet::new(),
@@ -6290,6 +6565,7 @@ impl Default for ExecutionIndex {
             prototype_calls: Vec::new(),
             prototype_field_writes: Vec::new(),
             prototype_callable_reads: BTreeMap::new(),
+            nested_callable_writes: BTreeMap::new(),
             prototype_capture_stack: Vec::new(),
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
@@ -6297,6 +6573,7 @@ impl Default for ExecutionIndex {
             binding_declaration_writes: BTreeMap::new(),
             namespace_wrapper_candidates: BTreeMap::new(),
             binding_use_bounds: BTreeMap::new(),
+            ident_references: Vec::new(),
             top_const_declarations: BTreeSet::new(),
             direct_top_level_var_declaration: false,
             direct_top_level_const_declaration: false,
@@ -6326,6 +6603,9 @@ impl Default for ExecutionIndex {
             owner_callable_prefix_effects: Vec::new(),
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
+            conditional_top_member_reads: BTreeSet::new(),
+            top_published_sources: BTreeMap::new(),
+            top_iterated_sources: BTreeMap::new(),
             original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
             bare_constructor_sites: BTreeSet::new(),
@@ -6524,6 +6804,33 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    /// A unique top-level function identity with no source writes or dynamic
+    /// scope; earlier statements cannot silently replace this class base.
+    pub(super) fn stable_heritage_function(
+        &self,
+        binding: &Id,
+        flow: &ChunkValueFlow,
+    ) -> Option<u32> {
+        let &key = self.hoisted_bindings.get(binding)?;
+        (self.dynamic_scope_owners.is_empty()
+            && self.direct_top_level_functions.contains(binding)
+            && !self.reassigned_bindings.contains(binding)
+            && !self.binding_target_writes.contains(binding)
+            && !self.binding_declaration_writes.contains_key(binding)
+            && flow
+                .values_of_binding(binding)
+                .iter()
+                .eq([Value::Alloc(Kind::Function, key)]))
+        .then_some(key)
+    }
+
+    /// The callee's exact body and parameters cannot observe or publish any
+    /// argument; this does not waive the call's normal evaluation effects.
+    pub(super) fn inert_heritage_callee(&self, binding: &Id, flow: &ChunkValueFlow) -> bool {
+        self.stable_heritage_function(binding, flow)
+            .is_some_and(|key| self.inert_argument_functions.contains(&key))
+    }
+
     /// A closure can resolve module bindings and unresolved globals when it is
     /// later invoked. Creating it does not read those values into the factory
     /// activation, so they are not retained provider captures. Enclosing
@@ -9324,6 +9631,7 @@ impl ExecutionIndex {
             owner_callable_prefix_effects: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
+            top_destructuring_member_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             ordered_initializers: BTreeMap::new(),
             initialization_source_identities: BTreeMap::new(),
@@ -9563,6 +9871,7 @@ impl ExecutionIndex {
             index.past_await = false;
             index.may_skip_await_depth = 0;
             index.conditional_depth = 0;
+            index.may_skip_member_read_depth = 0;
             index.literal_depth = 0;
             index.factory_member_value_depth = 0;
             index.factory_callback_depth = 0;
@@ -10812,7 +11121,108 @@ impl ExecutionIndex {
             &hints.assumptions.native_operation_inputs,
             array_spreads,
         );
+        index.ident_references.sort_unstable();
+        index.ident_references.dedup();
+        index.this_reading_accessor_objects = index
+            .callable_creations
+            .values()
+            .filter_map(|creation| match *creation {
+                DeferredCallableCreation::Getter {
+                    callable,
+                    home_object,
+                }
+                | DeferredCallableCreation::Setter {
+                    callable,
+                    home_object,
+                } => index.reads_this(callable).then_some(home_object),
+                _ => None,
+            })
+            .collect();
+        index.this_reading_accessor_classes = index
+            .class_accessors
+            .iter()
+            .filter(|(_, accessors)| accessors.iter().any(|accessor| index.reads_this(*accessor)))
+            .map(|(class, _)| *class)
+            .collect();
         index
+    }
+
+    /// Whether `callable`, or an arrow or other callable nested in it, reads
+    /// `this`. An unindexed or opaque callable may.
+    pub(super) fn reads_this(&self, callable: u32) -> bool {
+        let Some(span) = self.callable_spans.get(&callable) else {
+            return true;
+        };
+        self.callables.get(&callable).is_none_or(|body| body.opaque)
+            || self
+                .callable_spans
+                .range(span.lo.0..span.hi.0)
+                .any(|(nested, _)| {
+                    self.callables
+                        .get(nested)
+                        .is_some_and(|nested| nested.implicit_capture)
+                })
+    }
+
+    /// The bindings referenced in `[lo, hi)`.
+    pub(super) fn references_within(&self, lo: u32, hi: u32) -> impl Iterator<Item = &Id> {
+        let start = self
+            .ident_references
+            .partition_point(|(position, _)| *position < lo);
+        self.ident_references[start..]
+            .iter()
+            .take_while(move |(position, _)| *position < hi)
+            .map(|(_, id)| id)
+    }
+
+    /// A source binding used exactly once, at this member read. A second use
+    /// could alias, delete, redefine or publish the instance before the read.
+    pub(super) fn sole_binding_reference_at(&self, binding: &Id, span: Span) -> bool {
+        self.dynamic_scope_owners.is_empty()
+            && !self.reassigned_bindings.contains(binding)
+            && !self.binding_target_writes.contains(binding)
+            && !self.exported_bindings.contains(binding)
+            && !self.imported_bindings.contains(binding)
+            && self
+                .binding_declaration_writes
+                .get(binding)
+                .is_some_and(|writes| matches!(writes.as_slice(), [write] if write.direct_top_level && write.simple_identifier))
+            && self.binding_use_bounds.get(binding).is_some_and(|(first, last)| {
+                first == last && span.lo.0 <= *first && *first < span.hi.0
+            })
+    }
+
+    /// This member operation belongs to a direct module-level initializer,
+    /// whose expression is evaluated at most once. A lexical use inside a
+    /// callable can execute again after its first result exposes the instance.
+    pub(super) fn single_eager_initializer_read(&self, call: &Call) -> bool {
+        call.caller.is_none()
+            && self.top_calls[call.owner.0].iter().any(|indexed| {
+                indexed.kind == CallKind::LocalMemberRead
+                    && indexed.span == call.span
+                    && indexed.caller.is_none()
+            })
+            && self
+                .binding_declaration_writes
+                .values()
+                .flatten()
+                .any(|write| {
+                    write.owner == call.owner
+                        && write.direct_top_level
+                        && write
+                            .initializer_span
+                            .is_some_and(|span| span.lo <= call.span.lo && call.span.hi <= span.hi)
+                })
+    }
+
+    pub(super) fn unconditionally_evaluated_member_read(&self, call: &Call) -> bool {
+        !self
+            .conditional_top_member_reads
+            .contains(&CallSite::from(call.span))
+    }
+
+    pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
+        self.original_statement_spans[owner.0]
     }
 
     fn populate_native_point_effects(&mut self, external: &NativeWriteCensus) {
@@ -11254,6 +11664,12 @@ impl ExecutionIndex {
         if self.current.is_some() && self.past_await {
             return;
         }
+        if self.current.is_none()
+            && (self.conditional_depth > 0 || self.may_skip_member_read_depth > 0)
+            && call.kind == CallKind::LocalMemberRead
+        {
+            self.conditional_top_member_reads.insert(call.span.into());
+        }
         if let Some(key) = self.current {
             self.callables.get_mut(&key).unwrap().calls.push(call);
         } else {
@@ -11578,6 +11994,78 @@ impl ExecutionIndex {
         })
     }
 
+    fn record_published_source(&mut self, value: &Expr) {
+        let value = ValueExpr::from_expr(value);
+        match self.current {
+            Some(key) => self
+                .callables
+                .get_mut(&key)
+                .unwrap()
+                .published_sources
+                .push(value),
+            None => self
+                .top_published_sources
+                .entry(self.owner)
+                .or_default()
+                .push(value),
+        }
+    }
+
+    /// `arguments` is recorded as unknown: an own `[Symbol.iterator]` write
+    /// to it is not tracked.
+    fn record_iterated_source(&mut self, value: &Expr) {
+        let value = match value.unwrap_parens() {
+            Expr::Ident(ident) if ident.sym == "arguments" => ValueExpr::Unknown,
+            value => ValueExpr::from_expr(value),
+        };
+        self.record_iterated_value(value);
+    }
+
+    fn record_head_iterated_defaults(&mut self, head: &ForHead) {
+        match head {
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    self.record_iterated_defaults(&declarator.name);
+                }
+            }
+            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
+            ForHead::UsingDecl(_) => {}
+        }
+    }
+
+    fn record_iterated_defaults(&mut self, pattern: &Pat) {
+        let mut defaults = Vec::new();
+        iterated_defaults(pattern, &mut defaults);
+        for default in defaults {
+            self.record_iterated_source(default);
+        }
+    }
+
+    fn record_iterated_value(&mut self, value: ValueExpr) {
+        match self.current {
+            Some(key) => self
+                .callables
+                .get_mut(&key)
+                .unwrap()
+                .iterated_sources
+                .push(value),
+            None => self
+                .top_iterated_sources
+                .entry(self.owner)
+                .or_default()
+                .push(value),
+        }
+    }
+
+    fn record_nested_write(&mut self, binding: Id) {
+        for key in &self.prototype_capture_stack {
+            self.nested_callable_writes
+                .entry(*key)
+                .or_default()
+                .insert(binding.clone());
+        }
+    }
+
     fn record_member_write(&mut self, member: &MemberExpr) {
         if self.past_await {
             return;
@@ -11665,6 +12153,56 @@ impl Visit for ExecutionIndex {
         }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_spans.insert(class.span.lo.0, class.span);
+        self.class_constructors
+            .extend(class.body.iter().filter_map(|member| match member {
+                ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
+                _ => None,
+            }));
+        self.class_member_callables
+            .extend(class.body.iter().filter_map(|member| match member {
+                ClassMember::Constructor(constructor) => Some(constructor.span.lo.0),
+                ClassMember::Method(method) => Some(method.function.span.lo.0),
+                ClassMember::PrivateMethod(method) => Some(method.function.span.lo.0),
+                _ => None,
+            }));
+        self.class_store_regions.insert(
+            class.span.lo.0,
+            class
+                .body
+                .iter()
+                .filter_map(|member| match member {
+                    ClassMember::Constructor(constructor) => Some(constructor.span),
+                    ClassMember::ClassProp(prop) => prop.value.as_ref().map(|value| value.span()),
+                    ClassMember::PrivateProp(prop) => prop.value.as_ref().map(|value| value.span()),
+                    ClassMember::StaticBlock(block) => Some(block.span),
+                    _ => None,
+                })
+                .collect(),
+        );
+        self.class_accessors.insert(
+            class.span.lo.0,
+            class
+                .body
+                .iter()
+                .filter_map(|member| match member {
+                    ClassMember::Method(method)
+                        if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+                    {
+                        Some(method.function.span.lo.0)
+                    }
+                    ClassMember::PrivateMethod(method)
+                        if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+                    {
+                        Some(method.function.span.lo.0)
+                    }
+                    _ => None,
+                })
+                .collect(),
+        );
+        if let Some(heritage) = &class.super_class {
+            self.class_heritage_spans
+                .insert(class.span.lo.0, heritage.span());
+        }
         if let Some(site) = LocalClassConstructionShapes::private_empty_set_site(class) {
             self.private_empty_set_sites.insert(class.span.lo.0, site);
         }
@@ -11729,6 +12267,11 @@ impl Visit for ExecutionIndex {
                             binding: None,
                             bindings: BTreeSet::new(),
                             default: None,
+                            pattern_assignments: Vec::new(),
+                            pattern_loses_values: false,
+                            pattern_iterates: false,
+                            pattern_iterates_part: false,
+                            iterated_defaults: Vec::new(),
                         },
                     })
                     .collect();
@@ -11798,6 +12341,21 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
+        if let Some(prototype) = object.props.iter().find_map(|property| match property {
+            PropOrSpread::Prop(property) => match property.as_ref() {
+                Prop::KeyValue(pair)
+                    if matches!(pair.key, PropName::Ident(_) | PropName::Str(_))
+                        && static_property_name(&pair.key).as_deref() == Some("__proto__")
+                        && !matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                {
+                    Some(ValueExpr::from_expr(&pair.value))
+                }
+                _ => None,
+            },
+            _ => None,
+        }) {
+            self.literal_prototypes.insert(object.span.lo.0, prototype);
+        }
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
@@ -12346,9 +12904,43 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        // An array pattern in the head iterates each key, a string.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        if head_iterates {
+            self.record_iterated_value(ValueExpr::NonCallable(PrimKinds::STRING));
+        }
+        self.record_head_iterated_defaults(&node.left);
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        self.record_published_source(&node.right);
+        self.record_iterated_source(&node.right);
+        // An array pattern in the head iterates each element, which no
+        // source tracks; `Object.entries` yields fresh native pairs.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        let entries = matches!(node.right.unwrap_parens(), Expr::Call(call)
+            if matches!(&call.callee, Callee::Expr(callee)
+                if matches!(callee.unwrap_parens(), Expr::Member(member)
+                    if static_prop(&member.prop).as_deref() == Some("entries")
+                        && matches!(member.obj.unwrap_parens(), Expr::Ident(object) if object.sym == "Object"))));
+        if head_iterates && !entries {
+            self.record_iterated_value(ValueExpr::Unknown);
+        }
+        self.record_head_iterated_defaults(&node.left);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -12437,6 +13029,11 @@ impl Visit for ExecutionIndex {
     fn visit_catch_clause(&mut self, clause: &CatchClause) {
         if let Some(parameter) = &clause.param {
             self.invalidate_property_key_pattern(parameter);
+            // The thrown value is untracked; an array pattern iterates it.
+            if pattern_iterates(parameter) {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            self.record_iterated_defaults(parameter);
             if let Some(callable) = self.current {
                 self.callables
                     .get_mut(&callable)
@@ -12449,6 +13046,26 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        if !function.is_async
+            && !function.is_generator
+            && function.decorators.is_empty()
+            && function.type_params.is_none()
+            && function.return_type.is_none()
+            && function
+                .params
+                .iter()
+                .all(|param| param.decorators.is_empty() && matches!(param.pat, Pat::Ident(_)))
+            && function
+                .body
+                .as_ref()
+                .is_some_and(|body| match body.stmts.as_slice() {
+                    [] => true,
+                    [Stmt::Return(ret)] => ret.arg.as_deref().is_none_or(primitive_literal),
+                    _ => false,
+                })
+        {
+            self.inert_argument_functions.insert(function.span.lo.0);
+        }
         self.callable_creations
             .entry(function.span.lo.0)
             .or_insert(DeferredCallableCreation::Function(function.span.lo.0));
@@ -12617,6 +13234,7 @@ impl Visit for ExecutionIndex {
                 *last = (*last).max(position);
             })
             .or_insert((position, position));
+        self.ident_references.push((position, ident.to_id()));
         // A published outer closure can expose a nested closure's capabilities.
         for key in &self.prototype_capture_stack {
             self.prototype_callable_reads
@@ -12720,6 +13338,8 @@ impl Visit for ExecutionIndex {
     fn visit_binding_ident(&mut self, binding: &BindingIdent) {
         if !self.assignment_target {
             self.property_key_declarations.insert(binding.id.to_id());
+        } else {
+            self.record_nested_write(binding.id.to_id());
         }
         self.namespace_privacy.record_ident(&binding.id);
     }
@@ -12852,6 +13472,20 @@ impl Visit for ExecutionIndex {
                         }),
                 );
         } else {
+            if let Some(init) = &declarator.init
+                && pattern_loses_values(&declarator.name)
+            {
+                self.record_published_source(init);
+            }
+            if let Some(init) = &declarator.init
+                && pattern_iterates(&declarator.name)
+            {
+                self.record_iterated_source(init);
+            }
+            if pattern_iterates_part(&declarator.name) {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            self.record_iterated_defaults(&declarator.name);
             let mut bindings = Vec::new();
             let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
             collect_pattern_assignments(&declarator.name, &pattern_value, &mut bindings);
@@ -13044,6 +13678,17 @@ impl Visit for ExecutionIndex {
                 _ => None,
             };
             if let Some(receiver) = receiver {
+                match self.current {
+                    Some(key) => self
+                        .callables
+                        .get_mut(&key)
+                        .unwrap()
+                        .destructuring_member_receivers
+                        .push(receiver.clone()),
+                    None => {
+                        self.top_destructuring_member_receivers[self.owner.0].push(receiver.clone())
+                    }
+                }
                 self.destructuring_member_writes
                     .push(DestructuringMemberWrite {
                         receiver,
@@ -13056,7 +13701,10 @@ impl Visit for ExecutionIndex {
 
     fn visit_assign_pat(&mut self, assignment: &AssignPat) {
         let Some(source) = self.destructuring_source.take() else {
-            assignment.visit_children_with(self);
+            assignment.left.visit_with(self);
+            self.may_skip_member_read_depth += 1;
+            assignment.right.visit_with(self);
+            self.may_skip_member_read_depth -= 1;
             return;
         };
         self.destructuring_source = Some(ValueExpr::Alternatives(
@@ -13066,7 +13714,9 @@ impl Visit for ExecutionIndex {
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = Some(source);
+        self.may_skip_member_read_depth += 1;
         assignment.right.visit_with(self);
+        self.may_skip_member_read_depth -= 1;
     }
 
     fn visit_for_head(&mut self, head: &ForHead) {
@@ -13089,6 +13739,13 @@ impl Visit for ExecutionIndex {
                 }
             }
             _ => {}
+        }
+        if let Some(key) = self.current {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .head_bindings
+                .extend(assignments.iter().map(|(binding, _)| binding.clone()));
         }
         if let ForHead::Pat(pattern) = head {
             self.invalidate_property_key_pattern(pattern);
@@ -13230,11 +13887,18 @@ impl Visit for ExecutionIndex {
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
+        if matches!(
+            assignment.op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            self.may_skip_member_read_depth += 1;
+        }
         assignment.right.visit_with(self);
         if matches!(
             assignment.op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         ) {
+            self.may_skip_member_read_depth -= 1;
             self.past_await = before_assignment;
         }
         if !matches!(
@@ -13363,6 +14027,40 @@ impl Visit for ExecutionIndex {
                     assignment.span,
                 );
             }
+            let loses_values = match pattern {
+                AssignTargetPat::Array(_) | AssignTargetPat::Invalid(_) => true,
+                AssignTargetPat::Object(object) => {
+                    pattern_loses_values(&Pat::Object(object.clone()))
+                }
+            };
+            if loses_values {
+                self.record_published_source(&assignment.right);
+            }
+            let (iterates, iterates_part) = match pattern {
+                AssignTargetPat::Array(array) => {
+                    (true, pattern_iterates_part(&Pat::Array(array.clone())))
+                }
+                AssignTargetPat::Object(object) => {
+                    let object = Pat::Object(object.clone());
+                    (pattern_iterates(&object), pattern_iterates_part(&object))
+                }
+                AssignTargetPat::Invalid(_) => (false, false),
+            };
+            if iterates {
+                self.record_iterated_source(&assignment.right);
+            }
+            if iterates_part {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            match pattern {
+                AssignTargetPat::Array(array) => {
+                    self.record_iterated_defaults(&Pat::Array(array.clone()))
+                }
+                AssignTargetPat::Object(object) => {
+                    self.record_iterated_defaults(&Pat::Object(object.clone()))
+                }
+                AssignTargetPat::Invalid(_) => {}
+            }
             let mut assignments = Vec::new();
             collect_assign_target_assignments(
                 pattern,
@@ -13390,8 +14088,16 @@ impl Visit for ExecutionIndex {
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         binding_targets::record_update_target(&expression.arg, self);
-        let simple_target = binding_targets::simple_update_target(&expression.arg);
+        let simple_target = binding_targets::simple_write_target_expr(&expression.arg);
         if let Some(binding_targets::SimpleWriteTarget::Binding(binding)) = simple_target.as_ref() {
+            if let Some(key) = self.current {
+                self.callables
+                    .get_mut(&key)
+                    .unwrap()
+                    .update_targets
+                    .insert(binding.clone());
+            }
+            self.record_nested_write(binding.clone());
             self.reassigned_bindings.insert(binding.clone());
             self.property_key_assignments
                 .entry(binding.clone())
@@ -13498,6 +14204,13 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_return_stmt(&mut self, ret: &ReturnStmt) {
+        // A generator's return value reaches its consumer through `next()`
+        // or `yield*`, as a yielded one does.
+        if let (Some(key), Some(argument)) = (self.current, &ret.arg)
+            && self.callables[&key].generator
+        {
+            self.record_published_source(argument);
+        }
         ret.visit_children_with(self);
         if ret.arg.is_none()
             && let Some(key) = self.current
@@ -13517,7 +14230,25 @@ impl Visit for ExecutionIndex {
         }
     }
 
+    fn visit_yield_expr(&mut self, yielded: &YieldExpr) {
+        if let Some(argument) = &yielded.arg {
+            self.record_published_source(argument);
+            if yielded.delegate {
+                self.record_iterated_source(argument);
+            }
+        }
+        yielded.visit_children_with(self);
+    }
+
+    fn visit_expr_or_spread(&mut self, element: &ExprOrSpread) {
+        if element.spread.is_some() {
+            self.record_iterated_source(&element.expr);
+        }
+        element.visit_children_with(self);
+    }
+
     fn visit_throw_stmt(&mut self, thrown: &ThrowStmt) {
+        self.record_published_source(&thrown.arg);
         thrown.visit_children_with(self);
         self.mark_possible_namespace_escape(&thrown.arg);
     }
@@ -13566,8 +14297,7 @@ impl Visit for ExecutionIndex {
         if self.current.is_none() {
             self.ordinary_top_call_sites.insert(call.span.into());
         }
-        if self.current.is_none()
-            && let Callee::Expr(callee) = &call.callee
+        if let Callee::Expr(callee) = &call.callee
             && let Expr::Ident(factory) = callee.unwrap_parens()
             && self
                 .retained_record_factories
@@ -13877,7 +14607,11 @@ impl Visit for ExecutionIndex {
                 .insert(member.span.lo.0);
         }
         let before = self.past_await;
+        // Computed keys and call arguments after `?.` may never execute.
+        // Conservatively mark the whole chain conditional for read receipts.
+        self.may_skip_member_read_depth += 1;
         chain.visit_children_with(self);
+        self.may_skip_member_read_depth -= 1;
         self.past_await = before;
         if let OptChainBase::Call(call) = chain.base.as_ref() {
             // Optional invocation can still execute arbitrary callee/receiver

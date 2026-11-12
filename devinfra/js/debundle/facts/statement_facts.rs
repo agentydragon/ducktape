@@ -103,6 +103,10 @@ pub struct StatementFacts {
     /// Proven effects are retained even when some targets remain unresolved;
     /// `complete` decides whether the conservative fallback also runs.
     pub(crate) synchronous_calls: Option<SynchronousCalls>,
+    /// Every source-indexed callable this statement can publish contributes
+    /// its synchronous prefix. `None` means coverage is incomplete, so the
+    /// graph fallback must use the whole lazy read/rebind closure.
+    pub(crate) synchronous_prefix_effects: Option<(BTreeSet<Id>, BTreeSet<Id>)>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -233,6 +237,12 @@ pub(crate) struct SynchronousCalls {
     /// succeed. It is deliberately separate from the serialized proof-use
     /// report: report data is not an analysis input.
     pub local_record_factory_purity: Option<LocalRecordFactoryPurityCertificate>,
+    /// Direct top-level reads whose executed receiver was a private fresh
+    /// instance with an own class data field on every reached path.
+    pub(crate) proven_private_own_field_reads: Vec<(SourceUnitOrdinal, swc_common::Span)>,
+    /// Exact completed constructor-factory call whose checked bodies have no
+    /// immediate array-content operation. Separate from the purity proof.
+    pub(crate) local_record_factory_heap_call: Option<swc_common::Span>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order

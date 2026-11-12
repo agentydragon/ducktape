@@ -62,3 +62,5 @@ class UsageResponse(BaseModel):
     seven_day_opus: UsageBucket | None = None
     seven_day_sonnet: UsageBucket | None = None
     spend: Spend | None = None
+    # Parsed separately so a malformed optional reset inventory does not hide usage.
+    cedar_ember: object | None = None

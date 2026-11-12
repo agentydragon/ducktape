@@ -268,6 +268,9 @@ impl Join for ClassState {
                 alternatives,
                 |classes| &classes.private_constructor_result_owners,
             )),
+            private_fresh_instance_bindings: intersect_sets(&each_field(alternatives, |classes| {
+                &classes.private_fresh_instance_bindings
+            })),
         };
         *widened |= joined != *first;
         joined

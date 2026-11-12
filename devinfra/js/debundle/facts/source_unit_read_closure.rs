@@ -147,6 +147,19 @@ impl SourceUnitReadClosure {
     }
 
     pub(crate) fn new(facts: &[StatementFacts]) -> Self {
+        Self::build(facts, false)
+    }
+
+    /// Graph-level unresolved-call fallback uses the same covered callable
+    /// prefixes as the synchronous interpreter. Unknown owners retain their
+    /// whole lazy effects. Both traversal and effects must use this view:
+    /// retaining only the latter still follows a post-await read to its
+    /// declaration and can promote that declaration's lazy bodies.
+    pub(crate) fn new_synchronous(facts: &[StatementFacts]) -> Self {
+        Self::build(facts, true)
+    }
+
+    fn build(facts: &[StatementFacts], synchronous: bool) -> Self {
         let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitOrdinal>>::new();
         for stmt in facts {
             for binding in &stmt.declared {
@@ -173,7 +186,15 @@ impl SourceUnitReadClosure {
                     read_graph.add_edge(representative, source_unit, ());
                 }
             }
-            for id in stmt.reads.eager.iter().chain(stmt.reads.lazy.iter()) {
+            let lazy_reads = if synchronous {
+                stmt.synchronous_prefix_effects
+                    .as_ref()
+                    .map(|(reads, _)| reads)
+                    .unwrap_or(&stmt.reads.lazy)
+            } else {
+                &stmt.reads.lazy
+            };
+            for id in stmt.reads.eager.iter().chain(lazy_reads.iter()) {
                 if let Some(&target) = binding_source_unit.get(id) {
                     read_graph.add_edge(source_unit, target, ());
                 }
@@ -211,12 +232,20 @@ impl SourceUnitReadClosure {
                 let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
                     continue;
                 };
-                for id in &stmt.reads.lazy {
+                let (reads, rebinds) = if synchronous {
+                    stmt.synchronous_prefix_effects
+                        .as_ref()
+                        .map(|(reads, rebinds)| (reads, rebinds))
+                        .unwrap_or((&stmt.reads.lazy, &stmt.rebinds.lazy))
+                } else {
+                    (&stmt.reads.lazy, &stmt.rebinds.lazy)
+                };
+                for id in reads {
                     if let Some(&index) = binding_indices.get(id) {
                         local_effects[scc_idx].reads.insert(index);
                     }
                 }
-                for id in &stmt.rebinds.lazy {
+                for id in rebinds {
                     if let Some(&index) = binding_indices.get(id) {
                         local_effects[scc_idx].rebinds.insert(index);
                     }

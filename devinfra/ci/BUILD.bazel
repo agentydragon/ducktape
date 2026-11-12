@@ -321,6 +321,8 @@ py_test(
 py_test(
     name = "test_publication_test_verdicts",
     srcs = ["test_publication_test_verdicts.py"],
+    data = ["//devinfra/buildbuddy/bbapi"],
+    env = {"BBAPI_RLOCATION": "$(rlocationpath //devinfra/buildbuddy/bbapi)"},
     deps = [
         ":publication_evidence",
         ":publication_test_verdicts",
@@ -328,6 +330,7 @@ py_test(
         "//devinfra/buildbuddy/ci:invocation_ids",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

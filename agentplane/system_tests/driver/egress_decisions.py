@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
+from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc, egress_rules_pb2
 from agentplane.grpc.calls import dial
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
@@ -42,9 +42,19 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminA
 async def snapshot(
     stub: rpc.EgressAdminAsyncStub, caller: Caller, subject: identity_pb2.ServiceAccount
 ) -> list[pb.Decision]:
-    stream = stub.WatchDecisions(
-        pb.WatchDecisionsRequest(filter=pb.DecisionFilter(subject=subject)), metadata=caller.metadata
+    return await _snapshot(stub, caller, pb.DecisionFilter(subject=subject))
+
+
+async def snapshot_identity(stub: rpc.EgressAdminAsyncStub, caller: Caller, identity_name: str) -> list[pb.Decision]:
+    return await _snapshot(
+        stub, caller, pb.DecisionFilter(identity=egress_rules_pb2.IdentitySubject(name=identity_name))
     )
+
+
+async def _snapshot(
+    stub: rpc.EgressAdminAsyncStub, caller: Caller, decision_filter: pb.DecisionFilter
+) -> list[pb.Decision]:
+    stream = stub.WatchDecisions(pb.WatchDecisionsRequest(filter=decision_filter), metadata=caller.metadata)
     try:
         frame = await stream.read()
         if not isinstance(frame, pb.WatchDecisionsResponse) or frame.WhichOneof("frame") != "snapshot":

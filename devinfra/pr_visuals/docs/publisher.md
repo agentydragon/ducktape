@@ -3,21 +3,31 @@
 Read when changing `publisher.py`, `pull_request.py`, the publish workflow, or the
 bucket layout. Overview: <../README.md>.
 
-## Finding the invocation
+## Selecting the invocation
 
-The publisher asks BuildBuddy which CI test invocation the **commit** has, preferring
-the `//...` devel sweep — a commit can have both a sweep and an affected-set run, and
-the sweep can cover more visual tests, so the run that triggered the publish is
-often not the one that ran the tests. Fallback: IDs derived from the run's identity
-(<../../buildbuddy/ci/invocation_ids.py>), the only handle on a PR run (which records the merge
-SHA, not the head SHA).
+The triggering CI run's test and build IDs are derived from its run ID and attempt
+(<../../buildbuddy/ci/invocation_ids.py>). The publisher uses the triggering run's
+test invocation for visual artifacts and both its test and build invocations for
+failure diagnostics. PR CI can select only affected tests, so its review covers those
+tests, even if a separate full sweep exists for the same commit. The ID is known
+before Bazel starts; it does not guarantee that the invocation was created.
 
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
 ~4.4 s per artifact (~16 min for a commit's ~294 files). The artifact listing already
 carries each blob's `bytestream://` URI; the publisher passes exact destinations to
-`bbapi blob download` in two manifest calls, one for output records and one for their
-selected screenshot payloads. Each call downloads up to eight blobs concurrently (<20 s for a commit's files).
+`bbapi blob download` for output records. Selected screenshot payloads retain their
+CAS references until pixels are needed for a PR comparison or an image is absent
+at the final upload barrier. Those payloads are downloaded in manifest batches;
+each call downloads up to eight blobs concurrently.
+Collection records each variant's CAS source, digest, size, and candidate staging
+path under `<work-dir>/tests/<target-slug>/`. Comparison planning selects the
+digests whose pixels are needed before rendering. The bundle is staged under
+`<work-dir>/site/reviews-test-outputs/<sha>/`, while shared images are staged
+under `<work-dir>/site/assets/`. The image barrier receives that site root
+explicitly and may fetch remaining candidates directly into `assets/`.
+The publisher logs phase starts and workload counts; Actions timestamps on those
+lines show the time spent listing, downloading, building, and uploading.
 
 ## Which PR a run is for
 
@@ -93,6 +103,16 @@ verifies the referenced image before comparing pixels. A missing or corrupted
 baseline image is an error, not evidence of a new screenshot. Pointers advance only
 after the review bundle and shared images upload successfully.
 
+An unchanged candidate or devel image can reuse an existing shared object without
+downloading its BuildBuddy payload. A differing PR candidate is downloaded when
+pixel comparison requires it. The final image barrier checks every referenced
+object once; absent objects are downloaded from BuildBuddy, checked against the
+advertised CAS digest and size, verified as PNG, and uploaded before metadata or
+pages. A HEAD response confirms presence and size, not content integrity or PNG
+validity, so reuse relies on the write-limited, immutable image pool. Some historical
+objects were uploaded before PNG validation was introduced; reusing one does not
+revalidate it. Shared-image collection is not enabled; see <retention.md>.
+
 ## Check-runs
 
 - **PR visual review**: `in_progress` with the Bazel CI run (linking it); then
@@ -102,6 +122,23 @@ after the review bundle and shared images upload successfully.
   exposes them. Reviewers can request a manual rerun from the CI run page.
 - **PR visual diffs**: only when a baseline comparison ran; `success` if nothing was
   modified, removed, unstable or incomplete, else `neutral` — deliberately not a merge gate.
+
+After publication, the publisher rechecks the PR before changing its singleton
+comment. A failed recheck or comment update marks the final visual-review check
+`failure`; the publisher still attempts that check update. If publication itself
+failed, its original error remains the command's error, with any reporting errors
+attached as its cause. A stale or closed PR never receives a comment; a PR
+already stale at the initial lookup gets a `neutral` check.
+
+The singleton bot comment reports the latest result. A published bundle, CI
+failure, or processing failure creates or updates it. A successful run with no
+visual output updates an existing comment to describe that run, but creates no
+comment when none exists. This can happen for the same PR head when the affected
+test set changes, so an earlier review is not preserved as the current result.
+Every newly written comment starts with one versioned HTML marker,
+`<!-- pr-visuals {"version":1,...} -->`, containing its commit SHA, result
+kind, and CI conclusion. Older comments using `<!-- pr-visuals -->` remain
+discoverable and are replaced without parsing their display text.
 
 ## Storage
 
@@ -121,6 +158,9 @@ after the review bundle and shared images upload successfully.
 `//devinfra/pr_visuals:wheel` builds the `pr-visuals` wheel (`pr-visuals-announce`
 for check-runs, `pr-visuals-publish` for publication), bundling the publisher's small
 internal source deps and HTML templates; Python runtime deps are wheel metadata.
+The publish `main()` parses arguments into `PublicationConfig` and supplies the
+command runner and S3 client to `publish_visual_review()`. A cancelled run closes
+its check before creating an S3 client.
 
 Both workflow jobs install `.#pr-visuals` from trusted `devel` (wheel deps + `bbapi`;
 closure in the public Attic cache) and log the wheel URL and hash from

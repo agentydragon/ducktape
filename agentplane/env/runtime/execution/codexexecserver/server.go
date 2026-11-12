@@ -14,10 +14,13 @@ import (
 	"time"
 
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
+	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -302,21 +305,29 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 	return retry.Do(ctx, retry.NewConstant(200*time.Millisecond), func(ctx context.Context) error {
 		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		connection, status, err := executorcontrol.Connect(attempt, socket, executorcontrol.Request{Operation: "inspect"})
+		connection, err := executorcontrol.Dial(socket)
 		if err != nil {
 			return retry.RetryableError(err)
 		}
 		defer connection.Close()
-		if previous != "" && status.Generation != previous {
+		client := controlpb.NewCompanionControlClient(connection)
+		current, err := client.Inspect(attempt, &controlpb.InspectRequest{})
+		if err != nil {
+			return retry.RetryableError(err)
+		}
+		if current.GetGeneration() == "" {
+			return retry.RetryableError(errors.New("executor companion returned no generation"))
+		}
+		if previous != "" && current.GetGeneration() != previous {
 			// Generation changes only after a proven fence (or whole-container replacement).
 			// A successor may already have claimed the new generation.
 			return nil
 		}
-		if !status.Owned && status.Generation != previous {
+		if !current.GetOwned() && current.GetGeneration() != previous {
 			return nil
 		}
-		if status.Owned {
-			if err := json.NewEncoder(connection).Encode(executorcontrol.Request{Operation: "fence", Generation: status.Generation}); err != nil {
+		if current.GetOwned() {
+			if _, err := client.Fence(attempt, &controlpb.FenceRequest{Generation: current.GetGeneration()}); err != nil {
 				return retry.RetryableError(err)
 			}
 		}
@@ -325,24 +336,43 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 }
 
 func claimContainer(ctx context.Context, socket string, env map[string]string) (*supervision.Instance, error) {
-	connection, status, err := executorcontrol.Connect(ctx, socket, executorcontrol.Request{Operation: "claim", Environment: env})
+	connection, err := executorcontrol.Dial(socket)
 	if err != nil {
 		return nil, err
 	}
-	if !status.Owned {
+	// The handshake is bounded by ctx; the established stream lives until Stop.
+	leaseCtx, cancelLease := context.WithCancel(context.Background())
+	stopHandshake := context.AfterFunc(ctx, cancelLease)
+	stream, err := controlpb.NewCompanionControlClient(connection).Claim(leaseCtx, &controlpb.ClaimRequest{Environment: env})
+	var claim *controlpb.ClaimResponse
+	if err == nil {
+		claim, err = stream.Recv()
+	}
+	stopHandshake()
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		cancelLease()
 		_ = connection.Close()
-		if status.Error != "" {
-			return nil, Refusal{Reason: status.Error}
+		if status.Code(err) == codes.FailedPrecondition {
+			return nil, Refusal{Reason: status.Convert(err).Message()}
 		}
-		return nil, errors.New("executor companion refused ownership")
+		return nil, err
+	}
+	if claim.GetGeneration() == "" {
+		cancelLease()
+		_ = connection.Close()
+		return nil, errors.New("executor companion returned no generation")
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := io.Copy(io.Discard, connection)
+		_, err := stream.Recv()
 		done <- errors.Join(ErrExecutionBackendLost, ErrContainerOwnershipLost, err)
 	}()
 	return &supervision.Instance{Done: done, Stop: func(ctx context.Context) error {
+		cancelLease()
 		_ = connection.Close()
-		return FenceContainer(ctx, socket, status.Generation)
+		return FenceContainer(ctx, socket, claim.GetGeneration())
 	}}, nil
 }

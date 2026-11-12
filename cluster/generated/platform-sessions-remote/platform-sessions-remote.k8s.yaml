@@ -156,11 +156,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-openai.platform-sessions.svc
+    - openai.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -199,7 +199,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -385,7 +385,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -435,7 +435,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   ports:
@@ -451,7 +451,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -570,11 +570,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-anthropic.platform-sessions.svc
+    - anthropic.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -613,7 +613,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -799,7 +799,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -849,7 +849,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   ports:
@@ -865,7 +865,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -984,11 +984,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-chatgpt.platform-sessions.svc
+    - chatgpt.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -1027,7 +1027,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -1213,7 +1213,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -1263,7 +1263,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   ports:
@@ -1279,7 +1279,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -1398,11 +1398,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-blueshield.platform-sessions.svc
+    - blueshield.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -1441,7 +1441,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -1625,7 +1625,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -1675,7 +1675,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   ports:
@@ -1691,7 +1691,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -1810,11 +1810,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-quest
+  name: quest
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-quest.platform-sessions.svc
+    - quest.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -1853,7 +1853,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-quest
+  name: quest
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -2041,7 +2041,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -2091,7 +2091,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-quest
+  name: quest
   namespace: platform-sessions
 spec:
   ports:
@@ -2107,7 +2107,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-quest-provider
+  name: quest
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2229,11 +2229,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-thrive.platform-sessions.svc
+    - thrive.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -2272,7 +2272,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -2458,7 +2458,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -2508,7 +2508,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   ports:
@@ -2524,7 +2524,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2638,11 +2638,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-gateway
+  name: gateway
   namespace: platform-sessions
 spec:
   dnsNames:
-    - platform-sessions-gateway.platform-sessions.svc
+    - gateway.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -2651,7 +2651,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-gateway
+  name: gateway
   namespace: platform-sessions
 spec:
   replicas: 1
@@ -2674,17 +2674,17 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: gateway-integrations.json
-                  name: platform-sessions-remote-config
+                  name: remote-config
             - name: PLATFORM_SESSIONS_BEARERS
               valueFrom:
                 configMapKeyRef:
                   key: bearers.json
-                  name: platform-sessions-remote-config
+                  name: remote-config
             - name: PLATFORM_SESSIONS_PROVIDER_CONNECTIONS
               valueFrom:
                 configMapKeyRef:
                   key: connections.json
-                  name: platform-sessions-remote-config
+                  name: remote-config
             - name: PLATFORM_SESSIONS_GRPC_ADDRESS
               value: 0.0.0.0:8444
             - name: PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE
@@ -2894,7 +2894,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-gateway
+  name: gateway
   namespace: platform-sessions
 spec:
   ports:

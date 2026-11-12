@@ -23,6 +23,8 @@ import (
 // of a deleted record or a replaced credential ID.
 type SVIDResolver struct {
 	records *resolver.Resolver
+	// identitySubjectsOnly refuses a record naming a ServiceAccount.
+	identitySubjectsOnly bool
 }
 
 func NewSVIDResolver(objects client.Reader, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
@@ -33,6 +35,13 @@ func NewSVIDResolver(objects client.Reader, namespaces []string, identities *res
 	return &SVIDResolver{records: records}, nil
 }
 
+// IdentitySubjectsOnly is this resolver refusing every record that names a ServiceAccount, for a
+// listener whose ServiceAccount callers present only bearers: certificates there admit Identity
+// subjects and nothing else.
+func (r *SVIDResolver) IdentitySubjectsOnly() *SVIDResolver {
+	return &SVIDResolver{records: r.records, identitySubjectsOnly: true}
+}
+
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
 func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
 	records, err := resolver.NewKubernetes(config, namespaces, identities)
@@ -40,20 +49,6 @@ func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identit
 		return nil, err
 	}
 	return &SVIDResolver{records: records}, nil
-}
-
-// Resolve authenticates a gRPC TLS peer whose record names a ServiceAccount, and refuses an
-// Identity subject: only ResolveSubject's callers serve one.
-func (r *SVIDResolver) Resolve(ctx context.Context) (Principal, error) {
-	subject, err := r.ResolveSubject(ctx)
-	if err != nil {
-		return Principal{}, err
-	}
-	principal, ok := subject.(Principal)
-	if !ok {
-		return Principal{}, status.Error(codes.Unauthenticated, "invalid workload SVID")
-	}
-	return principal, nil
 }
 
 // ResolveSubject authenticates a gRPC TLS peer. The listener must use the transport
@@ -89,6 +84,9 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 	}
 	switch subject := resolved.Subject.(type) {
 	case resolver.ServiceAccount:
+		if r.identitySubjectsOnly {
+			return nil, ErrInvalidBearer
+		}
 		return Principal{
 			Account:           Account{Namespace: subject.Namespace, Name: subject.Name},
 			ServiceAccountUID: string(subject.UID),
@@ -106,7 +104,7 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 
 // WorkloadOf is the provenance a resolved workload's record carries.
 func WorkloadOf(peer resolver.Peer) Workload {
-	workload := Workload{Namespace: peer.Workload.Namespace, Name: peer.Workload.Name, Owner: StandingWorkload{}}
+	workload := Workload{Namespace: peer.Workload.Namespace, Name: peer.Workload.Name, Owner: NoController{}}
 	if owner := peer.Owner; owner != nil {
 		workload.Owner = ControllerOwner{APIVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, UID: string(owner.UID)}
 	}
@@ -240,10 +238,17 @@ func (r *Resolver) ResolveSubjectRequest(request *http.Request) (Subject, error)
 	return r.ResolveSubject(requestContext(request))
 }
 
+// requestContext carries an HTTP request's credentials as the gRPC middleware reads them. The
+// delegation header is base64 on the wire (EncodeDelegationHeader), as gRPC's own `-bin` transport.
 func requestContext(request *http.Request) context.Context {
+	envelopes := request.Header.Values(DelegationMetadataKey)
+	decoded := make([]string, len(envelopes))
+	for index, envelope := range envelopes {
+		decoded[index] = decodeDelegationHeader(envelope)
+	}
 	ctx := metadata.NewIncomingContext(request.Context(), metadata.MD{
 		"authorization":       request.Header.Values("Authorization"),
-		DelegationMetadataKey: request.Header.Values(DelegationMetadataKey),
+		DelegationMetadataKey: decoded,
 	})
 	if request.TLS != nil {
 		ctx = peer.NewContext(ctx, &peer.Peer{AuthInfo: credentials.TLSInfo{State: *request.TLS}})

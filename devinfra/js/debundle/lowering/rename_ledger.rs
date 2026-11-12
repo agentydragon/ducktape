@@ -1019,6 +1019,14 @@ impl SealedRenames {
     /// Chunk-scope renames projected to bare names — the map
     /// `LowerChunkSpecFacts::chunk_renames` consumes (pre-ledger:
     /// `collect_chunk_renames`'s output).
+    /// Whether any sealed rename gives a binding a different name.
+    pub fn renames_any(&self) -> bool {
+        self.by_scope
+            .values()
+            .flat_map(BTreeMap::iter)
+            .any(|(binding, (name, _))| binding.0 != *name)
+    }
+
     pub fn chunk_renames_by_name(&self) -> HashMap<String, String> {
         self.scope_renames_by_name(&RenameScope::Chunk)
             .into_iter()

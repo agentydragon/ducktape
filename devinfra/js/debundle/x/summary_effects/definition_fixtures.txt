@@ -1,0 +1,78 @@
+### computed key
+const d = { [second()]: 1 };
+### property value call
+const d = { a: second() };
+### array element call
+const d = [second()];
+### class heritage
+class K extends (second(), Object) {}
+### class static initializer
+const d = class { static x = second(); };
+### class static block
+const d = class { static { second(); } };
+### class computed method key
+const d = class { [second()]() {} };
+### unary coercion
+const d = -{ valueOf: second };
+### binary coercion
+const d = 1 + { valueOf: second };
+### template coercion
+const d = `${{ toString: second }}`;
+### spread of a user iterator
+const d = [...{ [Symbol.iterator]: function* () { second(); } }];
+### object spread running a getter
+const d = { ...{ get a() { second(); return 1; } } };
+### member read running a getter
+const d = { get a() { second(); return 1; } }.a;
+### sequence
+const d = (second(), 1);
+### constructor call
+const d = new (class { constructor() { second(); } })();
+### tagged template
+const d = second`x`;
+### logical short-circuit
+const d = state === 0 && second();
+### conditional
+const d = state === 0 ? second() : 1;
+### typeof of a call
+const d = typeof second();
+### immediately invoked function
+const d = (function () { second(); })();
+### immediately invoked arrow
+const d = (() => second())();
+### destructuring default
+const { a = second() } = {};
+### array destructuring
+const [a] = { [Symbol.iterator]: function* () { second(); } };
+### optional call
+const d = second?.();
+### comparison coercion
+const d = { valueOf: second } < 1;
+### loose equality coercion
+const d = { valueOf: second } == 1;
+### in operator
+const d = { toString: second } in {};
+### nullish
+const d = null ?? second();
+### assignment in initializer
+const d = (state = 1);
+### update in initializer
+const d = state++;
+### export default expression
+export default second();
+### var without const
+var d = second();
+### let
+let d = second();
+### call through an alias binding
+const alias = second, d = alias();
+### object method called
+const d = { m: second }.m();
+### array index call
+const d = [second][0]();
+### new on a function
+const d = new second();
+### void of a call
+const d = void second();
+### not of a call
+const d = !second();

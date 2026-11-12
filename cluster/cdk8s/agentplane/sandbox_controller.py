@@ -151,11 +151,6 @@ class SandboxController(Construct):
                     resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
                     verbs=["get", "list", "watch"],
                 ),
-                # Each Sandbox's own; garbage collection deletes them with the Sandbox.
-                RolePolicyRule(
-                    resources=[custom_resource("", "serviceaccounts")],
-                    verbs=["get", "list", "watch", "create", "patch"],
-                ),
                 # Each Sandbox's control Service, which the Runner Gateway points at the connected runner.
                 RolePolicyRule(
                     resources=[custom_resource("", "services")], verbs=["get", "list", "watch", "create", "patch"]
@@ -164,11 +159,9 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "patch"]
                 ),
-                # Binding a Sandbox's account to the PolicySets its spec names, in this namespace.
-                RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "policybindings")],
-                    verbs=["get", "list", "watch", "create", "patch", "delete"],
-                ),
+                # The Identity each Sandbox acts as, read live before a start; a watch retries the
+                # Sandboxes naming one that appears or goes.
+                RolePolicyRule(resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch"]),
                 # Leader election, and the Runner Gateway's connection Leases, which the controller watches.
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],

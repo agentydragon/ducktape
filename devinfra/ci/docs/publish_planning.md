@@ -28,14 +28,30 @@ test-gate authority.
 
 The reuse boundary is deliberately small. Only literal `//package:test` labels
 with exactly one `PASSED` summary, a configuration id, and one attempt are
-eligible. The CI stream must be the current push's deterministic test
-invocation, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
+eligible. The CI command must request the current push's deterministic test
+invocation ID, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
 successfully, and match the publication job's `--config=rbe`, `--config=ci`
 and RBE image. A cached one-attempt pass is accepted because Bazel keys test
 results by source and configuration. Missing or unreadable evidence, custom
-release flags, retries, multiple configurations, failed summaries, suites,
+release flags, per-test retries, multiple configurations, failed summaries, suites,
 external labels, wildcards, PR runs and dispatch runs preserve the publication
 test step.
+
+The workflow's test ID names the initial invocation. After `REMOTE_CACHE_EVICTED`,
+the loader follows its `PARENT_INVOCATION_ID` to the runner's ordered
+`ChildInvocationsConfigured` events. A cache retry has a new `Started.uuid` but
+retains the original requested `--invocation_id`. Every linked attempt must keep
+the same parent, command, source, requested targets and explicit options; only
+cache-evicted attempts may precede the final result. The final attempt supplies
+both reusable passes and recorded failures. The initial attempt's failures do
+not suppress publication after a successful retry.
+
+An unfinished runner, unreadable child, contradictory lineage or missing final
+result preserves the publication test step without suppressing it from an
+earlier attempt's failures. The `bbapi invocation export` contract carries the
+attempt and parent IDs, ordered children and terminal exit-code name. Until a
+CLI with those fields is pinned, successful initial invocations remain reusable,
+while failed invocations with no exit-code evidence keep their test gates enabled.
 
 ## Identity
 
@@ -166,13 +182,6 @@ runs once, `push_image` runs per image, and what they share is already in
 `image_registry`, leaving one comparison line apiece. Reconsider if the
 `testSummary` gate below lands, which deletes the per-image `bb remote test` and
 so most of what the fan-out buys.
-
-**Shell out to `bbapi`.** `bbapi` reads the same stream and grew the same
-capability for humans. The planners must not call it: `bbapi` is itself one of
-the artifacts in `artifact_targets.json`, so a release planner depending on the
-_released_ `bbapi` would be circular, and a stale pin in `nix/artifact-pins.json`
-would fail the plan on an unrecognised flag. `bes.py` is stdlib-only for the same
-reason the RBE worker image does not live in the registry it publishes to.
 
 **Fetch the runner's own uploaded artifacts.** The hosted-runner action is
 created with `DoNotCache: true`, and its blobs become unreachable within about a

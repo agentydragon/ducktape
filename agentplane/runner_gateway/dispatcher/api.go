@@ -229,10 +229,11 @@ func MethodsWithDelegation(
 	resolver *auth.Resolver,
 	delegator auth.Delegator,
 	serviceAccounts auth.ServiceAccountUIDReader,
+	identities auth.IdentityUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
 	methods, err := Methods(auth.ReviewedServiceAccountOrIdentity(resolver)).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts, identities,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated Dispatcher methods: %w", err)
@@ -245,21 +246,44 @@ func (s *Service) caller(ctx context.Context) (Caller, error) {
 	if err != nil {
 		return nil, err
 	}
-	if identity, ok := admitted.(auth.IdentityAdmission); ok {
+	switch identity := admitted.(type) {
+	case auth.IdentityAdmission:
 		return identityCaller(identity.Caller)
+	case auth.DelegatedIdentityAdmission:
+		return delegatedIdentityCaller(identity)
 	}
 	return s.serviceAccountCaller(ctx)
+}
+
+// delegatedIdentityCaller is a trusted platform component acting for an Identity. It is authorized
+// exactly as that Identity's own workload would be, and records the component that named it.
+func delegatedIdentityCaller(admission auth.DelegatedIdentityAdmission) (IdentityCaller, error) {
+	actor := admission.Actor
+	caller := IdentityCaller{
+		Identity: &identitypb.Identity{Name: admission.EffectiveCaller.Name, Uid: admission.EffectiveCaller.UID},
+		Proof: IdentityDelegation{
+			Actor:    serviceAccountIdentityFor(actor.Account, actor.ServiceAccountUID),
+			ActorPod: PodIdentity{Name: actor.PodName, UID: actor.PodUID},
+			Action: ActionCorrelation{
+				RequestID: admission.Provenance.GetAction().GetRequestId(), ExecutionID: admission.Provenance.GetAction().GetExecutionId(),
+			},
+		},
+	}
+	if err := validateCaller(caller, nil); err != nil {
+		return IdentityCaller{}, status.Error(codes.Unauthenticated, "delegated Identity caller is incomplete")
+	}
+	return caller, nil
 }
 
 func identityCaller(principal auth.IdentityPrincipal) (IdentityCaller, error) {
 	if principal.Identity.Name == "" || principal.Identity.UID == "" || (principal.PodName == "") != (principal.PodUID == "") {
 		return IdentityCaller{}, status.Error(codes.Unauthenticated, "Identity caller is incomplete")
 	}
-	caller := IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}}
+	proof := IdentitySVID{}
 	if principal.PodName != "" {
-		caller.Pod = &PodIdentity{Name: principal.PodName, UID: principal.PodUID}
+		proof.Pod = &PodIdentity{Name: principal.PodName, UID: principal.PodUID}
 	}
-	return caller, nil
+	return IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}, Proof: proof}, nil
 }
 
 func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCaller, error) {
@@ -294,7 +318,7 @@ func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCalle
 		attribution.EffectiveCaller = delegated.EffectiveCaller
 		attribution.ActorPod = &PodIdentity{Name: delegated.Actor.PodName, UID: delegated.Actor.PodUID}
 		attribution.Action = &ActionCorrelation{
-			RequestID: delegated.Provenance.GetActionRequestId(), ExecutionID: delegated.Provenance.GetActionExecutionId(),
+			RequestID: delegated.Provenance.GetAction().GetRequestId(), ExecutionID: delegated.Provenance.GetAction().GetExecutionId(),
 		}
 	default:
 		return ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call not admitted")
@@ -400,6 +424,9 @@ func apiError(err error) error {
 	case errors.Is(err, ErrNotCancellable):
 		return status.Error(codes.FailedPrecondition, "delivery already began")
 	default:
+		if _, ok := status.FromError(err); ok {
+			return err
+		}
 		return status.Error(codes.Unavailable, "dispatcher storage unavailable")
 	}
 }
@@ -520,6 +547,13 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, err
 	}
+	// An Identity creates no Session, directly or through a platform component acting for it, not
+	// even on a Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit
+	// grant that does not exist yet. How a Session asks for a sub-Session is
+	// SESSION_SUBAGENT_DELEGATION (agentplane/plans/task_dag.md).
+	if _, ok := caller.(IdentityCaller); ok {
+		return nil, status.Error(codes.PermissionDenied, "an Identity caller cannot create a Session")
+	}
 	// Recover an accepted request without consulting current owner availability. This
 	// path only reads the receipt; it never queues, wakes, binds or materializes work.
 	row, err := s.Store.GetSession(ctx, request.GetSessionId())
@@ -560,7 +594,9 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		return nil, err
 	}
 	// The Dispatcher is the authority for the Identity a Session executes as: the one its Sandbox
-	// names now, read live with its UID, recorded once beside the ServiceAccount.
+	// names now, read live with its UID, recorded once beside the ServiceAccount. A Sandbox naming an
+	// Identity whose managed ServiceAccount is absent runs as that Identity alone: its Session
+	// records no ServiceAccount.
 	identity, identityFound, err := s.executionIdentity(ctx, current)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
@@ -569,34 +605,47 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 	}
-	execution := &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
+	execution := SessionExecution{Identity: identity}
+	if accountFound {
+		execution.Principal = account
+	} else if identity == nil {
+		// Only a privileged open reaches the store without the account; delivery binds its UID.
+		execution.Principal = &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
+	}
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
-		if c.Privileged {
-			if accountFound {
-				execution = account
-			}
-		} else {
-			if !accountFound || account == nil || !sameServiceAccountIdentity(account, c.ServiceAccountIdentity) {
-				return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
-			}
-			execution = account
-		}
-	case IdentityCaller:
-		// An Identity caller opens a Session only on a Sandbox naming its exact Identity.
-		if !identityFound || !sameIdentity(identity, c.Identity) {
+		if !c.Privileged && (!accountFound || account == nil || !sameServiceAccountIdentity(account, c.ServiceAccountIdentity)) {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
-		if !accountFound || account == nil {
-			return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
-		}
-		execution = account
 	}
 	if !identityFound {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
 	}
-	row, err = s.Store.CreateSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
-		request.GetSpec(), request.SetupScript, nil, SessionExecution{Principal: execution, Identity: identity}, caller)
+	row, err = s.Store.CreateSessionWithPlacementForCallerAndCheck(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
+		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
+			latest, err := s.sandbox(ctx, target.GetName())
+			if err != nil {
+				return err
+			}
+			if latest.UID != current.UID {
+				return status.Error(codes.FailedPrecondition, "sandbox identity changed")
+			}
+			identityNow, found, err := s.executionIdentity(ctx, latest)
+			if err != nil {
+				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+			}
+			if !found || !sameIdentity(identityNow, execution.Identity) {
+				return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
+			}
+			accountNow, accountFoundNow, err := s.executionAccount(ctx, latest)
+			if err != nil {
+				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+			}
+			if accountFoundNow != accountFound || accountFound && !sameServiceAccountIdentity(accountNow, account) {
+				return status.Error(codes.FailedPrecondition, "sandbox execution account changed")
+			}
+			return nil
+		})
 	if err != nil {
 		return nil, apiError(err)
 	}

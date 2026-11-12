@@ -1,0 +1,75 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+# Report-only prototype of a summary-based, flow-insensitive effect analysis.
+# Nothing depends on it; it reads a chunk and writes a measurement report.
+rust_library(
+    name = "summary_effects",
+    srcs = [
+        "bits.rs",
+        "derive.rs",
+        "effects.rs",
+        "generate.rs",
+        "helpers.rs",
+        "intrinsics.rs",
+        "lib.rs",
+        "model.rs",
+        "orders.rs",
+        "pairs.rs",
+        "premises.rs",
+        "program.rs",
+        "report.rs",
+        "tier0.rs",
+    ],
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:rustc-hash",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_binary(
+    name = "summary_effects_bin",
+    srcs = ["main.rs"],
+    crate_name = "summary_effects_cli",
+    crate_root = "main.rs",
+    edition = "2024",
+    deps = [
+        ":summary_effects",
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+# Statements Node observes when swapped: both analyses must refuse each swap.
+rust_test(
+    name = "soundness_test",
+    srcs = ["soundness_test.rs"],
+    compile_data = [
+        "definition_fixtures.txt",
+        "derive_fixtures.txt",
+        "e2e_rejection_fixtures.txt",
+        "extension_fixtures.txt",
+        "premise_fixtures.txt",
+        "reach_fixtures.txt",
+        "soundness_fixtures.txt",
+    ],
+    crate_root = "soundness_test.rs",
+    edition = "2024",
+    deps = [
+        ":summary_effects",
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+    ],
+)

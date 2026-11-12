@@ -171,7 +171,7 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 // declared, not discovered, so a direct tool the roster lacks is a typo found now. Each group requests its boxes'
 // WorkloadCredentials. The offered templates are read once, here, so that a missing or unsafe one stops the service
 // rather than failing each create.
-func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config, policyNamespace string) (map[string]worker.Executor, error) {
+func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	var exec sandbox.Exec
 	var kubeClient kubernetes.Interface
@@ -200,7 +200,7 @@ func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.C
 				return nil, err
 			}
 		}
-		inventory := sandbox.NewInventory(binding, policyNamespace, kubeClient, exec, credentials, records)
+		inventory := sandbox.NewInventory(binding, kubeClient, exec, credentials, records)
 		if err := inventory.CheckTemplates(ctx); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
@@ -393,7 +393,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err := linkages.RemoveUnconfigured(ctx); err != nil {
 		return fmt.Errorf("removing the linkages of unconfigured MCP servers: %w", err)
 	}
-	byGroup, err := sandboxExecutors(ctx, c.ActionGroups, d.Kube, c.PolicyNamespace)
+	byGroup, err := sandboxExecutors(ctx, c.ActionGroups, d.Kube)
 	if err != nil {
 		return err
 	}
@@ -474,9 +474,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	visibility, err := policies.NewVisibility(
-		c.GitHubVisibility.APIBaseURL, time.Duration(c.GitHubVisibility.CacheTTLSeconds*float64(time.Second)),
-	)
+	visibility, err := policies.NewVisibility(policies.GitHubAPIBaseURL, policies.VisibilityTTL)
 	if err != nil {
 		return err
 	}

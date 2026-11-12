@@ -280,6 +280,28 @@ impl Effects {
         self
     }
 
+    /// Remove only the classifier's member-read obligation at an exact
+    /// runtime-certified site. Ambiguous duplicate events retain the reason.
+    pub(crate) fn discharge_private_own_field_reads(
+        mut self,
+        spans: &[Span],
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        for span in spans {
+            let matches = |event: &EffectEvent| {
+                matches!(event, EffectEvent::Effect {
+                    effect: Effect::Invoke(InvokeSite::MemberRead),
+                    span: site, ..
+                } if site == span)
+            };
+            if self.events.iter().filter(|event| matches(event)).count() == 1 {
+                self.events.retain(|event| !matches(event));
+                self.dependencies.extend(dependencies);
+            }
+        }
+        self
+    }
+
     /// Every binding a coercion's resolution reads.
     pub(crate) fn coerce_bindings(&self, bindings: &mut BTreeSet<Id>) {
         for event in &self.events {

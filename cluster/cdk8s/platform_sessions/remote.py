@@ -52,7 +52,7 @@ REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
 BEARER_FILES = ("owner", "aiquota", "quest", "thrive-scraper", "thrive-read", "chatgpt-read", "blueshield-read")
 _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
-_GATEWAY_DNS = f"{GATEWAY}.{NAMESPACE}.svc"
+_GATEWAY_DNS = f"gateway.{NAMESPACE}.svc"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
 _RECORD_CA_SECRET = "platform-sessions-recorder-ca"
@@ -67,7 +67,7 @@ def _provider_name(instance: str) -> str:
 
 
 def _provider_dns(instance: str) -> str:
-    return f"{_provider_name(instance)}.{NAMESPACE}.svc"
+    return f"{instance}.{NAMESPACE}.svc"
 
 
 def _provider_image(instance: str) -> str:
@@ -81,7 +81,7 @@ PROVIDER_IMAGES = tuple(sorted({_provider_image(instance) for instance in PROVID
 
 # A separate ConfigMap prevents preparing the new deployment from rolling the live service.
 CONFIG = ConfigMapArgs(
-    name="platform-sessions-remote-config",
+    name="remote-config",
     namespace=NAMESPACE,
     data={
         "gateway-integrations.json": json.dumps(
@@ -155,6 +155,7 @@ def _deployment(
     container: k8s.Container,
     volumes: list[k8s.Volume],
     *,
+    selector_name: str,
     node_selector: dict[str, str] | None = None,
     init_containers: list[k8s.Container] | None = None,
 ) -> None:
@@ -165,9 +166,9 @@ def _deployment(
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels={"app": name}),
+            selector=k8s.LabelSelector(match_labels={"app": selector_name}),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels={"app": name}),
+                metadata=k8s.ObjectMeta(labels={"app": selector_name}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
@@ -189,12 +190,12 @@ def _config_env(name: str, key: str) -> k8s.EnvVar:
     )
 
 
-def _service(chart: Chart, name: str, ports: list[k8s.ServicePort]) -> None:
+def _service(chart: Chart, name: str, ports: list[k8s.ServicePort], *, selector_name: str) -> None:
     k8s.KubeService(
         chart,
         f"{name}-service",
         metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector={"app": name}, ports=ports),
+        spec=k8s.ServiceSpec(selector={"app": selector_name}, ports=ports),
     )
 
 
@@ -215,7 +216,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
     Certificate(
         chart,
         f"{name}-certificate",
-        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         secret_name=f"{name}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
         dns_names=[_provider_dns(instance)],
@@ -386,7 +387,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
     )
     _deployment(
         chart,
-        name,
+        instance,
         k8s.Container(
             name="provider",
             image=f"{REGISTRY}/{_provider_image(instance)}:unset",
@@ -445,22 +446,24 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             tmp,
             *recorder_volumes,
         ],
+        selector_name=name,
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         init_containers=[*recorder_init, *recorder_sidecars],
     )
     _service(
         chart,
-        name,
+        instance,
         [
             k8s.ServicePort(name="https", port=8443, target_port=k8s.IntOrString.from_string("https")),
             k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
         ],
+        selector_name=name,
     )
 
     PodMonitor(
         chart,
         f"{name}-monitor",
-        metadata=ApiObjectMetadata(name=f"{name}-provider" if instance == "quest" else name, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels={"app": name}),
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
         + (
@@ -490,7 +493,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     Certificate(
         chart,
         f"{GATEWAY}-certificate",
-        metadata=ApiObjectMetadata(name=GATEWAY, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="gateway", namespace=NAMESPACE),
         secret_name=f"{GATEWAY}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
         dns_names=[_GATEWAY_DNS],
@@ -509,7 +512,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     gateway_health = k8s.Probe(http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("http")))
     _deployment(
         chart,
-        GATEWAY,
+        "gateway",
         k8s.Container(
             name="gateway",
             image=_GW_IMAGE,
@@ -556,14 +559,16 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
             k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{GATEWAY}-tls")),
         ],
+        selector_name=GATEWAY,
     )
     _service(
         chart,
-        GATEWAY,
+        "gateway",
         [
             k8s.ServicePort(name="http", port=8080, target_port=k8s.IntOrString.from_string("http")),
             k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
         ],
+        selector_name=GATEWAY,
     )
 
 
@@ -587,9 +592,6 @@ def platform_sessions_remote(
         directory,
         description="Platform Sessions gateway and separate providers.",
         suspend=False,
-        # The legacy and remote inventories overlap on the Quest monitor. Keep pruning off
-        # through its later rename; restore it only after the stale remote entry is gone.
-        prune=False,
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(legacy, cert_manager_environment, image_automation, piraeus),

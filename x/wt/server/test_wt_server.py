@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import psutil
 import pytest
@@ -8,6 +9,32 @@ from x.wt.server import wt_server
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_ids import make_worktree_id
 from x.wt.server.wt_server import WtDaemon
+
+
+async def test_discovery_reconciles_added_removed_and_existing_worktrees(real_config, monkeypatch):
+    daemon = WtDaemon(real_config)
+    removed = DiscoveredWorktree(real_config.worktrees_dir / "removed", "removed", make_worktree_id("removed"))
+    retained = DiscoveredWorktree(real_config.worktrees_dir / "retained", "retained", make_worktree_id("retained"))
+    refreshed = DiscoveredWorktree(retained.path, "refreshed", retained.wtid)
+    added = DiscoveredWorktree(real_config.worktrees_dir / "added", "added", make_worktree_id("added"))
+    scan = AsyncMock(side_effect=[{removed, retained}, {refreshed, added}])
+    start = AsyncMock()
+    stop = AsyncMock()
+    monkeypatch.setattr(wt_server, "scan_worktrees", scan)
+    monkeypatch.setattr(daemon, "_start_gitstatusd_for_worktree", start)
+    monkeypatch.setattr(daemon, "_stop_gitstatusd_for_worktree", stop)
+
+    await daemon._run_discovery_once()
+    start.reset_mock()
+    await daemon._run_discovery_once()
+
+    start.assert_awaited_once_with(added)
+    stop.assert_awaited_once_with(removed)
+    assert daemon.worktree_index is not None
+    assert set(daemon.known_worktrees) == {refreshed.path, added.path}
+    assert set(daemon.worktree_index.by_path) == {real_config.main_repo, refreshed.path, added.path}
+    assert daemon.worktree_index.by_name["refreshed"] == refreshed
+    assert "removed" not in daemon.worktree_index.by_name
 
 
 async def test_registration_survives_discovery_scan_that_predates_it(real_config, monkeypatch):
@@ -34,7 +61,7 @@ async def test_registration_survives_discovery_scan_that_predates_it(real_config
     await asyncio.gather(discovery, registration)
 
     assert daemon.worktree_index is not None
-    assert daemon.worktree_index.get_by_name("created") == created
+    assert daemon.worktree_index.by_name.get("created") == created
 
 
 async def test_worktree_found_by_a_scan_while_being_registered_gets_one_gitstatusd(real_config, monkeypatch):
@@ -68,6 +95,20 @@ async def test_worktree_found_by_a_scan_while_being_registered_gets_one_gitstatu
             orphan.kill()
 
 
+async def test_missing_gitstatusd_fails_the_startup_handshake(real_config, monkeypatch):
+    handshakes = []
+    monkeypatch.setattr(wt_server, "write_startup_handshake", lambda **kwargs: handshakes.append(kwargs))
+    monkeypatch.setattr(wt_server, "find_gitstatusd", lambda _config: (None, "gitstatusd unavailable"))
+    daemon = WtDaemon(real_config)
+
+    await daemon.start()
+
+    assert daemon.server is None
+    assert not any(handshake.get("ready") for handshake in handshakes)
+    assert handshakes[-1]["success"] is False
+    assert "gitstatusd unavailable" in handshakes[-1]["error_message"]
+
+
 async def test_failed_initial_discovery_fails_the_startup_handshake(real_config, monkeypatch):
     handshakes = []
     monkeypatch.setattr(wt_server, "write_startup_handshake", lambda **kwargs: handshakes.append(kwargs))
@@ -87,6 +128,36 @@ async def test_failed_initial_discovery_fails_the_startup_handshake(real_config,
     assert not any(handshake.get("ready") for handshake in handshakes)
     assert handshakes[-1]["success"] is False
     assert "scan refused" in handshakes[-1]["error_message"]
+
+
+async def test_stop_cancels_periodic_discovery(real_config):
+    daemon = WtDaemon(real_config)
+    started = asyncio.Event()
+
+    async def pending_discovery():
+        started.set()
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(pending_discovery())
+    daemon.discovery_task = task
+    await started.wait()
+    await daemon.stop()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_stop_clears_git_watchers_even_if_one_fails(real_config):
+    daemon = WtDaemon(real_config)
+    failed = Mock(stop=AsyncMock(side_effect=RuntimeError("failed to stop")))
+    healthy = Mock(stop=AsyncMock())
+    daemon.git_watchers[make_worktree_id("failed")] = failed
+    daemon.git_watchers[make_worktree_id("healthy")] = healthy
+
+    await daemon.stop()
+
+    failed.stop.assert_awaited_once()
+    healthy.stop.assert_awaited_once()
+    assert daemon.git_watchers == {}
 
 
 if __name__ == "__main__":

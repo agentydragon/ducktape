@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -206,9 +207,29 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	var connection *runnerConnection
+	var epoch uint64
+	var leaseUID types.UID
+	defer func() {
+		if connection != nil {
+			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
+		}
+		cancel()
+		_ = conn.Close()
+		if leaseUID != "" {
+			// The old connection is no longer locally callable. A successor's
+			// higher-epoch WatchState prevents new old-epoch Runner admissions;
+			// already admitted remote work may still have an uncertain outcome.
+			// The API write needs its own bounded context after observer cancellation.
+			releaseCtx, stopRelease := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := g.records.release(releaseCtx, destination.identity, leaseUID, epoch); err != nil && !errors.Is(err, errSupersededConnection) {
+				slog.Warn("runner connection Lease release failed", "sandbox", destination.identity.Name, "epoch", epoch, "error", err)
+			}
+			stopRelease()
+		}
+	}()
 	claimCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-	epoch, err := g.records.claim(claimCtx, destination.identity, destination.podUID)
+	epoch, leaseUID, err = g.records.claim(claimCtx, destination.identity, destination.podUID)
 	release()
 	if err != nil {
 		return err
@@ -240,16 +261,10 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	}()
 	liveness := time.NewTimer(timing.LivenessTimeout)
 	defer liveness.Stop()
-	var connection *runnerConnection
 	var lastObservedStage sandboxlease.QuiesceStage
 	observedStageSeen := false
 	var lastPublishedStage sandboxlease.QuiesceStage
 	publishedStageSeen := false
-	defer func() {
-		if connection != nil {
-			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
-		}
-	}()
 	for {
 		select {
 		case <-ctx.Done():

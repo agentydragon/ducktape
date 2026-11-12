@@ -47,7 +47,7 @@ type configTestTokenReviews struct{}
 
 type configTestWakeBudget struct{}
 
-func (configTestWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -318,6 +318,8 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n")},
 		{settingPrefix + "SANDBOX_CONTROLLER_ACCOUNT=not-an-account"},
 		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"delegation: {actor: agentplane/actions}\n")},
+		// Asserting Identities needs the policy namespace they are read in.
+		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"delegation: {actor: agentplane/actions, identity_callers: true, methods: [x]}\n")},
 	} {
 		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, bad...))
 		if err == nil {

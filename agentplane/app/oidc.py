@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SECURE_COOKIE = "__Host-agentplane_session"
 INSECURE_COOKIE = "agentplane_session"
@@ -28,6 +30,18 @@ class OIDCSettings(BaseModel):
     token_renew_before_seconds: int = Field(
         default=30, ge=0, description="Renew the login access token once it is this close to expiry."
     )
+    static_ed25519_keys: frozenset[str] | None = Field(
+        default=None,
+        min_length=1,
+        description="Unpadded base64url Ed25519 public keys verifying bearer ID tokens in place of the issuer's "
+        "discovered keys. Only an issuer under the reserved .test domain may pin keys; omit to use discovery.",
+    )
+
+    @model_validator(mode="after")
+    def _pin_only_test_issuers(self) -> OIDCSettings:
+        if self.static_ed25519_keys is not None and not (urlsplit(self.issuer).hostname or "").endswith(".test"):
+            raise ValueError("static_ed25519_keys requires an issuer under the reserved .test domain")
+        return self
 
 
 class OIDCSecretInputs(BaseModel):

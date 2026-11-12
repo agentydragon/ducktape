@@ -36,9 +36,10 @@ protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decima
 ## Sandbox lifecycle ownership
 
 The Runner Gateway's `EnvironmentService` owns Sandbox creation, templates, suspend, delete, wake
-policy and idle suspend policy. The app authenticates the operator and forwards the generated HTTP
+policy, idle suspend policy, and stopped-Sandbox identity changes. The app authenticates the operator and forwards the generated HTTP
 facade with its projected Pod-bound service token. The service applies configured default policy
-sets and fences mutations on Sandbox UID and resourceVersion. The app still reads Sandbox inventory
+sets and fences mutations on Sandbox UID and resourceVersion. Identity changes additionally use
+Dispatcher's per-Sandbox Session admission lock and retained-Session check. The app still reads Sandbox inventory
 through its existing read routes and watch. The Sandbox Controller reconciles the requested `spec`
 and owns `status`.
 
@@ -317,8 +318,8 @@ as unavailable while it reconnects rather than treating its old data as current.
 ## Authentication and authorization
 
 Every API route needs a caller; only `/healthz`, `/readyz` and the `/auth/*` endpoints answer without
-one. The separate frontend serves public static files, including `/sw.js`. There are two credentials,
-and both are cryptographic:
+one. The separate frontend serves public static files, including `/sw.js`. There are three credentials,
+and all are cryptographic:
 
 - **An operator's OIDC session.** The mounted `app-config` YAML's `oidc` section supplies the issuer,
   public base URL, and session timing; the Deployment supplies the client ID, client secret, and
@@ -329,6 +330,13 @@ and both are cryptographic:
   settings; an app the tests build without them has no login at all.
   The Go app uses its own cookie encoding and typed pending-login records; neither needs Authlib
   session compatibility. Switching between the Python and Go images requires signing in again.
+- **An operator's OIDC ID token.** A bearer whose `iss` is the configured issuer is checked as a
+  login's ID token is: the issuer's signature, the client ID as its only audience, expiry, and a
+  `sub` and `preferred_username`. It makes the same operator caller as a session, with no session
+  row, so routes that need the login's federation tokens or logout lifetime still require the
+  cookie, and no same-origin check applies, since browsers never send it on their own. The keys come
+  from the issuer's discovery document; `oidc.static_ed25519_keys` pins keys instead, which the
+  settings allow only for an issuer under the reserved `.test` domain. The k3s system tests use that.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
   (`token_audience` in the mounted YAML, `agentplane` by default), so a token minted for anything

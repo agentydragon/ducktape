@@ -57,9 +57,12 @@ func (a *Account) UnmarshalText(text []byte) error {
 }
 
 // Principal is the account and Pod binding established by verified workload credentials.
-// It is the ServiceAccount variant of Subject.
-// TODO: rename to AccountPrincipal once every service admits workloads through AnySubject
-// (IDENTITY_CUTOVER, agentplane/plans/task_dag.md).
+// It is the ServiceAccount variant of Subject, which after IDENTITY_CUTOVER only privileged
+// platform components (the app, central sampler, Action Service executors, MCP edge, gateway proxy)
+// present; they are authorized by component role and act for an Identity through delegation.
+// TODO: rename to a name meaning "platform component caller" (ComponentPrincipal or PlatformCaller,
+// to be decided) once every service admits workloads through AnySubject (IDENTITY_CUTOVER,
+// agentplane/plans/task_dag.md).
 // ServiceAccountUID is populated only when the resolver also verifies the canonical account UID.
 type Principal struct {
 	Account           Account
@@ -96,7 +99,7 @@ type Workload struct {
 	Owner           WorkloadOwner
 }
 
-// WorkloadOwner is a WorkloadCredential's controller: a ControllerOwner, or StandingWorkload.
+// WorkloadOwner is a WorkloadCredential's controller: a ControllerOwner, or NoController.
 type WorkloadOwner interface{ isWorkloadOwner() }
 
 // ControllerOwner is the record's controller owner reference, such as the Sandbox whose runner the
@@ -105,11 +108,12 @@ type ControllerOwner struct {
 	APIVersion, Kind, Name, UID string
 }
 
-// StandingWorkload is a record with no controller owner, which no owner revokes.
-type StandingWorkload struct{}
+// NoController is a record with no controller owner, which no owner revokes: a standing
+// workload, or an Identity's sandbox box, which lives until it is disposed of.
+type NoController struct{}
 
-func (ControllerOwner) isWorkloadOwner()  {}
-func (StandingWorkload) isWorkloadOwner() {}
+func (ControllerOwner) isWorkloadOwner() {}
+func (NoController) isWorkloadOwner()    {}
 
 // Subject is a verified workload: a ServiceAccount Principal, or an IdentityPrincipal, which only
 // a workload SVID yields.
@@ -164,13 +168,6 @@ type Resolver struct {
 	verdicts     authenticator.Token
 	svid         *SVIDResolver
 	listenerAuth *listener.Config
-}
-
-// PrincipalResolver resolves the principal admitted by an AnyAccount rule.
-// Resolver implements it with Kubernetes TokenReview; service-owned resolvers may provide another
-// verified source while using the same method policy.
-type PrincipalResolver interface {
-	Resolve(context.Context) (Principal, error)
 }
 
 // SubjectResolver resolves the subject admitted by an AnySubject rule, a ServiceAccount or an

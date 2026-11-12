@@ -140,8 +140,11 @@ export { registry, later };
 
 #[test]
 fn lazy_eval_disables_map_entry_proof_across_source_units() {
-    assert_collection_requires_later(
-        r#"function makeRegistry() {
+    // A direct `eval` is refused at admission (A1); the override keeps
+    // the analysis running.
+    expect_atomic_conflict_rejection(
+        split_collection_later(
+            r#"function makeRegistry() {
   eval("1");
   return new Map([["read", () => later]]);
 }
@@ -149,7 +152,11 @@ const registry = makeRegistry();
 const later = 42;
 export { makeRegistry, registry, later };
 "#,
-        &[Member::new("makeRegistry"), Member::new("registry")],
+            &[Member::new("makeRegistry"), Member::new("registry")],
+        )
+        .with_admission_overrides(&["a1_eval"]),
+        &["values/collection", "values/later"],
+        &[],
     );
 }
 

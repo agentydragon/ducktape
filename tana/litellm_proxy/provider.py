@@ -1018,9 +1018,6 @@ class _TanaStreamParser:
         self._emitted_tool_calls = False
         self._finished = False
 
-    def parse_line(self, line: str) -> list[GenericStreamingChunk]:
-        return self._parse_line(line)
-
     def finish(self) -> list[GenericStreamingChunk]:
         if self._finished:
             return []
@@ -1030,7 +1027,7 @@ class _TanaStreamParser:
         self._finished = True
         return [*tool_chunks, _stream_chunk(is_finished=True, finish_reason="tool_calls")]
 
-    def _parse_line(self, line: str) -> list[GenericStreamingChunk]:
+    def parse_line(self, line: str) -> list[GenericStreamingChunk]:
         stripped = line.strip()
         if not stripped:
             return []

@@ -482,7 +482,11 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             _stage("running pinned migration as non-superuser cdviz")
             _run_migration(client, migration_future.result(), network_name)
             with psycopg.connect(owner_url, autocommit=True) as owner:
-                owner.execute((root / "ducktape/cluster/cdk8s/cdviz/001_ci_feedback.sql").read_text())
+                source = root / "ducktape/cluster/cdk8s/cdviz"
+                baseline = (source / "001_ci_feedback.sql").read_text()
+                owner.execute(baseline)
+                owner.execute(baseline.replace("FUNCTION cdviz.ci_feedback(", "FUNCTION cdviz.ci_feedback_baseline("))
+                owner.execute((source / "002_ci_feedback_optimization.sql").read_text())
                 grants = (root / "ducktape/cluster/cdk8s/cdviz/grants.sql").read_text()
                 owner.execute(grants)
                 owner.execute("CALL cdviz.apply_retention(INTERVAL '90 days')")
@@ -746,6 +750,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                         assert policy is not None
                         assert set(policy[0]) == set(feedback_fixture.CONTEXTS)
                         feedback_fixture.seed(owner, _FROZEN)
+                        feedback_fixture.assert_equivalent(owner, _FROZEN)
                         feedback_fixture.assert_unknown_histories(owner, _FROZEN)
                     with psycopg.connect(reader_url) as reader:
                         feedback_fixture.assert_histories(reader, _FROZEN)
@@ -790,8 +795,8 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                                 _assert_number(panels["2"], "n", 5)
                                 _assert_number(panels["2"], "p50_seconds", 240)
                                 thresholds = _frame_rows(panels["6"]["result"]["frames"])
-                                assert [row["eligible_heads"] for row in thresholds] == [12, 12, 10]
-                                assert [row["still_observing"] for row in thresholds] == [1, 1, 3]
+                                assert [row["eligible_heads"] for row in thresholds] == [13, 13, 10]
+                                assert [row["still_observing"] for row in thresholds] == [1, 1, 4]
                                 assert [row["heads_green"] for row in thresholds] == [3, 4, 4]
                     assert not errors, "; ".join(errors)
                 finally:

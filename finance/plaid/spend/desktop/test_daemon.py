@@ -14,6 +14,7 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.desktop import daemon as daemon_module
+from finance.plaid.spend.desktop.credentials import EphemeralTokenStore, SecretServiceTokenStore
 from finance.plaid.spend.desktop.daemon import PlaidSpendBusInterface, PlaidSpendDaemon
 from finance.plaid.spend.desktop.oauth import AuthenticationRequiredError
 
@@ -31,6 +32,26 @@ class _EventStream(httpx.AsyncByteStream):
 
 def _event(view: Mapping[str, object]) -> str:
     return f"event: view\ndata: {json.dumps(view)}\n\n"
+
+
+async def test_ephemeral_credentials_are_session_local() -> None:
+    daemon = PlaidSpendDaemon(ephemeral_credentials=True)
+    other_daemon = PlaidSpendDaemon(ephemeral_credentials=True)
+    default_daemon = PlaidSpendDaemon()
+    try:
+        assert isinstance(daemon.token_store, EphemeralTokenStore)
+        assert type(default_daemon.token_store) is SecretServiceTokenStore
+        assert await daemon.token_store.load_refresh_token() is None
+        await daemon.token_store.save_refresh_token("first")
+        await daemon.token_store.save_refresh_token("rotated")
+        assert await daemon.token_store.load_refresh_token() == "rotated"
+        assert await other_daemon.token_store.load_refresh_token() is None
+        await daemon.token_store.clear()
+        assert await daemon.token_store.load_refresh_token() is None
+    finally:
+        await daemon.close()
+        await other_daemon.close()
+        await default_daemon.close()
 
 
 async def test_stream_views_are_emitted_through_the_dbus_interface() -> None:
@@ -64,6 +85,27 @@ async def test_stream_views_are_emitted_through_the_dbus_interface() -> None:
     assert [json.loads(call.args[0]) for call in bus_interface.view_changed.call_args_list] == [first, second]
     assert daemon.view == second
     assert daemon._retry_delay == 2.0
+
+
+async def test_pace_history_uses_daemon_auth_and_returns_the_server_payload() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"status": "active", "windows": []}, request=request)
+
+    daemon = PlaidSpendDaemon()
+    await daemon.http.aclose()
+    daemon.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    daemon.auth.http = daemon.http
+    daemon.auth.access_token = "test-token"
+    daemon.auth.access_token_expires_at = time.monotonic() + 3600
+    try:
+        assert json.loads(await daemon.get_pace_history()) == {"status": "active", "windows": []}
+    finally:
+        await daemon.close()
+    assert [request.url.path for request in requests] == ["/api/v1/pace-history"]
+    assert requests[0].headers["authorization"] == "Bearer test-token"
 
 
 async def test_token_refresh_reconnect_skips_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:

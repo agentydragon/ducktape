@@ -77,7 +77,7 @@ from grocy_mcp.mcp_types import (
     StockOpError,
     StockOpOk,
 )
-from mcp_infra.request_scoped_openapi import HTTPClientProvider
+from grocy_mcp.request_scoped_openapi import HTTPClientProvider
 
 logger = logging.getLogger(__name__)
 
@@ -195,9 +195,8 @@ def build_batch_tools_mcp(settings: ServerSettings, *, client_provider: HTTPClie
     """A bare FastMCP with only the custom batch tools — no OpenAPI-generated tools, no auth.
 
     Registration reads only the tool signatures, so the provider is not called
-    until a tool invocation. Haku-console uses a borrowed inert-client provider
-    here to reflect preview schemas without reaching Grocy; see
-    `haku/console/export_mcp_tool_schemas.py`.
+    until a tool invocation. Haku-console supplies a provider that fails if called
+    while reflecting preview schemas; see `haku/console/mcp/export_tool_schemas.py`.
     """
     mcp: FastMCP = FastMCP(name="grocy-batch-tools")
     register_batch_tools(mcp, settings, client_provider=client_provider)
@@ -217,7 +216,7 @@ def register_batch_tools(
         if len(items) > max_batch:
             raise ValueError(f"batch too large: {len(items)} {label} exceeds maximum of {max_batch}")
 
-    async def _request[T](fn: Callable[[], Awaitable[T]], *, mutation: bool = False, describe: str = "") -> T:
+    async def _retry[T](fn: Callable[[], Awaitable[T]], *, mutation: bool = False, describe: str = "") -> T:
         retry_predicate = _is_retryable_mutation if mutation else _is_retryable
         async with sem:
             try:
@@ -250,11 +249,8 @@ def register_batch_tools(
                 raise
         raise AssertionError("unreachable")
 
-    async def _retry[T](fn: Callable[[], Awaitable[T]]) -> T:
-        return await _request(fn)
-
     async def _retry_mutation[T](fn: Callable[[], Awaitable[T]], *, describe: str) -> T:
-        return await _request(fn, mutation=True, describe=describe)
+        return await _retry(fn, mutation=True, describe=describe)
 
     async def _ordered_batch[T, R](
         items: list[T], label: str, worker: Callable[[T], Awaitable[R]], error: Callable[[T, Exception], R]

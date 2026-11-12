@@ -316,6 +316,8 @@ struct SavedStatementFacts<'a> {
     calls: PositionBucketed<BTreeSet<SavedBinding>>,
     constructor: Option<SavedConstructorFacts>,
     synchronous_calls: Option<SavedSynchronousCalls<'a>>,
+    #[serde(default)]
+    synchronous_prefix_effects: Option<(BTreeSet<SavedBinding>, BTreeSet<SavedBinding>)>,
     at_init_unresolved_sources: BTreeSet<SavedBinding>,
     at_init_unresolved_inline_fn: bool,
     first_order_unresolved_sources: BTreeSet<SavedBinding>,
@@ -363,6 +365,16 @@ impl<'a> SavedStatementFacts<'a> {
                 .synchronous_calls
                 .as_ref()
                 .map(|calls| SavedSynchronousCalls::snapshot(calls, ordinals, purities))
+                .transpose()?,
+            synchronous_prefix_effects: fact
+                .synchronous_prefix_effects
+                .as_ref()
+                .map(|(reads, rebinds)| -> Result<_> {
+                    Ok((
+                        snapshot_bindings(reads, ordinals)?,
+                        snapshot_bindings(rebinds, ordinals)?,
+                    ))
+                })
                 .transpose()?,
             at_init_unresolved_sources: snapshot_bindings(
                 &fact.at_init_unresolved_sources,
@@ -424,6 +436,15 @@ impl<'a> SavedStatementFacts<'a> {
                 .synchronous_calls
                 .map(|calls| calls.restore(ordinals, purities))
                 .transpose()?,
+            synchronous_prefix_effects: self
+                .synchronous_prefix_effects
+                .map(|(reads, rebinds)| -> Result<_> {
+                    Ok((
+                        restore_bindings(reads, ordinals)?,
+                        restore_bindings(rebinds, ordinals)?,
+                    ))
+                })
+                .transpose()?,
             at_init_unresolved_sources: restore_bindings(
                 self.at_init_unresolved_sources,
                 ordinals,
@@ -470,6 +491,9 @@ struct SavedSynchronousCalls<'a> {
     local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
     local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
     local_record_factory_purity: Cow<'a, Option<super::LocalRecordFactoryPurityCertificate>>,
+    #[serde(default)]
+    proven_private_own_field_reads: Cow<'a, [(SourceUnitOrdinal, swc_common::Span)]>,
+    local_record_factory_heap_call: Option<swc_common::Span>,
     reads: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
     rebinds: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
     uninitialized_reads: BTreeSet<SavedBinding>,
@@ -525,6 +549,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedLocalRecordFactoryRejection::snapshot)
                 .collect(),
             local_record_factory_purity: Cow::Borrowed(&calls.local_record_factory_purity),
+            proven_private_own_field_reads: Cow::Borrowed(&calls.proven_private_own_field_reads),
+            local_record_factory_heap_call: calls.local_record_factory_heap_call,
             reads: calls
                 .reads
                 .iter()
@@ -623,6 +649,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedLocalRecordFactoryRejection::restore)
                 .collect(),
             local_record_factory_purity: self.local_record_factory_purity.into_owned(),
+            proven_private_own_field_reads: self.proven_private_own_field_reads.into_owned(),
+            local_record_factory_heap_call: self.local_record_factory_heap_call,
             reads: self
                 .reads
                 .into_iter()

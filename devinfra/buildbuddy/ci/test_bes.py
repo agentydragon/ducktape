@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import pytest_bazel
 
@@ -84,6 +86,30 @@ def test_read_rejects_invalid_export(monkeypatch) -> None:
     monkeypatch.setattr(bes, "run", lambda *_args, **_kwargs: b'{"outputs": []}')
     with pytest.raises(BuildBuddyError, match="invalid JSON"):
         read("inv-id")
+
+
+def test_read_preserves_runner_lineage_and_attempt_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    document = json.loads(EXPORT)
+    document.update(
+        invocationId="retry",
+        parentInvocationId="runner",
+        childInvocationIds=["first", "second"],
+        exitCodeName="SUCCESS",
+    )
+    monkeypatch.setattr(bes, "run", lambda *_args, **_kwargs: json.dumps(document).encode())
+    invocation = read("retry")
+    assert invocation.invocation_id == "retry"
+    assert invocation.parent_invocation_id == "runner"
+    assert invocation.child_invocation_ids == ("first", "second")
+    assert invocation.exit_code_name == "SUCCESS"
+
+
+def test_read_rejects_a_stream_from_another_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
+    document = json.loads(EXPORT)
+    document["invocationId"] = "another-invocation"
+    monkeypatch.setattr(bes, "run", lambda *_args, **_kwargs: json.dumps(document).encode())
+    with pytest.raises(BuildBuddyError, match="requested invocation expected, received another-invocation"):
+        read("expected")
 
 
 def test_fetch_blob_uses_bbapi_blob_cat_and_optional_invocation(monkeypatch) -> None:

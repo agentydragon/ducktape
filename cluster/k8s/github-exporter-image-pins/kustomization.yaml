@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/github-graphql-rate-exporter
-    newTag: devel-20261106050457-c86ac23 # {"$imagepolicy": "flux-system:github-graphql-rate-exporter:tag"}
+    newTag: devel-20261111024045-2a3e599 # {"$imagepolicy": "flux-system:github-graphql-rate-exporter:tag"}

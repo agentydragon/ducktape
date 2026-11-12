@@ -10,7 +10,9 @@ type ProcessStatus string
 
 const (
 	ProcessStarting ProcessStatus = "starting"
-	ProcessRunning  ProcessStatus = "running"
+	// ProcessRunning retains an open output handle; a stored exit code means the
+	// process has exited but its output has not yet closed.
+	ProcessRunning ProcessStatus = "running"
 	// ProcessExited has been fully consumed; ProcessExitedUnread still holds unread output.
 	ProcessExited       ProcessStatus = "exited"
 	ProcessExitedUnread ProcessStatus = "exited_unread"

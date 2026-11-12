@@ -5,19 +5,24 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import and_, exists, literal, select, text
+from sqlalchemy import and_, case, delete, exists, insert, literal, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession, aliased, load_only
 
 from x.ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
 from x.ai_session_archive.codex_metadata import classify_codex_source, read_codex_titles
+from x.ai_session_archive.codex_title_projection import ensure_codex_title_candidates
 from x.ai_session_archive.database import (
+    CodexTitleCandidateRow,
     CodexTitleObservationRow,
+    FileVersionImportRecordRow,
+    FileVersionImportRow,
     FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
@@ -31,7 +36,14 @@ from x.ai_session_archive.database import (
 from x.ai_session_archive.models import Harness, SessionKind
 from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
-from x.ai_session_archive.usage_observations import usage_observations_for_record
+from x.ai_session_archive.statuses import (
+    CodexMetadataStatus,
+    SnapshotCaptureStatus,
+    SnapshotFileStatus,
+    SnapshotInventoryStatus,
+    SnapshotProcessingStatus,
+)
+from x.ai_session_archive.usage_observations import UsageObservation, usage_observations_for_record
 
 PARSER_VERSION = "jsonl-v1"
 CLAUDE_TITLE_PROJECTION_VERSION = 1
@@ -99,6 +111,40 @@ class _ParsedRecord:
     byte_offset: int
     sha256: str
     json: ParsedRecordJson | RecordJsonParseError
+    usage: tuple[UsageObservation, ...]
+
+
+@dataclass(frozen=True)
+class _SnapshotFileIdentity:
+    change_kind: str
+    file_type: str
+    byte_size: int
+    modified_at: datetime | None
+    session_id: UUID | None
+
+    @classmethod
+    def from_row(cls, row: SnapshotFileRow) -> _SnapshotFileIdentity:
+        return cls(
+            change_kind=row.change_kind,
+            file_type=row.file_type,
+            byte_size=row.byte_size,
+            modified_at=row.modified_at,
+            session_id=row.session_id,
+        )
+
+
+def _assert_snapshot_identity(row: ResticSnapshotRow, snapshot: ResticSnapshot) -> None:
+    if (
+        ResticSnapshot(
+            id=row.snapshot_id,
+            captured_at=row.captured_at,
+            parent_id=row.parent_snapshot_id,
+            tree_id=row.tree_id,
+            paths=tuple(row.paths),
+        )
+        != snapshot
+    ):
+        raise RuntimeError(f"Restic metadata changed for snapshot {snapshot.id}")
 
 
 class SnapshotIngestor:
@@ -119,13 +165,37 @@ class SnapshotIngestor:
             # Make the latest names visible before a potentially long historical transcript import.
             self._process_codex_metadata(snapshots[-1], refresh_completed=True)
             self._project_codex_titles(allow_index_only=False)
+
+        with self._session_factory() as db:
+            snapshot_states = {
+                snapshot_id: (inventory_status, processing_status, codex_metadata_status)
+                for snapshot_id, inventory_status, processing_status, codex_metadata_status in db.execute(
+                    select(
+                        ResticSnapshotRow.snapshot_id,
+                        ResticSnapshotRow.inventory_status,
+                        ResticSnapshotRow.processing_status,
+                        ResticSnapshotRow.codex_metadata_status,
+                    ).where(
+                        ResticSnapshotRow.machine_id == self._source.machine_id,
+                        ResticSnapshotRow.snapshot_id.in_(available_snapshot_ids),
+                    )
+                )
+            }
         for snapshot in snapshots:
-            self._prepare_snapshot(snapshot, available_snapshot_ids)
-            self._process_codex_metadata(snapshot)
-            self._process_snapshot(snapshot)
+            inventory_status, processing_status, metadata_status = snapshot_states[snapshot.id]
+            if inventory_status != SnapshotInventoryStatus.COMPLETE:
+                self._prepare_snapshot(snapshot, available_snapshot_ids)
+            if metadata_status not in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL):
+                self._process_codex_metadata(snapshot)
+            if (
+                inventory_status != SnapshotInventoryStatus.COMPLETE
+                or processing_status != SnapshotProcessingStatus.COMPLETE
+            ):
+                self._process_snapshot(snapshot)
         with self._session_factory() as db:
             all_inventoried = all(
-                row.inventory_status == "complete" and row.processing_status == "complete"
+                row.inventory_status == SnapshotInventoryStatus.COMPLETE
+                and row.processing_status == SnapshotProcessingStatus.COMPLETE
                 for row in db.scalars(
                     select(ResticSnapshotRow).where(
                         ResticSnapshotRow.machine_id == self._source.machine_id,
@@ -147,7 +217,23 @@ class SnapshotIngestor:
             )
             for snapshot in snapshots:
                 if snapshot.id not in existing_ids:
-                    db.add(self._new_snapshot_row(snapshot))
+                    db.execute(
+                        pg_insert(ResticSnapshotRow)
+                        .values(
+                            machine_id=self._source.machine_id,
+                            snapshot_id=snapshot.id,
+                            captured_at=snapshot.captured_at,
+                            parent_snapshot_id=snapshot.parent_id,
+                            tree_id=snapshot.tree_id,
+                            paths=list(snapshot.paths),
+                            comparison_snapshot_id=None,
+                            inventory_status=SnapshotInventoryStatus.PENDING,
+                            processing_status=SnapshotProcessingStatus.PENDING,
+                            codex_metadata_status=CodexMetadataStatus.PENDING,
+                            capture_status=SnapshotCaptureStatus.UNKNOWN,
+                        )
+                        .on_conflict_do_nothing()
+                    )
                     existing_ids.add(snapshot.id)
 
     def _new_snapshot_row(self, snapshot: ResticSnapshot) -> ResticSnapshotRow:
@@ -159,19 +245,19 @@ class SnapshotIngestor:
             tree_id=snapshot.tree_id,
             paths=list(snapshot.paths),
             comparison_snapshot_id=None,
-            inventory_status="pending",
-            processing_status="pending",
-            codex_metadata_status="pending",
-            capture_status="unknown",
+            inventory_status=SnapshotInventoryStatus.PENDING,
+            processing_status=SnapshotProcessingStatus.PENDING,
+            codex_metadata_status=CodexMetadataStatus.PENDING,
+            capture_status=SnapshotCaptureStatus.UNKNOWN,
         )
 
     def _ensure_source(self) -> None:
         with self._session_factory() as db, db.begin():
-            machine = db.get(MachineRow, self._source.machine_id)
-            if machine is None:
-                db.add(MachineRow(id=self._source.machine_id, display_name=self._source.display_name))
-            else:
-                machine.display_name = self._source.display_name
+            db.execute(
+                pg_insert(MachineRow)
+                .values(id=self._source.machine_id, display_name=self._source.display_name)
+                .on_conflict_do_update(index_elements=[MachineRow.id], set_={"display_name": self._source.display_name})
+            )
             configured = {
                 (row.harness, row.root_path)
                 for row in db.scalars(
@@ -182,71 +268,122 @@ class SnapshotIngestor:
                 key = (root.harness.value, str(root.path))
                 if key not in configured:
                     db.add(SessionRootRow(machine_id=self._source.machine_id, harness=key[0], root_path=key[1]))
+            # A legacy importer can publish content while a newer importer has staged it.
+            db.execute(
+                delete(FileVersionImportRow).where(
+                    FileVersionImportRow.session_id.in_(
+                        select(SessionRow.id).where(SessionRow.machine_id == self._source.machine_id)
+                    ),
+                    exists().where(
+                        FileVersionRow.session_id == FileVersionImportRow.session_id,
+                        FileVersionRow.sha256 == FileVersionImportRow.sha256,
+                    ),
+                )
+            )
 
     def _prepare_snapshot(self, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> None:
         try:
-            with self._session_factory() as db, db.begin():
-                row = db.scalar(
-                    select(ResticSnapshotRow)
-                    .where(
-                        ResticSnapshotRow.machine_id == self._source.machine_id,
-                        ResticSnapshotRow.snapshot_id == snapshot.id,
+            while True:
+                with self._session_factory() as db, db.begin():
+                    row = db.scalar(
+                        select(ResticSnapshotRow)
+                        .where(
+                            ResticSnapshotRow.machine_id == self._source.machine_id,
+                            ResticSnapshotRow.snapshot_id == snapshot.id,
+                        )
+                        .with_for_update()
                     )
-                    .with_for_update()
-                )
-                if row is None:
-                    row = self._new_snapshot_row(snapshot)
-                    db.add(row)
-                    db.flush()
-                if row.inventory_status == "complete":
-                    return
+                    if row is None:
+                        row = self._new_snapshot_row(snapshot)
+                        db.add(row)
+                        db.flush()
+                    _assert_snapshot_identity(row, snapshot)
+                    if row.inventory_status == SnapshotInventoryStatus.COMPLETE:
+                        return
+                    comparison_snapshot_id = self._usable_parent(db, snapshot, available_snapshot_ids)
 
-                comparison_snapshot_id = self._usable_parent(db, snapshot, available_snapshot_ids)
                 if comparison_snapshot_id is None:
-                    files = self._source.restic.list_files(snapshot.id)
-                    entries = self._initial_entries(files)
+                    entries = self._initial_entries(self._source.restic.list_files(snapshot.id))
                 else:
                     changes = self._source.restic.diff_snapshots(comparison_snapshot_id, snapshot.id)
                     entries = self._changed_entries(changes)
 
-                row.comparison_snapshot_id = comparison_snapshot_id
-                row.inventory_error = None
-                for path, modifier, file_type, size, modified_at, status, error, location in entries:
-                    existing = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
-                    if existing is not None:
-                        continue
-                    session_id = None
-                    if location is not None:
-                        session_row = self._ensure_session(db, location)
-                        session_id = session_row.id
-                    db.add(
-                        SnapshotFileRow(
-                            machine_id=self._source.machine_id,
-                            snapshot_id=snapshot.id,
-                            path=path,
-                            session_id=session_id,
-                            change_kind=modifier,
-                            file_type=file_type,
-                            byte_size=size,
-                            modified_at=modified_at,
-                            status=status,
-                            error=error,
+                with self._session_factory() as db, db.begin():
+                    row = db.scalar(
+                        select(ResticSnapshotRow)
+                        .where(
+                            ResticSnapshotRow.machine_id == self._source.machine_id,
+                            ResticSnapshotRow.snapshot_id == snapshot.id,
                         )
+                        .with_for_update()
                     )
-                row.inventory_status = "complete"
-                row.processing_status = "pending"
+                    if row is None:
+                        raise RuntimeError(f"snapshot ledger row disappeared for {snapshot.id}")
+                    _assert_snapshot_identity(row, snapshot)
+                    if row.inventory_status == SnapshotInventoryStatus.COMPLETE:
+                        return
+                    current_comparison_snapshot_id = self._usable_parent(
+                        db, snapshot, available_snapshot_ids, lock=True
+                    )
+                    if comparison_snapshot_id is not None and current_comparison_snapshot_id != comparison_snapshot_id:
+                        # A diff is valid only while its exact parent remains fully processed.
+                        # Re-read the snapshot independently if that trust boundary changed.
+                        continue
+
+                    row.comparison_snapshot_id = comparison_snapshot_id
+                    row.inventory_error = None
+                    for path, modifier, file_type, size, modified_at, status, error, location in entries:
+                        existing = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
+                        if existing is not None:
+                            continue
+                        session_id = None
+                        if location is not None:
+                            session_row = self._ensure_session(db, location)
+                            session_id = session_row.id
+                        db.add(
+                            SnapshotFileRow(
+                                machine_id=self._source.machine_id,
+                                snapshot_id=snapshot.id,
+                                path=path,
+                                session_id=session_id,
+                                change_kind=modifier,
+                                file_type=file_type,
+                                byte_size=size,
+                                modified_at=modified_at,
+                                status=status,
+                                error=error,
+                            )
+                        )
+                    row.inventory_status = SnapshotInventoryStatus.COMPLETE
+                    row.processing_status = SnapshotProcessingStatus.PENDING
+                    return
         except Exception as exc:
             self._mark_inventory_failed(snapshot, exc)
 
-    def _usable_parent(self, db: DbSession, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> str | None:
+    def _usable_parent(
+        self, db: DbSession, snapshot: ResticSnapshot, available_snapshot_ids: set[str], *, lock: bool = False
+    ) -> str | None:
         parent_id = snapshot.parent_id
         if parent_id is None or parent_id not in available_snapshot_ids:
             return None
-        parent = db.get(ResticSnapshotRow, (self._source.machine_id, parent_id))
+        parent = (
+            db.scalar(
+                select(ResticSnapshotRow)
+                .where(
+                    ResticSnapshotRow.machine_id == self._source.machine_id, ResticSnapshotRow.snapshot_id == parent_id
+                )
+                .with_for_update()
+            )
+            if lock
+            else db.get(ResticSnapshotRow, (self._source.machine_id, parent_id))
+        )
         if parent is None:
             # A pruned/missing diff base cannot safely seed path state. Inventory this snapshot itself.
             return None
-        if parent.inventory_status != "complete" or parent.processing_status != "complete":
+        if (
+            parent.inventory_status != SnapshotInventoryStatus.COMPLETE
+            or parent.processing_status != SnapshotProcessingStatus.COMPLETE
+        ):
             # Work is independent when listed directly; never inherit from an unfinished ledger position.
             return None
         return parent_id
@@ -260,11 +397,14 @@ class SnapshotIngestor:
                 continue
             location = self._classify(file.path)
             if location is None:
-                status, error = "unclassified", None
+                status, error = SnapshotFileStatus.UNCLASSIFIED, None
             elif file.file_type != "file":
-                status, error = "not_indexed", f"JSONL path is a {file.file_type}, not a regular file"
+                status, error = (
+                    SnapshotFileStatus.NOT_INDEXED,
+                    f"JSONL path is a {file.file_type}, not a regular file",
+                )
             else:
-                status, error = "pending", None
+                status, error = SnapshotFileStatus.PENDING, None
             entries.append(
                 (file.path, "inventory", file.file_type, file.byte_size, file.modified_at, status, error, location)
             )
@@ -282,13 +422,13 @@ class SnapshotIngestor:
             modifier = ",".join(dict.fromkeys(modifiers))
             location = self._classify(path)
             if location is None:
-                status, error = "unclassified", None
+                status, error = SnapshotFileStatus.UNCLASSIFIED, None
             elif modifier == "-":
-                status, error = "deleted", None
+                status, error = SnapshotFileStatus.DELETED, None
             elif any(part not in _KNOWN_DIFF_MODIFIERS for part in modifiers):
-                status, error = "failed", f"unrecognized Restic diff modifier: {modifier}"
+                status, error = SnapshotFileStatus.FAILED, f"unrecognized Restic diff modifier: {modifier}"
             else:
-                status, error = "pending", None
+                status, error = SnapshotFileStatus.PENDING, None
             entries.append((path, modifier, "file", 0, None, status, error, location))
         return entries
 
@@ -335,6 +475,8 @@ class SnapshotIngestor:
         return None
 
     def _ensure_session(self, db: DbSession, location: _Location, inferred: bool = False) -> SessionRow:
+        # Inventories for distinct snapshots can discover the same physical session concurrently.
+        db.get(MachineRow, self._source.machine_id, with_for_update=True)
         session_id = _session_id(self._source.machine_id, location.harness, location.source_path)
         row = db.get(SessionRow, session_id)
         if row is not None:
@@ -393,7 +535,7 @@ class SnapshotIngestor:
                 )
             )
         for file_row in files:
-            if file_row.status not in ("pending", "failed"):
+            if file_row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
                 continue
             self._process_file(snapshot, file_row.path)
         with self._session_factory() as db, db.begin():
@@ -407,8 +549,8 @@ class SnapshotIngestor:
             )
             if snapshot_row is None:
                 return
-            if snapshot_row.inventory_status != "complete":
-                snapshot_row.processing_status = "failed"
+            if snapshot_row.inventory_status != SnapshotInventoryStatus.COMPLETE:
+                snapshot_row.processing_status = SnapshotProcessingStatus.FAILED
                 return
             statuses = list(
                 db.scalars(
@@ -418,8 +560,10 @@ class SnapshotIngestor:
                     )
                 )
             )
-            failed = any(status in ("pending", "failed") for status in statuses)
-            snapshot_row.processing_status = "failed" if failed else "complete"
+            failed = any(status in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED) for status in statuses)
+            snapshot_row.processing_status = (
+                SnapshotProcessingStatus.FAILED if failed else SnapshotProcessingStatus.COMPLETE
+            )
 
     def _process_codex_metadata(self, snapshot: ResticSnapshot, *, refresh_completed: bool = False) -> None:
         refresh_kinds = False
@@ -428,7 +572,7 @@ class SnapshotIngestor:
             if row is None:
                 row = self._new_snapshot_row(snapshot)
                 db.add(row)
-            if row.codex_metadata_status in ("complete", "partial"):
+            if row.codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL):
                 if not refresh_completed:
                     return
                 refresh_kinds = bool(
@@ -470,7 +614,7 @@ class SnapshotIngestor:
                                     item.session_kind.value if item is not None else SessionKind.UNKNOWN.value
                                 )
                     return
-                if row.codex_metadata_status in ("complete", "partial"):
+                if row.codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL):
                     return
                 for item in observations:
                     existing_observation = existing_observations.get(item.native_session_id)
@@ -493,17 +637,24 @@ class SnapshotIngestor:
                         existing_observation.title_source = item.title_source
                         existing_observation.updated_at = item.updated_at
                         existing_observation.session_kind = item.session_kind.value
-                row.codex_metadata_status = "failed" if retry_errors else "partial" if warnings else "complete"
+                row.codex_metadata_status = (
+                    CodexMetadataStatus.FAILED
+                    if retry_errors
+                    else CodexMetadataStatus.PARTIAL
+                    if warnings
+                    else CodexMetadataStatus.COMPLETE
+                )
                 issues = [*retry_errors, *warnings]
                 row.codex_metadata_error = "; ".join(issues)[:4000] if issues else None
         except Exception as exc:
             with self._session_factory() as db, db.begin():
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
                 if row is not None and not refresh_kinds:
-                    row.codex_metadata_status = "failed"
+                    row.codex_metadata_status = CodexMetadataStatus.FAILED
                     row.codex_metadata_error = _error_text(exc)
 
     def _project_codex_titles(self, *, allow_index_only: bool) -> None:
+        ensure_codex_title_candidates(self._session_factory, self._source.machine_id)
         with self._session_factory() as db, db.begin():
             sessions = list(
                 db.scalars(
@@ -518,73 +669,22 @@ class SnapshotIngestor:
                 if row.native_session_id and not row.native_session_id_conflict and not row.native_session_id_inferred:
                     by_native.setdefault(row.native_session_id, []).append(row)
             latest: dict[UUID, tuple[datetime, str, str]] = {}
-            observations = db.execute(
-                select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
-                .join(
-                    ResticSnapshotRow,
-                    (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
-                    & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
-                )
-                .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
-                .where(CodexTitleObservationRow.title.is_not(None))
-                # Matching below depends only on native ID and physical path.
-                # Older observations of that pair cannot win the title rank.
-                # Reduce them in PostgreSQL before SQLAlchemy buffers ORM rows:
-                # the full history contains millions of observations per host.
-                .distinct(CodexTitleObservationRow.native_session_id, CodexTitleObservationRow.source_path)
-                .order_by(
-                    CodexTitleObservationRow.native_session_id,
-                    CodexTitleObservationRow.source_path,
-                    ResticSnapshotRow.captured_at.desc(),
-                    CodexTitleObservationRow.snapshot_id.desc(),
-                    CodexTitleObservationRow.title.desc(),
-                )
-            )
-            for observation, captured_at in observations:
-                assert observation.title is not None
-                match = by_path.get(observation.source_path) if observation.source_path else None
-                if match is not None and match.native_session_id != observation.native_session_id:
-                    continue
-                if match is None and not observation.source_path and allow_index_only:
-                    candidates = by_native.get(observation.native_session_id, [])
-                    match = candidates[0] if len(candidates) == 1 else None
-                if match is None:
-                    continue
-                rank = (captured_at, observation.snapshot_id, observation.title)
-                if match.id not in latest or rank > latest[match.id]:
-                    latest[match.id] = rank
-
             latest_kinds: dict[UUID, tuple[datetime, str, str]] = {}
-            kind_observations = db.execute(
-                select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
-                .join(
-                    ResticSnapshotRow,
-                    (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
-                    & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
-                )
-                .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
-                .where(CodexTitleObservationRow.session_kind.is_not(None))
-                .distinct(CodexTitleObservationRow.native_session_id, CodexTitleObservationRow.source_path)
-                .order_by(
-                    CodexTitleObservationRow.native_session_id,
-                    CodexTitleObservationRow.source_path,
-                    ResticSnapshotRow.captured_at.desc(),
-                    CodexTitleObservationRow.snapshot_id.desc(),
-                )
-            )
-            for observation, captured_at in kind_observations:
-                assert observation.session_kind is not None
-                match = by_path.get(observation.source_path) if observation.source_path else None
-                if match is not None and match.native_session_id != observation.native_session_id:
+            for candidate in db.scalars(
+                select(CodexTitleCandidateRow).where(CodexTitleCandidateRow.machine_id == self._source.machine_id)
+            ):
+                match = by_path.get(candidate.source_path) if candidate.source_path else None
+                if match is not None and match.native_session_id != candidate.native_session_id:
                     continue
-                if match is None and not observation.source_path and allow_index_only:
-                    candidates = by_native.get(observation.native_session_id, [])
-                    match = candidates[0] if len(candidates) == 1 else None
+                if match is None and not candidate.source_path and allow_index_only:
+                    matches = by_native.get(candidate.native_session_id, [])
+                    match = matches[0] if len(matches) == 1 else None
                 if match is None:
                     continue
-                rank = (captured_at, observation.snapshot_id, observation.session_kind)
-                if match.id not in latest_kinds or rank > latest_kinds[match.id]:
-                    latest_kinds[match.id] = rank
+                rank = (candidate.captured_at, candidate.snapshot_id, candidate.value)
+                target = latest if candidate.field == "title" else latest_kinds
+                if match.id not in target or rank > target[match.id]:
+                    target[match.id] = rank
             for row in sessions:
                 if row.id in latest:
                     row.title = latest[row.id][2]
@@ -671,6 +771,17 @@ class SnapshotIngestor:
     def _process_file(self, snapshot: ResticSnapshot, path: str) -> None:
         try:
             with self._session_factory() as db, db.begin():
+                snapshot_row = db.scalar(
+                    select(ResticSnapshotRow)
+                    .where(
+                        ResticSnapshotRow.machine_id == self._source.machine_id,
+                        ResticSnapshotRow.snapshot_id == snapshot.id,
+                    )
+                    .with_for_update()
+                )
+                if snapshot_row is None:
+                    raise RuntimeError(f"missing snapshot row for {snapshot.id}")
+                _assert_snapshot_identity(snapshot_row, snapshot)
                 row = db.scalar(
                     select(SnapshotFileRow)
                     .where(
@@ -680,196 +791,426 @@ class SnapshotIngestor:
                     )
                     .with_for_update()
                 )
-                if row is None or row.status not in ("pending", "failed"):
+                if row is None or row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
                     return
                 location = self._classify(path)
                 if location is None:
-                    row.status = "unclassified"
+                    row.status = SnapshotFileStatus.UNCLASSIFIED
                     return
                 if row.change_kind == "-":
-                    row.status = "deleted"
+                    row.status = SnapshotFileStatus.DELETED
                     return
                 if any(
                     part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")
                 ):
                     raise ValueError(f"unrecognized Restic diff modifier: {row.change_kind}")
+                file_identity = _SnapshotFileIdentity.from_row(row)
+                inventory_status = snapshot_row.inventory_status
+                comparison_snapshot_id = snapshot_row.comparison_snapshot_id
 
-                with cast(BinaryIO, tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")) as contents:
-                    self._source.restic.dump_to(snapshot.id, path, contents)
-                    contents.seek(0)
-                    sha256, byte_size, record_count = _fingerprint_file(contents)
-                    contents.seek(0)
+            with cast(BinaryIO, tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")) as contents:
+                self._source.restic.dump_to(snapshot.id, path, contents)
+                contents.seek(0)
+                sha256, byte_size, record_count = _fingerprint_file(contents)
+                contents.seek(0)
+
+                with self._session_factory() as db, db.begin():
+                    snapshot_row = db.scalar(
+                        select(ResticSnapshotRow)
+                        .where(
+                            ResticSnapshotRow.machine_id == self._source.machine_id,
+                            ResticSnapshotRow.snapshot_id == snapshot.id,
+                        )
+                        .with_for_update()
+                    )
+                    if snapshot_row is None:
+                        raise RuntimeError(f"snapshot row disappeared for {snapshot.id}")
+                    _assert_snapshot_identity(snapshot_row, snapshot)
+                    row = db.scalar(
+                        select(SnapshotFileRow)
+                        .where(
+                            SnapshotFileRow.machine_id == self._source.machine_id,
+                            SnapshotFileRow.snapshot_id == snapshot.id,
+                            SnapshotFileRow.path == path,
+                        )
+                        .with_for_update()
+                    )
+                    if row is None or row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
+                        return
+                    if _SnapshotFileIdentity.from_row(row) != file_identity:
+                        raise RuntimeError(f"snapshot file identity changed while reading {path}")
+                    if (
+                        snapshot_row.inventory_status != inventory_status
+                        or snapshot_row.comparison_snapshot_id != comparison_snapshot_id
+                    ):
+                        # Inventory may have retried while Restic was reading. Leave this row eligible
+                        # for the next pass, which will capture the new comparison-parent decision.
+                        return
                     session_row = (
                         db.get(SessionRow, row.session_id) if row.session_id else self._ensure_session(db, location)
                     )
                     if session_row is None:
                         raise RuntimeError(f"missing session row for {path}")
-                    version_row, metadata = self._store_version(
-                        db,
-                        snapshot=snapshot,
-                        snapshot_file=row,
-                        location=location,
-                        session_row=session_row,
-                        sha256=sha256,
-                        byte_size=byte_size,
-                        record_count=record_count,
-                        contents=contents,
-                    )
-                    row.file_version_id = version_row.id
-                    row.byte_size = byte_size
-                    row.file_type = "file"
-                    row.status = "complete" if version_row.complete else "partial"
-                    row.error = None
-                    self._update_session_metadata(db, session_row, metadata)
+                    session_id = session_row.id
+                self._store_version(
+                    snapshot=snapshot,
+                    path=path,
+                    location=location,
+                    session_id=session_id,
+                    sha256=sha256,
+                    byte_size=byte_size,
+                    record_count=record_count,
+                    contents=contents,
+                    file_identity=file_identity,
+                    inventory_status=inventory_status,
+                    comparison_snapshot_id=comparison_snapshot_id,
+                )
+
         except Exception as exc:
             self._mark_file_failed(snapshot.id, path, exc)
 
     def _store_version(
         self,
-        db: DbSession,
         *,
         snapshot: ResticSnapshot,
-        snapshot_file: SnapshotFileRow,
+        path: str,
         location: _Location,
-        session_row: SessionRow,
+        session_id: UUID,
         sha256: str,
         byte_size: int,
         record_count: int,
         contents: BinaryIO,
-    ) -> tuple[FileVersionRow, dict[str, Any]]:
-        existing = db.scalar(
-            select(FileVersionRow).where(FileVersionRow.session_id == session_row.id, FileVersionRow.sha256 == sha256)
+        file_identity: _SnapshotFileIdentity,
+        inventory_status: str,
+        comparison_snapshot_id: str | None,
+    ) -> None:
+        version_id = uuid5(session_id, f"{PARSER_VERSION}:{sha256}")
+        parent = None
+        parent_ranks: dict[UUID, int] = {}
+        with self._session_factory() as db, db.begin():
+            existing = db.scalar(
+                select(FileVersionRow).where(FileVersionRow.session_id == session_id, FileVersionRow.sha256 == sha256)
+            )
+            if existing is not None and (existing.byte_size != byte_size or existing.parser_version != PARSER_VERSION):
+                raise RuntimeError("file content hash collides with an incompatible stored version")
+            if existing is None:
+                snapshot_file = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
+                assert snapshot_file is not None
+                previous = self._previous_version(db, snapshot_file)
+                db.execute(
+                    pg_insert(FileVersionImportRow)
+                    .values(
+                        id=version_id,
+                        session_id=session_id,
+                        sha256=sha256,
+                        parser_version=PARSER_VERSION,
+                        byte_size=byte_size,
+                        record_count=record_count,
+                        imported_record_count=0,
+                        parse_issue_count=0,
+                        parent_version_id=previous.id if previous is not None else None,
+                        shared_prefix_record_count=0,
+                    )
+                    .on_conflict_do_nothing()
+                )
+                stage = db.get(FileVersionImportRow, version_id)
+                assert stage is not None
+                if (
+                    stage.byte_size != byte_size
+                    or stage.record_count != record_count
+                    or stage.parser_version != PARSER_VERSION
+                ):
+                    raise RuntimeError("file content hash collides with an incompatible staged version")
+                if stage.parent_version_id is not None:
+                    parent = db.get(FileVersionRow, stage.parent_version_id)
+                    assert parent is not None
+                    if parent.delta_depth + 1 >= CHECKPOINT_INTERVAL:
+                        parent = None
+                    else:
+                        # Published lineage is immutable; avoid traversing it again for every batch.
+                        parent_ranks = _version_lineage_ranks(db, parent)
+        metadata: dict[str, Any] = {}
+        ordinal = 0
+        if existing is None:
+            # Parsing, usage projection and metadata extraction run without a database transaction.
+            while batch := _read_record_batch(contents, metadata, limit=500, harness=location.harness):
+                self._store_record_batch(version_id, ordinal, batch, parent=parent, parent_ranks=parent_ranks)
+                ordinal += len(batch)
+            if ordinal != record_count:
+                raise RuntimeError(f"file changed while parsing: expected {record_count} JSONL records, read {ordinal}")
+            metadata.setdefault("session_kind", SessionKind.UNKNOWN.value)
+        self._publish_version(
+            snapshot=snapshot,
+            path=path,
+            location=location,
+            version_id=version_id,
+            session_id=session_id,
+            sha256=sha256,
+            byte_size=byte_size,
+            record_count=record_count,
+            metadata=metadata,
+            file_identity=file_identity,
+            inventory_status=inventory_status,
+            comparison_snapshot_id=comparison_snapshot_id,
         )
-        if existing is not None:
+
+    def _store_record_batch(
+        self,
+        version_id: UUID,
+        start: int,
+        records: list[_ParsedRecord],
+        *,
+        parent: FileVersionRow | None,
+        parent_ranks: Mapping[UUID, int],
+    ) -> None:
+        with self._session_factory() as db, db.begin():
+            stage = db.get(FileVersionImportRow, version_id, with_for_update=True)
+            if stage is None:
+                # Another importer published this content after our initial check.
+                if db.get(FileVersionRow, version_id) is None:
+                    raise RuntimeError(f"missing file import: {version_id}")
+                return
+            if start > stage.imported_record_count:
+                raise RuntimeError(f"file import {version_id} is missing records before {start}")
+            payloads = self._get_payloads(db, records)
+            committed = min(len(records), stage.imported_record_count - start)
+            if committed:
+                inherited = min(committed, max(0, stage.shared_prefix_record_count - start))
+                if inherited and (
+                    parent is None
+                    or _effective_payload_ids(db, parent, parent_ranks, start, start + inherited)
+                    != [payload.id for payload in payloads[:inherited]]
+                ):
+                    raise RuntimeError("file content hash collides with staged prefix")
+                stored = list(
+                    db.execute(
+                        select(FileVersionImportRecordRow.payload_id, FileVersionImportRecordRow.byte_offset)
+                        .where(
+                            FileVersionImportRecordRow.import_id == version_id,
+                            FileVersionImportRecordRow.ordinal >= start + inherited,
+                            FileVersionImportRecordRow.ordinal < start + committed,
+                        )
+                        .order_by(FileVersionImportRecordRow.ordinal)
+                    ).tuples()
+                )
+                expected = [
+                    (payload.id, record.byte_offset)
+                    for record, payload in zip(records[inherited:committed], payloads[inherited:committed], strict=True)
+                ]
+                if stored != expected:
+                    raise RuntimeError("file content hash collides with staged records")
+            matching_prefix = parent is not None and stage.shared_prefix_record_count == stage.imported_record_count
+            parent_ids = (
+                _effective_payload_ids(db, parent, parent_ranks, start + committed, start + len(records))
+                if matching_prefix and parent is not None
+                else []
+            )
+            for index in range(committed, len(records)):
+                record, payload = records[index], payloads[index]
+                if isinstance(record.json, RecordJsonParseError):
+                    stage.parse_issue_count += 1
+                if matching_prefix:
+                    parent_index = index - committed
+                    if parent_index < len(parent_ids) and parent_ids[parent_index] == payload.id:
+                        stage.shared_prefix_record_count += 1
+                        continue
+                    matching_prefix = False
+                db.add(
+                    FileVersionImportRecordRow(
+                        import_id=version_id,
+                        ordinal=start + index,
+                        byte_offset=record.byte_offset,
+                        payload_id=payload.id,
+                    )
+                )
+            stage.imported_record_count = max(stage.imported_record_count, start + len(records))
+
+    def _publish_version(
+        self,
+        *,
+        snapshot: ResticSnapshot,
+        path: str,
+        location: _Location,
+        version_id: UUID,
+        session_id: UUID,
+        sha256: str,
+        byte_size: int,
+        record_count: int,
+        metadata: dict[str, Any],
+        file_identity: _SnapshotFileIdentity,
+        inventory_status: str,
+        comparison_snapshot_id: str | None,
+    ) -> None:
+        with self._session_factory() as db, db.begin():
+            snapshot_row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
+            if snapshot_row is None:
+                raise RuntimeError(f"snapshot row disappeared for {snapshot.id}")
+            _assert_snapshot_identity(snapshot_row, snapshot)
+            snapshot_file = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path), with_for_update=True)
+            if snapshot_file is None or snapshot_file.status not in (
+                SnapshotFileStatus.PENDING,
+                SnapshotFileStatus.FAILED,
+            ):
+                return
+            if _SnapshotFileIdentity.from_row(snapshot_file) != file_identity:
+                raise RuntimeError(f"snapshot file identity changed while parsing {path}")
+            if (
+                snapshot_row.inventory_status != inventory_status
+                or snapshot_row.comparison_snapshot_id != comparison_snapshot_id
+            ):
+                return
+            session_row = db.get(SessionRow, session_id, with_for_update=True)
+            if session_row is None:
+                raise RuntimeError(f"missing session row for {path}")
+            stage = db.get(FileVersionImportRow, version_id, with_for_update=True)
+            existing = db.scalar(
+                select(FileVersionRow).where(FileVersionRow.session_id == session_id, FileVersionRow.sha256 == sha256)
+            )
+            if existing is None:
+                if stage is None or stage.imported_record_count != record_count:
+                    raise RuntimeError(f"file import {version_id} is unfinished")
+                previous = self._previous_version(db, snapshot_file)
+                # An independently progressing ancestor may have appeared while we parsed.
+                # Reconstruct a checkpoint from the retained parent if the current ancestry changed.
+                use_parent = (
+                    previous is not None
+                    and previous.id == stage.parent_version_id
+                    and previous.delta_depth + 1 < CHECKPOINT_INTERVAL
+                )
+                prefix = stage.shared_prefix_record_count if use_parent else 0
+                inserted = db.scalar(
+                    pg_insert(FileVersionRow)
+                    .values(
+                        id=version_id,
+                        session_id=session_id,
+                        sha256=sha256,
+                        byte_size=byte_size,
+                        source_path=location.source_path,
+                        first_seen_at=snapshot.captured_at,
+                        last_seen_at=snapshot.captured_at,
+                        first_snapshot_id=snapshot.id,
+                        complete=stage.parse_issue_count == 0,
+                        parse_issue_count=stage.parse_issue_count,
+                        record_count=record_count,
+                        parent_version_id=previous.id if use_parent and previous else None,
+                        shared_prefix_record_count=prefix,
+                        is_checkpoint=not use_parent,
+                        delta_depth=previous.delta_depth + 1 if use_parent and previous else 0,
+                        parser_version=PARSER_VERSION,
+                    )
+                    .on_conflict_do_nothing()
+                    .returning(FileVersionRow.id)
+                )
+                if inserted is not None:
+                    # Publication copies only compact mappings, but its transaction scales with the suffix.
+                    if not use_parent and stage.shared_prefix_record_count:
+                        staged_parent = db.get(FileVersionRow, stage.parent_version_id)
+                        if staged_parent is None or staged_parent.session_id != session_id:
+                            raise RuntimeError(f"invalid staged parent for {version_id}")
+                        ranks = _version_lineage_ranks(db, staged_parent)
+                        db.execute(
+                            insert(FileVersionRecordRow).from_select(
+                                ["file_version_id", "ordinal", "byte_offset", "payload_id"],
+                                select(
+                                    literal(version_id),
+                                    FileVersionRecordRow.ordinal,
+                                    FileVersionRecordRow.byte_offset,
+                                    FileVersionRecordRow.payload_id,
+                                )
+                                .where(
+                                    FileVersionRecordRow.file_version_id.in_(ranks),
+                                    FileVersionRecordRow.ordinal < stage.shared_prefix_record_count,
+                                )
+                                .distinct(FileVersionRecordRow.ordinal)
+                                .order_by(
+                                    FileVersionRecordRow.ordinal,
+                                    case(ranks, value=FileVersionRecordRow.file_version_id),
+                                ),
+                            )
+                        )
+                    db.execute(
+                        insert(FileVersionRecordRow).from_select(
+                            ["file_version_id", "ordinal", "byte_offset", "payload_id"],
+                            select(
+                                literal(version_id),
+                                FileVersionImportRecordRow.ordinal,
+                                FileVersionImportRecordRow.byte_offset,
+                                FileVersionImportRecordRow.payload_id,
+                            ).where(
+                                FileVersionImportRecordRow.import_id == version_id,
+                                FileVersionImportRecordRow.ordinal >= prefix,
+                            ),
+                        )
+                    )
+                else:
+                    metadata = {}
+                existing = db.scalar(
+                    select(FileVersionRow).where(
+                        FileVersionRow.session_id == session_id, FileVersionRow.sha256 == sha256
+                    )
+                )
+                assert existing is not None
+            else:
+                metadata = {}
             if existing.byte_size != byte_size or existing.parser_version != PARSER_VERSION:
                 raise RuntimeError("file content hash collides with an incompatible stored version")
             if (snapshot.captured_at, snapshot.id) < (existing.first_seen_at, existing.first_snapshot_id):
                 existing.first_seen_at = snapshot.captured_at
                 existing.first_snapshot_id = snapshot.id
             existing.last_seen_at = max(existing.last_seen_at, snapshot.captured_at)
-            return existing, {}
-
-        previous = self._previous_version(db, snapshot_file)
-        previous_depth = previous.delta_depth if previous is not None else -1
-        if previous is None or previous_depth + 1 >= CHECKPOINT_INTERVAL:
-            parent_version_id = None
-            delta_depth = 0
-            is_checkpoint = True
-        else:
-            parent_version_id = previous.id
-            delta_depth = previous_depth + 1
-            is_checkpoint = False
-        version_id = uuid5(session_row.id, f"{PARSER_VERSION}:{sha256}")
-        row = FileVersionRow(
-            id=version_id,
-            session_id=session_row.id,
-            sha256=sha256,
-            byte_size=byte_size,
-            source_path=location.source_path,
-            first_seen_at=snapshot.captured_at,
-            last_seen_at=snapshot.captured_at,
-            first_snapshot_id=snapshot.id,
-            complete=False,
-            parse_issue_count=0,
-            record_count=record_count,
-            parent_version_id=parent_version_id,
-            shared_prefix_record_count=0,
-            is_checkpoint=is_checkpoint,
-            delta_depth=delta_depth,
-            parser_version=PARSER_VERSION,
-        )
-        db.add(row)
-        db.flush()
-        metadata: dict[str, Any] = {}
-        issue_count = 0
-        shared_prefix = 0
-        ordinal = 0
-        matching_prefix = not is_checkpoint
-        parent_ranks = _version_lineage_ranks(db, previous) if matching_prefix and previous is not None else {}
-        while batch := _read_record_batch(contents, metadata, limit=500, harness=location.harness):
-            payloads = self._get_payloads(db, batch)
-            parent_ids = (
-                _effective_payload_ids(db, previous, parent_ranks, ordinal, ordinal + len(batch))
-                if matching_prefix and previous is not None
-                else []
-            )
-            additions = []
-            for index, (record, payload) in enumerate(zip(batch, payloads, strict=True)):
-                if isinstance(record.json, RecordJsonParseError):
-                    issue_count += 1
-                if matching_prefix:
-                    parent_index = index
-                    if parent_index < len(parent_ids) and parent_ids[parent_index] == payload.id:
-                        shared_prefix += 1
-                        continue
-                    matching_prefix = False
-                additions.append(
-                    FileVersionRecordRow(
-                        file_version_id=version_id,
-                        ordinal=ordinal + index,
-                        byte_offset=record.byte_offset,
-                        payload_id=payload.id,
-                    )
-                )
-            if additions:
-                db.add_all(additions)
-            ordinal += len(batch)
-        if ordinal != record_count:
-            raise RuntimeError(f"file changed while parsing: expected {record_count} JSONL records, read {ordinal}")
-        metadata.setdefault("session_kind", SessionKind.UNKNOWN.value)
-        row.shared_prefix_record_count = 0 if is_checkpoint else shared_prefix
-        row.parse_issue_count = issue_count
-        row.complete = issue_count == 0
-        return row, metadata
+            snapshot_file.file_version_id = existing.id
+            snapshot_file.byte_size = byte_size
+            snapshot_file.file_type = "file"
+            snapshot_file.status = SnapshotFileStatus.COMPLETE if existing.complete else SnapshotFileStatus.PARTIAL
+            snapshot_file.error = None
+            self._update_session_metadata(db, session_row, metadata)
+            if stage is not None:
+                db.execute(delete(FileVersionImportRow).where(FileVersionImportRow.id == version_id))
 
     def _get_payloads(self, db: DbSession, records: list[_ParsedRecord]) -> list[RecordPayloadRow]:
-        hashes = list(dict.fromkeys(record.sha256 for record in records))
-        payload_by_hash: dict[str, RecordPayloadRow] = {}
-        for start in range(0, len(hashes), 1000):
-            batch = hashes[start : start + 1000]
-            rows = db.scalars(
+        by_hash: dict[str, _ParsedRecord] = {}
+        for record in records:
+            if record.sha256 in by_hash and by_hash[record.sha256].raw_bytes != record.raw_bytes:
+                raise RuntimeError("record SHA-256 collision detected")
+            by_hash[record.sha256] = record
+        new_ids = set(
+            db.scalars(
+                pg_insert(RecordPayloadRow)
+                .values(
+                    [
+                        {
+                            "id": uuid5(NAMESPACE_URL, f"ai-session-record:{PARSER_VERSION}:{record.sha256}"),
+                            "sha256": record.sha256,
+                            "parser_version": PARSER_VERSION,
+                            "raw_bytes": record.raw_bytes,
+                            "parse_error": record.json.parse_error
+                            if isinstance(record.json, RecordJsonParseError)
+                            else None,
+                            "timestamp": record.json.timestamp if isinstance(record.json, ParsedRecordJson) else None,
+                            "kind": record.json.kind if isinstance(record.json, ParsedRecordJson) else None,
+                        }
+                        for record in sorted(by_hash.values(), key=lambda record: record.sha256)
+                    ]
+                )
+                .on_conflict_do_nothing()
+                .returning(RecordPayloadRow.id)
+            )
+        )
+        payload_by_hash = {
+            row.sha256: row
+            for row in db.scalars(
                 select(RecordPayloadRow)
                 .options(load_only(RecordPayloadRow.sha256, RecordPayloadRow.raw_bytes))
-                .where(RecordPayloadRow.sha256.in_(batch), RecordPayloadRow.parser_version == PARSER_VERSION)
+                .where(RecordPayloadRow.sha256.in_(by_hash), RecordPayloadRow.parser_version == PARSER_VERSION)
             )
-            payload_by_hash.update((row.sha256, row) for row in rows)
-        for record in records:
-            if record.sha256 in payload_by_hash:
-                payload = payload_by_hash[record.sha256]
-                if payload.raw_bytes != record.raw_bytes:
-                    raise RuntimeError("record SHA-256 collision detected")
-                continue
-            payload = RecordPayloadRow(
-                id=uuid5(NAMESPACE_URL, f"ai-session-record:{PARSER_VERSION}:{record.sha256}"),
-                sha256=record.sha256,
-                parser_version=PARSER_VERSION,
-                raw_bytes=record.raw_bytes,
-                parse_error=record.json.parse_error if isinstance(record.json, RecordJsonParseError) else None,
-                timestamp=record.json.timestamp if isinstance(record.json, ParsedRecordJson) else None,
-                kind=record.json.kind if isinstance(record.json, ParsedRecordJson) else None,
-            )
-            db.add(payload)
-            payload_by_hash[record.sha256] = payload
-            if isinstance(record.json, ParsedRecordJson):
-                for observation_index, observation in enumerate(usage_observations_for_record(record.json.parsed)):
-                    db.add(
-                        UsageObservationRow(
-                            payload_id=payload.id,
-                            observation_index=observation_index,
-                            source_field=observation.source_field,
-                            counter_kind=observation.counter_kind,
-                            model=observation.model,
-                            response_id=observation.response_id,
-                            message_id=observation.message_id,
-                            turn_id=observation.turn_id,
-                            input_tokens=observation.input_tokens,
-                            output_tokens=observation.output_tokens,
-                            cache_read_input_tokens=observation.cache_read_input_tokens,
-                            cache_write_input_tokens=observation.cache_write_input_tokens,
-                            reasoning_output_tokens=observation.reasoning_output_tokens,
-                            total_tokens=observation.total_tokens,
-                        )
-                    )
+        }
+        for record in by_hash.values():
+            payload = payload_by_hash[record.sha256]
+            if payload.raw_bytes != record.raw_bytes:
+                raise RuntimeError("record SHA-256 collision detected")
+            if payload.id in new_ids:
+                for index, observation in enumerate(record.usage):
+                    db.add(UsageObservationRow(payload_id=payload.id, observation_index=index, **asdict(observation)))
         db.flush()
         return [payload_by_hash[record.sha256] for record in records]
 
@@ -913,7 +1254,11 @@ class SnapshotIngestor:
             ),
             {"machine_id": current.machine_id, "snapshot_id": current.snapshot_id, "path": current.path},
         ).first()
-        if prior is None or prior.status not in ("complete", "partial") or prior.file_version_id is None:
+        if (
+            prior is None
+            or prior.status not in (SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)
+            or prior.file_version_id is None
+        ):
             return None
         return db.get(FileVersionRow, prior.file_version_id)
 
@@ -985,32 +1330,19 @@ class SnapshotIngestor:
     def _apply_latest_codex_title(self, db: DbSession, row: SessionRow) -> None:
         if row.native_session_id_conflict or not row.native_session_id:
             return
-        observations = (
-            select(CodexTitleObservationRow)
-            .join(
-                ResticSnapshotRow,
-                (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
-                & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
+        candidates = dict(
+            db.execute(
+                select(CodexTitleCandidateRow.field, CodexTitleCandidateRow.value).where(
+                    CodexTitleCandidateRow.machine_id == row.machine_id,
+                    CodexTitleCandidateRow.native_session_id == row.native_session_id,
+                    CodexTitleCandidateRow.source_path == row.source_path,
+                )
             )
-            .where(
-                CodexTitleObservationRow.machine_id == row.machine_id,
-                CodexTitleObservationRow.native_session_id == row.native_session_id,
-                CodexTitleObservationRow.source_path == row.source_path,
-            )
-            .order_by(ResticSnapshotRow.captured_at.desc(), CodexTitleObservationRow.snapshot_id.desc())
+            .tuples()
+            .all()
         )
-        title, kind = db.execute(
-            select(
-                observations.with_only_columns(CodexTitleObservationRow.title)
-                .where(CodexTitleObservationRow.title.is_not(None))
-                .limit(1)
-                .scalar_subquery(),
-                observations.with_only_columns(CodexTitleObservationRow.session_kind)
-                .where(CodexTitleObservationRow.session_kind.is_not(None))
-                .limit(1)
-                .scalar_subquery(),
-            )
-        ).one()
+        title = candidates.get("title")
+        kind = candidates.get("session_kind")
         if title is not None:
             row.title = title
             row.codex_title_from_metadata = True
@@ -1030,7 +1362,7 @@ class SnapshotIngestor:
             )
             .where(
                 SnapshotFileRow.session_id == SessionRow.id,
-                SnapshotFileRow.status.in_(("complete", "partial")),
+                SnapshotFileRow.status.in_((SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)),
                 SnapshotFileRow.file_version_id.is_not(None),
             )
             .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
@@ -1125,19 +1457,36 @@ class SnapshotIngestor:
 
     def _mark_inventory_failed(self, snapshot: ResticSnapshot, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
-            row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id))
+            row = db.scalar(
+                select(ResticSnapshotRow)
+                .where(
+                    ResticSnapshotRow.machine_id == self._source.machine_id,
+                    ResticSnapshotRow.snapshot_id == snapshot.id,
+                )
+                .with_for_update()
+            )
             if row is None:
                 row = self._new_snapshot_row(snapshot)
                 db.add(row)
-            row.inventory_status = "failed"
+            if row.inventory_status == SnapshotInventoryStatus.COMPLETE:
+                return
+            row.inventory_status = SnapshotInventoryStatus.FAILED
             row.inventory_error = _error_text(exc)
-            row.processing_status = "failed"
+            row.processing_status = SnapshotProcessingStatus.FAILED
 
     def _mark_file_failed(self, snapshot_id: str, path: str, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
-            row = db.get(SnapshotFileRow, (self._source.machine_id, snapshot_id, path))
-            if row is not None:
-                row.status = "failed"
+            row = db.scalar(
+                select(SnapshotFileRow)
+                .where(
+                    SnapshotFileRow.machine_id == self._source.machine_id,
+                    SnapshotFileRow.snapshot_id == snapshot_id,
+                    SnapshotFileRow.path == path,
+                )
+                .with_for_update()
+            )
+            if row is not None and row.status in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
+                row.status = SnapshotFileStatus.FAILED
                 row.error = _error_text(exc)
 
     def _report(self, available_snapshot_ids: set[str]) -> IngestReport:
@@ -1161,22 +1510,22 @@ class SnapshotIngestor:
         return IngestReport(
             snapshots_seen=len(available_snapshot_ids),
             snapshots_complete=sum(
-                row.inventory_status == "complete"
-                and row.processing_status == "complete"
-                and row.codex_metadata_status in ("complete", "partial")
+                row.inventory_status == SnapshotInventoryStatus.COMPLETE
+                and row.processing_status == SnapshotProcessingStatus.COMPLETE
+                and row.codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL)
                 for row in snapshots
             ),
             snapshots_incomplete=sum(
-                row.inventory_status != "complete"
-                or row.processing_status != "complete"
-                or row.codex_metadata_status not in ("complete", "partial")
+                row.inventory_status != SnapshotInventoryStatus.COMPLETE
+                or row.processing_status != SnapshotProcessingStatus.COMPLETE
+                or row.codex_metadata_status not in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL)
                 for row in snapshots
             ),
-            files_complete=sum(row.status == "complete" for row in files),
-            files_partial=sum(row.status == "partial" for row in files),
-            files_failed=sum(row.status == "failed" for row in files),
-            files_unclassified=sum(row.status == "unclassified" for row in files),
-            codex_metadata_partial=sum(row.codex_metadata_status == "partial" for row in snapshots),
+            files_complete=sum(row.status == SnapshotFileStatus.COMPLETE for row in files),
+            files_partial=sum(row.status == SnapshotFileStatus.PARTIAL for row in files),
+            files_failed=sum(row.status == SnapshotFileStatus.FAILED for row in files),
+            files_unclassified=sum(row.status == SnapshotFileStatus.UNCLASSIFIED for row in files),
+            codex_metadata_partial=sum(row.codex_metadata_status == CodexMetadataStatus.PARTIAL for row in snapshots),
         )
 
 
@@ -1215,7 +1564,13 @@ def _read_record_batch(
             _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp, harness=harness)
         records.append(
             _ParsedRecord(
-                raw_bytes=raw_bytes, byte_offset=byte_offset, sha256=hashlib.sha256(raw_bytes).hexdigest(), json=parsed
+                raw_bytes=raw_bytes,
+                byte_offset=byte_offset,
+                sha256=hashlib.sha256(raw_bytes).hexdigest(),
+                json=parsed,
+                usage=tuple(usage_observations_for_record(parsed.parsed))
+                if isinstance(parsed, ParsedRecordJson)
+                else (),
             )
         )
         byte_offset += len(raw_bytes)

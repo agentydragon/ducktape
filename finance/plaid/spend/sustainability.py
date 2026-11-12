@@ -187,7 +187,7 @@ class Consumption:
 
 
 @dataclass(frozen=True)
-class _AccountCoverage:
+class AccountCoverage:
     first_recorded: date_type | None
     evidence: AccountHistory | None
 
@@ -294,7 +294,7 @@ def calculate_sustainability(
     for index, account in enumerate(sorted(allowance.spending_account_ids), start=1):
         first_recorded = min(days_by_account[account]) if days_by_account[account] else None
         evidence = policy.account_history.get(account)
-        boundary = _AccountCoverage(first_recorded, evidence)
+        boundary = AccountCoverage(first_recorded, evidence)
         boundaries.append(boundary)
         label = (account_labels or {}).get(account, f"Spending account {index}")
         if account in contradictory_accounts:

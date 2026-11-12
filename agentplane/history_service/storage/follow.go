@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -56,7 +57,7 @@ func (s *Store) ResolveFollowStart(ctx context.Context, sessionID uuid.UUID, req
 		return 0, invalid("missing follow start")
 	}
 	var after uint64
-	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		last, err := s.followLastCursor(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -130,7 +131,7 @@ func followCandidates(kinds []historypb.EventKind, args *[]any) (string, error) 
 // entry is returned alone. No database transaction is held while the caller sends the page.
 func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, after uint64, kinds []historypb.EventKind, includeSettlements bool) (FollowPage, error) {
 	var page FollowPage
-	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
+	err := postgres.Transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		var err error
 		if page.LastCursor, err = s.followLastCursor(ctx, tx, sessionID); err != nil {
 			return err

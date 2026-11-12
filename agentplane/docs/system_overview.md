@@ -40,7 +40,7 @@ flowchart LR
         end
         runtime -->|direct lifecycle and Session calls| runner
         runtime -->|lifecycle and execution RPC| execution
-        execution -->|companion ownership| podexec
+        execution -->|companion ownership: gRPC over Unix socket| podexec
         agent[Managed agent process and CLI]
         podexec[Codex executor container]
         sidecar[Egress sidecar]
@@ -394,7 +394,7 @@ flowchart LR
         exec[Companion container and exec-server]
         runtime -->|construct and own| host
         runtime -->|component lifecycle| execution
-        execution -->|Unix ownership connection| exec
+        execution -->|ownership gRPC over Unix socket| exec
         host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]

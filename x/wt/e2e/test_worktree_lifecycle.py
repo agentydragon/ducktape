@@ -1,0 +1,81 @@
+"""Exercise daemon status across a worktree create and removal."""
+
+from datetime import timedelta
+
+import pytest
+import pytest_bazel
+
+from x.wt.testing.data import WATCHER_DEBOUNCE_SECS
+from x.wt.testing.git_helpers import worktree_exists
+from x.wt.testing.utils import wait_until
+
+
+def _status(wt_cli) -> str:
+    r = wt_cli.status(timeout=timedelta(seconds=5.0))
+    assert r.returncode == 0, r.stderr
+    result: str = r.stdout
+    return result
+
+
+def wait_for_status_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
+    last = {"out": ""}
+    ok = wait_until(
+        lambda: (last.update({"out": _status(wt_cli)}), needle in last["out"])[-1],
+        timeout_seconds=timeout,
+        interval_seconds=WATCHER_DEBOUNCE_SECS,
+    )
+    if not ok:
+        pytest.fail(f"Timed out waiting for status to contain '{needle}'. Last output:\n{last['out']}")
+
+
+def wait_for_status_not_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
+    last = {"out": ""}
+    ok = wait_until(
+        lambda: (last.update({"out": _status(wt_cli)}), needle not in last["out"])[-1],
+        timeout_seconds=timeout,
+        interval_seconds=WATCHER_DEBOUNCE_SECS,
+    )
+    if not ok:
+        pytest.fail(f"Timed out waiting for status to drop '{needle}'. Last output:\n{last['out']}")
+
+
+def test_worktree_full_lifecycle(wt_cli, real_config, pygit2_repo):
+    """
+    Exercise the complete worktree lifecycle:
+    1. status (should start daemon)
+    2. create worktree
+    3. status (shows the newly registered worktree)
+    4. remove worktree
+    5. status (no longer shows the removed worktree)
+    """
+    # Step 1: Initial status - should start daemon and show empty state
+    result = wt_cli.status(timeout=timedelta(seconds=5.0))
+    assert result.returncode == 0, f"Status command failed: {result.stderr}"
+
+    # Step 2: Create a worktree
+    result = wt_cli.sh_c("feature-test", timeout=timedelta(seconds=5.0))
+    assert result.returncode == 0, f"Create command failed: {result.stderr}"
+
+    # Verify worktree was created on filesystem
+    worktree_path = real_config.worktrees_dir / "feature-test"
+    assert worktree_path.exists(), f"Worktree not created at {worktree_path}"
+    assert worktree_path.is_dir(), f"Worktree path is not a directory: {worktree_path}"
+
+    # Step 3: Status should now show the new worktree
+    wait_for_status_contains(wt_cli, "feature-test")
+
+    # Step 4: Remove the worktree
+    result = wt_cli.sh("rm", "feature-test", "--force", timeout=timedelta(seconds=5.0))
+    assert result.returncode == 0, f"Remove command failed: {result.stderr}"
+    # Ensure git no longer lists the worktree (verifies git worktree remove succeeded)
+    assert not worktree_exists(pygit2_repo, worktree_path), "Worktree still listed in main repo after removal"
+
+    # Verify worktree was removed from filesystem
+    assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
+
+    # Step 5: Status should no longer show the worktree
+    wait_for_status_not_contains(wt_cli, "feature-test")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

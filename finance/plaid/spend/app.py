@@ -26,6 +26,7 @@ from finance.plaid.spend.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
+from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.portfolio import CoinbaseClient
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
@@ -88,6 +89,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
             "/api/v1/events",
             "/api/v1/configuration",
             "/api/v1/transactions",
+            "/api/v1/pace-history",
             "/api/v1/sustainability",
             "/api/v1/sustainability/windows",
         },
@@ -150,6 +152,10 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         _access: SpendAccess, reader: SpendReader, period: TransactionPeriodId = PeriodId.ROLLING_30D
     ) -> SpendTransactionsView:
         return await reader.read_transactions(period)
+
+    @app.get("/api/v1/pace-history", response_model=PaceHistory | None)
+    async def get_pace_history(_access: SpendAccess, reader: SpendReader) -> PaceHistory | None:
+        return await reader.read_pace_history()
 
     @app.get("/api/v1/sustainability", response_model=SustainabilityView)
     async def get_sustainability(

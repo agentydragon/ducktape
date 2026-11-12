@@ -1,7 +1,6 @@
 """Pinned Codex exec-server in the production Runner's private companion container."""
 
 import http.client
-import json
 import os
 import shlex
 import socket
@@ -10,14 +9,19 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
+import grpc
 import pytest
 from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.e2e.testing import launches
+from agentplane.env.runtime.execution.companion.control import control_pb2, control_pb2_grpc
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
 from util.testing.container_logs import LoggedContainer
+
+# The generated gRPC stubs resolve protobuf's own stubs through direct deps.
+# gazelle:include_dep @pypi//protobuf
 
 
 @dataclass(frozen=True)
@@ -41,18 +45,11 @@ class CodexExecServerContainerStatus:
 
 
 def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerStatus:
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(2)
-        connection.connect(str(path))
-        connection.sendall(b'{"operation":"inspect"}\n')
-        response = bytearray()
-        while not response.endswith(b"\n"):
-            chunk = connection.recv(4096)
-            if not chunk:
-                raise ConnectionError("executor companion closed its inspect connection")
-            response.extend(chunk)
-    status = json.loads(response)
-    return CodexExecServerContainerStatus(generation=status["generation"], owned=status["owned"])
+    with grpc.insecure_channel(
+        f"unix://{path}", options=(("grpc.enable_retries", 0), ("grpc.use_local_subchannel_pool", 1))
+    ) as channel:
+        status = control_pb2_grpc.CompanionControlStub(channel).Inspect(control_pb2.InspectRequest(), timeout=2)
+        return CodexExecServerContainerStatus(generation=status.generation, owned=status.owned)
 
 
 @pytest.fixture
@@ -91,9 +88,9 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
         )
     )
     with container:
-        # Until the companion creates its ownership socket, inspecting it raises OSError.
+        # Until the companion starts its ownership service, inspection is unavailable.
         Retrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(OSError), reraise=True
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(grpc.RpcError), reraise=True
         )(inspect_codex_exec_server_container, socket_path)
         companion = CodexExecServerContainer(url=url, socket=socket_path, container=container, health_port=health_port)
         companion.check_health()

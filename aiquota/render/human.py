@@ -2,19 +2,29 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
-from decimal import Decimal
 
 from rich.text import Text
 
 from aiquota.models import AllQuotas
 from aiquota.render.format import (
+    extra_spend_has_hidden_fraction,
     format_age,
     format_burn,
     format_deadline,
+    format_extra_spend,
+    format_extra_spend_exact,
     format_peak_schedule,
     format_reset_credit_summary,
 )
-from aiquota.render.view_model import AllQuotasView, BalanceView, GrantView, ProviderView, WindowView, to_view
+from aiquota.render.view_model import (
+    AllQuotasView,
+    BalanceView,
+    GrantView,
+    ProviderView,
+    WindowView,
+    show_reset_credits,
+    to_view,
+)
 
 _API_PROVIDERS = {"openai_platform", "anthropic_platform"}
 _TINTS = {"cool": "blue", "ok": "white", "warn": "yellow", "hot": "red", "unknown": "white", "stale": "yellow"}
@@ -88,6 +98,7 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
         pv.display_windows
         or pv.balances
         or pv.grants
+        or pv.monthly_extra_spend is not None
         or (result is not None and (result.available_reset_credits or 0) > 0)
     )
 
@@ -98,13 +109,30 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
         error_line = f"  {pv.error_summary}"
         if substantive:
             error_line += " · showing available data"
-        lines.append(Text(error_line))
+        lines.append(Text(error_line, style="red"))
         if details and pv.error_detail is not None:
             lines.append(Text(f"    error: {pv.error_detail}"))
 
-    lines.extend(_credit_lines(pv, now, tz, details))
     if pv.status is not None:
-        lines.append(Text(f"  {pv.status}"))
+        urgent = pv.stale_since is None and not any(window.reset_pending for window in pv.display_windows)
+        lines.append(Text(f"  {pv.status}", style="red" if urgent else "yellow"))
+
+    lines.extend(_credit_lines(pv, now, tz, details))
+
+    if (
+        result is not None
+        and result.available_reset_credits is not None
+        and show_reset_credits(result.available_reset_credits, pv.display_windows, details=details)
+    ):
+        summary = format_reset_credit_summary(
+            result.available_reset_credits,
+            result.available_reset_credit_expiries,
+            result.reset_credit_expiry_lookup_failed,
+            now,
+            tz,
+            details=details,
+        )
+        lines.append(Text(f"  Banked resets: {summary}"))
 
     if pv.burn is not None and substantive:
         lines.append(Text(f"  {format_burn(pv.burn, now, tz)}"))
@@ -113,18 +141,14 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
             if schedule:
                 lines.append(Text(f"    {schedule}"))
 
-    if result is not None and result.available_reset_credits is not None:
-        exhausted = any(window.exhausted for window in pv.display_windows)
-        if result.available_reset_credits > 0 or details or exhausted:
-            summary = format_reset_credit_summary(
-                result.available_reset_credits,
-                result.available_reset_credit_expiries,
-                result.reset_credit_expiry_lookup_failed,
-                now,
-                tz,
-                details=details,
-            )
-            lines.append(Text(f"  Banked resets: {summary}"))
+    extra = pv.monthly_extra_spend
+    if extra is not None:
+        summary = format_extra_spend(extra.used_usd, extra.monthly_limit_usd)
+        enabled = " · extra usage enabled" if pv.currently_over_plan else ""
+        lines.append(Text(f"  {summary}{enabled}"))
+        exact = format_extra_spend_exact(extra.used_usd, extra.monthly_limit_usd)
+        if details and extra_spend_has_hidden_fraction(extra.used_usd, extra.monthly_limit_usd):
+            lines.append(Text(f"    exact spend: {exact}"))
 
     if pv.display_windows:
         lines.extend(
@@ -133,14 +157,6 @@ def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details
         )
     elif not substantive and pv.error_summary is None:
         lines.append(Text("  No quota or credit data available"))
-
-    extra = result.extra_spend if result is not None else None
-    if extra is not None and extra.used_usd > 0:
-        lines.append(
-            Text(
-                f"  Extra spend this month: {_usd(extra.used_usd)} of {_usd(extra.monthly_limit_usd, whole=True)} limit"
-            )
-        )
 
     return Text("\n").join(lines)
 
@@ -160,6 +176,10 @@ def _credit_lines(pv: ProviderView, now: datetime, tz: tzinfo | None, details: b
 def _balance_line(balance: BalanceView, indent: str, now: datetime, details: bool) -> Text:
     stale = f" · stale {format_age((now - balance.stale_since).total_seconds())}" if balance.stale_since else ""
     line = Text(f"{indent}{balance.label}: {balance.value}{stale}")
+    if details and balance.pool_detail is not None:
+        line.append(f"\n{indent}  pool: {balance.pool_detail}")
+    if details and balance.exact_value is not None:
+        line.append(f"\n{indent}  exact balance: {balance.exact_value}")
     if details and balance.error is not None:
         line.append(f"\n{indent}  error: {balance.error}")
     return line
@@ -177,13 +197,11 @@ def _grant_line(grant: GrantView, indent: str, now: datetime, tz: tzinfo | None,
     if grant.status:
         line += f" · {grant.status}"
     if details:
-        line += f" · {grant.original} granted"
+        if grant.exact_remaining is not None:
+            line += f" · exact remaining {grant.exact_remaining}"
+        if not grant.original_repeats_remaining:
+            line += f" · {grant.original} granted"
     return Text(line)
-
-
-def _usd(amount: float, *, whole: bool = False) -> str:
-    precision = ",.0f" if whole else ",.2f"
-    return f"${format(Decimal(str(amount)), precision)}"
 
 
 def _format_window_line(window: WindowView, widths: _ColumnWidths, details: bool) -> str:

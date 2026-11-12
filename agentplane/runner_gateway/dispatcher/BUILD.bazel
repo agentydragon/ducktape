@@ -24,7 +24,11 @@ go_library(
         "watch.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher",
-    visibility = ["//agentplane/runner_gateway:__subpackages__"],
+    visibility = [
+        # The Session-delegation executor's test runs it against a real Dispatcher.
+        "//agentplane/action_service/session_delegation:__pkg__",
+        "//agentplane/runner_gateway:__subpackages__",
+    ],
     deps = [
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
@@ -132,7 +136,9 @@ go_test(
     size = "medium",
     srcs = [
         "authorization_integration_test.go",
+        "delegated_identity_integration_test.go",
         "execution_identity_integration_test.go",
+        "identity_change_test.go",
         "placement_test.go",
         "store_integration_test.go",
         "store_integration_testmain_test.go",
@@ -144,6 +150,7 @@ go_test(
         ":session_dispatcher_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
@@ -156,6 +163,7 @@ go_test(
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/grpc",
         "//agentplane/workload_auth/listener",
         "//agentplane/workload_auth/testing",
         "//agentplane/workload_identity/resolver",
@@ -167,6 +175,7 @@ go_test(
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_client_go//util/workqueue",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",

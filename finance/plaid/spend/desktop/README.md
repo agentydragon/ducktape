@@ -12,7 +12,10 @@ for the graphical session on opted-in hosts. The CLI works from a terminal in th
 panel extension.
 
 ```sh
-plaid-spend             # show flexible allowance and statement-cycle spend
+plaid-spend             # compact allowance, pace history and card summary
+plaid-spend --details   # full allowance and card details
+plaid-spend --pace-window 30d --history-days 14 --scale auto
+plaid-spend --no-sparkline  # do not request pace history
 plaid-spend --json      # print the API view as JSON
 plaid-spend status      # show daemon connection and sign-in state
 plaid-spend login       # start Authentik sign-in in the browser
@@ -24,8 +27,22 @@ From the repository, run the same CLI with:
 bazelisk run //finance/plaid/spend/desktop:plaid_spend_cli
 ```
 
-The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain
+The CLI sparkline shows daily points for the selected rolling average; its history span is 7, 14, or 30 days and
+its scale can start at zero or fit the data. Dots mark unknown coverage. In a terminal, points use the same green,
+yellow and red leash thresholds as the panel; `--color never` disables color and `--color always` forces it.
+The sparkline is unavailable if the daemon or server cannot provide history. `--json` retains the original view-only
+JSON and does not fetch history. The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain
 owned by the daemon and stored in Secret Service.
+
+The panel's **Customize panel…** menu opens preferences for independently showing and ordering the status icon,
+abbreviated available balance, pace window, pace percentage, and sparkline. Preferences choose the 7- or
+30-day pace. The percentage compares the selected recorded purchase average with the daily leash, independently of
+the existing forecast/pace warning also shown in the expanded view. Green means at or below the leash, yellow above 100% through 120%, and red above
+120% or when the allowance is exhausted. The sparkline uses backend-calculated daily history, with a dotted line at
+the current leash and gaps for unknown coverage. Each segment uses the same pace thresholds and colors as the panel text.
+Its displayed time span, vertical baseline, leash line, and leash line color are
+configurable separately from the rolling-average period. The menu rounds larger available balances; when rounding hides a
+fraction, expand **Balance details** for the exact amount.
 
 ## Wire contract
 
@@ -38,9 +55,16 @@ subsequent notifications are full JSON views under the `view` event name. Each v
 When present, the `allowance` object supplies the available balance, monthly credit, daily reference rate, period-keyed
 spend and recorded pace, unmatched charge totals, a separate forecast, next credit and sync time; unavailable allowance
 states are shown without inventing a balance. Money fields use the currency's minor unit. The service supplies
-`daily_reference_minor_units`; desktop clients display it without recalculating it. `spend_percent` and `alert_state` are
-rendered as supplied; `spend_percent` is a decimal string in JSON. The desktop client does not calculate alerts or spend.
-Null spend and unavailable periods render as unavailable.
+`daily_reference_minor_units`; desktop clients use it without recalculating it. Card `spend_percent` and `alert_state`
+are rendered as supplied; `spend_percent` is a decimal string in JSON. The panel derives the selected pace percentage
+and its color from the supplied daily values; spend itself is calculated by the server. Null spend and unavailable
+periods render as unavailable.
+
+When the sparkline is enabled, the extension requests `GetPaceHistory()` from the daemon after each view update; the
+daemon calls the authenticated `GET /api/v1/pace-history` endpoint on demand. Missing history or an older daemon or
+server leaves the graph unavailable while the rest of the panel continues to work. This separate endpoint does not
+change the strict view shape used by older clients. See the [API description](../README.md#api) for coverage and
+reconstruction semantics.
 
 `AllowanceView` is strict. A client built before this required field was added rejects the extra field from a newer API,
 and a client built with the new model rejects an older API response that omits it. Release the desktop package and

@@ -73,6 +73,8 @@ fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
         root_attempt: _,
         purity_disagreement: _,
         local_record_factory_purity: _,
+        local_record_factory_heap_call: _,
+        proven_private_own_field_reads,
         binding_effect_coverage: _,
         settled_array_elements: _,
         global_object_aliases: _,
@@ -100,6 +102,10 @@ fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
         author_host_contract_uses,
     } = leaf;
     let effects = &mut joined.effects;
+    // A conditional read is discharged only when every leaf certifies it.
+    effects
+        .proven_private_own_field_reads
+        .retain(|read| proven_private_own_field_reads.contains(read));
     effects.evaluation_effects.extend(&evaluation_effects);
     effects.complete &= complete;
     union(

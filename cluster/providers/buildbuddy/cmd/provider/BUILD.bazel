@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "provider_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/cmd/provider",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//cluster/providers/buildbuddy/apis/v1alpha1",
+        "//cluster/providers/buildbuddy/internal/controller",
+        "@buildbuddy_controller_runtime//:controller-runtime",
+        "@buildbuddy_controller_runtime//pkg/cache",
+        "@buildbuddy_controller_runtime//pkg/client",
+        "@buildbuddy_controller_runtime//pkg/healthz",
+        "@buildbuddy_controller_runtime//pkg/metrics/server",
+        "@buildbuddy_crossplane_runtime//pkg/controller",
+        "@buildbuddy_crossplane_runtime//pkg/logging",
+        "@buildbuddy_crossplane_runtime//pkg/ratelimiter",
+        "@buildbuddy_go_logr//:logr",
+        "@buildbuddy_k8s_api//core/v1:core",
+        "@buildbuddy_k8s_apimachinery//pkg/fields",
+        "@buildbuddy_k8s_apimachinery//pkg/runtime",
+        "@buildbuddy_k8s_client_go//kubernetes/scheme",
+    ],
+)
+
+go_binary(
+    name = "provider",
+    embed = [":provider_lib"],
+    pure = "on",
+    visibility = ["//cluster/providers/buildbuddy:__subpackages__"],
+)

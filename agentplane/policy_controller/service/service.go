@@ -42,8 +42,6 @@ const (
 	recheckInterval = 5 * time.Second
 	writeTimeout    = 5 * time.Second
 	snapshotChunk   = 64
-	// fluxNameLabel marks an object Flux applies from git, which Flux would recreate if deleted.
-	fluxNameLabel = "kustomize.toolkit.fluxcd.io/name"
 )
 
 type Service struct {
@@ -82,6 +80,8 @@ func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Metho
 		policypb.PolicyService_ListPolicySetNames_FullMethodName:         rule,
 		policypb.PolicyService_WatchIdentities_FullMethodName:            rule,
 		policypb.PolicyService_DeleteIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
+		policypb.PolicyService_CreateIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
+		policypb.PolicyService_GrantIdentityPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
 	}
 }
 
@@ -112,7 +112,7 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 	if err := validSandboxName(target.Name); err != nil {
 		return nil, err
 	}
-	account, err := s.executionAccount(ctx, target)
+	identity, err := s.sandboxIdentity(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 			}},
 		},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.Subject{Namespace: account.GetAccount().GetNamespace(), Name: account.GetAccount().GetName()},
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
 			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
 		},
 	}
@@ -150,11 +150,11 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 		}
 		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be created")
 	}
-	// The owner reference carries the Sandbox UID, but PolicyBinding subjects name only a
-	// ServiceAccount. Recheck after create to catch a Sandbox or account replacement between the
-	// first read and the write. This is detection and cleanup, not an atomic cross-object fence.
-	currentAccount, err := s.executionAccount(ctx, target)
-	if err != nil || currentAccount.GetUid() != account.GetUid() {
+	// The owner reference carries the Sandbox UID, but the subject names the Identity by name only.
+	// Recheck after create to catch a Sandbox replacement, a rebind or an Identity replacement
+	// between the first read and the write. This is detection and cleanup, not an atomic fence.
+	current, err := s.sandboxIdentity(ctx, target)
+	if err != nil || current.UID != identity.UID {
 		s.cleanupCreatedBinding(ctx, binding)
 		if err != nil && status.Code(err) == codes.Unavailable {
 			return nil, err
@@ -196,7 +196,7 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if err := validSandboxName(target.Name); err != nil {
 		return nil, err
 	}
-	account, err := s.executionAccount(ctx, target)
+	identity, err := s.sandboxIdentity(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if string(binding.UID) != request.GetBindingUid() {
 		return nil, status.Error(codes.Aborted, "PolicyBinding changed; refresh the Sandbox policy view")
 	}
-	if _, fromFlux := binding.Labels[fluxNameLabel]; fromFlux {
+	if _, fromFlux := binding.Labels[policyapi.FluxKustomizationNameLabel]; fromFlux {
 		return nil, status.Error(codes.Aborted, "PolicyBinding is managed by Flux")
 	}
 	for _, owner := range binding.OwnerReferences {
@@ -225,8 +225,8 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 			return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Sandbox incarnation")
 		}
 	}
-	if binding.Spec.Subject.Namespace != account.GetAccount().GetNamespace() || binding.Spec.Subject.Name != account.GetAccount().GetName() {
-		return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another ServiceAccount")
+	if binding.Spec.Subject.Identity == nil || binding.Spec.Subject.Identity.Name != identity.Name {
+		return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Identity")
 	}
 	if binding.UID == "" || binding.ResourceVersion == "" {
 		return nil, status.Error(codes.Aborted, "PolicyBinding identity is unavailable; refresh the Sandbox policy view")
@@ -256,33 +256,41 @@ func (s *Service) requestTarget(namespace, name, uid string) (*identitypb.Enviro
 }
 
 func validSandboxName(name string) error {
-	if len(name) > 57 || len(validation.IsDNS1123Label(name)) > 0 {
+	if !sandboxapi.IsValidSandboxName(name) {
 		return status.Error(codes.InvalidArgument, "invalid Sandbox name")
 	}
 	return nil
 }
 
-func (s *Service) executionAccount(ctx context.Context, target *identitypb.EnvironmentTarget) (*identitypb.ServiceAccountIdentity, error) {
+// sandboxIdentity is the live Identity the exact Sandbox incarnation acts as: the one its
+// spec.identity names. An operator grant on a Sandbox binds that Identity.
+func (s *Service) sandboxIdentity(ctx context.Context, target *identitypb.EnvironmentTarget) (*policyapi.Identity, error) {
 	view, err := s.sandboxes.Get(ctx, target.GetName())
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, status.Error(codes.NotFound, "Sandbox not found")
 		}
-		slog.ErrorContext(ctx, "PolicyService Sandbox identity read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Sandbox identity is unavailable")
+		slog.ErrorContext(ctx, "PolicyService Sandbox read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Sandbox is unavailable")
 	}
 	if view.Identity.GetUid() != target.GetUid() || view.Resource.DeletionTimestamp != nil {
 		return nil, status.Error(codes.NotFound, "Sandbox not found")
 	}
-	account, found, err := s.sandboxes.ExecutionAccount(ctx, target)
-	if err != nil {
-		slog.ErrorContext(ctx, "PolicyService Sandbox ServiceAccount read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Sandbox ServiceAccount is unavailable")
+	if view.Resource.Spec.Identity == nil {
+		return nil, status.Error(codes.FailedPrecondition, "Sandbox acts as no Identity")
 	}
-	if !found {
-		return nil, status.Error(codes.NotFound, "Sandbox not found")
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: view.Resource.Spec.Identity.Name}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.FailedPrecondition, "the Sandbox's Identity does not exist")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
 	}
-	return account, nil
+	if !identity.DeletionTimestamp.IsZero() {
+		return nil, status.Error(codes.FailedPrecondition, "the Sandbox's Identity is being deleted")
+	}
+	return identity, nil
 }
 
 func (s *Service) requireKnownPolicySets(ctx context.Context, names []string) error {
@@ -474,7 +482,7 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 	if string(identity.UID) != request.GetUid() || identity.ResourceVersion == "" {
 		return nil, status.Error(codes.Aborted, "Identity changed; refresh the identities view")
 	}
-	if _, fromFlux := identity.Labels[fluxNameLabel]; fromFlux {
+	if _, fromFlux := identity.Labels[policyapi.FluxKustomizationNameLabel]; fromFlux {
 		return nil, status.Error(codes.FailedPrecondition, "Identity is managed by Flux")
 	}
 	var bindings policyapi.PolicyBindingList
@@ -543,6 +551,98 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		return nil, status.Error(codes.Unavailable, "Identity could not be deleted")
 	}
 	return &policypb.DeleteIdentityResponse{}, nil
+}
+
+func (s *Service) CreateIdentity(ctx context.Context, request *policypb.CreateIdentityRequest) (*policypb.CreateIdentityResponse, error) {
+	if request.GetName() == "" || request.GetDescription() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Identity name and description are required")
+	}
+	if errs := validation.IsDNS1123Subdomain(request.GetName()); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, "Identity name must be a DNS subdomain: "+strings.Join(errs, "; "))
+	}
+	identity := &policyapi.Identity{
+		TypeMeta:   metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: request.GetName()},
+		Spec:       policyapi.IdentitySpec{Description: request.GetDescription()},
+	}
+	if err := s.objects.Create(ctx, identity); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil, status.Error(codes.AlreadyExists, "an Identity of that name exists")
+		}
+		if apierrors.IsInvalid(err) {
+			return nil, status.Error(codes.InvalidArgument, "Identity is invalid")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity creation failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity could not be created")
+	}
+	message, err := identityMessage(identity)
+	if err != nil {
+		slog.ErrorContext(ctx, "PolicyService created an invalid Identity", "error", err)
+		return nil, status.Error(codes.Internal, "Identity response is invalid")
+	}
+	return &policypb.CreateIdentityResponse{Identity: message}, nil
+}
+
+func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *policypb.GrantIdentityPolicyBindingRequest) (*policypb.GrantIdentityPolicyBindingResponse, error) {
+	if request.GetIdentityName() == "" || request.GetIdentityUid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Identity name and UID are required")
+	}
+	if len(request.GetPolicySets()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one PolicySet is required")
+	}
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetIdentityName()}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "Identity not found")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	}
+	if string(identity.UID) != request.GetIdentityUid() || !identity.DeletionTimestamp.IsZero() {
+		return nil, status.Error(codes.NotFound, "Identity not found")
+	}
+	if err := s.requireKnownPolicySets(ctx, request.GetPolicySets()); err != nil {
+		return nil, err
+	}
+	var expiresAt *metav1.Time
+	if value := request.GetExpiresAt(); value != nil {
+		if err := value.CheckValid(); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "expires_at must be a valid timestamp")
+		}
+		converted := metav1.NewTime(value.AsTime().UTC())
+		expiresAt = &converted
+	}
+	controller, blockOwnerDeletion := false, false
+	binding := &policyapi.PolicyBinding{
+		TypeMeta: metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "PolicyBinding"},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: s.namespace, GenerateName: identity.Name + "-",
+			// Owned by the Identity incarnation: deleting it deletes this grant (DeleteIdentity does
+			// not count owned bindings), and a same-named successor inherits nothing.
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity",
+				Name: identity.Name, UID: identity.UID,
+				Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
+			}},
+		},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
+			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
+		},
+	}
+	if err := s.objects.Create(ctx, binding); err != nil {
+		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
+		if apierrors.IsAlreadyExists(err) {
+			return nil, status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
+		}
+		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be created")
+	}
+	message, err := bindingMessage(binding)
+	if err != nil {
+		slog.ErrorContext(ctx, "PolicyService created an invalid PolicyBinding", "error", err)
+		return nil, status.Error(codes.Internal, "PolicyBinding response is invalid")
+	}
+	return &policypb.GrantIdentityPolicyBindingResponse{Binding: message}, nil
 }
 
 func ownedBy(owners []metav1.OwnerReference, uid types.UID) bool {

@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["grpc.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/testing",
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
+)

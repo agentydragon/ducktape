@@ -59,3 +59,21 @@ diff --git a/internal/logging/BUILD.bazel b/internal/logging/BUILD.bazel
 +    ],
 +    visibility = ["//visibility:public"],
 +)
+diff --git a/internal/api/BUILD.bazel b/internal/api/BUILD.bazel
+--- a/internal/api/BUILD.bazel
++++ b/internal/api/BUILD.bazel
+@@ -1,2 +1,14 @@
++go_test(
++    name = "management_v8_test",
++    srcs = ["server_management_v8_test.go"],
++    embed = [":api"],
++    visibility = ["//visibility:public"],
++    deps = [
++        "//internal/api/handlers/management",
++        "//internal/config",
++        "@com_github_gin_gonic_gin//:gin",
++    ],
++)
++
+ go_test(
+     name = "api_test",

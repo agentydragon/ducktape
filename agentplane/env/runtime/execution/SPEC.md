@@ -29,8 +29,11 @@ proxy calls keep their existing status behavior and do not receive this executio
 
 Runtime holds the COSI database lock before constructing the embedded Execution service. Its
 COSI Execution controller serializes service attempts and requires the previous service's joined
-fence before launching a successor. Pod ownership is
-PID 1 plus its private process namespace. On ordinary release, the companion stops exec-server,
+fence before launching a successor. Pod ownership is PID 1 plus its private process namespace.
+The Execution Service holds a gRPC Claim stream over the companion's filesystem-protected Unix
+socket; cancellation or transport loss requests a fence. Inspect and generation-scoped Fence are
+unary RPCs. Stream closure or a Fence reply alone does not prove cleanup.
+On ordinary release, the companion stops exec-server,
 fences every remaining process in that namespace, and publishes a new idle generation only after
 the process table contains no workload process. Fence requests name the observed generation;
 delayed duplicates cannot fence a successor. A changed generation proves the prior owner was

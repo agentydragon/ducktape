@@ -37,12 +37,47 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// Owner pins both the authenticated ServiceAccount incarnation and the Sandbox incarnation
-// the inbox was opened for. Recreating either resource does not transfer ownership.
-type Owner struct {
+// TODO(SESSION_IDENTITY_AUTHZ): decide inbox ownership by the Session's Identity and its bindings,
+// not by the Sandbox incarnation the inbox was opened for (agentplane/plans/task_dag.md).
+//
+// Owner is who may read and manage an inbox: an AccountOwner or an IdentityOwner. Each pins the
+// subject incarnation and the Sandbox incarnation the inbox was opened for, so recreating either
+// resource does not transfer ownership.
+type Owner interface{ isOwner() }
+
+// AccountOwner is the ServiceAccount incarnation the Session executes as.
+type AccountOwner struct {
 	Account    model.ServiceAccount
 	AccountUID string
 	SandboxUID string
+}
+
+// IdentityOwner is the Identity incarnation the Dispatcher recorded the Session as executing as.
+// An Identity-owned inbox keeps `owner_namespace`/`owner_name`, which name the destination Sandbox
+// (the ServiceAccount is named after it), and `owner_identity_{name,uid}` say who owns it.
+type IdentityOwner struct {
+	Identity   model.Identity
+	SandboxUID string
+}
+
+func (AccountOwner) isOwner()  {}
+func (IdentityOwner) isOwner() {}
+
+// ownerPredicate selects the inboxes of alias (an inbox table alias, a source constant) owner has
+// established, with bind parameters numbered from first.
+func ownerPredicate(owner Owner, alias string, first int) (string, []any) {
+	switch owner := owner.(type) {
+	case AccountOwner:
+		return fmt.Sprintf("%[1]sowner_namespace = $%[2]d AND %[1]sowner_name = $%[3]d AND %[1]sdestination_uid = $%[4]d AND %[1]sowner_uid = $%[5]d",
+				alias, first, first+1, first+2, first+3),
+			[]any{owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID}
+	case IdentityOwner:
+		return fmt.Sprintf("%[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d",
+				alias, first, first+1, first+2),
+			[]any{owner.SandboxUID, owner.Identity.Name, owner.Identity.UID}
+	default:
+		panic(fmt.Sprintf("unknown inbox owner %T", owner))
+	}
 }
 
 // Errors the store distinguishes, one per gRPC status code a caller maps it to. Quota failures are *QuotaError.

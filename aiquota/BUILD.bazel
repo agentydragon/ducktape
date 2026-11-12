@@ -325,6 +325,7 @@ py_test(
         ":server_main",
         ":settings",
         "//:conftest",
+        "//aiquota/providers:claude_lib",
         "//aiquota/render:view_model_lib",
         "//util/testing:asgi",
         "@pypi//httpx",

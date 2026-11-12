@@ -219,7 +219,7 @@ Gateway model-list handlers and schemas used in the compatibility table were che
 - [L1] LiteLLM v1.103.0 release: <https://github.com/BerriAI/litellm/releases/tag/v1.103.0>
 - [L2] LiteLLM proxy API, providers, streaming, health, and metrics documentation: <https://docs.litellm.ai/docs/>
 - [L3] LiteLLM Langfuse integration documentation: <https://docs.litellm.ai/docs/observability/langfuse>
-- [L4] Current checked-in routes, tracing settings, Crossplane keys, and BuildBuddy sync in the fixed replacement plan: [llm_gateway_replacement.md](llm_gateway_replacement.md), [proxy.py](../../../cdk8s/litellm/proxy.py), [Crossplane key definitions](../../../cdk8s/litellm/crossplane_keys.py), [BuildBuddy sync](../../../../tf/gitops/litellm-buildbuddy-sync/main.tf)
+- [L4] Current checked-in routes, tracing settings, Crossplane keys, and BuildBuddy sync in the fixed replacement plan: [llm_gateway_replacement.md](llm_gateway_replacement.md), [proxy.py](../../../cdk8s/litellm/proxy.py), [Crossplane key definitions](../../../cdk8s/litellm/crossplane_keys.py), [BuildBuddy sync](../../../cdk8s/litellm/buildbuddy_crossplane.py)
 - [L5] LiteLLM core and enterprise license boundary: <https://github.com/BerriAI/litellm/blob/v1.103.0/LICENSE>
 - [L6] LiteLLM v1.106.3 latest release: <https://github.com/BerriAI/litellm/releases/tag/v1.106.3>
 - [L7] LiteLLM main-branch commit history: <https://github.com/BerriAI/litellm/commits/main/>

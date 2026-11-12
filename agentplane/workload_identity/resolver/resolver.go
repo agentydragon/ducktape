@@ -42,8 +42,9 @@ type ServiceAccount struct {
 	UID             types.UID
 }
 
-// Identity is an Identity in the policy namespace, as the incarnation the record names: a
-// credential of a deleted Identity gains nothing from a same-named successor.
+// Identity is an Identity in the policy namespace. A record naming the Identity's UID resolves only
+// to that incarnation, so its credential gains nothing from a same-named successor; a record naming
+// no UID (a standing record rendered from git) resolves to the live Identity of that name.
 type Identity struct {
 	Name string
 	UID  types.UID
@@ -185,7 +186,11 @@ func (r *Resolver) subject(ctx context.Context, record *workloadapi.WorkloadCred
 		} else if err != nil {
 			return nil, fmt.Errorf("%w: read Identity %s: %w", ErrUnavailable, key, err)
 		}
-		if identity.UID != named.UID || !identity.DeletionTimestamp.IsZero() {
+		if !identity.DeletionTimestamp.IsZero() {
+			return nil, fmt.Errorf("%w: subject Identity %s is being deleted", ErrRefused, key)
+		}
+		// Pinning the incarnation is the requester's choice (workloadapi.IdentitySubject).
+		if named.UID != "" && identity.UID != named.UID {
 			return nil, fmt.Errorf("%w: subject Identity %s is not the incarnation the record names", ErrRefused, key)
 		}
 		return Identity{Name: identity.Name, UID: identity.UID}, nil

@@ -1,10 +1,8 @@
 package threads
 
 import (
-	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -18,22 +16,10 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	database, err := postgres.Start(ctx, migrations.Up)
-	cancel()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "start PostgreSQL fixture:", err)
-		os.Exit(1)
-	}
-	integrationDatabase = database
-	code := m.Run()
-	if err := database.Close(); err != nil {
-		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	os.Exit(code)
+	os.Exit(postgres.RunIntegrationTests(migrations.Up, func(database *postgres.Database) int {
+		integrationDatabase = database
+		return m.Run()
+	}))
 }
 
 func openStore(t *testing.T) (*Store, *sql.DB, string) {

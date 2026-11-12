@@ -156,6 +156,7 @@ CREDENTIALS = (
         secret_name="openclaw-telegram-bot-token",
         consumers=(ApprovedConsumer("claude-sandbox", "openclaw-telegram-bot-token-claude-sandbox-reader"),),
     ),
+    Credential(secret_file="sfpl-credentials.sops.yaml", secret_name="sfpl-credentials"),
     Credential(
         secret_file="tana-agentydragon-gmail-com-account-pat.sops.yaml",
         secret_name="tana-agentydragon-gmail-com-account-pat",

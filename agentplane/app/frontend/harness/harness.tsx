@@ -213,6 +213,7 @@ const SANDBOXES: EnvironmentDescriptor[] = [
         phase: SandboxPhase.RUNNING,
       },
       executionAccount: { account: { namespace: "agentplane-visual", name: "ready-sandbox" } },
+      identityName: "referenced-identity",
       configuration: { wakeOnSend: true, idleSuspendAfter: { seconds: 3600n } },
       kubernetesDiagnostics: {
         sandboxStatus: {
@@ -303,7 +304,9 @@ const SANDBOXES: EnvironmentDescriptor[] = [
       createdAt: timestampFromDate(new Date(ago(48 * HOUR))),
       operatingMode: OperatingMode.SUSPENDED,
       phase: SandboxPhase.SUSPENDED,
+      stopStage: "Stopped",
     },
+    identityName: "referenced-identity",
     executionAccount: { account: { namespace: "agentplane-visual", name: "suspended-sandbox" } },
     configuration: { wakeOnSend: false },
     kubernetesDiagnostics: {
@@ -446,10 +449,11 @@ const BINDINGS = [
   { name: "ready-sandbox-github-public", source: "git", sets: ["github-public"], state: "True" },
   { name: "ready-sandbox-7q4xk", source: "operator", sets: ["pypi"], state: "True", expires: ago(2 * HOUR) },
   {
-    name: "ready-sandbox-unjudged-grant",
+    name: "ready-sandbox-stale-refusal",
     source: "operator",
     sets: ["harness-reviews"],
-    state: null,
+    state: "False",
+    generation: 2n,
     expires: ago(-HOUR),
   },
   {
@@ -459,10 +463,10 @@ const BINDINGS = [
     state: "False",
     expires: ago(-3 * HOUR),
   },
-].map(({ name, source, sets, state, expires }) =>
+].map(({ name, source, sets, state, expires, generation = 1n }) =>
   create(PolicyBindingSchema, {
     identity: { namespace: "agentplane-visual", name, uid: `binding-${name}` },
-    generation: 1n,
+    generation,
     labels: source === "git" ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
     ownerReferences:
       source === "sandbox"
@@ -2770,7 +2774,9 @@ type Flag =
   | "pushBrowserAdded"
   | "connectionRenamed"
   | "mcpLinkageChanged"
-  | "mcpHealthChanged";
+  | "mcpHealthChanged"
+  | "identityWatchUnavailable"
+  | "identityBindingsUnavailable";
 const flags = new Set<Flag>();
 
 function actionGroups(): ActionGroup[] {
@@ -3598,6 +3604,47 @@ function drops(url: URL): boolean {
 // down; once the flag is cleared it is served afresh.
 const droppedStreams = new Set<string>();
 
+routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/environments\/v1\/environments\/agentplane-visual\/([^/]+):identity-record$/,
+    (match, query) => {
+      const sandbox = SANDBOXES.find((item) => item.target?.name === decodeURIComponent(match[1]));
+      if (!sandbox || sandbox.target?.uid !== query.get("target.uid"))
+        return Response.json({ code: 5, message: "environment not found" }, { status: 404 });
+      return sandbox.target.name === "ready-sandbox"
+        ? { identity: { name: "referenced-identity", uid: "identity-referenced-identity" } }
+        : {};
+    },
+  ],
+  [
+    "PATCH",
+    /^\/upstream\/environments\/v1\/environments\/agentplane-visual\/([^/]+):identity$/,
+    (match, _query, _signal, body) => {
+      const sandbox = SANDBOXES.find((item) => item.target?.name === decodeURIComponent(match[1]));
+      const request = body ? (JSON.parse(body) as { target?: { uid?: string }; identityName?: string }) : {};
+      if (!sandbox?.target || sandbox.target.uid !== request.target?.uid)
+        return Response.json({ code: 5, message: "environment not found" }, { status: 404 });
+      if (sandbox.observedState?.stopStage !== "Stopped")
+        return Response.json({ code: 9, message: "spec.identity changes only while nothing runs" }, { status: 400 });
+      if (request.identityName === "git-origin-identity") {
+        sandbox.observedState.stopStage = "";
+        publishStreams(`/upstream/environments/v1/environments/agentplane-visual/${sandbox.target.name}:watch`);
+        return Response.json({ code: 9, message: "spec.identity changes only while nothing runs" }, { status: 400 });
+      }
+      if (request.identityName === "credential-referenced-identity")
+        return Response.json(
+          { code: 9, message: "environment identity is still named by Sessions: session-001" },
+          { status: 400 }
+        );
+      sandbox.identityName = request.identityName || undefined;
+      publishStreams("/upstream/environments/v1/environments:watch");
+      publishStreams(`/upstream/environments/v1/environments/agentplane-visual/${sandbox.target.name}:watch`);
+      return {};
+    },
+  ]
+);
+
 routes.unshift([
   "GET",
   /^\/(live\/.+|upstream\/notifications\/v1\/sessions\/[^/]+\/(?:inbox:watch|inbox\/entries:watch|subscriptions:watch)|sandboxes\/[^/]+\/console\/stream)$/,
@@ -3681,6 +3728,21 @@ routes.unshift([
 
 routes.unshift(
   [
+    "DELETE",
+    /^\/upstream\/environments\/v1\/environments\/([^/]+)\/([^/]+)$/,
+    (match, query) => {
+      const sandbox = SANDBOXES.find(
+        (item) =>
+          item.target?.namespace === decodeURIComponent(match[1]!) &&
+          item.target.name === decodeURIComponent(match[2]!) &&
+          item.target.uid === query.get("target.uid")
+      );
+      if (!sandbox) return Response.json({ message: "Sandbox changed" }, { status: 409 });
+      // The controller removes a Sandbox asynchronously; keep it in the watch until the test advances it.
+      return {};
+    },
+  ],
+  [
     "GET",
     /^\/upstream\/egress\/v1\/decisions:watch$/,
     (_match, _query, signal) =>
@@ -3743,6 +3805,12 @@ routes.unshift(
     (_match, query, signal) => {
       const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
       const identity = query.get("identity");
+      if (identity !== null && flags.has("identityBindingsUnavailable")) {
+        return Response.json(
+          { code: 14, message: "the Policy Service identity bindings watch is unavailable" },
+          { status: 503 }
+        );
+      }
       const bindings =
         query.get("everyIdentity") === "true"
           ? identityBindings
@@ -3770,8 +3838,14 @@ routes.unshift(
   [
     "GET",
     /^\/upstream\/policy\/v1\/identities:watch$/,
-    (_match, _query, signal) =>
-      ndjsonWatch(
+    (_match, _query, signal) => {
+      if (flags.has("identityWatchUnavailable")) {
+        return Response.json(
+          { code: 14, message: "the Policy Service identity watch is unavailable" },
+          { status: 503 }
+        );
+      }
+      return ndjsonWatch(
         [
           toJson(
             WatchIdentitiesResponseSchema,
@@ -3783,13 +3857,15 @@ routes.unshift(
           ),
         ],
         signal
-      ),
+      );
+    },
   ],
   [
     "DELETE",
     /^\/upstream\/policy\/v1\/identities\/agentplane-visual\/([^/]+)$/,
     (match, query) => deleteIdentity(decodeURIComponent(match[1]!), query.get("uid")),
   ],
+  ["GET", /^\/upstream\/dispatcher\/v1\/sessions$/, () => Response.json({ sessions: [] })],
   [
     "GET",
     /^\/upstream\/policy\/v1\/policy-sets:watch$/,
@@ -3926,6 +4002,11 @@ const visualHarness = {
       }),
     ];
   },
+  bindSandboxIdentity(sandboxName: string, identityName: string): void {
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);
+    if (!sandbox) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+    sandbox.identityName = identityName;
+  },
   nameThread(threadId: string, name: string): void {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
@@ -3971,6 +4052,11 @@ const visualHarness = {
   set(flag: Flag, on = true): void {
     if (on) flags.add(flag);
     else flags.delete(flag);
+  },
+  environmentIdentity(name: string | null): void {
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === "ready-sandbox");
+    if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+    sandbox.identityName = name ?? undefined;
   },
   /** Sets `flag` and serves the open streams whose path ends in `pathSuffix` again. */
   publish(flag: Flag, pathSuffix: string): void {
@@ -4083,9 +4169,7 @@ const visualHarness = {
       return rows;
     };
   },
-  rememberHistoryRowHeight(threadId: string, width: number, key: string, height: number): void {
-    rememberRowHeight(threadId, width, key, height);
-  },
+  rememberHistoryRowHeight: rememberRowHeight,
   lifecycleGroup(): void {
     threadEntityRows = lifecycleGroupRows;
   },

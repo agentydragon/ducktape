@@ -203,20 +203,6 @@ def sample_status_result(sample_commit_info):
     )
 
 
-def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = None):
-    assert worktree_path.exists(), f"Worktree {worktree_path} does not exist"
-    assert worktree_path.is_dir(), f"Worktree {worktree_path} is not a directory"
-
-    if expected_branch:
-        repo = pygit2.Repository(worktree_path)
-        head_ref = repo.head.shorthand
-        assert head_ref == expected_branch, f"Expected branch {expected_branch}, got {head_ref}"
-
-
-def assert_worktree_not_exists(worktree_path: Path):
-    assert not worktree_path.exists(), f"Worktree {worktree_path} should not exist"
-
-
 # Integration test fixtures for daemon-based tests
 # ================================================
 

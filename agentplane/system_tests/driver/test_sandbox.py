@@ -88,6 +88,18 @@ def cluster() -> Cluster:
     return cast(Cluster, access)
 
 
+@pytest.fixture(autouse=True)
+def identity_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_create_identity(_cluster: Cluster, name: str, _policy_sets: list[str]) -> dict[str, str]:
+        return {"namespace": "test", "name": name, "uid": f"identity-{name}"}
+
+    async def fake_delete_identity(_cluster: Cluster, _identity: dict[str, str]) -> None:
+        return None
+
+    monkeypatch.setattr(sandbox, "create_scenario_identity", fake_create_identity)
+    monkeypatch.setattr(sandbox, "delete_scenario_identity", fake_delete_identity)
+
+
 async def test_readiness_accepts_an_already_ready_sandbox_from_initial_inventory() -> None:
     client = create_autospec(Client, instance=True)
     view = _environment("readiness-test", str(uuid4()), ready=True)

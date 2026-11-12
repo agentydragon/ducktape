@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "eventually",
+    testonly = True,
+    srcs = ["eventually.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/eventually",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["@io_k8s_apimachinery//pkg/util/wait"],
+)

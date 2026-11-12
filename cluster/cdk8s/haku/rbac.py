@@ -8,7 +8,6 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.haku import ui_egress
@@ -43,23 +42,23 @@ def chart(app: App) -> Chart:
             },
         ),
     )
-    # haku-ui's own Action caller (ui_egress.py). Haku-authored workloads run in this namespace, so
-    # the account and its bindings are ours: Haku can create Pods as it but cannot create, label or
-    # bind ServiceAccounts here (the haku-state-workload-deployer Role has none). No Kubernetes
-    # permissions; its egress sidecar presents a standing SVID, not a ServiceAccount token.
+    # The account Haku's standing workloads run as (ui_egress.py). Haku-authored workloads run in this
+    # namespace, so the account is ours: Haku can create Pods as it but cannot create or bind
+    # ServiceAccounts here (the haku-state-workload-deployer Role has none). It is no policy subject
+    # and holds no Kubernetes permissions: each workload's egress sidecar presents a standing SVID
+    # acting as the haku-ui Identity, not a ServiceAccount token.
     k8s.KubeServiceAccount(
         chart,
         "haku-ui-service-account",
         metadata=k8s.ObjectMeta(
             name=ui_egress.SERVICE_ACCOUNT,
             namespace=NAMESPACE,
-            labels={CALLER_LABEL: "true"},
             annotations={
                 "description": (
-                    "The principal haku-ui reaches agentplane-staging as: Home Assistant and Grocy reads through "
-                    "the egress proxy, and <tool-call> Action requests that wait for the operator. haku-anki runs as "
-                    "this account too, for AnkiWeb sync (agentplane/actions_staging_policies.py). Its grants stay within claude-ai's "
-                    "(haku/ui_egress.py) except AnkiWeb."
+                    "The account haku-ui, haku-anki and haku-jupyter run as. Their SVIDs act as the haku-ui Identity "
+                    "in agentplane-staging: Home Assistant and Grocy reads through the egress proxy, <tool-call> Action "
+                    "requests that wait for the operator, and AnkiWeb sync (agentplane/actions_staging_policies.py). "
+                    "Its grants stay within claude-ai's (haku/ui_egress.py) except AnkiWeb."
                 )
             },
         ),

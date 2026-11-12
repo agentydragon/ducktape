@@ -20,12 +20,14 @@ type Context interface {
 	json.Marshaler
 	API() APIStyle
 	Records() ([]json.RawMessage, error)
+	RecordsFrom(int) ([]json.RawMessage, error)
+	RecordCount() int
+	Clone() Context
 	AppendRecords([]json.RawMessage) error
 	AppendUser([]ContentPart) error
 	AppendNotice([]ContentPart) error
 	AppendToolResult(ToolInvocation, []ContentPart) error
 	ChangeEffort(string) error
-	AppendExecutionState(*ExecutionState) error
 	PendingCalls() ([]ToolInvocation, error)
 	FindCall(string) (ToolInvocation, error)
 	CheckSettled() error

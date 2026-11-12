@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { CodeBlock } from "./code_block";
 import { Field } from "./field";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
-import { unwrapToolResult } from "./tool_rendering/result_entry";
+import { unwrapMcpToolResult } from "./mcp_result";
 import { toolResultPreview } from "./tool_rendering/index";
 
 /** The exact stored result envelope behind a collapsed disclosure — byte-exact-ish (the stored
@@ -36,7 +36,7 @@ export function ToolResultField({
   variant: PreviewVariant;
 }): JSX.Element | null {
   if (result == null) return null;
-  const nice = toolResultPreview(serverId, toolName, unwrapToolResult(result), variant);
+  const nice = toolResultPreview(serverId, toolName, unwrapMcpToolResult(result), variant);
   if (!nice) {
     if (variant !== "detailed") return null;
     return (

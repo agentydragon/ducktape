@@ -19,9 +19,9 @@ CPU limits; kubelet restarts the container. Its PID namespace must be private
 directory, environment binary disk and proxy trust bundle. Projected workload tokens remain
 confined to the egress sidecar.
 
-The embedded Execution Service claims the companion over its ownership socket. A claim's explicit
+The embedded Execution Service claims the companion over gRPC on its ownership Unix socket. A claim's explicit
 environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide reaper owns
-native and orphan waits. The claim connection and companion lifetime remain the executor's
+native and orphan waits. The Claim stream and companion lifetime remain the executor's
 ownership protocol. The companion does not construct Runtime's COSI lifecycle or Host's journals.
 Stdout/stderr readers are not joined before PID 1 exits, since escaped descendants can retain them.
 
@@ -31,11 +31,13 @@ roll back, restore both the previous template command and the previous environme
 After Flux applies the rollback, verify a fresh Pod's executor health endpoint and Execution Service
 ownership claim.
 
-Execution Service holds a Unix connection to the companion through an `emptyDir`. On ownership loss
+Execution Service holds a gRPC Claim stream to the companion through an `emptyDir` Unix socket
+with mode `0600`. The local service trusts filesystem access by the Sandbox UID and has no TCP
+listener. On ownership loss
 or executor exit, the companion normally fences its workload process domain and publishes a fresh
 idle generation while keeping PID 1 alive. If that in-container fence fails, the companion exits so
 the container runtime can fence the whole namespace; only a new container generation then proves
-that outer cleanup completed. A socket close alone does not prove either fence.
+that outer cleanup completed. A stream close alone does not prove either fence.
 
 A claim whose `exec-server` cannot be spawned at all (a missing or unexecutable Codex binary) starts
 nothing, so there is no workload generation to fence. The companion refuses the claim with the reason,

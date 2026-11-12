@@ -217,10 +217,10 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}
 	}
-	if _, err := f.Read(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Read(t.Context(), AccountOwner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the inbox: %v", err)
 	}
-	if _, err := f.GetSubscription(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.GetSubscription(t.Context(), AccountOwner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the subscription: %v", err)
 	}
 	if _, err := f.GetSubscription(t.Context(), f.incarnation(), uuid.New()); !errors.Is(err, ErrNotFound) {

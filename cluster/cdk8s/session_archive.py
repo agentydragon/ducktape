@@ -25,10 +25,9 @@ NAMESPACE = session_backup.NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/ai-session-archive-image-pins"
 HOSTNAME = "ai-session-archive.allegedly.works"
-DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespace=NAMESPACE)
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
-_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset"
 _OIDC = SecretRef(namespace=NAMESPACE, name="ai-session-archive-oidc")
 _RESTIC_CREDENTIALS_PATH = session_backup.IMPORTER_CREDENTIALS_PATH
 _WEB_PORT = 8080
@@ -55,13 +54,14 @@ def _database(chart: Chart) -> None:
             "description": "Disposable, Restic-derived view of workstation AI session history.",
             "cnpg.io/skipWalArchiving": "enabled",
         },
-        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
+        profile=cluster.OVH_PIRAEUS_HDD,
         size="100Gi",
         resize_in_use_volumes=False,
         instances=1,
         # The default 5s replication timeouts disconnect the HDD standby during
         # observed multi-second storage and network stalls.
         postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
+        # Created by pg_basebackup; initdb names the cloned app role CNPG reconciles.
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         # The Restic snapshots are the durable backup; this database is a rebuildable projection.
         wal_archive=False,
@@ -82,7 +82,8 @@ def _database(chart: Chart) -> None:
 def _migration_container() -> k8s.Container:
     return k8s.Container(
         name="migrate-database",
-        image=_MIGRATOR_IMAGE,
+        image=_IMPORTER_IMAGE,
+        args=["--migrate-database"],
         image_pull_policy="IfNotPresent",
         env=[DATABASE.app_secret.key("uri").env_var("DATABASE_URL")],
         resources=k8s.ResourceRequirements(

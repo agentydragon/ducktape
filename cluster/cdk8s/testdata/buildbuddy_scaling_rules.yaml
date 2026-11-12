@@ -1,0 +1,180 @@
+rule_files:
+  - buildbuddy.yaml
+evaluation_interval: 1m
+tests:
+  - name: idle worker has no queue series before its first task
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 1 1
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 0 0
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 0
+  - name: count occupied workers and their queue reservations
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 1 1
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 4000 4000
+      - series: buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",group_id="test-group"}
+        values: 2 2
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 3
+  - name: a missing worker scrape holds the requested count
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 2 2
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-b",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-1"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b"}
+        values: 0 0
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 0 0
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 2
+  - name: old worker samples do not affect current demand
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 1 1
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 4000 4000
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-old"}
+        values: 1 1
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-old"}
+        values: 4000 4000
+      - series: buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-old",group_id="test-group"}
+        values: 10 10
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 1
+  - name: a running but unregistered second worker holds the requested count
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 2 2
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-b",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-1"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b",health_check_name="registered_to_scheduler"}
+        values: 0 0
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 4000 4000
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b"}
+        values: 0 0
+      - series: buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",group_id="test-group"}
+        values: 10 10
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 2
+  - name: a second VM without a pod cannot trigger a third
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 2 2
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 4000 4000
+      - series: buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",group_id="test-group"}
+        values: 10 10
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 2
+  - name: stale pool state returns no scaling recommendation
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 1 _ _ _ _
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 4m
+        exp_samples: []
+  - name: once the second VM registers, backlog can request a third
+    interval: 1m
+    input_series:
+      - series: kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}
+        values: 2 2
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1 1
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-b",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-1"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1 1
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b",health_check_name="registered_to_scheduler"}
+        values: 1 1
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 4000 4000
+      - series: buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-b"}
+        values: 4000 4000
+      - series: buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",group_id="test-group"}
+        values: 1 1
+    promql_expr_test:
+      - expr: buildbuddy_kvm:demand
+        eval_time: 1m
+        exp_samples:
+          - labels: buildbuddy_kvm:demand
+            value: 3

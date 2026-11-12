@@ -57,12 +57,8 @@ py_wheel(
     distribution = "gmail_archiver",
     entry_points = {"console_scripts": ["gmail-archiver = gmail_archiver.main:app"]},
     python_requires = ">=3.14",
-    # SYNC: propagatedBuildInputs in nix/packages/default.nix (gmail-archiver).
-    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the Nix
-    # inputs once the pinned Gmail wheel no longer imports util.fmt.
     requires = [
         "beautifulsoup4",
-        "ducktape-util",
         "google-api-python-client",
         "google-auth",
         "openai",

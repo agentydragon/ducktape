@@ -2,20 +2,24 @@
 
 Status: **approved contract; shared protocol primitives, durable Action caller-UID retention, and the
 Runner Gateway Dispatcher, EnvironmentService, and History Service receiving paths are implemented.
-Caller-delegating Action adapters and their end-to-end use remain separate work.**
-Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount.
-The first consumer is routine caller-privilege Actions. Direct callers continue using the
+An Identity effective caller is implemented in the shared middleware, Dispatcher and History, and
+Action Service's Session delegation sends one for an Identity's request. The central sampler is the
+first non-Action actor: it pushes a Session's journal to History and makes its provider calls
+through LLM ingress for the Identity the Session executes as. Caller-delegating Action adapters and
+their end-to-end use remain separate work.**
+Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount
+or an Identity. The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.
 
 ## Identity and authority
 
 Keep these facts separate:
 
-| Fact             | Source                                                       | Use                                                                                           |
-| ---------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Actor            | Destination-audience token verified by the receiving backend | Authenticate the service making this RPC and check its permission to delegate on this method. |
-| Effective caller | Trusted delegation envelope, with SA namespace, name and UID | Apply the backend's ordinary caller authorization.                                            |
-| Provenance       | Durable request/execution identifiers supplied by the actor  | Correlate admissions and effects across services.                                             |
+| Fact             | Source                                                                                      | Use                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Actor            | Destination-audience token verified by the receiving backend                                | Authenticate the service making this RPC and check its permission to delegate on this method. |
+| Effective caller | Trusted delegation envelope: SA namespace, name and UID, or Identity name and UID           | Apply the backend's ordinary caller authorization.                                            |
+| Provenance       | The actor's durable record the call serves: an Action's request and execution, or a Session | Correlate admissions and effects across services.                                             |
 
 A delegated call uses the effective caller's permissions. Membership of the actor in a privileged
 backend allowlist must not select a privileged path for that call. Parentage, creator labels,
@@ -24,7 +28,10 @@ environment handles and provenance identifiers confer no authority.
 The receiving backend explicitly trusts the actor to assert caller identity for designated methods
 and caller namespaces. This is a real trust grant: a trusted actor can assert callers within that
 scope. Configure it separately from ordinary caller admission and privileged backend access;
-neither implies permission to delegate.
+neither implies permission to delegate. Asserting Identities is a grant of its own
+(`identity_callers`): a receiver's Identities are not in any caller namespace, and an existing
+ServiceAccount grant must not silently widen to every Identity when a receiver gains a policy
+namespace.
 
 For a direct call, actor and caller are the authenticated SA. An explicitly privileged broker
 operation retains its separately reviewed authority contract; the delegation envelope has no
@@ -43,15 +50,24 @@ agentplane-delegation-bin: <serialized Delegation protobuf>
 **Deviation:** `Agentplane-Delegated` is an Agentplane authorization scheme. It uses the existing
 TokenReview mechanism for the token, but explicitly selects delegated authorization. The envelope
 uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC library handles
-its transport encoding.
+its transport encoding. An HTTP receiver (LLM ingress) takes the same two headers, the envelope in
+standard base64 as gRPC itself transports `-bin` metadata, and admits the request through the same
+middleware (`Rule.AdmitRequest`).
 
 The envelope is `Delegation` in [`delegation.proto`](../proto/delegation.proto), a messages-only
-schema in package `agentplane.proto` that reuses `ServiceAccountIdentity` from
-[`identity.proto`](../proto/identity.proto).
+schema in package `agentplane.proto` that reuses `ServiceAccountIdentity` and `Identity` from
+[`identity.proto`](../proto/identity.proto). Its effective caller is a `oneof`: `caller`, a
+ServiceAccount, or `identity`, an Identity in the receiver's policy namespace. Its provenance is a
+second `oneof` of typed profiles: `action`, the Action Service's request and execution records, or
+`session`, the central Session a sampler acts for.
 
-All fields are required by this profile's validation: a valid SA reference, nonempty opaque SA UID,
-and valid request/execution UUIDs. Neither the actor nor its credentials appear in this envelope.
-The Action execution ID is the existing execution record's ID, never its lease token.
+All fields are required by this profile's validation: exactly one effective caller (a valid SA
+reference with a nonempty opaque SA UID, or a valid Identity name with a nonempty UID) and exactly
+one provenance profile with valid UUIDs (a Session ID in its canonical spelling). Neither the actor
+nor its credentials appear in this envelope. The Action execution ID is the existing execution
+record's ID, never its lease token. A receiver consumes the profile its method serves: the
+Dispatcher records an Action's correlation, History and LLM ingress require the Session a sampler
+names to be the one the call is about.
 
 Actions constructs the envelope from its authenticated, durable request and execution records.
 Tool arguments cannot supply or override it. Admission stores the verified caller UID with the
@@ -78,7 +94,9 @@ it, so an old replica refuses the call before effects. A delegated client never 
 ordinary `Bearer` authentication. Backends can gain support before clients start using it;
 mixed versions may refuse calls but must not elevate them.
 
-Additive protobuf fields must not change authorization meaning when ignored. A future incompatible
+Additive protobuf fields must not change authorization meaning when ignored. `identity` is
+field 4 of the `oneof`, not a change to `caller`: a receiver that predates it reads an Identity
+envelope as having no caller and refuses it as `UNAUTHENTICATED`, never as some ServiceAccount. A future incompatible
 authority change needs a discriminator that older receivers reject; silently ignoring a new
 permission restriction is invalid.
 
@@ -90,14 +108,16 @@ Shared middleware in `workload_auth/auth`, composed with the existing per-method
 2. Verify the actor's token for the receiving service's audience and admitted namespaces. The
    initial Actions delegator must prove its actual Pod-bound workload identity.
 3. Check the actor's explicit permission to delegate on this method.
-4. Decode and validate the envelope, including the permitted caller-namespace scope. Resolve the
-   effective SA and require its recorded UID to match; a deleted/recreated account is a different
-   caller.
+4. Decode and validate the envelope, including the permitted caller-namespace scope or the
+   Identity grant. Resolve the effective SA or Identity and require its recorded UID to match; a
+   deleted/recreated account or Identity is a different caller. A method whose direct mode admits
+   no Identity caller refuses a delegated one.
 5. Admit a typed direct or delegated context. Preserve the actor's proven Pod identity separately
    from the caller's account identity; never manufacture Pod proof for the original caller.
 6. Run the method's normal resource/policy checks for the effective caller. For example,
-   `SubmitInput` checks that caller against the Session's immutable execution principal, while
-   `EnvironmentService` compares it with the exact live Sandbox-owned ServiceAccount UID.
+   `SubmitInput` checks that caller against the Session's immutable execution principal, or an
+   Identity against the Identity incarnation recorded with the Session, while `EnvironmentService`
+   compares it with the exact live Sandbox-owned ServiceAccount UID.
 
 The handler consumes the admitted context, not raw identity headers, tool arguments or labels.
 No handler-specific copy of delegation parsing or privileged fallback is allowed. A delegated
@@ -115,8 +135,8 @@ new authorization decisions reapply the corresponding checks; provenance never f
 
 ## Actions, persistence and recovery
 
-Actions retains the verified caller UID at admission and carries it through Decision, execution and
-worker payloads. A caller-delegating adapter uses that durable identity. An old request without
+Actions retains the verified caller UID at admission, a ServiceAccount's or an Identity's, and
+carries it through Decision, execution and worker payloads. A caller-delegating adapter uses that durable identity. An old request without
 that identity cannot silently acquire the UID of whichever account now has the same name.
 Stored schema changes use new migrations and the normal service startup lifecycle.
 
@@ -140,10 +160,18 @@ Services needing caller delegation reuse the authentication mode, actor/caller d
 per-method trust checks and shared client/server implementation. No application or Actions lookup
 is required by the receiving backend. A caller need not have a Session or an execution environment.
 
-The initial envelope's provenance is Action-specific. A concrete non-Action consumer should add a
-typed provenance profile through shared schema evolution; it must not invent Action IDs or require
-Actions to be deployed. Keep the identity and authorization rules above. Do not add speculative
-generic grants, a delegation-chain service or arbitrary provenance maps ahead of a consumer.
+A concrete non-Action consumer adds a typed provenance profile through shared schema evolution;
+it must not invent Action IDs or require Actions to be deployed. The central sampler is one: it
+authenticates as itself and holds no agent key, and each call's effective caller is the Identity
+the Dispatcher recorded the Session as executing as, read from the sampler's own Session record,
+with the Session as provenance; neither JavaScript nor tool arguments can name or override it. A
+Session whose Sandbox named no Identity has none to delegate, and the sampler then calls as itself
+exactly as before Identities existed ([sampler contract](../central_sampler/SPEC.md#identity-and-admission)).
+Receivers grant the sampler per method and by scope like any actor: History on `Push`
+(`ingress.sampler_identity_callers`) and LLM ingress on inference
+(`central_sampler_identity_callers`), both over the Identities of their policy namespace. Keep
+the identity and authorization rules above. Do not add speculative generic grants, a
+delegation-chain service or arbitrary provenance maps ahead of a consumer.
 
 Trust is not transitive. A further hop needs its own explicitly trusted actor and target method.
 Construct outgoing context from an admitted identity or trusted durable record; never blindly

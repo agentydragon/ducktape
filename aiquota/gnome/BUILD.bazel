@@ -1,9 +1,9 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_test")
+load("//gnome:devkit.bzl", "gnome_devkit")
 
 pkg_files(
     name = "extension_files",
@@ -74,7 +74,6 @@ py_test(
         "//aiquota/testing:quota_fixtures",
         "//devinfra/oci",
         "//devinfra/testing:output_writer",
-        "//devinfra/testing:undeclared_outputs",
         "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",
@@ -84,18 +83,10 @@ py_test(
     ],
 )
 
-# Local iteration: install the bazel-built extension zip into the user's
-# gnome-shell extension dir and launch a nested devkit shell.
-sh_binary(
+gnome_devkit(
     name = "devkit",
-    srcs = ["devkit.sh"],
-    args = [
-        "$(rlocationpath :aiquota_zip)",
-        "$(rlocationpath //aiquota:desktop_bin)",
-    ],
-    data = [
-        ":aiquota_zip",
-        "//aiquota:desktop_bin",
-    ],
-    use_bash_launcher = True,
+    daemon = "//aiquota:desktop_bin",
+    extension_zip = ":aiquota_zip",
+    fixture_env = "AI_QUOTA_FIXTURE",
+    uuid = "aiquota@allegedly.works",
 )

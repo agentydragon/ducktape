@@ -33,9 +33,6 @@ class WorktreeIndex:
             by_name.setdefault(MAIN_WORKTREE_DISPLAY_NAME, main)
         return cls(by_path=by_path, by_name=by_name, main=main)
 
-    def get_by_name(self, name: str) -> DiscoveredWorktree | None:
-        return self.by_name.get(name)
-
     def resolve_target(self, name: str | None, current_path: Path) -> tuple[DiscoveredWorktree, str | None] | None:
         if name:
             if name == ".":

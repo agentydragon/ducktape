@@ -29,6 +29,8 @@ Deleting the record or replacing its credential ID revokes the certificate. `Res
 listener allows SPIFFE. Listener credential selection does not grant method authorization, and
 delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
 bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
+`SVIDResolver.IdentitySubjectsOnly` refuses records naming a ServiceAccount, for a listener whose
+ServiceAccount callers keep presenting bearers (History's read API).
 
 History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
 terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
@@ -53,30 +55,40 @@ Service uses this path. Other callers use Pod-bound `Principal` values.
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../docs/grpc_services.md#authentication)).
 
-`AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
-TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
-only the identity fields it proves. `Accounts` applies an explicit account allowlist. `SVIDOrAccounts` admits current Sandbox SVIDs
-and applies the account allowlist only to bearer callers, preserving History's sampler writer policy.
-`ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver` and
-admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmission`.
+`Accounts` admits only the listed ServiceAccounts. `SVIDOrAccounts` admits current Sandbox SVIDs
+and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
+an SVID naming an Identity is admitted as `AnySubject` admits it.
+`ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver`
+and admits any ServiceAccount or Identity that source authenticates; Identity callers are returned
+as an `IdentityAdmission`.
 `ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity
 as an `IdentityAdmission`.
 
 Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
-pins exact actor ServiceAccounts and per-actor caller namespace scopes to the Rule; attaching that
-Rule to a full method name is the method trust grant. It preserves the Rule's ordinary direct path.
-Delegation requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is
-reviewed for this service's audience. The asserted caller
-must match the live ServiceAccount UID. A method with no delegation policy rejects the delegated
-scheme and any delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a
-direct call.
+pins exact actor ServiceAccounts and per-actor caller scopes to the Rule; attaching that Rule to a
+full method name is the method trust grant. It preserves the Rule's ordinary direct path. Delegation
+requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is reviewed for
+this service's audience. An asserted ServiceAccount must be in the actor's caller namespaces and
+match the live ServiceAccount UID. An asserted Identity needs the actor's separate
+`Delegator.IdentityCallers` grant, a Rule whose direct mode admits Identity callers
+(`ReviewedServiceAccountOrIdentity`, `AnySubject`, `SVIDOrAccounts`), and the live Identity's UID in
+the receiver's policy namespace (`KubernetesIdentityUIDs`, an uncached read); otherwise it is
+`PERMISSION_DENIED`. A method with no delegation policy rejects the delegated scheme and any
+delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a direct call.
+Each UID reader is required only by the grants that use it: a receiver whose delegators assert
+Identities alone passes no ServiceAccount reader. The envelope's provenance is one typed profile,
+an Action's records or a central Session; the handler consumes the one its method serves.
+`Rule.AdmitRequest` admits an HTTP request by the same Rule and middleware, reading the
+`Authorization` header, the verified TLS peer and the `agentplane-delegation-bin` header in
+standard base64 (`EncodeDelegationHeader`), the form gRPC itself transports `-bin` metadata in.
 
 Handlers can read the typed result with `Admitted` or use `EffectiveCaller` for ordinary account
 checks. `DirectAdmission` keeps the direct caller and optional Pod proof together;
 `DelegatedAdmission` keeps the actor's Pod-bound `Principal`, effective ServiceAccount identity and
-provenance separate. A delegated actor is never installed in the legacy `Caller` context, which
+provenance separate, and `DelegatedIdentityAdmission` the same with an effective `Identity`, which
+`EffectiveCaller` refuses as it refuses an `IdentityAdmission`. A delegated actor is never installed in the legacy `Caller` context, which
 continues to mean the direct principal. For TokenReview callers that principal is Pod-bound; other
-`AnyAccount` sources supply only the fields they prove. The effective caller is account identity
+`AnySubject` sources supply only the fields they prove. The effective caller is account identity
 only and cannot prove a Pod binding.
 
 [`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the

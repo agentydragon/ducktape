@@ -188,6 +188,11 @@ replacement. Syntax placement must agree with the validated assignment, includin
 whole-statement moves and repeated declarations. Emission consumes an immutable
 validated plan.
 
+Final validation rejects a reconstructed file when a source global reference
+is proven to resolve to an emitted binding. This check runs even in dry runs
+and without a report directory; incomplete global-resolution evidence remains
+diagnostic.
+
 Generated module headers inline source-unit and binding lists only when each
 line fits within 160 bytes. Larger lists use a count and point to
 `reports/tree/<chunk>/chunk.json` at the output root; its `selected_module_lowerings`
@@ -393,6 +398,21 @@ construction source unit reports the consumed input references in
 configured inputs that the proof did not consume are not reported. Empty uses
 are omitted from JSON and default to empty when reading older reports.
 This adds no author flag or purity exemption.
+An exact direct top-level `X = new Map([[key, value], …])` initializer has a
+separate source-derived heap receipt when every entry is a dense two-element
+array of primitive literals. The Map and all entry arrays are fresh; no source
+expression between their creation and native iteration can mutate, escape or
+install accessors on them. The receipt requires an unshadowed, unreassigned
+global `Map`, no dynamic scope, and complete-program native-integrity evidence
+for the Map binding, `Map.prototype` and its adder, `Array.prototype`, and
+`%ArrayIteratorPrototype%`. It omits only this constructor's generic opaque
+heap read/write and argument-escape contribution. The collector still records
+the literal arrays' allocation cells, and ordinary binding, allocation,
+callback, purity and synchronous-execution analysis remains authoritative.
+Aliased/escaped iterables, sparse or spread entries, getters, nonprimitive
+entry expressions, nested calls and unsupported native slots retain the
+opaque path. The consumed native dependencies appear on that exact source unit
+in `heap_native_integrity_uses`.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
 ordering coverage.
@@ -2092,6 +2112,16 @@ the declaration. Later writes to that binding do not replace the superclass
 captured by the class. Unsupported or uncertain heritage retains the generic
 fallback.
 
+For a superclass expression `(helper(value), base)` whose call result is
+discarded, the capture fallback need not publish argument values when the
+callee is a stable top-level function whose simple parameters and empty or
+literal-return body cannot inspect or retain them. The call arguments must be
+tracked lexical reads or primitive literals without spreads, and `base` must be
+an unmodified top-level function declaration with one known identity. The
+helper, base and all normal evaluation effects remain tracked.
+Rebinding, dynamic scope, defaults, other argument expressions or uncertain
+function identity keep the conservative heritage-input fallback.
+
 A pure initializer that calls a uniquely known local function can retain an
 unpublished callback graph in a fresh ordinary record without making that
 initializer a speculative reachability root. The function must have simple
@@ -2156,8 +2186,8 @@ is insufficient: an inherited data value can retain an unrepresented callback.
 This assertion can override conservative prototype-mutation census blockers;
 it does not declare the factory pure or native identities intact.
 
-Admission requires a direct unary call of the selected stable top-level hoisted
-factory with a fresh literal data record. The canonical AST check excludes
+Top-level admission requires a direct unary call of the selected stable
+top-level hoisted factory with a fresh literal data record. The canonical AST check excludes
 assignment/sequence-wrapped records, spreads, computed keys, accessors,
 `__proto__`, duplicate keys, array holes and other eager calls. Nested dense
 arrays, literal values, inline callbacks, method definitions and independently
@@ -2195,6 +2225,22 @@ the conservative path records one typed reason in
 `synchronous_execution.local_record_factory_rejections`: the refused record
 shape with its outermost property, or the checked-proof condition that failed
 (with the constructor check for `constructor_proof`).
+
+A direct unary call of that annotated factory inside a local wrapper may use
+the same assertion at its nested call site. The selected runtime target must be
+the exact hoisted factory; the already evaluated argument must be the exact
+fresh, settled plain-data object checked by the canonical AST record check.
+Template substitutions in this nested form must be initialized primitive
+bindings, so coercion cannot invoke user code. The factory must have a
+source-checked return-only constructor body with no other calls or writes;
+additional nested `new` allocations must be inert. A conditional or indirect
+callee, accessor, spread, possible argument reentry, mutated class or escaped
+factory stays on the conservative path. The prototype assertion is scoped to
+that invocation and to its checked class and input object, and its consumed
+properties are reported for that call. The wrapper and argument evaluation,
+constructor lexical reads and heap effects, subsequent calls, and any
+publication remain in the ordinary execution and dependency analysis. This
+nested receipt does not issue the top-level call-site purity certificate.
 
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
@@ -4319,6 +4365,16 @@ a callback-pool record also gives the pool size. An `unsupported_construction`
 record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
+
+When a graph-level unresolved-call fallback expands a source-unit read closure,
+both its traversal and promoted effects use the indexed synchronous prefix for
+owners with complete callable coverage. A read only after a definite `await`
+cannot constrain module initialization through that callback. Closures created
+or published before suspension, callable getters, and paths that may skip an
+`await` retain their synchronous reads. Owners without complete coverage and
+dynamic lexical scope keep conservative lazy effects. The fallback still
+records its precision loss and all other reachable effect domains.
+
 `missing_call_result` identifies an ordered call whose synchronous-effect proof
 completed without supplying a return-value transfer. The body still truncates
 conservatively at that call. This does not report an unknown target or certify
@@ -4349,6 +4405,41 @@ site from another reason freshness was not established. This explanation does
 not change effect promotion.
 The ordered call-admission explanation does not change target admission,
 fallback effects, reachability, gate acceptance, or emitted JavaScript.
+
+An exact top-level call to a checked local constructor factory may receive a
+separate heap-locality receipt after ordinary synchronous execution completes.
+The receipt requires a single direct call with a fresh plain-data record
+argument, closed input values, stable local factory and class identities, and
+constructors whose checked bodies only retain arguments or read own fields of
+those fresh records. Implicit constructors with independently evaluated default
+fields are excluded. At that call site, the heap summary retains argument and
+callee evaluation, including nested allocations and reads, but does not treat
+retained arrays or captured callbacks as immediate reads and writes. The
+factory and constructor source bodies keep their conservative summaries for
+other calls. Prototype or getter uncertainty, an unknown call, incomplete
+execution, or an unsupported argument preserves the ordinary heap frontier.
+This receipt is independent of the call's purity certificate; later operations
+on retained values retain their own heap effects.
+
+A checked factory result kept in one private top-level binding may also retain
+its known own data field across a single direct member read in another
+top-level binding initializer. This requires that the receiver binding has no
+other reference, write, export, alias, or dynamic-scope use, and that the read
+executes eagerly once rather than inside a callable. Only that read avoids
+publishing the receiver through unrelated class accessors. A later or repeated
+read, a field deletion or redefinition, or a read of an actual accessor keeps
+the ordinary conservative effects. An abstract instance shape alone does not
+prove that an own field still exists.
+
+The same private own-field check can discharge the classifier's member-read
+purity reason at the exact evaluated top-level read site. The completed owner
+must have no unknown call, precision loss, or uninitialized read, and every
+joined execution path must carry that read's proof. The discharge removes only
+one matching member-read reason at that span; other reads, calls, and writes
+retain their purity obligations. A conditional or short-circuited read without
+proof on every path keeps the conservative reason. A read nested under a
+conditional expression, short-circuit or logical assignment, or optional
+chain cannot mint this receipt even if one abstract execution visits it.
 
 An annotated local constructor-factory call kept on the conservative path records
 its first typed refusal in `synchronous_execution.local_record_factory_rejections`.

@@ -190,7 +190,36 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     # The tail grows by more than a page while the reader stays back in the thread: its rows
     # arrive on the same shape, and the row the reader is at does not move.
     latest = append_items(thread_browser, "window-item", range(130, 165))
-    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    try:
+        await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    except AssertionError as error:
+        thread_id = thread_browser.source.session_id
+        summary = await thread_browser.content.session_summary(thread_id)
+        assert summary is not None
+        view = await thread_browser.content.reader.read_thread_entities(
+            history_service_pb2.ReadThreadEntitiesRequest(
+                session_id=str(thread_id),
+                keys=history_service_pb2.EntityKeys(
+                    keys=[
+                        history_service_pb2.EntityKey(
+                            entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
+                        )
+                    ]
+                ),
+            )
+        )
+        shape = await page.request.post(
+            f"{thread_browser.ingress.url}/threads/{thread_id}/sync/entities"
+            f"?projection_epoch={summary.projection_epoch}&offset=now",
+            data={"where": "entity_kind = 'view_state'", "order_by": "entity_index DESC", "limit": 1},
+            headers={"Origin": thread_browser.ingress.url},
+        )
+        browser_cursor = await page.locator("[data-projection-cursor]").get_attribute("data-projection-cursor")
+        raise AssertionError(
+            f"cursor {latest.cursor}: committed={summary.committed_cursor}, folded={summary.folded_through}, "
+            f"view={[row.revision_cursor for row in view.entities]}, browser={browser_cursor}, "
+            f"electric_status={shape.status}, electric_body={(await shape.text())[:1000]}"
+        ) from error
     restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2

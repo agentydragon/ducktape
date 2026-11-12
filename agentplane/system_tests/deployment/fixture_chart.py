@@ -44,7 +44,7 @@ from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
-from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, PublicLiteLLM
+from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, OperatorTokenIssuer, PublicLiteLLM
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
@@ -119,9 +119,18 @@ MCP_EDGE_HTTP_SERVICE = mcp_edge.http_service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
 # The fixture's own Dex clients.
-_APP_LOGIN = dex.StaticClient(id="test-app-login", name="Test app login", redirect_uri=f"{APP_ORIGIN}/auth/callback")
+APP_CLIENT_ID = "test-app-login"
+APP_CLIENT_SECRET = "test-k3s-app-client-secret"
+_APP_LOGIN = dex.StaticClient(id=APP_CLIENT_ID, name="Test app login", redirect_uri=f"{APP_ORIGIN}/auth/callback")
 _MCP_LINKAGE = dex.StaticClient(
     id="test-mcp-linkage", name="Test MCP linkage", redirect_uri=f"{APP_ORIGIN}/mcp-linkage/callback"
+)
+# Fixtures without Dex: the app's OIDC issuer is this test-only one, whose key the stack pins.
+OPERATOR_TOKENS = OperatorTokenIssuer(
+    issuer="https://test-operator-issuer.test",
+    audience=APP_CLIENT_ID,
+    subject="test-operator-subject",
+    username="test-operator",
 )
 _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset"
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
@@ -172,11 +181,13 @@ def environment(
     *,
     vm_sandboxes: bool,
     models: Models,
+    operator_token_key: str | None,
     app_origin: str = APP_ORIGIN,
     central_sampler: bool = False,
     firecracker_sandboxes: bool = False,
 ) -> Environment:
-    """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
+    """Build the common fixture settings; MCP renderers add their servers and Dex resources separately.
+    With `operator_token_key`, the app's OIDC issuer is `OPERATOR_TOKENS`'s, pinned to that key."""
     app_login = login_client(app_origin)
     operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
     routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
@@ -204,7 +215,8 @@ def environment(
                 )
             },
             max_live_sessions=2,
-            turn_timeout_seconds=60,
+            # Gateway reconnect has a bounded 120s window; a live turn must outlast it.
+            turn_timeout_seconds=240,
             rpc_timeout_seconds=10,
             executor_initialize_timeout_seconds=30,
             lease_seconds=60,
@@ -222,7 +234,6 @@ def environment(
         # These scenarios check delivery and acknowledgement; worker integration tests cover
         # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
-        default_policy_sets=frozenset(egress.DEFAULT_POLICIES),
         app_config=Settings(
             models=catalog,
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
@@ -244,9 +255,16 @@ def environment(
             ),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
             listen_address="0.0.0.0:8080",
-            token_subjects=frozenset({f"system:serviceaccount:{NAMESPACE}:agentplane-agent"}),
             log_levels={},
-            oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin),
+            oidc=(
+                OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
+                if operator_token_key is None
+                else OIDCSettings(
+                    issuer=OPERATOR_TOKENS.issuer,
+                    public_base_url=app_origin,
+                    static_ed25519_keys=frozenset({operator_token_key}),
+                )
+            ),
             action_federation=dex.action_federation(operator_oidc),
             frontend_config=FrontendConfig(
                 trace_search=TraceSearchSettings(
@@ -368,6 +386,7 @@ def objects(
     ca_key: str,
     system_roots: str,
     cluster_ca: str,
+    operator_token_key: str,
     models: Models,
     vm_sandboxes: bool,
     firecracker_sandboxes: bool = False,
@@ -380,6 +399,7 @@ def objects(
         vm_sandboxes=vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,
         models=models,
+        operator_token_key=operator_token_key,
         central_sampler=central_sampler,
     )
     fixture = build_chart(
@@ -690,8 +710,8 @@ def build_chart(
         chart,
         app_component.oidc_secret(NAMESPACE).name,
         {
-            "client-id": _APP_LOGIN.id,
-            "client-secret": "test-k3s-app-client-secret",
+            "client-id": APP_CLIENT_ID,
+            "client-secret": APP_CLIENT_SECRET,
             "session-secret": "test-k3s-app-session-secret",
         },
     )
@@ -853,7 +873,6 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     )
     oom_config_map["metadata"]["name"] = oom_config_map_name
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
-    oom_config["environment"]["resources"]["executor"]["memory_max_bytes"] = vm_configuration.OOM_EXECUTOR_MEMORY_BYTES
     oom_config_map["data"]["environment-runtime.json"] = json.dumps(oom_config, separators=(",", ":"))
     oom_spec = oom_template["spec"]["vm"]["template"]["spec"]
     oom_spec["domain"]["firmware"]["kernelBoot"]["kernelArgs"] += " agentplane.cgroup-observer=1"

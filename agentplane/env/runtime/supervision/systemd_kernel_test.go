@@ -610,6 +610,9 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatalf("native stdin/stdout round trip=%q", got)
 		}
 		<-stderr
+		if err := readCtx.Err(); err != nil {
+			t.Fatalf("shared observation context ended before final systemd proof read: %v", err)
+		}
 		assertSystemdProofEmpty(t, readCtx, conn, systemdProofUnitName(t, p))
 	})
 	if t.Failed() {

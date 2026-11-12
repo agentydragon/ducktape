@@ -55,7 +55,7 @@ func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.T
 
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -132,7 +132,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
-		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}), DefaultPolicySets: []string{testDefaultPolicy},
+		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}),
 	})
 	if err != nil {
 		t.Fatal(err)

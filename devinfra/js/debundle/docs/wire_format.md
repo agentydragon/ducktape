@@ -244,13 +244,14 @@ must appear exactly once in that chunk's final files, at the same span and
 spelling, and still resolve to no binding when the final AST is resolved
 afresh. `preserved` means all sites passed, or were removed together with
 their statement by a vendor residual strip (`elided_use_count`); `changed`
-means a site is `captured_by_binding` (an emitted import or local) or
-`renamed`; `incomplete` names the missing evidence (no inventory, a missing
+means a site is `renamed`; `incomplete` names the missing evidence (no
+inventory, a missing
 or duplicated final site or entry, a raw entry whose bytes changed, or
 `dynamic_scope` from `with`/direct `eval` in a transformed body). It proves
 binding correspondence only, not value or effect equivalence, and says
-nothing about identifiers emission introduced without a source site. The
-report never changes acceptance.
+nothing about identifiers emission introduced without a source site. Final
+validation rejects `captured_by_binding` findings even when reports are disabled
+or the run is a dry run; other findings remain diagnostic.
 
 `counts` includes every conflicting swapped pair, cell incidence, Havoc pair
 and premise disposition. `legacy_edge_comparison` separately counts

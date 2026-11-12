@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )
 
@@ -70,7 +71,7 @@ func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Ti
 		uuid.New(), row.ID, ExecutionPendingDispatch, at); err != nil {
 		return false, err
 	}
-	return true, notify(ctx, tx, DispatchChannel, "")
+	return true, postgres.Notify(ctx, tx, DispatchChannel, "")
 }
 
 // Decide records an operator's Decision on a pending request and returns the request and whether it now awaits

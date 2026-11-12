@@ -77,13 +77,13 @@ nodes. Full set and checklist: <docs/decisions.md> § "OVH-Only Resilience Invar
 `Terraform` CRs (`tf/gitops/*`, infra-drift) run on two custom GHCR images (not Forgejo:
 the Forgejo pull credential is created by one of those CRs):
 
-- `ghcr.io/agentydragon/tofu-controller`: upstream plus an `ExternalArtifact` source kind
-  (fork branch `external-artifact-source`, <../third_party/tofu_controller/README.md>), so
+- `ghcr.io/agentydragon/tofu-controller`: built from an upstream commit with the
+  `ExternalArtifact` source kind (<../third_party/tofu_controller/README.md>), so
   each module reads its own content-addressed `ArtifactGenerator` artifact
   (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>) and only changed modules replan.
   Drop once upstream releases flux-iac/tofu-controller#1901.
 - `ghcr.io/agentydragon/tf-runner`: upstream runner with all pinned providers baked in
-  (<tf_runner/README.md>); its base tag must match the controller fork's base release.
+  (<tf_runner/README.md>); its protocol must match the controller.
 
 ## Layout
 

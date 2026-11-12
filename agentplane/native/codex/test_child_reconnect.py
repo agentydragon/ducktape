@@ -24,7 +24,7 @@ from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import EFFORT, MODEL
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
-from util.net import async_wait_for_port
+from util.testing.net import async_wait_for_port
 
 
 @dataclass

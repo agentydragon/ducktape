@@ -29,14 +29,14 @@ func ValidateCompaction(original *Context, records []json.RawMessage, audit *Aud
 		return nil, knownFailure("compaction must include opaque encrypted_content")
 	}
 	compacted := []Item{item}
-	if contextBytes(compacted) >= contextBytes(original.Items) {
+	if contextBytes(compacted) >= contextBytes(original.items) {
 		return nil, knownFailure("compaction did not reduce serialized model context")
 	}
 	environment, err := Message("user", environmentText)
 	if err != nil {
 		return nil, err
 	}
-	replacement := &Context{Items: append([]Item{environment}, compacted...)}
+	replacement := &Context{items: append([]Item{environment}, compacted...)}
 	if _, err := replacement.Records(); err != nil {
 		return nil, err
 	}

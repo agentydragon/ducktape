@@ -725,7 +725,11 @@ fn global_reach(cause: &str) -> Value {
 /// The reach of the rejected construction of `result` in `source`, whose
 /// entry prints `3`.
 fn construction_reach(source: &str, extra_chunks: &[(&str, &str)]) -> Value {
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks));
+    construction_reach_of(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks))
+}
+
+fn construction_reach_of(opts: FixtureOpts<'_>) -> Value {
+    let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     result["precision_losses"]
@@ -797,10 +801,15 @@ fn published_class_with_a_borrowed_method_has_global_reach() {
 
 #[test]
 fn dynamic_scope_in_the_chunk_has_global_reach() {
+    // A direct `eval` is refused at admission (A1); the override keeps
+    // the analysis running to pin its reach.
     assert_eq!(
-        construction_reach(
-            "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
-            &[],
+        construction_reach_of(
+            FixtureOpts::new(
+                "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+                vec![],
+            )
+            .with_admission_overrides(&["a1_eval"]),
         ),
         global_reach("dynamic_scope")
     );

@@ -45,6 +45,8 @@ func owner(name string, uid types.UID) Owner {
 	return OwnedBy(&metav1.ObjectMeta{Namespace: testNamespace, Name: name, UID: uid}, sandbox)
 }
 
+func controllerUID(owner Owner) types.UID { return owner.Holder.(Controller).Reference.UID }
+
 func newRequester(t *testing.T) Requester {
 	t.Helper()
 	requester, err := New(objects, objects)
@@ -101,7 +103,7 @@ func TestARequestIsPendingUntilIssuedForItsCurrentSpec(t *testing.T) {
 		t.Fatalf("first Ensure = %+v", credential)
 	}
 	created := record(t, "test-lifecycle")
-	if controller := metav1.GetControllerOf(created); controller == nil || controller.UID != request.Owner.Reference.UID || controller.Kind != "Sandbox" ||
+	if controller := metav1.GetControllerOf(created); controller == nil || controller.UID != controllerUID(request.Owner) || controller.Kind != "Sandbox" ||
 		created.Spec.Subject.ServiceAccount != "test-agent" || created.Spec.Binding != nil {
 		t.Fatalf("created %+v", created)
 	}
@@ -160,7 +162,7 @@ func TestAnEarlierOwnersRecordIsReplacedAndAForeignOneKept(t *testing.T) {
 		t.Fatalf("an earlier owner's record = %+v", credential)
 	}
 	ensure(t, requester, later)
-	if controller := metav1.GetControllerOf(record(t, "test-reused")); controller.UID != later.Owner.Reference.UID {
+	if controller := metav1.GetControllerOf(record(t, "test-reused")); controller.UID != controllerUID(later.Owner) {
 		t.Fatalf("the record is still the earlier owner's: %+v", controller)
 	}
 
@@ -174,7 +176,7 @@ func TestAnEarlierOwnersRecordIsReplacedAndAForeignOneKept(t *testing.T) {
 	if err := requester.Revoke(t.Context(), foreign.Owner); err != nil {
 		t.Fatal(err)
 	}
-	if controller := metav1.GetControllerOf(record(t, "test-reused")); controller.UID != later.Owner.Reference.UID {
+	if controller := metav1.GetControllerOf(record(t, "test-reused")); controller.UID != controllerUID(later.Owner) {
 		t.Fatalf("a foreign request changed the record: %+v", controller)
 	}
 
@@ -200,7 +202,7 @@ func TestAnOwnerHoldsARecordPerWorkloadName(t *testing.T) {
 	first.Name, second.Name = "test-box-caller-first", "test-box-caller-second"
 	for _, box := range []Owner{first, second} {
 		ensure(t, requester, Request{Owner: box, Subject: ServiceAccount{Name: "test-box-caller"}})
-		if controller := metav1.GetControllerOf(record(t, box.Name)); controller == nil || controller.UID != account.Reference.UID {
+		if controller := metav1.GetControllerOf(record(t, box.Name)); controller == nil || controller.UID != controllerUID(account) {
 			t.Fatalf("record %s is not the account's: %+v", box.Name, controller)
 		}
 	}
@@ -211,4 +213,61 @@ func TestAnOwnerHoldsARecordPerWorkloadName(t *testing.T) {
 		t.Fatalf("revoked record survived: %v", err)
 	}
 	record(t, second.Name)
+}
+
+// An unowned record is told from another's by its labels alone: a same-named record of another
+// holder, or of another owner's labels, is never adopted, changed or revoked.
+func TestAnUnownedRecordIsKnownByItsLabels(t *testing.T) {
+	requester := newRequester(t)
+	labelled := func(uid string) Owner {
+		return Owner{Namespace: testNamespace, Name: "test-unowned", Holder: Unowned{Labels: map[string]string{"test.example/owner-uid": uid}}}
+	}
+	first := Request{Owner: labelled("first"), Subject: Identity{Name: "test-agent", UID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}}
+	ensure(t, requester, first)
+	created := record(t, "test-unowned")
+	if len(created.OwnerReferences) != 0 || created.Labels["test.example/owner-uid"] != "first" || created.Labels[UnownedLabel] != "true" {
+		t.Fatalf("created %+v", created.ObjectMeta)
+	}
+	issue(t, created, firstID, nil, metav1.ConditionTrue, "Issued")
+	if credential, ok := ensure(t, requester, first).(Issued); !ok || credential.ID != firstID {
+		t.Fatalf("the owner's record = %+v", credential)
+	}
+
+	successor := Request{Owner: labelled("successor"), Subject: Identity{Name: "test-agent", UID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}}
+	controlled := Request{Owner: owner("test-unowned", "cccccccc-cccc-4ccc-8ccc-cccccccccccc"), Subject: first.Subject}
+	for name, other := range map[string]Request{"other labels": successor, "a controller": controlled} {
+		if credential, ok := ensure(t, requester, other).(Pending); !ok || credential.Reason != "RecordConflict" {
+			t.Errorf("%s: %+v, want RecordConflict", name, credential)
+		}
+		if err := requester.Revoke(t.Context(), other.Owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if kept := record(t, "test-unowned"); kept.UID != created.UID || kept.Spec.Subject.Identity.UID != first.Subject.(Identity).UID {
+		t.Fatalf("another holder changed the record: %+v", kept)
+	}
+
+	if err := requester.Revoke(t.Context(), first.Owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: testNamespace, Name: "test-unowned"}, &workloadapi.WorkloadCredential{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("revoked record survived: %v", err)
+	}
+}
+
+// A record a controller owns is not an unowned owner's, even with its labels.
+func TestAControlledRecordIsNotAnUnownedOnes(t *testing.T) {
+	requester := newRequester(t)
+	controlled := Request{Owner: owner("test-controlled", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"), Subject: ServiceAccount{Name: "test-agent"}}
+	ensure(t, requester, controlled)
+	existing := record(t, "test-controlled")
+	labels := map[string]string{"test.example/owner-uid": "first"}
+	existing.Labels = map[string]string{"test.example/owner-uid": "first", UnownedLabel: "true"}
+	if err := objects.Update(t.Context(), existing); err != nil {
+		t.Fatal(err)
+	}
+	unowned := Request{Owner: Owner{Namespace: testNamespace, Name: "test-controlled", Holder: Unowned{Labels: labels}}, Subject: ServiceAccount{Name: "test-agent"}}
+	if credential, ok := ensure(t, requester, unowned).(Pending); !ok || credential.Reason != "RecordConflict" {
+		t.Fatalf("a controlled record = %+v, want RecordConflict", credential)
+	}
 }

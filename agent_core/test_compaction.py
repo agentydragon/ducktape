@@ -48,7 +48,7 @@ def summarizing_client():
 
 async def test_compact_transcript_basic(mcp_tool_provider, summarizing_client):
     """Test basic transcript compaction."""
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider,
         client=summarizing_client,
         handlers=[BaseHandler()],
@@ -67,7 +67,7 @@ async def test_compact_transcript_basic(mcp_tool_provider, summarizing_client):
     # Compact with keep_recent_turns=2 (should keep last 2 messages)
     result = await agent.compact_transcript(keep_recent_turns=2)
 
-    assert result.compacted
+    assert result
     assert summarizing_client.call_count == 1
 
     # After compaction: [summary, last 2 messages]
@@ -80,7 +80,7 @@ async def test_compact_transcript_basic(mcp_tool_provider, summarizing_client):
 
 async def test_compact_transcript_insufficient_history(mcp_tool_provider, summarizing_client):
     """Test that compaction doesn't happen when history is too short."""
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider,
         client=summarizing_client,
         handlers=[BaseHandler()],
@@ -97,7 +97,7 @@ async def test_compact_transcript_insufficient_history(mcp_tool_provider, summar
     # Try to compact with keep_recent_turns=10 (more than we have)
     result = await agent.compact_transcript(keep_recent_turns=10)
 
-    assert not result.compacted
+    assert not result
     assert summarizing_client.call_count == 0
     assert agent._transcript == original_transcript
 

@@ -71,6 +71,7 @@ def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
         ),
         LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
         _MCP,
+        None,
     )
 
 
@@ -437,13 +438,24 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         if doc["kind"] == "ServiceAccount"
     }
     static_account = f"{fixture.namespace}/mcp-edge-test-caller"
-    sandbox_account = f"{fixture.namespace}/systest-delegation-caller"
-    assert set(mintable_accounts) == {static_account, sandbox_account}
-    # The static OAuth fixture caller is chart-owned and must remain labeled for Actions.
-    assert set(mintable_accounts) & chart_service_accounts.keys() == {static_account}
+    assert set(mintable_accounts) == {static_account}
+    # The standing OAuth fixture caller is chart-owned and remains labeled for Actions.
     caller = chart_service_accounts[static_account]
     assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
-    # The Sandbox controller creates and labels this account after chart rendering.
+
+    binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
+    assert binding["spec"] == {
+        "subject": {"namespace": fixture.namespace, "name": "mcp-edge-test-caller"},
+        "policySets": ["mcp-edge-test-caller-session-delegation"],
+    }
+    policy = _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")
+    assert policy["spec"]["rules"] == [
+        {
+            "type": "action_auto_approve",
+            "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
+        }
+    ]
+
     token_rules = [
         rule for rule in _resource(docs, "Role", "mcp-edge")["rules"] if "serviceaccounts/token" in rule["resources"]
     ]
@@ -586,13 +598,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]
     ordinary_resources = config["environment"]["resources"]
-    oom_executor = oom_resources["executor"]
-    ordinary_executor = ordinary_resources["executor"]
-    assert oom_executor["memory_max_bytes"] < ordinary_executor["memory_max_bytes"]
-    assert {
-        **oom_resources,
-        "executor": {**oom_executor, "memory_max_bytes": ordinary_executor["memory_max_bytes"]},
-    } == ordinary_resources
+    assert oom_resources == ordinary_resources
     control = config["control"]
     assert {"port": int(control["listen_address"].rsplit(":", 1)[1])} in interface["ports"]
     assert control["security"] == {

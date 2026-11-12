@@ -52,7 +52,7 @@
 - [ ] Extend trusted fork CI to `main` if it becomes an active PR target. Branch protection
       requires checks there, but <.github/workflows/trusted-fork-pr-ci.yml> currently
       replaces fork checks only for `devel`; keep this deferred while `main` is unused.
-- [ ] File upstream BB issue + revert `--script` workaround in `bazel-ci.yml` once fixed. See <devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md> (post-run `downloadOutputs` fails with "Exhausted all peers"). Also audit `push-images.yml` which also uses `bb remote build … --remote_download_regex=…`.
+- [ ] Report `bb remote build`'s missing local BEP-file uploads upstream. Reproduction and prior review: <devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md>. Publication-fetch migration: <devinfra/ci/TODO.md>.
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests and flat package structure)
 - [ ] Remove `--per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare` from `.bazelrc` once OR-Tools cleans up signed/unsigned comparisons in `external/or-tools+/`. Currently `or-tools 9.15`.
 - [ ] Pre-commit lint for <devinfra/ci/image_targets.json> completeness: fail if any in-cluster `oci_image` target lacks an entry, and warn on entries whose `target` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: extend `//devinfra/ci:test_plan_image_pushes` to run `bazel query 'kind("oci_image_rule", //...)'` and diff it against `load_images`.

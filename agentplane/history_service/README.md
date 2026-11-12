@@ -9,9 +9,11 @@ token alone does not grant it. A Session UUID by itself grants nothing. Consumer
 `testing/go_service.py` runs the built Go service over a test database. Tests can inspect the fold's
 storage through `fold/models.py` and use the generated Thread entity messages for semantic reads.
 
-An optional, separate `delegation` setting names the Actions actor, caller namespaces and exact full
-History RPC method names that admit delegated reads. The shared workload-auth middleware rechecks the
-asserted caller's current ServiceAccount UID. Delegated Actions calls retain ordinary execution-principal
+An optional, separate `delegation` setting names the Actions actor, caller namespaces, whether it may
+assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
+method names that admit delegated reads. The shared workload-auth middleware rechecks the asserted
+caller's current ServiceAccount or Identity UID; a delegated Identity reads only the Sessions recorded
+with that incarnation, as its own workload does. Delegated Actions calls retain ordinary execution-principal
 read scope even if the actor is also a configured backend reader; actor Pod proof does not widen the read.
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.
@@ -54,10 +56,21 @@ The runner-ingress projected-token audience is absent from Sandbox templates and
 
 `rpc` configures the shared native gRPC listener, its server TLS files and explicit authentication modes.
 With SPIFFE enabled, `Push` admits Sandbox SVIDs and configured sampler bearer accounts; bearer-only
-listeners retain namespace-scoped writer admission. Reads require their existing bearer audience and
-resource authorization. Presenting a certificate together with bearer or delegation metadata is refused.
+listeners retain namespace-scoped writer admission. A ServiceAccount reads only with a bearer of the read
+audience, never with an SVID. Presenting a certificate together with bearer or delegation metadata is refused.
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
-UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
+UID) in `session_history`; other accounts get `PERMISSION_DENIED`.
+
+With the optional `policy_namespace` set, `Push` also admits a Sandbox SVID whose WorkloadCredential
+names an Identity in that namespace (absent, such a writer is refused). The record must be in
+`ingress.writer_namespaces` and controlled by a Sandbox: the Session binds to the Identity
+incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity of the same name, the
+same Identity running another Sandbox, or a ServiceAccount writer is refused, and an Identity writer
+cannot take a ServiceAccount-bound Session. The read API admits a Sandbox SVID naming an Identity
+and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
+be its own Identity, and its `execution_principal`, when present, the ServiceAccount its Sandbox
+controls. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
+replica predating Identity writers cannot bind a ServiceAccount over one. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
@@ -159,7 +172,9 @@ fill an older record; a different UID is refused. `FindSessions` supports both n
 exact UID lookup, including deleted Sandboxes. Legacy rows and ServiceAccounts without a Sandbox
 controller owner remain without a UID.
 
-A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+An Identity writer's Sandbox is the controller owner of its WorkloadCredential.
+
+A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. A nullable retained execution Identity (`Attached.execution_identity`, the Identity incarnation the Dispatcher recorded) is retained from an Identity runner running as it or a configured central sampler relaying it, never from a ServiceAccount runner, which cannot vouch for it; it is immutable like the execution principal, and a read scoped to an Identity incarnation lists exactly the Sessions retained as executing as it, whether or not their Sandbox still exists. The read API admits an Identity SVID (with `policy_namespace` set) and scopes it to that Identity incarnation. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 
 ## Delta settlement
 
@@ -262,7 +277,20 @@ The listener accepts TCP addresses or inherited descriptors as documented by
 identities fixed. A central execution principal is retained only from the Dispatcher-provided
 identity on the admitted sampler path; the executor account name is not used to guess its UID.
 Native announcements cannot claim central metadata. The same cursor, exact-replay,
-writer fencing and commit-before-ack rules apply. Central outboxes retain evidence in sampler
+writer fencing and commit-before-ack rules apply.
+
+When the Agentplane chart configures a central sampler, it also enables
+`ingress.sampler_identity_callers`. Direct History deployments must opt in explicitly.
+
+`ingress.sampler_identity_callers` (requires `policy_namespace`, sampler accounts and the SPIFFE
+listener, on which `Push` admits Identity writers) additionally lets those accounts push as
+delegating actors under the [delegated authorization contract](../docs/delegated_authorization.md),
+naming the Identity a Session executes as and the Session itself. The middleware verifies the
+sampler's token and grant and reads the Identity live, so a stale or missing incarnation is refused
+before the handler; the sampler stays the writer, and the Identity is retained as the Session's
+execution Identity only when the announcement names the same one and the same Session, in a
+`sampler_announce`. A sampler pushing as itself keeps relaying the recorded Identity as above.
+Announcing a central Session never implies this grant. Central outboxes retain evidence in sampler
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
 not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).

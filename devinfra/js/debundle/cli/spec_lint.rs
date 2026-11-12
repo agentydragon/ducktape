@@ -226,7 +226,7 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
     if let Some(max_probes) = args.max_probes {
         ensure!(max_probes > 0, "--max-probes must be positive");
     }
-    let cli = args.transform.clone().resolve()?;
+    let cli = args.transform.context.clone().resolve()?;
     let spec = load_transform_spec_source(&cli.spec_source)?;
     let pass = run_captured_pass(args.transform.clone())?;
     let reports: Vec<(String, ChunkSpecLint)> = pass.chunk_reports(SPEC_LINT_REPORT)?;

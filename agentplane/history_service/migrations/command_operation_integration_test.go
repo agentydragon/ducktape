@@ -22,7 +22,8 @@ func storedOperation(t *testing.T, db *sql.DB, id string) string {
 	return operation
 }
 
-// Command rows a pre-enum fold wrote, before or during the rollout, spell the enum value name.
+// Command rows a pre-enum fold wrote, before or during the 00012 rollout, spell the enum value name; once
+// 00014 drops the rollout trigger, a row is stored as written.
 func TestCommandOperationsBecomeEnumNames(t *testing.T) {
 	db := baselineDB(t)
 	provider, err := schema.Provider(db)
@@ -34,19 +35,31 @@ func TestCommandOperationsBecomeEnumNames(t *testing.T) {
 	}
 	insertCommand(t, db, "stored-input", `{"operation":"submit_input","outcome":"THREAD_COMMAND_OUTCOME_PENDING"}`)
 	insertCommand(t, db, "stored-stop", `{"operation":"stop_runner_session","outcome":"THREAD_COMMAND_OUTCOME_EFFECTED"}`)
-	if err := upBaseline(t, db); err != nil {
+	if _, err := provider.UpTo(t.Context(), 12); err != nil {
 		t.Fatal(err)
 	}
 	insertCommand(t, db, "overlapping-compact", `{"operation":"compact","outcome":"THREAD_COMMAND_OUTCOME_PENDING"}`)
 	insertCommand(t, db, "current-model", `{"operation":"OPERATION_CHANGE_MODEL","outcome":"THREAD_COMMAND_OUTCOME_PENDING"}`)
+	if err := upBaseline(t, db); err != nil {
+		t.Fatal(err)
+	}
+	insertCommand(t, db, "after-rollout", `{"operation":"compact","outcome":"THREAD_COMMAND_OUTCOME_PENDING"}`)
 	for id, want := range map[string]string{
 		"stored-input":        `"OPERATION_SUBMIT_INPUT"`,
 		"stored-stop":         `4`,
 		"overlapping-compact": `"OPERATION_COMPACT"`,
 		"current-model":       `"OPERATION_CHANGE_MODEL"`,
+		"after-rollout":       `"compact"`,
 	} {
 		if got := storedOperation(t, db, id); got != want {
 			t.Errorf("%s operation = %s, want %s", id, got, want)
 		}
+	}
+	var functions int
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM pg_proc WHERE proname = 'thread_command_operation_enum'`).Scan(&functions); err != nil {
+		t.Fatal(err)
+	}
+	if functions != 0 {
+		t.Fatalf("thread_command_operation_enum survives 00014: %d", functions)
 	}
 }

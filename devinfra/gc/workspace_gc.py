@@ -20,10 +20,10 @@ run against this repo. `--prune` alone never removes one (`shutil.rmtree` on an 
 object store is a bigger blast radius than anything else this tool does); it additionally
 needs `--delete-foreign-clones`.
 
-Nothing is removed without an explicit flag. Each removal revalidates its candidate immediately
-beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
-still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
-Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
+Nothing is removed without an explicit flag. The workspace must not be modified by other
+processes while workspace-gc runs: checks and removals are not atomic. Worktrees and branches
+are removed based on the scan; bases and repo-cache entries are rechecked under Bazel locks.
+Skipped items are reported but exit 0; failed removals exit 1.
 Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
 clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
 network-free.
@@ -123,7 +123,7 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
 
 def render_branches(items: list[BranchClassification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedBranch)]
-    rows = [[verdict_of(item), item.branch.name, branch_gc.describe_reason(item)] for item in visible]
+    rows = [[verdict_of(item), item.branch, branch_gc.describe_reason(item)] for item in visible]
     counts = {
         "prunable": sum(isinstance(item, PrunableBranch) for item in items),
         "kept": sum(isinstance(item, RetainedBranch) for item in items),
@@ -283,10 +283,6 @@ def _scan(
     )
 
 
-def _relative_to(path: Path, start: Path) -> str:
-    return os.path.relpath(path, start)
-
-
 async def _run_bounded[T, R](
     items: Sequence[T], function: Callable[[T], R], *, workers: int, on_done: Callable[[R], None] | None = None
 ) -> list[R]:
@@ -396,26 +392,15 @@ def _report_removals[S](
 
 
 async def _apply_worktree_removals(context: _RunContext, worktrees: list[Classification]) -> _RemovalOutcome[Path]:
-    """Remove every prunable worktree that is still prunable now."""
+    """Remove every prunable worktree from the scan."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
         return _nothing_to_remove()
     logger.info("Removing %d worktrees", len(candidates))
-    main_path = git_repo.main_worktree(context.repo)
-    active_path = _active_worktree(context.repo)
-    live = worktree_gc.processes_by_worktree(item.worktree.path for item in candidates)
 
     def remove_one(item: PrunableWorktree) -> RemovalResult[Path]:
         logger.info("Removing worktree %s", item.worktree.path)
-        return worktree_gc.remove_if_still_prunable(
-            context.repo,
-            item.worktree,
-            main=item.main,
-            pr_states=context.prs,
-            main_path=main_path,
-            active_path=active_path,
-            live_pids=live.get(item.worktree.path, []),
-        )
+        return worktree_gc.remove_worktree(context.repo, item.worktree.path)
 
     return _report_removals(
         await _remove_all(candidates, remove_one, _WORKTREE_LABELS, workers=context.workers), _WORKTREE_LABELS
@@ -423,15 +408,15 @@ async def _apply_worktree_removals(context: _RunContext, worktrees: list[Classif
 
 
 def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> _RemovalOutcome[str]:
-    """Delete every prunable branch that has not moved since it was classified."""
+    """Delete every prunable branch from the scan."""
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
         return _nothing_to_remove()
     logger.info("Deleting %d branches", len(candidates))
     results = []
     for index, item in enumerate(candidates, start=1):
-        logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch.name)
-        results.append(branch_gc.delete_branch(repo, item.branch.name, expected_tip=item.tip))
+        logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch)
+        results.append(branch_gc.delete_branch(repo, item.branch))
     return _report_removals(results, _BRANCH_LABELS)
 
 
@@ -479,7 +464,7 @@ async def _apply_repo_cache_deletions(
         "repo-cache entries",
         "Repo cache",
         "deleted",
-        lambda path: _relative_to(path, contents),
+        lambda path: os.path.relpath(path, contents),
         leftover="trash",
     )
     results = [
@@ -711,10 +696,9 @@ async def _apply(
     """Remove what `command` shows, in dependency order; returns whether every step succeeded.
 
     Worktrees go first so branches they hold are freed and their bases orphan, and bases before the
-    repo cache so entries only they referenced become unreferenced. Worktrees reuse the scan
-    (`git worktree remove` itself refuses a tree that turned dirty); branches are re-classified
-    because the removals change who holds them. Every step runs regardless of an earlier one's
-    failures — each domain is independent.
+    repo cache so entries only they referenced become unreferenced. Worktrees and branches reuse
+    the scan; Git refuses to delete a branch still held by a worktree. Every step runs regardless
+    of an earlier one's failures — each domain is independent.
     """
     domains, scan, context = command.domains, findings.scan, findings.context
     oks: list[bool] = []
@@ -723,18 +707,7 @@ async def _apply(
         oks.append((await _apply_worktree_removals(context, scan.worktrees)).ok)
     if _Domain.BRANCHES in domains:
         assert context is not None
-        pg = git_repo.open_repo(context.repo)
-        with progress:
-            branches = workspace_scan.scan_branches(
-                context.repo,
-                worktrees=scan.worktrees,
-                main=git_repo.main_ref(pg),
-                default_branch=git_repo.default_branch_name(pg),
-                pr_states=context.prs,
-                workers=context.workers,
-                progress=progress,
-            )
-        oks.append(_apply_branch_deletions(context.repo, branches).ok)
+        oks.append(_apply_branch_deletions(context.repo, scan.branches).ok)
     bases_removed: frozenset[Path] = frozenset()
     if _Domain.BASES in domains:
         # Removing worktrees orphans bases the first scan kept, so only then are bases rescanned.
@@ -874,7 +847,7 @@ def _worktrees_command(
     no_prs: _NoPrsOption = False,
     verbose: _VerboseOption = False,
     workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
-    prune: Annotated[bool, typer.Option("--prune", help="remove prunable worktrees (revalidated first)")] = False,
+    prune: Annotated[bool, typer.Option("--prune", help="remove prunable worktrees")] = False,
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)

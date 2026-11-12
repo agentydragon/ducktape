@@ -679,6 +679,25 @@ impl AssignmentAnalysis {
         validation
     }
 
+    /// Whether the emitted tree may not resolve a name the way the source
+    /// does: some unit runs before a unit that precedes it in the source, or
+    /// the units declaring bindings do not all share one module.
+    pub fn splits_or_reorders(&self) -> bool {
+        let graph = self.inputs.dependency_graph();
+        let order = self.candidate_emitted_order();
+        let rows = order.rows();
+        let declaring_modules: BTreeSet<_> = rows
+            .iter()
+            .filter(|(_, _, unit)| {
+                graph
+                    .node(*unit)
+                    .is_some_and(|node| !node.declared.is_empty())
+            })
+            .map(|(module, _, _)| module)
+            .collect();
+        declaring_modules.len() > 1 || rows.windows(2).any(|pair| pair[0].1 > pair[1].1)
+    }
+
     pub fn realizability_verdict(&self) -> &RealizabilityVerdict {
         self.realizability
             .get_or_init(|| check_realizability(self.inputs.dependency_graph(), &self.assignment))

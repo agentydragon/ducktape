@@ -424,6 +424,7 @@ manifest:
     sniffio: sniffio
     sortedcontainers: sortedcontainers
     soupsieve: soupsieve
+    sparklines: sparklines
     splitwise: splitwise
     sqlalchemy: sqlalchemy
     sqlparse: sqlparse
@@ -436,6 +437,7 @@ manifest:
     syrupy: syrupy
     tabulate: tabulate
     tenacity: tenacity
+    termcolor: termcolor
     testcontainers: testcontainers
     tests: splitwise
     textual: textual
@@ -450,6 +452,7 @@ manifest:
     typeguard: typeguard
     typer: typer
     typer_di: typer_di
+    types_boto3_s3: types_boto3_s3
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
     tzlocal: tzlocal
@@ -479,4 +482,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 03ead7934a9c34cc71464f1a8ab94dc661aedc60f317ed08cd554408a303542e
+integrity: e3b6282de678321ba407e4f993c6255db4fa49e3f17bf60d8373025899e32b06

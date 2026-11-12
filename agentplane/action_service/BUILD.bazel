@@ -57,15 +57,6 @@ py_test(
 )
 
 py_library(
-    name = "policy_view",
-    srcs = ["policy_view.py"],
-    deps = [
-        ":models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "mcp_settings",
     srcs = ["mcp_settings.py"],
     visibility = [
@@ -412,6 +403,7 @@ go_test(
         ":linkage_service_go_proto",
         ":operator_action_service_go_proto",
         ":web_push_service_go_proto",
+        "//agentplane/action_service/callers",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/migrations",

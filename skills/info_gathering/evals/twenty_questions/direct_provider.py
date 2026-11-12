@@ -9,7 +9,7 @@
 
 Callables accept one annotated Pydantic model or no arguments (using EmptyArgs).
 `@provider.tool(name="...")` overrides the Python name; the callable's docstring
-supplies the tool description. Register the provider with Agent.create().
+supplies the tool description. Register the provider with Agent().
 
 ToolResult passes through, strings become text, and None becomes text "OK".
 BaseModel/list results become structured content via pydantic-core serialization.

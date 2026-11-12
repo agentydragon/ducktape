@@ -64,7 +64,7 @@ py_library(
         ":client",
         ":grocy_types",
         ":mcp_types",
-        "//mcp_infra:request_scoped_openapi",
+        ":request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//pydantic",
@@ -84,9 +84,9 @@ py_library(
         ":batch_tools",
         ":client",
         ":mcp_types",
+        ":request_scoped_openapi",
         ":tool_metadata",
         "//mcp_infra:persistence",
-        "//mcp_infra:request_scoped_openapi",
         "//mcp_infra/authentik_auth:provider",
         "//mcp_infra/authentik_auth:token_exchange",
         "@pypi//fastmcp_slim",
@@ -166,9 +166,9 @@ py_test(
         ":client",
         ":conftest",
         ":mcp_types",
+        ":request_scoped_openapi",
         ":server",
         "//:conftest",
-        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//prometheus_client",
@@ -185,9 +185,9 @@ py_test(
         ":conftest",
         ":grocy_types",
         ":mcp_types",
+        ":request_scoped_openapi",
         ":server",
         "//:conftest",
-        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
@@ -213,8 +213,8 @@ py_library(
     deps = [
         ":client",
         ":mcp_types",
+        ":request_scoped_openapi",
         ":server",
-        "//mcp_infra:request_scoped_openapi",
     ],
 )
 
@@ -232,9 +232,9 @@ py_test(
         ":client",
         ":conftest",
         ":mcp_types",
+        ":request_scoped_openapi",
         "//:conftest",
         "//grocy_mcp/testing:helpers",
-        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//httpx2",
@@ -269,11 +269,11 @@ py_test(
         ":client",
         ":conftest",
         ":mcp_types",
+        ":request_scoped_openapi",
         ":server",
         ":tool_metadata",
         "//:conftest",
         "//grocy_mcp/testing:helpers",
-        "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
@@ -323,4 +323,28 @@ oci_load(
 py_library(
     name = "tool_metadata",
     srcs = ["tool_metadata.py"],
+)
+
+py_library(
+    name = "request_scoped_openapi",
+    srcs = ["request_scoped_openapi.py"],
+    visibility = ["//grocy_mcp:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+    ],
+)
+
+py_test(
+    name = "test_request_scoped_openapi",
+    srcs = ["test_request_scoped_openapi.py"],
+    deps = [
+        ":conftest",
+        ":request_scoped_openapi",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

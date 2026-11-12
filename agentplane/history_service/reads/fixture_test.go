@@ -44,7 +44,7 @@ func newFixture(t *testing.T) fixture {
 func (f fixture) session(t *testing.T, history *storage.Store, sandbox string, entries ...*eventlogpb.EventEntry) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	writer := storage.Writer{Namespace: "test-sandbox-namespace", Name: sandbox, UID: "test-runner-account-uid"}
+	writer := storage.ServiceAccountWriter{Namespace: "test-sandbox-namespace", Name: sandbox, UID: "test-runner-account-uid"}
 	if _, err := history.BindWriter(t.Context(), sessionID, writer, "", nil); err != nil {
 		t.Fatal(err)
 	}

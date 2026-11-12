@@ -32,13 +32,6 @@ def test_flux_bindings_and_launches_name_rendered_policy_sets(catalog_manifests:
     named = {
         (f"preset {preset}", name) for preset, spec in config["sandbox_presets"].items() for name in spec["policy_sets"]
     }
-    gateway = one(
-        doc for doc in _of(catalog_manifests, "ConfigMap") if doc["metadata"]["name"] == "runner-gateway-settings"
-    )
-    named |= {
-        ("environment default", name)
-        for name in yaml.safe_load(gateway["data"]["settings.yaml"])["environment_default_policy_sets"]
-    }
     named |= {
         (f"binding {binding['metadata']['name']}", name)
         for binding in _of(catalog_manifests, "PolicyBinding")
@@ -56,6 +49,33 @@ def test_no_policy_set_carries_a_kubernetes_rule(identity_catalog_manifests: lis
         for rule in doc["spec"]["rules"]
         if rule["type"].startswith("kubernetes_")
     ] == []
+
+
+def test_every_identity_binding_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
+    """Staging renders the standing workloads' bindings on Identities before the catalog; each names
+    one staging renders, in the binding's namespace."""
+    identities = _names(staging_manifests, "Identity")
+    named = [
+        (binding["metadata"]["namespace"], binding["spec"]["subject"]["identity"]["name"])
+        for binding in _of(staging_manifests, "PolicyBinding")
+        if "identity" in binding["spec"]["subject"]
+    ]
+    assert named
+    assert set(named) <= identities
+
+
+def test_every_standing_record_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
+    """Every `WorkloadCredential` staging renders is standing and acts as an Identity the policy
+    namespace renders, never as a ServiceAccount."""
+    actions = one(doc for doc in _of(staging_manifests, "ConfigMap") if doc["metadata"]["name"] == "actions-settings")
+    policy_namespace = yaml.safe_load(one(actions["data"].values()))["policy_namespace"]
+    identities = _names(staging_manifests, "Identity")
+    records = _of(staging_manifests, "WorkloadCredential")
+    assert records
+    for record in records:
+        assert set(record["spec"]) == {"subject"}, record["metadata"]
+        assert set(record["spec"]["subject"]) == {"identity"}, record["metadata"]
+        assert (policy_namespace, record["spec"]["subject"]["identity"]["name"]) in identities, record["metadata"]
 
 
 def test_every_binding_names_an_identity_that_exists(identity_catalog_manifests: list[dict[str, Any]]) -> None:
@@ -110,9 +130,10 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
             assert (name, rules) == (rule["credentialRef"]["name"], [rule])
             account_sets.add(name)
     assert len(impersonation) == 1
-    gateway = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "runner-gateway-settings")
-    defaults = yaml.safe_load(gateway["data"]["settings.yaml"])["environment_default_policy_sets"]
-    assert len(account_sets & set(defaults)) == 1, defaults
+    app_config = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "app-config")
+    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    # Every preset grants the shared diagnostics account's use set.
+    assert all(account_sets & set(spec["policy_sets"]) for spec in presets.values()), presets
 
 
 def _kubernetes_rules(rules: list[dict[str, Any]]) -> set[tuple[str, str, str | None]]:
@@ -129,13 +150,11 @@ def _kubernetes_rules(rules: list[dict[str, Any]]) -> set[tuple[str, str, str | 
 
 
 def _holders(docs: list[dict[str, Any]]) -> dict[str, list[str]]:
-    """The sets each launch preset (with the environment defaults) and each Flux binding grants."""
+    """The sets each launch preset and each Flux binding grants."""
     app_config = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "app-config")
-    gateway = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "runner-gateway-settings")
-    defaults = yaml.safe_load(gateway["data"]["settings.yaml"])["environment_default_policy_sets"]
     presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
     return {
-        **{f"preset {name}": [*defaults, *spec["policy_sets"]] for name, spec in presets.items()},
+        **{f"preset {name}": spec["policy_sets"] for name, spec in presets.items()},
         **{f"binding {doc['metadata']['name']}": doc["spec"]["policySets"] for doc in _of(docs, "PolicyBinding")},
     }
 

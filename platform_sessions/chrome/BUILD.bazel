@@ -4,12 +4,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "export",
-    srcs = ["export.py"],
-    deps = [":profile"],
-)
-
-py_library(
     name = "profile",
     srcs = ["profile.py"],
     deps = [

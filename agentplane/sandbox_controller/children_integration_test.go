@@ -2,6 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -26,10 +28,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -138,6 +142,88 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 	}
 }
 
+func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
+	const ns = "sandbox-controller-watch-contract"
+	kube, err := kubeapiserver.Start(kubeapiserver.WithAPIServerFlag("authorization-mode", "RBAC"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := kube.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx := context.Background()
+	if _, err := kube.Clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// The serving controller acts through WorkloadCredentials and has no use for either resource.
+	if _, err := kube.Clientset.RbacV1().Roles(ns).Create(ctx, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "sandbox-controller"},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods", "persistentvolumeclaims", "configmaps", "services", "events"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{sandboxapi.GroupVersion.Group}, Resources: []string{"sandboxes", "sandboxtemplates"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{policyapi.SchemeGroupVersion.Group}, Resources: []string{"identities", "workloadcredentials"}, Verbs: []string{"get", "list", "watch"}},
+		},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kube.Clientset.RbacV1().RoleBindings(ns).Create(ctx, &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "sandbox-controller"},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "sandbox-controller"},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: kubeapiserver.User}},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	controllerConfig := rest.CopyConfig(kube.Config)
+	controllerConfig.BearerToken = kube.UserToken
+	controllerConfig.BearerTokenFile = ""
+	controllerConfig.Username, controllerConfig.Password = "", ""
+	controllerConfig.TLSClientConfig.CertFile, controllerConfig.TLSClientConfig.KeyFile = "", ""
+	controllerConfig.TLSClientConfig.CertData, controllerConfig.TLSClientConfig.KeyData = nil, nil
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{
+		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, workloadapi.AddToScheme, kubevirtv1.AddToScheme,
+	} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byObject, err := CacheByObject(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := ctrl.NewManager(controllerConfig, ctrl.Options{
+		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"}, HealthProbeBindAddress: "0",
+		// Both tests create the Sandbox controller in the same process.
+		Controller: ctrlconfig.Controller{SkipNameValidation: new(true)},
+		Cache:      cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: byObject},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), Now: time.Now}
+	if err := r.SetupWithManager(mgr); err != nil {
+		t.Fatal(err)
+	}
+	startCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	started := make(chan error, 1)
+	go func() { started <- mgr.Start(startCtx) }()
+	if !mgr.GetCache().WaitForCacheSync(startCtx) {
+		cancel()
+		if err := <-started; err != nil {
+			t.Fatalf("manager failed before its watch cache synced: %v", err)
+		}
+		t.Fatal("manager watch cache did not sync with the granted resource permissions")
+	}
+	cancel()
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -233,35 +319,15 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		}
 	})
 	key := types.NamespacedName{Namespace: ns, Name: "sandbox"}
-	foreign := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: ns}}
-	if err := objects.Create(ctx, foreign); err != nil {
+	agent := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: "integration-agent", Namespace: ns}, Spec: policyapi.IdentitySpec{Description: "Integration agent"}}
+	if err := objects.Create(ctx, agent); err != nil {
 		t.Fatal(err)
 	}
+	acting := &sandboxapi.IdentityRef{Name: agent.Name}
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: ns}, Spec: sandboxapi.SandboxSpec{
-		Template: template.Name, Running: true, PolicySets: []string{"desired-grant"}, Bootstrap: "echo desired",
+		Template: template.Name, Running: true, Identity: acting, Bootstrap: "echo desired",
 	}}
 	if err := objects.Create(ctx, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool {
-		var current sandboxapi.Sandbox
-		if objects.Get(ctx, key, &current) != nil {
-			return false
-		}
-		condition := meta.FindStatusCondition(current.Status.Conditions, sandboxapi.ConditionRunning)
-		return condition != nil && condition.Reason == "ServiceAccountConflict"
-	})
-	if err := objects.Get(ctx, key, &corev1.Pod{}); !apierrors.IsNotFound(err) {
-		t.Fatalf("foreign ServiceAccount allowed a Pod: %v", err)
-	}
-	if err := objects.Delete(ctx, foreign); err != nil {
-		t.Fatal(err)
-	}
-	if err := objects.Get(ctx, key, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	sandbox.Annotations = map[string]string{"retry": "after-foreign-account-removal"}
-	if err := objects.Update(ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
@@ -285,23 +351,20 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatalf("runner Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, RunnerWorkloadTrustFile)
 	}
 	const otherID = "fedcba9876543210fedcba9876543210"
-	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
-		"metadata": {"annotations": {"agentplane.allegedly.works/environment-runtime-credential": "`+otherID+`"}},
-		"status": {"runnerCredential": {"kind": "VM", "podUid": "`+otherID+`"}}
-	}`))); err != nil {
+	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, fmt.Appendf(nil, `{
+		"metadata": {"annotations": {%q: %q}},
+		"status": {"runnerCredential": {"kind": "VM", "podUid": %q}}
+	}`, sandboxapi.EnvironmentRuntimeCredentialMetadataKey, otherID, otherID))); err != nil {
 		t.Fatal(err)
 	}
-	var account corev1.ServiceAccount
-	if err := objects.Get(ctx, key, &account); err != nil {
+	// A reconcile that read the patched Sandbox, by the next spec write.
+	if err := objects.Get(ctx, key, sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if err := objects.Patch(ctx, &account, client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"labels":{"agentplane.allegedly.works/use-action-service":"false","unrelated":"keep"}}}`))); err != nil {
+	sandbox.Annotations = map[string]string{"retry": "after-status-patch"}
+	if err := objects.Update(ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
-	// The ServiceAccount heal is a reconcile that read the patched Sandbox.
-	eventually(t, func() bool {
-		return objects.Get(ctx, key, &account) == nil && account.Labels[ActionCallerLabel] == "true" && account.Labels["unrelated"] == "keep"
-	})
 	var unchanged corev1.Pod
 	if err := objects.Get(ctx, key, &unchanged); err != nil || unchanged.UID != pod.UID {
 		t.Fatalf("spec writer's patch replaced the bound Pod: %v", err)
@@ -339,16 +402,6 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	eventually(t, func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.UID != deletedUID && launch.Data[LaunchFile] == wantLaunch
 	})
-	var binding policyapi.PolicyBinding
-	if err := objects.Get(ctx, key, &binding); err != nil {
-		t.Fatal(err)
-	}
-	if err := objects.Patch(ctx, &binding, client.RawPatch(types.MergePatchType, []byte(`{"spec":{"policySets":["wrong"],"expiresAt":"2099-01-01T00:00:00Z"}}`))); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool {
-		return objects.Get(ctx, key, &binding) == nil && len(binding.Spec.PolicySets) == 1 && binding.Spec.PolicySets[0] == "desired-grant" && binding.Spec.ExpiresAt == nil
-	})
 	var service corev1.Service
 	serviceKey := types.NamespacedName{Namespace: ns, Name: key.Name + sandboxapi.ControlServiceSuffix}
 	if err := objects.Get(ctx, serviceKey, &service); err != nil {
@@ -360,26 +413,18 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	eventually(t, func() bool {
 		return objects.Get(ctx, serviceKey, &service) == nil && len(service.Spec.Selector) == 0 && len(service.Spec.Ports) == 1 && service.Spec.Ports[0].Name == sandboxapi.ControlServicePortName && service.Spec.Ports[0].TargetPort.IntVal == sandboxapi.ControlServicePort
 	})
-	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{"spec":{"policySets":[]}}`))); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool { return apierrors.IsNotFound(objects.Get(ctx, key, &policyapi.PolicyBinding{})) })
 	for _, test := range []struct {
 		name, reason string
 		foreign      client.Object
 	}{
 		{"foreign-launch", "ConfigMapConflict", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foreign-launch-launch", Namespace: ns}}},
-		{"foreign-binding", "PolicyBindingConflict", &policyapi.PolicyBinding{
-			ObjectMeta: metav1.ObjectMeta{Name: "foreign-binding", Namespace: ns},
-			Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
-		}},
 		{"foreign-service", "ServiceConflict", &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foreign-service-control", Namespace: ns}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := objects.Create(ctx, test.foreign); err != nil {
 				t.Fatal(err)
 			}
-			other := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: test.name, Namespace: ns}, Spec: sandboxapi.SandboxSpec{Template: template.Name, Running: true, PolicySets: []string{"desired-grant"}}}
+			other := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: test.name, Namespace: ns}, Spec: sandboxapi.SandboxSpec{Template: template.Name, Running: true, Identity: acting}}
 			if err := objects.Create(ctx, other); err != nil {
 				t.Fatal(err)
 			}
@@ -403,7 +448,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		if err := objects.Create(ctx, changed); err != nil {
 			t.Fatal(err)
 		}
-		other := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "template-watch", Namespace: ns}, Spec: sandboxapi.SandboxSpec{Template: changed.Name, Running: true}}
+		other := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "template-watch", Namespace: ns}, Spec: sandboxapi.SandboxSpec{Template: changed.Name, Running: true, Identity: acting}}
 		if err := objects.Create(ctx, other); err != nil {
 			t.Fatal(err)
 		}
@@ -460,7 +505,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	}
 	vmSandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Name: "vm-without-api", Namespace: ns},
-		Spec:       sandboxapi.SandboxSpec{Template: vmTemplate.Name, Running: true},
+		Spec:       sandboxapi.SandboxSpec{Template: vmTemplate.Name, Running: true, Identity: acting},
 	}
 	if err := objects.Create(ctx, vmSandbox); err != nil {
 		t.Fatal(err)

@@ -52,9 +52,9 @@ def chart(app: App) -> Chart:
             crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
         ),
         values={
-            # KEDA has cluster-scoped CRDs and admission plumbing, but its operator only
-            # watches the one namespace whose runners it is allowed to scale.
-            "watchNamespace": runner.NAMESPACE,
+            # Keep the watch list limited: Helm binds the operator's ClusterRole through
+            # namespaced RoleBindings in each watched namespace and the KEDA namespace.
+            "watchNamespace": f"{runner.NAMESPACE},buildbuddy-executor",
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             "resources": {
                 "operator": _resources(

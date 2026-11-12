@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -41,9 +42,10 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	// The Action Service was asked, as the caller, whether it may follow the request.
 	source := request.GetSource().GetActions()
-	want := actionsCall{owner: model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
-	if got := server.actions.asked(); len(got) != 1 || got[0] != want {
-		t.Errorf("Action Service asked %v, want %v", got, want)
+	owner := model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}
+	if got := server.actions.asked(); len(got) != 1 || got[0].owner.(store.AccountOwner).Account != owner ||
+		got[0].requestID != uuid.MustParse(source.GetRequestId()) || got[0].afterSequence != 0 {
+		t.Errorf("Action Service asked %v, want %v's request %s", got, owner, source.GetRequestId())
 	}
 
 	inboxes, err := server.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
@@ -188,20 +190,27 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 }
 
 func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
+	// Each opening is made once its test's server has created the Sandboxes, whose UIDs it may name.
 	for _, test := range []struct {
 		name    string
-		opening *dispatcherpb.Session
+		opening func() *dispatcherpb.Session
 		want    codes.Code
 	}{
-		{name: "no Dispatcher opening", want: codes.NotFound},
-		{name: "different Session", opening: nativeSession("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
-		{name: "no UID", opening: nativeSession(testSession, sandboxName, ""), want: codes.Unavailable},
-		{name: "deleted Sandbox", opening: nativeSession(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
-		{name: "same-name replacement", opening: nativeSession(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
+		{name: "no Dispatcher opening", opening: func() *dispatcherpb.Session { return nil }, want: codes.NotFound},
+		{name: "different Session", opening: func() *dispatcherpb.Session {
+			return nativeSession("another-session", sandboxName, sandboxUID)
+		}, want: codes.Unavailable},
+		{name: "no UID", opening: func() *dispatcherpb.Session { return nativeSession(testSession, sandboxName, "") }, want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: func() *dispatcherpb.Session {
+			return nativeSession(testSession, "deleted-sandbox", sandboxUID)
+		}, want: codes.NotFound},
+		{name: "same-name replacement", opening: func() *dispatcherpb.Session {
+			return nativeSession(testSession, sandboxName, "previous-uid")
+		}, want: codes.NotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)
-			s.openings.placements[testSession] = test.opening
+			s.openings.placements[testSession] = test.opening()
 			_, err := s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("fenced-opening"))
 			requireCode(t, err, test.want)
 			s.requireNoInbox(t)
@@ -639,5 +648,31 @@ func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) 
 	page, err := s.client.ReadInbox(bearing(t, operatorToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(page.GetEntries()) != 1 || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() {
 		t.Fatalf("retained operator view = %v, %v", page, err)
+	}
+}
+
+// A subscription's inbox is also owned by the Identity the Session authority recorded the Session as
+// executing as, so the Sandbox's runner keeps it once it runs as that Identity.
+func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *testing.T) {
+	server := newServer(t)
+	identity := &identitypb.Identity{Name: "test-agent", Uid: "test-agent-uid"}
+	server.openings.placements[testSession].Identity = identity
+	response, err := server.client.CreateSubscription(bearing(t, sandboxToken), createRequest("identity"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := func(uid string) []store.Inbox {
+		t.Helper()
+		inboxes, err := server.store.ListInboxes(t.Context(), store.IdentityOwner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inboxes
+	}
+	if inboxes := owned(identity.Uid); len(inboxes) != 1 || inboxes[0].ID.String() != response.GetSubscription().GetInboxId() {
+		t.Fatalf("the Session's Identity owns %v, want the subscription's inbox", inboxes)
+	}
+	if inboxes := owned("test-successor-uid"); len(inboxes) != 0 {
+		t.Fatalf("a same-named successor Identity owns %v", inboxes)
 	}
 }

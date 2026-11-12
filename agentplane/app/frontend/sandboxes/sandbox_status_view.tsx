@@ -19,7 +19,6 @@ import {
   EnvironmentRuntimeLifecycleBlockerKind,
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
-  type Harness as ProtoHarness,
   ProcessState,
   SessionExecutionState,
   type EnvironmentRuntimeLifecycleStatus,
@@ -401,10 +400,6 @@ function lifecycleBlockerLabel(kind: EnvironmentRuntimeLifecycleBlockerKind): st
   return "unknown barrier";
 }
 
-function runtimeHarnessLabel(harness: ProtoHarness): string {
-  return harnessLabel(harness);
-}
-
 function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: EnvironmentRuntimeLifecycleStatus }): JSX.Element {
   const blocker = lifecycle.blocker;
   const stage = lifecycleStageLabel(lifecycle.stage);
@@ -597,7 +592,7 @@ function EnvironmentRuntimeDiagnostics({
                 <Paper key={process.processId} withBorder p="sm" radius="md">
                   <Stack gap={4}>
                     <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600}>{runtimeHarnessLabel(process.harness)}</Text>
+                      <Text fw={600}>{harnessLabel(process.harness)}</Text>
                       <Badge>{processStateLabel(process.state)}</Badge>
                     </Group>
                     <Text size="sm">PID {process.pid === undefined ? "not started" : process.pid.toString()}</Text>

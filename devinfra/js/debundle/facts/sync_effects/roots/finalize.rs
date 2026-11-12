@@ -92,12 +92,27 @@ pub(super) fn finalize(
         && let Some(proof) = checked_local_constructor_factory
     {
         let dependencies = observations.dependencies().clone();
+        if proof.heap_local {
+            // The source proof selected this exact root call and only local
+            // constructor bodies. The completed execution below rules out a
+            // refused path. Argument evaluation is projected separately from
+            // the root AST after this pass; these callable summaries still
+            // describe arbitrary invocations of the same source functions.
+            outcome.effects.local_record_factory_heap_call = Some(proof.call_span);
+        }
         outcome.effects.local_record_factory_purity =
             Some(crate::facts::LocalRecordFactoryPurityCertificate {
                 call_span: proof.call_span,
                 checked_owners: proof.checked_owners,
                 dependencies,
             });
+        if let [binding] = fact.declared.iter().collect::<Vec<_>>().as_slice() {
+            state
+                .world_mut()
+                .classes
+                .private_fresh_instance_bindings
+                .insert((*binding).clone());
+        }
     }
     state.world_mut().module.top_env = top_env;
     state.world_mut().module.top_captures = top_captures;
@@ -112,8 +127,30 @@ pub(super) fn finalize(
             outcome.effects.heap_contents.extend(cells);
         }
     }
-    outcome.effects.purity_disagreement =
-        queries.complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());
+    if outcome.effects.local_record_factory_heap_call.is_some() {
+        outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
+        outcome.effects.non_assumed_heap_accesses = Default::default();
+    }
+    let proven_reads = if outcome.complete
+        && !outcome.unknown_call
+        && outcome.effects.precision_losses.is_empty()
+        && outcome.effects.uninitialized_reads.is_empty()
+    {
+        outcome
+            .effects
+            .proven_private_own_field_reads
+            .iter()
+            .filter_map(|(read_owner, span)| (*read_owner == owner).then_some(*span))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    outcome.effects.purity_disagreement = queries.complete_owner_purity(
+        owner,
+        outcome.effects.local_record_factory_purity.as_ref(),
+        &proven_reads,
+        observations.dependencies(),
+    );
     let mut prior_effect_owners = outcome.executed_owners.clone();
     prior_effect_owners.retain(|owner| {
         !state

@@ -99,27 +99,25 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
-              policySets:
-                description: PolicySets names the PolicySets in the Sandbox's namespace
-                  its ServiceAccount is bound to.
-                items:
-                  minLength: 1
-                  type: string
-                type: array
-                x-kubernetes-list-type: set
               resumePolicy:
-                description: 'ResumePolicy controls whether the exact live execution
-                  ServiceAccount may request resume.
+                description: 'ResumePolicy controls whether the Sandbox''s own principal,
+                  its exact live execution
 
-                  Omitted policy and fields default to deny.'
+                  ServiceAccount or the Identity it acts as, may request resume. Omitted
+                  policy and fields
+
+                  default to deny.'
                 properties:
                   allowOwnServiceAccount:
                     default: false
                     description: 'AllowOwnServiceAccount permits the Sandbox''s exact
                       live execution ServiceAccount to request
 
-                      resume while the Sandbox is idle-suspended. It does not authorize
-                      overriding a requested stop.'
+                      resume while the Sandbox is idle-suspended, and queued work
+                      of the Identity the Sandbox acts
+
+                      as to wake it then. It does not authorize overriding a requested
+                      stop.'
                     type: boolean
                 type: object
               running:
