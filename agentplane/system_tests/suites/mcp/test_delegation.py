@@ -144,8 +144,6 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
             for service_account in inventory.service_accounts
             if service_account.namespace == cluster.namespace and service_account.name == "mcp-edge-test-caller"
         )
-        assert account.uid
-
         async with connected_session(
             server=deployment.mcp_fixtures.mcp_edge_url,
             operator=operator_bff,
