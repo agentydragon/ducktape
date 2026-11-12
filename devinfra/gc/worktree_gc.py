@@ -1,7 +1,7 @@
 """Classify and remove clean, idle worktrees whose work has landed.
 
-Ignored files do not prevent removal and Git deletes them. Inspection and removal are
-not atomic.
+Ignored files do not prevent removal and Git deletes them. The workspace must not change
+while workspace-gc is running; inspection and removal are not atomic.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, open_repo, patches_landed_in_main
+from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 from devinfra.gc.verdict import Prunable, Retained, Review
@@ -53,7 +53,6 @@ class PrunableWorktree(Prunable):
     last_activity: datetime | None
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
     pr: PrInfo | None = None  # set for PR_LANDED
-    detached_head: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,9 +224,7 @@ def _classify_worktree(
         return RetainedWorktree(worktree, reason, activity, pr=pr, pid=pid)
 
     def prune(reason: PrunableWorktreeReason, *, pr: PrInfo | None = None) -> PrunableWorktree:
-        return PrunableWorktree(
-            worktree, reason, activity, main, pr=pr, detached_head=str(head) if worktree.branch is None else None
-        )
+        return PrunableWorktree(worktree, reason, activity, main, pr=pr)
 
     def review(reason: ReviewWorktreeReason) -> ReviewWorktree:
         return ReviewWorktree(worktree, reason, activity, main)
@@ -258,29 +255,14 @@ def _classify_worktree(
     return review(ReviewWorktreeReason.UNMERGED)
 
 
-def remove_worktree(
-    repo: Path, path: Path, *, expected_branch: str | None = None, detached_head: str | None = None
-) -> RemovalResult[Path]:
-    """Remove a worktree after checking its checkout has not changed.
-
-    Classified callers can pass the expected checkout. Git refuses tracked and untracked
-    changes but removes ignored files. Checking HEAD and removing are not atomic.
-    """
+def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
+    """Remove a worktree; Git refuses tracked and untracked changes but deletes ignored files."""
     try:
         path.lstat()
     except FileNotFoundError:
         return Skipped(path, "worktree directory is missing; review and prune its stale Git metadata separately")
     except OSError as error:
         return Failed(path, f"cannot inspect worktree directory before removal: {error}")
-    try:
-        pg = open_repo(path)
-        if detached_head is not None:
-            if not pg.head_is_detached or str(pg.head.peel(pygit2.Commit).id) != detached_head:
-                return Skipped(path, "detached HEAD changed before removal")
-        elif expected_branch is not None and (pg.head_is_detached or pg.head.shorthand != expected_branch):
-            return Skipped(path, "checked-out branch changed before removal")
-    except INSPECTION_ERRORS as error:
-        return Failed(path, f"cannot inspect worktree safety before removal: {error}")
     try:
         outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
     except (OSError, subprocess.SubprocessError) as error:
@@ -302,16 +284,11 @@ def remove_if_still_prunable(
 ) -> RemovalResult[Path]:
     """Re-classify `worktree` now and remove it only if it is still prunable.
 
-    Recheck the current checkout and detached HEAD before invoking Git.
-    These checks are not atomic with removal.
+    Reclassification and removal are not atomic; the workspace must remain unchanged.
     """
     fresh = classify_worktree(
         worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
     )
-    if fresh.worktree.branch != worktree.branch:
-        return Skipped(worktree.path, "checked-out branch changed since the scan")
     if not isinstance(fresh, PrunableWorktree):
         return Skipped(worktree.path, describe_reason(fresh))
-    return remove_worktree(
-        repo, worktree.path, expected_branch=fresh.worktree.branch, detached_head=fresh.detached_head
-    )
+    return remove_worktree(repo, worktree.path)

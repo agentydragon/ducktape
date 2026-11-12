@@ -36,11 +36,6 @@ def _commit_detached(wt: GitRepo, message: str) -> None:
     wt.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", message)
 
 
-def _surviving_ref_commits(repo: GitRepo) -> list[str]:
-    """Commits reachable from named refs; unlike `--all`, omit linked-worktree HEADs."""
-    return repo.run("rev-list", "--branches", "--tags", "--remotes").stdout.splitlines()
-
-
 def test_ancestor_is_prunable(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")  # branched at main's HEAD, then main moves ahead
     repo.commit("later", "1\n", "advance main")
@@ -222,17 +217,6 @@ def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc:
     ) == Removed(path)
 
 
-def test_remove_worktree_skips_changed_detached_head(repo: GitRepo) -> None:
-    path = repo.path.parent / "wt"
-    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    old_head = detached.rev("HEAD")
-    _commit_detached(detached, "new commit")
-    result = wg.remove_worktree(repo.path, path, detached_head=old_head)
-    assert isinstance(result, Skipped)
-    assert path.exists()
-
-
 def test_detached_unmerged_commit_is_review(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
@@ -360,42 +344,6 @@ def test_remove_if_still_prunable_removes_an_unchanged_tree(repo: GitRepo) -> No
 
     assert _remove_if_still_prunable(repo, wt, live_pids=[]) == Removed(wt.path)
     assert not wt.path.exists()
-
-
-def test_remove_if_still_prunable_skips_when_worktree_detaches_after_scan(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    assert isinstance(_classify(repo, wt.path, proc), wg.PrunableWorktree)
-    wt.run("switch", "--detach")
-    _commit_detached(wt, "detached empty commit")
-    detached_head = wt.rev("HEAD")
-    assert detached_head not in _surviving_ref_commits(repo)
-
-    result = _remove_if_still_prunable(repo, wt, live_pids=[])
-
-    assert isinstance(result, Skipped)
-    assert wt.path.exists()
-    assert wt.rev("HEAD") == detached_head
-
-
-def test_remove_if_still_prunable_skips_when_branch_changes_after_scan(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    worktree = Worktree(wt.path, "feature")
-    pr_states = {"feature": PrInfo(13, PrState.MERGED)}
-    assert isinstance(
-        wg.classify_worktree(
-            worktree, main="main", pr_states=pr_states, main_path=repo.path, active_path=None, live_pids=[]
-        ),
-        wg.PrunableWorktree,
-    )
-    wt.run("switch", "-c", "new-open-pr")
-
-    result = wg.remove_if_still_prunable(
-        repo.path, worktree, main="main", pr_states=pr_states, main_path=repo.path, active_path=None, live_pids=[]
-    )
-
-    assert isinstance(result, Skipped)
-    assert "branch changed" in result.reason
-    assert wt.path.exists()
 
 
 def test_remove_if_still_prunable_skips_a_tree_a_process_entered_since_the_scan(repo: GitRepo) -> None:

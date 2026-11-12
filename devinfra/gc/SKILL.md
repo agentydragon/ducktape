@@ -23,8 +23,9 @@ unreferenced once the bases linking to it are gone):
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
 result, scoped to one domain.
-All use the PRUNE/KEEP/REVIEW model and are dry by default. Ignored files do not
-block worktree removal; Git deletes them with the worktree.
+All use the PRUNE/KEEP/REVIEW model and are dry by default. The workspace must not change
+while workspace-gc runs: its checks and removals are not atomic. Ignored files do not block
+worktree removal; Git deletes them with the worktree.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
@@ -89,8 +90,8 @@ default is the only root.
 
 - `PRUNE`: clean of tracked and untracked changes, idle, and its work has landed in
   the main branch or its branch has a merged or closed PR. Detached commits qualify on
-  the same Git content and patch checks. `--prune` reclassifies before removal and rechecks
-  detached HEAD. Git deletes ignored files. Checks and removal are not atomic.
+  the same Git content and patch checks. `--prune` reclassifies before removal. Git deletes
+  ignored files.
 - `KEEP`: main or invoking checkout, uncommitted changes, open PR, or live process.
 - `REVIEW`: unmerged work or an undeterminable default branch or missing detached worktree.
 
