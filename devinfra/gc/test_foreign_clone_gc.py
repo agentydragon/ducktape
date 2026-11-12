@@ -162,20 +162,31 @@ def test_prune_foreign_clone_removes_nested_worktrees_then_the_root(repo: GitRep
     assert not foreign.path.exists()
 
 
-def test_prune_foreign_clone_does_not_delete_root_when_nested_remove_is_skipped(repo: GitRepo) -> None:
+def test_prune_foreign_clone_removes_ignored_nested_files(repo: GitRepo) -> None:
     repo.set_origin(_ORIGIN)
     foreign = _foreign_clone(repo)
     nested_wt = foreign.worktree("nested", "spike")
     (foreign.path / ".git" / "info" / "exclude").write_text(".env\n")
-    local_env = nested_wt.path / ".env"
-    local_env.write_text("local data\n")
+    (nested_wt.path / ".env").write_text("local data\n")
     clone = fcg.ForeignClone(foreign.path, fcg.git_repo.list_worktrees(foreign.path))
 
-    outcome = fcg.prune_foreign_clone(clone)
+    assert fcg.prune_foreign_clone(clone) == Removed(foreign.path)
+    assert not foreign.path.exists()
+    assert not nested_wt.path.exists()
 
-    assert isinstance(outcome, Skipped)
+
+def test_prune_foreign_clone_does_not_delete_root_when_nested_remove_is_skipped(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo.set_origin(_ORIGIN)
+    foreign = _foreign_clone(repo)
+    nested_wt = foreign.worktree("nested", "spike")
+    clone = fcg.ForeignClone(foreign.path, fcg.git_repo.list_worktrees(foreign.path))
+    monkeypatch.setattr(fcg.worktree_gc, "remove_worktree", lambda repo, path: Skipped(path, "changed"))
+
+    assert isinstance(fcg.prune_foreign_clone(clone), Skipped)
     assert foreign.path.exists()
-    assert local_env.read_text() == "local data\n"
+    assert nested_wt.path.exists()
 
 
 if __name__ == "__main__":
