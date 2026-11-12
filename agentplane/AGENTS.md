@@ -71,7 +71,7 @@ need not keep existing rows, custom resources or messages readable: change the s
 delete/recreate whatever no longer parses. No migration, tolerant reader or compatibility field to
 carry old data, and no staged rollout to avoid a disagreement window. The schema change itself is
 still a new migration; the migrate step fails the rollout when schema and models differ. Root
-`AGENTS.md` § Refactoring limits (person-authored data, roll-safety) still bind.
+`AGENTS.md` § Changes (user-authored data) and `STYLE.md` § General (roll-safety) still bind.
 
 ## Preserve staging data during service extractions
 
