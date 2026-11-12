@@ -20,12 +20,28 @@ fn split() -> FixtureOpts<'static> {
     )
 }
 
+fn assert_odd_even_map_modules(fixture: &Fixture) {
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/odd.js",
+        &["a", "c"],
+        &["b", "d"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/even.js",
+        &["b", "d"],
+        &["a", "c"],
+    );
+}
+
 #[test]
 fn fresh_literal_map_constructors_split_and_preserve_runtime() {
     let fixture = run_fixture(split());
     assert_preserved_entry_output(&fixture, "1 2 3 4\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
     assert_all_emitted_js_checks(&fixture);
+    assert_odd_even_map_modules(&fixture);
     let graph = fixture.dependency_graph();
     let first = node_declaring(&graph, "a");
     let frontier = first
@@ -57,6 +73,7 @@ export { a, b, c, d };
     assert_preserved_entry_output(&fixture, "1 2 3 4\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
     assert_all_emitted_js_checks(&fixture);
+    assert_odd_even_map_modules(&fixture);
     let graph = fixture.dependency_graph();
     assert!(
         !node_declaring(&graph, "c")
@@ -66,6 +83,29 @@ export { a, b, c, d };
             .expect("Map heap frontier")
             .own_at_init
             .opaque
+    );
+}
+
+#[test]
+fn poisoned_map_adder_rejects_the_interleaved_split() {
+    let source = format!(
+        "Map.prototype.set = function (key, value) {{ globalThis.touched = true; return this; }};\n{SOURCE}"
+    );
+    let rejected = expect_cycle_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("odd", &[Member::new("a"), Member::new("c")]),
+                logical_module("even", &[Member::new("b"), Member::new("d")]),
+            ],
+        ),
+        &["odd", "even"],
+    );
+    assert!(
+        rejected["cut"]
+            .as_array()
+            .is_some_and(|cut| !cut.is_empty()),
+        "expected a concrete cyclic ordering cut: {rejected:#}"
     );
 }
 
