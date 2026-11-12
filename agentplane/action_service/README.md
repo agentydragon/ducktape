@@ -447,9 +447,10 @@ a matching allow records `PolicyEvidence`, including the matched rule and any re
 repository. A set has no deny form: no match leaves the request for a human. The Go
 [`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
 
-The Go integration app reads PolicySet inventory from Kubernetes through its
-[`policyaccess` package](../app/go/policyaccess/policyaccess.go). Its effective action-policy view comes
-from the Action Service's generated `WatchActionPolicy` response. The Python
+The Go integration app obtains PolicySet names from the Policy Controller's
+`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/go/appconfigapi.go).
+Its effective action-policy view comes from the Action Service's generated `WatchActionPolicy`
+response. The Python
 `policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic
 models are used by test clients, not by the app runtime. Policy resolution and admission remain in the
 Go informer and provider. Staging's network policy admits `api.github.com:443` for the Go provider's
