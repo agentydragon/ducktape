@@ -2003,6 +2003,7 @@ pub(super) struct EvaluatedCallOperands {
 /// The kernel's selections for operands it evaluated itself.
 pub(super) struct SuppliedCallSelections {
     pub(super) selected_pure_initializer_call: bool,
+    pub(super) selected_const_factory_result: bool,
     pub(super) selected_member_dependencies: Option<Box<ProofDependencies>>,
     pub(super) selected_value: Option<CallableSelection>,
     pub(super) argument_selections: Vec<Option<CallableSelection>>,
@@ -11969,11 +11970,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let needs_value = supplied.is_some();
         let SuppliedCallSelections {
             selected_pure_initializer_call,
+            selected_const_factory_result,
             selected_member_dependencies,
             selected_value,
             argument_selections,
         } = supplied.unwrap_or_else(|| SuppliedCallSelections {
             selected_pure_initializer_call: false,
+            selected_const_factory_result: false,
             selected_member_dependencies: None,
             selected_value: None,
             argument_selections: vec![None; call.args.len()],
@@ -12142,6 +12145,27 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .is_some()
         {
             return CallTransfer::EffectsOnly;
+        }
+        // An exact author-pinned root call returns normally with an opaque
+        // callable. Its separately asserted no-reentry and purity premises
+        // cover timing and completion; argument evaluation has already run.
+        // Keep later invocation, member reads and escape conservative.
+        if selected_pure_initializer_call
+            && selected_const_factory_result
+            && needs_value
+            && call.kind == CallKind::Call
+            && !call.has_spread
+            && !operands_may_throw
+            && prepared_receiver.is_none()
+            && let ValueExpr::Binding(callee) = &call.callee
+            && self.inputs.index.no_reentry_exports.contains(callee)
+            && matches!(call.args.as_slice(), [ValueExpr::Binding(binding)]
+                if self.inputs.index.dynamic_scope_owners.is_empty()
+                    && self.closed_primitive_binding(binding))
+            && matches!(args.as_slice(), [values]
+                if !values.is_empty() && values.iter().all(AbstractValue::is_primitive))
+        {
+            return CallTransfer::Values(Values::from([self.deferred_callbacks(args[0].clone())]));
         }
         // The author assertion covers this direct imported call with checked
         // primitive arguments. Its result remains Unknown; only opaque

@@ -153,6 +153,7 @@ impl Executor<'_, '_> {
         };
         let supplied = SuppliedCallSelections {
             selected_pure_initializer_call: operands.selected_pure_initializer_call,
+            selected_const_factory_result: operands.selected_const_factory_result,
             selected_member_dependencies,
             selected_value,
             argument_selections: operands.argument_selections,

@@ -924,6 +924,10 @@ pub struct InitializerCallEffectInputContract {
     pub provider_chunk: String,
     pub provider_export: String,
     pub audited_provider_sha256: String,
+    /// The audited provider returns a normal opaque callable for the one
+    /// initialized literal-const primitive argument at this exact call site.
+    #[serde(default)]
+    pub returns_opaque_function_from_const_primitive: bool,
     /// Required when this exact export is emitted from a bundled partial
     /// vendor swap. Pins the effective replacement independently of the
     /// original provider parser input.

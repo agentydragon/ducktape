@@ -447,6 +447,8 @@ pub struct ResolvedInitializerCallEffectInput {
     pub provider_chunk: String,
     pub provider_export: String,
     pub provider_sha256: String,
+    #[serde(default)]
+    pub returns_opaque_function_from_const_primitive: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_replacement: Option<EffectiveInitializerCallReplacement>,
     /// Complete ordinary static dependency closure that evaluated before the

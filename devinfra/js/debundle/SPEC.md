@@ -1428,9 +1428,11 @@ member fails closed. The two SHA-256 values pin the parser input bytes of the
 importer and original provider. The selected declaration must have one direct
 initializer call to a bare named ESM import of that exact provider export,
 with exactly one freshly written, anonymous, ordinary `function` expression
-argument. Spreads, other arities, named/async/generator callbacks, mutated or
-indirect callees, and ambiguous declarations are rejected. Prepared comma-list
-declarations may select one declarator; sibling declarators gain no assertion.
+argument by default. The separately described const-primitive result form admits
+one bare initialized binding instead. Spreads, other arities, named/async/generator
+callbacks in the default form, mutated or indirect callees, and ambiguous
+declarations are rejected. Prepared comma-list declarations may select one
+declarator; sibling declarators gain no assertion.
 The provider's resolved ordinary static dependency closure must finish before
 the importer, without an importer backedge or ambiguous/nonordinary request.
 
@@ -1465,7 +1467,7 @@ effects. Effective replacement behavior is likewise author audited against
 the pinned bundle bytes and export mapping, not inferred from the original
 provider's callable facts.
 
-The assertion grants no normal completion, result shape, lexical coverage,
+By default, the assertion grants no normal completion, result shape, lexical coverage,
 callback nonpublication or invocation timing, carrier lifetime, operand/callee
 purity, or later-use effect. Actual operand evaluation and known effects
 compose in order. An independent `initializer_purity: pure` assertion and
@@ -1487,6 +1489,21 @@ unknown or mixed targets, spreads, and member receivers retain their ordinary
 fallback. The callback remains reachable through the carrier on later use.
 This transfer adds no operation-domain, lexical, or completion assertion by
 itself; the normal root still needs every independent premise above.
+
+An entry may set `returns_opaque_function_from_const_primitive: true` only after
+auditing the pinned provider and any effective replacement to return normally
+with a fresh callable function object for the selected call. This changes the
+admitted argument shape to one bare binding of a direct top-level `const`
+initialized from a primitive literal. The ordered transfer additionally
+requires that binding to be initialized at this prefix, never rebound,
+unambiguous under dynamic scope, and evaluated to a nonempty set of primitive
+values. It uses the already evaluated argument and direct import; no expression
+is replayed. The provider
+must also have a separate `no_reentry_exports` assertion and the selected
+initializer must have `initializer_purity: pure`. The returned value is an
+opaque capability: later calls, property reads, mutation, and escape keep
+their ordinary unknown effects. The assertion does not identify the function
+body, guarantee an output, or suppress provider-private or later host effects.
 
 ## Static-import and host-loader queries
 

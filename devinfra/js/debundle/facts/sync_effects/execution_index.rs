@@ -9813,7 +9813,11 @@ impl ExecutionIndex {
                 })
                 && let Some(body) = LocalBody::from_initializer(expression)
                 && let Some((callee, call_span)) =
-                    body.single_identifier_call_with_function_argument_initializer()
+                    (if input.returns_opaque_function_from_const_primitive {
+                        body.single_identifier_call_with_binding_argument_initializer()
+                    } else {
+                        body.single_identifier_call_with_function_argument_initializer()
+                    })
                 && input.callee == *callee
                 && input.call_span == call_span
             {
