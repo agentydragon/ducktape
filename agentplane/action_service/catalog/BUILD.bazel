@@ -28,6 +28,7 @@ go_test(
     embed = [":catalog"],
     embedsrcs = ["golden.json"],
     deps = [
+        "//agentplane/testing/yamltest",
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],

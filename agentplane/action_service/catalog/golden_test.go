@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/yamltest"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -31,7 +32,7 @@ func TestActionGroupsMatchGoContract(t *testing.T) {
 	}
 	for _, vector := range golden.ActionGroups {
 		t.Run(vector.Name, func(t *testing.T) {
-			c, err := parse(asYAML(t, vector.Input))
+			c, err := parse(yamltest.JSONInput(t, vector.Input))
 			accepted := err == nil
 			if accepted != vector.Accepted {
 				t.Fatalf("accepted = %v, parse error = %v; want accepted = %v", accepted, err, vector.Accepted)
@@ -58,22 +59,6 @@ func TestActionGroupsMatchGoContract(t *testing.T) {
 			}
 		})
 	}
-}
-
-// asYAML decodes and re-encodes a JSON document so yaml.v3 receives Unicode code points rather than surrogate pairs.
-func asYAML(t *testing.T, document json.RawMessage) string {
-	t.Helper()
-	decoder := json.NewDecoder(bytes.NewReader(document))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		t.Fatal(err)
-	}
-	written, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(written)
 }
 
 // dump is the catalog's settings with defaults and absent values made explicit.
