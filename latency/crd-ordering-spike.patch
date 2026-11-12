@@ -1,0 +1,28 @@
+diff --git a/agentplane/system_tests/deployment/stack.py b/agentplane/system_tests/deployment/stack.py
+index 92cdfeff15..1ec35a6350 100644
+--- a/agentplane/system_tests/deployment/stack.py
++++ b/agentplane/system_tests/deployment/stack.py
+@@ -483,6 +483,10 @@ def running_stack(
+                 fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
+                 pki_infrastructure.prepare(k3s.kubectl, cert_manager, trust_manager, warm=baseline_warm)
+                 setup.add_event("cert-manager and trust-manager ready")
++                with tracer.start_as_current_span("system_test.crds.apply"):
++                    for crd in crds:
++                        k3s.kubectl("apply", "-f", str(crd))
++                setup.add_event("CRDs applied")
+                 fixture_import.result()
+                 setup.add_event("fixture images imported" if guest_images else "images imported")
+                 if guest_images:
+@@ -500,12 +504,8 @@ def running_stack(
+                     # The raw boot disk's cold unpack competes with PostgreSQL initialization and
+                     # k3s SQLite writes on the KVM worker. Finish it before starting app workloads.
+                     guest_import.result()
+-                with tracer.start_as_current_span("system_test.crds.apply"):
+-                    for crd in crds:
+-                        k3s.kubectl("apply", "-f", str(crd))
+                 if virtualization is not None:
+                     virtualization.wait_for_apis(k3s)
+-                setup.add_event("CRDs applied")
+                 # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
+                 namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
+                 rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
