@@ -187,15 +187,15 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	}
 	// The VMI and its virt-launcher Pod carry the Sandbox label too.
 	spec.Template.ObjectMeta.Labels = withSandboxLabel(spec.Template.ObjectMeta.Labels, sandbox)
-	spec.Template.ObjectMeta.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credential.ID
+	spec.Template.ObjectMeta.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = credential.ID
 	always := kubevirtv1.RunStrategyAlways
 	spec.Running, spec.RunStrategy = nil, &always
 	meta := owned(sandbox)
 	meta.Annotations = map[string]string{
-		RenderedSpecAnnotation:               renderedSpec(spec),
-		RunnerCredentialIDAnnotation:         credential.ID,
-		RunnerCredentialVMIUIDAnnotation:     "",
-		RunnerCredentialLastVMIUIDAnnotation: "",
+		RenderedSpecAnnotation:                             renderedSpec(spec),
+		sandboxapi.EnvironmentRuntimeCredentialMetadataKey: credential.ID,
+		RunnerCredentialVMIUIDAnnotation:                   "",
+		RunnerCredentialLastVMIUIDAnnotation:               "",
 	}
 	return &kubevirtv1.VirtualMachine{ObjectMeta: meta, Spec: *spec}, nil
 }

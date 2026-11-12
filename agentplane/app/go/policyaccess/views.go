@@ -12,7 +12,7 @@ const (
 )
 
 func bindingProvenance(binding *policyapi.PolicyBinding) BindingProvenance {
-	if _, ok := binding.Labels[fluxKustomizationLabel]; ok {
+	if _, ok := binding.Labels[policyapi.FluxKustomizationNameLabel]; ok {
 		return BindingFromGit
 	}
 	for _, owner := range binding.OwnerReferences {
@@ -22,5 +22,3 @@ func bindingProvenance(binding *policyapi.PolicyBinding) BindingProvenance {
 	}
 	return BindingFromOperator
 }
-
-const fluxKustomizationLabel = "kustomize.toolkit.fluxcd.io/name"

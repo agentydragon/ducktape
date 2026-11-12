@@ -21,9 +21,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// Callers says whether a workload may call: a ServiceAccount whether it carries the
-// `agentplane.allegedly.works/use-action-service` label, in a view of the ServiceAccounts the service can vouch
-// for; an Identity incarnation whether a live PolicyBinding names it. An implementation logs its refusals.
+// Callers says whether a workload may call: for a ServiceAccount, whether it carries the Action Service caller
+// label in a view of the ServiceAccounts the service can vouch for; for an Identity incarnation, whether a live
+// PolicyBinding names it. An implementation logs its refusals.
 type Callers interface {
 	Admits(account auth.Account) bool
 	AdmitsIdentity(identity auth.Identity) bool

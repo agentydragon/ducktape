@@ -42,8 +42,6 @@ const (
 	recheckInterval = 5 * time.Second
 	writeTimeout    = 5 * time.Second
 	snapshotChunk   = 64
-	// fluxNameLabel marks an object Flux applies from git, which Flux would recreate if deleted.
-	fluxNameLabel = "kustomize.toolkit.fluxcd.io/name"
 )
 
 type Service struct {
@@ -213,7 +211,7 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if string(binding.UID) != request.GetBindingUid() {
 		return nil, status.Error(codes.Aborted, "PolicyBinding changed; refresh the Sandbox policy view")
 	}
-	if _, fromFlux := binding.Labels[fluxNameLabel]; fromFlux {
+	if _, fromFlux := binding.Labels[policyapi.FluxKustomizationNameLabel]; fromFlux {
 		return nil, status.Error(codes.Aborted, "PolicyBinding is managed by Flux")
 	}
 	for _, owner := range binding.OwnerReferences {
@@ -476,7 +474,7 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 	if string(identity.UID) != request.GetUid() || identity.ResourceVersion == "" {
 		return nil, status.Error(codes.Aborted, "Identity changed; refresh the identities view")
 	}
-	if _, fromFlux := identity.Labels[fluxNameLabel]; fromFlux {
+	if _, fromFlux := identity.Labels[policyapi.FluxKustomizationNameLabel]; fromFlux {
 		return nil, status.Error(codes.FailedPrecondition, "Identity is managed by Flux")
 	}
 	var bindings policyapi.PolicyBindingList

@@ -2,6 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
@@ -285,22 +287,23 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatalf("runner Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, RunnerWorkloadTrustFile)
 	}
 	const otherID = "fedcba9876543210fedcba9876543210"
-	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
-		"metadata": {"annotations": {"agentplane.allegedly.works/environment-runtime-credential": "`+otherID+`"}},
-		"status": {"runnerCredential": {"kind": "VM", "podUid": "`+otherID+`"}}
-	}`))); err != nil {
+	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, fmt.Appendf(nil, `{
+		"metadata": {"annotations": {%q: %q}},
+		"status": {"runnerCredential": {"kind": "VM", "podUid": %q}}
+	}`, sandboxapi.EnvironmentRuntimeCredentialMetadataKey, otherID, otherID))); err != nil {
 		t.Fatal(err)
 	}
 	var account corev1.ServiceAccount
 	if err := objects.Get(ctx, key, &account); err != nil {
 		t.Fatal(err)
 	}
-	if err := objects.Patch(ctx, &account, client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"labels":{"agentplane.allegedly.works/use-action-service":"false","unrelated":"keep"}}}`))); err != nil {
+	if err := objects.Patch(ctx, &account, client.RawPatch(types.MergePatchType,
+		fmt.Appendf(nil, `{"metadata":{"labels":{%q:"false","unrelated":"keep"}}}`, callers.ServiceAccountLabelKey))); err != nil {
 		t.Fatal(err)
 	}
 	// The ServiceAccount heal is a reconcile that read the patched Sandbox.
 	eventually(t, func() bool {
-		return objects.Get(ctx, key, &account) == nil && account.Labels[ActionCallerLabel] == "true" && account.Labels["unrelated"] == "keep"
+		return objects.Get(ctx, key, &account) == nil && account.Labels[callers.ServiceAccountLabelKey] == callers.ServiceAccountLabelValue && account.Labels["unrelated"] == "keep"
 	})
 	var unchanged corev1.Pod
 	if err := objects.Get(ctx, key, &unchanged); err != nil || unchanged.UID != pod.UID {

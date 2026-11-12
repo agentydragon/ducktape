@@ -235,7 +235,7 @@ func credentialTestVM(sandbox *sandboxapi.Sandbox, id, acceptedVMI string, strat
 	return &kubevirtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vm-uid",
-			Annotations: map[string]string{RunnerCredentialIDAnnotation: id, RunnerCredentialVMIUIDAnnotation: acceptedVMI},
+			Annotations: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id, RunnerCredentialVMIUIDAnnotation: acceptedVMI},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: "Sandbox", Name: sandbox.Name, UID: sandbox.UID, Controller: new(true),
 			}},
@@ -247,7 +247,7 @@ func credentialTestVM(sandbox *sandboxapi.Sandbox, id, acceptedVMI string, strat
 func credentialTestVMI(sandbox *sandboxapi.Sandbox, uid types.UID, id string) *kubevirtv1.VirtualMachineInstance {
 	return &kubevirtv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: uid,
-		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: id},
+		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id},
 	}}
 }
 
@@ -369,7 +369,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(vm), &gotVM); err != nil {
 		t.Fatal(err)
 	}
-	newID := gotVM.Annotations[RunnerCredentialIDAnnotation]
+	newID := gotVM.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	if newID == old.ID || newID != w.credential.ID || !validRunnerCredentialID(newID) {
 		t.Fatalf("restart did not rotate the old VMI's credential: %q, workload %q", newID, w.credential.ID)
 	}
@@ -476,7 +476,7 @@ func TestPodWithARotatedCredentialIsReplaced(t *testing.T) {
 func runnerCredentialTestPod(uid types.UID, id string) *corev1.Pod {
 	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: "sandboxes", Name: "test", UID: uid,
-		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: id},
+		Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id},
 	}}
 }
 
@@ -500,8 +500,8 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 	// the Sandbox, pointing at another generation.
 	sandbox := credentialTestSandbox()
 	sandbox.Annotations = map[string]string{
-		RunnerCredentialIDAnnotation:         "fedcba9876543210fedcba9876543210",
-		RunnerCredentialLastVMIUIDAnnotation: "vmi-other",
+		sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "fedcba9876543210fedcba9876543210",
+		RunnerCredentialLastVMIUIDAnnotation:               "vmi-other",
 	}
 	r, c := newCredentialReconciler(t, sandbox)
 	issued := requestIssued(t, r, sandbox, nil)

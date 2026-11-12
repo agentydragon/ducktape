@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
@@ -58,8 +59,6 @@ const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 	testAudience = "test-actions"
-	// callerLabel admits a ServiceAccount's workloads: sandbox_controller's ActionCallerLabel sets it.
-	callerLabel = "agentplane.allegedly.works/use-action-service"
 	// policyNamespace holds the PolicySets and PolicyBindings the service watches.
 	policyNamespace = "test-agentplane"
 )
@@ -546,10 +545,10 @@ func setCallerLabel(t *testing.T, account auth.Account, labeled bool) {
 	}
 	value := "null"
 	if labeled {
-		value = `"true"`
+		value = fmt.Sprintf("%q", callers.ServiceAccountLabelValue)
 	}
 	if _, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(t.Context(), account.Name, types.MergePatchType,
-		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callerLabel, value), metav1.PatchOptions{}); err != nil {
+		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callers.ServiceAccountLabelKey, value), metav1.PatchOptions{}); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -86,7 +86,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	f.pod, err = pods.Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: f.namespace,
-			Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: "test-environment-runtime-credential"},
+			Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "test-environment-runtime-credential"},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: testSandbox,
 				UID: f.sandbox.UID, Controller: &controller,
@@ -140,7 +140,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	}
 	f.ca = tlstest.NewCA(t)
 	f.gatewayTLS = f.ca.Issue(t, environment_runtime_transport.GatewayURI)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]}.URI()
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

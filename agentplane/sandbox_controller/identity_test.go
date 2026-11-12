@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,8 +52,8 @@ func TestPodRunsAsTheSandboxsOwnServiceAccount(t *testing.T) {
 	if getBinding(t, c) != nil {
 		t.Error("a Sandbox naming no PolicySets got a PolicyBinding")
 	}
-	if account.Labels[ActionCallerLabel] != "true" {
-		t.Errorf("ServiceAccount labels = %v, want %s", account.Labels, ActionCallerLabel)
+	if account.Labels[callers.ServiceAccountLabelKey] != callers.ServiceAccountLabelValue {
+		t.Errorf("ServiceAccount labels = %v, want %s", account.Labels, callers.ServiceAccountLabelKey)
 	}
 }
 
@@ -63,7 +64,7 @@ func TestAccountCreatedWithoutTheActionCallerLabelGetsIt(t *testing.T) {
 	if err := c.Get(context.Background(), sandboxKey, &account); err != nil {
 		t.Fatal(err)
 	}
-	delete(account.Labels, ActionCallerLabel)
+	delete(account.Labels, callers.ServiceAccountLabelKey)
 	if err := c.Update(context.Background(), &account); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +72,8 @@ func TestAccountCreatedWithoutTheActionCallerLabelGetsIt(t *testing.T) {
 	if err := c.Get(context.Background(), sandboxKey, &account); err != nil {
 		t.Fatal(err)
 	}
-	if account.Labels[ActionCallerLabel] != "true" {
-		t.Errorf("ServiceAccount labels = %v, want %s", account.Labels, ActionCallerLabel)
+	if account.Labels[callers.ServiceAccountLabelKey] != callers.ServiceAccountLabelValue {
+		t.Errorf("ServiceAccount labels = %v, want %s", account.Labels, callers.ServiceAccountLabelKey)
 	}
 }
 

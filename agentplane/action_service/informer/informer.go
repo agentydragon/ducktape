@@ -21,16 +21,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
-
-// CallerLabel, set to "true" on a ServiceAccount of a caller namespace, admits its workloads as callers. It grants no
-// Action. Must equal CALLER_LABEL in agentplane/action_service/policies/resources.py, which labels the cluster's
-// callers, and ActionCallerLabel in agentplane/sandbox_controller.
-const CallerLabel = "agentplane.allegedly.works/use-action-service"
 
 // ActionsReady is the condition this service keeps on each PolicyBinding of the policy namespace.
 var ActionsReady = reader.Condition{
@@ -82,7 +78,7 @@ func (i *Index) Admits(account auth.Account) bool {
 	i.mu.RUnlock()
 	if !labeled {
 		slog.Warn("workload bearer refused: the ServiceAccount does not carry the caller label",
-			"namespace", account.Namespace, "name", account.Name, "label", CallerLabel)
+			"namespace", account.Namespace, "name", account.Name, "label", callers.ServiceAccountLabelKey)
 	}
 	return labeled
 }
@@ -170,7 +166,9 @@ func New(base *rest.Config, index *Index, policyNamespace string) (*Informer, er
 			return nil, err
 		}
 		// The server sends a ServiceAccount that loses the label as deleted.
-		labeled := func(options *metav1.ListOptions) { options.LabelSelector = CallerLabel + "=true" }
+		labeled := func(options *metav1.ListOptions) {
+			options.LabelSelector = callers.ServiceAccountLabelKey + "=" + callers.ServiceAccountLabelValue
+		}
 		watched = append(watched, reader.Watch(
 			watches,
 			serviceAccounts(namespace),

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,15 +46,15 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 	t.Parallel()
 	f := newFixture(t)
 	admitted := auth.Account{Namespace: f.callers, Name: "test-labeled"}
-	labeled := f.serviceAccount(admitted, "true")
+	labeled := f.serviceAccount(admitted, callers.ServiceAccountLabelValue)
 	unlabeled := auth.Account{Namespace: f.callers, Name: "test-unlabeled"}
 	becomesLabeled := f.serviceAccount(unlabeled, "")
 	alsoAdmitted := auth.Account{Namespace: f.moreCallers, Name: "test-labeled"}
-	deleted := f.serviceAccount(alsoAdmitted, "true")
+	deleted := f.serviceAccount(alsoAdmitted, callers.ServiceAccountLabelValue)
 	notTrue := auth.Account{Namespace: f.callers, Name: "test-labeled-false"}
 	f.serviceAccount(notTrue, "false")
 	outside := auth.Account{Namespace: f.elsewhere, Name: "test-labeled"}
-	f.serviceAccount(outside, "true")
+	f.serviceAccount(outside, callers.ServiceAccountLabelValue)
 	f.start()
 
 	f.eventually("the index to sync", f.available)
@@ -68,9 +69,9 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 		t.Errorf("the callers listed: %v, %v", listed, available)
 	}
 
-	delete(labeled.Labels, CallerLabel)
+	delete(labeled.Labels, callers.ServiceAccountLabelKey)
 	f.update(labeled)
-	becomesLabeled.Labels = map[string]string{CallerLabel: "true"}
+	becomesLabeled.Labels = map[string]string{callers.ServiceAccountLabelKey: callers.ServiceAccountLabelValue}
 	f.update(becomesLabeled)
 	f.remove(deleted)
 	f.eventually("the label changes and the deletion to be followed", func() bool {
@@ -85,7 +86,7 @@ func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	caller := auth.Account{Namespace: f.moreCallers, Name: "test-workload"}
-	f.serviceAccount(caller, "true")
+	f.serviceAccount(caller, callers.ServiceAccountLabelValue)
 	subject := reader.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
 	f.create(f.policySet("test-set", exactActions()))
 	f.create(f.policyBinding(f.policy, "test-grant", subject, "test-set"))

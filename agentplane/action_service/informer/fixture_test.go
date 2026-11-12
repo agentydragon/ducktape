@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -140,7 +141,7 @@ func (f *fixture) serviceAccount(account auth.Account, label string) *corev1.Ser
 		f.t.Fatal(err)
 	}
 	if label != "" {
-		created.Labels = map[string]string{CallerLabel: label}
+		created.Labels = map[string]string{callers.ServiceAccountLabelKey: label}
 		f.update(created)
 	}
 	return created

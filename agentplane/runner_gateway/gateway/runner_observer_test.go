@@ -778,7 +778,7 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	pod := f.pod.DeepCopy()
-	pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = "test-replacement-credential"
+	pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = "test-replacement-credential"
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
