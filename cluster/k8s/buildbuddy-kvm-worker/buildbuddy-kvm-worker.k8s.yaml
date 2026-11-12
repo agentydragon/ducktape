@@ -1312,9 +1312,9 @@ spec:
       rules:
         - alert: BuildBuddyKvmPoolEmpty
           annotations:
-            description: No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
-            summary: No KVM worker is ready
-          expr: absent(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1)
+            description: No BuildBuddy KVM worker has been registered and scrapable for 2 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
+            summary: No KVM worker is registered
+          expr: absent((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"})))
           for: 2m
           labels:
             severity: critical
