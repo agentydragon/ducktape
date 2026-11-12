@@ -657,6 +657,24 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 	}
 }
 
+func TestSettlingStoreRetainsStderrAndCompletionWhileDroppingReasoningDeltas(t *testing.T) {
+	store := NewStore(testDB(t), true)
+	sessionID := opened(t, store)
+	span := reasoningSpanWithStderr().Entries
+	appendEntries(t, store, sessionID, span[:8]...)
+	assertEntries(t, readPage(t, store, sessionID, 0, 128).Entries, span[:8]...)
+
+	appendEntries(t, store, sessionID, span[8])
+	page := readPage(t, store, sessionID, 0, 128)
+	assertEntries(t, page.Entries, span[0], span[1], span[6], span[7], span[8])
+	if got := settledRanges(page); !reflect.DeepEqual(got, []CursorRange{{3, 6}}) {
+		t.Fatalf("settled ranges %v", got)
+	}
+	// Replayed runner deltas must remain covered without duplicating the diagnostic.
+	appendEntries(t, store, sessionID, span...)
+	assertEntries(t, readPage(t, store, sessionID, 0, 128).Entries, page.Entries...)
+}
+
 func TestAnItemWithoutNativeFramesCompletesUnsettled(t *testing.T) {
 	store := NewStore(testDB(t), true)
 	sessionID := opened(t, store)

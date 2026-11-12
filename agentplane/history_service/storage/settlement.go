@@ -33,11 +33,10 @@ type target struct {
 	field  field
 }
 
-// anomalies are observations that may signal a harness or runner problem. A span holding one keeps
-// every packet, so the frames stay available to turn into a harness/runner test.
+// Failures and recovery boundaries keep a span whole. Stderr is retained independently;
+// it does not invalidate proof that a completed item holds all of its delta content.
 var anomalies = map[historypb.EventKind]bool{
 	historypb.EventKind_EVENT_KIND_COMMAND_FAILED:          true,
-	historypb.EventKind_EVENT_KIND_HARNESS_STDERR:          true,
 	historypb.EventKind_EVENT_KIND_HARNESS_LOST:            true,
 	historypb.EventKind_EVENT_KIND_HARNESS_EXITED:          true,
 	historypb.EventKind_EVENT_KIND_HARNESS_LAUNCH_FAILED:   true,

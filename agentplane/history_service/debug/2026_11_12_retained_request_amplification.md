@@ -54,6 +54,33 @@ whole-chunk equality only; it excludes overlaps with raw events and repeated por
 different chunks. The native diff stream is a larger confirmed target than this particular
 within-projection whole-chunk duplication measurement.
 
+## Completed reasoning blocked by stderr
+
+A read-only trace at approximately 11:39 UTC found a completed Codex reasoning item in Session
+`58e5d7cc-8e45-46e8-bf7b-8e8a79b28d12`, cursors 63,823–73,741, with **4,949 native/derived
+delta pairs still retained**. Their payloads occupy **1,984,780 stored bytes**, excluding row/index
+overhead. The exact delta templates, source references, item identities and completed summary all
+match. One `HarnessStderr` at cursor 67,250 vetoes settlement for the whole span: Codex reported
+that its approval policy refused an escalated command. Keeping that diagnostic is independent of
+keeping thousands of duplicate reasoning chunks.
+
+Running the settlement decision over the captured span rejects it at the anomaly check. Omitting
+only the stderr entry from that decision produces a settlement covering all **9,898 delta rows**,
+while preserving the start, completion and unrelated native notifications. This is a demonstrated
+cause in one span, not attribution of all retained reasoning bytes to stderr.
+
+The regression tests reproduce the veto with a smaller Codex span. Both the pure decision and
+PostgreSQL append/read test fail before the change
+([red invocation](https://app.buildbuddy.io/invocation/e0b9b324-75a4-4427-a6c7-9d8538949c9e)).
+The changed policy retains stderr at its original cursor while allowing exact, otherwise eligible
+delta pairs to settle. Failures, recovery boundaries, malformed frames and source-reference checks
+continue to keep ineligible spans whole. Already stored items require a separate settlement pass;
+changing the append path does not revisit them.
+
+Another sampled Codex command retains deltas because its completed `aggregatedOutput` includes an
+earlier prefix absent from the streamed deltas. The exact-concatenation rule rejects that case;
+the stderr change does not broaden content matching.
+
 ## Turn-diff cleanup
 
 At 11:13 UTC on 2026-11-12, the operator authorized deleting existing turn diffs without a

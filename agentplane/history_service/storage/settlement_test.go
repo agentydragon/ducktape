@@ -58,6 +58,24 @@ func TestCodexReasoningComparesEachSummaryPart(t *testing.T) {
 	}
 }
 
+func TestCompletedReasoningWithStderrSettlesOnlyItsDeltaPairs(t *testing.T) {
+	// Staging retained 4,949 matching reasoning chunk pairs because one stderr line
+	// vetoed the entire span, although the completion held all streamed content.
+	settlement := settled(t, reasoningSpanWithStderr())
+	if settlement.CompletionCursor != 9 || settlement.ChunkCount != 2 ||
+		!reflect.DeepEqual(settlementRanges(settlement), []CursorRange{{3, 6}}) {
+		t.Fatalf("settlement %v", settlement)
+	}
+}
+
+func TestStderrCitingADeltaKeepsTheItem(t *testing.T) {
+	span := reasoningSpanWithStderr()
+	span.Entries[7].Event.SourceSequences = []uint64{3}
+	if settle(span.Entries) != nil {
+		t.Fatal("a chunk frame cited by retained stderr settled")
+	}
+}
+
 func TestCodexCommandOutputSettlesWhenAggregatedMatches(t *testing.T) {
 	aggregated := "one\ntwo\n"
 	settled(t, spans.CodexCommand([]string{"one\n", "two\n"}, &aggregated))
@@ -86,9 +104,11 @@ func TestArgumentsThatDifferFromTheToolInputKeepChunks(t *testing.T) {
 }
 
 func TestAnomalyInTheSpanKeepsEveryChunk(t *testing.T) {
-	span := spans.ClaudeText([]string{"Hel"}, spans.TextOptions{Interpose: func(span *spans.Span) { span.Stderr("harness complaint") }})
+	span := spans.ClaudeText([]string{"Hel"}, spans.TextOptions{Interpose: func(span *spans.Span) {
+		span.Derived(nil, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{CommandFailed: &eventpb.CommandFailed{CommandId: "test-command"}}})
+	}})
 	if settle(span.Entries) != nil {
-		t.Fatal("a span with harness stderr settled")
+		t.Fatal("a span with a failed command settled")
 	}
 }
 
