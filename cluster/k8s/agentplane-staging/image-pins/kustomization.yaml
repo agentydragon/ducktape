@@ -33,11 +33,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261112224147-630fd86 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261112115133-a3ea0b2 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261112224356-630fd86 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261112115023-a3ea0b2 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261112224357-630fd86 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261112115132-a3ea0b2 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261112224403-630fd86 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
     newTag: devel-20261112104149-61a1079 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
