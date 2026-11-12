@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from datetime import datetime
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 
 # gazelle:include_dep @pypi//protobuf
 import httpx
@@ -157,6 +157,18 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 view = await wait_until_running(client, created)
             except SandboxNotReadyError as error:
                 failed_view = error.last_view
+                try:
+                    path = await _write_sandbox_diagnostics(
+                        cluster,
+                        client,
+                        created.name,
+                        created.uid,
+                        [failed_view] if failed_view is not None else None,
+                        stage="readiness",
+                    )
+                    error.add_note(f"Sandbox readiness diagnostics: {path}")
+                except Exception as diagnostic_error:
+                    error.add_note(f"Sandbox readiness diagnostics failed: {diagnostic_error!r}")
                 if (
                     is_vm_template(template)
                     and failed_view is not None
@@ -326,7 +338,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
                 raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
         except TimeoutError as error:
             try:
-                path = await _write_cleanup_diagnostics(cluster, client, name, uid, last_snapshot)
+                path = await _write_sandbox_diagnostics(cluster, client, name, uid, last_snapshot, stage="cleanup")
                 error.add_note(f"Sandbox cleanup diagnostics: {path}")
             except Exception as diagnostic_error:
                 error.add_note(f"Sandbox cleanup diagnostics failed: {diagnostic_error!r}")
@@ -344,11 +356,14 @@ async def _wait_for_sandbox_deletion(cluster: Cluster, name: str, uid: str) -> N
         await asyncio.sleep(0.25)
 
 
-async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any) -> str:
-    """Capture the state and control logs when the effective suspend watch stops progressing."""
+async def _write_sandbox_diagnostics(
+    cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any, *, stage: Literal["readiness", "cleanup"]
+) -> str:
+    """Capture failed lifecycle evidence before suspension removes the workload."""
 
     diagnostic: dict[str, Any] = {
         "sandbox_name": name,
+        "sandbox_uid": uid,
         "last_live_snapshot": None if last_snapshot is None else [MessageToDict(row) for row in last_snapshot],
     }
 
@@ -394,16 +409,41 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
     diagnostic["sandbox_controller_logs"] = controller_logs
     diagnostic["runner_gateway_logs"] = gateway_logs
     if pods.get("returncode") == 0:
-        try:
-            pod_names = [pod["metadata"]["name"] for pod in json.loads(pods["stdout"]).get("items", [])]
-        except KeyError, TypeError, ValueError:
-            pod_names = []
-        diagnostic["environment_runtime_logs"] = await asyncio.gather(
-            *(
-                kubectl("logs", f"pod/{pod}", "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--tail=100", "--since=10m")
-                for pod in pod_names
+        owned = [
+            pod
+            for pod in json.loads(pods["stdout"])["items"]
+            if any(
+                owner.get("kind") == "Sandbox" and owner.get("uid") == uid
+                for owner in pod["metadata"].get("ownerReferences", [])
             )
-        )
-    path = undeclared_outputs_dir() / f"sandbox-cleanup-{name}.json"
+            and any(container["name"] == ENVIRONMENT_RUNTIME_CONTAINER for container in pod["spec"]["containers"])
+        ]
+
+        async def runtime_logs(pod: dict[str, Any]) -> dict[str, Any]:
+            pod_name = pod["metadata"]["name"]
+            current, previous = await asyncio.gather(
+                kubectl("logs", f"pod/{pod_name}", "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--tail=100", "--since=10m"),
+                kubectl("logs", f"pod/{pod_name}", "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--previous", "--tail=100"),
+            )
+            after = await kubectl("get", "pod", pod_name, "-o", "json")
+            if after.get("returncode") != 0 or json.loads(after["stdout"])["metadata"]["uid"] != pod["metadata"]["uid"]:
+                return {
+                    "pod_name": pod_name,
+                    "pod_uid": pod["metadata"]["uid"],
+                    "status_before": pod.get("status"),
+                    "identity_unverified": True,
+                    "pod_after": after,
+                }
+            return {
+                "pod_name": pod_name,
+                "pod_uid": pod["metadata"]["uid"],
+                "status_before": pod.get("status"),
+                "current": current,
+                "previous": previous,
+                "pod_after": after,
+            }
+
+        diagnostic["environment_runtime_logs"] = await asyncio.gather(*(runtime_logs(pod) for pod in owned))
+    path = undeclared_outputs_dir() / f"sandbox-{stage}-{name}.json"
     path.write_text(json.dumps(diagnostic, indent=2) + "\n")
     return str(path)
