@@ -651,8 +651,30 @@ unique operations until a reviewed replacement and migration are verified. The r
 [approved delegation contract](session_delegation_workflows.md) and
 [`ORCHESTRATION_V1_BACKEND_GRANTS`](#orchestration_v1_backend_grants--orchestration_v1-operations-on-backend-grants).
 Exit with a capability/authority map, target contract and explicit retain/retire/replace proposal
-for stakeholder review. This is not a selection or implementation, and is not a prerequisite for
-the current receiver or tool work.
+for stakeholder review. Its implementation is tracked by `SESSION_TOOL_SURFACE_CONSOLIDATION`;
+the decision does not block current receiver or tool work.
+
+### `SESSION_TOOL_SURFACE_CONSOLIDATION` — consolidate orchestration and Session delegation
+
+**Operator-requested follow-up, 2026-11-11; blocked on `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN`.**
+Consolidate the overlapping `orchestration_v1` and `session_delegation` executors and published
+Action/MCP tools under the reviewed capability and authority map. Prefer retiring the older
+`orchestration_v1` group once its required workflows have replacements. Its operator-broker
+Decision authority is distinct from Session delegation's backend-enforced caller authority; shared
+code does not make those grants interchangeable.
+
+Preserve or explicitly replace launch/provisioning, model and reasoning-effort changes, Session
+listing, retained reads, input observation, turn waiting and cancellation. Migrate configured direct
+tools, launch policies/grants, CLI guides and every caller with each retired surface. If the selected
+replacement requires broader backend grants, its affected operations wait on
+`ORCHESTRATION_V1_BACKEND_GRANTS` and that node's authorization prerequisites; independent shared
+helpers and same-caller operations need not wait.
+
+**Exit:** the reviewed surface serves each retained workflow with positive and denied-authority
+coverage; redundant executors, contracts, policy shapes and documentation are removed, with no
+production caller depending on the retired group. Split implementation into independently reviewable
+PRs after the design is selected. This node records the requested consolidation, not authorization
+to delete unique operations or change authority before review.
 
 ### `ACTION_PROTO_CONTRACT_DESIGN` — protobuf contracts for Action inputs and outputs
 
