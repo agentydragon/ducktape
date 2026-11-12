@@ -23,8 +23,10 @@ unreferenced once the bases linking to it are gone):
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
 `workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
 result, scoped to one domain.
-All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
-immediately before removing it, skipping (and exiting nonzero for) one that changed.
+All use the PRUNE/KEEP/REVIEW model and are dry by default. Worktrees and branches are
+removed based on the scan; Bazel bases and repo-cache entries are rechecked under locks.
+The workspace must not be modified by other processes while workspace-gc runs: checks and
+removals are not atomic.
 Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
 them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
 anything you would miss.
@@ -33,8 +35,8 @@ Scans emit INFO progress to stderr as they inspect each worktree, branch, output
 batch, or requested size, so a large or slow item is identifiable before the final report.
 
 Git or filesystem failures inspecting a worktree, branch, or foreign clone produce `REVIEW`
-with the error, leaving that item intact while other items continue. This also applies during
-deletion revalidation. An existing directory with unreadable Git metadata is never treated as
+with the error, leaving that item intact while other items continue. An existing directory
+with unreadable Git metadata is never treated as
 a missing worktree. Failures that block the entire command exit nonzero with a diagnostic.
 An item skipped at deletion (it no longer qualifies, or its Bazel lock or the cache is busy) is
 reported as `SKIPPED` and does not change the exit status; a failed removal does.
@@ -93,9 +95,9 @@ default is the only root.
 - `PRUNE`: clean, idle (not main/active, no process cwd'd inside), and its work is already
   in the main branch — an ancestor, a squash/rebase-merge (merging into main is a no-op),
   an empty branch, or a **merged GitHub PR** for its branch. Remove with
-  `workspace-gc worktrees --prune`: it re-classifies each worktree right before removing it, runs `git worktree remove` **without
-  `--force`** (so a tree that turned dirty is skipped), and **never deletes branches** —
-  the work stays reachable through them.
+  `workspace-gc worktrees --prune`: it runs `git worktree remove` **without `--force`**
+  (so Git refuses tracked and untracked changes) and **never deletes branches** — the work
+  stays reachable through them.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
   changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
   (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the
@@ -141,9 +143,8 @@ branch; interpret it literally:
   commit having a patch-equivalent already on the default branch) **or** by
   a merged PR whose merged head the branch has not advanced beyond. A branch checked out in a
   _prunable_ worktree is eligible too; `all --prune` removes that worktree first, then the
-  branch. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges) **after
-  re-proving** the branch is still prunable — safe because the content is in the default
-  branch, but it removes the ref (recoverable only via reflog).
+  branch. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges); it removes
+  the ref (recoverable only via reflog).
 - `KEEP`: the default branch, a branch with an open PR, or a branch checked out in a retained
   worktree (git won't delete a checked-out branch anyway).
 - `REVIEW`: commits not in the default branch and no merged PR, or a merged PR the branch has
