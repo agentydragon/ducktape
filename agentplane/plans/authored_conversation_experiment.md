@@ -116,6 +116,22 @@ authorship, separation of thread/trace/context, delivery of input arriving durin
 end, reset persistence, and reporting a missing published answer. Live Qwen runs establish whether
 participation is natural; scripted model responses alone cannot establish that.
 
+## Follow-on interaction experiments
+
+After the core runs, try richer ways for participants to act on the thread. These are candidates,
+not additional gates for W1-W4:
+
+- **Emoji reactions:** let either participant react to a message. Try an acknowledgement without
+  another text message, and user feedback on an agent answer. Observe whether the model naturally
+  uses and understands reactions. Compare notifying it of a reaction with discovering one on a
+  later read before choosing wakeup behavior or fixed emoji meanings.
+- **Editing past messages:** try a human correcting an earlier instruction and an agent revising
+  its own answer or summary. Keep the message ID stable and retain revisions so the trace can
+  distinguish what the model originally read from the thread's current content. Surface an edit
+  as new information; it does not retroactively rewrite model context or undo executed work.
+  Check whether the agent notices the revision and proceeds from the corrected conversation
+  without treating its stale context as the latest version.
+
 ## Evidence and stopping condition
 
 Keep local run artifacts under the task scratch directory. Add a short findings note under
