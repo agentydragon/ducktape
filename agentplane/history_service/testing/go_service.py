@@ -199,6 +199,7 @@ async def go_history_service(
         config.write_text(
             json.dumps(
                 {
+                    "policy_namespace": WRITER.namespace,
                     "reader_accounts": [{"namespace": READER.namespace, "name": READER.name}],
                     "token_audience": READER_AUDIENCE,
                     "request_timeout_s": 10,

@@ -206,6 +206,7 @@ async def run_gateway(
             )
             effective_settings = Settings(
                 sandbox_namespace=namespace,
+                policy_namespace=namespace,
                 dispatcher_database_url=database_url,
                 pod_name=workload.name,
                 pod_ip="192.0.2.10",
