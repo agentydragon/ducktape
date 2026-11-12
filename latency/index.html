@@ -129,8 +129,8 @@
             <header>
               <${Anchor} href="../">Ducktape reports<//
               ><${Text} mt="md" c="dimmed"
-                >CI latency · 11–12 November cohort · follow-ups through
-                ${followup.observed_at_utc}<//
+                >CI latency · 11–12 November cohort · selected follow-ups
+                through 2026-11-12 22:55 UTC<//
               ><${Title} order=${1} my="sm"
                 >Routine feedback is short; Agentplane still waits on test work
                 and recovery<//
@@ -139,9 +139,9 @@
                 is${" "}<strong>2m55s</strong>. Matched Agentplane service heads
                 take${" "} <strong>10m03s median / 23m30s p90</strong>. Current
                 native examples spend minutes inside managed system-test
-                actions, with about 60ms of action queueing. Prioritize their
-                startup and scenario work, and the fresh failures that force
-                another full attempt.<//
+                actions. Earlier actions queued for about 60ms, while a later
+                Pod control waited 536.8s. Prioritize the complete action graph
+                and establish why admission and result recovery diverged.<//
               ><${Text} mt="sm" size="sm" c="dimmed"
                 ><${ManifestStamp} src="./manifest.json" /><br />The cohort
                 below remains 11 Nov 07:20 → 12 Nov 07:20 UTC, with results
@@ -178,10 +178,11 @@
               >Keep the four-CPU KVM shape and the Pod suite’s current
               reservation. The same-source KVM canary is faster in its bounded
               three-scenario run, but uses different resources and cleanup, so
-              it does not establish a production CI saving. K3s store reuse
-              passed reset and invalidation acceptance; exact-head CI is pending
-              and the speedup is unmeasured. More KVM workers cannot shorten a
-              managed VM or Pod action.<//
+              it does not establish a production CI saving. Firecracker
+              image-store reuse merged and was observed across two physical
+              executions on one worker; its speedup is unmeasured. VM/Pod
+              already retained a separate K3s baseline. More KVM workers cannot
+              shorten a managed VM or Pod action.<//
             >
             <section id="cohorts">
               <${Title} order=${2}>What different PRs experience<//
@@ -511,9 +512,10 @@
                 drain is merged. The old one-worker, 22–26-reservation incident
                 is historical. A separate live read found two ready VMs. Keep
                 one action per worker because shared K3s storage has exclusive
-                ownership. Managed VM work cannot be moved to the existing
-                manual KVM target unchanged: that target asks for 10GB while
-                each executor advertises 7GiB.<//
+                ownership. The earlier closed #15822 pilot requested 10 GB,
+                above the worker’s 7 GiB advertisement. The current manual KVM
+                target requests 7 GiB; required-CI placement still needs a
+                resource-matched, capacity-aware test.<//
               >
               <${Text} my="sm"
                 >Selected latest day completed runner occupancy is 59.46
@@ -548,18 +550,18 @@
                   ],
                   [
                     "2 · K3s fixture lifecycle",
-                    "The K3s store-reuse candidate now passes cold import, warm reuse across fresh Kubernetes UIDs, SIGKILL reset and binary-mismatch reset under clean-stop, exact-binary and 20 GB headroom rules. Keep mutable DB/PKI/workspaces fresh and cleanup scenario-owned.",
-                    "PR #15188 is open and ready for review with all required exact-head CI checks green. These are safety and reset results, not an end-to-end latency measurement. Selected VM/Pod setup is 77–154s; this envelope is not removable-work evidence. No deployed lifecycle change is authorized.",
+                    "Firecracker image-store reuse passed cold import, warm reuse across fresh Kubernetes UIDs, SIGKILL reset and binary-mismatch reset under clean-stop, exact-binary and 20 GB headroom rules. VM/Pod already had a separate retained baseline. Keep mutable DB/PKI/workspaces fresh and cleanup scenario-owned.",
+                    "PR #15188 merged. Two uncached Firecracker actions on one worker confirmed store continuity; this is not an end-to-end latency measurement. Selected VM/Pod setup is 77–154s; this envelope is not removable-work evidence.",
                   ],
                   [
                     "3 · VM placement",
                     "The bounded three-scenario same-source pilot completed: KVM 262.3s versus managed TCG 474.5s. KVM used 4 CPUs; managed TCG used 8 compute units. Stack time was 128s / 125s; scenario time was 115s / 249s.",
-                    "PR #15822 remains open with required checks green. Different resources and cleanup prevent a cost-adjusted production CI claim. One managed invocation still ends on Pod, so isolated VM acceleration has zero conditional headroom there. Extra worker RAM/capacity and isolation/drain ownership remain recurring costs.",
+                    "PR #15822 was closed after the pilot. Different resources and cleanup prevent a cost-adjusted production CI claim. One managed invocation still ends on Pod, so isolated VM acceleration has zero conditional headroom there. Extra worker RAM/capacity and isolation/drain ownership remain recurring costs.",
                   ],
                   [
                     "Tail 1 · runtime/test contract",
-                    "The observed 256 MiB shared cgroup can kill the tool and Codex exec-server in sequence. The pinned Codex 0.162.1 bundled exec-server exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; existing OOM and no-replay assertions remain unchanged. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate process/session/PTY/sandbox/filesystem architecture and ownership decision.",
-                    "The Nov 12 shared-cgroup incident killed the tool and then the exec-server, losing the native session. The audit of bundled Codex 0.162.1 found no per-command memory/cgroup placement or pre-exec controls. Runtime design PR #15800 and patch-dependent producer PR #15869 are closed; capability note PR #15883 merged. The current shared-cgroup setup does not guarantee exec-server survival from tool OOM. No runtime repair or change to the OOM/no-replay assertions is claimed.",
+                    "The observed 256 MiB shared cgroup can kill the tool and Codex exec-server in sequence. The pinned Codex 0.162.1 bundled exec-server exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; the unsupported survival probe is now manual while no-replay behavior remains. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate process/session/PTY/sandbox/filesystem architecture and ownership decision.",
+                    "The Nov 12 shared-cgroup incident killed the tool and then the exec-server, losing the native session. The audit of bundled Codex 0.162.1 found no per-command memory/cgroup placement or pre-exec controls. Runtime design PR #15800 and patch-dependent producer PR #15869 are closed; capability note PR #15883 merged. The current shared-cgroup setup does not guarantee exec-server survival from tool OOM. PR #15897 moved the unsupported OOM survival check to a manual target; no runtime repair is claimed.",
                   ],
                   [
                     "Retain / rejected",
@@ -585,13 +587,12 @@
                 start times and scenario/lifecycle boundaries as well. Narrow
                 image inputs cost no standing capacity; prepared infrastructure
                 adds versioned reset ownership and idle resource cost; KVM
-                requires an eligible larger worker and admission/drain
-                ownership. None yet has a validated four-minute end-to-end
-                forecast. K3s store acceptance now covers cold/warm reuse, fresh
-                UIDs, forced reset and binary mismatch with exact-head CI green;
-                next measure matched full-graph feedback. The KVM canary needs
-                equivalent resource and cleanup accounting before a placement
-                change.<//
+                requires eligible capacity and admission/drain ownership. None
+                yet has a validated four-minute end-to-end forecast. Firecracker
+                store acceptance covers cold/warm reuse, fresh UIDs, forced
+                reset and binary mismatch with exact-head CI green; next measure
+                matched full-graph feedback. The KVM canary needs equivalent
+                resource and cleanup accounting before a placement change.<//
               >
               ${table(
                 [
@@ -614,10 +615,75 @@
                 heads cannot be added to CPU or worker seconds.<//
               >
             </section>
+            <${Stack} component="section" id="nov12-later" gap="sm" my="xl">
+              <${Title} order=${2}
+                >Later Nov 12: store reuse and the full graph<//
+              >
+              <${Text} component="p"
+                >These are selected observations through 22:55 UTC, not a new
+                population or a before/after CI rate.${" "}
+                <${Anchor} href="evidence.json"
+                  >Evidence and exact run identities<//
+                >.<//
+              >
+              <${Paper} withBorder p="md">
+                <${Text} fw=${600}>Firecracker store continuity<//>
+                <${Text} component="p"
+                  >Merged${" "}
+                  <${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/15188"
+                    >#15188<//
+                  >${" "} retains Firecracker’s previously non-persisted image
+                  store. Two distinct uncached physical executions on one worker
+                  took 216.274s and 213.310s; the first final inventory matched
+                  the second starting inventory (52 image references). Setup was
+                  70.47s and 67.66s. This proves continuity on that worker, not
+                  causal speedup or fleet hit rate.${" "}
+                  <${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/15901"
+                    >Methods and artifacts<//
+                  >.<//
+                >
+              <//>
+              <${Paper} withBorder p="md">
+                <${Text} fw=${600}
+                  >Full graph, admission and missing verdicts<//
+                >
+                <${Text} component="p"
+                  >The sampled last bottleneck changed from Pod to MCP Actions
+                  between runs. A later${" "}
+                  <${Anchor}
+                    href="https://app.buildbuddy.io/invocation/88924b1e-808c-4da9-89ec-3ac634268d6c"
+                    >Pod control<//
+                  >${" "} queued 536.823s, yet a matching-platform${" "}
+                  <${Anchor}
+                    href="https://app.buildbuddy.io/invocation/34d911a5-ebfa-4040-b7d7-b59ccd4880ec"
+                    >action submitted during that wait<//
+                  >${" "} started in 25.7ms. Provider scheduling and placement
+                  reasons remain unknown. That second action failed before
+                  pytest collection from a malformed argument; its admission
+                  clock is still valid.<//
+                >
+                <${Text} component="p"
+                  >An isolated TLS case passed uncached in 188.771s. The control
+                  and corrected split-main actions finished physical work but
+                  lost their observers and have no recoverable test verdict;
+                  their uncontrolled timings do not establish complete coverage
+                  or a speedup. The next comparison needs scheduler-side
+                  admission evidence, recoverable results, and matched full-gate
+                  timing with case coverage and duplicate setup costs.${" "}
+                  <${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/15904"
+                    >Graph and experiment follow-up<//
+                  >.<//
+                >
+              <//>
+            <//>
             <${Stack} component="section" id="nov12-followups" gap="md" my="xl">
               <${Title} order=${2}>Nov 12 intervention follow-up<//>
               <${Text} component="p">
-                These selected experiments update intervention status only. The
+                The cards below retain their status at
+                ${followup.observed_at_utc}; later updates appear above. The
                 latency population, source pin and 11–12 November observation
                 window above are unchanged. A faster action admission or pilot
                 does not equal a measured change in the full PR feedback cohort.

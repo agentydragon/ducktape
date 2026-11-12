@@ -1,4 +1,41 @@
 {
+  "nov12_later_followup": {
+    "observed_through_utc": "2026-11-12T22:55:00Z",
+    "scope": "Selected post-window investigations; existing cohort windows, source pin, population counts and rates remain unchanged.",
+    "firecracker_store": {
+      "implementation_pr": "https://github.com/agentydragon/ducktape/pull/15188",
+      "evidence_pr": "https://github.com/agentydragon/ducktape/pull/15901",
+      "run_urls": [
+        "https://app.buildbuddy.io/invocation/1d0825b0-0947-4a8e-8f0d-5fcb70630e19",
+        "https://app.buildbuddy.io/invocation/d74fd16f-b026-4775-8951-89e55cf3efbc"
+      ],
+      "source_tree": "dddecd23",
+      "second_run_base": "630fd860",
+      "second_run_applied_patch_prefix": "afb4d515",
+      "test_action_digest": "9a9634d706bc262dc9ffcc6b2f84d1bb0664df582e665805f9de5a1b9c537735/595",
+      "total_seconds": [216.274, 213.31],
+      "setup_seconds": [70.47, 67.66],
+      "summed_image_import_seconds": [27.39, 26.51],
+      "inventory_sha256": "e3b820811ed1b43798eb1514ab68ebe90acbc259990ede167d0615ed8607f065",
+      "inventory_image_refs": 52,
+      "limit": "Distinct uncached physical actions on the same worker demonstrate store continuity. VM and Pod already retained a separate baseline. No matched causal speedup or fleet hit rate was measured."
+    },
+    "graph_and_admission": {
+      "note_pr": "https://github.com/agentydragon/ducktape/pull/15904",
+      "control_url": "https://app.buildbuddy.io/invocation/88924b1e-808c-4da9-89ec-3ac634268d6c",
+      "contemporaneous_url": "https://app.buildbuddy.io/invocation/34d911a5-ebfa-4040-b7d7-b59ccd4880ec",
+      "corrected_split_url": "https://app.buildbuddy.io/invocation/fa944edd-c4a0-4c18-b576-1f0ac09d5e58",
+      "control_queue_seconds": 536.823,
+      "control_execution_seconds": 366.64,
+      "contemporaneous_queue_seconds": 0.0257,
+      "corrected_split_queue_seconds": 0.064,
+      "corrected_split_execution_seconds": 388.205,
+      "isolated_tls_pass_seconds": 188.771,
+      "limit": "Control and corrected split have unavailable test results after terminal outer stream error and disconnected invocations. First split main failed before collection due malformed argument; its admission timestamp is valid. Neither a speedup nor full test selection is established; provider scheduling cause remains unknown."
+    },
+    "policy_pr": "https://github.com/agentydragon/ducktape/pull/15897",
+    "kvm_pilot_status": "PR #15822 closed; current manual test_vm_kvm requests 7 GiB on a four-CPU worker. A resource-matched required-CI pilot remains unvalidated."
+  },
   "schema_version": 3,
   "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],

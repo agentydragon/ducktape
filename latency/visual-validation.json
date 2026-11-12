@@ -1,41 +1,39 @@
 {
   "status": "PASSED",
   "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/04c8e734-4fed-4704-b250-0a0e282cdd21",
-  "complete_test_case_count": 12,
-  "pytest_seconds": 192.949,
-  "reviewed_at_utc": "2026-11-12T12:20:16.548016+00:00",
+  "invocation": "https://app.buildbuddy.io/invocation/2dd76acb-2a1d-4b09-b007-aae5b032fefa",
+  "case_count": 4,
+  "scope": "Four latency cases after link-spacing correction",
+  "reviewed_at_utc": "2026-11-12T23:13:18.708409+00:00",
   "tested_assets": [
     {
       "path": "latency/index.html",
-      "sha256": "82a6e60f958369d89b1a132aa1bee6ee5e4ceca32e5c501214e3cbe6f9f9f864"
+      "sha256": "718b67b324903bf09ccf7f406f929ed8f3caab5f7862a3acbc476030ccd4e9d3"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "61383190203aa1b26ba14dd9b0a82d505d1f9199ae6ec7ec163d93ddf2c55f7b"
+      "sha256": "9e442317ff5f56814fe7876601bf40da9a00cd8dc6cb2c271ab54f514dafd5b8"
     },
     {
       "path": "latency/manifest.json",
-      "sha256": "fa0adbfb3460b318eafa1e6ac6c735dc5190db011fda81b368ea5476bf5eb755"
-    },
-    {
-      "path": "report.js",
-      "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-    },
-    {
-      "path": "report.css",
-      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+      "sha256": "9fb9b94e99b92bf9ad03ada3b2490ef256e38e9078638db3490f27d17dd280ed"
     }
   ],
   "published_assets": [
     {
       "path": "latency/index.html",
-      "sha256": "9f9fa7694555d7de4dde7724ec888f86a8aa9dc7fd5dc62e0decd94d116ab8fb"
+      "sha256": "718b67b324903bf09ccf7f406f929ed8f3caab5f7862a3acbc476030ccd4e9d3"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "ad3068313b21dc8ace96099d94c9f3f94e4f0d9f221c14c475bd2ac65883051c"
+      "sha256": "9e442317ff5f56814fe7876601bf40da9a00cd8dc6cb2c271ab54f514dafd5b8"
     },
+    {
+      "path": "latency/manifest.json",
+      "sha256": "57d8987219a9a9554957a439746d7a2be76c1fdff98b54716f9b17e05f98c5dc"
+    }
+  ],
+  "shared_assets": [
     {
       "path": "report.js",
       "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
@@ -45,6 +43,7 @@
       "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     }
   ],
+  "manifest_note": "Publication manifest differs from tested manifest only by the visual-validation reference.",
   "checks": [
     "Desktop and mobile",
     "Initial light and dark schemes",
@@ -56,49 +55,23 @@
   "manually_reviewed_screenshots": [
     {
       "case": "light-desktop-latency",
-      "checkpoint": "section-latency-nov12-followups",
-      "sha256": "eb0d930cbe7b08c1796732e0adea958937b898322b2374dac43a52bda26b61f9",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/eb0d930cbe7b08c1796732e0adea958937b898322b2374dac43a52bda26b61f9/194226",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
+      "checkpoint": "section-latency-nov12-later",
+      "sha256": "2b3e27a2e8e7efbf72bb8e53c227d0271157c41984795feb8f7f80c63ba2a2b9"
     },
     {
       "case": "light-mobile-latency",
-      "checkpoint": "section-latency-nov12-followups",
-      "sha256": "f8b08f89b31759085994a70e29926f995f184fcaf59f2d8cad39d18a6118c570",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f8b08f89b31759085994a70e29926f995f184fcaf59f2d8cad39d18a6118c570/203699",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
+      "checkpoint": "section-latency-nov12-later",
+      "sha256": "a103519c565db2b76ac0b90e339b754d98c7f3b93c747262e47b6cba0e76658f"
     },
     {
       "case": "dark-desktop-latency",
-      "checkpoint": "section-latency-nov12-followups",
-      "sha256": "72c2c3c2c092af5d755bf6b742f703bac0ba7a8c1c152afd35f7850aa165e010",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/72c2c3c2c092af5d755bf6b742f703bac0ba7a8c1c152afd35f7850aa165e010/195622",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
+      "checkpoint": "section-latency-nov12-later",
+      "sha256": "f46d3a5800e0dff76a47381d1f684e981bbd4e8bf4ed7076755a479cd680dc7d"
     },
     {
       "case": "dark-mobile-latency",
-      "checkpoint": "section-latency-nov12-followups",
-      "sha256": "383442d07719c3762e70af044b5770f294444e5864f1bb798ea1fc8ec67d039b",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/383442d07719c3762e70af044b5770f294444e5864f1bb798ea1fc8ec67d039b/207722",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
-    }
-  ],
-  "review_scope": "All four follow-up section theme/viewport captures for this report were manually inspected. Existing charts and controls passed automated checks; not every unchanged screenshot was manually reviewed again.",
-  "input_semantics": "Published HTML is the pinned Prettier normalization of the tested HTML; published evidence is JSON-equivalent to tested evidence. Publication timestamp/hash metadata and this receipt were generated after capture. The report cohort/source window remains unchanged.",
-  "execution": {
-    "queue_seconds": 0.059896,
-    "execution_start_utc": "2026-11-12T12:03:40.392240Z",
-    "execution_complete_utc": "2026-11-12T12:06:53.341345Z",
-    "observation": "HTTPS metadata confirmed completion after log streaming stopped updating; no duplicate run."
-  },
-  "validation_iterations": [
-    {
-      "invocation": "f9f53201-1715-42dd-bb1c-0c3da18fa188",
-      "result": "Failed template nesting; corrected."
-    },
-    {
-      "invocation": "3d671c3c-ddea-4cbc-b0c6-89466a983cad",
-      "result": "Passed; manual review found table header and mobile prose layout defects, replaced by responsive cards before final run."
+      "checkpoint": "section-latency-nov12-later",
+      "sha256": "26d2b32875645084d41d8e72f0ef0a8a0875145b46838ecbd1b00ac0f5dfee23"
     }
   ]
 }

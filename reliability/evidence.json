@@ -1,4 +1,49 @@
 {
+  "nov12_later_followup": {
+    "observed_through_utc": "2026-11-12T22:55:00Z",
+    "scope": "Selected post-window investigations. Original 5–12 November populations, denominators, rates and source pin were not recollected.",
+    "oom": {
+      "implementation_pr": "https://github.com/agentydragon/ducktape/pull/15897",
+      "status": "merged",
+      "change": "Codex exec-server survival after tool OOM moved into a manual target with a comment explaining the unsupported guarantee; ordinary Codex and Claude VM tests remain required.",
+      "limit": "No additional cgroup isolation or runtime repair. The later green CI rerun used a cached VM result."
+    },
+    "dispatcher_certificates": {
+      "failure_url": "https://app.buildbuddy.io/invocation/cfecc04e-ac6f-571c-8421-660fdce441ec",
+      "evidence_pr": "https://github.com/agentydragon/ducktape/pull/15899",
+      "known_cleanup_pr": "https://github.com/agentydragon/ducktape/pull/15193",
+      "finding": "Retained certificate artifacts show the intermediate signed by an earlier root; a newly issued root did not validate it. Root issuance occurred 0.44 seconds apart.",
+      "limit": "Why the root was issued twice and exact mounted Secret bytes remain unknown. Sampled later dispatcher passes may be cached and do not establish a fresh recurrence rate."
+    },
+    "mcp_runtime": {
+      "failure_url": "https://app.buildbuddy.io/invocation/1e6dc3d2-1d13-565b-b32f-0c399df96474",
+      "fresh_pass_url": "https://app.buildbuddy.io/invocation/0514b26f-a4b0-5abf-81ba-076ceea0c132",
+      "evidence_pr": "https://github.com/agentydragon/ducktape/pull/15900",
+      "tested_source": "b55239863dd62a89d7fdb00bb9571a58db8706eb",
+      "finding": "All three failing actions retained intermediate certificates signed by an earlier root. Two Pod UIDs have direct environment-runtime certificate-verification stderr; all three targets later passed uncached in one post-fix invocation.",
+      "limit": "For other timed-out Pods, the exact exit cause is inferred; one post-fix run is not a recurrence rate. This is startup evidence, not a shutdown-race diagnosis."
+    },
+    "kvm_pool": {
+      "alert_pr": "https://github.com/agentydragon/ducktape/pull/15806",
+      "dashboard_url": "https://grafana.allegedly.works/d/buildbuddy-executor-pool",
+      "sample_start_utc": "2026-11-12T18:58:00Z",
+      "sample_end_utc": "2026-11-12T22:23:00Z",
+      "samples": 206,
+      "registered_samples": 205,
+      "healthy_samples": 204,
+      "desired_and_scrape_up_samples": 206,
+      "alert_firing_samples": 0,
+      "recent_ci_created_runs": 29,
+      "recent_ci_outcomes": {
+        "success": 17,
+        "failure": 4,
+        "cancelled": 3,
+        "without_conclusion": 5
+      },
+      "ci_cutoff_utc": "2026-11-12T22:27:48Z",
+      "limit": "All four failed job logs lacked the no-registered kvm-vm signature. No sustained-empty live event tested alert firing; promtool unit tests cover the rule. Historical nine reported failures predate autoscale/drain."
+    }
+  },
   "repository": "https://github.com/agentydragon/ducktape",
   "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
