@@ -212,7 +212,9 @@ async def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) ->
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     detached = GitRepo(path)
-    _commit_detached(detached, "detached empty commit")
+    (path / "unique").write_text("unique work\n")
+    detached.run("add", "unique")
+    detached.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "unique work")
     detached_head = detached.rev("HEAD")
     assert detached_head not in _surviving_ref_commits(repo)
 
@@ -253,7 +255,25 @@ async def test_detached_ancestor_is_prunable_and_recoverable(repo: GitRepo, proc
     head = item.worktree.head
     assert head
     assert await _remove_detached(repo, item.worktree) == Removed(path)
-    assert repo.rev(f"refs/workspace-gc-preserved/{head}") == head
+    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
+
+
+async def test_detached_squash_landed_preserves_exact_commit(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    wt = GitRepo(path)
+    for name in ("one", "two"):
+        (path / name).write_text(name)
+        wt.run("add", name)
+        wt.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", name)
+    head = wt.rev("HEAD")
+    repo.run("merge", "--squash", head)
+    repo.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "squash")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    assert item.reason is wg.PrunableWorktreeReason.CONTENT_IN_MAIN
+    assert await _remove_detached(repo, item.worktree) == Removed(path)
+    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
 
 
 async def test_detached_patch_landed_preserves_exact_commit(repo: GitRepo, proc: Path) -> None:
@@ -264,13 +284,29 @@ async def test_detached_patch_landed_preserves_exact_commit(repo: GitRepo, proc:
     wt.run("add", "change")
     wt.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "feature")
     head = wt.rev("HEAD")
-    repo.run("-c", "user.name=t", "-c", "user.email=t@t", "cherry-pick", head)
+    repo.run("cherry-pick", "--no-commit", head)
+    repo.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "different commit")
     repo.run("-c", "user.name=t", "-c", "user.email=t@t", "revert", "--no-edit", "HEAD")
     item = await _classify(repo, path, proc)
     assert isinstance(item, wg.PrunableWorktree)
     assert item.reason is wg.PrunableWorktreeReason.PATCHES_IN_MAIN
     assert await _remove_detached(repo, item.worktree) == Removed(path)
-    assert repo.rev(f"refs/workspace-gc-preserved/{head}") == head
+    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
+
+
+async def test_detached_reflog_commits_survive_reset_and_removal(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    wt = GitRepo(path)
+    (path / "abandoned").write_text("unique work\n")
+    wt.run("add", "abandoned")
+    wt.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "abandoned")
+    abandoned = wt.rev("HEAD")
+    wt.run("reset", "--hard", "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    assert await _remove_detached(repo, item.worktree) == Removed(path)
+    assert repo.rev(f"refs/workspace-gc/recovery/{abandoned}") == abandoned
 
 
 async def test_detached_head_change_since_scan_is_skipped(repo: GitRepo, proc: Path) -> None:
@@ -294,14 +330,14 @@ async def test_detached_head_change_after_ref_creation_is_skipped(
 
     async def racing_git(repo_path: Path, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         result = await real_git(repo_path, *args, **kwargs)
-        if args[0] == "rev-parse" and args[-1].startswith("refs/workspace-gc-preserved/"):
+        if args[0] == "rev-parse" and args[-1].startswith("refs/workspace-gc/recovery/"):
             _commit_detached(GitRepo(path), "new work")
         return result
 
     monkeypatch.setattr(wg, "git", racing_git)
     assert isinstance(await _remove_detached(repo, item.worktree), Skipped)
     assert path.exists()
-    assert repo.rev(f"refs/workspace-gc-preserved/{item.worktree.head}") == item.worktree.head
+    assert repo.rev(f"refs/workspace-gc/recovery/{item.worktree.head}") == item.worktree.head
 
 
 async def test_detached_ref_creation_failure_does_not_remove(
@@ -347,7 +383,7 @@ async def test_detached_recovery_ref_survives_failed_or_cancelled_removal(
     else:
         assert isinstance(await _remove_detached(repo, item.worktree), Failed)
     assert path.exists()
-    assert repo.rev(f"refs/workspace-gc-preserved/{item.worktree.head}") == item.worktree.head
+    assert repo.rev(f"refs/workspace-gc/recovery/{item.worktree.head}") == item.worktree.head
 
 
 async def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:

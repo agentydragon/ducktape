@@ -95,8 +95,8 @@ default is the only root.
   and its work has landed on the default branch, or its branch has a merged or closed PR.
   `workspace-gc worktrees --prune` reclassifies before calling `git worktree remove` without
   `--force`; Git deletes ignored files. Attached branches survive worktree removal. A detached
-  HEAD with landed content or patches is eligible, and its captured commit is retained under
-  `refs/workspace-gc-preserved/<commit>`. A branch or detached HEAD change during revalidation is
+  HEAD with landed content or patches is eligible; its HEAD and available reflog commits are
+  retained under `refs/workspace-gc/recovery/<commit>` before Git removes the reflog. A branch or detached HEAD change during revalidation is
   skipped. If the worktree directory is already missing, removal is skipped; review stale
   entries with `git worktree prune --dry-run --verbose` and prune only confirmed records.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)

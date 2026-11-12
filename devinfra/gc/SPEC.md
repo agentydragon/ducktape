@@ -39,7 +39,8 @@ repository may contain user data that checking worktrees alone cannot establish 
 A worktree is not eligible for removal if it has tracked or non-ignored untracked changes.
 Ignored files and directories do not prevent removal and are deleted by Git. A clean detached
 HEAD is eligible when its content or patches have landed on the default branch. Before removal,
-its captured commit is retained under `refs/workspace-gc-preserved/<commit>`.
+its HEAD and available reflog commits are retained under `refs/workspace-gc/recovery/<commit>`.
+The reflog inventory is rechecked before Git removes it with the worktree.
 
 Re-listing worktrees and reclassification confirm that the checked-out branch and detached HEAD
 still match the scan. Inspection errors fail closed. A missing worktree directory is skipped;

@@ -9,7 +9,7 @@ active, and open-PR worktrees are kept; unique work is reported for review.
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
 GitHub. `git worktree remove` refuses tracked or untracked changes, but deletes ignored files.
-Detached commits are preserved under refs/workspace-gc-preserved/ before removal. The final
+Detached HEAD and reflog commits are preserved under refs/workspace-gc/recovery/ before removal. The final
 HEAD check and removal are not atomic.
 """
 
