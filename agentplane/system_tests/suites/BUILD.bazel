@@ -94,7 +94,6 @@ k3s_suite(
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
-    boot_evidence = True,
     stack = "vm",
     deps = [
         "//:conftest",
@@ -166,11 +165,36 @@ k3s_suite(
     ],
 )
 
-# Manual profile variant imports one perf-capable root; only the OOM guest records.
+# Codex exec-server and commands share a memory cgroup, so tool OOM can also kill the
+# server. Revisit this probe if a replacement executor guarantees command isolation.
+k3s_suite(
+    name = "test_vm_oom",
+    srcs = ["test_vm_oom.py"],
+    boot_evidence = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Manual profile variant imports a perf-capable root for the OOM guest.
 k3s_suite(
     name = "test_vm_profile",
-    srcs = ["test_vm.py"],
-    main = "test_vm.py",
+    srcs = ["test_vm_oom.py"],
+    main = "test_vm_oom.py",
     profile_guest = True,
     stack = "vm",
     tags = ["manual"],
@@ -178,17 +202,14 @@ k3s_suite(
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:offered_models",
-        "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:vm_sandbox",
-        "//agentplane/system_tests/vm:configuration",
-        "//agentplane/system_tests/vm:trace_contract",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

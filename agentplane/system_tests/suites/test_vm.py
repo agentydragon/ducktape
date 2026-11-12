@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 import pytest
 import pytest_bazel
@@ -69,18 +68,6 @@ async def test_vm_scenarios(
                 cluster, owned_client, dispatcher, sandbox, harness, models[harness], scripted, template
             )
 
-    async def oom() -> None:
-        async with scenario_resources() as (owned_client, sandbox):
-            await vm_sandbox.codex_tool_oom(
-                cluster,
-                owned_client,
-                dispatcher,
-                sandbox,
-                models[session_pb2.HARNESS_CODEX],
-                scripted,
-                native_profile=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",
-            )
-
     # pytest-asyncio serializes separate tests. Launch every independent boot here so a
     # finished scenario never leaves its worker capacity idle behind another test's teardown.
     # Each task owns its guests and cleanup.
@@ -90,7 +77,6 @@ async def test_vm_scenarios(
             traced_scenario("vm-turn-harness_claude", turn(session_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))
         )
         scenarios.create_task(traced_scenario("vm-turn-harness_codex", turn(session_pb2.HARNESS_CODEX, VM_TEMPLATE)))
-        scenarios.create_task(traced_scenario("codex-tool-oom", oom()))
 
     await _wait_for_vm_process_trace_contract()
 
