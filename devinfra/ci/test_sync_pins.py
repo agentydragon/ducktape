@@ -48,35 +48,44 @@ def _wheel(files: dict[str, str]) -> bytes:
 
 
 @pytest.mark.parametrize(
-    ("old_util", "old_ws", "old_gmail", "expected"),
+    ("util_files", "hook_source", "expected"),
     [
-        (True, True, True, []),
-        (False, True, True, ["ws imports util.agent_sandbox", "gmail-archiver imports util.fmt"]),
-        (False, False, True, ["gmail-archiver imports util.fmt"]),
-        (False, False, False, []),
+        ({"util/otel.py": ""}, "from util.otel import JsonlSpanExporter", []),
+        ({"util/otel/__init__.py": ""}, "from util.otel import JsonlSpanExporter", []),
+        ({}, "from util.otel import JsonlSpanExporter", ["ducktape-git-hooks imports util.otel"]),
+        ({}, "from util import otel", ["ducktape-git-hooks imports util.otel"]),
+        ({}, "import logging", []),
     ],
 )
 def test_util_pin_waits_for_released_wheel_consumers(
-    old_util: bool, old_ws: bool, old_gmail: bool, expected: list[str]
+    util_files: dict[str, str], hook_source: str, expected: list[str]
 ) -> None:
-    util_files = {"util/agent_sandbox.py": "", "util/fmt.py": ""} if old_util else {}
-    consumers = {
-        "ws": _wheel({"devinfra/ws/cli.py": "from util.agent_sandbox import CLAIMS_PLURAL" if old_ws else ""}),
-        "gmail-archiver": _wheel(
-            {
-                "gmail_archiver/main.py": "from util.fmt import format_truncation_suffix" if old_gmail else "",
-                "gmail_archiver/planners/doordash.py": "",
-            }
-        ),
-    }
-    assert missing_wheel_imports(_wheel(util_files), consumers) == expected
+    hooks = _wheel({"devinfra/precommit/git_hook.py": hook_source})
+    assert missing_wheel_imports(_wheel(util_files), hooks) == expected
 
 
-@pytest.mark.parametrize("migrated_consumers", [False, True])
+@pytest.mark.parametrize(
+    ("new_util", "new_hooks", "util_has_otel", "hooks_import_otel", "hooks_available", "advance"),
+    [
+        (True, False, False, True, True, False),  # Existing hooks block removal of util.otel.
+        (False, True, False, True, True, False),  # New hooks cannot add an unavailable import.
+        (True, True, True, True, True, True),  # Both pins advance when the proposed pair is compatible.
+        (True, True, False, False, True, True),  # A migrated hooks wheel allows util.otel removal.
+        (True, False, True, False, False, False),  # Missing hooks wheel blocks the util update.
+    ],
+)
 def test_pin_sync_never_publishes_incompatible_wheel_set(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, migrated_consumers: bool
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    new_util: bool,
+    new_hooks: bool,
+    util_has_otel: bool,
+    hooks_import_otel: bool,
+    hooks_available: bool,
+    advance: bool,
 ) -> None:
-    filenames = {name: f"{name}.whl" for name in ("ducktape-util", "ws", "gmail-archiver")}
+    # Hooks precede util in the real artifact inventory.
+    filenames = {name: f"{name}.whl" for name in ("ducktape-git-hooks", "ducktape-util", "unrelated")}
 
     def release(name: str, revision: str) -> SimpleNamespace:
         return SimpleNamespace(
@@ -88,12 +97,15 @@ def test_pin_sync_never_publishes_incompatible_wheel_set(
         )
 
     old_util = release("ducktape-util", "1")
-    new_util = release("ducktape-util", "2")
-    old_ws = release("ws", "1")
-    old_gmail = release("gmail-archiver", "1")
-    latest_ws = release("ws", "2") if migrated_consumers else old_ws
-    latest_gmail = release("gmail-archiver", "2") if migrated_consumers else old_gmail
-    releases = [old_util, new_util, old_ws, old_gmail, latest_ws, latest_gmail]
+    old_hooks = release("ducktape-git-hooks", "1")
+    latest_util = release("ducktape-util", "2") if new_util else old_util
+    latest_hooks = release("ducktape-git-hooks", "2") if new_hooks else old_hooks
+    old_unrelated = release("unrelated", "1")
+    latest_unrelated = release("unrelated", "2")
+    releases = [old_util, latest_util, old_unrelated, latest_unrelated]
+    # A missing release listing must still check the currently pinned hooks wheel.
+    if new_hooks:
+        releases.extend([old_hooks, latest_hooks])
     repo = SimpleNamespace(
         get_releases=lambda: releases,
         get_branch=lambda _: SimpleNamespace(commit=SimpleNamespace(sha="devel")),
@@ -115,22 +127,20 @@ def test_pin_sync_never_publishes_incompatible_wheel_set(
         Sources(
             pins={
                 "ducktape-util": Pin(url=url(old_util, "ducktape-util"), sha256="old"),
-                "ws": Pin(url=url(old_ws, "ws"), sha256="old"),
-                "gmail-archiver": Pin(url=url(old_gmail, "gmail-archiver"), sha256="old"),
+                **(
+                    {"ducktape-git-hooks": Pin(url=url(old_hooks, "ducktape-git-hooks"), sha256="old")}
+                    if hooks_available
+                    else {}
+                ),
+                "unrelated": Pin(url=url(old_unrelated, "unrelated"), sha256="old"),
             }
         ).model_dump_json()
     )
     monkeypatch.setattr(sync_pins, "sources_path", lambda: source)
     wheels = {
-        url(new_util, "ducktape-util"): _wheel({}),
-        url(latest_ws, "ws"): _wheel(
-            {"devinfra/ws/cli.py": "" if migrated_consumers else "from util.agent_sandbox import CLAIMS_PLURAL"}
-        ),
-        url(latest_gmail, "gmail-archiver"): _wheel(
-            {
-                "gmail_archiver/main.py": "" if migrated_consumers else "from util.fmt import format_truncation_suffix",
-                "gmail_archiver/planners/doordash.py": "",
-            }
+        url(latest_util, "ducktape-util"): _wheel({"util/otel.py": ""} if util_has_otel else {}),
+        url(latest_hooks, "ducktape-git-hooks"): _wheel(
+            {"devinfra/precommit/git_hook.py": "from util.otel import JsonlSpanExporter" if hooks_import_otel else ""}
         ),
     }
     monkeypatch.setattr(sync_pins, "download_wheel", lambda url: wheels[url])
@@ -138,9 +148,12 @@ def test_pin_sync_never_publishes_incompatible_wheel_set(
     sync_pins.main()
 
     pins = Sources.model_validate_json(source.read_text()).pins
-    assert pins["ducktape-util"].url == url(new_util if migrated_consumers else old_util, "ducktape-util")
-    assert pins["ws"].url == url(latest_ws, "ws")
-    assert pins["gmail-archiver"].url == url(latest_gmail, "gmail-archiver")
+    assert pins["ducktape-util"].url == url(latest_util if advance else old_util, "ducktape-util")
+    if hooks_available:
+        assert pins["ducktape-git-hooks"].url == url(latest_hooks if advance else old_hooks, "ducktape-git-hooks")
+    else:
+        assert "ducktape-git-hooks" not in pins
+    assert pins["unrelated"].url == url(latest_unrelated, "unrelated")
 
 
 if __name__ == "__main__":
