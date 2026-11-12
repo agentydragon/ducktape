@@ -386,6 +386,53 @@ func TestAnotherCallersBoxOfThatNameIsNotReached(t *testing.T) {
 	}
 }
 
+// A same-named Identity cannot adopt a box from the ServiceAccount-keyed format used before the cutover.
+func TestAnIdentityDoesNotAdoptALegacyServiceAccountBox(t *testing.T) {
+	f := newFixture(t, nil)
+	legacyOwner := metav1.OwnerReference{
+		APIVersion: workloadapi.SchemeGroupVersion.String(), Kind: workloadapi.Kind,
+		Name: objectName(f.caller, "box"), UID: types.UID("legacy-record-uid"), Controller: new(true),
+	}
+	legacyLabels := map[string]string{
+		managedLabel: "true", callerLabel: f.caller.Name, callerNamespaceLabel: f.binding.Namespace,
+		templateLabel: testTemplate, nameLabel: "box", credentialLabel: "legacy-credential",
+	}
+	legacy := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: f.binding.Namespace, Name: objectName(f.caller, "box"), UID: types.UID("legacy-pod-uid"),
+		Labels: legacyLabels, OwnerReferences: []metav1.OwnerReference{legacyOwner},
+	}, Spec: corev1.PodSpec{
+		ServiceAccountName: f.caller.Name,
+		Containers:         []corev1.Container{{Name: "workspace", Image: "registry.test/legacy"}},
+	}}
+	if _, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Create(t.Context(), legacy, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	inventory := f.inventory()
+
+	if boxes, err := inventory.List(t.Context(), f.caller); err != nil || len(boxes) != 0 {
+		t.Errorf("List() = %v, %v; want no legacy account box", boxes, err)
+	}
+	var foreign *ForeignError
+	if _, err := inventory.Get(t.Context(), f.caller, "box"); !errors.As(err, &foreign) {
+		t.Errorf("Get() = %v, want a ForeignError", err)
+	}
+	if _, err := inventory.Create(t.Context(), f.caller, "box", testTemplate); !errors.As(err, &foreign) {
+		t.Errorf("Create() = %v, want a ForeignError", err)
+	}
+	if existed, err := inventory.Dispose(t.Context(), f.caller, "box"); !errors.As(err, &foreign) || existed {
+		t.Errorf("Dispose() = %t, %v; want a ForeignError without deletion", existed, err)
+	}
+
+	got, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Get(t.Context(), legacy.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UID != legacy.UID || got.Spec.ServiceAccountName != legacy.Spec.ServiceAccountName ||
+		!reflect.DeepEqual(got.Labels, legacyLabels) || !reflect.DeepEqual(got.OwnerReferences, []metav1.OwnerReference{legacyOwner}) {
+		t.Errorf("legacy box changed: UID=%s ServiceAccount=%s labels=%v owners=%v", got.UID, got.Spec.ServiceAccountName, got.Labels, got.OwnerReferences)
+	}
+}
+
 func TestAListHoldsOnlyTheCallersBoxes(t *testing.T) {
 	f := newFixture(t, nil)
 	other := workloadIdentity(t, f.identityNamespace, "test-other")
