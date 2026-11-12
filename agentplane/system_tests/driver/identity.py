@@ -10,14 +10,14 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.crd_group import GROUP
 from agentplane.system_tests.driver.cluster import Cluster
-from cluster.cdk8s.agentplane import egress
 
 API_VERSION = f"{GROUP}/v1alpha1"
 
 
-# The baseline sets every preset grants (staging_config), which these preset-less launches name
-# themselves; the deployment fixture defines the same sets.
-LAUNCH_DEFAULT_POLICY_SETS = tuple(sorted(egress.DEFAULT_POLICIES))
+# The baseline sets every preset grants, which these preset-less launches name themselves: the
+# deployment fixture's DEFAULT_POLICIES (cluster/cdk8s/agentplane/egress.py). Kept literal so the
+# driver does not import cdk8s.
+LAUNCH_DEFAULT_POLICY_SETS = ("basic", "inference-experiments")
 
 
 @asynccontextmanager
