@@ -180,14 +180,14 @@ type expansion struct {
 
 func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBinding) (expansion, error) {
 	spec := binding.Spec
-	if spec.Subject.Identity != nil {
-		// Kubernetes rules bind a ServiceAccount; an identity's Kubernetes access is a
-		// ServiceAccountGrant on an account it uses.
-		return expansion{reason: "SubjectNotServiceAccount", message: "Kubernetes rules are not applied for an identity subject"}, nil
-	}
-	account, e, err := r.subject(ctx, spec.Subject.Namespace, spec.Subject.Name, r.SubjectNamespaces)
-	if account == nil {
-		return e, err
+	var account *corev1.ServiceAccount
+	if spec.Subject.Identity == nil {
+		var e expansion
+		var err error
+		account, e, err = r.subject(ctx, spec.Subject.Namespace, spec.Subject.Name, r.SubjectNamespaces)
+		if account == nil {
+			return e, err
+		}
 	}
 	var natives []native
 	missing := unavailableSets{reason: policyapi.PolicySetUnavailable, kind: "PolicySets"}
@@ -204,6 +204,11 @@ func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBindin
 		for _, rule := range set.Spec.Rules {
 			natives = append(natives, scopes(rule)...)
 		}
+	}
+	if spec.Subject.Identity != nil && len(natives) > 0 {
+		// Kubernetes rules bind a ServiceAccount; an identity's Kubernetes access is a
+		// ServiceAccountGrant on an account it uses.
+		return expansion{reason: "SubjectNotServiceAccount", message: "Kubernetes rules are not applied for an identity subject"}, nil
 	}
 	return r.expandNatives(ctx, bindingOwner, binding, account, natives, missing)
 }

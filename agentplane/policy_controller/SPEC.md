@@ -26,8 +26,9 @@ controller checks this instead. Such an object reports `KubernetesReady` `False`
 - A `PolicyBinding` in the controller's policy namespace grants by existing: creating one allows,
   deleting one takes that back. It names one ServiceAccount, which must live in one of
   the controller's subject namespaces, or one `Identity`, and `PolicySet` names in its own
-  namespace. The controller applies no Kubernetes rule for an Identity subject
-  (`SubjectNotServiceAccount`): an identity reaches Kubernetes only by acting as an account a
+  namespace. An Identity binding selecting no Kubernetes rules reports `KubernetesReady=True`
+  with zero native bindings. Selecting Kubernetes rules for an Identity reports
+  `SubjectNotServiceAccount`: an identity reaches Kubernetes only by acting as an account a
   `ServiceAccountGrant` provisions.
 - A `kubernetes_role_binding` rule binds an existing Role or ClusterRole in each namespace it names;
   `kubernetes_cluster_role_binding` binds an existing ClusterRole cluster-wide. Namespaces are named,
@@ -176,7 +177,7 @@ binding as absent, but its native bindings keep granting: nothing in the API ser
 
 Each `PolicyBinding` carries a `KubernetesReady` condition, applied under the controller's own field
 manager so other readers' conditions stay. It is `Applied`, or `False` with reason
-`SubjectNotWatched`, `SubjectNotServiceAccount` (an identity subject, whose Kubernetes access is a grant instead), `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
+`SubjectNotWatched`, `SubjectNotServiceAccount` (Kubernetes rules selected for an identity subject), `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
 message naming what is wrong. Reasons are informational. With it the controller applies
 `status.missingRoles`: each Role (with its namespace) or ClusterRole the binding's rules name that does
 not exist. It is checked once the subject resolves and holds even when applying the rest fails
