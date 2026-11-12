@@ -34,7 +34,7 @@ func dialExportChannels(target, tokenFile string, tls *environment_runtime_trans
 	if err != nil {
 		return exportChannels{}, err
 	}
-	delegated, err := workloadgrpc.DialDelegated(target, tokenFile, 30*time.Second, tls)
+	delegated, err := workloadgrpc.DialDelegated(target, tokenFile, 30*time.Second, tls, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		direct.Close()
 		return exportChannels{}, err

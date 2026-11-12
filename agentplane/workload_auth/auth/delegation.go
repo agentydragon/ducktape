@@ -94,11 +94,15 @@ type Delegator struct {
 	// IdentityCallers lets the actor assert any Identity in the receiver's policy namespace. It is a
 	// grant of its own: trust to assert ServiceAccounts never implies it.
 	IdentityCallers bool
+	// ConnectionProvenance admits the MCP edge's typed durable Connection/grant attribution on this method.
+	// It is deliberately opt-in; Action and Session profiles do not imply Connection authority.
+	ConnectionProvenance bool
 }
 
 type delegatorGrant struct {
-	callerNamespaces map[string]struct{}
-	identityCallers  bool
+	callerNamespaces     map[string]struct{}
+	identityCallers      bool
+	connectionProvenance bool
 }
 
 type delegationPolicy struct {
@@ -150,7 +154,10 @@ func (r Rule) AllowDelegationFrom(delegators []Delegator, serviceAccounts Servic
 			}
 			namespaces[namespace] = struct{}{}
 		}
-		configured[delegator.Account] = delegatorGrant{callerNamespaces: namespaces, identityCallers: delegator.IdentityCallers}
+		configured[delegator.Account] = delegatorGrant{
+			callerNamespaces: namespaces, identityCallers: delegator.IdentityCallers,
+			connectionProvenance: delegator.ConnectionProvenance,
+		}
 	}
 	policy := &delegationPolicy{resolver: r.resolver, delegators: configured, serviceAccounts: serviceAccounts}
 	if r.admitsIdentityCallers() {
@@ -216,6 +223,20 @@ func validDelegation(envelope *delegationpb.Delegation) bool {
 		// History and LLM ingress key the Session by its canonical spelling, so only that is valid.
 		parsed, err := uuid.Parse(provenance.Session.GetSessionId())
 		return err == nil && parsed.String() == provenance.Session.GetSessionId()
+	case *delegationpb.Delegation_Connection:
+		if provenance.Connection == nil {
+			return false
+		}
+		// Connection identifiers are canonical UUIDs. They identify durable OAuth authority for
+		// audit attribution, but the receiver still relies on its method-scoped actor grant and the
+		// edge's live grant revalidation; neither identifier is authority on its own.
+		for _, id := range []string{provenance.Connection.GetConnectionId(), provenance.Connection.GetGrantId()} {
+			parsed, err := uuid.Parse(id)
+			if err != nil || parsed.String() != id {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
@@ -368,8 +389,14 @@ func (p *delegationPolicy) admit(ctx, reviewContext context.Context, authorizati
 	if !trusted {
 		return nil, status.Error(codes.PermissionDenied, "delegator is not trusted for this method")
 	}
+	if _, isConnection := envelope.GetProvenance().(*delegationpb.Delegation_Connection); isConnection && !grant.connectionProvenance {
+		return nil, status.Error(codes.PermissionDenied, "Connection provenance is not admitted on this method")
+	}
 	if identity := envelope.GetIdentity(); identity != nil {
 		return p.admitIdentity(ctx, reviewContext, actor, grant, identity, envelope)
+	}
+	if _, isConnection := envelope.GetProvenance().(*delegationpb.Delegation_Connection); isConnection {
+		return nil, status.Error(codes.PermissionDenied, "Connection provenance requires an Identity caller")
 	}
 	caller := envelope.GetCaller()
 	if _, ok := grant.callerNamespaces[caller.GetAccount().GetNamespace()]; !ok {

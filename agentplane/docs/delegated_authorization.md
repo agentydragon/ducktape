@@ -5,8 +5,9 @@ Runner Gateway Dispatcher, EnvironmentService, and History Service receiving pat
 An Identity effective caller is implemented in the shared middleware, Dispatcher and History, and
 Action Service's Session delegation sends one for an Identity's request. The central sampler is the
 first non-Action actor: it pushes a Session's journal to History and makes its provider calls
-through LLM ingress for the Identity the Session executes as. Caller-delegating Action adapters and
-their end-to-end use remain separate work.**
+through LLM ingress for the Identity the Session executes as. Typed Connection provenance and its
+method-scoped admission primitive are implemented; the MCP edge consumer remains separate work.
+Caller-delegating Action adapters and their end-to-end use remain separate work.**
 Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount
 or an Identity. The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.
@@ -15,11 +16,11 @@ or an Identity. The first consumer is routine caller-privilege Actions. Direct c
 
 Keep these facts separate:
 
-| Fact             | Source                                                                                      | Use                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Actor            | Destination-audience token verified by the receiving backend                                | Authenticate the service making this RPC and check its permission to delegate on this method. |
-| Effective caller | Trusted delegation envelope: SA namespace, name and UID, or Identity name and UID           | Apply the backend's ordinary caller authorization.                                            |
-| Provenance       | The actor's durable record the call serves: an Action's request and execution, or a Session | Correlate admissions and effects across services.                                             |
+| Fact             | Source                                                                                                                 | Use                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Actor            | Destination-audience token verified by the receiving backend                                                           | Authenticate the service making this RPC and check its permission to delegate on this method. |
+| Effective caller | Trusted delegation envelope: SA namespace, name and UID, or Identity name and UID                                      | Apply the backend's ordinary caller authorization.                                            |
+| Provenance       | The actor's durable record the call serves: an Action request and execution, a Session, or an MCP Connection and grant | Correlate admissions and effects across services.                                             |
 
 A delegated call uses the effective caller's permissions. Membership of the actor in a privileged
 backend allowlist must not select a privileged path for that call. Parentage, creator labels,
@@ -58,14 +59,18 @@ The envelope is `Delegation` in [`delegation.proto`](../proto/delegation.proto),
 schema in package `agentplane.proto` that reuses `ServiceAccountIdentity` and `Identity` from
 [`identity.proto`](../proto/identity.proto). Its effective caller is a `oneof`: `caller`, a
 ServiceAccount, or `identity`, an Identity in the receiver's policy namespace. Its provenance is a
-second `oneof` of typed profiles: `action`, the Action Service's request and execution records, or
-`session`, the central Session a sampler acts for.
+second `oneof` of typed profiles: `action`, the Action Service's request and execution records;
+`session`, the central Session a sampler acts for; or `connection`, an external MCP Connection and
+its existing consented grant.
 
 All fields are required by this profile's validation: exactly one effective caller (a valid SA
 reference with a nonempty opaque SA UID, or a valid Identity name with a nonempty UID) and exactly
 one provenance profile with valid UUIDs (a Session ID in its canonical spelling). Neither the actor
 nor its credentials appear in this envelope. The Action execution ID is the existing execution
-record's ID, never its lease token. A receiver consumes the profile its method serves: the
+record's ID, never its lease token. A Connection and grant ID identify existing authority for audit
+attribution, but confer no authority by themselves; only an explicitly opted-in receiving method
+may admit Connection provenance, and it requires an Identity effective caller. A receiver consumes
+the profile its method serves: the
 Dispatcher records an Action's correlation, History and LLM ingress require the Session a sampler
 names to be the one the call is about.
 
@@ -109,7 +114,8 @@ Shared middleware in `workload_auth/auth`, composed with the existing per-method
    initial Actions delegator must prove its actual Pod-bound workload identity.
 3. Check the actor's explicit permission to delegate on this method.
 4. Decode and validate the envelope, including the permitted caller-namespace scope or the
-   Identity grant. Resolve the effective SA or Identity and require its recorded UID to match; a
+   Identity grant. A Connection provenance profile is additionally method-scoped and requires an
+   Identity effective caller. Resolve the effective SA or Identity and require its recorded UID to match; a
    deleted/recreated account or Identity is a different caller. A method whose direct mode admits
    no Identity caller refuses a delegated one.
 5. Admit a typed direct or delegated context. Preserve the actor's proven Pod identity separately

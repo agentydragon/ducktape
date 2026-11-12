@@ -423,6 +423,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
 			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
 			c.SessionDelegationDispatcher.TLS,
+			workloadgrpc.ClientInterceptors{},
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
@@ -432,6 +433,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
 			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
 			c.SessionDelegationHistory.TLS,
+			workloadgrpc.ClientInterceptors{},
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated History Service: %w", err)
