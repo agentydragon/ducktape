@@ -4119,6 +4119,7 @@ data:
           - shared-diagnostics
           - public-inventory
           - cluster-diagnostics
+          - k8s-account-public-coder
           - ducktape-pr-failed-jobs
           - send-to-public-coder
         inbox_tags:
@@ -4162,6 +4163,7 @@ data:
           - haku-sandbox-write
           - coinbase
           - plaid-diagnostics
+          - k8s-account-haku
           - send-to-haku
         inbox_tags:
           - haku
@@ -4189,6 +4191,7 @@ data:
           - coinbase
           - spend-policy-config
           - plaid-diagnostics
+          - k8s-account-finance-agent
           - ducktape-pr-failed-jobs
           - send-to-finance-agent
         inbox_tags:
@@ -4213,6 +4216,7 @@ data:
           - shared-diagnostics
           - public-inventory
           - cluster-diagnostics
+          - k8s-account-public-coder
           - ducktape-pr-failed-jobs
           - send-to-public-coder
         inbox_tags:
@@ -7271,6 +7275,7 @@ data:
                   - shared-diagnostics
                   - public-inventory
                   - cluster-diagnostics
+                  - k8s-account-public-coder
                   - ducktape-pr-failed-jobs
                   - send-to-public-coder
                 inbox_tags:
@@ -7342,6 +7347,7 @@ data:
                   - haku-sandbox-write
                   - coinbase
                   - plaid-diagnostics
+                  - k8s-account-haku
                   - send-to-haku
                 inbox_tags:
                   - haku
@@ -7387,6 +7393,7 @@ data:
                   - coinbase
                   - spend-policy-config
                   - plaid-diagnostics
+                  - k8s-account-finance-agent
                   - ducktape-pr-failed-jobs
                   - send-to-finance-agent
                 inbox_tags:
@@ -7536,6 +7543,7 @@ data:
                   - shared-diagnostics
                   - public-inventory
                   - cluster-diagnostics
+                  - k8s-account-public-coder
                   - ducktape-pr-failed-jobs
                   - send-to-public-coder
                 inbox_tags:
@@ -9906,6 +9914,16 @@ spec:
     - {}
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: cluster-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterRole: cluster-diagnostics-reader
+      type: cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: cluster-diagnostics
@@ -9914,6 +9932,20 @@ spec:
   rules:
     - clusterRole: cluster-diagnostics-reader
       type: kubernetes_cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: coinbase
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: claude-ai-coinbase-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9935,6 +9967,20 @@ spec:
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: haku-sandbox-write
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - haku-sandbox
+      role:
+        kind: Role
+        name: haku-sandbox-admin
+      type: role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: haku-sandbox-write
@@ -9947,6 +9993,20 @@ spec:
         kind: Role
         name: haku-sandbox-admin
       type: kubernetes_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: plaid-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - plaid-mcp
+      role:
+        kind: Role
+        name: plaid-finance-diagnostics-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9988,6 +10048,18 @@ spec:
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: public-inventory
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterRole: public-coder-agent-cluster-metadata-reader
+      type: cluster_role_binding
+    - clusterRole: public-coder-agent-node-reader
+      type: cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: public-inventory
@@ -9998,6 +10070,20 @@ spec:
       type: kubernetes_cluster_role_binding
     - clusterRole: public-coder-agent-node-reader
       type: kubernetes_cluster_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: sandbox-tool-config
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: agentplane-sandbox-tool-config-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10012,6 +10098,112 @@ spec:
         kind: Role
         name: agentplane-sandbox-tool-config-reader
       type: kubernetes_role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - activitywatch
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-logs
+      type: role_binding
+    - namespaces:
+        - activitywatch
+        - agent-sandbox-system
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - public-coder-agent
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-metadata
+      type: role_binding
+    - namespaces:
+        - clickhouse
+      role:
+        kind: Role
+        name: agent-clickhouse-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - haku-console
+      role:
+        kind: Role
+        name: agent-haku-console-metadata-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: agent-public-coder-extended-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - ducktape-flux
+      role:
+        kind: Role
+        name: ducktape-flux-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: public-coder-agent-reader
+      type: role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10120,6 +10312,20 @@ spec:
       type: kubernetes_role_binding
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: spend-policy-config
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - plaid-mcp
+      role:
+        kind: Role
+        name: plaid-spend-finance-config-reader
+      type: role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: spend-policy-config
@@ -10132,6 +10338,221 @@ spec:
         kind: Role
         name: plaid-spend-finance-config-reader
       type: kubernetes_role_binding
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: Read-only namespace diagnostics every agent may use.
+  name: shared-diagnostics
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+  serviceAccount:
+    name: shared-diagnostics
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/shared-diagnostics ServiceAccount: Read-only namespace diagnostics every agent may use. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-shared-diagnostics for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: shared-diagnostics
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-shared-diagnostics
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The 'public-coder' preset's Kubernetes identity.
+  name: public-coder
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: public-coder
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+    - public-inventory
+    - cluster-diagnostics
+  serviceAccount:
+    name: public-coder
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-public-coder
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/public-coder ServiceAccount: The 'public-coder' preset's Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-public-coder for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: public-coder
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-public-coder
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-public-coder
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The 'finance-agent' preset's Kubernetes identity.
+  name: finance-agent
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: finance-agent
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+    - public-inventory
+    - cluster-diagnostics
+    - coinbase
+    - spend-policy-config
+    - plaid-diagnostics
+  serviceAccount:
+    name: finance-agent
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-finance-agent
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/finance-agent ServiceAccount: The 'finance-agent' preset's Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-finance-agent for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: finance-agent
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-finance-agent
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-finance-agent
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The 'haku' preset's Kubernetes identity.
+  name: haku
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: haku
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - shared-diagnostics
+    - cluster-diagnostics
+    - haku-sandbox-write
+    - coinbase
+    - plaid-diagnostics
+  serviceAccount:
+    name: haku
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-haku
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/haku ServiceAccount: The 'haku' preset's Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-haku for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: haku
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-haku
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
