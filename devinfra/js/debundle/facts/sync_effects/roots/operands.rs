@@ -309,7 +309,13 @@ pub(super) fn prepare<'source>(
         let [(binding, _)] = assignments.as_slice() else {
             return None;
         };
-        let (callee, span) = body.single_identifier_call_with_function_argument_initializer()?;
+        let (callee, span, const_primitive_result) = body
+            .single_identifier_call_with_function_argument_initializer()
+            .map(|(callee, span)| (callee, span, false))
+            .or_else(|| {
+                body.single_identifier_call_with_binding_argument_initializer()
+                    .map(|(callee, span)| (callee, span, true))
+            })?;
         let source = index.initialization_source_identities.get(&owner)?;
         if !source.matches(owner, binding, body.root_span()?) {
             return None;
@@ -325,7 +331,11 @@ pub(super) fn prepare<'source>(
         {
             return None;
         }
-        inputs.initializer_call_effect_input(owner, binding, callee, span)
+        inputs
+            .initializer_call_effect_input(owner, binding, callee, span)
+            .filter(|input| {
+                input.returns_opaque_function_from_const_primitive == const_primitive_result
+            })
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
     let root_array_iteration = root_array_iteration(executor, calls);

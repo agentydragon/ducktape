@@ -718,8 +718,10 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         .inputs
                         .initializer_call_effect_input(self.owner, &identity.binding, callee, span),
                     _ => None,
-                })
-                .map(|input| input.reference.clone());
+                });
+        let selected_const_factory_result =
+            audited_input.is_some_and(|input| input.returns_opaque_function_from_const_primitive);
+        let audited_input = audited_input.map(|input| input.reference.clone());
         let pure_initializer = audited_input.is_some()
             && self
                 .outcome
@@ -752,6 +754,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     .map(|argument| argument.selection.clone())
                     .collect(),
                 selected_pure_initializer_call: pure_initializer,
+                selected_const_factory_result,
             })),
         });
         let RuntimeValue::Call {

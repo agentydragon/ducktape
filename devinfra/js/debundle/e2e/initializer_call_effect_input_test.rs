@@ -77,6 +77,182 @@ const EFFECTIVE_BUNDLE: &str = "const bundleWrap = callback => {\n\
 };\n\
 export { bundleWrap };\n";
 
+const STRING_FACTORY_SOURCE: &str = "import { make } from './peer.js';\n\
+const values = ['a'];\n\
+const seed = 'abc';\n\
+const slot = make(seed), sibling = 4;\n\
+values.push('b');\n\
+const later = slot;\n\
+console.log(later(), values.length, sibling);\n\
+export { slot, later, values, sibling };\n";
+const STRING_FACTORY_PROVIDER: &str = "export function make(seed) {\n\
+  const size = seed.length;\n\
+  return () => size;\n\
+}\n";
+const EAGER_STRING_FACTORY_SOURCE: &str = "import { keep, make } from './peer.js';\n\
+let observed = 0;\n\
+const callback = () => observed;\n\
+keep(callback);\n\
+const seed = 'abc';\n\
+const slot = make(seed), sibling = 4;\n\
+observed = 42;\n\
+console.log(slot(), sibling);\n\
+export { callback, observed, seed, slot, sibling };\n";
+const EAGER_STRING_FACTORY_PROVIDER: &str = "let retained;\n\
+export function keep(callback) { retained = callback; }\n\
+export function make(seed) {\n\
+  const captured = retained();\n\
+  return () => captured + seed.length;\n\
+}\n";
+const LATER_CALL_SOURCE: &str = "import { make } from './peer.js';\n\
+globalThis.value = 0;\n\
+const seed = 'abc';\n\
+const slot = make(seed), sibling = 4;\n\
+const seen = slot();\n\
+globalThis.value = 42;\n\
+console.log(seen, sibling);\n\
+export { seed, slot, sibling, seen };\n";
+const LATER_CALL_PROVIDER: &str = "export function make(seed) {\n\
+  return () => globalThis.value + seed.length;\n\
+}\n";
+
+#[test]
+fn exact_string_factory_result_allows_separate_data_module() {
+    let peer = [("static/peer", STRING_FACTORY_PROVIDER)];
+    let modules = vec![
+        logical_module(
+            "callbacks/slot",
+            &[
+                Member::new("seed"),
+                Member::new("slot").with_initializer_purity(),
+            ],
+        ),
+        logical_module_with_anon(
+            "values/data",
+            &[
+                Member::new("values"),
+                Member::new("later"),
+                Member::new("sibling"),
+            ],
+            &["values.push('b');"],
+        ),
+    ];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(&["make"])
+        .build()];
+    let opts = || {
+        FixtureOpts::new(STRING_FACTORY_SOURCE, modules.clone())
+            .with_extra_chunks(&peer)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&purity)
+    };
+    let baseline = run_rejection_fixture(opts());
+    assert!(
+        !baseline.cycles().is_empty(),
+        "the unproved factory call must leave the split rejected"
+    );
+    let mut receipt = input(STRING_FACTORY_SOURCE, "slot");
+    receipt.provider_export = "make".into();
+    receipt.audited_provider_sha256 = source_sha256(STRING_FACTORY_PROVIDER);
+    receipt.resolved_member.module = "callbacks/slot".into();
+    receipt.returns_opaque_function_from_const_primitive = true;
+    let fixture =
+        run_fixture(opts().with_initializer_call_effect_inputs("static/app", vec![receipt]));
+    assert_preserved_entry_output(&fixture, "3 2 4\n");
+    assert!(
+        fixture
+            .out_root
+            .join("static/app/modules/callbacks/slot.js")
+            .exists()
+    );
+    assert!(
+        fixture
+            .out_root
+            .join("static/app/modules/values/data.js")
+            .exists()
+    );
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+}
+
+#[test]
+fn exact_result_receipt_does_not_defer_provider_callback_without_timing_premise() {
+    let peer = [("static/peer", EAGER_STRING_FACTORY_PROVIDER)];
+    let modules = vec![
+        logical_module(
+            "callbacks/slot",
+            &[
+                Member::new("seed"),
+                Member::new("slot").with_initializer_purity(),
+            ],
+        ),
+        logical_module_with_anon(
+            "values/data",
+            &[
+                Member::new("observed"),
+                Member::new("callback"),
+                Member::new("sibling"),
+            ],
+            &["keep(callback);", "observed = 42;"],
+        ),
+    ];
+    let mut receipt = input(EAGER_STRING_FACTORY_SOURCE, "slot");
+    receipt.provider_export = "make".into();
+    receipt.audited_provider_sha256 = source_sha256(EAGER_STRING_FACTORY_PROVIDER);
+    receipt.resolved_member.module = "callbacks/slot".into();
+    receipt.returns_opaque_function_from_const_primitive = true;
+    let rejection = run_rejection_fixture(
+        FixtureOpts::new(EAGER_STRING_FACTORY_SOURCE, modules)
+            .with_extra_chunks(&peer)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_initializer_call_effect_inputs("static/app", vec![receipt]),
+    );
+    assert!(
+        !rejection.cycles().is_empty(),
+        "the retained callback reads the later-written binding at factory time"
+    );
+    assert_node_output(&rejection.source_root.join("static/app.js"), "3 4\n", "");
+}
+
+#[test]
+fn opaque_factory_result_keeps_later_call_effects() {
+    let peer = [("static/peer", LATER_CALL_PROVIDER)];
+    let modules = vec![
+        logical_module(
+            "callbacks/slot",
+            &[
+                Member::new("seed"),
+                Member::new("slot").with_initializer_purity(),
+                Member::new("seen"),
+            ],
+        ),
+        logical_module_with_anon(
+            "values/data",
+            &[Member::new("sibling")],
+            &["globalThis.value = 0;", "globalThis.value = 42;"],
+        ),
+    ];
+    let mut receipt = input(LATER_CALL_SOURCE, "slot");
+    receipt.provider_export = "make".into();
+    receipt.audited_provider_sha256 = source_sha256(LATER_CALL_PROVIDER);
+    receipt.resolved_member.module = "callbacks/slot".into();
+    receipt.returns_opaque_function_from_const_primitive = true;
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(&["make"])
+        .build()];
+    let rejection = run_rejection_fixture(
+        FixtureOpts::new(LATER_CALL_SOURCE, modules)
+            .with_extra_chunks(&peer)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&purity)
+            .with_initializer_call_effect_inputs("static/app", vec![receipt]),
+    );
+    assert!(
+        !rejection.cycles().is_empty(),
+        "a later invocation of the returned callable can read the intervening host write"
+    );
+    assert_node_output(&rejection.source_root.join("static/app.js"), "3 4\n", "");
+}
+
 fn input(source: &str, binding: &str) -> InitializerCallEffectInputContract {
     InitializerCallEffectInputContract {
         resolved_member: ResolvedMemberSelector {
@@ -87,6 +263,7 @@ fn input(source: &str, binding: &str) -> InitializerCallEffectInputContract {
         provider_chunk: "static/peer".into(),
         provider_export: "wrap".into(),
         audited_provider_sha256: source_sha256(PROVIDER),
+        returns_opaque_function_from_const_primitive: false,
         effective_replacement: None,
         note: Some(
             "Audited wrapper writes only fresh per-call records and reads stable protocol slots."

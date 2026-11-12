@@ -1063,23 +1063,38 @@ fn resolve_initializer_call_effect_inputs(
                 anyhow::bail!("{request} requires a bare imported callee");
             };
             let [argument] = call.args.as_slice() else {
-                anyhow::bail!("{request} requires exactly one function argument");
-            };
-            let swc_ecma_ast::Expr::Fn(callback) = argument.expr.as_ref().unwrap_parens() else {
-                anyhow::bail!("{request} requires a fresh anonymous ordinary function argument");
+                anyhow::bail!("{request} requires exactly one argument");
             };
             ensure!(
-                argument.spread.is_none()
-                    && call.type_args.is_none()
-                    && callback.ident.is_none()
-                    && !callback.function.is_async
-                    && !callback.function.is_generator
-                    && callback.function.body.is_some()
-                    && callback.function.decorators.is_empty()
-                    && callback.function.type_params.is_none()
-                    && callback.function.return_type.is_none(),
-                "{request} requires a fresh anonymous ordinary function argument"
+                argument.spread.is_none() && call.type_args.is_none(),
+                "{request} requires a direct unspread argument"
             );
+            if contract.returns_opaque_function_from_const_primitive {
+                ensure!(
+                    matches!(
+                        argument.expr.as_ref().unwrap_parens(),
+                        swc_ecma_ast::Expr::Ident(_)
+                    ),
+                    "{request} requires a bare const-primitive binding argument"
+                );
+            } else {
+                let swc_ecma_ast::Expr::Fn(callback) = argument.expr.as_ref().unwrap_parens()
+                else {
+                    anyhow::bail!(
+                        "{request} requires a fresh anonymous ordinary function argument"
+                    );
+                };
+                ensure!(
+                    callback.ident.is_none()
+                        && !callback.function.is_async
+                        && !callback.function.is_generator
+                        && callback.function.body.is_some()
+                        && callback.function.decorators.is_empty()
+                        && callback.function.type_params.is_none()
+                        && callback.function.return_type.is_none(),
+                    "{request} requires a fresh anonymous ordinary function argument"
+                );
+            }
             // The callee is a resolved direct ESM import binding. Its immutable
             // module environment cell supplies the selected GetBindingValue;
             // attempted assignment throws and remains an actual source effect.
@@ -1116,6 +1131,8 @@ fn resolve_initializer_call_effect_inputs(
                 provider_chunk: imported.module.clone(),
                 provider_export: imported.export.clone(),
                 provider_sha256: provider_source.sha256.clone(),
+                returns_opaque_function_from_const_primitive: contract
+                    .returns_opaque_function_from_const_primitive,
                 effective_replacement,
                 provider_dependency_closure: closure,
             });

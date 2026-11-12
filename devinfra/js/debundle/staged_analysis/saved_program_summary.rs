@@ -454,6 +454,8 @@ struct SavedInitializerCallEffectInput {
     provider_chunk: String,
     provider_export: String,
     provider_sha256: String,
+    #[serde(default)]
+    returns_opaque_function_from_const_primitive: bool,
     effective_replacement: Option<analysis::analysis_inputs::EffectiveInitializerCallReplacement>,
     provider_dependency_closure: BTreeSet<String>,
 }
@@ -472,6 +474,8 @@ impl SavedInitializerCallEffectInput {
             provider_chunk: input.provider_chunk.clone(),
             provider_export: input.provider_export.clone(),
             provider_sha256: input.provider_sha256.clone(),
+            returns_opaque_function_from_const_primitive: input
+                .returns_opaque_function_from_const_primitive,
             effective_replacement: input.effective_replacement.clone(),
             provider_dependency_closure: input.provider_dependency_closure.clone(),
         })
@@ -487,6 +491,8 @@ impl SavedInitializerCallEffectInput {
             provider_chunk: self.provider_chunk,
             provider_export: self.provider_export,
             provider_sha256: self.provider_sha256,
+            returns_opaque_function_from_const_primitive: self
+                .returns_opaque_function_from_const_primitive,
             effective_replacement: self.effective_replacement,
             provider_dependency_closure: self.provider_dependency_closure,
         })

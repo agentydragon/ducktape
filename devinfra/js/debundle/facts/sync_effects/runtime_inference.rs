@@ -80,6 +80,9 @@ pub(super) struct CallOperands {
     /// This only admits an existing callback-factory result transfer; the
     /// ordered caller still checks the operation domains.
     pub(super) selected_pure_initializer_call: bool,
+    /// Exact author-pinned provider result for one initialized literal-const
+    /// string argument; carries no later-call or object-shape inference.
+    pub(super) selected_const_factory_result: bool,
 }
 
 pub(super) enum CallTransfer {

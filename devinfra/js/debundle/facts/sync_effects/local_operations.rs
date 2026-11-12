@@ -1217,6 +1217,30 @@ impl LocalBody {
         }
     }
 
+    /// Exact root syntax for the independently audited const-primitive result
+    /// form. The source contract and prefix transfer still check the binding.
+    pub(super) fn single_identifier_call_with_binding_argument_initializer(
+        &self,
+    ) -> Option<(&Id, Span)> {
+        self.root_span?;
+        match self.operations.as_ref() {
+            [
+                LocalOperation::Return(Some(LocalExpression::Call {
+                    callee: LocalCallee::Binding(callee),
+                    arguments,
+                    span,
+                })),
+            ] if matches!(
+                arguments.as_ref(),
+                [LocalExpression::Value(ValueExpr::Binding(_))]
+            ) =>
+            {
+                Some((callee, *span))
+            }
+            _ => None,
+        }
+    }
+
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
     pub(super) fn lower<'a>(
