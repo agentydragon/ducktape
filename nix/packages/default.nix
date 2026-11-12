@@ -608,9 +608,9 @@ rec {
     mainProgram = "gmail-archiver";
     importsCheck = [ "gmail_archiver.main" ];
     entrypointChecks = [ "gmail-archiver" ];
-    # SYNC: requires in //gmail_archiver:gmail_archiver_wheel.
-    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
-    # requirements once the pinned Gmail wheel no longer imports util.fmt.
+    # SYNC: Requires-Dist in the currently pinned Gmail wheel.
+    # CLEANUP(added 2026-11-11): Remove ducktape-util once artifact-pins.json
+    # points to a Gmail wheel without `Requires-Dist: ducktape-util`.
     propagatedBuildInputs = with python314Packages; [
       beautifulsoup4
       ducktape-util
