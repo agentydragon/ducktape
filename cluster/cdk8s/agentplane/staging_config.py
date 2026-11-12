@@ -34,6 +34,7 @@ from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runt
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
+    DEFAULT_POLICIES,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
@@ -270,6 +271,11 @@ def config(
         for name in presets:
             cfg.sandbox_presets[name].inbox_tags = [group]
             cfg.sandbox_presets[name].policy_sets += [send_to(group)]
+    # Every preset grants the defaults itself, so a preset shows all a launch of it grants: the
+    # baseline sets and the shared diagnostics account (operator, 2026-11-12).
+    defaults = [*DEFAULT_POLICIES, kubernetes_account_ref.shared_diagnostics(namespace).credential_name]
+    for sandbox_preset in cfg.sandbox_presets.values():
+        sandbox_preset.policy_sets = list(dict.fromkeys([*defaults, *sandbox_preset.policy_sets]))
     # A new staging Sandbox suspends after 15 idle minutes and wakes for a message (operator, 2026-10-24).
     cfg.new_sandbox_defaults = NewSandboxDefaults(wake_on_send=True, idle_suspend_after_seconds=15 * 60)
     return cfg
