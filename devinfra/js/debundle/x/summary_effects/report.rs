@@ -784,14 +784,7 @@ fn class_name(class: tier0::Conflict) -> String {
         .unwrap_or_default()
 }
 
-pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier0Report> {
-    let mut index =
-        crate::derive::ProgramIndex::new(options.program.as_ref().filter(|_| options.derive));
-    tier0_report_indexed(inputs, options, &mut index)
-}
-
-/// `tier0_report` with a derivation index of `options.program` that
-/// outlives the call.
+/// Build a Tier 0 report with a reusable derivation index for `options.program`.
 pub fn tier0_report_indexed(
     inputs: Inputs<'_>,
     options: &tier0::Options,
