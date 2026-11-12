@@ -79,11 +79,14 @@ buffers are bounded to 1 MiB per response and 2 MiB total, within the existing
 ten-second diagnostic budget. The original assertion remains the test failure if
 capture fails.
 
-An entity view update at the expected cursor in this artifact would move the
-boundary into client filtering/application; its absence, with the fresh snapshot
-current, would leave the live-serving/relay path. A buffer eviction or unavailable
-response is missing evidence, not proof that no update arrived. Browser-login
-setup timeouts remain a separate failure.
+An entity view update at the expected cursor in this artifact establishes that
+Chromium received that update, directing investigation into client
+filtering/application. Capture observes only one response's retained bytes.
+Absence cannot exclude client handling: the update may have arrived on an earlier
+response, been evicted, or appeared in a malformed or incomplete frame. Correlate
+the request position, decoding counters and snapshot with the trace before
+localizing a delivery gap. An unavailable response is missing evidence.
+Browser-login setup timeouts remain a separate failure.
 
 The [fresh baseline](https://app.buildbuddy.io/invocation/b9b4fba4-5d1c-4d80-9b43-b388d82fbaaa)
 on `e5d9161610` passed its one uncached remote test run in 61.534 seconds. A
@@ -97,3 +100,9 @@ its relevant revisions without saving its payload. The impossible assertion was
 restored. The forced run used effective source `e5d9161610` plus the diagnostic
 patch; the remote runner fetched newer base `d85ebfd828` and applied the inverse
 committed difference as part of mirroring the worktree.
+
+The [ordinary focused run with the CDP fixture enabled](https://app.buildbuddy.io/invocation/de2f1fe3-cac7-4dc9-bdbb-c24ae84b739c)
+passed at code commit `0c3306453e`, with one uncached remote test execution in
+61.100 seconds. That verifies the final fixture's normal lifetime separately from
+the deliberately failing diagnostic probe. PR #15913's final-head CI is separate
+from these focused executions.
