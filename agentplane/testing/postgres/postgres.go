@@ -20,15 +20,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// The BUILD target supplies runfiles paths for the loader and image descriptors.
-var loaderRlocation, postgresRlocation, ryukRlocation string
+// The BUILD target supplies the loader and image references and their runfiles paths.
+var loaderRlocation, postgresImage, postgresRlocation, ryukImage, ryukRlocation string
 
 const (
-	postgresImage = "postgres:18"
-	postgresUser  = "postgres"
-	postgresPass  = "postgres"
-	postgresDB    = "postgres"
-	ryukImage     = "testcontainers/ryuk:0.14.0"
+	postgresUser = "postgres"
+	postgresPass = "postgres"
+	postgresDB   = "postgres"
 	// templateDB is the copy of the migrated database that Clone copies.
 	templateDB = "migrated_template"
 )

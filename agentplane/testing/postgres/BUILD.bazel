@@ -1,4 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "RYUK_TAG")
+load("//third_party/containers:images.bzl", "POSTGRES_18_TAG")
 
 go_library(
     name = "postgres",
@@ -16,7 +18,9 @@ go_library(
     visibility = ["//agentplane:__subpackages__"],
     x_defs = {
         "github.com/agentydragon/ducktape/agentplane/testing/postgres.loaderRlocation": "$(rlocationpath //devinfra/oci:oci_load_bin)",
+        "github.com/agentydragon/ducktape/agentplane/testing/postgres.postgresImage": POSTGRES_18_TAG,
         "github.com/agentydragon/ducktape/agentplane/testing/postgres.postgresRlocation": "$(rlocationpath //third_party/containers:postgres_18_rloc)",
+        "github.com/agentydragon/ducktape/agentplane/testing/postgres.ryukImage": RYUK_TAG,
         "github.com/agentydragon/ducktape/agentplane/testing/postgres.ryukRlocation": "$(rlocationpath //third_party/containers:ryuk_rloc)",
     },
     deps = [
