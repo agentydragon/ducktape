@@ -54,6 +54,23 @@ whole-chunk equality only; it excludes overlaps with raw events and repeated por
 different chunks. The native diff stream is a larger confirmed target than this particular
 within-projection whole-chunk duplication measurement.
 
+## Turn-diff cleanup
+
+At 11:13 UTC on 2026-11-12, the operator authorized deleting existing turn diffs without a
+backup. A generated-protobuf decoder and JSON method check selected **31,322 incoming Codex
+`turn/diff/updated` entries across 30 Sessions**; ten other entries mentioning that string
+were excluded. The deleted payloads occupied **311,996,363 stored bytes (297.5 MiB)**.
+
+Each Session transaction deleted only the selected native entries and added their removed-cursor
+ranges; Session watermarks and other events stayed intact. History page and sequence reads
+recognized the removed cursors for all 30 Sessions. A complete post-cleanup scan found zero
+remaining turn-diff notifications. Ordinary `VACUUM ANALYZE` completed, making dead space reusable;
+the event relation remained approximately 5.11 GiB, rather than shrinking its files. Both History
+replicas remained available and CNPG remained ready. No backup was created for this cleanup.
+
+The default-off notification control is tracked separately in
+[PR #15862](https://github.com/agentydragon/ducktape/pull/15862); this cleanup did not deploy it.
+
 ## Old sampler request snapshots
 
 Across `session_event`, boundary records (kind 31) occupy 1,834,786,518 stored payload bytes;
