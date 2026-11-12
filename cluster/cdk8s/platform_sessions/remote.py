@@ -81,7 +81,7 @@ PROVIDER_IMAGES = tuple(sorted({_provider_image(instance) for instance in PROVID
 
 # A separate ConfigMap prevents preparing the new deployment from rolling the live service.
 CONFIG = ConfigMapArgs(
-    name="platform-sessions-remote-config",
+    name="remote-config",
     namespace=NAMESPACE,
     data={
         "gateway-integrations.json": json.dumps(
@@ -460,7 +460,9 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
     PodMonitor(
         chart,
         f"{name}-monitor",
-        metadata=ApiObjectMetadata(name=f"{name}-provider" if instance == "quest" else name, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=f"{instance}-provider" if instance == "quest" else instance, namespace=NAMESPACE
+        ),
         selector=PodMonitorSpecSelector(match_labels={"app": name}),
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
         + (

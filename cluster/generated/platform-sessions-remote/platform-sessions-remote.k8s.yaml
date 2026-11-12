@@ -385,7 +385,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -451,7 +451,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -799,7 +799,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -865,7 +865,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -1213,7 +1213,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -1279,7 +1279,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -1625,7 +1625,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -1691,7 +1691,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2041,7 +2041,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -2107,7 +2107,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-quest-provider
+  name: quest-provider
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2458,7 +2458,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: platform-sessions-remote-config
+            name: remote-config
           name: config
         - name: provider-credentials
           projected:
@@ -2524,7 +2524,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2674,17 +2674,17 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: gateway-integrations.json
-                  name: platform-sessions-remote-config
+                  name: remote-config
             - name: PLATFORM_SESSIONS_BEARERS
               valueFrom:
                 configMapKeyRef:
                   key: bearers.json
-                  name: platform-sessions-remote-config
+                  name: remote-config
             - name: PLATFORM_SESSIONS_PROVIDER_CONNECTIONS
               valueFrom:
                 configMapKeyRef:
                   key: connections.json
-                  name: platform-sessions-remote-config
+                  name: remote-config
             - name: PLATFORM_SESSIONS_GRPC_ADDRESS
               value: 0.0.0.0:8444
             - name: PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE

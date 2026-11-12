@@ -5,7 +5,7 @@ resources:
 components:
   - ../../k8s/platform-sessions-remote-image-pins
 configMapGenerator:
-  - name: platform-sessions-remote-config
+  - name: remote-config
     namespace: platform-sessions
     literals:
       - 'gateway-integrations.json={"integrations": [{"id": "openai", "type": "openai"}, {"id": "anthropic", "type": "anthropic"}, {"id": "chatgpt", "type": "chatgpt"}, {"id": "blueshield", "type": "blueshield"}, {"id": "quest", "type": "quest"}, {"id": "thrive", "type": "thrive"}]}'
