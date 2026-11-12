@@ -160,7 +160,9 @@ The exact corrected spike is retained as a
 [patch](four_minute_system_test_graph.pod_split.patch), SHA256
 `f2078c91e574770b5be108aea1ada5ce03b6d404dcbf4aa9f925066a85b2bc80`,
 against `630fd860`. It adds an `args` passthrough to `k3s_suite`, leaves the
-main Pod target with 20 selected cases, and adds one manual TLS-only target.
+main Pod target configured to select the other 20 declared cases, and adds
+one manual TLS-only target. The actual main action's JUnit/result is
+unavailable, so its test selection and verdict were not independently verified.
 The initial failed action used an unquoted `-k` expression; the retained patch
 quotes that expression as one pytest argument. It is an experiment, not a
 proposed required-CI change.
