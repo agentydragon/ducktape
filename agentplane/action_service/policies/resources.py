@@ -16,7 +16,8 @@ from agentplane.action_service.policies.kind import Spec
 from agentplane.action_service.policies.registry import Policy
 from agentplane.crd_group import GROUP
 
-# Sandbox Controller marks its Sandboxes' accounts as Action Service callers.
+# Keep CALLER_LABEL in sync with ServiceAccountLabelKey and ServiceAccountLabelValue in
+# agentplane/action_service/callers/labels.go.
 CALLER_LABEL = f"{GROUP}/use-action-service"
 # On a PolicyBinding, beside the other readers' conditions.
 ACTIONS_READY_CONDITION = "ActionsReady"
