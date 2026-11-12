@@ -360,6 +360,82 @@ func TestAFreshIDOnlyWhenTheBindingChanges(t *testing.T) {
 	}
 }
 
+// An ownerless box mounts its issued Secret before it can bind the Pod. Accepting that first
+// binding must keep the mounted Secret; replacing or clearing an accepted binding must rotate it.
+func TestAnOwnerlessBoxKeepsItsMountedSecretUntilTheBindingChanges(t *testing.T) {
+	ctx := t.Context()
+	ca := transporttesting.NewCA(t)
+	requests := newRequester(t)
+	resolves := newResolver(t)
+	request := requester.Request{
+		Owner:   requester.Owner{Namespace: testNamespace, Name: "test-ownerless-box", Holder: requester.Unowned{Labels: map[string]string{"test-caller": "first"}}},
+		Subject: requester.ServiceAccount{Name: subjectAccount},
+	}
+	if _, err := requests.Ensure(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	issue(t, ca, observed(t, request.Owner.Name))
+	started := ensureIssued(t, requests, request)
+	mountedLeaf := leaf(t, ca, started.SecretName)
+
+	firstPod := types.UID("55555555-5555-4555-8555-555555555555")
+	request.Binding = requester.Pod{Name: "test-box-pod", UID: firstPod}
+	if _, err := requests.Ensure(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	bound := observed(t, request.Owner.Name)
+	if bound.Status.CredentialID != started.ID || bound.Status.SecretName != started.SecretName {
+		t.Fatalf("first binding changed the mounted credential: %+v then %+v", started, bound.Status)
+	}
+	accepted := ensureIssued(t, requests, request)
+	if !accepted.Accepted {
+		t.Fatalf("first Pod did not accept its mounted credential: %+v", accepted)
+	}
+	if peer, err := resolves.Resolve(ctx, mountedLeaf); err != nil || peer.Binding.PodUID != firstPod {
+		t.Fatalf("the mounted credential resolved %+v, %v", peer, err)
+	}
+	if err := objects.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: started.SecretName}, &corev1.Secret{}); err != nil {
+		t.Fatalf("the first Pod's mounted Secret disappeared: %v", err)
+	}
+
+	request.Binding = requester.Pod{Name: "test-box-pod", UID: "66666666-6666-4666-8666-666666666666"}
+	if _, err := requests.Ensure(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	replaced := observed(t, request.Owner.Name)
+	if replaced.Status.CredentialID == started.ID || replaced.Status.SecretName == started.SecretName {
+		t.Fatalf("replacement Pod reused the old credential: %+v", replaced.Status)
+	}
+	if _, err := resolves.Resolve(ctx, mountedLeaf); err == nil {
+		t.Fatal("the previous Pod's mounted credential still resolves")
+	}
+	issue(t, ca, replaced)
+	replacement := ensureIssued(t, requests, request)
+	replacementLeaf := leaf(t, ca, replacement.SecretName)
+	eventually(t, "the superseded mounted Secret to go", func() (bool, string) {
+		err := objects.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: started.SecretName}, &corev1.Secret{})
+		return apierrors.IsNotFound(err), fmt.Sprint(err)
+	})
+
+	request.Binding = nil
+	if _, err := requests.Ensure(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	cleared := observed(t, request.Owner.Name)
+	if cleared.Status.CredentialID == replacement.ID || cleared.Status.SecretName == replacement.SecretName || cleared.Status.SecretName == started.SecretName {
+		t.Fatalf("clearing the binding reused an earlier Secret: %+v", cleared.Status)
+	}
+	if _, err := resolves.Resolve(ctx, replacementLeaf); err == nil {
+		t.Fatal("clearing the binding left the replacement Pod's credential valid")
+	}
+	issue(t, ca, cleared)
+	restarted := ensureIssued(t, requests, request)
+	request.Binding = requester.Pod{Name: "test-box-pod", UID: "77777777-7777-4777-8777-777777777777"}
+	if rebound := ensureIssued(t, requests, request); rebound.ID != restarted.ID || rebound.SecretName != restarted.SecretName || !rebound.Accepted {
+		t.Fatalf("the next Pod's first binding changed its mounted credential: %+v then %+v", restarted, rebound)
+	}
+}
+
 // A standing workload has no owner and no binding: its ID and Secret name never change.
 func TestAStandingWorkloadKeepsItsCredential(t *testing.T) {
 	ctx := t.Context()
