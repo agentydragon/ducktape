@@ -1,5 +1,5 @@
 """Gatus: the Helm release, its Postgres, network policies, route and ServiceMonitor, and its
-own configuration (`config.py`) in the `gatus-config` ConfigMap."""
+own configuration (`config.py`) in the `config` ConfigMap."""
 
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ def chart(app: App) -> Chart:
     config_map = ConfigMap(
         chart,
         "config",
-        metadata=ApiObjectMetadata(name="gatus-config", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="config", namespace=_NAMESPACE),
         data={"config.yaml": config.render(hostname=_HOSTNAME)},
     )
     _helm_release(chart, config_map)

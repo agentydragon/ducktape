@@ -137,7 +137,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gatus-config
+  name: config
   namespace: gatus
 data:
   config.yaml: |
@@ -365,7 +365,7 @@ spec:
     envFrom:
       - secretRef:
           name: gatus-oidc-secret
-    externalConfigMap: gatus-config
+    externalConfigMap: config
     ingress:
       enabled: false
     nodeSelector:
