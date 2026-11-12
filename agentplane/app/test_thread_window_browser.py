@@ -1,6 +1,7 @@
 """Real-browser acceptance for a thread's window: one shape, paged back into, resumed after a gap."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -193,33 +194,49 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     try:
         await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     except AssertionError as error:
-        thread_id = thread_browser.source.session_id
-        summary = await thread_browser.content.session_summary(thread_id)
-        assert summary is not None
-        view = await thread_browser.content.reader.read_thread_entities(
-            history_service_pb2.ReadThreadEntitiesRequest(
-                session_id=str(thread_id),
-                keys=history_service_pb2.EntityKeys(
-                    keys=[
-                        history_service_pb2.EntityKey(
-                            entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
-                        )
-                    ]
-                ),
-            )
-        )
-        shape = await page.request.post(
-            f"{thread_browser.ingress.url}/threads/{thread_id}/sync/entities"
-            f"?projection_epoch={summary.projection_epoch}&offset=now",
-            data={"where": "entity_kind = 'view_state'", "order_by": "entity_index DESC", "limit": 1},
-            headers={"Origin": thread_browser.ingress.url},
-        )
-        browser_cursor = await page.locator("[data-projection-cursor]").get_attribute("data-projection-cursor")
-        raise AssertionError(
-            f"cursor {latest.cursor}: committed={summary.committed_cursor}, folded={summary.folded_through}, "
-            f"view={[row.revision_cursor for row in view.entities]}, browser={browser_cursor}, "
-            f"electric_status={shape.status}, electric_body={(await shape.text())[:1000]}"
-        ) from error
+        # Best-effort evidence must neither wedge the test nor replace its browser assertion.
+        try:
+            async with asyncio.timeout(10):
+                thread_id = thread_browser.source.session_id
+                summary = await thread_browser.content.session_summary(thread_id)
+                if summary is None:
+                    raise AssertionError("History has no Session summary for the seeded thread")
+                view = await thread_browser.content.reader.read_thread_entities(
+                    history_service_pb2.ReadThreadEntitiesRequest(
+                        session_id=str(thread_id),
+                        keys=history_service_pb2.EntityKeys(
+                            keys=[
+                                history_service_pb2.EntityKey(
+                                    entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
+                                )
+                            ]
+                        ),
+                    )
+                )
+                shape = await page.request.post(
+                    f"{thread_browser.ingress.url}/threads/{thread_id}/sync/entities"
+                    f"?projection_epoch={summary.projection_epoch}&offset=now",
+                    data={"where": "entity_kind = 'view_state'", "order_by": "entity_index DESC", "limit": 1},
+                    headers={"Origin": thread_browser.ingress.url},
+                )
+                browser_cursor = await page.locator("[data-projection-cursor]").get_attribute("data-projection-cursor")
+                (undeclared_outputs_dir() / "thread-window-projection-gap.json").write_text(
+                    json.dumps(
+                        {
+                            "expected": latest.cursor,
+                            "committed": summary.committed_cursor,
+                            "folded": summary.folded_through,
+                            "view": [row.revision_cursor for row in view.entities],
+                            "browser": browser_cursor,
+                            "electric_status": shape.status,
+                            "electric_body": await shape.text(),
+                        }
+                    )
+                )
+                error.add_note("Projection diagnostics saved to thread-window-projection-gap.json")
+        except Exception as diagnostic_error:
+            error.add_note(f"Projection diagnostics unavailable ({type(diagnostic_error).__name__})")
+        raise
     restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
