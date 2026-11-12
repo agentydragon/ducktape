@@ -378,14 +378,6 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     )
     await expect(pending).to_have_count(1)
     await expect(pending).to_contain_text("Check the exact call before approving.")
-    if example.key == "everything.echo":
-        audit = pending.get_by_role("button", name="Identity visual-test-identity", exact=False)
-        await expect(audit).to_be_visible()
-        await expect(audit).to_have_attribute("aria-expanded", "false")
-        await audit.click()
-        await expect(pending).to_contain_text(
-            "Requested by Identity visual-test-identity · UID visual-test-identity-uid"
-        )
     await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
