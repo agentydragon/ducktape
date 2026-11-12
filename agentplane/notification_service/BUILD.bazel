@@ -223,6 +223,7 @@ go_test(
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
         "//agentplane/notification_service/store",
+        "//agentplane/notification_service/testing",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres/probes",
         "//agentplane/proto:command_go_proto",

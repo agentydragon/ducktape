@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -188,13 +189,13 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 	if err := recipient.Objects.Update(t.Context(), recipient.Sandbox); err != nil {
 		t.Fatal(err)
 	}
-	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) {
+	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(s, identityRunDispatcher{sandbox: recipient.Sandbox, identity: recipient.Identity})
 	})
-	historyAddress := serveGRPC(t, func(s *grpc.Server) {
+	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, sandboxHistory{sandbox: recipient.Sandbox})
 	})
-	actionAddress := serveGRPC(t, func(s *grpc.Server) {
+	actionAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		actionpb.RegisterActionServiceServer(s, identityActions{identity: recipient.Identity})
 	})
 	ca := environmentruntimetransporttesting.NewCA(t)
