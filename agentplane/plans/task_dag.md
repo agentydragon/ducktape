@@ -3375,11 +3375,16 @@ Environment with `spec.identity` naming it; no Environment operation creates or 
 [#15239](https://github.com/agentydragon/ducktape/pull/15239) is superseded by the merged source
 changes and is not a rollout dependency.
 
-This is source status only. No deployed revision, live rollout, or acceptance result is asserted
-here. The [rollout plan](sandbox_identity_rollout.md) owns the remaining holds, artifact and image
-checks, live acceptance, rollback, and reopening criteria. Keep this node and its dependents open
-until those gates are recorded. `IDENTITY_SYSTEM_TESTS` is a separate acceptance gate; it does not
-replace the operational checks in the rollout plan.
+**Serving and partially accepted (2026-11-12, rollout owner):**
+[Live evidence](../debug/2026_11_12_sandbox_identity_cutover/README.md) records the deployed
+artifact/image revisions, Pod/VM credentials, in-Sandbox Kubernetes authorization, Codex and
+sampler tool turns, and suspend/resume. The proposed declarative holds were never applied.
+Operator-approved broker acceptance remains open: the Identity caller UI repair #15860 is merged
+and its code/visual checks passed, but the serving frontend still predates that repair.
+The [rollout plan](sandbox_identity_rollout.md) retains rollback and remaining acceptance steps;
+do not repeat its already-completed cutover sequence. Keep this node and its dependents open
+until the remaining acceptance and source/configuration check below are recorded.
+`IDENTITY_SYSTEM_TESTS` remains a separate gate.
 
 The merged contract is: the controller requests an Identity-subject `WorkloadCredential` pinned to
 the live Identity UID; a Sandbox with no live Identity starts no workload, while a running

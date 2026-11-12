@@ -1,5 +1,11 @@
 # Sandbox Identity switch rollout
 
+**2026-11-12 status (rollout owner):** #15742 and #15744 are merged and serving. The proposed
+holds below were never applied. [Live evidence](../debug/2026_11_12_sandbox_identity_cutover/README.md)
+records the observed sequence and remaining operator-approved broker acceptance. The Identity
+caller UI repair #15860 is merged and awaiting frontend release. Treat the cutover steps below as
+the prepared plan; do not repeat completed migration or inventory-retirement steps.
+
 Prepared for rolling out the merged switch and its dependent cleanup. Remove this plan and its
 companion hold patch after live acceptance and move any lasting operational instructions to the
 owning service's documentation.
@@ -15,8 +21,8 @@ standing-workload/MCP Identity cutover and environment-rule design remain separa
 The source switch and cleanup are merged in [#15742](https://github.com/agentydragon/ducktape/pull/15742)
 (`642063435fcd7246e3b973a45de103264bdeb867`) and
 [#15744](https://github.com/agentydragon/ducktape/pull/15744)
-(`004efb6317a3760fef668781e8d3fb3ba4cd63b9`). This plan tracks rollout only: it does not assert
-that those revisions are deployed or that live acceptance has passed.
+(`004efb6317a3760fef668781e8d3fb3ba4cd63b9`). The evidence linked above records the deployed revisions and completed checks;
+this prepared plan retains the remaining acceptance and rollback procedure.
 Direct Identity callers and caller-delegated `sessions/create` cannot create Sessions in this cutover,
 and Identities have no explicit-resume authority. Operator provisioning and the existing approved
 `orchestration_v1` broker flow remain available. Caller-authorized child Sessions are tracked separately as
