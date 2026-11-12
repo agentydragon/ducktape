@@ -7,7 +7,7 @@ report snapshots. The CI reports are:
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json).
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
-  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json).
+  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Nov 12 intervention dispositions are supplemental; the original windows and rates remain unchanged.
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),
   [source and observation window](visual-reliability/manifest.json).
