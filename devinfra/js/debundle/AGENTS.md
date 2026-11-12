@@ -86,6 +86,14 @@ A sound scoped solution can be the lasting choice. Theorem: <docs/design.md>
 - **Default: e2e through the `debundle` CLI** (`e2e/`, `e2e/support/`), even for a
   bug in one internal stage. Assert the external contract (module exports, entry
   output under Node, layout, source shape).
+- **Gate fixes need a behavioral regression test.** For an incorrect acceptance
+  or rejection, give a minimal bundle and spec to the real pipeline and assert
+  the correct result: a valid split is accepted and emitted, or an invalid split
+  is rejected with the relevant error. Verify that the same bundle and spec
+  reproduce the bug before the fix. Check emitted behavior where relevant.
+  Analysis reports and implementation-specific facts may supplement this test,
+  but are not its sole oracle: internal representations and inference strategies
+  can change without changing whether the split is valid.
 - Synthetic fixtures use neutral descriptive names (`factory`, `lazyLoader`) or
   simple placeholders (`a`, `b`, `foo`, `bar`). Never carry arbitrary minified
   identifiers from the source being reproduced into a fixture.
