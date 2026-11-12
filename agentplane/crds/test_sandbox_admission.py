@@ -343,7 +343,12 @@ async def test_egress_credential_source_and_target_validation() -> None:
         ]
         secret = {"secretRef": {"name": "api-token", "key": "token"}}
         for index, (source, valid) in enumerate(source_cases):
-            await create(f"source-{index}", source, [{"method": "wholeValue", "header": "Authorization"}], valid)
+            await create(
+                f"source-{index}",
+                source,
+                [{"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"}],
+                valid,
+            )
         for index, (target, valid) in enumerate(target_cases):
             await create(f"target-{index}", secret, [target], valid)
 

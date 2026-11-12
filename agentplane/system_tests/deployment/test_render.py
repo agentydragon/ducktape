@@ -362,14 +362,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         workload = command_pod["containers"][0]
         sidecar = one(c for c in command_pod["containers"] if c["name"] == "egress-sidecar")
         projected_volumes = {v["name"] for v in command_pod["volumes"] if "projected" in v}
-        assert projected_volumes
-        assert not projected_volumes.intersection(mount["name"] for mount in workload["volumeMounts"])
-        assert projected_volumes <= {mount["name"] for mount in sidecar["volumeMounts"]}
+        assert not projected_volumes
         settings_volume = one(v for v in command_pod["volumes"] if v["name"] == "egress-sidecar-settings")
+        assert settings_volume["name"] in {mount["name"] for mount in sidecar["volumeMounts"]}
         settings = yaml.safe_load(
             _resource(docs, "ConfigMap", settings_volume["configMap"]["name"])["data"]["settings.yaml"]
         )
         transport = settings["proxy"]["transport"]
+        assert "audience_token_files" not in settings
         assert transport["mode"] == "tls"
         # The Action Service mounts the box's SVID there (agentplane/action_service/sandbox/inventory.go).
         assert transport["auth"] == {

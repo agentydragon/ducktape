@@ -1,6 +1,7 @@
 """The sidecar authoring model keeps invalid hop settings out of rendered settings."""
 
 import json
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -77,12 +78,12 @@ def test_retired_audience_token_settings_are_omitted_from_rendered_settings() ->
                 "address": "egress.example:8888",
                 "transport": {
                     "mode": "tls",
-                    "ca_file": "/ca",
-                    "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"},
+                    "ca_file": Path("/ca"),
+                    "auth": {"mode": "spiffe", "cert_file": Path("/c"), "key_file": Path("/k")},
                 },
             }
         ),
-        audience_token_files={"kubernetes": "/var/run/agentplane-egress/kubernetes-token"},
+        audience_token_files={"kubernetes": Path("/var/run/agentplane-egress/kubernetes-token")},
     )
 
     assert "audience_token_files" not in settings.model_dump(mode="json", exclude_none=True)

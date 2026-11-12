@@ -31,9 +31,7 @@ import (
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"golang.org/x/net/http2"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 var tokenCredential = resources.Credential{
