@@ -81,6 +81,34 @@ Another sampled Codex command retains deltas because its completed `aggregatedOu
 earlier prefix absent from the streamed deltas. The exact-concatenation rule rejects that case;
 the stderr change does not broaden content matching.
 
+## Historical settlement backfill
+
+The [maintenance command](../README.md#historical-settlement) from
+[PR #15908](https://github.com/agentydragon/ducktape/pull/15908) is published in
+`devel-20261112234321-022c3c9`, digest
+`sha256:63965691213dca97c0d76869cec6878229985f759453c6ff806066e8d3025fb2`.
+Both History replicas were ready on that image before the apply.
+
+The scoped dry run and apply agreed on **39 items, 216,902 delta rows and 43,714,014 stored
+payload bytes** in Session `58e5d7cc-8e45-46e8-bf7b-8e8a79b28d12`. The apply Job
+`history-settlement-apply-7g2tn` completed at 23:51:54 UTC on 2026-11-12.
+The measured reasoning span now has 21 retained entries instead of 9,919. Its native/semantic
+start and completion and stderr hashes are unchanged, as is the projected item's state hash.
+There are no dangling delta evidence/native links for that settlement. Live `ReadPage`,
+`ReadSequences` and late-removal reads recognize the settled gaps and retain cursor 3,884,665 as
+the Session watermark; the measured span has 17 removal ranges. PostgreSQL and both History
+replicas remained healthy.
+
+The first dry-run Job landed on `wyrm2` (`atlas` zone), while PostgreSQL runs in `hil-ovh`.
+It had not reached its first candidate after several minutes; its primary connection was waiting
+on `ClientRead`. Recreating it in `hil-ovh` reached candidates after about 40 seconds and finished
+in 84 seconds. The staging template pins that zone because the bounded scan makes many small
+queries. No database content changed during either dry run.
+
+The full read-only preview covered 163 Sessions and identified 115 eligible items across 27
+Sessions: **243,088 rows and 49,604,130 stored payload bytes**. These payload counts exclude
+row/index overhead and do not imply shrinking PostgreSQL relation files.
+
 ## Turn-diff cleanup
 
 At 11:13 UTC on 2026-11-12, the operator authorized deleting existing turn diffs without a
