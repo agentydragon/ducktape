@@ -1,15 +1,17 @@
 # Information trust tiers — which provider may see what, and who enforces it
 
-**Status: partially built.** Named logical recall indexes, per-index Git configuration, and
-multi-index search are implemented, but the deployed integration is currently disabled. Trust-tier
-labels, per-agent index grants, room membership enforcement, and classifier backstops remain design
-work tracked below and in <../console/TODO.md>.
+**Status: design needs a new implementation baseline.** The Console-hosted session runtime,
+Matrix channel, and Console Recall integration were retired; the former Haku recall index
+was removed. The Matrix and Console mechanics below describe the earlier design, not existing
+controls or a dispatchable implementation. Before using it, choose the conversation and
+agent runtime, identify every cross-tier read and write boundary, and design enforcement there.
+Trust-tier labels, grants, membership enforcement, and classifier backstops remain open.
 
 Operator, 2026-08-15: several agent kinds, each cloning a different workspace repo, talking to
 each other in Matrix rooms the operator is also in, with the high-trust agent delegating
 unsensitive work down.
 
-**v0 ships the structural half only** — workspace repos, room tiers, enforced membership — and
+**The proposed v0 covers the structural half** — workspace repos, room tiers, enforced membership — and
 governs message content by instructing agents not to share, with a classifier added later as a
 backstop. What that bet does and does not rest on is § v0 below; the classifier's design is kept
 here because deferring it is not the same as leaving it unshaped. Git-content classification is
@@ -30,9 +32,9 @@ _provider_; the agent is the vehicle that carries data to one. Two consequences:
 - **The thing to label is the corpus, not the message.** `haku-state` is Anthropic-only because
   it is the personal-data motherlode; ducktape is public; k8s diagnostics is neither. A label on
   a corpus is durable and checkable.
-- **The enforcement points already exist, per zone**: which workspace is mounted, which
-  credential is reflected in, which LiteLLM route the harness can reach, which egress the
-  perimeter permits. Four perimeter controls, all of them the kind doctrine already prefers.
+- **Candidate enforcement points** include the workspace mount, reflected credentials, the
+  LiteLLM route available to the harness, and its egress perimeter. Verify the selected
+  runtime enforces each control for each tier.
 
 That is enforceable. "Classify each message before it crosses" is not, by itself — it is a
 probabilistic filter on output from an author assumed adversarial. Both are wanted; only the
@@ -98,40 +100,12 @@ inadvertent detail actually lives — out of mixed rooms by construction.
 
 ## Corpus separation covers past conversations, not just repos
 
-Operator, 2026-08-15: an agent reads only the transcripts and conversations its tier gives it
-access to. That **settles a deferral that has been open on purpose** — the Matrix channel leaves
-reads unscoped and says so explicitly (<../console/channels/matrix/SPEC.md> § The agent's own
-view), on the grounds that with one operator, one Haku and one room a fence would separate Haku
-from its own history and nothing else. Several agents at several tiers is exactly the condition that premise was waiting on.
-
-Note what the fence is and is not: **the tier, not the room.** Cross-room and cross-session reads
-stay open _within_ a tier, which keeps an agent's own history reachable and only cuts the edges
-that cross a boundary.
-
-R5.3a also predicted where this lands, and that prediction holds: every read goes through the
-console, which knows the calling Agent and each conversation's owner, so this is a decision
-function at one call site in the shape the approval policy already has — not scoping smeared
-through the transport. Three things it needs:
-
-- **A conversation needs a tier of its own.** A session's room is its conversation's live
-  `channel_attachment`; the tier goes beside it, derived from the room's fixed tier for a Matrix
-  conversation and from the agent kind otherwise. Those two must agree, and the room's is
-  authoritative where both exist.
-- **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
-  and must read as top-tier — unreadable by anything lower — rather than as "unclassified,
-  therefore fine".
-- **Semantic search was where this bit first, and the Console integration is retired.** Its
-  reader, authorization, MCP tool, and indexer role are removed. The Recall schema and indexed data
-  remain during the rollout. Re-enabling Console search requires reviewing the profile and tier
-  boundaries together. The condition for revisiting stands: the moment a second operator or a room
-  Haku should not see exists, ranked retrieval is where that leaks first. A drilldown makes reading
-  another conversation deliberate — you have to name the session; ranked retrieval surfaces it by
-  accident, at the top of the results, in answer to an innocent question.
-
-Still open: define tiers for agent kinds and Matrix rooms, derive conversation
-trust labels, and add tier-specific chat indexes if profile labels are no longer
-sufficient. Track implementation in <../console/TODO.md> § Scope conversation reads
-to the reader's trust tier.
+An agent should read only conversations its tier permits, including through search and
+retrieval. Label conversations and retained derived data, fail closed for unlabelled legacy
+content, and enforce the label on every read and search path. The old Console conversation
+and Recall implementation was retired, so these controls need owners in the chosen replacement
+runtime rather than a change to the former Console reader. Decide how cross-tier access is
+authorized before exposing shared history.
 
 ## Running more than one agent at once
 
@@ -421,10 +395,9 @@ if one is ever added the classifier's placement has to be revisited before that 
 
 ### Where it hooks in, and what it does not cover
 
-**The choke point already exists**, which is what will make the backstop enforceable when it
-lands. The console holds the only Matrix credential and posts everything the agent says (R11.1
-auto-forward — the agent has no send tool), so the classifier is a filter in the reply path,
-before the room send, in reviewed console code the agent cannot reach around.
+The former Console-owned Matrix send path was a proposed choke point, but it was retired with
+the hosted session runtime. A replacement needs an operator-controlled send boundary that the
+agent cannot bypass before a classifier can enforce anything on outbound messages.
 
 It covers **outbound** only. A lower tier's messages and results coming back are an **integrity**
 concern, not a confidentiality one, and need no classifier — they need the treatment every
@@ -436,21 +409,19 @@ survives that document's retirement.
 **Out of scope here** (operator, 2026-08-15) — it needs a plan of its own and is not urgent.
 Three findings to carry into that plan rather than re-derive:
 
-- **The egress proxy is the wrong layer for content.** `haku-egress-proxy` rewrites a header for
-  a known host, which is cheap because it inspects request _metadata_. Classifying pushed content
+- **The egress proxy is the wrong layer for content.** Classifying pushed content
   means parsing git's smart-HTTP protocol and unpacking packfiles inside the proxy, on a path
   that has to stay fast, for payloads that are large, compressed and delta-encoded.
 - **The destination already has the content unpacked.** A **Forgejo pre-receive hook** is
   synchronous and refuses the push, which is the semantics actually wanted; a **required CI
   status** on PRs is weaker (the content has already landed on a branch) but needs no protocol
   parsing at all.
-- **The proxy is right for the other half.** Which repos an agent may push to at all is metadata,
-  and the proxy already sees the request path.
+- **Repository scoping is separate.** Whether an agent may push to a repository is a metadata
+  decision; evaluate whether the selected egress policy can enforce it on each Git transport.
 
-That last one is where this joins something already wanted: <../TODO.md>'s runtime-steerable
-egress grant — widening or revoking what the proxy permits mid-session, "the same shape as the
-approval queue, applied to egress rather than to tool calls". A console-driven proxy is the
-natural home for per-repo push scoping, and the two should be planned together.
+Per-repo push scoping and runtime-steerable egress grants remain open in <../TODO.md>.
+The former Haku proxy and Console approval queue are retired; choose the enforcement and
+approval owner against the current Agentplane egress architecture before planning either.
 
 ## Shared rooms, with the operator in them
 
