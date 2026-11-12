@@ -23,6 +23,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -277,6 +278,15 @@ func TestSessionGatewayRejectsBeforeEffects(t *testing.T) {
 		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, "/sandboxes/demo/sessions", body)
 		if response.Code != http.StatusUnprocessableEntity || len(peer.calls) != 0 {
 			t.Fatalf("status %d effects %v: %s", response.Code, peer.calls, response.Body.String())
+		}
+	}
+	for _, name := range []string{"Upper", "a-", strings.Repeat("a", sandboxapi.MaxSandboxNameLength+1)} {
+		peer := &sessionTestPeer{}
+		path := "/sandboxes/" + name + "/sessions"
+		body := `{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`
+		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, path, body)
+		if response.Code != http.StatusUnprocessableEntity || len(peer.calls) != 0 {
+			t.Fatalf("invalid Sandbox name %q: status %d effects %v: %s", name, response.Code, peer.calls, response.Body.String())
 		}
 	}
 }

@@ -258,7 +258,7 @@ func (s *Service) requestTarget(namespace, name, uid string) (*identitypb.Enviro
 }
 
 func validSandboxName(name string) error {
-	if len(name) > 57 || len(validation.IsDNS1123Label(name)) > 0 {
+	if !sandboxapi.IsValidSandboxName(name) {
 		return status.Error(codes.InvalidArgument, "invalid Sandbox name")
 	}
 	return nil
