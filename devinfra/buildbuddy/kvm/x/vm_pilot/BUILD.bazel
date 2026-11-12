@@ -1,0 +1,26 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "render_bin",
+    main_module = "devinfra.buildbuddy.kvm.x.vm_pilot.render",
+    deps = [":render"],
+)
+
+py_library(
+    name = "render",
+    srcs = ["render.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_test(
+    name = "test_render",
+    srcs = ["test_render.py"],
+    data = ["//cluster/k8s:buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml"],
+    deps = [
+        ":render",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)

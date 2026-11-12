@@ -32,6 +32,11 @@ exports_files(
 )
 
 exports_files(
+    ["buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml"],
+    visibility = ["//devinfra/buildbuddy/kvm/x/vm_pilot:__pkg__"],
+)
+
+exports_files(
     [
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
     ],

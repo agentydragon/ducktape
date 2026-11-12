@@ -31,3 +31,23 @@ go_test(
     },
     tags = ["manual"],
 )
+
+go_test(
+    name = "kvm_vm_pilot_test",
+    srcs = [
+        "kvm_test.go",
+        "worker_keyring_test.go",
+        "worker_pivot_root_test.go",
+    ],
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "10GB",
+        "test.Pool": "kvm-canary-20261109",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "docker",
+    },
+    tags = ["manual"],
+)
