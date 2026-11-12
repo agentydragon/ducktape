@@ -31,7 +31,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"

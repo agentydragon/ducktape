@@ -18,7 +18,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing" // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"

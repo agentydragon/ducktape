@@ -13,7 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
-	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing"
+	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
