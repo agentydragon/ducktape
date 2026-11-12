@@ -342,12 +342,8 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contextItems, err := json.Marshal(conversation.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET context=$2::jsonb WHERE id=$1`,
-		session.ConversationID, contextItems); err != nil {
+	conversation.ActiveContext = conversation.Context()
+	if err := store.transaction(t.Context(), func(tx *sql.Tx) error { return updateConversation(t.Context(), tx, conversation) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1746,8 +1742,16 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record) VALUES($1,1,$2::jsonb)`, session.ConversationID,
-		`{"type":"reasoning","provider_id":9007199254740993}`); err != nil {
+	if err := store.transaction(t.Context(), func(tx *sql.Tx) error {
+		conversation, err := lockOwner(t.Context(), tx, owner)
+		if err != nil {
+			return err
+		}
+		if err := conversation.Archive.AppendRecords([]json.RawMessage{json.RawMessage(`{"type":"reasoning","provider_id":9007199254740993}`)}); err != nil {
+			return err
+		}
+		return updateConversation(t.Context(), tx, conversation)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	intentID, err := store.RecordNested(t.Context(), owner, IntentTool, map[string]any{"opaque_id": json.Number("9007199254740993"), "call": map[string]any{"call_id": "stored-call"}})

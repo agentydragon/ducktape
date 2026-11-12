@@ -2,7 +2,6 @@ package centralsampler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1127,12 +1126,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	wire, err := json.Marshal(body)
-	if err != nil {
-		return "", err
-	}
-	// Persist the exact outgoing content before dispatch; credentials never enter this record.
-	intentID, err := r.store.Begin(ctx, owner, providerRequestIntent(PendingIntentSampling, connection, config, wire))
+	request := providerRequestIntent(PendingIntentSampling, connection, config, body)
+	intentID, err := r.store.Begin(ctx, owner, request)
 	if err != nil {
 		return "", err
 	}
@@ -1141,7 +1136,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
+	response, err := adapter.Sample(ctx, client, connection, body, request.WireBody, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
 	if err != nil {
 		var known *protocol.KnownFailureError
 		if errors.As(err, &known) {
@@ -1219,16 +1214,13 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	wire, err := json.Marshal(plan.Body)
-	if err != nil {
-		return err
-	}
 	connection, err := r.settings.Connection(model)
 	if err != nil {
 		return err
 	}
 	original := conversation.Context()
-	intentID, err := r.store.BeginCompaction(ctx, owner, providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model], wire), original)
+	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model], plan.Body)
+	intentID, err := r.store.BeginCompaction(ctx, owner, request, original)
 	if err != nil {
 		return err
 	}
@@ -1241,7 +1233,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return err
 	}
 	defer client.CloseIdleConnections()
-	result, err := adapter.Sample(ctx, client, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
+	result, err := adapter.Sample(ctx, client, connection, plan.Body, request.WireBody, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
 	if err != nil {
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}

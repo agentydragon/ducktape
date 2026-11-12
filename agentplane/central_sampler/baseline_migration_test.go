@@ -62,11 +62,14 @@ func TestSamplerVersion10AdoptionRemovesRedundantEventIndex(t *testing.T) {
 
 	// Reconstruct the validated version-10 history on this clone. The native tables and rows remain
 	// in place, so Migrate must take baseline 11's adoption path before applying migration 12.
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_conversation ADD COLUMN context JSONB;
+		CREATE TABLE sampler_conversation_item (conversation_id UUID NOT NULL REFERENCES sampler_conversation(id),
+		ordinal BIGINT NOT NULL CHECK(ordinal>0),record JSONB NOT NULL,PRIMARY KEY(conversation_id,ordinal))`)
 	migrationExec(t, store.DB(), `CREATE INDEX sampler_event_sequence_idx ON sampler_event(session_id, sequence)`)
 	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id >= 11`)
 	migrationExec(t, store.DB(), `INSERT INTO central_sampler_goose_version(version_id, is_applied)
 		VALUES (8, true), (9, true), (10, true)`)
-	if err := Migrate(t.Context(), store.DB()); err != nil {
+	if err := MigrateDuringMaintenance(t.Context(), store.DB()); err != nil {
 		t.Fatalf("Migrate version-10 database: %v", err)
 	}
 

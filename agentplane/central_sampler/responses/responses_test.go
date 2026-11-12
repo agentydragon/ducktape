@@ -327,7 +327,7 @@ func TestDialectAndExecEncodingAreIndependent(t *testing.T) {
 					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
 				}))
 				defer server.Close()
-				if _, err := Sample(context.Background(), server.Client(), server.URL, "Bearer fixture", body, config, nil, nil, false); err != nil {
+				if _, err := Sample(context.Background(), server.Client(), server.URL, "Bearer fixture", encoded, config, nil, nil, false); err != nil {
 					t.Fatal(err)
 				}
 			})

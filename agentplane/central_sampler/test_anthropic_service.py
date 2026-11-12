@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import grpc
 import pytest
 import pytest_bazel
 from pydantic import SecretStr
@@ -105,6 +106,22 @@ async def wait_until_blocked(stub: Any) -> None:
             await asyncio.sleep(0.05)
 
 
+async def assert_reconstructed_request(stub: Any, request_id: str, expected: dict[str, Any]) -> None:
+    request = sampler_pb2.ReadProviderRequestRequest(session_id=SESSION_ID, request_id=request_id)
+    chunks = [chunk async for chunk in stub.ReadProviderRequest(request, metadata=METADATA, timeout=10)]
+    assert chunks[0].metadata.request_id == request_id
+    assert "x-api-key" not in chunks[0].metadata.headers
+    assert json.loads(b"".join(chunk.body_chunk for chunk in chunks[1:])) == expected
+    with pytest.raises(grpc.aio.AioRpcError) as denied:
+        _ = [
+            chunk
+            async for chunk in stub.ReadProviderRequest(
+                request, metadata=(("authorization", "Bearer recreated-account-token"),), timeout=10
+            )
+        ]
+    assert denied.value.code() == grpc.StatusCode.NOT_FOUND
+
+
 @pytest.mark.parametrize("operation", ["partial_exec", "failed_compaction"])
 async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
     operation: str, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
@@ -177,7 +194,13 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 assert len(compaction_intents) == 1
                 intent = compaction_intents[0]
                 assert intent.result is None, "a non-terminal compaction was recorded as a settled result"
-                assert json.loads(intent.request["wire_request"]) == intent.request["body"]
+                assert intent.body == compact_request, (
+                    "reconstructed content differs from the captured provider request"
+                )
+                assert intent.request.get("profile_id"), "compact request has no stored profile reference"
+                assert "body" not in intent.request
+                assert "wire_request" not in intent.request
+                await assert_reconstructed_request(stub, intent.id, compact_request)
                 assert (await store.get_session(SESSION_ID)).blocked
             else:
                 await stub.SubmitInput(
@@ -215,7 +238,11 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 assert len(intents) == 1
                 assert intents[0].request.get("kind") == "sampling"
                 assert intents[0].result is None, "a non-terminal eager tool call was recorded as settled"
-                assert json.loads(intents[0].request["wire_request"]) == intents[0].request["body"]
+                assert intents[0].body == body, "reconstructed content differs from the captured provider request"
+                assert intents[0].request.get("profile_id"), "sampling request has no stored profile reference"
+                assert "body" not in intents[0].request
+                assert "wire_request" not in intents[0].request
+                await assert_reconstructed_request(stub, intents[0].id, body)
                 assert not any(intent.request.get("kind") == "tool" for intent in intents), (
                     "partial tool arguments crossed the terminal provider-message boundary"
                 )

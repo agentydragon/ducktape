@@ -8,7 +8,6 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	"google.golang.org/protobuf/proto"
 )
 
 func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, intentID string) (*eventpb.Event, error) {
@@ -86,7 +85,7 @@ func recoveryEventsBefore(ctx context.Context, tx *sql.Tx, sessionID string, bef
 			return nil, err
 		}
 		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
+		if err := decodeStoredEvent(wire, entry); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)

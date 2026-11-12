@@ -599,7 +599,11 @@ initial context renders an update; Codex resolves the shell before its first ren
 ## Evidence and continuation
 
 Provider requests/responses, tool intents/results, commands and context checkpoints commit in the
-sampler DB. Each provider intent stores its final serialized request before dispatch. Transport
+sampler DB. Each provider intent commits an immutable context/profile reference and the digest and
+length of its reconstructed request before dispatch. The provider receives those reconstructed bytes.
+`ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
+content hashes alone grant no read access. New provider dispatch boundaries contain these references.
+Transport
 bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
 usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
 at 64 MiB per response; received bytes are recorded before parsing, including incomplete SSE tails.
@@ -662,16 +666,35 @@ continues to govern retained reads.
 The service and provider/tool loop run in Go; the pinned upstream JavaScript host is a child
 process of the sampler. Production requires no Python interpreter. The existing gRPC API and
 sampler-owned `sampler_*` table layout remain the boundary for clients and durable state. The Go
-service applies its Goose SQL baseline before serving. Repeated startup preserves
+service applies its Goose migrations before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
 Acceptance tests start the actual Go binary and inspect its database separately.
 
-`sampler_conversation.api` pins the native protocol. Ordered, immutable native records live in
-`sampler_conversation_item.record`. `sampler_conversation.context` optionally holds the compacted
-active context as a protocol-owned object (`items` for Responses; `messages` and deferred effort
-restoration for Anthropic). With no replacement context, the archive is the active context.
+`sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
+OpenAI items/content parts and Anthropic messages/content blocks. Shared text, base64 image data and
+opaque continuation strings have their own kinds; signatures and unknown provider fields survive.
+Content IDs hash the kind and standard-JSON payload with a versioned domain separator. Payloads are
+bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
+general JSON node format or serializer.
+
+`sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
+shares the entire prior prefix. Conversation archive and optional active roots reference these
+contexts; small controls retain Anthropic deferred effort. With no replacement context, the archive
+is the active context. `sampler_model_request` links each distinct intent execution to its frozen
+request profile and context. Profiles share instructions/system text and individual tool definitions;
+per-call attribution does not duplicate them. The first request's system/instructions and tool
+definitions remain fixed across sampler rolls. Requests use the provider's native request fields
+and Go's standard JSON encoder; input/messages follows from the pinned API.
 Compaction atomically verifies the expected active context and lease before replacing it and
 settling its intent/command. It never rewrites the archive. New responses append only new records.
+
+Migration 13 creates, converts, verifies and retires the inline copies as one registered Go migration.
+Conversion commits bounded batches and resumes after interruption. Unsupported retained data stops
+the migration before retiring its source. Old journal entries retain their exact logical bytes for
+History duplicate/replay checks; physical compression reduces those retained copies. Their historical
+full-request payloads remain legacy evidence. History's database and existing copies are unchanged.
+A populated database requires stopped writers and the same binary's `--migrate-only` mode; ordinary
+rolling startup refuses this conversion. See [the maintenance procedure](plans/native_content_cutover.md).
 
 Baseline 11 creates the native schema on a fresh empty database. An existing database is adopted
 only with completed Goose version 10, including the earlier baseline and export checkpoint migration,

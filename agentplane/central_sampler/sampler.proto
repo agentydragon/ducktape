@@ -17,6 +17,7 @@ service Sampler {
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   rpc GetCommand(GetCommandRequest) returns (GetCommandResponse);
+  rpc ReadProviderRequest(ReadProviderRequestRequest) returns (stream ReadProviderRequestResponse);
   // Replays durable evidence; follow waits for newly committed entries. No History dependency.
   rpc FollowEvents(FollowEventsRequest) returns (stream FollowEventsResponse);
   rpc Compact(CompactRequest) returns (CompactResponse);
@@ -52,6 +53,24 @@ message GetCommandResponse {
   // Empty until applied, failed, or interrupted; these outcomes are also in the event log.
   CommandOutcome outcome = 2;
   string failure_reason = 3;
+}
+message ReadProviderRequestRequest {
+  string session_id = 1;
+  string request_id = 2;
+}
+message ReadProviderRequestMetadata {
+  string request_id = 1;
+  string context_id = 2;
+  string profile_id = 3;
+  string method = 4;
+  string url = 5;
+  map<string, string> headers = 6;
+}
+message ReadProviderRequestResponse {
+  oneof item {
+    ReadProviderRequestMetadata metadata = 1;
+    bytes body_chunk = 2;
+  }
 }
 message FollowEventsRequest { string session_id = 1; uint64 after_cursor = 2; bool follow = 3; }
 message FollowEventsResponse { agentplane.proto.EventEntry entry = 1; }

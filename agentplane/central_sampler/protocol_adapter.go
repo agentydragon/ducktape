@@ -131,12 +131,12 @@ func (a anthropicAdapter) Prepare(c *Conversation, s *Session, _ *ExecutionState
 	return anthropic.BuildRequest(params, *a.config.AnthropicMessages, anthropic.PreviousMessageID(c.Archive.(*anthropic.Context)))
 }
 
-func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, body any, _ []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
+func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, _ any, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
 	authorization, headers, err := providerAuthorization(connection, attribution)
 	if err != nil {
 		return nil, err
 	}
-	response, err := responses.Sample(ctx, client, connection.BaseURL, authorization, body.(responses.Request), a.config.Responses, evidence, headers, compaction)
+	response, err := responses.Sample(ctx, client, connection.BaseURL, authorization, wire, a.config.Responses, evidence, headers, compaction)
 	if err != nil {
 		return nil, err
 	}

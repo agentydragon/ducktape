@@ -20,8 +20,8 @@ type Schema struct {
 }
 
 // Provider is the Goose provider for the schema on db: a PostgreSQL session lock serializes migrators, and the
-// global registry is disabled so only Files apply.
-func (s Schema) Provider(db *sql.DB) (*goose.Provider, error) {
+// global registry is disabled so only Files and explicitly supplied Go migrations apply.
+func (s Schema) Provider(db *sql.DB, migrations ...*goose.Migration) (*goose.Provider, error) {
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(s.LockID))
 	if err != nil {
 		return nil, err
@@ -31,7 +31,7 @@ func (s Schema) Provider(db *sql.DB) (*goose.Provider, error) {
 		return nil, err
 	}
 	return goose.NewProvider(goose.DialectPostgres, db, files,
-		goose.WithTableName(s.Table), goose.WithSessionLocker(locker), goose.WithDisableGlobalRegistry(true))
+		goose.WithTableName(s.Table), goose.WithSessionLocker(locker), goose.WithDisableGlobalRegistry(true), goose.WithGoMigrations(migrations...))
 }
 
 // Up applies the schema's pending migrations. It is the up function Run takes.

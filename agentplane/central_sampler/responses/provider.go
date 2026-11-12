@@ -199,13 +199,9 @@ func Headers(config Config, compaction bool) map[string]string {
 }
 
 // Sample posts body with the given Authorization value and attribution headers.
-func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, body Request, config Config,
+func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, encoded []byte, config Config,
 	evidence protocol.EvidenceSink, attribution map[string]string, compaction bool,
 ) (*Response, error) {
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/responses", bytes.NewReader(encoded))
 	if err != nil {
 		return nil, err

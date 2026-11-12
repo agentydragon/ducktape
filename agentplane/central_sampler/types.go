@@ -36,6 +36,10 @@ type Conversation struct {
 	ExecutorShell *string
 	// EnvironmentContext is the last model-visible environment context.
 	EnvironmentContext *EnvironmentContext
+	archiveContextID   string
+	activeContextID    string
+	archiveControl     json.RawMessage
+	activeControl      json.RawMessage
 }
 
 func (c *Conversation) Context() protocol.Context {
@@ -190,15 +194,19 @@ type IntentRequest struct {
 // ProviderRequest records a provider call before dispatch. Authentication is deliberately absent:
 // it is committed in the same transaction as the pending intent, before any upstream request.
 type ProviderRequest struct {
-	API           protocol.APIStyle `json:"api"`
-	Connection    string            `json:"connection"`
-	ProviderModel string            `json:"provider_model"`
-	Method        string            `json:"method"`
-	URL           string            `json:"url"`
-	Headers       map[string]string `json:"headers"`
-	// Body and WireRequest are the same outgoing bytes, as JSON and as the exact string sent.
-	Body        json.RawMessage `json:"body"`
-	WireRequest string          `json:"wire_request"`
+	API           protocol.APIStyle  `json:"api"`
+	Connection    string             `json:"connection"`
+	ProviderModel string             `json:"provider_model"`
+	Method        string             `json:"method"`
+	URL           string             `json:"url"`
+	Headers       map[string]string  `json:"headers"`
+	ContextID     string             `json:"context_id,omitempty"`
+	ProfileID     protocol.ContentID `json:"profile_id"`
+	BodySHA256    string             `json:"body_sha256"`
+	BodyLength    int                `json:"body_length"`
+	// The prepared provider object and rendered bytes live only during dispatch.
+	NativeBody any    `json:"-"`
+	WireBody   []byte `json:"-"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested
