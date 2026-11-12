@@ -181,7 +181,7 @@ EVIDENCE_DIR=/tmp/gitlab-spike-benchmark-$RUN_ID
 JOB=gitlab-spike-bench-$RUN_ID
 mkdir -m 700 -p "$EVIDENCE_DIR"
 sha256sum cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh >"$EVIDENCE_DIR/script.sha256"
-kubectl -n gitlab-spike create job --from=cronjob/gitlab-spike-benchmark "$JOB"
+kubectl -n gitlab-spike create job --from=cronjob/benchmark "$JOB"
 kubectl -n gitlab-spike wait --for=condition=complete "job/$JOB" --timeout=30m
 kubectl -n gitlab-spike get job "$JOB" -o yaml >"$EVIDENCE_DIR/job.yaml"
 kubectl -n gitlab-spike get pods -l "job-name=$JOB" -o wide >"$EVIDENCE_DIR/pods.txt"
@@ -334,7 +334,7 @@ ordinals 0, 1, and 2, but verify the live Pod and metadata rather than assuming 
 harness requires the supplied Pod name and storage name to match exactly.
 
 The failure policy is a generated, dormant CiliumNetworkPolicy named
-`gitlab-spike-fault-isolation`. It selects only Gitaly Pods labeled `app=gitaly`,
+`fault-isolation`. It selects only Gitaly Pods labeled `app=gitaly`,
 `release=gitlab-spike`, and `gitlab-spike.ducktape.io/fault=isolated`, and denies all ingress
 and egress. The script validates this policy, the three-ready-replica StatefulSet, the exact
 Praefect primary, the healthy baseline, and successful read-only TCP connections from the
