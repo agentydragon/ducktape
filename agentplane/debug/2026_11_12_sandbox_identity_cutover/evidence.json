@@ -685,5 +685,45 @@
     "tool_turn_completed": false,
     "timeout_seconds": 300,
     "test_sandbox_cleaned": true
+  },
+  "action_caller_ui": {
+    "pr": 15860,
+    "head": "569d33d2c2616ab64dd5b5b82d1d6e51df334c4c",
+    "merge": "abdc5a3d8aacb8390265dccadb6aea6a0b566271",
+    "merged_at": "2026-11-12T11:09:15Z",
+    "pr_ci": {
+      "github_run": 43205872092,
+      "buildbuddy": "5f31e2a2-790c-5dc8-a4b8-4289c1cf6bdf",
+      "result": "success"
+    },
+    "focused_units": "741cec50-2c57-4bf3-8dd5-e5a88c1cdd35",
+    "focused_visuals": {
+      "invocation": "5d0c69e7-adb0-4e5f-acad-a897d5b0e258",
+      "cases": ["audit details desktop", "audit details mobile"],
+      "result": "success",
+      "captures_reviewed": true
+    },
+    "published_visuals": {
+      "review": "success",
+      "diffs": "neutral",
+      "modified": 11,
+      "new": 0,
+      "removed": 0,
+      "unchanged": 918,
+      "unstable": 0
+    },
+    "rollout_status": "Pending post-merge release; serving frontend still predates this merge."
+  },
+  "sandbox_guidance": {
+    "pr": 15844,
+    "head": "3908e706756f73b65e125d9861b9390f53971ccb",
+    "merge": "012f1dccc1051bff8595fdf281b48f2751e1b046",
+    "merged_at": "2026-11-12T11:12:57Z",
+    "pr_ci": {
+      "github_run": 43205342109,
+      "buildbuddy": "d6a34c2d-817b-51a5-9cd2-d8d8f71eb591",
+      "result": "success"
+    },
+    "scope": "Identity and explicit-grant prompt/schema guidance; no authorization change."
   }
 }

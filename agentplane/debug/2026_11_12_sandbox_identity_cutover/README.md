@@ -85,10 +85,11 @@ per-Sandbox ServiceAccount.
 [Broker request ca00e722-ec5b-46a1-a6a5-2e103f2f82d8](https://agentplane-staging.allegedly.works/#/actions/ca00e722-ec5b-46a1-a6a5-2e103f2f82d8)
 requests one disposable `environment-tools` Sandbox, `identity-cutover-broker-5064d58b`, with only
 `basic-identity` and shared diagnostics, plus `list_sessions` for the caller on that exact Sandbox
-UID. It remains pending. The operator tried to review it and reported the frontend caller error. The caller display repair
-is being validated separately.
-Fix the caller presentation, verify its published visuals and rollout, then obtain a real operator
-decision and verify the broker-created Identity/grants/Sandbox. Kubernetes admin credentials are
+UID. It remains pending. The operator tried to review it and reported the frontend caller error. The caller display repair [#15860](https://github.com/agentydragon/ducktape/pull/15860) merged
+as `abdc5a3d8aacb8390265dccadb6aea6a0b566271`. Its final-head code and visual-publication checks passed;
+the desktop/mobile Identity audit captures were inspected. The serving frontend still predates the
+repair while its post-merge release runs. Verify the new frontend is serving, then obtain a real
+operator decision and verify the broker-created Identity/grants/Sandbox. Kubernetes admin credentials are
 not an operator OIDC decision. The parent acceptance Sandbox is stopped with no live Pod or credential while this review is
 blocked; its Identity, grants, retained state and pending request remain. Keep that Identity until
 the request is settled, then remove only the recorded owned acceptance resources and preserve their retained evidence.
@@ -109,3 +110,9 @@ together. The pre-cutover Deployment image tags and Flux artifact snapshot are i
 no rollback was performed.
 The operator's archived-thread waiver does not cover the new acceptance Sessions or unrelated new
 work. Preserve their History and any later user data during a forward repair or reviewed rollback.
+
+The prompt/schema guidance repair [#15844](https://github.com/agentydragon/ducktape/pull/15844)
+merged as `012f1dccc1051bff8595fdf281b48f2751e1b046` after its generated-manifest and final-head
+checks passed. It describes bound Identity credentials and complete explicit launch grants, and
+distinguishes denied Identity lifecycle calls from operator provisioning and approved broker Actions.
+It changes no authorization rule. Serving the updated guidance remains a separate rollout observation.
