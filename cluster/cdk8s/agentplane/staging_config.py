@@ -100,11 +100,12 @@ def preset_role_sets(preset: str) -> list[str]:
 
 
 def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
-    """The assignable sets a `preset` launch binds. In the identity catalog a launch binds only their
-    `PolicySet` halves and the use set of the preset's own Kubernetes account."""
+    """The assignable sets a `preset` launch binds, and the use set of the preset's own Kubernetes
+    account, which its Identity acts as at the API server. In the identity catalog only the sets'
+    `PolicySet` halves remain beside it."""
     sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
     if not identity_catalog:
-        return sets
+        return [*sets, kubernetes_account_ref.account(namespace, preset).credential_name]
     return [
         *(name for name in sets if name in assignable_set_egress_rules()),
         kubernetes_account_ref.account(namespace, preset).credential_name,

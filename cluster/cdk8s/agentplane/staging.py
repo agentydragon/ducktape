@@ -459,7 +459,8 @@ ENV = Environment(
     ),
     app_config=_app_config(identity_catalog=False),
     runtime_catalog=_RUNTIME_CATALOG,
-    default_policy_sets=frozenset(DEFAULT_POLICIES),
+    # Every launch also acts as the shared diagnostics account.
+    default_policy_sets=frozenset(DEFAULT_POLICIES) | {shared_diagnostics(STAGING_NAMESPACE).credential_name},
     # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
     #   removes the ServiceAccount-subject rendering and this switch.
     identity_catalog=False,
@@ -685,19 +686,8 @@ ENV = Environment(
 
 
 def environment(*, identity_catalog: bool) -> Environment:
-    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes. In
-    the identity catalog every launch also holds the shared diagnostics account's use set, the reach
-    `basic` gave it through the Sandbox's own ServiceAccount; Flux bindings name it only explicitly."""
-    return replace(
-        ENV,
-        identity_catalog=identity_catalog,
-        app_config=_app_config(identity_catalog=identity_catalog),
-        default_policy_sets=(
-            ENV.default_policy_sets | {shared_diagnostics(ENV.namespace).credential_name}
-            if identity_catalog
-            else ENV.default_policy_sets
-        ),
-    )
+    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes."""
+    return replace(ENV, identity_catalog=identity_catalog, app_config=_app_config(identity_catalog=identity_catalog))
 
 
 def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
@@ -777,6 +767,15 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     egress_rules = staging_config.assignable_set_egress_rules()
     role_sets: dict[str, KubernetesRoleSet] = {}
     for name, grants in sorted(assignable_sets.items()):
+        # Sandboxes act as Identities and reach the API server only as accounts, which the role
+        # sets grant; in the ServiceAccount catalog the PolicySet keeps its Kubernetes rules for
+        # the ServiceAccount callers that remain until IDENTITY_CUTOVER.
+        role_sets[name] = KubernetesRoleSet(
+            chart,
+            f"kubernetes-role-set-{name}",
+            metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+            rules=agent_access_profiles.role_set_rules_for_grants(grants),
+        )
         if not env.identity_catalog:
             PolicySet(
                 chart,
@@ -784,20 +783,14 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())],
             )
-            continue
-        role_sets[name] = KubernetesRoleSet(
-            chart,
-            f"kubernetes-role-set-{name}",
-            metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-            rules=agent_access_profiles.role_set_rules_for_grants(grants),
-        )
-        if name in egress_rules:
+        elif name in egress_rules:
             PolicySet(
                 chart,
                 f"policy-set-{name}",
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 rules=egress_rules[name],
             )
+    _add_launch_accounts(chart, env, role_sets=role_sets)
     if env.identity_catalog:
         _add_identity_catalog(chart, env, role_sets=role_sets)
     for group in staging_config.INBOX_GROUPS:
@@ -955,8 +948,31 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     return chart
 
 
+def _add_launch_accounts(chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]) -> None:
+    """The accounts a launched Sandbox's Identity acts as at the API server: the shared diagnostics
+    account every launch holds, and one per preset that grants Kubernetes roles (operator,
+    2026-11-09), so each agent has one kubectl identity."""
+    KubernetesAccount(
+        chart,
+        "kubernetes-account-shared-diagnostics",
+        account=shared_diagnostics(env.namespace),
+        policy_namespace=env.namespace,
+        description="Read-only namespace diagnostics every agent may use.",
+        role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
+    )
+    for preset in agent_access_profiles.MANAGED_GRANTS:
+        KubernetesAccount(
+            chart,
+            f"kubernetes-account-{preset}",
+            account=kubernetes_account_ref.account(env.namespace, preset),
+            policy_namespace=env.namespace,
+            description=f"The '{preset}' preset's Kubernetes identity.",
+            role_sets=[role_sets[role_set] for role_set in staging_config.preset_role_sets(preset)],
+        )
+
+
 def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]) -> None:
-    """The standing callers' identities and the shared account `basic` acts as."""
+    """The standing callers' identities and their own Kubernetes accounts."""
     for caller, description in (
         (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
         (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
@@ -968,25 +984,10 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
             metadata=ApiObjectMetadata(name=caller.identity, namespace=env.namespace),
             description=description,
         )
-    KubernetesAccount(
-        chart,
-        "kubernetes-account-shared-diagnostics",
-        account=shared_diagnostics(env.namespace),
-        policy_namespace=env.namespace,
-        description="Read-only namespace diagnostics every agent may use.",
-        role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
-    )
-    # One account per preset that grants Kubernetes roles, and per standing caller with roles of its
-    # own (operator, 2026-11-09), so each agent has one kubectl identity.
+    # Each standing caller with roles of its own has its own account.
     accounts = [
-        *(
-            (preset, f"The '{preset}' preset's Kubernetes identity.", staging_config.preset_role_sets(preset))
-            for preset in agent_access_profiles.MANAGED_GRANTS
-        ),
-        *(
-            (caller.identity, f"The {caller.identity} agent's own Kubernetes identity.", caller_role_sets())
-            for caller in (CLAUDE_AI, HAKU_AGENT)
-        ),
+        (caller.identity, f"The {caller.identity} agent's own Kubernetes identity.", caller_role_sets())
+        for caller in (CLAUDE_AI, HAKU_AGENT)
     ]
     for name, description, names in accounts:
         KubernetesAccount(
