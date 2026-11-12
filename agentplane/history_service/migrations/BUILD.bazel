@@ -14,6 +14,10 @@ go_test(
     size = "medium",
     srcs = glob(["*_test.go"]),
     embed = [":migrations"],
+    embedsrcs = glob(["testdata/legacy_v14/*.sql"]),
     tags = ["requires_docker"],
-    deps = ["//agentplane/testing/postgres"],
+    deps = [
+        "//agentplane/testing/postgres",
+        "@com_github_pressly_goose_v3//:goose",
+    ],
 )
