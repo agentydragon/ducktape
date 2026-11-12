@@ -2945,6 +2945,7 @@ data:
       sampler_accounts:
         - namespace: agentplane-staging
           name: central-sampler
+      sampler_identity_callers: true
       settle_deltas: true
     delegation:
       actor: agentplane-staging/actions

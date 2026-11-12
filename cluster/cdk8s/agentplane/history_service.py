@@ -119,6 +119,7 @@ class HistoryService(Construct):
                 if env.central_sampler is not None
                 else ()
             ),
+            sampler_identity_callers=env.central_sampler is not None,
             settle_deltas=env.settle_deltas,
         )
         content = {
