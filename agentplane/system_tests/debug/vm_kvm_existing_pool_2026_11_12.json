@@ -73,7 +73,8 @@
     },
     "maximum_docker_action_working_set": {
       "timestamp_utc": "2026-11-12T19:29:03Z",
-      "bytes": 5040144121
+      "bytes": 5040144121,
+      "approximate_from_humanized_docker_stats": true
     },
     "memory_psi_delta_us_first_to_last_sample": {
       "some": 607396,
@@ -101,7 +102,6 @@
       "oom_kill": 0,
       "pswpin": 0,
       "pswpout": 0,
-      "root_avail_mib": 223,
       "readyz_http_with_server_type_buildbuddy_executor": 200,
       "docker_containers": ["buildbuddy-kvm-worker-executor"],
       "action_scope_removed_after_exit": true,
@@ -110,14 +110,19 @@
       "vm_uid_stable": "d262d83a-49bc-4dc6-8280-5c89cd66be85",
       "vmi_uid_stable": "898a998f-8025-469a-ba23-e4dcd2ce593a",
       "buildbuddy_avail_human": "54G (df -h rounded)",
-      "root_avail_human": "223M (df -h rounded)"
+      "root_avail_human": "223M (df -h rounded)",
+      "df_h_rounded": {
+        "root_available": "223M",
+        "buildbuddy_available": "54G"
+      }
     },
     "limitations": [
       "The action container started at 19:26:07Z; the first detailed sampler sample was 19:26:29Z.",
       "Sampling paused while adding parent-scope cgroup reads; the gap is recorded above.",
-      "memory.peak on the action Docker scope disappeared when the container exited; the sampled high-water mark is retained in the CSV/transcript.",
+      "memory.peak on the action Docker scope disappeared when the container exited; the sampled high-water mark is retained in the accompanying CSV.",
       "Docker stats is working-set memory; cgroup memory.current/peak includes file cache.",
-      "The guest had no swap configured; guest OOM/swap counters do not include the expected OOM inside the test fixture."
+      "The guest had no swap configured; guest OOM/swap counters do not include the expected OOM inside the test fixture.",
+      "Docker working-set byte values are converted from rounded human-readable docker stats output; cgroup counters are raw integer bytes."
     ],
     "action_cgroup_sample_window_utc": ["2026-11-12T19:28:13Z", "2026-11-12T19:30:39Z"],
     "last_action_cgroup_sample_utc": "2026-11-12T19:30:39Z",
