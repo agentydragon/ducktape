@@ -234,3 +234,33 @@ func testSet(name string, rules int) *policyapi.PolicySet {
 	}
 	return set
 }
+
+func TestIdentityOwnedBindingDoesNotGrantToASameNamedSuccessorBeforeGC(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	index.PutPolicySet(testSet("test-own", 1))
+	original := Identity{Name: "test-agent", UID: "first-identity"}
+	index.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: original.Name, UID: original.UID}})
+	binding := &policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-launcher", OwnerReferences: []metav1.OwnerReference{
+			{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Sandbox", Name: "target", UID: "target-uid"},
+			{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity", Name: original.Name, UID: original.UID},
+		}},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: original.Name}}, PolicySets: []string{"test-own"},
+		},
+	}
+	index.PutBinding(binding)
+	if len(index.Grants(original)) != 1 {
+		t.Fatal("original Identity did not receive its grant")
+	}
+	replacement := Identity{Name: original.Name, UID: "replacement-identity"}
+	index.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: replacement.Name, UID: replacement.UID}})
+	if len(index.Grants(original)) != 0 || len(index.Grants(replacement)) != 0 || len(index.Bindings(replacement)) != 0 {
+		t.Fatal("a retained binding granted after its owning Identity was replaced")
+	}
+	binding.OwnerReferences[1].UID = replacement.UID
+	index.PutBinding(binding)
+	if len(index.Grants(replacement)) != 1 {
+		t.Fatal("an explicit grant to the replacement was not applied")
+	}
+}

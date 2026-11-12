@@ -128,6 +128,7 @@ _API_SERVER_TOKEN_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 # because a preset or an explicit grant refers to the policy by name; each lives with the
 # construct that creates it, so renaming or dropping a policy is a change in one file.
 BASIC_POLICY = "basic"
+BASIC_IDENTITY_POLICY = "basic-identity"
 PACKAGES_POLICY = "packages"
 INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
@@ -346,38 +347,44 @@ def _egress_policies(
         metadata=ApiObjectMetadata(name=PUBLIC_INTERNET_POLICY, namespace=namespace),
         rules=[Rule.egress(hosts=["*"])],
     )
+    basic_action_rules = [
+        # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
+        # effective caller's own authority. The receivers check the caller UID and resource
+        # ownership; this exact list grants no provisioning, broker or unrelated Actions.
+        AutoApproveIf.exact_actions(
+            actions={
+                "environments": ["get", "list", "resume"],
+                "sessions": [
+                    "cancel_input",
+                    "create",
+                    "get",
+                    "interrupt_turn",
+                    "observe_input",
+                    "read_turns",
+                    "submit_input",
+                ],
+            }
+        )
+    ]
+    # In the mixed staging catalog, standing ServiceAccount callers keep the projected-token route
+    # on `basic`. New Sandbox Identities use this action-only sibling and the account-specific use
+    # sets below instead.
+    if projected_kubernetes_token:
+        add_egress_policy(
+            scope,
+            "egresspolicy-basic-identity",
+            metadata=ApiObjectMetadata(name=BASIC_IDENTITY_POLICY, namespace=namespace),
+            rules=basic_action_rules,
+        )
     add_egress_policy(
         scope,
         "egresspolicy-basic",
         metadata=ApiObjectMetadata(name=BASIC_POLICY, namespace=namespace),
         rules=[
-            # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
-            # full names their clients spell.
-            #
-            # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
-            # effective caller's own authority. The receivers check the caller UID and resource
-            # ownership; this exact list grants no provisioning, broker or unrelated Actions.
-            AutoApproveIf.exact_actions(
-                actions={
-                    "environments": ["get", "list", "resume"],
-                    "sessions": [
-                        "cancel_input",
-                        "create",
-                        "get",
-                        "interrupt_turn",
-                        "observe_input",
-                        "read_turns",
-                        "submit_input",
-                    ],
-                }
-            ),
-            # The API server, inside `basic` rather than behind a policy a launch opts into: every
-            # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
-            # caller happened to name a policy. Kubernetes commands carry its placeholder directly;
-            # the proxy substitutes the caller's own projected token, which only a command box
-            # running as its caller carries: a Sandbox has no ServiceAccount, so this rule gives it
-            # nothing. Without `projected_kubernetes_token`, an agent reaches the API server only as
-            # an account whose use set it holds (`kubernetes_account_rule`).
+            *basic_action_rules,
+            # Standing ServiceAccount callers may send their own token with the placeholder. A
+            # Sandbox Identity has no projected token and uses an account-specific use set instead;
+            # its preset selects `basic-identity`, not this legacy route.
             #
             # No method or path list: what a box may read or write is the API server's answer
             # for its caller's ServiceAccount, and narrowing verbs here would be a second, weaker copy

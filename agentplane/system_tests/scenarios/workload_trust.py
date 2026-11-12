@@ -22,12 +22,11 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
-import yaml
-
 from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.tls import service_root_certificates
@@ -308,10 +307,8 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
     ]
     # Kubelet holds the Pod until the Secret exists, which needs the URI the controller allocates.
     pod["volumes"].append({"name": "impostor-leaf", "secret": {"secretName": name}})
-    gateway_settings = yaml.safe_load(
-        (await _object(cluster, "configmap", "runner-gateway-settings"))["data"]["settings.yaml"]
-    )
     async with contextlib.AsyncExitStack() as cleanup:
+        identity = await cleanup.enter_async_context(scenario_identity(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS)))
         await cluster.kubectl(
             "create",
             "-f",
@@ -344,11 +341,7 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
                 "metadata": {"name": name, "namespace": cluster.namespace},
-                "spec": {
-                    "template": name,
-                    "running": True,
-                    "policySets": gateway_settings["environment_default_policy_sets"],
-                },
+                "spec": {"template": name, "running": True, "identity": {"name": identity}},
             },
         )
         cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")

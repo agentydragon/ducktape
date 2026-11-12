@@ -22,6 +22,7 @@ from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
     environment_sandbox,
+    kubernetes_account_ref,
     llm_ingress,
     notifications,
     runner_gateway,
@@ -31,6 +32,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.egress import (
     ADMIN_GRPC_AUDIENCE,
+    BASIC_IDENTITY_POLICY,
     BASIC_POLICY,
     DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -42,7 +44,7 @@ from cluster.cdk8s.agentplane.egress import (
     Egress,
     admin,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
+from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
@@ -208,8 +210,8 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
         }
     ]
 
-    # `basic` is both a fleet default and explicitly held by the static MCP/workload principals;
-    # ordinary preset choices can replace other policies but still include it.
+    # `basic` stays on the standing ServiceAccount bindings. New Identity launches get the sibling
+    # without its projected-token Kubernetes route while retaining the same Action approval.
     assert BASIC_POLICY in _environment_default_policies(catalog_manifests)
     for account in ("claude-ai", "haku-agent"):
         binding = _by_name(catalog_manifests, "PolicyBinding", account)
@@ -217,7 +219,7 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
     app_config = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["sandbox_presets"]
     for preset in app_config["sandbox_presets"].values():
-        assert BASIC_POLICY in preset["policy_sets"]
+        assert (BASIC_IDENTITY_POLICY in preset["policy_sets"]) != (BASIC_POLICY in preset["policy_sets"])
 
 
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
@@ -242,22 +244,10 @@ def test_public_internet_is_available_but_never_implicitly_granted(catalog_manif
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
-def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:
-    """Every agent talks to the API server, so the rule admitting it is in `basic`.
-
-    `basic` is the policy every launch is granted before the caller picks anything
-    (`SandboxAccess`, agentplane/app/sandbox_access.py), which is what makes
-    Kubernetes access a property of a caller rather than a choice one. The credential description
-    tells the agent which API server to use and that the proxy substitutes the caller's own
-    projected token, which only a command box running as its caller carries.
-
-    What makes it legitimate as an unconditional grant is what gets substituted. A default is the
-    one grant a caller cannot decline, so it may only ever substitute the caller's own identity;
-    this credential is that Pod's ServiceAccount projected for the API server's audience, and a
-    `secretRef` source here would hand an operator's credential to every caller in the namespace.
-    What a box may then do is the RBAC bound to its account, the only axis this narrows -- which
-    is why the rule names neither methods nor paths.
-    """
+def test_legacy_basic_keeps_projected_token_route_out_of_identity_defaults(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    """Standing ServiceAccount callers retain `basic`; Sandbox Identity launches use account policies."""
     basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
     api_server = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule.get("hosts", []))
     assert api_server.get("credentialRef") == {"name": KUBERNETES_CREDENTIAL}, api_server
@@ -275,9 +265,14 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     assert "secretRef" not in source, "a default may substitute a sandbox's own credential, never an operator's"
     assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source
 
-    # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
-    defaults = _environment_default_policies(staging_manifests)
-    assert BASIC_POLICY in defaults, defaults
+    app_config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert BASIC_POLICY in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
+    assert all(BASIC_IDENTITY_POLICY in spec["policy_sets"] for spec in app_config["sandbox_presets"].values())
+    assert all(BASIC_POLICY not in spec["policy_sets"] for spec in app_config["sandbox_presets"].values())
+    identity_basic = _by_name(staging_manifests, "PolicySet", BASIC_IDENTITY_POLICY)
+    assert identity_basic["spec"]["rules"] == [
+        rule for rule in basic["spec"]["rules"] if rule["type"] == "action_auto_approve"
+    ]
 
 
 def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: list[dict[str, Any]]) -> None:
@@ -464,9 +459,68 @@ def test_haku_launches_on_an_available_central_sampler_route(catalog_manifests: 
     assert "central_sampler" not in action_spec
 
 
-def _kubernetes_grants(policy_sets: list[str]) -> set[str]:
-    """The launch grants a preset's Kubernetes PolicySets hold."""
-    return {grant for name in policy_sets for grant in agent_access_profiles.POLICY_SETS.get(name, ())}
+def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_grants(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    """New Sandbox Identities use account egress, while their existing account grants retain preset RBAC."""
+    config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    policies = {
+        doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifests if doc["kind"] == "PolicySet"
+    }
+    account_grants = {
+        (grant["spec"]["serviceAccount"]["namespace"], grant["spec"]["serviceAccount"]["name"]): set(
+            grant["spec"]["roleSets"]
+        )
+        for grant in staging_manifests
+        if grant["kind"] == "ServiceAccountGrant"
+    }
+
+    for preset, spec in config["sandbox_presets"].items():
+        launch_policies = set(spec["policy_sets"])
+        assert BASIC_IDENTITY_POLICY in launch_policies, preset
+        assert BASIC_POLICY not in launch_policies, preset
+        assert shared_diagnostics(staging.ENV.namespace).credential_name in launch_policies, preset
+        assert all(not rule["type"].startswith("kubernetes_") for name in launch_policies for rule in policies[name]), (
+            preset
+        )
+        assert all(
+            rule.get("credentialRef", {}).get("name") != KUBERNETES_CREDENTIAL
+            for name in launch_policies
+            for rule in policies[name]
+        ), preset
+
+    public_role_sets = {"shared-diagnostics", "public-inventory", "cluster-diagnostics"}
+    expected_role_sets = {
+        "public-coder": public_role_sets,
+        "finance-agent": public_role_sets
+        | {
+            agent_access_profiles.COINBASE_POLICY,
+            "spend-policy-config",
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+        },
+        "haku": {
+            "shared-diagnostics",
+            "haku-sandbox-write",
+            "cluster-diagnostics",
+            agent_access_profiles.COINBASE_POLICY,
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+        },
+    }
+    for preset in ("public-coder", "finance-agent", "haku"):
+        ref = kubernetes_account_ref.account(staging.ENV.namespace, preset)
+        assert ref.credential_name in config["sandbox_presets"][preset]["policy_sets"]
+        assert account_grants[(ref.namespace, ref.name)] == expected_role_sets[preset]
+
+    for preset in ("finance-agent", "haku"):
+        launch_policies = config["sandbox_presets"][preset]["policy_sets"]
+        assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in launch_policies
+        assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in launch_policies
+    for name in (agent_access_profiles.COINBASE_POLICY, agent_access_profiles.PLAID_DIAGNOSTICS_POLICY):
+        assert any(rule["type"].startswith("kubernetes_") for rule in policies[name])
+        identity_rules = policies[f"{name}-identity"]
+        assert identity_rules
+        assert all(not rule["type"].startswith("kubernetes_") for rule in identity_rules)
+        assert identity_rules == [rule for rule in policies[name] if rule["type"] == "egress"]
 
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
@@ -477,22 +531,38 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     assert "kubernetes_grants" not in config
     grant_models = staging_grants.catalog(staging.ENV.namespace)
     catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
-    selected = _kubernetes_grants(config["sandbox_presets"][preset]["policy_sets"])
+    account_grants = {
+        grant["spec"]["serviceAccount"]["name"]: set(grant["spec"]["roleSets"])
+        for grant in staging_manifests
+        if grant["kind"] == "ServiceAccountGrant"
+    }
+    selected_role_sets = account_grants[preset]
+    selected = {
+        grant for role_set in selected_role_sets for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
+    }
+    public_selected = {
+        grant
+        for role_set in account_grants["public-coder"]
+        for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
+    }
     credential_grants = (
         {"coinbase-credentials", "spend-policy-config", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
         if preset == "finance-agent"
         else set()
     )
-    # Coinbase bundles the Secret grant and GET egress; only explicitly selected callers get it.
-    assert (agent_access_profiles.COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (
-        preset == "finance-agent"
-    )
-    assert selected == _kubernetes_grants(config["sandbox_presets"]["public-coder"]["policy_sets"]) | credential_grants
+    # Coinbase and Plaid keep their GET egress in the Identity policy sibling; their Kubernetes
+    # permissions are provisioned on the preset account.
+    assert (
+        f"{agent_access_profiles.COINBASE_POLICY}-identity" in config["sandbox_presets"][preset]["policy_sets"]
+    ) == (preset == "finance-agent")
+    assert selected == public_selected | credential_grants
     assert "cluster-diagnostics" in selected
     haku_policy_sets = config["sandbox_presets"]["haku"]["policy_sets"]
-    haku = _kubernetes_grants(haku_policy_sets)
+    haku = {
+        grant for role_set in account_grants["haku"] for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
+    }
     assert "cluster-diagnostics" in haku
-    assert agent_access_profiles.COINBASE_POLICY in haku_policy_sets
+    assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in haku_policy_sets
     assert (
         agent_access_profiles.COINBASE_POLICY
         in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
@@ -500,9 +570,6 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     assert (
         agent_access_profiles.COINBASE_POLICY
         in _by_name(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    )
-    assert not any(
-        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "coinbase-credentials" for doc in staging_manifests
     )
     coinbase_rules = _by_name(staging_manifests, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"]["rules"]
     assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
@@ -516,7 +583,11 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     assert egress_rule["methods"] == ["GET"]
     assert "paths" not in egress_rule
     assert "credentialRef" not in egress_rule
-    assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in haku_policy_sets
+    coinbase_identity_rules = _by_name(
+        staging_manifests, "PolicySet", f"{agent_access_profiles.COINBASE_POLICY}-identity"
+    )["spec"]["rules"]
+    assert coinbase_identity_rules == [egress_rule]
+    assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in haku_policy_sets
     assert (
         agent_access_profiles.PLAID_DIAGNOSTICS_POLICY
         in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
@@ -525,9 +596,13 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
         agent_access_profiles.PLAID_DIAGNOSTICS_POLICY
         in _by_name(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     )
-    assert not any(
-        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == PLAID_PGWEB_CREDENTIAL for doc in staging_manifests
-    )
+    plaid_rules = _by_name(staging_manifests, "PolicySet", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY)["spec"][
+        "rules"
+    ]
+    plaid_identity_rules = _by_name(
+        staging_manifests, "PolicySet", f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
+    )["spec"]["rules"]
+    assert plaid_identity_rules == [rule for rule in plaid_rules if rule["type"] == "egress"]
     assert (
         set(haku) - set(selected)
         == {"haku-sandbox-write", "coinbase-credentials", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}

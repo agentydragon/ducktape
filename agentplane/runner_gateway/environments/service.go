@@ -44,7 +44,6 @@ type Service struct {
 	readers                sets.Set[auth.Account]
 	managers               sets.Set[auth.Account]
 	launchers              sets.Set[auth.Account]
-	defaultPolicySets      []string
 	identityChanges        IdentityChangeGuard
 	collectionAuthInterval time.Duration
 }
@@ -67,7 +66,7 @@ func New(
 	return &Service{
 		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
 		lifecycle: lifecycleManager, readers: readers, managers: management.Managers,
-		launchers: management.Launchers, defaultPolicySets: slices.Clone(management.DefaultPolicySets),
+		launchers:              management.Launchers,
 		identityChanges:        management.IdentityChanges,
 		collectionAuthInterval: auth.DefaultVerdictTTL,
 	}, nil
@@ -75,10 +74,9 @@ func New(
 
 // ManagementOptions grants mutation authority independently of inventory and resume grants.
 type ManagementOptions struct {
-	Managers          sets.Set[auth.Account]
-	Launchers         sets.Set[auth.Account]
-	DefaultPolicySets []string
-	IdentityChanges   IdentityChangeGuard
+	Managers        sets.Set[auth.Account]
+	Launchers       sets.Set[auth.Account]
+	IdentityChanges IdentityChangeGuard
 }
 
 // IdentityChangeGuard serializes a Sandbox patch with Dispatcher Session admission and rejects

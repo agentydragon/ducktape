@@ -117,10 +117,37 @@ async def _submit(
     *,
     child_answers: dict[str, str],
     guidance_marker: str,
-    caller_namespace: str,
-    caller_name: str,
-    caller_uid: str,
+    caller_identity_name: str,
+    caller_identity_uid: str,
 ) -> dict[str, Any]:
+    receipt = await _submit_receipt(
+        agent,
+        model,
+        group,
+        action,
+        arguments,
+        child_answers=child_answers,
+        guidance_marker=guidance_marker,
+        caller_identity_name=caller_identity_name,
+        caller_identity_uid=caller_identity_uid,
+    )
+    assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
+    assert receipt.HasField("execution")
+    return json_format.MessageToDict(receipt.execution.result)
+
+
+async def _submit_receipt(
+    agent: Agent,
+    model: ScriptedModel[Any],
+    group: str,
+    action: str,
+    arguments: dict[str, Any],
+    *,
+    child_answers: dict[str, str],
+    guidance_marker: str,
+    caller_identity_name: str,
+    caller_identity_uid: str,
+) -> action_service_pb2.ActionRequest:
     output = await _run_parent_cli(
         agent,
         model,
@@ -129,15 +156,14 @@ async def _submit(
         guidance_marker=guidance_marker,
     )
     receipt = _receipt(output)
-    assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.action.group == group
     assert receipt.action.name == action
-    assert receipt.caller.namespace == caller_namespace
-    assert receipt.caller.name == caller_name
-    assert receipt.HasField("caller_uid")
-    assert receipt.caller_uid == caller_uid
-    assert receipt.HasField("execution")
-    return json_format.MessageToDict(receipt.execution.result)
+    assert receipt.HasField("caller_identity")
+    assert receipt.caller_identity.name == caller_identity_name
+    assert receipt.caller_identity.uid == caller_identity_uid
+    assert not receipt.HasField("caller")
+    assert not receipt.HasField("caller_uid")
+    return receipt
 
 
 @pytest.mark.scripted_model
@@ -154,12 +180,10 @@ async def test_parent_session_delegates_through_the_action_cli(
     parent_view = await sandbox("systest-parent-delegation")
     assert parent_view.kubernetes_diagnostics.HasField("pod")
     await policy_objects.ensure_basic_binding(parent_view)
-    service_account = json.loads(
-        await cluster.kubectl("get", "serviceaccount", parent_view.execution_account.account.name, "-o", "json")
-    )
-    caller_uid = service_account["metadata"]["uid"]
-    caller_namespace = parent_view.execution_account.account.namespace
-    caller_name = parent_view.execution_account.account.name
+    caller_identity_name = parent_view.identity_name
+    assert caller_identity_name
+    identity = json.loads(await cluster.kubectl("get", "identity", caller_identity_name, "-o", "json"))
+    caller_identity_uid = identity["metadata"]["uid"]
 
     parent = await Agent.create(
         client,
@@ -204,44 +228,15 @@ async def test_parent_session_delegates_through_the_action_cli(
     assert listed_action["name"] == "list"
     assert "limit" in listed_action["inputSchema"]["properties"]
 
-    page = await _submit(
-        parent,
-        model,
-        "environments",
-        "list",
-        {"limit": 100},
-        child_answers=child_answers,
-        guidance_marker=guidance_marker,
-        caller_namespace=caller_namespace,
-        caller_name=caller_name,
-        caller_uid=caller_uid,
+    # Environment discovery is an operator lifecycle API. The parent Identity uses only
+    # the Session actions below after the operator provisions its child.
+    current = json_format.MessageToDict(
+        await client.get_environment(parent_view.target), preserving_proto_field_name=True
     )
-    items = page["items"]
-    descriptor = one(
-        item
-        for item in items
-        if item["target"]["namespace"] == parent_view.target.namespace
-        and item["target"]["name"] == parent_view.target.name
-        and item["target"]["uid"] == str(parent_view.target.uid)
-    )
-    target = descriptor["target"]
-
-    current = await _submit(
-        parent,
-        model,
-        "environments",
-        "get",
-        {"target": target},
-        child_answers=child_answers,
-        guidance_marker=guidance_marker,
-        caller_namespace=caller_namespace,
-        caller_name=caller_name,
-        caller_uid=caller_uid,
-    )
-    execution_account = current["execution_account"]
-    assert execution_account["account"]["namespace"] == caller_namespace
-    assert execution_account["account"]["name"] == caller_name
-    assert execution_account["uid"] == caller_uid
+    target = current["target"]
+    assert identity["metadata"]["name"] == caller_identity_name
+    assert identity["metadata"]["uid"] == caller_identity_uid
+    assert current["identity_name"] == caller_identity_name
     assert current["observed_state"]["readiness"]["state"] == "READINESS_STATE_READY"
     configuration_group = current["configuration"]
     workspace = configuration_group["workspace"]
@@ -249,17 +244,18 @@ async def test_parent_session_delegates_through_the_action_cli(
     configuration = one(
         choice for choice in configuration_group["configurations"] if choice["harness"] == "HARNESS_CODEX"
     )
-    reasoning_effort = next(effort for effort in configuration["reasoning_efforts"] if effort)
+    reasoning_effort = "low"
+    assert reasoning_effort in configuration["reasoning_efforts"]
 
-    session_id = str(uuid4())
-    opened = await _submit(
+    denied_session_id = str(uuid4())
+    denied = await _submit_receipt(
         parent,
         model,
         "sessions",
         "create",
         {
             "target": target,
-            "session_id": session_id,
+            "session_id": denied_session_id,
             "spec": {
                 "harness": configuration["harness"],
                 "model": configuration["model"],
@@ -270,11 +266,53 @@ async def test_parent_session_delegates_through_the_action_cli(
         },
         child_answers=child_answers,
         guidance_marker=guidance_marker,
-        caller_namespace=caller_namespace,
-        caller_name=caller_name,
-        caller_uid=caller_uid,
+        caller_identity_name=caller_identity_name,
+        caller_identity_uid=caller_identity_uid,
     )
-    assert opened["session"]["session_id"] == session_id
+    assert denied.state == action_service_pb2.ACTION_STATE_FAILED, denied
+    assert denied.HasField("execution")
+    assert denied.execution.error.kind == action_service_pb2.EXECUTION_ERROR_KIND_BACKEND_REFUSED
+
+    absent = await _submit(
+        parent,
+        model,
+        "sessions",
+        "get",
+        {"session_id": denied_session_id},
+        child_answers=child_answers,
+        guidance_marker=guidance_marker,
+        caller_identity_name=caller_identity_name,
+        caller_identity_uid=caller_identity_uid,
+    )
+    assert absent["session"]["kind"] == "not_observed"
+    assert absent["history"]["kind"] == "not_observed"
+
+    child = await Agent.create(
+        client,
+        dispatcher,
+        sandbox=parent_view.target.name,
+        sandbox_uid=parent_view.target.uid,
+        harness=session_pb2.HARNESS_CODEX,
+        model=configuration["model"],
+        cwd=f"{workspace['root'].rstrip('/')}/parent-delegated-{uuid4()}",
+        instructions=guidance_marker,
+    )
+    session_id = str(child.thread_id)
+
+    existing = await _submit(
+        parent,
+        model,
+        "sessions",
+        "get",
+        {"session_id": session_id},
+        child_answers=child_answers,
+        guidance_marker=guidance_marker,
+        caller_identity_name=caller_identity_name,
+        caller_identity_uid=caller_identity_uid,
+    )
+    assert existing["session_id"] == session_id
+    assert existing["session"]["kind"] == "observed"
+    assert existing["session"]["value"]["identity"] == {"name": caller_identity_name, "uid": caller_identity_uid}
 
     before_input = await _submit(
         parent,
@@ -284,9 +322,8 @@ async def test_parent_session_delegates_through_the_action_cli(
         {"session_id": session_id, "count": 10},
         child_answers=child_answers,
         guidance_marker=guidance_marker,
-        caller_namespace=caller_namespace,
-        caller_name=caller_name,
-        caller_uid=caller_uid,
+        caller_identity_name=caller_identity_name,
+        caller_identity_uid=caller_identity_uid,
     )
     assert before_input["session_id"] == session_id
     assert before_input["source"] == "history"
@@ -309,9 +346,8 @@ async def test_parent_session_delegates_through_the_action_cli(
             {"target": target, "session_id": session_id, "command_id": str(uuid4()), "text": child_input},
             child_answers=child_answers,
             guidance_marker=guidance_marker,
-            caller_namespace=caller_namespace,
-            caller_name=caller_name,
-            caller_uid=caller_uid,
+            caller_identity_name=caller_identity_name,
+            caller_identity_uid=caller_identity_uid,
         )
         assert submitted["dispatch"]["session_id"] == session_id
 
@@ -323,9 +359,8 @@ async def test_parent_session_delegates_through_the_action_cli(
             {"session_id": session_id, "command_id": _last_command_id(submitted), "wait_seconds": 30},
             child_answers=child_answers,
             guidance_marker=guidance_marker,
-            caller_namespace=caller_namespace,
-            caller_name=caller_name,
-            caller_uid=caller_uid,
+            caller_identity_name=caller_identity_name,
+            caller_identity_uid=caller_identity_uid,
         )
         assert observation["observation"]["kind"] == "turn_completed", observation["observation"]
         assert observation["observation"]["turn"]["final_assistant_message"] == answer
@@ -339,9 +374,8 @@ async def test_parent_session_delegates_through_the_action_cli(
             {"session_id": session_id},
             child_answers=child_answers,
             guidance_marker=guidance_marker,
-            caller_namespace=caller_namespace,
-            caller_name=caller_name,
-            caller_uid=caller_uid,
+            caller_identity_name=caller_identity_name,
+            caller_identity_uid=caller_identity_uid,
         )
         assert snapshot["session_id"] == session_id
         assert snapshot["session"]["kind"] == "observed"
@@ -355,9 +389,8 @@ async def test_parent_session_delegates_through_the_action_cli(
             {"session_id": session_id, "count": 10},
             child_answers=child_answers,
             guidance_marker=guidance_marker,
-            caller_namespace=caller_namespace,
-            caller_name=caller_name,
-            caller_uid=caller_uid,
+            caller_identity_name=caller_identity_name,
+            caller_identity_uid=caller_identity_uid,
         )
         assert page["session_id"] == session_id
         assert page["source"] == "history"

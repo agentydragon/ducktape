@@ -71,7 +71,10 @@ question 11).
 exact Identity incarnation (name and UID, `NOT_FOUND` for another or a deleting one). The binding's
 subject is the Identity and it carries a non-controller owner reference to the Identity's UID, so
 `DeleteIdentity` does not count it and garbage collection removes it with the Identity; a later
-Identity of the same name inherits none of its grants.
+Identity of the same name inherits none of its grants. The shared policy reader checks the
+Identity owner UID as well as the caller UID, so this remains true before garbage collection
+and when another owner retains the binding. A declarative binding without an Identity owner
+continues to follow its subject name.
 
 `PolicyService.DeleteIdentity`, behind the same writer allowlist, deletes one Identity by name and
 observed UID with UID and resourceVersion preconditions; garbage collection then removes what the

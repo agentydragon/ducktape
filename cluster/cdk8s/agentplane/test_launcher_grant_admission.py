@@ -133,11 +133,41 @@ async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_cha
                     assert not await admitted(action_service, _without(policy_set, ("metadata", "ownerReferences")))
             assert await admitted(action_service, policy_set)
             assert await admitted(action_service, policy_binding)
+            caller_owner = {
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "Identity",
+                "name": "test-caller",
+                "uid": "efcf0bca-1bc7-4668-af7c-389ed128234a",
+            }
+            identity_binding = _with(policy_binding, ("spec", "subject"), {"identity": {"name": "test-caller"}})
+            identity_binding = _with(
+                identity_binding, ("metadata", "ownerReferences"), [_owner(launched), caller_owner]
+            )
+            assert await admitted(action_service, identity_binding)
+            identity_grant = _object(
+                "PolicyBinding",
+                "test-caller.identity",
+                {"subject": {"identity": {"name": "test-caller"}}, "policySets": ["test-default"]},
+                [caller_owner],
+            )
+            assert await admitted(action_service, identity_grant)
 
             other = {"name": "test-other", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
             owners = ("metadata", "ownerReferences")
             denied = {
                 "an unowned grant": _without(policy_set, owners),
+                "an Identity launcher grant without its Identity owner": _with(
+                    identity_binding, owners, [_owner(launched)]
+                ),
+                "an Identity launcher grant owned by another Identity": _with(
+                    identity_binding, (*owners, 1, "name"), "test-another-caller"
+                ),
+                "an Identity launcher grant owned by another kind": _with(
+                    identity_binding, (*owners, 1, "kind"), "ServiceAccount"
+                ),
+                "an Identity launcher grant with an extra owner": _with(
+                    identity_binding, owners, [_owner(launched), caller_owner, {**_owner(launched), **other}]
+                ),
                 "a grant owned by two Sandboxes": _with(
                     policy_set, owners, [_owner(launched), {**_owner(launched), **other}]
                 ),

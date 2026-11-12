@@ -1,7 +1,7 @@
 # Sandbox Controller
 
-Reconciles `Sandbox` into retained state and optional workspace PVCs, its own ServiceAccount and
-`PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
+Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
+`Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
 status. Each runner serves mTLS on its workload network, and the Runner Gateway connects to the
@@ -38,21 +38,22 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   generates the controller-gen deep-copy methods; build `//agentplane/sandboxes/api:deepcopy` to
   check them directly. The pinned upstream `controller-gen` binary and Go SDK run with declared
   Bazel inputs, so no generated Go file is committed.
-- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its Pods, VMI and
-  state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
+- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its ConfigMap,
+  Service and WorkloadCredential, its Pods, VMI and state PVC (by the Sandbox label), and the
+  templates and Identity it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
 - [`environment_runtime_credential.go`](environment_runtime_credential.go): the WorkloadCredential
   request, incarnation binding and credential mounts.
 - [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
-- [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
-  conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
+- [`identity.go`](identity.go): the live `Identity` gate and the credential subject each workload
+  incarnation keeps.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
-  Services and the other kinds it creates or watches), the namespace's WorkloadCredentials, Pod Events
-  and the Gateway's connection Leases. RBAC cannot select by label, so the Role still grants
-  `list`/`watch` on those kinds.
+  Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the
+  namespace, Pod Events and the Gateway's connection Leases. RBAC cannot select by label, so the Role
+  still grants `list`/`watch` on those kinds.
 
 Ordinary child resources use narrow server-side apply updates after an uncached ownership
 check. Creation is exclusive, so a same-name collision cannot adopt a foreign resource. PVCs
@@ -113,9 +114,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
-- **No Pod waits on its `PolicyBinding`'s readers.** Every reader fails closed, so a grant applied
-  after the Pod starts only refuses its first requests, as for a running Pod whose PolicySets
-  change; a gate would make every Sandbox depend on every reader, optional ones included.
+- **No Pod waits on its Identity's bindings' readers.** Every reader fails closed, so a grant applied
+  after the Pod starts only refuses its first requests, as for a running Pod whose
+  Identity's grants change; a gate would make every Sandbox depend on every reader, optional ones included.
 - **Gotcha:** agent-sandbox's `Sandbox`, which the cluster installs for other workloads, makes
   `kubectl get sandboxes` resolve to either kind; name ours as `sandboxes.agentplane.allegedly.works`.
 - Unit tests drive `Reconcile` against controller-runtime's fake client. The child-resource

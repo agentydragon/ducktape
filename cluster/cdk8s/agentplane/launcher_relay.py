@@ -9,10 +9,11 @@ The tokens are mounted into the relay and nowhere else in the Pod, and the guest
 VirtualMachine's template carries the runner Pods' labels, which KubeVirt copies onto the launcher, so
 the runner fence and the platform-route rules apply to it unchanged.
 
-The relay runs as the Sandbox's own ServiceAccount, so the egress proxy grants it what that account's
-PolicyBinding grants. The policy admits a launcher only when KubeVirt's controller creates it for a live
-VMI of a live VirtualMachine controlled by one of our Sandboxes, and that same Sandbox controls the
-ServiceAccount.
+The launcher runs as the namespace's default account with no token: the relay authenticates with the
+Sandbox's WorkloadCredential, as the Identity the Sandbox acts as, and the egress proxy grants it what that
+Identity's bindings grant. The policy admits a launcher only when KubeVirt's controller creates it for a
+live VMI of a live VirtualMachine controlled by one of our Sandboxes, whose WorkloadCredential has
+accepted that VMI.
 
 The relay is a native sidecar so the guest can flush telemetry until compute exits. It starts
 after KubeVirt's existing initializers, alongside the filesystem daemons below.
@@ -96,8 +97,7 @@ def _controller(kind: str, api_version: str) -> str:
 
 
 def _context() -> list[ClusterPolicySpecRulesContext]:
-    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential and ServiceAccount,
-    each read live."""
+    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential, each read live."""
     return [
         ClusterPolicySpecRulesContext(
             name="vmiOwner",
@@ -151,12 +151,6 @@ def _context() -> list[ClusterPolicySpecRulesContext]:
             name="credentialOwner",
             variable=ClusterPolicySpecRulesContextVariable(
                 jmes_path=f"credential.{_controller('Sandbox', _SANDBOX_API_VERSION)}", default={}
-            ),
-        ),
-        ClusterPolicySpecRulesContext(
-            name="account",
-            api_call=ClusterPolicySpecRulesContextApiCall(
-                url_path="/api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}"
             ),
         ),
     ]
@@ -318,17 +312,13 @@ class LauncherRelayPolicy(ClusterPolicy):
                     validate=Validate.deny(
                         message=(
                             "A launcher must be created by KubeVirt for a live VirtualMachine controlled by a "
-                            "Sandbox, which also controls the ServiceAccount of the same name."
+                            "live Sandbox whose WorkloadCredential accepted its VMI."
                         ),
                         conditions={
                             "any": [
                                 _mismatch("request.userInfo.username", CONTROLLER_USERNAME),
                                 _mismatch("vmiOwner.uid", "{{vmi.metadata.uid}}"),
                                 _mismatch("vmOwner.uid", "{{vm.metadata.uid}}"),
-                                _mismatch(
-                                    "sandbox.uid || ''",
-                                    f"{{{{account.{_controller('Sandbox', _SANDBOX_API_VERSION)}.uid || 'none'}}}}",
-                                ),
                                 *relay_only,
                                 *runner_tls_checks,
                                 # The guest gets no Kubernetes token of its own.
@@ -344,7 +334,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                     mutate=ClusterPolicySpecRulesMutate(
                         patch_strategic_merge={
                             "spec": {
-                                "serviceAccountName": "{{account.metadata.name}}",
+                                "serviceAccountName": "default",
                                 "automountServiceAccountToken": False,
                                 **pull_secrets,
                                 # The subsequent daemon move appends without disturbing existing init order.
@@ -493,7 +483,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                         message="The launcher must have exactly one native relay init sidecar.",
                         conditions={
                             "any": [
-                                _mismatch("request.object.spec.serviceAccountName", "{{account.metadata.name}}"),
+                                _mismatch("request.object.spec.serviceAccountName", "default"),
                                 _mismatch("request.object.spec.automountServiceAccountToken", False),
                                 _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 0),
                                 _mismatch(f"length(request.object.spec.initContainers[?name=='{relay['name']}'])", 1),

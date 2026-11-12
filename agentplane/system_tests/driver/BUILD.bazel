@@ -241,6 +241,7 @@ py_library(
     srcs = ["central_sampler.py"],
     deps = [
         ":cluster",
+        ":identity",
         ":tls",
         ":tracing",
         "//agentplane:crd_group",
@@ -254,7 +255,6 @@ py_library(
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -302,6 +302,7 @@ py_library(
     srcs = ["sandbox.py"],
     deps = [
         ":cluster",
+        ":identity",
         ":tracing",
         "//agentplane:crd_group",
         "//agentplane/app/testing:client",
@@ -310,6 +311,7 @@ py_library(
         "//agentplane/system_tests/vm:boot_rcu",
         "//agentplane/system_tests/vm:launcher_topology",
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
     ],
@@ -481,6 +483,7 @@ py_library(
         ":tls",
         "//agentplane/egress:egress_admin_pb2",
         "//agentplane/egress:egress_admin_pb2_grpc",
+        "//agentplane/egress:egress_rules_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/proto:identity_pb2",
         "@pypi//grpcio",
@@ -496,5 +499,15 @@ py_library(
     deps = [
         ":cluster",
         "@pypi//grpcio",
+    ],
+)
+
+py_library(
+    name = "identity",
+    srcs = ["identity.py"],
+    deps = [
+        ":cluster",
+        "//agentplane:crd_group",
+        "@pypi//kubernetes_asyncio",
     ],
 )

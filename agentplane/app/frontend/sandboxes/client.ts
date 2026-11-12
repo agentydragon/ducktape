@@ -2,6 +2,7 @@ import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
 import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import { fetchJson, HttpError } from "../client";
+import { createIdentity, deleteIdentity, grantIdentityPolicyBinding } from "../identities/client";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   CreateEnvironmentRequestSchema,
@@ -146,6 +147,33 @@ export async function createEnvironment(request: CreateEnvironmentRequest): Prom
   if (!target.namespace || !target.uid || target.name !== request.name)
     throw new Error("EnvironmentService returned an invalid created target");
   return target;
+}
+
+/**
+ * Launches a Sandbox as three operations: the Identity it acts as, that Identity's PolicySets, then
+ * the Sandbox naming it. If a step is refused, the Identity is deleted, and with it its grant; a
+ * failure whose outcome is unknown leaves it for the Identities page.
+ */
+export async function launchEnvironment(
+  request: CreateEnvironmentRequest,
+  policySets: string[]
+): Promise<EnvironmentTarget> {
+  const identity = await createIdentity(request.name, `Agent of Sandbox ${request.name}, launched from the app.`);
+  try {
+    if (policySets.length > 0) await grantIdentityPolicyBinding(identity, policySets);
+    return await createEnvironment({ ...request, identity: request.name });
+  } catch (failure) {
+    if (
+      failure instanceof HttpError &&
+      failure.status >= 400 &&
+      failure.status < 500 &&
+      failure.status !== 408 &&
+      failure.status !== 429
+    ) {
+      await deleteIdentity(identity);
+    }
+    throw failure;
+  }
 }
 
 export async function suspendEnvironment(target: EnvironmentTarget): Promise<void> {

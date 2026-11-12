@@ -246,7 +246,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return err
 	}
 	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
-		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
+		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...),
 		IdentityChanges: store,
 	})
 	if err != nil {
