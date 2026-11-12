@@ -104,8 +104,7 @@ default is the only root.
   dirt is real work.
 - `REVIEW`: clean but has commits not in main and no merged PR, a detached HEAD with unique commits, or an
   undeterminable default branch.
-  Judge these yourself — inspect the
-  commits/PR and decide; removal must not make any commit unreachable.
+  Judge these yourself by inspecting the commits and PR.
 
 The PR cross-check uses `GITHUB_TOKEN` or `gh auth token`; pass `--no-prs` to classify on
 git signals only (offline). An unavailable PR check produces REVIEW for otherwise-prunable
@@ -153,10 +152,8 @@ branch; interpret it literally:
   beyond. The classifier also marks a closed-not-merged PR as a candidate when the branch has
   not advanced past its PR head; that is not evidence its unique commit history is disposable.
   A branch checked out in a _prunable_ worktree is a candidate too; `all --prune` removes that
-  worktree first. Branch removal preserves recovery refs and compare-deletes the classified
-  tip, skipping branches that have moved or are checked out. Git cannot atomically combine the
-  tip comparison with the checkout check; the tool checks again after deletion and attempts to
-  restore the branch if a concurrent checkout is observed.
+  worktree first. Branch removal preserves the classified tip and reflog commits under recovery
+  refs. A branch whose worktree remains checked out is kept.
 - `KEEP`: the default branch, a branch with an open PR, or a branch checked out in a retained
   worktree.
 - `REVIEW`: commits not in the default branch and no candidate PR signal, or a branch that has

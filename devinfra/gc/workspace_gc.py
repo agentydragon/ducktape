@@ -19,9 +19,8 @@ run against this repo. Foreign clones are independent repositories and are never
 automatically; their refs and other data are outside the worktree scan's safety proof.
 
 Nothing is removed without an explicit flag. The tool assumes no external workspace changes
-during a run. A base or repo-cache entry is rechecked under its Bazel lock before removal. Branch deletion checks worktree holders and uses Git's compare-and-delete operation
-to avoid deleting a branch whose tip changed; Git does not make those checks atomic with a
-concurrent checkout. Skipped items are reported but exit 0; failed removals exit 1.
+during a run. A base or repo-cache entry is rechecked under its Bazel lock before removal.
+Skipped items are reported but exit 0; failed removals exit 1.
 Gitignored files do not count as uncommitted work and are deleted with the worktree.
 `github_prs` owns GitHub access (PR state); the scan itself is network-free.
 """

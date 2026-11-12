@@ -15,11 +15,9 @@ Worktree identities are resolved once per inventory and indexed for output-base 
 an unresolved or ambiguous identity cannot establish a dependency on a particular worktree.
 
 Branch classification accounts for worktree holders. A branch held by a prunable worktree waits
-for that worktree's removal. Before deleting a branch, the run checks worktree holders, preserves
-recovery refs, and uses a compare-and-delete against the classified tip. Git does not provide an
-atomic operation combining the tip comparison with a checkout check: a simultaneous checkout can
-race with deletion. The run checks again afterward and attempts to restore a branch if it finds
-such a checkout. If the branch reflog cannot be inventoried, deletion fails closed. Recovery refs
+for that worktree's removal; a branch with a remaining holder is not deleted. Branch removal
+preserves the classified tip and available reflog commits under recovery refs in the deletion
+transaction. If the branch reflog cannot be inventoried, deletion fails closed. Recovery refs
 retain captured commits until those refs are removed separately. An output base can be
 reinspected after its workspace disappears. A repository-cache entry is
 eligible only after the relevant output bases have been enumerated and their references
