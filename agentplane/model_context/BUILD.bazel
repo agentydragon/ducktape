@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "model_context",
+    srcs = [
+        "model_context.go",
+        "render.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/model_context",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+go_test(
+    name = "model_context_test",
+    srcs = ["model_context_test.go"],
+    embed = [":model_context"],
+)
