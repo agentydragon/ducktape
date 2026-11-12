@@ -96,8 +96,11 @@ Dispatcher DNS SAN while the serving certificate intentionally has only
 `spiffe://agentplane/session-dispatcher`. This was a host test transport failure, not a failed
 Identity tool turn. [#15834](https://github.com/agentydragon/ducktape/pull/15834) repairs only manual
 live fixtures using the production Go CA/SPIFFE verifier through a loopback TLS proxy. The common
-k3s path remains unchanged. Separate focused Go/Python checks passed; its selected manual live
-smoke and PR CI are tracked independently of the live checks above.
+k3s path remains unchanged. Separate focused Go/Python checks and its final-head PR CI passed. The selected manual rerun
+reached Dispatcher admission and input delivery, then timed out after 300 seconds awaiting the
+first Ollama/Gemma output ([run](https://app.buildbuddy.io/invocation/ca3866a7-bb62-4b7c-bf32-ea17481841c2)).
+Its test Sandbox was cleaned up. This is a passing transport observation, not a passing Ollama
+end-to-end test; the successful Luna turns above remain separate evidence.
 
 Rollback must restore schema/configuration, controller RBAC/watch behavior and compatible images
 together. The pre-cutover image snapshot was taken before deployment; no rollback was performed.
