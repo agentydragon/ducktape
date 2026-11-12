@@ -24,10 +24,9 @@ Nothing is removed without an explicit flag. Each removal revalidates its candid
 beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
 still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
 Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
-Ignored files do not count in `git status`; worktrees with detected ignored paths are kept,
-and the removal entry point checks again just before `git worktree remove`. A concurrent file
-creation after that check can still be deleted because Git does not make inventory and removal
-atomic. `github_prs` owns GitHub access (PR state); the scan itself is network-free.
+Ignored files do not count in `git status` and Git deletes them when removing a worktree.
+Detached HEAD and reflog commits are retained under Git recovery refs before removal.
+`github_prs` owns GitHub access (PR state); the scan itself is network-free.
 """
 
 from __future__ import annotations
@@ -871,7 +870,7 @@ def _worktrees_command(
     verbose: _VerboseOption = False,
     workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     prune: Annotated[
-        bool, typer.Option("--prune", help="remove clean, attached worktrees without ignored files (revalidated first)")
+        bool, typer.Option("--prune", help="remove clean worktrees (revalidated first; ignored files are deleted)")
     ] = False,
 ) -> None:
     """The worktree slice of the joint scan."""

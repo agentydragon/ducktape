@@ -175,9 +175,7 @@ def test_existing_worktree_with_broken_gitdir_is_review(repo: GitRepo, proc: Pat
     assert wt.path.is_dir()
 
 
-@pytest.mark.parametrize(
-    "stage", ["_status", "_ignored_paths", "_last_activity", "content_in_main", "patches_landed_in_main"]
-)
+@pytest.mark.parametrize("stage", ["_status", "_last_activity", "content_in_main", "patches_landed_in_main"])
 @pytest.mark.parametrize("error_type", [KeyError, ValueError, PermissionError])
 def test_worktree_inspection_failure_is_review(
     repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch, stage: str, error_type: type[Exception]
@@ -197,20 +195,80 @@ def test_worktree_inspection_failure_is_review(
     assert "unreadable Git state" in wg.describe_reason(result)
 
 
-def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
+def test_detached_landed_commit_is_removed_and_preserved(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     detached = GitRepo(path)
     _commit_detached(detached, "detached empty commit")
-    detached_head = detached.rev("HEAD")
-    surviving_commits = _surviving_ref_commits(repo)
-    assert detached_head not in surviving_commits
-
+    head = detached.rev("HEAD")
     result = _classify(repo, path, proc)
+    assert isinstance(result, wg.PrunableWorktree)
+    removal = wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+    assert removal == Removed(path)
+    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
 
-    assert isinstance(result, wg.ReviewWorktree)
-    assert result.reason is wg.ReviewWorktreeReason.DETACHED_HEAD
-    assert "reachability" in wg.describe_reason(result)
+
+def test_detached_reflog_commits_survive_removal(repo: GitRepo) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    _commit_detached(detached, "abandoned commit")
+    abandoned = detached.rev("HEAD")
+    detached.run("reset", "--hard", "main")
+    result = wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+    assert result == Removed(path)
+    assert repo.rev(f"refs/workspace-gc/recovery/{abandoned}") == abandoned
+
+
+def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    detached.commit("base", "1\n", "first change")
+    head = detached.rev("HEAD")
+    repo.commit("base", "1\n", "same patch")
+    repo.commit("base", "2\n", "subsequent change")
+    result = _classify(repo, path, proc)
+    assert result.reason is wg.PrunableWorktreeReason.PATCHES_IN_MAIN
+    assert wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    ) == Removed(path)
+    assert repo.rev(f"refs/workspace-gc/recovery/{head}") == head
+
+
+def test_detached_head_change_during_preservation_stops_removal(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    real_git = wg.git
+    changed = False
+
+    def change_head(repo_path: Path, *args: str, **kwargs: bool) -> subprocess.CompletedProcess[str]:
+        nonlocal changed
+        result = real_git(repo_path, *args, **kwargs)
+        if args[0] == "update-ref" and not changed:
+            changed = True
+            _commit_detached(detached, "concurrent commit")
+        return result
+
+    monkeypatch.setattr(wg, "git", change_head)
+    result = wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+    assert isinstance(result, Skipped)
+    assert path.exists()
+
+
+def test_detached_unmerged_commit_is_review(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    detached.commit("novel", "unique\n", "unmerged work")
+    assert isinstance(_classify(repo, path, proc), wg.ReviewWorktree)
 
 
 def test_detached_worktree_is_not_directly_removable(repo: GitRepo) -> None:
@@ -240,33 +298,13 @@ def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:
     assert result.reason is wg.ReviewWorktreeReason.DETACHED_HEAD
 
 
-def test_ignored_file_is_retained_even_for_a_closed_pr(repo: GitRepo, proc: Path) -> None:
+def test_ignored_files_do_not_block_removal(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     _ignore_in_repo(repo, ".env")
-    (wt.path / ".env").write_text("local secret\n")
-    closed_pr = PrInfo(11, PrState.CLOSED)
-
-    result = _classify(repo, wt.path, proc, pr_states={"feature": closed_pr})
-
-    assert isinstance(result, wg.RetainedWorktree)
-    assert (result.reason, result.pr) == (wg.RetainedWorktreeReason.IGNORED_FILES, closed_pr)
-    assert "ignored" in wg.describe_reason(result)
-    assert "11" in wg.describe_reason(result)
-
-
-def test_ignored_directory_is_retained_with_git_directory_collapse(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, "generated/")
-    nested = wt.path / "generated" / "nested"
-    nested.mkdir(parents=True)
-    for index in range(10):
-        (nested / f"output-{index}").write_text("generated\n")
-
-    result = _classify(repo, wt.path, proc)
-
-    assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason is wg.RetainedWorktreeReason.IGNORED_FILES
-    assert wg._ignored_paths(wt.path) == ["generated/"]
+    (wt.path / ".env").write_text("local data\n")
+    assert isinstance(_classify(repo, wt.path, proc), wg.PrunableWorktree)
+    assert _remove_if_still_prunable(repo, wt, live_pids=[]) == Removed(wt.path)
+    assert not wt.path.exists()
 
 
 @pytest.mark.parametrize(
@@ -343,35 +381,6 @@ def test_remove_worktree_skips_missing_directory_for_git_worktree_prune(repo: Gi
     assert any(item.path == wt.path for item in git_repo.list_worktrees(repo.path))
 
 
-def test_remove_worktree_skips_ignored_file_for_direct_call(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, ".env")
-    local_env = wt.path / ".env"
-    local_env.write_text("local data\n")
-
-    result = wg.remove_worktree(repo.path, wt.path)
-
-    assert isinstance(result, Skipped)
-    assert local_env.read_text() == "local data\n"
-    assert wt.path.exists()
-
-
-def test_remove_worktree_fails_closed_if_ignored_inventory_fails(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    wt = repo.worktree("wt", "feature")
-
-    def fail(*args: object, **kwargs: object) -> None:
-        raise PermissionError("cannot read ignore state")
-
-    monkeypatch.setattr(wg, "_ignored_paths", fail)
-    result = wg.remove_worktree(repo.path, wt.path)
-
-    assert isinstance(result, Failed)
-    assert "cannot inspect worktree safety" in result.error
-    assert wt.path.exists()
-
-
 def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> RemovalResult[Path]:
     return wg.remove_if_still_prunable(
         repo.path,
@@ -443,20 +452,6 @@ def test_remove_if_still_prunable_skips_a_tree_with_uncommitted_work_since_the_s
     result = _remove_if_still_prunable(repo, wt, live_pids=[])
 
     assert isinstance(result, Skipped)
-    assert wt.path.exists()
-
-
-def test_remove_if_still_prunable_skips_ignored_file_added_since_the_scan(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, ".env")
-    assert isinstance(_classify(repo, wt.path, proc), wg.PrunableWorktree)
-    local_env = wt.path / ".env"
-    local_env.write_text("new after scan\n")
-
-    result = _remove_if_still_prunable(repo, wt, live_pids=[])
-
-    assert isinstance(result, Skipped)
-    assert local_env.read_text() == "new after scan\n"
     assert wt.path.exists()
 
 
