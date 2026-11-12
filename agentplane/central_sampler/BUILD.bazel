@@ -381,6 +381,7 @@ go_library(
         "codex/legacy_image_helper.txt",
         "codex/wait_description.txt",
         "schema/0011_baseline.sql",
+        "schema/0012_drop_redundant_event_index.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler",
     visibility = [

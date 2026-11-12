@@ -1,6 +1,7 @@
 package centralsampler
 
 import (
+	"bytes"
 	"database/sql"
 	"strings"
 	"sync"
@@ -36,9 +37,77 @@ func TestFreshSamplerBaseline(t *testing.T) {
 	}
 }
 
+func TestFreshSamplerMigrationsRemoveRedundantEventIndex(t *testing.T) {
+	store := newTestStore(t)
+	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version
+		WHERE version_id=12 AND is_applied`); got != 1 {
+		t.Fatalf("fresh index migration history rows = %d, want 1", got)
+	}
+	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM pg_indexes
+		WHERE schemaname=current_schema() AND indexname='sampler_event_sequence_idx'`); got != 0 {
+		t.Fatalf("redundant event index count = %d, want 0", got)
+	}
+	assertSamplerEventPrimaryKey(t, store.DB())
+}
+
+func TestSamplerVersion10AdoptionRemovesRedundantEventIndex(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	wantEntry := []byte("version-10 event retained by adoption")
+	const sequence = 1000000
+	migrationExec(t, store.DB(), `INSERT INTO sampler_event(session_id, sequence, entry) VALUES($1, $2, $3)`,
+		session.ID, sequence, wantEntry)
+	migrationExec(t, store.DB(), `INSERT INTO sampler_export_checkpoint(session_id, destination, cursor)
+		VALUES($1, 'retained-destination', 73)`, session.ID)
+
+	// Reconstruct the validated version-10 history on this clone. The native tables and rows remain
+	// in place, so Migrate must take baseline 11's adoption path before applying migration 12.
+	migrationExec(t, store.DB(), `CREATE INDEX sampler_event_sequence_idx ON sampler_event(session_id, sequence)`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id >= 11`)
+	migrationExec(t, store.DB(), `INSERT INTO central_sampler_goose_version(version_id, is_applied)
+		VALUES (8, true), (9, true), (10, true)`)
+	if err := Migrate(t.Context(), store.DB()); err != nil {
+		t.Fatalf("Migrate version-10 database: %v", err)
+	}
+
+	for _, version := range []int{11, 12} {
+		if got := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version
+			WHERE version_id=$1 AND is_applied`, version); got != 1 {
+			t.Fatalf("adopted migration %d history rows = %d, want 1", version, got)
+		}
+	}
+	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM pg_indexes
+		WHERE schemaname=current_schema() AND indexname='sampler_event_sequence_idx'`); got != 0 {
+		t.Fatalf("adopted redundant event index count = %d, want 0", got)
+	}
+	assertSamplerEventPrimaryKey(t, store.DB())
+
+	var gotEntry []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT entry FROM sampler_event
+		WHERE session_id=$1 AND sequence=$2`, session.ID, sequence).Scan(&gotEntry); err != nil {
+		t.Fatal("read retained version-10 event:", err)
+	}
+	if !bytes.Equal(gotEntry, wantEntry) {
+		t.Fatalf("adopted event entry = %q, want %q", gotEntry, wantEntry)
+	}
+	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_export_checkpoint
+		WHERE session_id=$1 AND destination='retained-destination' AND cursor=73`, session.ID); got != 1 {
+		t.Fatalf("retained export checkpoint rows = %d, want 1", got)
+	}
+}
+
+func assertSamplerEventPrimaryKey(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if got := migrationCount(t, db, `SELECT count(*) FROM pg_constraint
+		WHERE conrelid='sampler_event'::regclass AND contype='p'
+		AND pg_get_constraintdef(oid)='PRIMARY KEY (session_id, sequence)'`); got != 1 {
+		t.Fatalf("sampler_event composite primary key constraints = %d, want 1", got)
+	}
+}
+
 func TestSamplerBaselineRejectsUnmarkedDatabase(t *testing.T) {
 	store := newTestStore(t)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=11`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id >= 11`)
 	if err := Migrate(t.Context(), store.DB()); err == nil || !strings.Contains(err.Error(), "unrecognized objects") {
 		t.Fatalf("Migrate error = %v, want unmarked schema rejection", err)
 	}
