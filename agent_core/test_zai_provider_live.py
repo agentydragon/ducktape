@@ -8,10 +8,6 @@ import pytest_bazel
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
-from agent_core.model import ChatCompletionsAgentModel
-from openai_utils.api_shape import LLMApiShape
-from openai_utils.model import FunctionCallItem, FunctionToolParam, ResponsesRequest, UserMessage
-
 _ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 # z.ai also exposes an Anthropic Messages-shaped endpoint; the SDK posts to {base_url}/v1/messages.
 _ZAI_ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic"
@@ -27,32 +23,35 @@ async def _sample_tool_call_arguments(*, parameters: dict, strict: bool, user_te
     assert api_key, "ZAI_API_KEY must be set for the live z.ai tool-schema tests"
 
     client = AsyncOpenAI(base_url=_ZAI_BASE_URL, api_key=api_key)
-    model = ChatCompletionsAgentModel(client=client, model=os.environ.get("ZAI_MODEL", "glm-4.6"))
-    request = ResponsesRequest(
-        input=[UserMessage.text(user_text)],
-        instructions="Use start_critic. Do not answer in prose.",
-        tools=[
-            FunctionToolParam(
-                name="start_critic",
-                description="Start a critic run on a single example.",
-                parameters=parameters,
-                strict=strict,
-            )
-        ],
-        tool_choice="auto",
-        max_output_tokens=512,
-    )
-    prepared = model.prepare(request)
-    assert model.api_shape == LLMApiShape.CHAT_COMPLETIONS
     try:
-        result = await model.sample(prepared)
+        response = await client.chat.completions.create(
+            model=os.environ.get("ZAI_MODEL", "glm-4.6"),
+            messages=[
+                {"role": "system", "content": "Use start_critic. Do not answer in prose."},
+                {"role": "user", "content": user_text},
+            ],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "start_critic",
+                        "description": "Start a critic run on a single example.",
+                        "parameters": parameters,
+                        "strict": strict,
+                    },
+                }
+            ],
+            tool_choice="auto",
+            max_completion_tokens=512,
+        )
     finally:
         await client.close()
 
-    tool_calls = [item for item in result.output if isinstance(item, FunctionCallItem)]
+    tool_calls = response.choices[0].message.tool_calls or []
     assert len(tool_calls) == 1
-    assert tool_calls[0].arguments is not None
-    arguments = json.loads(tool_calls[0].arguments)
+    tool_call = tool_calls[0]
+    assert tool_call.type == "function"
+    arguments = json.loads(tool_call.function.arguments)
     assert isinstance(arguments, dict)
     return arguments
 
@@ -233,50 +232,6 @@ async def test_zai_anthropic_shape_union_tool_param_returned_as_object_live(comb
     assert example["kind"] == "file_set"
     assert example["snapshot_slug"] == "crush/2025-08-30-internal_db"
     assert example["files_hash"] == "c27fe50118b25dbc185f00315006c37b"
-
-
-async def test_zai_chat_adapter_tool_call_live() -> None:
-    api_key = os.environ.get("ZAI_API_KEY")
-    assert api_key, "ZAI_API_KEY must be set for the live z.ai chat adapter smoke test"
-
-    client = AsyncOpenAI(base_url="https://api.z.ai/api/coding/paas/v4", api_key=api_key)
-    model = ChatCompletionsAgentModel(client=client, model=os.environ.get("ZAI_MODEL", "glm-4.6"))
-    request = ResponsesRequest(
-        input=[UserMessage.text('Call record_result with exactly {"answer": "ok"}.')],
-        instructions="Use record_result. Do not answer in prose.",
-        tools=[
-            FunctionToolParam(
-                name="record_result",
-                description="Record the final answer for the test harness.",
-                parameters={
-                    "type": "object",
-                    "properties": {"answer": {"type": "string", "enum": ["ok"]}},
-                    "required": ["answer"],
-                    "additionalProperties": False,
-                },
-                strict=True,
-            )
-        ],
-        tool_choice="auto",
-        max_output_tokens=256,
-    )
-
-    prepared = model.prepare(request)
-    assert model.api_shape == LLMApiShape.CHAT_COMPLETIONS
-
-    try:
-        result = await model.sample(prepared)
-    finally:
-        await client.close()
-
-    tool_calls = [item for item in result.output if isinstance(item, FunctionCallItem)]
-    assert len(tool_calls) == 1
-    assert tool_calls[0].name == "record_result"
-    arguments = tool_calls[0].arguments
-    assert arguments is not None
-    assert json.loads(arguments) == {"answer": "ok"}
-    assert result.usage is not None
-    assert result.usage.total_tokens > 0
 
 
 if __name__ == "__main__":

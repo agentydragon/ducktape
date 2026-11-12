@@ -136,14 +136,14 @@ Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
     be a JSON object, so z.ai's Anthropic adapter parses GLM's XML tool call back
     into a structured object instead of leaving the raw string. So routing
     glm-4.6 through the Anthropic shape avoids the bug without flattening any
-    schema. Canaried live in `agent_core/test_zai_chat_adapter_live.py`
+    schema. Canaried live in `agent_core/test_zai_provider_live.py`
     (`test_zai_anthropic_shape_union_tool_param_returned_as_object_live`).
   - **Recipe**: either (a) route glm-4.6 through the Anthropic Messages shape and
     keep union schemas as-is, or (b) on chat-completions, represent a
     discriminated union as a single concrete object (carry the superset of
     fields, keep `kind` as an `enum`, enforce the per-`kind` required fields
     server-side) or as flat top-level params — never `anyOf`/`oneOf`. All working
-    shapes are canaried live in `agent_core/test_zai_chat_adapter_live.py`.
+    shapes are canaried live in `agent_core/test_zai_provider_live.py`.
 - Forced named tool choice in the OpenAI object form is rejected:
   `{"type": "function", "function": {"name": "..."}}` returns `400` with
   `{"error":{"code":"1210","message":"Invalid API parameter, please check the documentation."}}`.
