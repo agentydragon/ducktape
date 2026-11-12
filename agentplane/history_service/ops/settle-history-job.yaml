@@ -17,6 +17,9 @@ spec:
       serviceAccountName: history-service
       automountServiceAccountToken: false
       restartPolicy: Never
+      # The bounded scan makes many small queries; keep it in PostgreSQL's zone.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       imagePullSecrets:
         - name: forgejo-images-creds
       securityContext:
