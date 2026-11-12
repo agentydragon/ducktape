@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+import signal
 from collections.abc import AsyncIterator
 from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
@@ -584,13 +585,13 @@ async def _stopped_gateway_process(
     executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
     assert executable.name == "runner-gateway", executable
 
-    async def signal_gateway(signal: str) -> None:
+    async def signal_gateway(name: str) -> None:
         process = await asyncio.create_subprocess_exec(
             *ctr_command,
             "tasks",
             "kill",
             "--signal",
-            signal,
+            name,
             container_id,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -598,34 +599,50 @@ async def _stopped_gateway_process(
         _, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
         if process.returncode:
             raise RuntimeError(
-                f"ctr tasks kill {signal} exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}"
+                f"ctr tasks kill {name} exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}"
             )
 
-    try:
-        await signal_gateway("SIGSTOP")
-        async with asyncio.timeout(5):
-            while True:
-                status = await asyncio.to_thread(Path(f"/proc/{pid}/status").read_text)
-                if re.search(r"^State:\s+T ", status, re.MULTILINE):
-                    break
-                await asyncio.sleep(0.01)
-        (undeclared_outputs_dir() / "gateway-crash-process.json").write_text(
-            json.dumps(
-                {
-                    "pod": metadata,
-                    "container": container,
-                    "container_id": container_id,
-                    "pid": pid,
-                    "stopped_status": status,
-                },
-                indent=2,
-            )
-            + "\n"
-        )
-        yield
-    finally:
-        # This must run even if scaling, the deletion wait or diagnostics fail.
-        await signal_gateway("SIGKILL")
+    # Keep this proc file open: reads fail if the captured task dies, even if its PID
+    # is reused. A fresh /proc lookup could observe another process with that PID.
+    with await asyncio.to_thread(Path(f"/proc/{pid}/status").open) as process_status:
+
+        def read_status() -> str:
+            process_status.seek(0)
+            return process_status.read()
+
+        diagnostic: dict[str, object] = {
+            "pod": metadata,
+            "container": container,
+            "container_id": container_id,
+            "pid": pid,
+        }
+        output = undeclared_outputs_dir() / "gateway-crash-process.json"
+        try:
+            await signal_gateway("SIGSTOP")
+            async with asyncio.timeout(5):
+                while True:
+                    status = await asyncio.to_thread(read_status)
+                    if re.search(r"^State:\s+T ", status, re.MULTILINE):
+                        break
+                    await asyncio.sleep(0.01)
+            diagnostic["stopped_status"] = status
+            output.write_text(json.dumps(diagnostic, indent=2) + "\n")
+            yield
+            # The API deletion timestamp alone does not show that kubelet saw it.
+            # Wait for kubelet's SIGTERM while SIGSTOP prevents the handler running.
+            async with asyncio.timeout(15):
+                while True:
+                    status = await asyncio.to_thread(read_status)
+                    assert re.search(r"^State:\s+T ", status, re.MULTILINE), status
+                    pending = re.findall(r"^(?:SigPnd|ShdPnd):\s+([0-9a-f]+)", status, re.MULTILINE)
+                    if any(int(mask, 16) & (1 << (signal.SIGTERM - 1)) for mask in pending):
+                        break
+                    await asyncio.sleep(0.01)
+            diagnostic["pending_sigterm_status"] = status
+            output.write_text(json.dumps(diagnostic, indent=2) + "\n")
+        finally:
+            # This must run even if scaling, the deletion wait or diagnostics fail.
+            await signal_gateway("SIGKILL")
 
 
 async def _roll_gateway_for_central_session(

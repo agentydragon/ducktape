@@ -4,7 +4,7 @@ The MCP gateway-crash test failed twice at the same Lease assertion after killin
 `runner-gateway` process and scaling its Deployment to zero. In both runs, the Lease kept the
 same metadata UID, but its `spec.holderIdentity` field was absent when the test fetched it after
 the Pod deletion wait. The test therefore raised `KeyError: 'holderIdentity'` at
-[`central_sampler.py:638`](../scenarios/central_sampler.py#L638).
+[`central_sampler.py`](../scenarios/central_sampler.py).
 
 | BuildBuddy invocation                                                                                             | Source                                                     | Observation                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -38,6 +38,12 @@ the target is `test_gateway_crash` and artifact paths begin with `test.outputs/`
 The Pod is `runner-gateway-b49bfcd6b-zcvgq`, UID `1217573a-b8e4-483d-bf90-053ed504c9d3`.
 The restart races the fixture's sequential SIGKILL and Deployment scale-down commands.
 
+The historical `d51e2ec6-fff0-5dea-8e16-35e75682f5f9` failure has the same mechanism on
+2026-11-11 UTC: original container `a7fdb80c…` exits `137` at `06:22:51.488`; container attempt `1`,
+`57f9f518…`, starts at `06:22:51.770`; its `WatchState` opens at `06:22:52.092` and publishes facts;
+scale-down sends it SIGTERM at `06:22:52.662`. Match daemon records to the invocation's test window
+(`06:20:10`–`06:24:02`), since retained node logs can include earlier tests.
+
 [`observeRunner`](../../runner_gateway/gateway/runner_observer.go) claims a new Lease epoch
 before opening `WatchState`. Its deferred cleanup closes the direct Runner connection and calls
 [`connectionRecords.release`](../../runner_gateway/gateway/records.go), which clears the holder
@@ -49,8 +55,10 @@ the previous process's unexpired Lease. The assertion observes a graceful releas
 ## Candidate repair and validation
 
 The abrupt fixture sends SIGSTOP to the verified container and confirms the host process is
-stopped. It then scales the Deployment to zero, waits for that Pod's deletion timestamp, and sends
-SIGKILL to the same captured container ID. The stopped process cannot run a graceful signal handler,
+stopped. It then scales the Deployment to zero, waits for that Pod's deletion timestamp and
+kubelet's pending SIGTERM on the stopped process, and sends SIGKILL to the same captured container
+ID. The pending signal proves kubelet observed termination; the API timestamp alone cannot.
+The process-status file stays open across the wait so PID reuse cannot substitute another task. The stopped process cannot run a graceful signal handler,
 and Pod termination precedes its death. A `finally` kills the stopped process even if scaling,
 waiting or diagnostics fail. Ordinary graceful-roll scenarios keep their existing sequence.
 
