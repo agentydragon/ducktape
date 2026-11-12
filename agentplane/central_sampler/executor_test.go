@@ -121,6 +121,45 @@ func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
+func TestOpenSessionTransportFailurePreservesFailurePhase(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		phase string
+	}{
+		{name: "open", phase: "open"},
+		{name: "receive", phase: "receive"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store, owner := claimedExecutorStore(t)
+			client := &fakeExecutionClient{}
+			failure := status.Error(codes.Unavailable, "executor connection lost")
+			client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+				if test.phase == "open" {
+					return nil, failure
+				}
+				return failedExecutionStream{err: failure}, nil
+			}
+			executor := newFakeExecutor(t, store, owner, client)
+			var transport *executorTransportError
+			if err := executor.openSession(t.Context(), nil); !errors.As(err, &transport) || transport.phase != test.phase {
+				t.Fatalf("OpenSession error=%v, want transport phase %q", err, test.phase)
+			}
+			var raw []byte
+			if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='initialize' ORDER BY id LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
+				t.Fatal(err)
+			}
+			var evidence map[string]any
+			if err := json.Unmarshal(raw, &evidence); err != nil {
+				t.Fatal(err)
+			}
+			if evidence["phase"] != test.phase || evidence["remote_outcome"] != "unknown" || evidence["automatic_replay"] != false {
+				t.Fatalf("OpenSession evidence=%+v, want unknown non-replayed %s failure", evidence, test.phase)
+			}
+			assertNoUnresolvedNestedIntents(t, store, owner)
+		})
+	}
+}
+
 func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	client := &fakeExecutionClient{}
@@ -1994,6 +2033,10 @@ type fakeExecutionStream struct {
 	initial *executorpb.OpenSessionResponse
 	once    sync.Once
 }
+
+type failedExecutionStream struct{ err error }
+
+func (s failedExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) { return nil, s.err }
 
 type notificationExecutorStream struct {
 	ctx       context.Context

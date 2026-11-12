@@ -226,27 +226,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: intent, ResumeSessionId: resume})
 	if err != nil {
 		cancel()
-		if handshakeCtx.Err() != nil && (errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled) {
-			err = handshakeCtx.Err()
-		}
-		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
-			if finishErr := e.finishNested(ctx, intent, environmentFailure.intentEvidence()); finishErr != nil {
-				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
-			}
-			return environmentFailure
-		}
-		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
-			if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
-				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
-			}
-			fence.recorded = true
-			return fence
-		}
-		transport := &executorTransportError{method: executorMethodInitialize, phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
-		if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
-			return fmt.Errorf("record OpenSession transport outcome after %v: %w", transport, finishErr)
-		}
-		return transport
+		return e.finishOpenSessionFailure(ctx, handshakeCtx, intent, scope, "open", err)
 	}
 	first := make(chan struct {
 		response *executorpb.OpenSessionResponse
@@ -277,27 +257,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	}
 	if err != nil {
 		cancel()
-		if handshakeCtx.Err() != nil && (errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled) {
-			err = handshakeCtx.Err()
-		}
-		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
-			if finishErr := e.finishNested(ctx, intent, environmentFailure.intentEvidence()); finishErr != nil {
-				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
-			}
-			return environmentFailure
-		}
-		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
-			if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
-				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
-			}
-			fence.recorded = true
-			return fence
-		}
-		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
-		if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
-			return fmt.Errorf("record OpenSession receive outcome after %v: %w", transport, finishErr)
-		}
-		return transport
+		return e.finishOpenSessionFailure(ctx, handshakeCtx, intent, scope, "receive", err)
 	}
 	if opened == nil {
 		cancel()
@@ -394,6 +354,37 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	e.sessionStateMu.Unlock()
 	go e.watchSession(streamCtx, stream, intent, opened.ExecutionSessionId, generation, cancel, done)
 	return nil
+}
+
+// finishOpenSessionFailure records the shared refusal, incarnation-fence, or unknown-outcome
+// classification for failures to create the stream or receive its first frame. phase stays in
+// transport evidence so callers can distinguish those two failure boundaries.
+func (e *Executor) finishOpenSessionFailure(ctx, handshakeCtx context.Context, intent string, scope *executorpb.ExecutionScope, phase string, err error) error {
+	if handshakeCtx.Err() != nil && (errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled) {
+		err = handshakeCtx.Err()
+	}
+	if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
+		if finishErr := e.finishNested(ctx, intent, environmentFailure.intentEvidence()); finishErr != nil {
+			return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
+		}
+		return environmentFailure
+	}
+	if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
+		if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
+			return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
+		}
+		fence.recorded = true
+		return fence
+	}
+	transport := &executorTransportError{method: executorMethodInitialize, phase: phase, intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
+	if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+		outcome := "transport"
+		if phase == "receive" {
+			outcome = "receive"
+		}
+		return fmt.Errorf("record OpenSession %s outcome after %v: %w", outcome, transport, finishErr)
+	}
+	return transport
 }
 
 func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse, nativeEvidenceErr error) error {
