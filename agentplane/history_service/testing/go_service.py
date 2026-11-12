@@ -27,6 +27,8 @@ from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, write_ca
+from agentplane.workload_auth import listener as workload_listener
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
@@ -111,7 +113,12 @@ class GoHistoryService:
         if attached is not None:
             announce.CopyFrom(attached)
         announce.session_id = str(session_id)
-        async with asyncio.timeout(_PROGRESS_BOUND_SECONDS), grpc.aio.insecure_channel(self.ingress_target) as channel:
+        async with (
+            asyncio.timeout(_PROGRESS_BOUND_SECONDS),
+            grpc.aio.secure_channel(self.ingress_target, self.reader.channel_credentials)
+            if self.reader.channel_credentials is not None
+            else grpc.aio.insecure_channel(self.ingress_target) as channel,
+        ):
             call = session_ingress_pb2_grpc.SessionJournalIngressStub(channel).Push(
                 metadata=(("authorization", f"Bearer {await self.writer_token(writer)}"),)
             )
@@ -189,6 +196,8 @@ async def go_history_service(
     writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
     sampler_accounts: Sequence[ServiceAccountRef] = (),
+    svid_ca: CertificateAuthority | None = None,
+    policy_namespace: str = WRITER.namespace,
 ) -> AsyncIterator[GoHistoryService]:
     """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
     with ExitStack() as listeners:
@@ -197,17 +206,29 @@ async def go_history_service(
         token_file.write_text(await api.workload_token(READER, [READER_AUDIENCE]))
         config = directory / "history-service.yaml"
         reader_fd = reader_listener.socket.fileno()
+        rpc = workload_listener.Listener(
+            listen_address=f"fd:{reader_fd}",
+            auth=[workload_listener.KubernetesBearerAuth(audiences=frozenset({READER_AUDIENCE, WRITER_AUDIENCE}))],
+        )
+        channel_credentials = None
+        if svid_ca is not None:
+            tls_directory = directory / "history-tls"
+            tls_directory.mkdir()
+            ca_file, _ = write_ca(svid_ca, tls_directory, "ca")
+            cert_file, key_file = issue_workload_leaf(
+                svid_ca, "spiffe://agentplane/history-ingress", tls_directory, dns_name="localhost"
+            )
+            rpc.tls = workload_listener.TLS(cert_file=cert_file, key_file=key_file)
+            rpc.auth.append(workload_listener.SPIFFEAuth(ca_file=ca_file))
+            channel_credentials = grpc.ssl_channel_credentials(root_certificates=svid_ca.cert_pem)
         config.write_text(
             json.dumps(
                 {
-                    "policy_namespace": WRITER.namespace,
+                    "policy_namespace": policy_namespace,
                     "reader_accounts": [{"namespace": READER.namespace, "name": READER.name}],
                     "token_audience": READER_AUDIENCE,
                     "request_timeout_s": 10,
-                    "rpc": {
-                        "listen_address": f"fd:{reader_fd}",
-                        "auth": [{"mode": "kubernetes_bearer", "audiences": [READER_AUDIENCE, WRITER_AUDIENCE]}],
-                    },
+                    "rpc": rpc.model_dump(mode="json", exclude_none=True),
                     "kubeconfig": str(api.kubeconfig),
                     "ingress": {
                         "token_audience": WRITER_AUDIENCE,
@@ -229,15 +250,18 @@ async def go_history_service(
             health_port=reader_listener.port,
             grace_s=_GRACE_SECONDS,
             pass_fds=(reader_fd,),
+            health_credentials=channel_credentials,
         ) as process:
             listeners.close()
-            read_target = f"{reader_listener.host}:{reader_listener.port}"
+            read_target = f"localhost:{reader_listener.port}"
             service = GoHistoryService(
                 database_url=database_url,
                 read_target=read_target,
                 ingress_target=read_target,
                 reader_token_file=token_file,
-                reader=HistoryServiceClient(read_target, token_file=token_file, request_timeout_s=20),
+                reader=HistoryServiceClient(
+                    read_target, token_file=token_file, request_timeout_s=20, channel_credentials=channel_credentials
+                ),
                 api=api,
                 process=process,
             )

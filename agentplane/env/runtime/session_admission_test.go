@@ -310,6 +310,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	config.testBacking = reopenedBacking
 	r := newSessionTestRuntimeWithState(t, config, resources)
 	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
+	request.ExecutionIdentity = nil // Retry the retained ownerless record without assigning it a new owner.
 	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}

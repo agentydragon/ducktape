@@ -126,6 +126,8 @@ py_library(
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",
         "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:tls",
+        "//agentplane/workload_auth:listener",
         "//util:db_url",
         "//util:net",
         "//util/testing:postgres",
