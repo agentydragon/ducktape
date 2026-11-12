@@ -1499,7 +1499,7 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 	if conversation.ExecutorSession == nil || *conversation.ExecutorSession != "fresh-executor" {
 		t.Fatalf("stored executor session=%v, want fresh-executor", conversation.ExecutorSession)
 	}
-	contextJSON, err := json.Marshal(conversation.Archive)
+	contextJSON, err := json.Marshal(conversation.Transcript)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1741,12 +1741,12 @@ func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 	if conversation.ExecutorSession == nil || *conversation.ExecutorSession != "fresh-executor" {
 		t.Fatalf("definitive loss did not bind fresh session: %+v", conversation.ExecutorSession)
 	}
-	archive, err := json.Marshal(conversation.Archive)
+	transcript, err := json.Marshal(conversation.Transcript)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(archive), "retained exec-server session was definitively lost") != 1 {
-		t.Fatalf("model did not receive one truthful loss notice: %s", archive)
+	if strings.Count(string(transcript), "retained exec-server session was definitively lost") != 1 {
+		t.Fatalf("model did not receive one truthful loss notice: %s", transcript)
 	}
 	if err := e.close(); err != nil {
 		t.Fatal(err)

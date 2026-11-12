@@ -154,7 +154,7 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 assert (
                     await turn_completed(stub, SESSION_ID, "anthropic-seed", timeout_s=TIMEOUT_SECONDS)
                 ).status == event_pb2.TURN_STATUS_COMPLETED
-                archive_before = await store.archive_items(SESSION_ID)
+                transcript_before = await store.transcript_items(SESSION_ID)
                 active_before = await store.active_context(SESSION_ID)
                 await stub.Compact(
                     sampler_pb2.CompactRequest(session_id=SESSION_ID, command_id="anthropic-compact-failed"),
@@ -185,7 +185,9 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                     )
                     await exchange.close()
                 await wait_until_blocked(stub)
-                assert await store.archive_items(SESSION_ID) == archive_before, "failed compaction changed the archive"
+                assert await store.transcript_items(SESSION_ID) == transcript_before, (
+                    "failed compaction changed the transcript"
+                )
                 assert await store.active_context(SESSION_ID) == active_before, (
                     "failed compaction changed active context"
                 )
@@ -246,7 +248,7 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 assert not any(intent.request.get("kind") == "tool" for intent in intents), (
                     "partial tool arguments crossed the terminal provider-message boundary"
                 )
-                assert not any(item.get("role") == "assistant" for item in await store.archive_items(SESSION_ID)), (
+                assert not any(item.get("role") == "assistant" for item in await store.transcript_items(SESSION_ID)), (
                     "an incomplete provider response was appended to canonical context"
                 )
 

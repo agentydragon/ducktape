@@ -10,14 +10,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestToolResultsResolveArchiveProvenanceInCompactedContext(t *testing.T) {
+func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) {
 	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
 		t.Run(string(api), func(t *testing.T) {
-			archive, err := newNativeContext(api)
+			transcript, err := newNativeContext(api)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := archive.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "earlier turn"}}); err != nil {
+			if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "earlier turn"}}); err != nil {
 				t.Fatal(err)
 			}
 			completed := json.RawMessage(`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"earlier answer"}]}`)
@@ -28,13 +28,13 @@ func TestToolResultsResolveArchiveProvenanceInCompactedContext(t *testing.T) {
 				callRecord = json.RawMessage(`{"id":"msg_fixture_call","role":"assistant","content":[{"type":"tool_use","id":"call_fixture","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use"}`)
 				summary = json.RawMessage(`{"id":"msg_fixture_summary","role":"assistant","content":[{"type":"compaction","content":"earlier summary","signature":"fixture-signature"}],"stop_reason":"compaction"}`)
 			}
-			if err := archive.AppendRecords([]json.RawMessage{completed}); err != nil {
+			if err := transcript.AppendRecords([]json.RawMessage{completed}); err != nil {
 				t.Fatal(err)
 			}
-			if err := archive.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "current turn"}}); err != nil {
+			if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "current turn"}}); err != nil {
 				t.Fatal(err)
 			}
-			if err := archive.AppendRecords([]json.RawMessage{callRecord}); err != nil {
+			if err := transcript.AppendRecords([]json.RawMessage{callRecord}); err != nil {
 				t.Fatal(err)
 			}
 			active, err := newNativeContext(api)
@@ -50,16 +50,16 @@ func TestToolResultsResolveArchiveProvenanceInCompactedContext(t *testing.T) {
 			if err := active.AppendRecords([]json.RawMessage{callRecord}); err != nil {
 				t.Fatal(err)
 			}
-			conversation := &Conversation{API: api, Archive: archive, ActiveContext: active}
-			before, err := json.Marshal(archive)
+			conversation := &Conversation{API: api, Transcript: transcript, ActiveContext: active}
+			before, err := json.Marshal(transcript)
 			if err != nil {
 				t.Fatal(err)
 			}
-			calls, err := archive.PendingCalls()
+			calls, err := transcript.PendingCalls()
 			if err != nil || len(calls) != 1 {
 				t.Fatalf("pending calls: %v %v", calls, err)
 			}
-			after, err := json.Marshal(archive)
+			after, err := json.Marshal(transcript)
 			if err != nil || string(before) != string(after) {
 				t.Fatalf("deriving execution decisions changed native records: %v", err)
 			}
@@ -76,7 +76,7 @@ func TestToolResultsResolveArchiveProvenanceInCompactedContext(t *testing.T) {
 			if err := conversation.appendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
 				t.Fatal(err)
 			}
-			for _, state := range []protocol.Context{archive, active} {
+			for _, state := range []protocol.Context{transcript, active} {
 				if err := state.CheckSettled(); err != nil {
 					t.Fatalf("result did not settle the native call: %v", err)
 				}

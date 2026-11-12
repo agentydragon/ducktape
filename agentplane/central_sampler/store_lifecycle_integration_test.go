@@ -41,10 +41,10 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		}
 	}
 	readTranscript := func() ([][]byte, error) {
-		rows, err := store.DB().QueryContext(t.Context(), `WITH RECURSIVE archive AS (
-			SELECT c.* FROM sampler_context c JOIN sampler_conversation s ON s.archive_context_id=c.id WHERE s.id=$1
-			UNION ALL SELECT p.* FROM sampler_context p JOIN archive c ON p.id=c.parent_id
-		) SELECT content_id FROM archive ORDER BY item_count`, session.ConversationID)
+		rows, err := store.DB().QueryContext(t.Context(), `WITH RECURSIVE transcript AS (
+			SELECT c.* FROM sampler_context c JOIN sampler_conversation s ON s.transcript_context_id=c.id WHERE s.id=$1
+			UNION ALL SELECT p.* FROM sampler_context p JOIN transcript c ON p.id=c.parent_id
+		) SELECT content_id FROM transcript ORDER BY item_count`, session.ConversationID)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +71,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		t.Fatal(err)
 	}
 	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}}}
-	intentID, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context())
+	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

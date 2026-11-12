@@ -20,12 +20,13 @@ type Owner struct {
 
 // Conversation is the durable provider conversation and its current execution fence.
 type Conversation struct {
-	ID              string
-	Generation      int
-	Owner           *string
-	LeaseUntil      *time.Time
-	API             protocol.APIStyle
-	Archive         protocol.Context
+	ID         string
+	Generation int
+	Owner      *string
+	LeaseUntil *time.Time
+	API        protocol.APIStyle
+	// Transcript retains the full native conversation across compaction.
+	Transcript      protocol.Context
 	Pending         *PendingIntent
 	Stopped         bool
 	ExecutorSession *string
@@ -35,22 +36,22 @@ type Conversation struct {
 	// ExecutorShell is the shell name the bound exec-server last reported.
 	ExecutorShell *string
 	// EnvironmentContext is the last model-visible environment context.
-	EnvironmentContext *EnvironmentContext
-	archiveContextID   string
-	activeContextID    string
-	archiveControl     json.RawMessage
-	activeControl      json.RawMessage
+	EnvironmentContext  *EnvironmentContext
+	transcriptContextID string
+	activeContextID     string
+	transcriptControl   json.RawMessage
+	activeControl       json.RawMessage
 }
 
 func (c *Conversation) Context() protocol.Context {
 	if c.ActiveContext == nil {
-		return c.Archive
+		return c.Transcript
 	}
 	return c.ActiveContext
 }
 
 func (c *Conversation) apply(change func(protocol.Context) error) error {
-	if err := change(c.Archive); err != nil {
+	if err := change(c.Transcript); err != nil {
 		return err
 	}
 	if c.ActiveContext != nil {
@@ -60,8 +61,8 @@ func (c *Conversation) apply(change func(protocol.Context) error) error {
 }
 
 func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []protocol.ContentPart) error {
-	// The archive ordinal is authoritative. Compacted active context has different local ordinals.
-	original, err := c.Archive.FindCall(call.CallID)
+	// The transcript ordinal is authoritative. Compacted active context has different local ordinals.
+	original, err := c.Transcript.FindCall(call.CallID)
 	if err != nil {
 		return err
 	}
@@ -202,11 +203,6 @@ type ProviderRequest struct {
 	Headers       map[string]string  `json:"headers"`
 	ContextID     string             `json:"context_id,omitempty"`
 	ProfileID     protocol.ContentID `json:"profile_id"`
-	BodySHA256    string             `json:"body_sha256"`
-	BodyLength    int                `json:"body_length"`
-	// The prepared provider object and rendered bytes live only during dispatch.
-	NativeBody any    `json:"-"`
-	WireBody   []byte `json:"-"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested

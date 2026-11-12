@@ -510,7 +510,7 @@ func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls, err := conversation.Archive.PendingCalls(); err != nil || len(calls) != 0 {
+	if calls, err := conversation.Transcript.PendingCalls(); err != nil || len(calls) != 0 {
 		t.Fatalf("the model's wait call was left unanswered: calls=%v err=%v", calls, err)
 	}
 	contextWire, err := json.Marshal(conversation.Context())

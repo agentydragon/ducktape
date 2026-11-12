@@ -2,9 +2,7 @@ package centralsampler
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func renderProviderRequest(store *contentStore, request *ProviderRequest) ([]byte, error) {
+func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte, error) {
 	ids, err := store.loadContext(request.ContextID)
 	if err != nil {
 		return nil, err
@@ -38,55 +36,48 @@ func renderProviderRequest(store *contentStore, request *ProviderRequest) ([]byt
 	}
 }
 
-func finishStoredRequest(store *contentStore, request *ProviderRequest, profile protocol.ContentID, ids []protocol.ContentID) error {
+func finishStoredRequest(store *contentStore, request ProviderRequest, profile protocol.ContentID, ids []protocol.ContentID) (ProviderRequest, []byte, error) {
 	contextID, err := store.storeContext(request.API, ids)
 	if err != nil {
-		return err
+		return ProviderRequest{}, nil, err
 	}
 	request.ContextID = contextID
 	request.ProfileID = profile
 	wire, err := renderProviderRequest(store, request)
-	if err != nil {
-		return err
-	}
-	digest := sha256.Sum256(wire)
-	request.BodySHA256 = hex.EncodeToString(digest[:])
-	request.BodyLength = len(wire)
-	request.WireBody = wire
-	return nil
+	return request, wire, err
 }
 
 // New requests are packed from native provider structs, before serializing a full body.
-func storeProviderRequest(ctx context.Context, tx *sql.Tx, request *ProviderRequest) error {
-	if request == nil {
-		return nil
+func prepareProviderRequest(ctx context.Context, tx *sql.Tx, conversationID string, request ProviderRequest, native any) (ProviderRequest, []byte, error) {
+	native, err := freezeProviderInstructions(ctx, tx, conversationID, native)
+	if err != nil {
+		return ProviderRequest{}, nil, err
 	}
 	store := newContentStore(ctx, tx)
 	var profile protocol.ContentID
 	var ids []protocol.ContentID
-	var err error
-	switch body := request.NativeBody.(type) {
+	switch body := native.(type) {
 	case responses.Request:
 		if request.API != protocol.APIStyleResponses {
-			return protocol.ErrInvalid
+			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
 		profile, ids, err = responses.StoreRequest(store, body)
 	case anthropic.Request:
 		if request.API != protocol.APIStyleAnthropicMessages {
-			return protocol.ErrInvalid
+			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
 		profile, ids, err = anthropic.StoreRequest(store, body)
 	default:
-		return fmt.Errorf("unsupported provider request %T", request.NativeBody)
+		return ProviderRequest{}, nil, fmt.Errorf("unsupported provider request %T", native)
 	}
 	if err != nil {
-		return err
+		return ProviderRequest{}, nil, err
 	}
 	return finishStoredRequest(store, request, profile, ids)
 }
 
 // Only the one-time historical migration disassembles an already-serialized request.
-func packLegacyRequest(ctx context.Context, tx *sql.Tx, request *ProviderRequest, body json.RawMessage) error {
+func packLegacyRequest(ctx context.Context, tx *sql.Tx, request ProviderRequest, body json.RawMessage) (ProviderRequest, []byte, error) {
 	store := newContentStore(ctx, tx)
 	var profile protocol.ContentID
 	var ids []protocol.ContentID
@@ -97,10 +88,10 @@ func packLegacyRequest(ctx context.Context, tx *sql.Tx, request *ProviderRequest
 	case protocol.APIStyleAnthropicMessages:
 		profile, ids, err = anthropic.StoreRequestJSON(store, body)
 	default:
-		return protocol.ErrInvalid
+		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
 	if err != nil {
-		return err
+		return ProviderRequest{}, nil, err
 	}
 	return finishStoredRequest(store, request, profile, ids)
 }
@@ -115,29 +106,26 @@ func saveProviderRequest(ctx context.Context, tx *sql.Tx, id, conversationID str
 
 // Signed Anthropic continuations depend on unchanged system/tool definitions.
 // Freeze those authored fields at the first request rather than rebuilding them after a roll.
-func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID string, request *ProviderRequest) error {
-	if request == nil {
-		return nil
-	}
+func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID string, native any) (any, error) {
 	var profile protocol.ContentID
 	var previousContext sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT profile_id,context_id FROM sampler_model_request WHERE conversation_id=$1 ORDER BY position DESC LIMIT 1`, conversationID).Scan(&profile, &previousContext)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return native, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	store := newContentStore(ctx, tx)
-	switch body := request.NativeBody.(type) {
+	switch body := native.(type) {
 	case responses.Request:
 		wire, err := responses.RestoreRequest(store, profile, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var previous responses.Request
 		if err := json.Unmarshal(wire, &previous); err != nil {
-			return err
+			return nil, err
 		}
 		body.Instructions = previous.Instructions
 		body.Tools = previous.Tools
@@ -146,16 +134,16 @@ func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID 
 			if first, ok := body.Input[0].(responses.Item); ok && first.Type == responses.ItemAdditionalTools {
 				ids, err := store.loadContext(previousContext.String)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				if len(ids) > 0 {
-					records, err := store.restoreRecords(request.API, ids[:1])
+					records, err := store.restoreRecords(protocol.APIStyleResponses, ids[:1])
 					if err != nil {
-						return err
+						return nil, err
 					}
 					var frozen responses.Item
 					if err := json.Unmarshal(records[0], &frozen); err != nil {
-						return err
+						return nil, err
 					}
 					if frozen.Type == responses.ItemAdditionalTools {
 						body.Input = append([]responses.RequestInput(nil), body.Input...)
@@ -164,23 +152,22 @@ func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID 
 				}
 			}
 		}
-		request.NativeBody = body
+		return body, nil
 	case anthropic.Request:
 		wire, err := anthropic.RestoreRequest(store, profile, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var previous anthropic.Request
 		if err := json.Unmarshal(wire, &previous); err != nil {
-			return err
+			return nil, err
 		}
 		body.System = previous.System
 		body.Tools = previous.Tools
-		request.NativeBody = body
+		return body, nil
 	default:
-		return protocol.ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
-	return nil
 }
 
 type StoredProviderRequest struct {
@@ -215,13 +202,9 @@ func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, accountUID, 
 		if intent.ProviderRequest == nil || intent.ProfileID == "" {
 			return protocol.ErrMissing
 		}
-		body, err := renderProviderRequest(newContentStore(ctx, tx), intent.ProviderRequest)
+		body, err := renderProviderRequest(newContentStore(ctx, tx), *intent.ProviderRequest)
 		if err != nil {
 			return err
-		}
-		sum := sha256.Sum256(body)
-		if intent.BodySHA256 != hex.EncodeToString(sum[:]) || intent.BodyLength != len(body) {
-			return errors.New("stored provider request digest mismatch")
 		}
 		result = &StoredProviderRequest{RequestID: requestID, ContextID: intent.ContextID, ProfileID: intent.ProfileID, Method: intent.Method, URL: intent.URL, Headers: intent.Headers, Body: body}
 		return nil

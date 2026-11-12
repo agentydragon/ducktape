@@ -114,7 +114,7 @@ func TestLegacyDispatchSequencesUseBoundedJournalOrder(t *testing.T) {
 	}
 }
 
-func TestMigrateContentStoreResumesAfterCommittedArchivePrefix(t *testing.T) {
+func TestMigrateContentStoreResumesAfterCommittedTranscriptPrefix(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	const sequence = 900000
@@ -152,34 +152,34 @@ func TestMigrateContentStoreResumesAfterCommittedArchivePrefix(t *testing.T) {
 			conversation_id UUID NOT NULL REFERENCES sampler_conversation(id),
 			ordinal BIGINT NOT NULL CHECK(ordinal>0), record JSONB NOT NULL,
 			PRIMARY KEY(conversation_id,ordinal))`)
-	migrationExec(t, store.DB(), `UPDATE sampler_conversation SET archive_context_id=NULL,archive_control=NULL WHERE id=$1`, session.ConversationID)
-	first := []byte(`{"type":"message","role":"user","content":"first archive record"}`)
+	migrationExec(t, store.DB(), `UPDATE sampler_conversation SET transcript_context_id=NULL,transcript_control=NULL WHERE id=$1`, session.ConversationID)
+	first := []byte(`{"type":"message","role":"user","content":"first transcript record"}`)
 	unsupported := []byte(`{"role":"user","content":"bad legacy record has no type"}`)
 	migrationExec(t, store.DB(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record)
 		VALUES($1,1,$2::jsonb),($1,2,$3::jsonb)`, session.ConversationID, first, unsupported)
 
 	if err := migrateContentStoreWithBatchSize(t.Context(), store.DB(), 1); err == nil {
-		t.Fatal("migration succeeded despite unsupported legacy archive record")
+		t.Fatal("migration succeeded despite unsupported legacy transcript record")
 	}
 	var root string
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT archive_context_id FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&root); err != nil {
-		t.Fatal("read committed archive prefix:", err)
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT transcript_context_id FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&root); err != nil {
+		t.Fatal("read committed transcript prefix:", err)
 	}
 	if root == "" {
-		t.Fatal("first archive batch did not publish a root before the later invalid record")
+		t.Fatal("first transcript batch did not publish a root before the later invalid record")
 	}
 	if got := migrationCount(t, store.DB(), `SELECT item_count FROM sampler_context WHERE id=$1`, root); got != 1 {
 		t.Fatalf("committed context prefix item count=%d, want 1", got)
 	}
 	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_conversation_item WHERE conversation_id=$1`, session.ConversationID); got != 2 {
-		t.Fatalf("legacy archive rows after failed conversion=%d, want 2", got)
+		t.Fatalf("legacy transcript rows after failed conversion=%d, want 2", got)
 	}
 	var storedJournal []byte
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence=$2`, session.ID, sequence).Scan(&storedJournal); err != nil {
 		t.Fatal("read physically stored journal event:", err)
 	}
 	if len(storedJournal) < 2 || !bytes.Equal(storedJournal[:2], []byte{0x1f, 0x8b}) {
-		t.Fatal("large legacy journal entry was not compressed before archive conversion failed")
+		t.Fatal("large legacy journal entry was not compressed before transcript conversion failed")
 	}
 	reader, err := gzip.NewReader(bytes.NewReader(storedJournal))
 	if err != nil {
@@ -205,7 +205,7 @@ func TestMigrateContentStoreResumesAfterCommittedArchivePrefix(t *testing.T) {
 
 	// Fix only the unsupported row and rerun. The committed content prefix must be reused, not
 	// duplicated, and the old inline table is retired only once the remaining suffix validates.
-	second := []byte(`{"type":"message","role":"assistant","content":"second archive record"}`)
+	second := []byte(`{"type":"message","role":"assistant","content":"second transcript record"}`)
 	migrationExec(t, store.DB(), `UPDATE sampler_conversation_item SET record=$2::jsonb
 		WHERE conversation_id=$1 AND ordinal=2`, session.ConversationID, second)
 	if err := migrateContentStoreWithBatchSize(t.Context(), store.DB(), 1); err != nil {
@@ -217,33 +217,33 @@ func TestMigrateContentStoreResumesAfterCommittedArchivePrefix(t *testing.T) {
 	if exists, err := migrationColumnExists(t.Context(), store.DB(), "sampler_conversation", "context"); err != nil || exists {
 		t.Fatalf("legacy context column exists=%v, err=%v", exists, err)
 	}
-	var archiveRoot string
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT archive_context_id FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&archiveRoot); err != nil {
-		t.Fatal("read final archive root:", err)
+	var transcriptRoot string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT transcript_context_id FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&transcriptRoot); err != nil {
+		t.Fatal("read final transcript root:", err)
 	}
 	tx, err := store.DB().BeginTx(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := newContentStore(t.Context(), tx).loadContext(archiveRoot)
+	ids, err := newContentStore(t.Context(), tx).loadContext(transcriptRoot)
 	if err != nil {
 		_ = tx.Rollback()
-		t.Fatal("load final archive root:", err)
+		t.Fatal("load final transcript root:", err)
 	}
 	if len(ids) != 2 {
 		_ = tx.Rollback()
-		t.Fatalf("final archive context items=%d, want 2", len(ids))
+		t.Fatalf("final transcript context items=%d, want 2", len(ids))
 	}
 	records, err := newContentStore(t.Context(), tx).restoreRecords(protocol.APIStyleResponses, ids)
 	if err != nil {
 		_ = tx.Rollback()
-		t.Fatal("restore final archive records:", err)
+		t.Fatal("restore final transcript records:", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if !jsonEquivalent(records[0], first) || !jsonEquivalent(records[1], second) {
-		t.Fatalf("restored archive records differ from legacy values: %s, %s", records[0], records[1])
+		t.Fatalf("restored transcript records differ from legacy values: %s, %s", records[0], records[1])
 	}
 }
 
@@ -265,7 +265,7 @@ func TestMigrateContentStorePreservesProviderRequestsAndSignedContinuation(t *te
 			conversation_id UUID NOT NULL REFERENCES sampler_conversation(id),
 			ordinal BIGINT NOT NULL CHECK(ordinal>0), record JSONB NOT NULL,
 			PRIMARY KEY(conversation_id,ordinal))`)
-	migrationExec(t, store.DB(), `UPDATE sampler_conversation SET archive_context_id=NULL,archive_control=NULL`)
+	migrationExec(t, store.DB(), `UPDATE sampler_conversation SET transcript_context_id=NULL,transcript_control=NULL`)
 
 	// IDs sort opposite the actual dispatch order, and the compaction request has a shorter input
 	// after context reset. Journal boundaries must remain the ordering source for both.

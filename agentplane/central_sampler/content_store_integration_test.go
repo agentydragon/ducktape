@@ -36,18 +36,18 @@ func openContentStoreSession(t *testing.T, store *Store, account string) (*Sessi
 	return session, owner
 }
 
-func responsesRequestForArchive(t *testing.T, store *Store, owner Owner, instructions string, tools []responses.AdditionalTool, metadata *responses.ClientMetadata) responses.Request {
+func responsesRequestForTranscript(t *testing.T, store *Store, owner Owner, instructions string, tools []responses.AdditionalTool, metadata *responses.ClientMetadata) responses.Request {
 	t.Helper()
 	conversation, err := store.Read(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	archive, ok := conversation.Archive.(*responses.Context)
+	transcript, ok := conversation.Transcript.(*responses.Context)
 	if !ok {
-		t.Fatalf("archive is %T, want *responses.Context", conversation.Archive)
+		t.Fatalf("transcript is %T, want *responses.Context", conversation.Transcript)
 	}
-	input := make([]responses.RequestInput, len(archive.Items))
-	for index, item := range archive.Items {
+	input := make([]responses.RequestInput, len(transcript.Items))
+	for index, item := range transcript.Items {
 		input[index] = item
 	}
 	return responses.Request{
@@ -60,7 +60,7 @@ func responsesRequestForArchive(t *testing.T, store *Store, owner Owner, instruc
 	}
 }
 
-func dispatchStoredResponsesRequest(t *testing.T, store *Store, owner Owner, request responses.Request) (string, responses.Request, []byte) {
+func dispatchStoredResponsesRequest(t *testing.T, store *Store, owner Owner, request responses.Request) (string, []byte) {
 	t.Helper()
 	connection := ConnectionConfig{BaseURL: "https://provider.example.test"}
 	config := ModelConfig{
@@ -69,23 +69,15 @@ func dispatchStoredResponsesRequest(t *testing.T, store *Store, owner Owner, req
 		API:           protocol.APIStyleResponses,
 		Responses:     responses.Config{Dialect: responses.DialectLite},
 	}
-	intent := providerRequestIntent(PendingIntentSampling, connection, config, request)
-	requestID, err := store.Begin(t.Context(), owner, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	native, ok := intent.ProviderRequest.NativeBody.(responses.Request)
-	if !ok {
-		t.Fatalf("native provider body is %T, want responses.Request", intent.ProviderRequest.NativeBody)
-	}
-	wire, err := json.Marshal(native)
+	intent := providerRequestIntent(PendingIntentSampling, connection, config)
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Finish(t.Context(), owner, requestID, map[string]any{"status": "ok"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	return requestID, native, wire
+	return requestID, wire
 }
 
 func fixtureResponsesTool(name, description string, parameters string) []responses.AdditionalTool {
@@ -189,27 +181,20 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 			tools = baseTools
 		}
 		metadata := &responses.ClientMetadata{SessionID: "fixture-session", ThreadID: "fixture-thread", TurnID: fmt.Sprintf("turn-%02d", turn)}
-		request := responsesRequestForArchive(t, store, owner, instructions, tools, metadata)
-		requestID, normalized, wire := dispatchStoredResponsesRequest(t, store, owner, request)
+		request := responsesRequestForTranscript(t, store, owner, instructions, tools, metadata)
+		requestID, wire := dispatchStoredResponsesRequest(t, store, owner, request)
 		if turn == 0 {
-			firstID, firstWire, duplicateRequest = requestID, wire, normalized
-			if normalized.Instructions != storedRequestInstruction {
-				t.Fatalf("first provider request changed before storage: instructions=%q tools=%+v", normalized.Instructions, normalized.Tools)
-			}
-			equivalentJSON(t, protocol.MustJSON(normalized.Tools), protocol.MustJSON(baseTools))
+			firstID, firstWire, duplicateRequest = requestID, wire, request
+			equivalentJSON(t, wire, protocol.MustJSON(request))
 		}
 		if turn == turns-1 {
 			lastID, lastWire = requestID, wire
-			if normalized.Instructions != storedRequestInstruction {
-				t.Fatalf("later request did not retain frozen instructions/tools: instructions=%q tools=%+v", normalized.Instructions, normalized.Tools)
-			}
-			equivalentJSON(t, protocol.MustJSON(normalized.Tools), protocol.MustJSON(baseTools))
 		}
 	}
 
 	// Re-dispatch the exact first request after it has completed. The body is stable while each
 	// durable intent receives its own distinct authorization handle.
-	duplicateID, _, duplicateWire = dispatchStoredResponsesRequest(t, store, owner, duplicateRequest)
+	duplicateID, duplicateWire = dispatchStoredResponsesRequest(t, store, owner, duplicateRequest)
 	if duplicateID == firstID {
 		t.Fatalf("identical requests reused intent ID %s", firstID)
 	}
@@ -264,16 +249,16 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 		t.Fatal(err)
 	}
 	metadata := (*responses.ClientMetadata)(nil)
-	firstRequest := responsesRequestForArchive(t, store, firstOwner, storedRequestInstruction, tool, metadata)
-	firstID, _, firstWire := dispatchStoredResponsesRequest(t, store, firstOwner, firstRequest)
+	firstRequest := responsesRequestForTranscript(t, store, firstOwner, storedRequestInstruction, tool, metadata)
+	firstID, firstWire := dispatchStoredResponsesRequest(t, store, firstOwner, firstRequest)
 	firstContentRows := tableRowCount(t, store, "sampler_content")
 	firstContextRows := tableRowCount(t, store, "sampler_context")
 
 	if err := store.AppendInput(t.Context(), secondOwner, "A prompt shared across accounts."); err != nil {
 		t.Fatal(err)
 	}
-	secondRequest := responsesRequestForArchive(t, store, secondOwner, storedRequestInstruction, tool, metadata)
-	secondID, _, secondWire := dispatchStoredResponsesRequest(t, store, secondOwner, secondRequest)
+	secondRequest := responsesRequestForTranscript(t, store, secondOwner, storedRequestInstruction, tool, metadata)
+	secondID, secondWire := dispatchStoredResponsesRequest(t, store, secondOwner, secondRequest)
 	if firstID == secondID {
 		t.Fatalf("separate sessions reused request ID %s", firstID)
 	}

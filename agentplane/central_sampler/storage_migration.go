@@ -3,9 +3,7 @@ package centralsampler
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,12 +51,12 @@ func migrateContentStoreWithBatchSize(ctx context.Context, db *sql.DB, batchSize
 		return err
 	}
 	if oldItems {
-		if err := migrateArchiveContexts(ctx, db, batchSize); err != nil {
+		if err := migrateTranscriptContexts(ctx, db, batchSize); err != nil {
 			return err
 		}
-	} else if err := validateCompletedArchiveRoots(ctx, db); err != nil {
+	} else if err := validateCompletedTranscriptRoots(ctx, db); err != nil {
 		// The old table can be absent only after validation and retirement committed. This also
-		// detects an interrupted or manually edited schema that would otherwise lose archived data.
+		// detects an interrupted or manually edited schema that would otherwise lose transcript data.
 		return err
 	}
 	if oldContext {
@@ -167,24 +165,24 @@ func compressLegacyJournal(ctx context.Context, db *sql.DB, pageSize int) error 
 	}
 }
 
-func migrateArchiveContexts(ctx context.Context, db *sql.DB, batchSize int) error {
+func migrateTranscriptContexts(ctx context.Context, db *sql.DB, batchSize int) error {
 	for {
 		var conversationID string
 		err := db.QueryRowContext(ctx, `SELECT id::text FROM sampler_conversation
-			WHERE archive_control IS NULL ORDER BY id LIMIT 1`).Scan(&conversationID)
+			WHERE transcript_control IS NULL ORDER BY id LIMIT 1`).Scan(&conversationID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("find conversation with unconverted archive: %w", err)
+			return fmt.Errorf("find conversation with unconverted transcript: %w", err)
 		}
-		if err := convertArchiveBatch(ctx, db, conversationID, batchSize); err != nil {
+		if err := convertTranscriptBatch(ctx, db, conversationID, batchSize); err != nil {
 			return err
 		}
 	}
 }
 
-func convertArchiveBatch(ctx context.Context, db *sql.DB, conversationID string, batchSize int) error {
+func convertTranscriptBatch(ctx context.Context, db *sql.DB, conversationID string, batchSize int) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -193,9 +191,9 @@ func convertArchiveBatch(ctx context.Context, db *sql.DB, conversationID string,
 	var api protocol.APIStyle
 	var oldRoot sql.NullString
 	var control []byte
-	if err := tx.QueryRowContext(ctx, `SELECT api,archive_context_id,archive_control FROM sampler_conversation
+	if err := tx.QueryRowContext(ctx, `SELECT api,transcript_context_id,transcript_control FROM sampler_conversation
 		WHERE id=$1 FOR UPDATE`, conversationID).Scan(&api, &oldRoot, &control); err != nil {
-		return fmt.Errorf("read archive root for conversation %s: %w", conversationID, err)
+		return fmt.Errorf("read transcript root for conversation %s: %w", conversationID, err)
 	}
 	if control != nil {
 		return tx.Commit()
@@ -204,20 +202,20 @@ func convertArchiveBatch(ctx context.Context, db *sql.DB, conversationID string,
 	var legacyRecords []json.RawMessage
 	prefix, err := store.loadContext(oldRoot.String)
 	if err != nil {
-		return fmt.Errorf("load archive prefix for conversation %s: %w", conversationID, err)
+		return fmt.Errorf("load transcript prefix for conversation %s: %w", conversationID, err)
 	}
 	var count, maxOrdinal int64
 	if err := tx.QueryRowContext(ctx, `SELECT count(*),COALESCE(max(ordinal),0) FROM sampler_conversation_item WHERE conversation_id=$1`, conversationID).
 		Scan(&count, &maxOrdinal); err != nil {
-		return fmt.Errorf("count legacy archive for conversation %s: %w", conversationID, err)
+		return fmt.Errorf("count legacy transcript for conversation %s: %w", conversationID, err)
 	}
 	if int64(len(prefix)) > count || maxOrdinal != count {
-		return fmt.Errorf("legacy archive for conversation %s has %d rows through ordinal %d but converted prefix has %d items", conversationID, count, maxOrdinal, len(prefix))
+		return fmt.Errorf("legacy transcript for conversation %s has %d rows through ordinal %d but converted prefix has %d items", conversationID, count, maxOrdinal, len(prefix))
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT ordinal,record FROM sampler_conversation_item
 		WHERE conversation_id=$1 AND ordinal>$2 ORDER BY ordinal LIMIT $3`, conversationID, len(prefix), batchSize)
 	if err != nil {
-		return fmt.Errorf("read legacy archive for conversation %s: %w", conversationID, err)
+		return fmt.Errorf("read legacy transcript for conversation %s: %w", conversationID, err)
 	}
 	var suffix []protocol.ContentID
 	for rows.Next() {
@@ -225,17 +223,17 @@ func convertArchiveBatch(ctx context.Context, db *sql.DB, conversationID string,
 		var record []byte
 		if err := rows.Scan(&ordinal, &record); err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("read legacy archive item for conversation %s: %w", conversationID, err)
+			return fmt.Errorf("read legacy transcript item for conversation %s: %w", conversationID, err)
 		}
 		want := int64(len(prefix) + len(suffix) + 1)
 		if ordinal != want {
 			_ = rows.Close()
-			return fmt.Errorf("legacy archive for conversation %s has ordinal %d, expected %d", conversationID, ordinal, want)
+			return fmt.Errorf("legacy transcript for conversation %s has ordinal %d, expected %d", conversationID, ordinal, want)
 		}
 		id, err := store.storeRecord(api, record)
 		if err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("convert archive item %d for conversation %s: %w", ordinal, conversationID, err)
+			return fmt.Errorf("convert transcript item %d for conversation %s: %w", ordinal, conversationID, err)
 		}
 		legacyRecords = append(legacyRecords, append(json.RawMessage(nil), record...))
 		suffix = append(suffix, id)
@@ -243,46 +241,46 @@ func convertArchiveBatch(ctx context.Context, db *sql.DB, conversationID string,
 	rowsErr := rows.Err()
 	closeErr := rows.Close()
 	if rowsErr != nil {
-		return fmt.Errorf("read legacy archive page for conversation %s: %w", conversationID, rowsErr)
+		return fmt.Errorf("read legacy transcript page for conversation %s: %w", conversationID, rowsErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("close legacy archive page for conversation %s: %w", conversationID, closeErr)
+		return fmt.Errorf("close legacy transcript page for conversation %s: %w", conversationID, closeErr)
 	}
 	root, err := appendContextIDs(store, api, oldRoot.String, len(prefix), suffix)
 	if err != nil {
-		return fmt.Errorf("append archive content for conversation %s: %w", conversationID, err)
+		return fmt.Errorf("append transcript content for conversation %s: %w", conversationID, err)
 	}
 	if len(suffix) > 0 {
 		storedRecords, err := store.restoreRecords(api, suffix)
 		if err != nil {
-			return fmt.Errorf("validate converted archive records for conversation %s: %w", conversationID, err)
+			return fmt.Errorf("validate converted transcript records for conversation %s: %w", conversationID, err)
 		}
 		for index, stored := range storedRecords {
 			if !jsonEquivalent(legacyRecords[index], stored) {
-				return fmt.Errorf("converted archive item %d changed for conversation %s", len(prefix)+index+1, conversationID)
+				return fmt.Errorf("converted transcript item %d changed for conversation %s", len(prefix)+index+1, conversationID)
 			}
 		}
 	}
 	converted := len(prefix) + len(suffix)
 	if int64(converted) == count {
 		if maxOrdinal != int64(converted) {
-			return fmt.Errorf("legacy archive for conversation %s is not a contiguous prefix", conversationID)
+			return fmt.Errorf("legacy transcript for conversation %s is not a contiguous prefix", conversationID)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET archive_context_id=$2,archive_control='{}'::jsonb WHERE id=$1`,
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET transcript_context_id=$2,transcript_control='{}'::jsonb WHERE id=$1`,
 			conversationID, nullableContextID(root)); err != nil {
-			return fmt.Errorf("finish archive conversion for conversation %s: %w", conversationID, err)
+			return fmt.Errorf("finish transcript conversion for conversation %s: %w", conversationID, err)
 		}
 	} else {
 		if len(suffix) == 0 {
-			return fmt.Errorf("legacy archive for conversation %s is missing ordinal %d", conversationID, converted+1)
+			return fmt.Errorf("legacy transcript for conversation %s is missing ordinal %d", conversationID, converted+1)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET archive_context_id=$2 WHERE id=$1`,
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET transcript_context_id=$2 WHERE id=$1`,
 			conversationID, nullableContextID(root)); err != nil {
-			return fmt.Errorf("checkpoint archive conversion for conversation %s: %w", conversationID, err)
+			return fmt.Errorf("checkpoint transcript conversion for conversation %s: %w", conversationID, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit archive conversion for conversation %s: %w", conversationID, err)
+		return fmt.Errorf("commit transcript conversion for conversation %s: %w", conversationID, err)
 	}
 	return nil
 }
@@ -312,16 +310,16 @@ func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, p
 	return parent, nil
 }
 
-func validateCompletedArchiveRoots(ctx context.Context, db *sql.DB) error {
+func validateCompletedTranscriptRoots(ctx context.Context, db *sql.DB) error {
 	var missing string
-	err := db.QueryRowContext(ctx, `SELECT id::text FROM sampler_conversation WHERE archive_control IS NULL ORDER BY id LIMIT 1`).Scan(&missing)
+	err := db.QueryRowContext(ctx, `SELECT id::text FROM sampler_conversation WHERE transcript_control IS NULL ORDER BY id LIMIT 1`).Scan(&missing)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("legacy archive table is absent but conversation %s has no completed archive marker", missing)
+	return fmt.Errorf("legacy transcript table is absent but conversation %s has no completed transcript marker", missing)
 }
 
 func migrateActiveContexts(ctx context.Context, db *sql.DB, batchSize int) error {
@@ -711,7 +709,7 @@ func staticRequestProfile(ctx context.Context, db *sql.DB, intentID string) ([]b
 		if err != nil {
 			return nil, err
 		}
-		body, err = renderProviderRequest(newContentStore(ctx, tx), intent.ProviderRequest)
+		body, err = renderProviderRequest(newContentStore(ctx, tx), *intent.ProviderRequest)
 		_ = tx.Rollback()
 		if err != nil {
 			return nil, fmt.Errorf("render native profile for intent %s: %w", intentID, err)
@@ -790,17 +788,18 @@ func convertProviderRequest(ctx context.Context, tx *sql.Tx, conversationID stri
 		if err != nil {
 			return fmt.Errorf("validate legacy provider intent %s: %w", order.id, err)
 		}
-		request := &ProviderRequest{
+		metadata := ProviderRequest{
 			API: old.API, Connection: old.Connection, ProviderModel: old.ProviderModel,
 			Method: old.Method, URL: old.URL, Headers: old.Headers,
 		}
-		if err := packLegacyRequest(ctx, tx, request, body); err != nil {
+		request, wire, err := packLegacyRequest(ctx, tx, metadata, body)
+		if err != nil {
 			return fmt.Errorf("convert provider intent %s: %w", order.id, err)
 		}
-		if !jsonEquivalent(body, request.WireBody) {
+		if !jsonEquivalent(body, wire) {
 			return fmt.Errorf("converted provider request for intent %s is not semantically equivalent", order.id)
 		}
-		if err := setCompactIntentFields(fields, request); err != nil {
+		if err := setCompactIntentFields(fields, &request); err != nil {
 			return fmt.Errorf("encode compact provider intent %s: %w", order.id, err)
 		}
 		delete(fields, "body")
@@ -903,20 +902,20 @@ func decimalRat(number json.Number) (*big.Rat, bool) {
 }
 
 func validateNativeContent(ctx context.Context, db *sql.DB, oldItems, oldContext bool) error {
-	var badArchive string
-	err := db.QueryRowContext(ctx, `SELECT id::text FROM sampler_conversation WHERE archive_control IS NULL ORDER BY id LIMIT 1`).Scan(&badArchive)
+	var badTranscript string
+	err := db.QueryRowContext(ctx, `SELECT id::text FROM sampler_conversation WHERE transcript_control IS NULL ORDER BY id LIMIT 1`).Scan(&badTranscript)
 	if !errors.Is(err, sql.ErrNoRows) {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("conversation %s has no completed archive context", badArchive)
+		return fmt.Errorf("conversation %s has no completed transcript context", badTranscript)
 	}
 	if oldItems {
-		rows, err := db.QueryContext(ctx, `SELECT c.id::text,c.api,COALESCE(c.archive_context_id,''),count(i.ordinal),COALESCE(max(i.ordinal),0)
+		rows, err := db.QueryContext(ctx, `SELECT c.id::text,c.api,COALESCE(c.transcript_context_id,''),count(i.ordinal),COALESCE(max(i.ordinal),0)
 			FROM sampler_conversation c LEFT JOIN sampler_conversation_item i ON i.conversation_id=c.id
-			GROUP BY c.id,c.api,c.archive_context_id ORDER BY c.id`)
+			GROUP BY c.id,c.api,c.transcript_context_id ORDER BY c.id`)
 		if err != nil {
-			return fmt.Errorf("validate converted archives: %w", err)
+			return fmt.Errorf("validate converted transcripts: %w", err)
 		}
 		for rows.Next() {
 			var conversationID, root string
@@ -928,7 +927,7 @@ func validateNativeContent(ctx context.Context, db *sql.DB, oldItems, oldContext
 			}
 			if count != maxOrdinal {
 				_ = rows.Close()
-				return fmt.Errorf("legacy archive for conversation %s is not contiguous", conversationID)
+				return fmt.Errorf("legacy transcript for conversation %s is not contiguous", conversationID)
 			}
 			tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 			if err != nil {
@@ -940,9 +939,9 @@ func validateNativeContent(ctx context.Context, db *sql.DB, oldItems, oldContext
 			if err != nil || int64(len(ids)) != count {
 				_ = rows.Close()
 				if err != nil {
-					return fmt.Errorf("validate archive root for conversation %s: %w", conversationID, err)
+					return fmt.Errorf("validate transcript root for conversation %s: %w", conversationID, err)
 				}
-				return fmt.Errorf("archive root for conversation %s contains %d items; legacy archive has %d", conversationID, len(ids), count)
+				return fmt.Errorf("transcript root for conversation %s contains %d items; legacy transcript has %d", conversationID, len(ids), count)
 			}
 		}
 		rowsErr := rows.Err()
@@ -1036,17 +1035,13 @@ func validateStoredProviderRequests(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		body, bodyErr := renderProviderRequest(newContentStore(ctx, tx), request)
+		_, bodyErr := renderProviderRequest(newContentStore(ctx, tx), *request)
 		rollbackErr := tx.Rollback()
 		if bodyErr != nil {
 			return fmt.Errorf("validate native provider request %s: %w", row.id, bodyErr)
 		}
 		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			return rollbackErr
-		}
-		digest := sha256.Sum256(body)
-		if len(body) != request.BodyLength || hex.EncodeToString(digest[:]) != request.BodySHA256 {
-			return fmt.Errorf("validate native provider request %s: body digest metadata is missing or inconsistent", row.id)
 		}
 	}
 	return nil

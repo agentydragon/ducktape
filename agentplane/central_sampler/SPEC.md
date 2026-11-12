@@ -599,8 +599,9 @@ initial context renders an update; Codex resolves the shell before its first ren
 ## Evidence and continuation
 
 Provider requests/responses, tool intents/results, commands and context checkpoints commit in the
-sampler DB. Each provider intent commits an immutable context/profile reference and the digest and
-length of its reconstructed request before dispatch. The provider receives those reconstructed bytes.
+sampler DB. Each provider intent commits immutable context/profile references before dispatch.
+Preparation returns the rendered bytes directly to the dispatcher; provider objects and rendered
+bytes are absent from the persisted intent. The retained contract is equivalent provider JSON.
 `ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
 content hashes alone grant no read access. New provider dispatch boundaries contain these references.
 Transport
@@ -678,15 +679,17 @@ bytes, avoiding JSONB number normalization after hashing. This is a provider rep
 general JSON node format or serializer.
 
 `sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
-shares the entire prior prefix. Conversation archive and optional active roots reference these
-contexts; small controls retain Anthropic deferred effort. With no replacement context, the archive
-is the active context. `sampler_model_request` links each distinct intent execution to its frozen
+shares the entire prior prefix. The conversation transcript retains the full native conversation
+across compaction. Transcript and optional active roots reference these contexts; small controls
+retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
+`sampler_model_request` links each distinct intent execution to its frozen
 request profile and context. Profiles share instructions/system text and individual tool definitions;
 per-call attribution does not duplicate them. The first request's system/instructions and tool
 definitions remain fixed across sampler rolls. Requests use the provider's native request fields
 and Go's standard JSON encoder; input/messages follows from the pinned API.
 Compaction atomically verifies the expected active context and lease before replacing it and
-settling its intent/command. It never rewrites the archive. New responses append only new records.
+settling its intent/command. It never rewrites the transcript. New responses append to both the
+transcript and active context using shared content records.
 
 Migration 13 creates, converts, verifies and retires the inline copies as one registered Go migration.
 Conversion commits bounded batches and resumes after interruption. Unsupported retained data stops

@@ -30,7 +30,7 @@ func modelToolSurface(encoding protocol.ExecEncoding) (protocol.ToolSurface, err
 	return protocol.ToolSurface{Description: description, Parameters: parameters, FreeformGrammar: execFreeformGrammar, WaitDescription: waitToolDescription(), WaitParameters: waitToolParameters()}, nil
 }
 
-func providerRequestIntent(kind PendingIntentKind, connection ConnectionConfig, config ModelConfig, body any) IntentRequest {
+func providerRequestIntent(kind PendingIntentKind, connection ConnectionConfig, config ModelConfig) IntentRequest {
 	path := "/v1/responses"
 	var headers map[string]string
 	switch config.API {
@@ -42,6 +42,6 @@ func providerRequestIntent(kind PendingIntentKind, connection ConnectionConfig, 
 	}
 	return IntentRequest{Kind: kind, ProviderRequest: &ProviderRequest{
 		API: config.API, Connection: config.Connection, ProviderModel: config.ProviderModel, Method: http.MethodPost,
-		URL: strings.TrimRight(connection.BaseURL, "/") + path, Headers: headers, NativeBody: body,
+		URL: strings.TrimRight(connection.BaseURL, "/") + path, Headers: headers,
 	}}
 }

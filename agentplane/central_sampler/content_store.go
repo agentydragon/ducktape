@@ -269,7 +269,7 @@ func (s *contentStore) storeContext(api protocol.APIStyle, contents []protocol.C
 	return parent, nil
 }
 
-func (s *contentStore) checkArchivePrefix(previous, current string) error {
+func (s *contentStore) checkTranscriptPrefix(previous, current string) error {
 	if previous == "" || previous == current {
 		return nil
 	}
@@ -281,7 +281,7 @@ func (s *contentStore) checkArchivePrefix(previous, current string) error {
 		return err
 	}
 	if !retained {
-		return fmt.Errorf("retained conversation archive is not an append-only prefix")
+		return fmt.Errorf("retained conversation transcript is not an append-only prefix")
 	}
 	return nil
 }

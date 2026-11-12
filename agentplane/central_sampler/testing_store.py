@@ -329,21 +329,21 @@ class Store:
             ).one()
         return SessionSnapshot(cursor=row.cursor, blocked=row.blocked)
 
-    async def archive_items(self, session_id: str) -> list[dict[str, Any]]:
+    async def transcript_items(self, session_id: str) -> list[dict[str, Any]]:
         """Append-only conversation transcript, retained across compaction."""
         async with self.engine.connect() as connection:
             row = (
                 await connection.execute(
                     text(
-                        "SELECT c.api, c.archive_context_id FROM sampler_conversation c "
+                        "SELECT c.api, c.transcript_context_id FROM sampler_conversation c "
                         "JOIN sampler_session s ON s.conversation_id=c.id WHERE s.id=:session_id"
                     ),
                     {"session_id": session_id},
                 )
             ).one()
-        if row.archive_context_id is None:
+        if row.transcript_context_id is None:
             return []
-        return await self._records(row.api, row.archive_context_id)
+        return await self._records(row.api, row.transcript_context_id)
 
     async def active_context(self, session_id: str) -> list[dict[str, Any]]:
         """The active native model context, exposed as its record list for assertions."""
@@ -351,13 +351,13 @@ class Store:
             row = (
                 await connection.execute(
                     text(
-                        "SELECT c.api, c.active_context_id, c.archive_context_id FROM sampler_conversation c "
+                        "SELECT c.api, c.active_context_id, c.transcript_context_id FROM sampler_conversation c "
                         "JOIN sampler_session s ON s.conversation_id=c.id WHERE s.id=:session_id"
                     ),
                     {"session_id": session_id},
                 )
             ).one()
-        context_id = row.active_context_id or row.archive_context_id
+        context_id = row.active_context_id or row.transcript_context_id
         if context_id is None:
             return []
         return await self._records(row.api, context_id)

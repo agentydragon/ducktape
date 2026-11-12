@@ -70,7 +70,7 @@ func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, i
 }
 
 func recoveryEventsBefore(ctx context.Context, tx *sql.Tx, sessionID string, before uint64) ([]*eventlogpb.EventEntry, error) {
-	// Bound each query even when the Session has a long archive: closing a PostgreSQL
+	// Bound each query even when the Session has a long transcript: closing a PostgreSQL
 	// result early must not drain all earlier entries from the connection.
 	rows, err := tx.QueryContext(ctx, `SELECT entry FROM sampler_event
 		WHERE session_id=$1 AND sequence<$2 ORDER BY sequence DESC LIMIT 256`, sessionID, before)

@@ -16,9 +16,9 @@ CREATE TABLE IF NOT EXISTS sampler_context (
     item_count BIGINT NOT NULL CHECK (item_count > 0)
 );
 ALTER TABLE sampler_conversation
-    ADD COLUMN IF NOT EXISTS archive_context_id TEXT REFERENCES sampler_context(id),
+    ADD COLUMN IF NOT EXISTS transcript_context_id TEXT REFERENCES sampler_context(id),
     ADD COLUMN IF NOT EXISTS active_context_id TEXT REFERENCES sampler_context(id),
-    ADD COLUMN IF NOT EXISTS archive_control JSONB,
+    ADD COLUMN IF NOT EXISTS transcript_control JSONB,
     ADD COLUMN IF NOT EXISTS active_control JSONB;
 CREATE TABLE IF NOT EXISTS sampler_model_request (
     id UUID PRIMARY KEY REFERENCES sampler_intent(id),

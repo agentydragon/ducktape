@@ -45,14 +45,15 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 		Responses: responses.Config{Dialect: responses.DialectLite},
 	}
 	connection := ConnectionConfig{BaseURL: "https://provider.example.test"}
-	intent := providerRequestIntent(PendingIntentSampling, connection, config, responses.Request{
+	body := responses.Request{
 		Model: "fixture-model", Instructions: bodyText, Input: []responses.RequestInput{}, Stream: true,
-	})
+	}
+	intent := providerRequestIntent(PendingIntentSampling, connection, config)
 	// The retained provider headers are normally unauthenticated. Exercise filtering against old
 	// or malformed retained records that still contain credential headers.
 	intent.ProviderRequest.Headers["Authorization"] = "Bearer do-not-return"
 	intent.ProviderRequest.Headers["X-API-Key"] = "do-not-return"
-	requestID, err := store.Begin(t.Context(), owner, intent)
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +61,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	if err != nil {
 		t.Fatal(err)
 	}
+	equivalentJSON(t, stored.Body, wire)
 	if len(stored.Body) <= maxProviderRequestBodyChunkSize {
 		t.Fatalf("fixture body is %d bytes; want more than one chunk", len(stored.Body))
 	}
