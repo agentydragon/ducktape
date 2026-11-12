@@ -91,7 +91,8 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             await asyncio.wait_for(asyncio.to_thread(gate.write_text, "continue\n"), timeout=10)
             async with await endpoint.next() as exchange:
                 assert (workspace / "setup-cwd").read_text() == str(workspace) + "\n"
-                assert exchange.request.body["input"][-1]["content"] == command.text
+                user_messages = [item for item in exchange.request.body["input"] if item.get("role") == "user"]
+                assert user_messages[-1]["content"] == command.text
                 await exchange.send(*response_stream([Message("Setup is ready.")], model="test-model").events)
             events = await through_event(stub, request.session_id, "turn_completed")
             assert events[-1].turn_completed.status == event_pb2.TURN_STATUS_COMPLETED

@@ -55,6 +55,9 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             update={"reasoning_efforts": {"high"}}
         )
         config.models["compatible-model"] = config.models["test-model"].model_copy(update={"reasoning_efforts": {""}})
+        config.models["other-provider-model"] = config.models["test-model"].model_copy(
+            update={"provider_model": "other-test-model"}
+        )
         config.models["standard-model"] = ModelConfig(
             connection="provider",
             provider_model="standard-provider-model",
@@ -87,6 +90,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                     ("unknown-model", grpc.StatusCode.INVALID_ARGUMENT),
                     ("restricted-model", grpc.StatusCode.INVALID_ARGUMENT),
                     ("standard-model", grpc.StatusCode.FAILED_PRECONDITION),
+                    ("other-provider-model", grpc.StatusCode.FAILED_PRECONDITION),
                 ):
                     with pytest.raises(grpc.aio.AioRpcError) as rejected:
                         await stub.ChangeModel(
@@ -143,8 +147,47 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                         timeout=10,
                     )
                 assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-                await exchange.send(*response_stream([Message("done")], model="test-model").events)
+                await exchange.send(
+                    *response_stream(
+                        [
+                            Reasoning("A retained summary.", encrypted_content="fixture-model-bound-reasoning"),
+                            Message("done"),
+                        ],
+                        model="test-model",
+                    ).events
+                )
             assert (await turn_completed(stub, SESSION_ID, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.ChangeModel(
+                    environment_runtime_pb2.ChangeModelRequest(
+                        session_id=request.session_id, command_id="after-reasoning", model="other-provider-model"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+            assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+            # A route alias for the same provider model still accepts retained continuation.
+            await stub.ChangeModel(
+                environment_runtime_pb2.ChangeModelRequest(
+                    session_id=request.session_id, command_id="same-provider-model", model="test-model"
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            await stub.SubmitInput(
+                environment_runtime_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="continue", text="Continue with the same model."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                assert exchange.request.body["model"] == "test-model"
+                assert [
+                    item["encrypted_content"] for item in exchange.request.body["input"] if item["type"] == "reasoning"
+                ] == ["fixture-model-bound-reasoning"]
+                await exchange.send(*response_stream([Message("continued")], model="test-model").events)
+            assert (await turn_completed(stub, SESSION_ID, "continue")).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_session_store_survives_idle_turns_and_is_separate_between_sessions(

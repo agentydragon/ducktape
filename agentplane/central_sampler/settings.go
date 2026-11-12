@@ -98,14 +98,17 @@ func (c ModelConfig) Validate() error {
 }
 
 func (c ModelConfig) Compatible(other ModelConfig) bool {
-	if c.Connection != other.Connection || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
+	// Matching wire formats do not establish that another model can consume retained
+	// signed thinking, encrypted reasoning or compaction items. Keep the provider
+	// model fixed until the adapter has an explicit cross-model continuation contract.
+	if c.Connection != other.Connection || c.ProviderModel != other.ProviderModel || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
 		return false
 	}
 	switch c.API {
 	case protocol.APIStyleResponses:
 		return c.Responses.Compatible(other.Responses)
 	case protocol.APIStyleAnthropicMessages:
-		return c.ProviderModel == other.ProviderModel && c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
+		return c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
 	default:
 		return false
 	}

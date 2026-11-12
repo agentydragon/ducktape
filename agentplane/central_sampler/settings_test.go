@@ -284,7 +284,7 @@ func copyAnthropicMessages(config *anthropic.Config) *anthropic.Config {
 	return &copy
 }
 
-func TestModelConfigCompatibilityTracksWireSemantics(t *testing.T) {
+func TestModelConfigCompatibilityTracksContinuationSemantics(t *testing.T) {
 	responsesModel := fixtureSettings().Models["test-model"]
 	if !responsesModel.Compatible(responsesModel) {
 		t.Fatal("identical Responses routes should be compatible")
@@ -301,8 +301,8 @@ func TestModelConfigCompatibilityTracksWireSemantics(t *testing.T) {
 	}
 	changedProviderModel := responsesModel
 	changedProviderModel.ProviderModel = "other-model"
-	if !responsesModel.Compatible(changedProviderModel) {
-		t.Fatal("Responses routes with the same wire semantics may change provider model")
+	if responsesModel.Compatible(changedProviderModel) {
+		t.Fatal("matching Responses wire semantics do not establish cross-model continuation compatibility")
 	}
 
 	anthropic := ModelConfig{

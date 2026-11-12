@@ -250,8 +250,11 @@ retained in provider history and answered with the matching function or custom t
 unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
 unsupported output items, duplicate call IDs, and configured names used with the wrong item type
 remain validation failures.
-Model changes cannot change connection, API, dialect or exec encoding within a Session. Anthropic
-also requires the same provider model and request options to preserve signed continuation. Route contracts must remain fixed
+Model changes cannot change connection, provider model, API, dialect or exec encoding within a
+Session. Matching wire formats do not establish that a different model accepts retained signed
+thinking, encrypted reasoning or compaction items; cross-model continuation is conservatively
+rejected with `FAILED_PRECONDITION`. Route aliases for the same provider model remain eligible.
+Anthropic also requires the same request options to preserve signed continuation. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID. Model changes require the
 target to allow the current effort; effort changes must be allowed by the current model.
 Admission validates the projected model and effort after earlier queued commands under the
@@ -685,14 +688,14 @@ sampler-private `internal/storage` content reader/writer: typed IDs/kinds, stand
 content hashing and integrity checks. Shared storage imports neither provider nor semantic protocol
 packages and does not interpret provider payloads. The shared `protocol` package defines semantic
 contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
-authorization and execution history. The shared table holds provider-specific JSON envelopes, not
+authorization and request history. The shared table holds provider-specific JSON envelopes, not
 a universal message schema.
 
 `sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
 shares the entire prior prefix. The conversation transcript retains the full native conversation
 across compaction. Transcript and optional active roots reference these contexts; small controls
 retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
-`sampler_model_request` links each distinct execution to a frozen profile, ordered request-only
+`sampler_model_request` links each provider request to a frozen profile, ordered request-only
 prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
 encoding projection key permit projecting only newly appended native records. A changed prefix
 never becomes the parent of the stable history chain. Loaded contexts retain append checkpoints;
@@ -705,7 +708,7 @@ fixed across sampler rolls. Preparation runs against the authoritative conversat
 transaction and constructs a reference-based request recipe before rendering. Reconstruction uses
 these concrete native fields and Go's standard JSON encoder, rather than rerunning current prompt
 policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
-commit. Identical requests retain distinct execution IDs.
+commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
 
 Before sampling, the first snapshot of model-visible execution handles and subsequent changes
 append as native notices, after the
