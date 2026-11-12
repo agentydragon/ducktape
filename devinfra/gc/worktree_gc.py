@@ -361,7 +361,8 @@ async def remove_worktree(repo: Path, path: Path, *, expected_detached_head: str
                 logger.warning("Preserving detached reflog commit at %s before removing %s", recovery_ref, path)
                 await git(repo, "update-ref", "--no-deref", recovery_ref, oid, "", check=False, interruptible=False)
                 resolved = await git(repo, "rev-parse", "--verify", recovery_ref)
-                if resolved.stdout.strip() != oid:
+                symbolic = await git(repo, "symbolic-ref", "-q", recovery_ref, check=False)
+                if symbolic.returncode != 1 or resolved.stdout.strip() != oid:
                     return Failed(path, f"cannot preserve detached commit at {recovery_ref}")
             current = await run_blocking(lambda: open_repo(path))
             if not current.head_is_detached or str(current.head.peel(pygit2.Commit).id) != current_head:

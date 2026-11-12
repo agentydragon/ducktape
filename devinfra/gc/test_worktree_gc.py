@@ -359,6 +359,28 @@ async def test_detached_ref_creation_failure_does_not_remove(
     assert path.exists()
 
 
+@pytest.mark.parametrize("symbolic", [False, True])
+async def test_detached_recovery_ref_collision_does_not_remove(repo: GitRepo, proc: Path, symbolic: bool) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    head = item.worktree.head
+    assert head is not None
+    ref = f"refs/workspace-gc/recovery/{head}"
+    if symbolic:
+        repo.run("symbolic-ref", ref, "refs/heads/main")
+    else:
+        repo.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "other")
+        repo.run("update-ref", ref, repo.rev("main"))
+    assert isinstance(await _remove_detached(repo, item.worktree), Failed)
+    assert path.exists()
+    if symbolic:
+        assert repo.run("symbolic-ref", ref).stdout.strip() == "refs/heads/main"
+    else:
+        assert repo.rev(ref) != head
+
+
 @pytest.mark.parametrize("cancel", [False, True])
 async def test_detached_recovery_ref_survives_failed_or_cancelled_removal(
     repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch, cancel: bool
