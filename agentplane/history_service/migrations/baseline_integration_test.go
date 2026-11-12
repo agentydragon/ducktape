@@ -2,13 +2,19 @@ package migrations
 
 import (
 	"database/sql"
-	"fmt"
+	"embed"
+	"io/fs"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/pressly/goose/v3"
 )
+
+// These are the migration files shipped immediately before version 15, kept as test fixtures so
+// the prior-v11 fresh-schema upgrade remains an executable compatibility check.
+//
+//go:embed testdata/legacy_v14/*.sql
+var legacyV14Migrations embed.FS
 
 func baselineDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -30,18 +36,29 @@ func upBaseline(t *testing.T, db *sql.DB) error {
 	return err
 }
 
-func assertV14GooseCanReadV15Ledger(t *testing.T, db *sql.DB, firstVersion, lastVersion int) {
+func previousV14Provider(t *testing.T, db *sql.DB) *goose.Provider {
 	t.Helper()
-	migrations := make(fstest.MapFS, lastVersion-firstVersion+1)
-	for version := firstVersion; version <= lastVersion; version++ {
-		name := fmt.Sprintf("%05d_previous.sql", version)
-		migrations[name] = &fstest.MapFile{Data: []byte("-- +goose Up\nSELECT 1;\n-- +goose Down\nSELECT 1;\n")}
+	files, err := fs.Sub(legacyV14Migrations, "testdata/legacy_v14")
+	if err != nil {
+		t.Fatal(err)
 	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations,
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
 		goose.WithTableName("history_service_goose_version"), goose.WithDisableGlobalRegistry(true))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return provider
+}
+
+func upPriorV14(t *testing.T, db *sql.DB) error {
+	t.Helper()
+	_, err := previousV14Provider(t, db).Up(t.Context())
+	return err
+}
+
+func assertV14GooseCanReadV15Ledger(t *testing.T, db *sql.DB) {
+	t.Helper()
+	provider := previousV14Provider(t, db)
 	pending, err := provider.HasPending(t.Context())
 	if err != nil {
 		t.Fatalf("v14 Goose provider reading v15 ledger: %v", err)
@@ -67,17 +84,6 @@ func setHistoryVersion(t *testing.T, db *sql.DB, version int) {
 	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO history_service_goose_version(version_id,is_applied)
 		SELECT generated.version_id,true FROM generate_series(1,$1) AS generated(version_id)`, version); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func setFreshV11History(t *testing.T, db *sql.DB) {
-	t.Helper()
-	if _, err := db.ExecContext(t.Context(), `DELETE FROM history_service_goose_version`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO history_service_goose_version(version_id,is_applied)
-		VALUES (0,true),(11,true),(12,true),(13,true),(14,true)`); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -221,7 +227,7 @@ func TestBaselineAdoptsVersion14AndPreservesHistory(t *testing.T) {
 			t.Errorf("applied Goose version %d records = %d, want 1", version, got)
 		}
 	}
-	assertV14GooseCanReadV15Ledger(t, db, 1, 14)
+	assertV14GooseCanReadV15Ledger(t, db)
 	if got := commandBridgeCount(t, db); got != 0 {
 		t.Errorf("temporary command bridge objects = %d", got)
 	}
@@ -262,10 +268,9 @@ func TestBaselineAdoptsVersion14AndPreservesHistory(t *testing.T) {
 
 func TestBaselineAdoptsPriorV11FreshSchemaHistory(t *testing.T) {
 	db := baselineDB(t)
-	if err := upBaseline(t, db); err != nil {
-		t.Fatal(err)
+	if err := upPriorV14(t, db); err != nil {
+		t.Fatal("create fresh schema using the prior v11 baseline through v14:", err)
 	}
-	setFreshV11History(t, db)
 	objectsBefore := schemaObjectIdentities(t, db)
 	if err := upBaseline(t, db); err != nil {
 		t.Fatal("adopt v14 schema created from the prior v11 fresh baseline:", err)
@@ -283,7 +288,7 @@ func TestBaselineAdoptsPriorV11FreshSchemaHistory(t *testing.T) {
 			t.Errorf("unexpected legacy Goose version %d records = %d", version, got)
 		}
 	}
-	assertV14GooseCanReadV15Ledger(t, db, 11, 14)
+	assertV14GooseCanReadV15Ledger(t, db)
 }
 
 func TestBaselineRejectsOlderDeployedVersionBeforeChangingData(t *testing.T) {
