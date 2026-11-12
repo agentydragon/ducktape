@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
@@ -171,7 +172,7 @@ func TestATransientLookupFailureAndAnOwnerMismatchCannotConfirmStaleness(t *test
 
 	// The Sandbox answers, but it is not the owner's: that is not a stale destination either.
 	wrongOwner := matchingSandbox()
-	wrongOwner.Identity.Name = "different-owner"
+	wrongOwner.Resource.Spec.Identity.Name = "different-owner"
 	h.sandboxes.serve(wrongOwner)
 	h.makeDue(t, inbox)
 	h.step(t)
@@ -206,10 +207,10 @@ func TestAFailedFirstLookupDoesNotStartStaleConfirmation(t *testing.T) {
 
 func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
+	subscription, err := h.store.SubscribeAsIdentity(t.Context(), testOwner, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
-	}, nil, "test-account-uid")
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,11 +236,15 @@ func TestAMatchingDestinationIsWorkedAndShowsNoError(t *testing.T) {
 }
 
 func TestWorkerDoesNotReadSourcesForUnknownOrChangedSessionOwner(t *testing.T) {
-	for _, uid := range []string{"", "replacement-account-uid"} {
-		t.Run(uid, func(t *testing.T) {
+	for _, identity := range []*identitypb.Identity{nil, {Name: "test-identity", Uid: "replacement-identity-uid"}} {
+		name := "missing identity"
+		if identity != nil {
+			name = "replacement identity"
+		}
+		t.Run(name, func(t *testing.T) {
 			h := newHarness(t, debounce(0, 0))
 			subscription := h.subscribe(t, "owner-uid")
-			h.dispatcher.accountUID = uid
+			h.dispatcher.identity = identity
 			h.step(t)
 			if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
 				t.Fatal("worked sources or delivered under an unproven owner")
@@ -249,25 +254,52 @@ func TestWorkerDoesNotReadSourcesForUnknownOrChangedSessionOwner(t *testing.T) {
 	}
 }
 
-func TestWorkerEstablishesOwnerBeforeItsFirstSourceRead(t *testing.T) {
+func TestWorkerDoesNotReadSourcesAfterSandboxIdentityReplacement(t *testing.T) {
 	h := newHarness(t, debounce(0, 0))
-	subscription := h.subscribe(t, "establish-before-source")
-	h.exec(t, `UPDATE inbox SET owner_uid = NULL WHERE id = $1`, subscription.InboxID)
-	seen := false
-	h.actions.on(func(_ context.Context, claim store.Claim, _ store.DueSubscription) error {
-		seen = true
-		if claim.OwnerUID == nil || *claim.OwnerUID != "test-account-uid" {
-			t.Fatal("source read without the established owner UID")
-		}
-		return nil
-	})
+	subscription := h.subscribe(t, "sandbox-identity-uid")
+	h.sandboxes.mu.Lock()
+	h.sandboxes.identity = &identitypb.Identity{Name: testOwner.Name, Uid: "replacement-identity-uid"}
+	h.sandboxes.mu.Unlock()
+
 	h.step(t)
-	if !seen {
-		t.Fatal("source was not reconciled after proving its owner")
+	if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
+		t.Fatal("worked sources or delivered after the Sandbox's same-named Identity was replaced")
 	}
-	inbox := h.page(t, subscription.InboxID).Inbox
-	if inbox.OwnerUID == nil || *inbox.OwnerUID != "test-account-uid" {
-		t.Fatalf("owner UID was not persisted: %v", inbox.OwnerUID)
+	requireNotRetired(t, h, subscription)
+	if got := h.row(t, subscription.InboxID).deliveryError; got == nil || *got != "OwnerMismatchError" {
+		t.Fatalf("delivery error = %v, want OwnerMismatchError", got)
+	}
+}
+
+func TestWorkerRetainsAnOwnerlessLegacyInboxWithoutReadingSources(t *testing.T) {
+	h := newHarness(t, debounce(0, 0))
+	subscription := h.subscribe(t, "legacy-owner")
+	h.exec(t, `UPDATE inbox SET owner_identity_name = NULL, owner_identity_uid = NULL WHERE id = $1`, subscription.InboxID)
+	h.step(t)
+	if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
+		t.Fatal("an unowned legacy inbox reached a source or runner")
+	}
+	row := h.row(t, subscription.InboxID)
+	if row.retired {
+		t.Fatal("the retained legacy inbox was retired")
+	}
+	if row.lastCursor != 0 {
+		t.Fatalf("legacy inbox cursor changed: %d", row.lastCursor)
+	}
+	if got := row.deliveryError; got == nil || *got != "OwnerMismatchError" {
+		t.Fatalf("delivery error = %v, want OwnerMismatchError", got)
+	}
+	var ownerUID, identityName, identityUID sql.NullString
+	if err := h.db.QueryRowContext(t.Context(), `SELECT owner_uid, owner_identity_name, owner_identity_uid FROM inbox WHERE id = $1`, subscription.InboxID).
+		Scan(&ownerUID, &identityName, &identityUID); err != nil {
+		t.Fatal(err)
+	}
+	if ownerUID.Valid || identityName.Valid || identityUID.Valid {
+		t.Fatalf("legacy ownership changed: account UID %v, Identity %v/%v", ownerUID, identityName, identityUID)
+	}
+	inboxes, err := h.store.ListInboxes(t.Context(), testIncarnation)
+	if err != nil || len(inboxes) != 0 {
+		t.Fatalf("Identity inboxes = %v, %v; legacy inbox must not be adopted", inboxes, err)
 	}
 }
 
@@ -277,7 +309,6 @@ func TestWorkerEstablishesOwnerBeforeItsFirstSourceRead(t *testing.T) {
 func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.T) {
 	h := newHarness(t, debounce(0, 300))
 	identity := model.Identity{Name: "test-identity", UID: "test-identity-uid"}
-	h.dispatcher.accountUID = ""
 	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
 	subscription, err := h.store.SubscribeAsIdentity(t.Context(), identity, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",

@@ -24,6 +24,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -38,24 +39,28 @@ const (
 	testSession    = "test-session"
 )
 
-// testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
-var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+// testOwner owns the inboxes: the Dispatcher records this exact Identity for each Session.
+var testOwner = model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 
-// testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+// testIncarnation is testOwner in the Sandbox incarnation the destinations name.
+var testIncarnation = store.IdentityOwner{Identity: testOwner, SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 
 func matchingSandbox() sandboxreader.View {
-	return sandboxreader.View{Identity: &sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}}
+	return sandboxreader.View{
+		Identity: &sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID},
+		Resource: &sandboxapi.Sandbox{Spec: sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: testOwner.Name}}},
+	}
 }
 
 // fakeSandboxes serves the one Sandbox the destinations name, until a test makes it fail or replaces it.
 type fakeSandboxes struct {
-	mu      sync.Mutex
-	view    sandboxreader.View
-	err     error
-	lookups int
+	mu       sync.Mutex
+	view     sandboxreader.View
+	identity *identitypb.Identity
+	err      error
+	lookups  int
 }
 
 func (s *fakeSandboxes) Get(_ context.Context, _ string) (sandboxreader.View, error) {
@@ -66,6 +71,25 @@ func (s *fakeSandboxes) Get(_ context.Context, _ string) (sandboxreader.View, er
 		return sandboxreader.View{}, s.err
 	}
 	return s.view, nil
+}
+
+func (s *fakeSandboxes) ExecutionIdentity(_ context.Context, sandbox *sandboxreader.Identity) (*identitypb.Identity, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return nil, false, s.err
+	}
+	if sandbox == nil || s.view.Identity == nil || sandbox.Namespace != s.view.Identity.Namespace ||
+		sandbox.Name != s.view.Identity.Name || sandbox.Uid != s.view.Identity.Uid {
+		return nil, false, nil
+	}
+	if s.view.Resource == nil || s.view.Resource.Spec.Identity == nil {
+		return nil, true, nil
+	}
+	if s.identity == nil {
+		return nil, false, nil
+	}
+	return &identitypb.Identity{Name: s.view.Resource.Spec.Identity.Name, Uid: s.identity.GetUid()}, true, nil
 }
 
 func (s *fakeSandboxes) serve(view sandboxreader.View) {
@@ -256,7 +280,9 @@ func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settin
 	t.Helper()
 	db := postgres.Open(t, databaseURL)
 	h := &harness{
-		db: db, settings: settings, sandboxes: &fakeSandboxes{view: matchingSandbox()},
+		db: db, settings: settings, sandboxes: &fakeSandboxes{
+			view: matchingSandbox(), identity: &identitypb.Identity{Name: testOwner.Name, Uid: testOwner.UID},
+		},
 		history: &fakeHistory{}, dispatcher: &fakeDispatcher{identity: &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}}, actions: newFakeProvider(),
 	}
 	h.exec(t, `TRUNCATE inbox CASCADE`)
@@ -298,10 +324,10 @@ func destination() model.DestinationRef {
 
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store.Subscription {
 	t.Helper()
-	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
+	subscription, err := h.store.SubscribeAsIdentity(t.Context(), testOwner, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: model.ActionsSource{RequestID: request}, LifetimeDays: 7,
-	}, nil, "test-account-uid")
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

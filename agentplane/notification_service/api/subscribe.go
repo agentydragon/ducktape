@@ -87,7 +87,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 	if err != nil {
 		return store.Subscription{}, err
 	}
-	return subscription, s.establishIdentity(ctx, session.GetSession(), body.DestinationRef, body.SessionID)
+	return subscription, nil
 }
 
 // destination resolves the Sandbox the reference names to the exact incarnation, which must name the Identity
@@ -98,20 +98,28 @@ func (s *Notifications) destination(ctx context.Context, owner store.Owner, ref 
 	if err != nil {
 		return nil, err
 	}
-	if !runsAs(view, owner) {
+	runsAs, err := s.sandboxRunsAs(ctx, view, owner)
+	if err != nil {
+		return nil, err
+	}
+	if !runsAs {
 		return nil, errSandboxMissing
 	}
 	return view.Identity, nil
 }
 
-// runsAs reports whether the Sandbox as read names the Identity owner in `spec.identity`.
-func runsAs(view sandboxreader.View, owner store.Owner) bool {
+// sandboxRunsAs reads the live execution Identity for the exact Sandbox incarnation and compares
+// both UID and name. A reused Identity name cannot make a retained Session appear owned by its successor.
+func (s *Notifications) sandboxRunsAs(ctx context.Context, view sandboxreader.View, owner store.Owner) (bool, error) {
 	switch owner := owner.(type) {
 	case store.IdentityOwner:
-		named := view.Resource.Spec.Identity
-		return named != nil && named.Name == owner.Identity.Name
+		identity, found, err := s.sandboxes.ExecutionIdentity(ctx, view.Identity)
+		if err != nil {
+			return false, unavailable("sandbox execution Identity", err)
+		}
+		return found && identity != nil && identity.Name == owner.Identity.Name && identity.Uid == owner.Identity.UID, nil
 	default:
-		return false
+		return false, nil
 	}
 }
 

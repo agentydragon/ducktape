@@ -51,7 +51,7 @@ func (s testServer) sentMessage(t *testing.T, token, id string) (*notificationsp
 // requireNoInbox checks that the test Sandbox has no inbox.
 func (s testServer) requireNoInbox(t *testing.T) {
 	t.Helper()
-	inboxes, err := s.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := s.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,14 +79,14 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("retry = %v, want %v", retried, sent)
 	}
 
-	inboxes, err := server.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(inboxes.GetInboxes()) != 1 {
 		t.Fatalf("inboxes = %v", inboxes)
 	}
-	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	read, err := server.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,10 +105,10 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	}
 
 	// Only the sender follows the message.
-	if _, err := server.sentMessage(t, sandboxToken, sent.GetId()); status.Code(err) != codes.NotFound {
+	if _, err := server.sentMessage(t, identityToken, sent.GetId()); status.Code(err) != codes.NotFound {
 		t.Errorf("the recipient's lookup: %v, want NotFound", err)
 	}
-	if _, err := server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := server.client.AcknowledgeInbox(bearing(t, identityToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	followed, err := server.sentMessage(t, otherSandboxToken, sent.GetId())

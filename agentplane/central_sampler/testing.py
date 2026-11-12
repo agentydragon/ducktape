@@ -180,6 +180,7 @@ def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
             owner=identity_pb2.ServiceAccount(namespace="test", name="executor"),
             target=identity_pb2.EnvironmentTarget(namespace="test", name="test-sandbox", uid="test-sandbox-uid"),
         ),
+        execution_identity=identity_pb2.Identity(name="test-identity", uid="test-identity-uid"),
         expected_incarnation_uid="test-pod-uid",
     )
 

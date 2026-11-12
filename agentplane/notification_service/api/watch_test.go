@@ -50,11 +50,11 @@ func TestInboxWatchOpensAndFollowsCommittedChanges(t *testing.T) {
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetId() == sub.GetInboxId() })
 	s.record(t, sub, 1)
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetDelivery().GetPendingAcknowledgementCount() == 1 })
-	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, identityToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetAcknowledged() == 1 })
-	if _, err := s.client.RetireInbox(bearing(t, sandboxToken), &pb.RetireInboxRequest{SessionId: testSession}); err != nil {
+	if _, err := s.client.RetireInbox(bearing(t, identityToken), &pb.RetireInboxRequest{SessionId: testSession}); err != nil {
 		t.Fatal(err)
 	}
 	retired := untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetRetired() })
@@ -132,7 +132,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 			break
 		}
 	}
-	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, identityToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -149,7 +149,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 func TestWorkloadWatchStopsWhenItsSandboxIsRecreated(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "watch-fence")
-	stream, err := s.client.WatchInbox(bearing(t, sandboxToken), &pb.WatchInboxRequest{SessionId: testSession})
+	stream, err := s.client.WatchInbox(bearing(t, identityToken), &pb.WatchInboxRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
 			// The client deadline bounds a broken service; a backend timeout must end the watch first.
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
-			stream, err := s.client.WatchInbox(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sandboxToken), &pb.WatchInboxRequest{SessionId: testSession})
+			stream, err := s.client.WatchInbox(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+identityToken), &pb.WatchInboxRequest{SessionId: testSession})
 			if err != nil {
 				t.Fatal(err)
 			}

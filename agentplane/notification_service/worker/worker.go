@@ -247,7 +247,7 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 	if err != nil {
 		return unavailable(err)
 	}
-	if err := w.establishOwner(ctx, &claim, session.GetSession()); err != nil {
+	if err := w.checkSessionOwner(claim, session.GetSession()); err != nil {
 		return err
 	}
 	destinationErr := w.checkDestination(ctx, claim)
@@ -276,21 +276,14 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 	return w.deliver(ctx, claim, claim.DestinationRef.Name, *notice)
 }
 
-// establishOwner checks the claimed inbox's Identity against what the Session authority recorded.
-// Legacy ServiceAccount-owned inboxes remain retained but are not delivered as Session-owned inboxes.
-func (w *Worker) establishOwner(ctx context.Context, claim *store.Claim, session *dispatcherpb.Session) error {
-	if identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef); ok {
-		if claim.OwnerUID != nil {
-			return errOwnerMismatch
-		}
-		err := w.Store.EstablishInboxIdentity(ctx, claim.DestinationRef, claim.SessionID, identity)
-		if errors.Is(err, store.ErrNotFound) {
-			return errOwnerMismatch
-		}
-		claim.OwnerIdentity = &identity
-		return err
+// checkSessionOwner checks the claimed inbox's already-persisted Identity against what the Session authority recorded.
+// Legacy rows without an Identity owner remain retained but are not adopted or delivered.
+func (w *Worker) checkSessionOwner(claim store.Claim, session *dispatcherpb.Session) error {
+	identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef)
+	if !ok || claim.OwnerUID != nil || claim.OwnerIdentity == nil || *claim.OwnerIdentity != identity {
+		return errOwnerMismatch
 	}
-	return errOwnerMismatch
+	return nil
 }
 
 // readSource reads the claimed inbox's next due subscription, if any, and records the outcome on it.

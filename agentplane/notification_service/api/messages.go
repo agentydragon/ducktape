@@ -103,7 +103,11 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 	} else {
 		return nil, store.ErrNotFound
 	}
-	if !runsAs(view, message.Recipient) {
+	runsAs, err := s.sandboxRunsAs(ctx, view, message.Recipient)
+	if err != nil {
+		return nil, err
+	}
+	if !runsAs {
 		return nil, errSandboxMissing
 	}
 	sent, err := s.store.Send(ctx, message)
@@ -117,9 +121,6 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 		sent, err = s.store.Send(ctx, message)
 	}
 	if err != nil {
-		return nil, err
-	}
-	if err := s.establishIdentity(ctx, session.GetSession(), message.DestinationRef, message.SessionID); err != nil {
 		return nil, err
 	}
 	return &notificationspb.SendMessageResponse{Message: sentMessageView(sent)}, nil
