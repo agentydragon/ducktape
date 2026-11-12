@@ -32,7 +32,6 @@ forward:
 
 func TestCollectionsLoadFromTheFileAndScalarsFromTheEnvironment(t *testing.T) {
 	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [file-namespace]
-projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
 forward:
   listen_address: 127.0.0.1:5555
@@ -53,7 +52,6 @@ admin_listen_address: 127.0.0.1:1111
 	if c.Forward.ListenAddress != "127.0.0.1:5555" || !c.Forward.Has(listener.SPIFFE) ||
 		c.AdminListenAddress != "127.0.0.1:1111" ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
-		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
 		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}
@@ -160,7 +158,6 @@ forward:
 	configured, err := configtest.Load(t, settingPrefix, loadConfig, required(
 		t,
 		settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-projected_token_audiences: [destination]
 forward:
   listen_address: 127.0.0.1:8888
   tls:

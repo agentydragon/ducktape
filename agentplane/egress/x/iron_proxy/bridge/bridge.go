@@ -135,12 +135,7 @@ func (b *Bridge) TransformRequest(ctx context.Context, request *transformv1.Tran
 	}
 
 	caller := reader.ServiceAccount{Namespace: state.principal.Account.Namespace, Name: state.principal.Account.Name}
-	workload := &policy.WorkloadContext{
-		Caller: caller,
-		PodUID: state.principal.PodUID,
-		// Projected audience tokens are intentionally unsupported by this bridge prototype.
-	}
-	verdict := b.policy.Evaluate(caller, policyRequest, workload)
+	verdict := b.policy.Evaluate(caller, policyRequest)
 	allowed, ok := verdict.(policy.Allowed)
 	if !ok {
 		return reject(policyStatus(verdict), deniedReason(verdict)), nil
@@ -331,7 +326,7 @@ func headersFromProto(input map[string]*transformv1.HeaderValues) (http.Header, 
 
 func stripPrivateHeaders(headers http.Header) bool {
 	changed := false
-	for _, name := range []string{proxyAuthorizationHeader, identity.ProjectedTokenHeader} {
+	for _, name := range []string{proxyAuthorizationHeader, identity.UntrustedWorkloadTokenHeader} {
 		canonical := textproto.CanonicalMIMEHeaderKey(name)
 		if _, ok := headers[canonical]; ok {
 			// iron-proxy applies a modified header map only when it is non-empty. Keep a

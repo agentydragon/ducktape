@@ -36,16 +36,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-var (
-	tokenCredential = resources.Credential{
-		Name: "body-token", Source: resources.SecretKey{Name: "keys", Key: "body"},
-		Targets: []resources.Target{resources.JSONField{Field: "token"}},
-	}
-	projectedCredential = resources.Credential{
-		Name: "kube", Source: resources.ProjectedWorkloadToken{Audience: projectedAudience},
-		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
-	}
-)
+var tokenCredential = resources.Credential{
+	Name: "body-token", Source: resources.SecretKey{Name: "keys", Key: "body"},
+	Targets: []resources.Target{resources.JSONField{Field: "token"}},
+}
 
 func rule(path, credential string) policyapi.Rule {
 	rule := policyapi.Rule{Type: resources.EgressRuleType, Hosts: []string{fixtureHost}, Paths: []string{path}}
@@ -181,7 +175,7 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 	})
 	response := l.send(t, "GET", portOf(upstream), "/allowed",
 		header("x-api-key", "agentplane-credential-key",
-			"X-Agentplane-Workload-Token", projectedAudience+" "+projectedToken), nil)
+			"X-Agentplane-Workload-Token", "attacker-controlled workload token"), nil)
 	record := l.records.all()[0]
 	if response.StatusCode != 200 || record.Outcome != decision.Allow || !record.Substituted ||
 		*record.Address != "127.0.0.1" || *record.Binding != "runner" || *record.Policy != "egress" || *record.Rule != 0 ||
@@ -244,74 +238,6 @@ func TestJSONBodyCredentialIsSubstitutedWithItsLengthUpdated(t *testing.T) {
 	l.send(t, "POST", portOf(upstream), "/upload", json, strings.NewReader(large))
 	if got := received.take(); got != large {
 		t.Errorf("upstream got %d bytes of a %d byte body", len(got), len(large))
-	}
-}
-
-func TestProjectedTokenIsSubstitutedOnlyWhenItProvesTheHopsPod(t *testing.T) {
-	l := newLab(t)
-	l.index.PutCredential(projectedCredential)
-	l.allow(rule("/kube", "kube"))
-	_, otherPodToken := runnerToken(t, projectedAudience)
-	var authorization seen
-	upstream := plainUpstream(t, func(w http.ResponseWriter, r *http.Request) { authorization.set(r.Header.Get("Authorization")) })
-	for name, c := range map[string]struct {
-		presented     string
-		status        int
-		authorization string
-	}{
-		"same pod":              {projectedAudience + " " + projectedToken, 200, "Bearer " + projectedToken},
-		"another pod":           {projectedAudience + " " + otherPodToken, 403, ""},
-		"unreviewed":            {projectedAudience + " forged", 403, ""},
-		"unconfigured audience": {"https://other.test.invalid " + projectedToken, 403, ""},
-		"malformed":             {projectedToken, 403, ""},
-	} {
-		t.Run(name, func(t *testing.T) {
-			response := l.send(t, "GET", portOf(upstream), "/kube",
-				header("Authorization", "Bearer agentplane-credential-kube",
-					"X-Agentplane-Workload-Token", c.presented), nil)
-			if got := authorization.take(); response.StatusCode != c.status || got != c.authorization {
-				t.Errorf("status %d, upstream Authorization %q", response.StatusCode, got)
-			}
-			if c.status == 403 && response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" {
-				t.Errorf("refused as %q", response.Header.Get("x-agentplane-egress"))
-			}
-		})
-	}
-}
-
-func TestTunnelRequestsInheritWhatTheConnectPresented(t *testing.T) {
-	l := newLab(t)
-	l.index.PutCredential(projectedCredential)
-	l.allow(rule("/kube", "kube"))
-	var authorization seen
-	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization.set(r.Header.Get("Authorization"))
-	}))
-	_, client := l.tunnelPresenting(t, portOf(upstream), true,
-		"X-Agentplane-Workload-Token: "+projectedAudience+" "+projectedToken+"\r\n")
-	send := func(tokens ...string) int {
-		req := request(bounded(t), portOf(upstream), "/kube", true, nil)
-		req.Header.Del("x-api-key")
-		req.Header.Set("Authorization", "Bearer agentplane-credential-kube")
-		req.Header["X-Agentplane-Workload-Token"] = tokens
-		response, err := client.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		return response.StatusCode
-	}
-
-	if status, got := send(), authorization.take(); status != 200 || got != "Bearer "+projectedToken {
-		t.Errorf("without the header: status %d, upstream Authorization %q", status, got)
-	}
-	// A request that presents the header with nothing usable in it inherits nothing.
-	if status, got := send("malformed"), authorization.take(); status != 403 || got != "" {
-		t.Errorf("with a malformed entry: status %d, upstream Authorization %q", status, got)
-	}
-	// What it presented replaces what the CONNECT did.
-	if status, got := send(projectedAudience+" "+projectedToken), authorization.take(); status != 200 || got != "Bearer "+projectedToken {
-		t.Errorf("with a fresh entry: status %d, upstream Authorization %q", status, got)
 	}
 }
 
@@ -651,7 +577,7 @@ func TestNoSecretReachesTheLogsOrTheRecordedDecisions(t *testing.T) {
 		body, _ := io.ReadAll(refused.Body)
 		t.Fatalf("forged bearer: status %d headers=%v body=%q", refused.StatusCode, refused.Header, body)
 	}
-	_, client := l.tunnelPresenting(t, port, true, "X-Agentplane-Workload-Token: "+projectedAudience+" "+forgedProjected+"\r\n")
+	_, client := l.tunnelPresenting(t, port, true, "X-Agentplane-Workload-Token: forged workload token: "+forgedProjected+"\r\n")
 	public := request(bounded(t), port, "/public/"+pathSecret+"?token="+querySecret, true, nil)
 	public.Header.Del("x-api-key")
 	public.Header.Set("X-Test-Private", headerSecret)
@@ -945,22 +871,6 @@ func TestAnIdentityIsDecidedByItsOwnBindingsAndRecordedByName(t *testing.T) {
 	}
 	if admitted := records[1]; admitted.Outcome != decision.Allow || valueOf(admitted.Binding) != "agent" || !admitted.Substituted {
 		t.Errorf("admitted %+v", admitted)
-	}
-
-	// A Pod token proves a ServiceAccount, never an Identity, so even its own Pod's is dropped.
-	l.index.PutCredential(projectedCredential)
-	l.allow(rule("/allowed", "key"), rule("/kube", "kube"))
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-		Namespace: runner.Namespace, Name: agent.Principal.PodName, UID: types.UID(agent.Principal.PodUID),
-	}, Spec: corev1.PodSpec{ServiceAccountName: agent.Principal.Account.Name}}
-	podToken, err := kube.PodToken(t.Context(), pod, projectedAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response := send("/kube", header("Authorization", "Bearer agentplane-credential-kube",
-		"X-Agentplane-Workload-Token", projectedAudience+" "+podToken)); response.StatusCode != 403 ||
-		response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" || authorization.take() != "" {
-		t.Errorf("Identity's projected token: status %d, %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
 	}
 }
 

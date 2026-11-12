@@ -119,6 +119,12 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     ):
         assert runner_mounts[path] == executor_mounts[path]
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    assert pod["automountServiceAccountToken"] is False
+    assert all(
+        "serviceAccountToken" not in source
+        for volume in volumes.values()
+        for source in volume.get("projected", {}).get("sources", [])
+    ), "command box workloads must not receive a ServiceAccount token projection"
     for path in ("/home/runner", "/tmp", "/run/agentplane/executor"):
         assert "emptyDir" in volumes[runner_mounts[path]]
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net/http"
 	"reflect"
 	"strings"
@@ -27,11 +26,9 @@ const proxyAuthorization = "Proxy-Authorization"
 // deniedHeader carries the machine-readable reason of a refusal.
 const deniedHeader = "x-agentplane-egress"
 
-// authenticated is the SVID a connection proved, and what it may present for substitution.
+// authenticated is the SVID a connection proved.
 type authenticated struct {
 	subject auth.Subject
-	// projected holds the tokens the sidecar offered, by audience, that were reviewed as this Pod's.
-	projected map[string]string
 }
 
 func (authenticated) String() string   { return "authenticated{redacted}" }
@@ -50,31 +47,17 @@ type outcome struct {
 func (p *Proxy) gate(req *http.Request, client *connection, body []byte, host string, port int) (policy.Decision, upstream.Pin) {
 	_, supplied := req.Header[proxyAuthorization]
 	req.Header.Del(proxyAuthorization)
-	presented := takeProjectedTokens(req.Header)
-	result := p.decide(req, client, supplied, presented, body, host, port)
+	req.Header.Del(identity.UntrustedWorkloadTokenHeader)
+	result := p.decide(req, client, supplied, body, host, port)
 	p.record(req, client, host, port, result)
 	return result.decision, result.pin
 }
 
-// takeProjectedTokens removes the audience-tagged tokens from the request. It is nil when the
-// request carried none at all, which is what a request inside a tunnel looks like and so inherits
-// what the CONNECT presented; an empty map is a request that carried the header with nothing usable
-// in it, which inherits nothing.
-func takeProjectedTokens(header http.Header) map[string]string {
-	values := header.Values(identity.ProjectedTokenHeader)
-	if len(values) == 0 {
-		return nil
-	}
-	header.Del(identity.ProjectedTokenHeader)
-	return identity.ParseProjectedTokens(values)
-}
-
 func (p *Proxy) decide(
-	req *http.Request, client *connection, supplied bool, presented map[string]string,
-	body []byte, host string, port int,
+	req *http.Request, client *connection, supplied bool, body []byte, host string, port int,
 ) outcome {
 	ctx := req.Context()
-	who, err := p.authenticate(ctx, client, supplied, presented)
+	who, err := p.authenticate(ctx, client, supplied)
 	if err != nil {
 		var rejection *identity.Rejection
 		if errors.As(err, &rejection) {
@@ -104,8 +87,7 @@ func (p *Proxy) decide(
 		// relay dials https with UpstreamRoots verification; nothing else is TLS to the upstream.
 		request.TLS = req.URL.Scheme == "https"
 	}
-	workload := &policy.WorkloadContext{Caller: caller, PodUID: podUID(who.subject), Projected: who.projected}
-	first := p.options.Policy.Evaluate(caller, request, workload)
+	first := p.options.Policy.Evaluate(caller, request)
 	admitted, ok := first.(policy.Allowed)
 	if !ok {
 		return outcome{decision: first, caller: who}
@@ -125,18 +107,15 @@ func (p *Proxy) decide(
 	// Identity and DNS awaited I/O. Reading policy and readiness again after the last await is what
 	// keeps a revocation, expiry or watch failure during admission from authorizing the dial.
 	if !p.options.Policy.Health.Available() ||
-		!reflect.DeepEqual(p.options.Policy.Evaluate(caller, request, workload), first) {
+		!reflect.DeepEqual(p.options.Policy.Evaluate(caller, request), first) {
 		return refused(decision.Unavailable)
 	}
 	return outcome{decision: admitted, pin: pin, caller: who}
 }
 
-// authenticate re-resolves the connection's SVID on every request and binds the presented
-// projected tokens to the Pod it proves. `supplied` is a Proxy-Authorization header on the request,
-// which this listener refuses rather than ignores.
-func (p *Proxy) authenticate(
-	ctx context.Context, client *connection, supplied bool, presented map[string]string,
-) (*authenticated, error) {
+// authenticate re-resolves the connection's SVID on every request. `supplied` is a
+// Proxy-Authorization header on the request, which this listener refuses rather than ignores.
+func (p *Proxy) authenticate(ctx context.Context, client *connection, supplied bool) (*authenticated, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	previous := client.auth
@@ -150,13 +129,7 @@ func (p *Proxy) authenticate(
 		client.auth = nil
 		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "authenticated tunnel identity changed"}
 	}
-	var projected map[string]string
-	if presented != nil {
-		projected = p.options.Authentication.VerifyProjected(ctx, caller, presented)
-	} else if previous != nil {
-		projected = maps.Clone(previous.projected)
-	}
-	client.auth = &authenticated{subject: caller.Subject, projected: projected}
+	client.auth = &authenticated{subject: caller.Subject}
 	return client.auth, nil
 }
 

@@ -21,11 +21,10 @@ from cluster.cdk8s.agentplane.launcher_relay import (
     RUNNER_TLS_VOLUME_NAME,
     LauncherRelayPolicy,
 )
-from cluster.cdk8s.agentplane.sandbox_pod import EGRESS_TOKEN_VOLUME_NAME, SIDECAR_SETTINGS_VOLUME_NAME
+from cluster.cdk8s.agentplane.sandbox_pod import SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.cdk8s.kyverno.apply import KyvernoApplyResult, apply_policy
 
 NAMESPACE = "launcher-relay-test"
-TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME
 RELAY_SETTINGS = "relay-test-relay-settings"
 RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 RUNNER_SECRET = f"svid-sandbox-a-{RUNNER_CREDENTIAL_ID}"
@@ -44,18 +43,13 @@ RUNNER_POD = {
                 "env": [{"name": "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE", "value": "/etc/relay-test/settings.yaml"}],
                 "securityContext": {"allowPrivilegeEscalation": False},
                 "volumeMounts": [
-                    {"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test", "readOnly": True},
-                    {"name": SIDECAR_SETTINGS_VOLUME_NAME, "mountPath": "/etc/relay-test", "readOnly": True},
+                    {"name": SIDECAR_SETTINGS_VOLUME_NAME, "mountPath": "/etc/relay-test", "readOnly": True}
                 ],
             }
         ],
         "volumes": [
             {"name": "unrelated", "configMap": {"name": "relay-test-config"}},
             {"name": SIDECAR_SETTINGS_VOLUME_NAME, "configMap": {"name": "relay-test-settings"}},
-            {
-                "name": TOKEN_VOLUME,
-                "projected": {"sources": [{"serviceAccountToken": {"audience": "relay-test", "path": "token"}}]},
-            },
         ],
     },
 }
@@ -251,16 +245,12 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert spec["serviceAccountName"] == "default"
     assert spec["automountServiceAccountToken"] is False
     assert spec["imagePullSecrets"] == [{"name": "relay-test-pull"}]
-    assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME]
+    assert [v["name"] for v in spec["volumes"]] == [SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME]
     assert not any(c["name"] == "egress-sidecar" for c in spec["containers"])
     relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
     assert relay["restartPolicy"] == "Always"
     assert relay["image"] == "sidecar:test"
-    assert {mount["name"] for mount in relay["volumeMounts"]} == {
-        TOKEN_VOLUME,
-        SIDECAR_SETTINGS_VOLUME_NAME,
-        RUNNER_TLS_VOLUME_NAME,
-    }
+    assert {mount["name"] for mount in relay["volumeMounts"]} == {SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME}
     # The runner's settings listen on loopback; the guest dials the relay from outside it.
     assert one(v for v in spec["volumes"] if v["name"] == SIDECAR_SETTINGS_VOLUME_NAME)["configMap"] == {
         "name": RELAY_SETTINGS
@@ -553,7 +543,7 @@ def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -
         {
             "name": "egress-sidecar",
             "image": "sidecar:test",
-            "volumeMounts": [{"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test"}],
+            "volumeMounts": [{"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/run/agentplane/workload-svid"}],
         }
     )
     assert apply(tmp_path, policy, resource).failed > 0
@@ -562,10 +552,16 @@ def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -
 @pytest.mark.parametrize(
     ("field", "operation"), [("containers", "CREATE"), ("initContainers", "CREATE"), ("ephemeralContainers", "UPDATE")]
 )
-def test_rejects_token_mount_outside_relay(tmp_path: Path, policy: dict, field: str, operation: str) -> None:
+def test_rejects_runner_credential_mount_outside_relay(
+    tmp_path: Path, policy: dict, field: str, operation: str
+) -> None:
     resource = launcher()
     resource["spec"].setdefault(field, []).append(
-        {"name": "intruder", "image": "probe:test", "volumeMounts": [{"name": TOKEN_VOLUME, "mountPath": "/t"}]}
+        {
+            "name": "intruder",
+            "image": "probe:test",
+            "volumeMounts": [{"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/t"}],
+        }
     )
     assert apply(tmp_path, policy, resource, operation=operation).failed > 0
 

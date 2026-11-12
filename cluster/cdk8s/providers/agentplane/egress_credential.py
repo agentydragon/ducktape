@@ -13,7 +13,6 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpec,
     EgressCredentialSpecSource,
     EgressCredentialSpecSourceKubernetesServiceAccount,
-    EgressCredentialSpecSourceProjectedWorkloadToken,
     EgressCredentialSpecSourceSecretRef,
     EgressCredentialSpecTargets,
 )
@@ -25,19 +24,12 @@ from constructs import Construct
 class Source:
     """`EgressCredentialSpecSource`'s variant shapes: the CRD schema declares them `oneOf`, so
     exactly one factory's result is ever set. `secret_ref` resolves a Secret key in the proxy's
-    configured credentials namespace; `projected_workload_token` selects that same Pod's identity
-    minted for another audience; `kubernetes_service_account` has the proxy impersonate an account.
+    configured credentials namespace; `kubernetes_service_account` has the proxy impersonate an account.
     """
 
     @staticmethod
     def secret_ref(*, name: str, key: str) -> EgressCredentialSpecSource:
         return EgressCredentialSpecSource(secret_ref=EgressCredentialSpecSourceSecretRef(name=name, key=key))
-
-    @staticmethod
-    def projected_workload_token(*, audience: str) -> EgressCredentialSpecSource:
-        return EgressCredentialSpecSource(
-            projected_workload_token=EgressCredentialSpecSourceProjectedWorkloadToken(audience=audience)
-        )
 
     @staticmethod
     def kubernetes_service_account(*, service_account: ServiceAccount) -> EgressCredentialSpecSource:

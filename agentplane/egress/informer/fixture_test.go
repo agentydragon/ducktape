@@ -178,7 +178,7 @@ func decide(index *policy.Index, credential string) policy.Decision {
 	if credential != "" {
 		headers.Set("Authorization", "Bearer "+resources.Placeholder(credential))
 	}
-	return index.Evaluate(reader.ServiceAccount(subject), policy.Request{Method: http.MethodGet, Host: host, Path: "/", Headers: headers}, nil)
+	return index.Evaluate(reader.ServiceAccount(subject), policy.Request{Method: http.MethodGet, Host: host, Path: "/", Headers: headers})
 }
 
 func substituted(value string) []presentation.HeaderRewrite {

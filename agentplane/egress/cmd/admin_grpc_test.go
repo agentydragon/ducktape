@@ -103,7 +103,7 @@ func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	authentication, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil), testResolver(t))
+	authentication, err := identity.NewAuthenticator(forward, testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil), testResolver(t))
+	workloadAuth, err := identity.NewAuthenticator(forward, testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}

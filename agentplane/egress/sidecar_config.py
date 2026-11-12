@@ -98,12 +98,6 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
     proxy: Proxy = Field(description="The central egress proxy hop.")
-    audience_token_files: dict[str, Path] = Field(
-        default_factory=dict,
-        description="Audience to the projected token file holding this Pod's identity for it, offered to the "
-        "central proxy to substitute where a rule names that audience. Destination tokens are independent "
-        "of the proxy hop authentication.",
-    )
     workload_routes: dict[str, WorkloadRoute] = Field(
         default_factory=dict,
         description="Exact HTTP origin to service-owned SVID TLS through an opaque central CONNECT.",

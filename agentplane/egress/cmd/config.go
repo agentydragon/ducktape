@@ -37,7 +37,6 @@ type config struct {
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
-	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
 	DatabaseURL                     string            `mapstructure:"database_url"`
@@ -121,9 +120,6 @@ func (c *config) validate() error {
 	}
 	if len(c.AllowedServiceAccountNamespaces) == 0 || slices.Contains(c.AllowedServiceAccountNamespaces, "") {
 		return errors.New("allowed_service_account_namespaces must list at least one namespace, none of them empty")
-	}
-	if slices.Contains(c.ProjectedTokenAudiences, "") {
-		return errors.New("projected_token_audiences must not contain an empty audience")
 	}
 	if err := c.Forward.Validate(); err != nil {
 		return fmt.Errorf("forward listener: %w", err)

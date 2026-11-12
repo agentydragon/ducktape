@@ -36,7 +36,7 @@ type vectors struct {
 	} `json:"arguments"`
 	Boxes []struct {
 		Name       string            `json:"name"`
-		Caller     Account           `json:"caller"`
+		Caller     Identity          `json:"caller"`
 		Box        string            `json:"box"`
 		ObjectName string            `json:"object_name"`
 		Labels     map[string]string `json:"labels"`

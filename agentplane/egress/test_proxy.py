@@ -72,7 +72,6 @@ SANDBOX_B = "sb-b"
 RUNNER_CREDENTIAL_ID = "a" * 32
 WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
 ROTATED_RUNNER_CREDENTIAL_ID = "b" * 32
-PROJECTED_AUDIENCE = "agentplane-egress-test-projected"
 BINDING_B = f"{SANDBOX_B}-private-policy"
 EGRESS_PROXY_URI = "spiffe://agentplane/egress-proxy"
 # Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
@@ -121,10 +120,8 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 
 @dataclass(frozen=True)
 class SeededSandbox:
-    projected_token: str
     sandbox_uid: str
     pod_uid: str
-    mismatched_pod_token: str
 
 
 def replica_settings(
@@ -145,7 +142,6 @@ def replica_settings(
         log_levels={},
         ca_cert=cert,
         ca_key=key,
-        projected_token_audiences=frozenset({PROJECTED_AUDIENCE}),
         upstream_ca_file=upstream_ca_file,
         forward=listener.Listener(
             listen_address="0.0.0.0:8888",
@@ -185,16 +181,6 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
             ),
         ),
     )
-    await core.create_namespaced_pod(
-        SANDBOX_NAMESPACE,
-        k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(name=f"{SANDBOX_A}-other-pod"),
-            spec=k8s_client.V1PodSpec(
-                service_account_name=SANDBOX_A,
-                containers=[k8s_client.V1Container(name="workload", image="registry.test/unused")],
-            ),
-        ),
-    )
     await core.create_namespaced_secret(
         CREDENTIALS_NAMESPACE,
         k8s_client.V1Secret(
@@ -225,12 +211,6 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
                         "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
                         "credentialRef": {"name": _CONTRACT_CREDENTIAL},
                     },
-                    {
-                        "type": "egress",
-                        "hosts": [UPSTREAM_HOST],
-                        "paths": ["/projected"],
-                        "credentialRef": {"name": "svid-projected-credential"},
-                    },
                     {"type": "egress", "hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
                 ]
             },
@@ -245,19 +225,6 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
     for plural, body in bodies.items():
         await custom.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
     for plural, body in (
-        (
-            CREDENTIALS_PLURAL,
-            {
-                "apiVersion": _API_VERSION,
-                "kind": "EgressCredential",
-                "metadata": {"name": "svid-projected-credential"},
-                "spec": {
-                    "source": {"projectedWorkloadToken": {"audience": PROJECTED_AUDIENCE}},
-                    "description": "a test projected token",
-                    "targets": [{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
-                },
-            },
-        ),
         (
             POLICY_SETS_PLURAL,
             {
@@ -321,12 +288,7 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         _content_type="application/merge-patch+json",
     )
     await issue_record(custom, sandbox["metadata"]["uid"], pod.metadata.name, pod.metadata.uid, RUNNER_CREDENTIAL_ID)
-    return SeededSandbox(
-        projected_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [PROJECTED_AUDIENCE]),
-        sandbox_uid=sandbox["metadata"]["uid"],
-        pod_uid=pod.metadata.uid,
-        mismatched_pod_token=await server.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [PROJECTED_AUDIENCE]),
-    )
+    return SeededSandbox(sandbox_uid=sandbox["metadata"]["uid"], pod_uid=pod.metadata.uid)
 
 
 def _record_status(credential_id: str, pod_uid: str) -> dict[str, Any]:
@@ -407,7 +369,6 @@ class Egress:
     replica: GoReplica
     client_tls: ssl.SSLContext
     client_certificate: tuple[Path, Path]
-    projected_token: str
     api: KubernetesApiServer
     interception_ca: CertificateAuthority
     upstream_ca: CertificateAuthority
@@ -415,7 +376,6 @@ class Egress:
     upstream: RecordingUpstream
     sandbox_uid: str
     pod_uid: str
-    mismatched_pod_token: str
     tmp_path: Path
     database_url: str
 
@@ -464,7 +424,6 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
                 replica=running,
                 client_tls=client_tls,
                 client_certificate=client_certificate,
-                projected_token=seeded.projected_token,
                 api=api,
                 interception_ca=interception_ca,
                 upstream_ca=upstream_ca,
@@ -472,7 +431,6 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
                 upstream=upstream,
                 sandbox_uid=seeded.sandbox_uid,
                 pod_uid=seeded.pod_uid,
-                mismatched_pod_token=seeded.mismatched_pod_token,
                 tmp_path=tmp_path,
                 database_url=history_db_url,
             )
@@ -710,39 +668,21 @@ async def test_svid_listener_keeps_a_deleting_sandboxs_credential_until_its_reco
     assert [path for _, path, _ in egress.upstream.requests] == ["/public/deleting"]
 
 
-async def test_svid_projected_token_must_match_sandbox_pod_uid(egress: Egress) -> None:
-    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
-    placeholder = placeholder_of("svid-projected-credential")
+async def test_untrusted_workload_token_header_is_not_forwarded(egress: Egress) -> None:
+    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "header-client"))
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(
             client,
             egress,
             proxy_tls,
-            "/projected",
-            headers={
-                "Authorization": f"Bearer {placeholder}",
-                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.mismatched_pod_token}",
-            },
-        )
-        assert status == 403, headers
-        assert headers["x-agentplane-egress"] == "denied; reason=credential-unavailable"
-        assert not egress.upstream.requests
-
-        status, headers = await svid_request(
-            client,
-            egress,
-            proxy_tls,
-            "/projected",
-            headers={
-                "Authorization": f"Bearer {placeholder}",
-                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.projected_token}",
-            },
+            "/public/untrusted-header",
+            headers={"X-Agentplane-Workload-Token": "attacker-controlled token"},
         )
     assert status == 200, headers
     assert len(egress.upstream.requests) == 1
-    method, path, forwarded_headers = egress.upstream.requests[0]
-    assert (method, path) == ("GET", "/projected")
-    assert forwarded_headers["authorization"] == f"Bearer {egress.projected_token}"
+    _, path, forwarded_headers = egress.upstream.requests[0]
+    assert path == "/public/untrusted-header"
+    assert "x-agentplane-workload-token" not in forwarded_headers
 
 
 STANDING_RECORD = "standing-a"
@@ -796,23 +736,18 @@ async def test_a_standing_record_authenticates_its_subject_without_a_pod(egress:
     proxy_tls = proxy_svid_client_context(
         egress, issue_workload_leaf(egress.runtime_ca, uri, directory, dns_name="localhost")
     )
-    placeholder = placeholder_of("svid-projected-credential")
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/standing")
         assert status == 200, headers
-        # The token is the subject's own and Pod-bound, which a bound record would accept.
         status, headers = await svid_request(
             client,
             egress,
             proxy_tls,
-            "/projected",
-            headers={
-                "Authorization": f"Bearer {placeholder}",
-                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.projected_token}",
-            },
+            "/public/standing-with-untrusted-token",
+            headers={"X-Agentplane-Workload-Token": "attacker-controlled token"},
         )
-        assert status == 403, headers
-        assert headers["x-agentplane-egress"] == "denied; reason=credential-unavailable"
+        assert status == 200, headers
+        assert "x-agentplane-workload-token" not in egress.upstream.requests[-1][2]
 
         await custom.delete_namespaced_custom_object(
             GROUP,
@@ -825,8 +760,11 @@ async def test_a_standing_record_authenticates_its_subject_without_a_pod(egress:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/pruned")
     assert status == 403, headers
     assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
-    assert [path for _, path, _ in egress.upstream.requests] == ["/public/standing"]
-    # The two authenticated decisions name the subject and no Pod.
+    assert [path for _, path, _ in egress.upstream.requests] == [
+        "/public/standing",
+        "/public/standing-with-untrusted-token",
+    ]
+    # Both authenticated decisions name the subject and no Pod.
     async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
         with attempt:
             assert await asyncio.to_thread(_source_pod_uids, egress.database_url, SUBJECT_A) == [None, None]

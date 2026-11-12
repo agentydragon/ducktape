@@ -50,17 +50,15 @@ import (
 const (
 	fixtureHost = "upstream.test"
 	// policyNamespace holds the lab's PolicySets, PolicyBindings and Identities.
-	policyNamespace   = "test-policy"
-	hopAudience       = "test-egress"
-	projectedAudience = "https://kubernetes.test.invalid"
+	policyNamespace = "test-policy"
+	hopAudience     = "test-egress"
 )
 
 var (
-	kube           *kubeapiserver.Server
-	runner         = auth.Account{Namespace: "test-workloads"}
-	runnerPod      *corev1.Pod
-	hopToken       string // Retained only to prove Proxy-Authorization cannot authenticate.
-	projectedToken string
+	kube      *kubeapiserver.Server
+	runner    = auth.Account{Namespace: "test-workloads"}
+	runnerPod *corev1.Pod
+	hopToken  string // Retained only to prove Proxy-Authorization cannot authenticate.
 )
 
 func TestMain(m *testing.M) {
@@ -68,20 +66,6 @@ func TestMain(m *testing.M) {
 		kube = server
 		return nil
 	}))
-}
-
-// runnerToken is a new Pod running as runner and a token for audience bound to it.
-func runnerToken(t *testing.T, audience string) (*corev1.Pod, string) {
-	t.Helper()
-	pod, err := kube.Pod(t.Context(), runner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, err := kube.PodToken(t.Context(), pod, audience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pod, token
 }
 
 type countedListener struct {
@@ -175,9 +159,6 @@ func newLab(t *testing.T) *lab {
 	if hopToken, err = kube.PodToken(t.Context(), runnerPod, hopAudience); err != nil {
 		t.Fatal(err)
 	}
-	if projectedToken, err = kube.PodToken(t.Context(), runnerPod, projectedAudience); err != nil {
-		t.Fatal(err)
-	}
 	proxyCA := transporttesting.NewCA(t)
 	proxyLeaf := proxyCA.Issue(t, environment_runtime_transport.EgressProxyURI)
 	proxyTLS, err := proxyLeaf.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
@@ -212,16 +193,11 @@ func newLab(t *testing.T) *lab {
 		Type: resources.EgressRuleType, Hosts: []string{fixtureHost}, CredentialRef: &policyapi.CredentialRef{Name: "key"},
 		Paths: []string{"/allowed", "/stream", "/sse", "/ws", "/cancel"},
 	})
-	// These tests revoke and rebind tokens between requests, so every call reviews its bearer.
-	projected, err := auth.NewResolver(kube.TokenReviews(), projectedAudience, []string{runner.Namespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
 	authentication, err := identity.NewAuthenticator(listener.Config{
 		ListenAddress: "127.0.0.1:8888",
 		TLS:           &listener.TLS{CertFile: proxyLeaf.CertFile, KeyFile: proxyLeaf.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: proxyCA.RootFile}},
-	}, identity.NewVerifier(map[string]*auth.Resolver{projectedAudience: projected}), svids)
+	}, svids)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -225,7 +225,6 @@ func decodeProxyTransport(node *yaml.Node) (tlsProxyTransportConfig, error) {
 
 type config struct {
 	Proxy                  proxyConfig                    `yaml:"proxy"`
-	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
 	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
 	PlatformRoutes         *platformRoutesConfig          `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`
@@ -239,7 +238,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("%s must name the YAML settings file", configFileEnv)
 	}
 	c := config{
-		AudienceTokenFiles:     map[string]string{},
 		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		ListenAddress:          "127.0.0.1:3128",

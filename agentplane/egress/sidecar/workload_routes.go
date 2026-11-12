@@ -63,7 +63,7 @@ func (s *sidecar) prepareWorkloadRoutes() error {
 				r.Out.Header.Del("Authorization")
 				r.Out.Header.Del("Proxy-Authorization")
 				r.Out.Header.Del("Proxy-Connection")
-				r.Out.Header.Del(projectedTokenHeader)
+				r.Out.Header.Del(untrustedWorkloadTokenHeader)
 			},
 			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 				slog.Warn("workload TLS route refused", "upstream", config.Upstream, "error", err)

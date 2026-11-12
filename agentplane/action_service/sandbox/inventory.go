@@ -29,18 +29,15 @@ import (
 
 // The labels of a box. The Action Service's Pod and pods/exec grants are namespace-wide and cannot say "only the
 // boxes this Action made", so the boundary is here: every read, exec and delete selects on managedLabel and on the
-// caller's (callerLabel and callerNamespaceLabel for an Account, the identity labels for an Identity), and a Pod
-// without them is not this surface's to act on. The Python service (binding.py, inventory.py)
+// caller's exact Identity incarnation, and a Pod without those labels is not this surface's to act on. The Python service (binding.py, inventory.py)
 // stamps the same labels, so a box either made is the other's.
 const (
-	labelPrefix          = "sandbox-actions.agentplane.allegedly.works/"
-	managedLabel         = labelPrefix + "managed"
-	callerLabel          = labelPrefix + "caller"
-	callerNamespaceLabel = labelPrefix + "caller-namespace"
-	identityLabel        = labelPrefix + "caller-identity"
-	identityUIDLabel     = labelPrefix + "caller-identity-uid"
-	templateLabel        = labelPrefix + "template"
-	nameLabel            = labelPrefix + "name"
+	labelPrefix      = "sandbox-actions.agentplane.allegedly.works/"
+	managedLabel     = labelPrefix + "managed"
+	identityLabel    = labelPrefix + "caller-identity"
+	identityUIDLabel = labelPrefix + "caller-identity-uid"
+	templateLabel    = labelPrefix + "template"
+	nameLabel        = labelPrefix + "name"
 	// credentialLabel is the credential ID a box was started with, which its record must still issue for the box to
 	// be bound to it.
 	credentialLabel = labelPrefix + "credential"
@@ -59,27 +56,15 @@ const (
 	svidMountPath = "/run/agentplane/workload-svid"
 )
 
-// serviceAccountKind is the kind of a box record's subject, and of its owner when the caller has no Sandbox.
-var serviceAccountKind = corev1.SchemeGroupVersion.WithKind("ServiceAccount")
-
-// defaultServiceAccount is what an Identity's box runs as: no account of its own, and no token, which every offered
-// template already refuses to mount.
+// defaultServiceAccount is the box's Kubernetes account. Its token automount is disabled, and templates may not
+// project another ServiceAccount token.
 const defaultServiceAccount = "default"
-
-// Caller is whom a box is for: an Account, which it runs as, or an Identity.
-type Caller interface{ isCaller() }
-
-// Account is a ServiceAccount of the group's namespace.
-type Account store.ServiceAccount
 
 // Identity is an Identity incarnation of the policy namespace. Acting as it confers no authority over its boxes'
 // lifecycle: nothing owns their records, so deleting the Identity revokes their credentials and deletes nothing. Its
 // boxes run on the group namespace's default ServiceAccount, and a later Identity of the same name reaches none of
 // them.
 type Identity store.Identity
-
-func (Account) isCaller()  {}
-func (Identity) isCaller() {}
 
 // UnavailableError is a request the inventory cannot carry out, in terms the caller can act on.
 type UnavailableError struct {
@@ -97,9 +82,7 @@ func (e *ForeignError) Error() string {
 	return fmt.Sprintf("a sandbox named %q exists and is not yours", e.Name)
 }
 
-// TemplateError is an offered template whose workload could read a ServiceAccount credential. A box runs as its caller, so a
-// ServiceAccount token in a container an agent runs commands in would hand out the caller's whole authority as a
-// portable credential.
+// TemplateError is an offered template that exposes a ServiceAccount credential to the workload.
 type TemplateError struct {
 	Template string
 	Problem  string
@@ -133,13 +116,11 @@ type Condition struct {
 	LastTransitionTime *time.Time `json:"last_transition_time"`
 }
 
-// Inventory is every box one sandbox group owns, keyed by the caller that asked for it. A box is a plain Pod
-// stamped from a PodTemplate the group offers, running as its Account caller, or on the default ServiceAccount for an
-// Identity. Each box has a WorkloadCredential of its own name, subject its caller, bound to the box's Pod: its egress
-// sidecar presents that SVID. The record is the box Pod's owner. An Account's Session Sandbox, else the account, owns
-// the record, so a Session Sandbox's agent that created boxes loses them, and their credentials, with the Sandbox. An
-// Identity's box record has no owner: the box lives until it is disposed of, and deleting the Identity only revokes
-// its credential.
+// Inventory is every box one sandbox group owns, keyed by the Identity that asked for it. A box is a plain Pod
+// stamped from a PodTemplate the group offers, running on the namespace's default ServiceAccount. Each box has a
+// WorkloadCredential of its own name, subject its Identity, bound to the box's Pod: its egress sidecar presents that
+// SVID. The record is the box Pod's owner. The Identity's record has no owner: the box lives until it is disposed of,
+// and deleting the Identity only revokes its credential.
 type Inventory struct {
 	binding     catalog.PodBinding
 	client      kubernetes.Interface
@@ -194,33 +175,17 @@ func checkTemplate(name string, template *corev1.PodTemplateSpec) error {
 		}) {
 		return &TemplateError{name, fmt.Sprintf("defines the reserved SVID volume %q or mount %q", svidVolume, svidMountPath)}
 	}
-	tokenVolumes := map[string]bool{}
 	for _, volume := range spec.Volumes {
 		if volume.Projected != nil && slices.ContainsFunc(volume.Projected.Sources,
 			func(source corev1.VolumeProjection) bool { return source.ServiceAccountToken != nil }) {
-			tokenVolumes[volume.Name] = true
-		}
-	}
-	for _, container := range spec.Containers {
-		if container.Name == egressSidecar {
-			continue
-		}
-		var mounted []string
-		for _, mount := range container.VolumeMounts {
-			if tokenVolumes[mount.Name] {
-				mounted = append(mounted, mount.Name)
-			}
-		}
-		if len(mounted) > 0 {
-			slices.Sort(mounted)
-			return &TemplateError{name, fmt.Sprintf("mounts ServiceAccount tokens %q in %q", slices.Compact(mounted), container.Name)}
+			return &TemplateError{name, fmt.Sprintf("projects a ServiceAccount token in volume %q", volume.Name)}
 		}
 	}
 	return nil
 }
 
-// CheckTemplates reads every offered template once, when the service starts: one that is missing, or whose box
-// would expose a credential to the workload, is a deployment defect, and refusing to start names it where a caller would only meet
+// CheckTemplates reads every offered template once, when the service starts: one that is missing or exposes a
+// credential to the workload is a deployment defect, and refusing to start names it where a caller would only meet
 // it as a box that cannot be created.
 func (i *Inventory) CheckTemplates(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(i.binding.Templates)) {
@@ -232,38 +197,22 @@ func (i *Inventory) CheckTemplates(ctx context.Context) error {
 	return nil
 }
 
-// objectName is a box's Pod's name: the same for the same caller and name, so creating a box twice reaches the
+// objectName is a box's Pod's name: the same for the same Identity and name, so creating a box twice reaches the
 // same Pod.
-func objectName(caller Caller, name string) string {
-	var prefix string
-	switch caller := caller.(type) {
-	case Account:
-		prefix = caller.Name
-	case Identity:
-		prefix = caller.Name
-	default:
-		panic(fmt.Sprintf("unknown caller %T", caller))
-	}
-	object := prefix + "-" + name
+func objectName(caller Identity, name string) string {
+	object := caller.Name + "-" + name
 	return strings.TrimRight(object[:min(len(object), 63)], "-")
 }
 
-// callerLabels are the labels that say whose a box is. A box carries one caller kind's labels and none of the other's.
-func callerLabels(caller Caller) map[string]string {
-	switch caller := caller.(type) {
-	case Account:
-		return map[string]string{callerLabel: caller.Name, callerNamespaceLabel: caller.Namespace}
-	case Identity:
-		return map[string]string{identityLabel: caller.Name, identityUIDLabel: caller.UID}
-	default:
-		panic(fmt.Sprintf("unknown caller %T", caller))
-	}
+// callerLabels pin a box to the exact Identity incarnation whose delegation authorized it.
+func callerLabels(caller Identity) map[string]string {
+	return map[string]string{identityLabel: caller.Name, identityUIDLabel: caller.UID}
 }
 
-// callers reports whether a box's labels name caller, and no caller of another kind.
-func callers(boxLabels map[string]string, caller Caller) bool {
+// callers reports whether a box's labels name the caller's exact Identity incarnation.
+func callers(boxLabels map[string]string, caller Identity) bool {
 	want := callerLabels(caller)
-	for _, key := range []string{callerLabel, callerNamespaceLabel, identityLabel, identityUIDLabel} {
+	for _, key := range []string{identityLabel, identityUIDLabel} {
 		if boxLabels[key] != want[key] {
 			return false
 		}
@@ -271,7 +220,7 @@ func callers(boxLabels map[string]string, caller Caller) bool {
 	return true
 }
 
-func boxLabels(caller Caller, name, template string) map[string]string {
+func boxLabels(caller Identity, name, template string) map[string]string {
 	labels := map[string]string{managedLabel: "true", templateLabel: template, nameLabel: name}
 	maps.Copy(labels, callerLabels(caller))
 	return labels
@@ -279,7 +228,7 @@ func boxLabels(caller Caller, name, template string) map[string]string {
 
 // pod is the caller's box of that name, or nil. A same-named Pod this surface did not create for the caller is a
 // ForeignError rather than adopted or reported absent.
-func (i *Inventory) pod(ctx context.Context, caller Caller, name string) (*corev1.Pod, error) {
+func (i *Inventory) pod(ctx context.Context, caller Identity, name string) (*corev1.Pod, error) {
 	pod, err := i.client.CoreV1().Pods(i.binding.Namespace).Get(ctx, objectName(caller, name), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil, nil
@@ -300,23 +249,17 @@ func (i *Inventory) pod(ctx context.Context, caller Caller, name string) (*corev
 //
 // An existing box of that name is returned as it stands, whatever template it was created from: deciding that its
 // shape is wrong is the caller's, and Dispose is how it acts on that.
-func (i *Inventory) Create(ctx context.Context, caller Caller, name, template string) (Info, error) {
+func (i *Inventory) Create(ctx context.Context, caller Identity, name, template string) (Info, error) {
 	box, err := i.Template(ctx, template)
 	if err != nil {
 		return Info{}, err
-	}
-	var account *corev1.ServiceAccount
-	if caller, ok := caller.(Account); ok {
-		if account, err = i.client.CoreV1().ServiceAccounts(i.binding.Namespace).Get(ctx, caller.Name, metav1.GetOptions{}); err != nil {
-			return Info{}, err
-		}
 	}
 	existing, err := i.pod(ctx, caller, name)
 	switch {
 	case err != nil:
 		return Info{}, err
 	case existing == nil:
-		if err := i.stamp(ctx, caller, account, name, template, box); err != nil {
+		if err := i.stamp(ctx, caller, name, template, box); err != nil {
 			return Info{}, err
 		}
 	case existing.Labels[templateLabel] != template:
@@ -331,44 +274,24 @@ func (i *Inventory) Create(ctx context.Context, caller Caller, name, template st
 		return Info{}, &UnavailableError{fmt.Sprintf("sandbox %q disappeared as it was created", name)}
 	}
 	// Also a box another replica stamped and may not have lived to bind.
-	if err := i.bind(ctx, caller, account, pod); err != nil {
+	if err := i.bind(ctx, caller, pod); err != nil {
 		return Info{}, err
 	}
 	return info(pod), nil
 }
 
-// credentialOwner is the request for a box's credential, whose record takes the box's name. An Account's record is
-// owned by the account's controller, a Session Sandbox, else the account
-// itself, so a Sandbox's boxes go with the Sandbox rather than with the account SANDBOX_IDENTITY_SPEC stops creating;
-// its subject is the account. An Identity's record names the Identity incarnation and has no owner: the Identity's
-// caller labels tell it from another caller's, so a same-named successor neither adopts nor revokes it. account is
-// the Account caller's ServiceAccount, nil for an Identity.
-func credentialOwner(namespace string, caller Caller, account *corev1.ServiceAccount, name string) requester.Request {
+// credentialOwner is the request for a box's credential, whose record takes the box's name and names the exact
+// Identity incarnation. The record is unowned: the Identity's labels distinguish it from a same-named successor.
+func credentialOwner(namespace string, caller Identity, name string) requester.Request {
 	owner := requester.Owner{Namespace: namespace, Name: objectName(caller, name)}
-	var subject requester.Subject
-	switch caller := caller.(type) {
-	case Account:
-		reference := metav1.OwnerReference{APIVersion: serviceAccountKind.GroupVersion().String(), Kind: serviceAccountKind.Kind, Name: account.Name, UID: account.UID}
-		if controller := metav1.GetControllerOfNoCopy(account); controller != nil {
-			// Without blockOwnerDeletion, which would need the Sandbox's finalizers.
-			reference = metav1.OwnerReference{APIVersion: controller.APIVersion, Kind: controller.Kind, Name: controller.Name, UID: controller.UID}
-		}
-		reference.Controller = new(true)
-		owner.Holder = requester.Controller{Reference: reference}
-		subject = requester.ServiceAccount{Name: account.Name}
-	case Identity:
-		owner.Holder = requester.Unowned{Labels: callerLabels(caller)}
-		subject = requester.Identity{Name: caller.Name, UID: types.UID(caller.UID)}
-	default:
-		panic(fmt.Sprintf("unknown caller %T", caller))
-	}
-	return requester.Request{Owner: owner, Subject: subject}
+	owner.Holder = requester.Unowned{Labels: callerLabels(caller)}
+	return requester.Request{Owner: owner, Subject: requester.Identity{Name: caller.Name, UID: types.UID(caller.UID)}}
 }
 
 // issue waits until the box's record issues an unbound credential, the one a new Pod starts with: a record still
 // bound to an earlier Pod of the name mints a fresh one. It reports false if a box of the name appeared meanwhile,
 // another replica's, whose credential the next unbound request would revoke.
-func (i *Inventory) issue(ctx context.Context, caller Caller, request requester.Request, name string) (requester.Issued, bool, error) {
+func (i *Inventory) issue(ctx context.Context, caller Identity, request requester.Request, name string) (requester.Issued, bool, error) {
 	var issued requester.Issued
 	var pending requester.Pending
 	appeared := false
@@ -402,8 +325,8 @@ func (i *Inventory) issue(ctx context.Context, caller Caller, request requester.
 	return issued, !appeared, err
 }
 
-func (i *Inventory) stamp(ctx context.Context, caller Caller, account *corev1.ServiceAccount, name, templateName string, template *corev1.PodTemplateSpec) error {
-	request := credentialOwner(i.binding.Namespace, caller, account, name)
+func (i *Inventory) stamp(ctx context.Context, caller Identity, name, templateName string, template *corev1.PodTemplateSpec) error {
+	request := credentialOwner(i.binding.Namespace, caller, name)
 	issued, fresh, err := i.issue(ctx, caller, request, name)
 	if err != nil || !fresh {
 		return err
@@ -416,15 +339,7 @@ func (i *Inventory) stamp(ctx context.Context, caller Caller, account *corev1.Se
 		return &UnavailableError{fmt.Sprintf("the credential of sandbox %q changed as it was created; create it again", name)}
 	}
 	spec := *template.Spec.DeepCopy()
-	switch caller := caller.(type) {
-	case Account:
-		// CLEANUP(added 2026-11-09): an Account's box keeps running as it, whose Kubernetes-audience token its sidecar
-		// substitutes for `kubectl`, until IDENTITY_CUTOVER (agentplane/plans/task_dag.md) makes every caller an
-		// Identity.
-		spec.ServiceAccountName = caller.Name
-	case Identity:
-		spec.ServiceAccountName = defaultServiceAccount
-	}
+	spec.ServiceAccountName = defaultServiceAccount
 	withCredential(&spec, issued.SecretName)
 	podLabels := maps.Clone(template.Labels)
 	if podLabels == nil {
@@ -495,8 +410,8 @@ func withCredential(spec *corev1.PodSpec, secretName string) {
 // bind accepts pod as the incarnation of the credential it was started with: the first binding after a fresh ID
 // accepts that ID. Only the record that owns the Pod, still issuing the Pod's credential and bound to no other Pod,
 // is bound; binding one that has since rotated would accept an ID the Pod does not hold.
-func (i *Inventory) bind(ctx context.Context, caller Caller, account *corev1.ServiceAccount, pod *corev1.Pod) error {
-	request := credentialOwner(i.binding.Namespace, caller, account, pod.Labels[nameLabel])
+func (i *Inventory) bind(ctx context.Context, caller Identity, pod *corev1.Pod) error {
+	request := credentialOwner(i.binding.Namespace, caller, pod.Labels[nameLabel])
 	var record workloadapi.WorkloadCredential
 	if err := i.records.Get(ctx, types.NamespacedName{Namespace: request.Owner.Namespace, Name: request.Owner.Name}, &record); apierrors.IsNotFound(err) {
 		return nil
@@ -514,7 +429,7 @@ func (i *Inventory) bind(ctx context.Context, caller Caller, account *corev1.Ser
 }
 
 // Get is the caller's box of that name.
-func (i *Inventory) Get(ctx context.Context, caller Caller, name string) (Info, error) {
+func (i *Inventory) Get(ctx context.Context, caller Identity, name string) (Info, error) {
 	pod, err := i.pod(ctx, caller, name)
 	if err != nil {
 		return Info{}, err
@@ -526,7 +441,7 @@ func (i *Inventory) Get(ctx context.Context, caller Caller, name string) (Info, 
 }
 
 // List is every box of the caller's.
-func (i *Inventory) List(ctx context.Context, caller Caller) ([]Info, error) {
+func (i *Inventory) List(ctx context.Context, caller Identity) ([]Info, error) {
 	selector := labels.Set{managedLabel: "true"}
 	maps.Copy(selector, callerLabels(caller))
 	pods, err := i.client.CoreV1().Pods(i.binding.Namespace).List(ctx, metav1.ListOptions{
@@ -547,7 +462,7 @@ func (i *Inventory) List(ctx context.Context, caller Caller) ([]Info, error) {
 
 // Dispose revokes the caller's box's credential and deletes the box; false when it had none to delete. The
 // credential goes first, so the box's SVID stops authenticating before its Pod has stopped.
-func (i *Inventory) Dispose(ctx context.Context, caller Caller, name string) (bool, error) {
+func (i *Inventory) Dispose(ctx context.Context, caller Identity, name string) (bool, error) {
 	pod, err := i.pod(ctx, caller, name)
 	if err != nil || pod == nil {
 		return false, err
@@ -564,7 +479,7 @@ func (i *Inventory) Dispose(ctx context.Context, caller Caller, name string) (bo
 
 // revoke deletes the record pod runs under, if it still does: a record of the name that does not own pod is another
 // box's.
-func (i *Inventory) revoke(ctx context.Context, caller Caller, pod *corev1.Pod) error {
+func (i *Inventory) revoke(ctx context.Context, caller Identity, pod *corev1.Pod) error {
 	var record workloadapi.WorkloadCredential
 	if err := i.records.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, &record); apierrors.IsNotFound(err) {
 		return nil
@@ -574,28 +489,14 @@ func (i *Inventory) revoke(ctx context.Context, caller Caller, pod *corev1.Pod) 
 	if box := metav1.GetControllerOfNoCopy(pod); box == nil || box.UID != record.UID {
 		return nil
 	}
-	owner := requester.Owner{Namespace: record.Namespace, Name: record.Name}
-	switch caller := caller.(type) {
-	case Account:
-		// Dispose holds no ServiceAccount to derive the owner from; the record's controller is the one it was
-		// requested under.
-		controller := metav1.GetControllerOfNoCopy(&record)
-		if controller == nil {
-			return nil
-		}
-		owner.Holder = requester.Controller{Reference: *controller}
-	case Identity:
-		owner.Holder = requester.Unowned{Labels: callerLabels(caller)}
-	default:
-		panic(fmt.Sprintf("unknown caller %T", caller))
-	}
+	owner := requester.Owner{Namespace: record.Namespace, Name: record.Name, Holder: requester.Unowned{Labels: callerLabels(caller)}}
 	return i.credentials.Revoke(ctx, owner)
 }
 
 // Run runs script in the caller's box, which must be ready. The caps are this group's at most: submission already
 // refuses past them, and a request another replica admitted under other caps, across a settings roll, is still held
 // to these.
-func (i *Inventory) Run(ctx context.Context, caller Caller, name string, run Script) (ExecResult, error) {
+func (i *Inventory) Run(ctx context.Context, caller Identity, name string, run Script) (ExecResult, error) {
 	pod, err := i.pod(ctx, caller, name)
 	if err != nil {
 		return ExecResult{}, err

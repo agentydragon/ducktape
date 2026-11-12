@@ -36,7 +36,7 @@ classifies errors by. CONNECT needs a hijacked tunnel either way.
 ## Sidecar settings: strict `yaml.v3`, not Viper
 
 The proxy and the other Go services read their settings through Viper. The sidecar does not, because
-its file keys maps by data: `audience_token_files` by audience and `platform_routes.routes` by route name; each route also allowlists exact gRPC service prefixes.
+its `platform_routes.routes` map is keyed by route name; each route also allowlists exact gRPC service prefixes.
 Viper lowercases every key, map keys included. With v1.21.0 (`ExperimentalBindStruct`,
 `UnmarshalExact`) two audiences that differ only in case merge into one entry and a route name loses
 its case, so a Pod could offer one audience the other's token. `config_test.go` keeps both spellings
@@ -45,5 +45,5 @@ apart. A move to Viper first needs those maps to become lists of records.
 ## Test tiers
 
 A real kube-apiserver and etcd (envtest) check CRD validation and list/watch/delete semantics.
-The transport tests use real Pod-bound, audience-scoped ServiceAccount tokens and TokenReview.
+The admin gRPC tests use real Pod-bound, audience-scoped ServiceAccount tokens and TokenReview.
 Scripted API servers remain for controlled replica watch faults and process lifecycle scenarios.

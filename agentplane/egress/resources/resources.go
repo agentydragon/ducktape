@@ -98,11 +98,6 @@ type Source interface{ isSource() }
 // SecretKey reads a key of a Secret in the credentials namespace.
 type SecretKey struct{ Name, Key string }
 
-// ProjectedWorkloadToken selects the destination audience the sidecar projected and presented on
-// the hop. The proxy never implicitly reuses the hop credential; it reviews the named token as the
-// same Pod that authenticated the hop before substitution.
-type ProjectedWorkloadToken struct{ Audience string }
-
 // KubernetesServiceAccount is a ServiceAccount the proxy acts as by impersonation on its own API
 // server: it presents its own bearer there with Impersonate-User naming the account.
 type KubernetesServiceAccount struct{ Namespace, Name string }
@@ -114,7 +109,6 @@ func (a KubernetesServiceAccount) Username() string {
 }
 
 func (SecretKey) isSource()                {}
-func (ProjectedWorkloadToken) isSource()   {}
 func (KubernetesServiceAccount) isSource() {}
 
 // Credential is a credential a sandbox may present without holding, named so that its
@@ -190,12 +184,6 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 	if source.SecretRef != nil {
 		parsed = append(parsed, SecretKey{Name: source.SecretRef.Name, Key: source.SecretRef.Key})
 	}
-	if source.ProjectedWorkloadToken != nil {
-		if source.ProjectedWorkloadToken.Audience == "" {
-			return nil, errors.New("projectedWorkloadToken.audience is required")
-		}
-		parsed = append(parsed, ProjectedWorkloadToken{Audience: source.ProjectedWorkloadToken.Audience})
-	}
 	if account := source.KubernetesServiceAccount; account != nil {
 		// The API server builds the username from these, so a name it would not accept must not reach a header.
 		if problems := validation.IsDNS1123Label(account.Namespace); len(problems) > 0 {
@@ -207,7 +195,7 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 		parsed = append(parsed, KubernetesServiceAccount{Namespace: account.Namespace, Name: account.Name})
 	}
 	if len(parsed) != 1 {
-		return nil, errors.New("source must set exactly one of secretRef, projectedWorkloadToken or kubernetesServiceAccount")
+		return nil, errors.New("source must set exactly one of secretRef or kubernetesServiceAccount")
 	}
 	return parsed[0], nil
 }

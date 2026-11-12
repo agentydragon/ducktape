@@ -12,15 +12,6 @@ type SecretKeyRef struct {
 	Key string `json:"key"`
 }
 
-// ProjectedWorkloadTokenSource selects the token the sidecar projected for a destination audience.
-type ProjectedWorkloadTokenSource struct {
-	// The source names the audience the destination expects. The proxy substitutes only a token the
-	// sidecar presented for this audience and it reviewed as the same Pod that authenticated the hop;
-	// it never implicitly reuses the hop credential.
-	// +kubebuilder:validation:MinLength=1
-	Audience string `json:"audience"`
-}
-
 // KubernetesServiceAccountSource names a ServiceAccount the proxy acts as by impersonation on the API
 // server its own credential reaches: it presents its own bearer and asks the API server to treat the
 // request as this account's. No token for the account is minted or held. A named API server is the
@@ -38,10 +29,9 @@ type KubernetesServiceAccountSource struct {
 }
 
 // CredentialSource is exactly one source for the substituted value.
-// +kubebuilder:validation:ExactlyOneOf=secretRef;projectedWorkloadToken;kubernetesServiceAccount
+// +kubebuilder:validation:ExactlyOneOf=secretRef;kubernetesServiceAccount
 type CredentialSource struct {
 	SecretRef                *SecretKeyRef                   `json:"secretRef,omitempty"`
-	ProjectedWorkloadToken   *ProjectedWorkloadTokenSource   `json:"projectedWorkloadToken,omitempty"`
 	KubernetesServiceAccount *KubernetesServiceAccountSource `json:"kubernetesServiceAccount,omitempty"`
 }
 

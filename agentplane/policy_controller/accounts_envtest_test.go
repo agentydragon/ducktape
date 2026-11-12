@@ -400,7 +400,7 @@ func assertAccountUse(t *testing.T, api client.Client, account *policyapi.Manage
 	}
 	name := AccountCredentialName(account.Name)
 	source := credential.Spec.Source
-	if source.SecretRef != nil || source.ProjectedWorkloadToken != nil || source.KubernetesServiceAccount == nil ||
+	if source.SecretRef != nil || source.KubernetesServiceAccount == nil ||
 		*source.KubernetesServiceAccount != (egressapi.KubernetesServiceAccountSource{Namespace: serviceAccount.Namespace, Name: serviceAccount.Name}) {
 		t.Fatalf("credential source: %+v", source)
 	}

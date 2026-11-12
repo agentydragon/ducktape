@@ -7,25 +7,24 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
 
 const (
-	refusedHeader        = "x-agentplane-egress-sidecar"
-	projectedTokenHeader = "X-Agentplane-Workload-Token"
-	readinessPath        = "/readyz"
-	maxHeadBytes         = 64 * 1024
+	refusedHeader                = "x-agentplane-egress-sidecar"
+	untrustedWorkloadTokenHeader = identity.UntrustedWorkloadTokenHeader
+	readinessPath                = "/readyz"
+	maxHeadBytes                 = 64 * 1024
 )
 
 type sidecar struct {
@@ -238,7 +237,7 @@ func (s *sidecar) proxyHandler() http.Handler {
 		Transport: transport,
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.Out.RequestURI = ""
-			rewriteRequest(request.Out, s.readProjectedTokens())
+			rewriteRequest(request.Out)
 		},
 		ErrorHandler: func(writer http.ResponseWriter, _ *http.Request, err error) {
 			slog.Warn("central proxy request failed", "address", s.config.Proxy.Address, "error", err)
@@ -305,7 +304,7 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 	upstreamRequest.URL = &url.URL{Host: authority}
 	upstreamRequest.Host = authority
 	upstreamRequest.Body = nil
-	rewriteRequest(upstreamRequest, s.readProjectedTokens())
+	rewriteRequest(upstreamRequest)
 	if err := upstreamRequest.WriteProxy(upstream); err != nil {
 		slog.Warn("writing CONNECT to central proxy failed", "error", err)
 		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
@@ -347,15 +346,12 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-// rewriteRequest replaces caller-supplied proxy credentials with sidecar-owned credentials.
-func rewriteRequest(request *http.Request, projected map[string]string) {
+// rewriteRequest strips caller-supplied proxy credentials and the retired workload-token header.
+func rewriteRequest(request *http.Request) {
 	request.Header.Del("Proxy-Connection")
-	request.Header.Del(projectedTokenHeader)
+	request.Header.Del(untrustedWorkloadTokenHeader)
 	// The hop authenticates by SVID alone; a caller's Proxy-Authorization never reaches the proxy.
 	request.Header.Del("Proxy-Authorization")
-	for _, audience := range slices.Sorted(maps.Keys(projected)) {
-		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
-	}
 	if _, ok := request.Header["User-Agent"]; !ok {
 		request.Header["User-Agent"] = []string{""}
 	}
@@ -389,18 +385,6 @@ func (s *sidecar) track(conn net.Conn, add bool) {
 	} else {
 		delete(s.active, conn)
 	}
-}
-
-func (s *sidecar) readProjectedTokens() map[string]string {
-	tokens := make(map[string]string, len(s.config.AudienceTokenFiles))
-	for audience, path := range s.config.AudienceTokenFiles {
-		if token, err := readToken(path); err == nil {
-			tokens[audience] = token
-		} else {
-			slog.Warn("projected audience token unavailable", "audience", audience, "path", path, "error", err)
-		}
-	}
-	return tokens
 }
 
 func pipeDuplex(client net.Conn, clientReader *bufio.Reader, upstream net.Conn, upstreamReader *bufio.Reader) error {

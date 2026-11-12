@@ -23,7 +23,6 @@ const (
 	secretValue    = "real-value"
 	appSecretValue = "real-app-value"
 	authorization  = "Authorization"
-	audience       = "https://kubernetes.test.invalid"
 )
 
 var (
@@ -252,7 +251,7 @@ func TestEvaluate(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			assertDecision(t, c.index.Evaluate(caller, c.request, nil), c.want)
+			assertDecision(t, c.index.Evaluate(caller, c.request), c.want)
 		})
 	}
 }
@@ -263,8 +262,8 @@ func TestTheSameNameInAnotherNamespaceIsADifferentSubject(t *testing.T) {
 	bound := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
 	elsewhere := reader.ServiceAccount{Namespace: "somewhere-else", Name: caller.Name}
 
-	assertDecision(t, bound.Evaluate(caller, outbound(), nil), Allowed{Binding: "b", Policy: "github"})
-	assertDecision(t, bound.Evaluate(elsewhere, outbound(), nil), Denied{decision.NoBinding})
+	assertDecision(t, bound.Evaluate(caller, outbound()), Allowed{Binding: "b", Policy: "github"})
+	assertDecision(t, bound.Evaluate(elsewhere, outbound()), Denied{decision.NoBinding})
 }
 
 func scopedIndex(credential resources.Credential) *Index {
@@ -275,46 +274,12 @@ func scopedIndex(credential resources.Credential) *Index {
 	)
 }
 
-func TestProjectedWorkloadSource(t *testing.T) {
-	projected := resources.Credential{
-		Name: "kubernetes-workload", Source: resources.ProjectedWorkloadToken{Audience: audience}, Targets: []resources.Target{bearer},
-	}
-	scoped := scopedIndex(projected)
-	request := outbound(header(authorization, "Bearer "+projected.Placeholder()))
-	context := func(subject reader.ServiceAccount, tokens map[string]string) *WorkloadContext {
-		return &WorkloadContext{Caller: subject, PodUID: "pod-a-uid", Projected: tokens}
-	}
-
-	// The hop bearer is not what a destination validating its own audience will take, so a rule
-	// naming an audience gets the token presented for that audience and no other.
-	got := scoped.Evaluate(caller, request, context(caller, map[string]string{audience: "pod-a-api-server-token", "https://other.test.invalid": "not-this-one"}))
-	assertDecision(t, got, Allowed{Binding: "b", Policy: "scoped", Rewrites: swapped("pod-a-api-server-token")})
-	for _, token := range []string{"pod-a-api-server-token"} {
-		if strings.Contains(fmt.Sprintf("%+v", got), token) {
-			t.Errorf("the decision prints %s", token)
-		}
-	}
-
-	// A token the verifier dropped is absent rather than present and unusable, so the rule naming
-	// it denies where it is used instead of spending some other audience's token.
-	assertDecision(t, scoped.Evaluate(caller, request, nil), Denied{decision.CredentialUnavailable})
-	assertDecision(t, scoped.Evaluate(caller, request, context(caller, nil)), Denied{decision.CredentialUnavailable})
-	otherAudience := context(caller, map[string]string{"https://other.test.invalid": "not-this-one"})
-	assertDecision(t, scoped.Evaluate(caller, request, otherAudience), Denied{decision.CredentialUnavailable})
-
-	// Context belongs to the caller it authenticated as: one subject's projected tokens are never
-	// substituted into another's request, however well-formed they are.
-	someoneElse := reader.ServiceAccount{Namespace: namespace, Name: "someone-else"}
-	assertDecision(t, scoped.Evaluate(caller, request, context(someoneElse, map[string]string{audience: "pod-b-api-server-token"})),
-		Denied{decision.CredentialUnavailable})
-}
-
 func TestABasicUsernameTargetTakesTheHalfBeforeTheFirstColon(t *testing.T) {
 	// What `https://<token>@github.com` sends.
 	credential := secretCredential("github-pat", "token", resources.BasicUsername{Header: authorization})
 	request := outbound(header(authorization, basic(credential.Placeholder()+":")))
 
-	got := scopedIndexWithSecret(credential).Evaluate(caller, request, nil)
+	got := scopedIndexWithSecret(credential).Evaluate(caller, request)
 
 	assertDecision(t, got, Allowed{
 		Binding: "b", Policy: "scoped",
@@ -326,7 +291,7 @@ func TestAWholeValueTargetTakesTheHeaderEntire(t *testing.T) {
 	// The shape an API key travels in: `x-api-key: <key>`, no scheme to strip.
 	credential := secretCredential("github-pat", "token", resources.WholeValue{Header: "X-Api-Key"})
 
-	got := scopedIndexWithSecret(credential).Evaluate(caller, outbound(header("x-api-key", credential.Placeholder())), nil)
+	got := scopedIndexWithSecret(credential).Evaluate(caller, outbound(header("x-api-key", credential.Placeholder())))
 
 	assertDecision(t, got, Allowed{
 		Binding: "b", Policy: "scoped", Rewrites: []presentation.HeaderRewrite{{Header: "X-Api-Key", Values: []string{secretValue}}},
@@ -343,7 +308,7 @@ func TestSubstitutionCoversEveryValueOfTheHeader(t *testing.T) {
 	base := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
 	request := outbound(header(authorization, "Bearer "+githubCredential.Placeholder(), "Bearer other"))
 
-	assertDecision(t, base.Evaluate(caller, request, nil), Allowed{
+	assertDecision(t, base.Evaluate(caller, request), Allowed{
 		Binding: "b", Policy: "github",
 		Rewrites: []presentation.HeaderRewrite{{Header: authorization, Values: []string{"Bearer " + secretValue, "Bearer other"}}},
 	})
@@ -377,12 +342,12 @@ func TestABlanketRequiresABindingAndRespectsMethodAndPath(t *testing.T) {
 	index := standardIndex([]*policyapi.PolicySet{limited})
 	onRoute := outbound(host("arbitrary.example.org"), path("/public/file"))
 
-	assertDecision(t, index.Evaluate(caller, onRoute, nil), Denied{decision.NoBinding})
+	assertDecision(t, index.Evaluate(caller, onRoute), Denied{decision.NoBinding})
 
 	index.Rules.PutBinding(binding("b", "public"))
-	assertDecision(t, index.Evaluate(caller, onRoute, nil), Allowed{Binding: "b", Policy: "public"})
-	assertDecision(t, index.Evaluate(caller, outbound(host("arbitrary.example.org"), path("/private")), nil), Denied{decision.NoRule})
-	assertDecision(t, index.Evaluate(caller, outbound(host("arbitrary.example.org"), path("/public/file"), method("POST")), nil),
+	assertDecision(t, index.Evaluate(caller, onRoute), Allowed{Binding: "b", Policy: "public"})
+	assertDecision(t, index.Evaluate(caller, outbound(host("arbitrary.example.org"), path("/private"))), Denied{decision.NoRule})
+	assertDecision(t, index.Evaluate(caller, outbound(host("arbitrary.example.org"), path("/public/file"), method("POST"))),
 		Denied{decision.NoRule})
 }
 
@@ -395,7 +360,7 @@ func TestABlanketDoesNotSendAKnownCredentialToAnotherHostOrPath(t *testing.T) {
 		outbound(host("untrusted.example.org"), withPlaceholder),
 		outbound(path("/outside-github-rule"), withPlaceholder),
 	} {
-		assertDecision(t, index.Evaluate(caller, request, nil), Denied{decision.PlaceholderUnresolved})
+		assertDecision(t, index.Evaluate(caller, request), Denied{decision.PlaceholderUnresolved})
 	}
 }
 
@@ -427,7 +392,7 @@ func matrixRequest(options ...func(*Request)) Request {
 func body(body string) func(*Request) { return func(r *Request) { r.Body = []byte(body) } }
 
 func TestAJSONSecretIsSubstitutedOnlyAfterCredentialAuthorization(t *testing.T) {
-	got, ok := matrixIndex().Evaluate(caller, matrixRequest(), nil).(Allowed)
+	got, ok := matrixIndex().Evaluate(caller, matrixRequest()).(Allowed)
 
 	if !ok || got.BodyRewrite == nil {
 		t.Fatalf("decision = %#v, want an Allowed with a body rewrite", got)
@@ -446,24 +411,24 @@ func TestOtherwiseAllowedRequestsCannotRedeemJSONCredentialsOffRoute(t *testing.
 		"method": matrixRequest(method("GET")), "host": matrixRequest(host("other.test")), "path": matrixRequest(path("/elsewhere")),
 	} {
 		t.Run(name, func(t *testing.T) {
-			assertDecision(t, matrixIndex().Evaluate(caller, request, nil), Denied{decision.PlaceholderUnresolved})
+			assertDecision(t, matrixIndex().Evaluate(caller, request), Denied{decision.PlaceholderUnresolved})
 		})
 	}
 }
 
 func TestAJSONRouteFailsClosedForInvalidBodyMissingSecretOrRevokedBinding(t *testing.T) {
 	index := matrixIndex()
-	assertDecision(t, index.Evaluate(caller, matrixRequest(body("{broken")), nil), Denied{decision.InvalidBody})
+	assertDecision(t, index.Evaluate(caller, matrixRequest(body("{broken"))), Denied{decision.InvalidBody})
 
 	index.DeleteSecret("pat")
-	assertDecision(t, index.Evaluate(caller, matrixRequest(), nil), Denied{decision.CredentialUnavailable})
+	assertDecision(t, index.Evaluate(caller, matrixRequest()), Denied{decision.CredentialUnavailable})
 
 	index.Rules.DeleteBinding("b")
-	assertDecision(t, index.Evaluate(caller, matrixRequest(), nil), Denied{decision.NoBinding})
+	assertDecision(t, index.Evaluate(caller, matrixRequest()), Denied{decision.NoBinding})
 }
 
 func TestNonJSONUploadsToUnrelatedRoutesAreUnchanged(t *testing.T) {
-	assertDecision(t, matrixIndex().Evaluate(caller, matrixRequest(path("/upload"), body("not json")), nil),
+	assertDecision(t, matrixIndex().Evaluate(caller, matrixRequest(path("/upload"), body("not json"))),
 		Allowed{Binding: "b", Policy: "matrix", Rule: 1})
 }
 
@@ -471,7 +436,7 @@ func TestABodyCredentialIsKnownEvenWithoutABindingNamingIt(t *testing.T) {
 	index := matrixIndex()
 	index.Rules.PutPolicySet(policySet("matrix", egress([]string{"matrix.test"}, nil, nil, "")))
 
-	assertDecision(t, index.Evaluate(caller, matrixRequest(), nil), Denied{decision.PlaceholderUnresolved})
+	assertDecision(t, index.Evaluate(caller, matrixRequest()), Denied{decision.PlaceholderUnresolved})
 }
 
 func TestAPolicyBindingGrantsItsExistingSetsRulesBySetPosition(t *testing.T) {
@@ -480,7 +445,7 @@ func TestAPolicyBindingGrantsItsExistingSetsRulesBySetPosition(t *testing.T) {
 		[]*policyapi.PolicySet{policySet("github", kubernetesRule, kubernetesRule, githubRule)}, binding("pb", "absent", "github"),
 	)
 
-	assertDecision(t, index.Evaluate(caller, outbound(header(authorization, "Bearer "+githubCredential.Placeholder())), nil),
+	assertDecision(t, index.Evaluate(caller, outbound(header(authorization, "Bearer "+githubCredential.Placeholder()))),
 		Allowed{Binding: "pb", Policy: "github", Rule: 2, Rewrites: swapped(secretValue)})
 }
 
@@ -495,7 +460,7 @@ func TestAPolicyBindingWithoutEgressRulesForTheCallerIsNoBinding(t *testing.T) {
 		),
 	} {
 		t.Run(name, func(t *testing.T) {
-			assertDecision(t, index.Evaluate(caller, outbound(), nil), Denied{decision.NoBinding})
+			assertDecision(t, index.Evaluate(caller, outbound()), Denied{decision.NoBinding})
 		})
 	}
 }
@@ -505,11 +470,11 @@ func TestAPolicyBindingWithoutEgressRulesForTheCallerIsNoBinding(t *testing.T) {
 func TestARefusedPolicySetGrantsNothing(t *testing.T) {
 	broken := policySet("github", githubRule, egress([]string{"*"}, nil, nil, "github-pat"))
 	index := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
-	assertDecision(t, index.Evaluate(caller, outbound(), nil), Allowed{Binding: "b", Policy: "github"})
+	assertDecision(t, index.Evaluate(caller, outbound()), Allowed{Binding: "b", Policy: "github"})
 
 	index.Rules.PutPolicySet(broken)
 
-	assertDecision(t, index.Evaluate(caller, outbound(), nil), Denied{decision.NoBinding})
+	assertDecision(t, index.Evaluate(caller, outbound()), Denied{decision.NoBinding})
 }
 
 // The dial needs to know whether the rule that decided declared its hosts cluster-internal, so the
@@ -555,7 +520,7 @@ func TestAllowedCarriesTheDecidingRulesClusterInternal(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			index := standardIndex([]*policyapi.PolicySet{policySet("p", c.rules...)}, binding("b", "p"))
-			assertDecision(t, index.Evaluate(caller, c.request, nil), c.want)
+			assertDecision(t, index.Evaluate(caller, c.request), c.want)
 		})
 	}
 }
@@ -598,7 +563,7 @@ func admit(index *Index, subject reader.ServiceAccount, request Request) Decisio
 	if index.LocalAPIServer != nil {
 		request.APIServerToken = index.LocalAPIServer.Token
 	}
-	return index.Evaluate(subject, request, nil)
+	return index.Evaluate(subject, request)
 }
 
 func TestAKubernetesServiceAccountCredentialSendsTheProxysBearerAndNamesTheAccount(t *testing.T) {
@@ -630,15 +595,6 @@ func TestACallersOwnImpersonationHeadersRefuseTheRequest(t *testing.T) {
 			assertDecision(t, admit(accountIndex(proxyToken), caller, request), Denied{decision.ImpersonationForbidden})
 		})
 	}
-	// Another credential is the caller's own business: its impersonation runs on its own rights.
-	projected := resources.Credential{
-		Name: "kubernetes-workload", Source: resources.ProjectedWorkloadToken{Audience: audience}, Targets: []resources.Target{bearer},
-	}
-	request := outbound(header(authorization, "Bearer "+projected.Placeholder()), header("Impersonate-User", "someone"))
-	workload := &WorkloadContext{Caller: caller, Projected: map[string]string{audience: "own-token"}}
-	if _, ok := scopedIndex(projected).Evaluate(caller, request, workload).(Allowed); !ok {
-		t.Error("a projected credential refused a request carrying Impersonate-User")
-	}
 }
 
 func TestTheProxysBearerGoesOnlyToTheLocalAPIServerOverTLS(t *testing.T) {
@@ -663,7 +619,7 @@ func TestTheProxysBearerGoesOnlyToTheLocalAPIServerOverTLS(t *testing.T) {
 		})
 	}
 	// Without this admission's token reader there is no bearer to send.
-	assertDecision(t, accountIndex(proxyToken).Evaluate(caller, toAPIServer(), nil), Denied{decision.CredentialUnavailable})
+	assertDecision(t, accountIndex(proxyToken).Evaluate(caller, toAPIServer()), Denied{decision.CredentialUnavailable})
 }
 
 func TestLosingTheUseRuleStopsImpersonationOnTheNextRequest(t *testing.T) {
