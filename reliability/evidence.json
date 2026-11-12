@@ -1,340 +1,773 @@
 {
   "repository": "https://github.com/agentydragon/ducktape",
-  "source_devel_commit": "17ed98e8ea69787689c908a3ed49749b6ee7e554",
-  "window_utc": ["2026-11-03T00:00:00Z", "2026-11-10T23:13:00Z"],
-  "collected_at_utc": "2026-11-10T23:15:00Z",
-  "sampling_design": "Eight-day devel-filtered VM stats and branch-unverified target history, plus selected #15493 PR attempts. No repository-wide PR job census or complete fresh physical denominator.",
-  "vm_target_tracking": {
-    "target": "//agentplane/system_tests/suites:test_vm",
-    "source": "bbapi target stats --branch devel and paginated target history --count 0; exact canonical repository, since 2026-11-03; stats until 2026-11-11 but data collected by 23:04 UTC on 2026-11-10. Selected history invocation metadata says BRANCH_NAME=devel; branch is not encoded in each history row.",
-    "stats_api": {
-      "total_runs": 98,
-      "failed_runs": 28,
-      "likely_flaky_runs": 8,
-      "note": "GetTargetStats API aggregate. Its 98 runs are not equated with the 917 history rows or a verified fresh physical execution denominator."
-    },
-    "history": {
-      "rows": 917,
-      "verdicts": {
-        "PASSED": 889,
-        "FAILED": 13,
-        "FAILED_TO_BUILD": 15
-      },
-      "by_created_day_utc": {
-        "2026-11-03": {
-          "PASSED": 69,
-          "FAILED": 3,
-          "FAILED_TO_BUILD": 1
-        },
-        "2026-11-04": {
-          "PASSED": 179
-        },
-        "2026-11-05": {
-          "PASSED": 76
-        },
-        "2026-11-06": {
-          "PASSED": 130,
-          "FAILED": 1
-        },
-        "2026-11-07": {
-          "PASSED": 126,
-          "FAILED": 3
-        },
-        "2026-11-08": {
-          "PASSED": 98
-        },
-        "2026-11-09": {
-          "PASSED": 67,
-          "FAILED": 3,
-          "FAILED_TO_BUILD": 13
-        },
-        "2026-11-10": {
-          "PASSED": 144,
-          "FAILED": 3,
-          "FAILED_TO_BUILD": 1
+  "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
+  "window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
+  "scope": "Seven-day BuildBuddy target statistics and exact-window target history; final-24-hour PR-head required-check states; exact-window merged-PR required-check visibility; source and guest evidence for selected failures.",
+  "target_stats": {
+    "api": "BuildBuddy GetTargetStats with explicit canonical repo, devel branch filter, since=168h and until=0s.",
+    "collected_at_utc": "2026-11-12T07:25:26Z",
+    "effective_window_utc": ["2026-11-05T07:25:26Z", "2026-11-12T07:25:26Z"],
+    "requested_window_offset_seconds": 326,
+    "limit": "The API accepted a relative duration rather than explicit timestamps. These target-run summary rows are not unique physical attempts; likelyFlakyRuns is a service heuristic.",
+    "rows": [
+      {
+        "label": "//agentplane/system_tests/suites:test_vm",
+        "data": {
+          "totalRuns": "88",
+          "likelyFlakyRuns": "8",
+          "failedRuns": "28",
+          "totalFlakeRuntimeUsec": "4023720000"
         }
       },
-      "earliest_created_at_utc": "2026-11-03T00:31:25.313000Z",
-      "latest_created_at_utc": "2026-11-10T22:46:26.812000Z",
-      "cache_status": "not established for all rows; repeated start times indicate reuse and cannot prove physical exposure",
-      "pagination": "--count 0 requested all pages; no count cap",
-      "pr_15493_invocations_absent": true
-    },
-    "flake_heuristic": {
-      "samples": 8,
-      "sample_invocation_ids": [
-        "c3a9fd9f-e61f-5e11-8d20-4ff9ccf8d81f",
-        "1bee75e5-c6ae-5f5f-9776-d1cd085a8d22",
-        "993090b5-818b-5fd1-a093-892740372ed0",
-        "79acbe48-12c4-579a-a163-3c8ab29771a9",
-        "4789e905-f7c7-5cc3-b41a-796ae236dba4",
-        "ee8b4d09-93de-5b36-bbb6-8aa03c2da3bb",
-        "6c4f5c10-51e1-57bf-b3c4-99f4e67ef006",
-        "0f46c99a-c8cf-50dd-b128-a5ef0328c62d"
-      ],
-      "meaning": "BuildBuddy likely_flaky_runs compares nearby target outcomes; samples are not verified same-SHA recoveries."
-    },
-    "fresh_comparator": {
-      "invocation_id": "48ba5dfd-30d7-51a2-9702-cb73f8be45c8",
-      "url": "https://app.buildbuddy.io/invocation/48ba5dfd-30d7-51a2-9702-cb73f8be45c8",
-      "target": "//agentplane/system_tests/suites:test_vm",
-      "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
-      "test_summary": {
-        "overall_status": "PASSED",
-        "total_run_count": 1,
-        "cached_runs": 0,
-        "cache_basis": "All matching TestResult events have remote execution strategy; zero cached is an omitted protobuf scalar.",
-        "test_result_statuses": ["PASSED"],
-        "test_result_strategies": ["remote"]
-      },
-      "test_action_digest": "88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
-      "test_execution_ids": [
-        "/uploads/8df707ee-dc51-46c3-963d-57446163d1b3/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850"
-      ],
-      "tested_sha": "495c724344db7352bed4b6e4ab4f141597ea90be"
-    },
-    "measurement_window_utc": ["2026-11-03T00:00:00Z", "2026-11-10T23:04:00Z"],
-    "branch_provenance_limit": "Devel-filtered GetTargetStats is branch-specific. The 917 history rows lack branch per row; sampled invocation metadata is devel, but the entire history population cannot be called branch-verified mainline."
-  },
-  "pr_15493": {
-    "url": "https://github.com/agentydragon/ducktape/pull/15493",
-    "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
-    "tested_synthetic_merge_sha": "31568ce99bd545d962e7212c9d43101227e662e8",
-    "github_run_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369",
-    "github_run_id": 42911870369,
-    "github_test_build_job_attempts_at_collection": {
-      "1": "failure",
-      "2": "failure",
-      "3": "failure",
-      "4": "failure"
-    },
-    "selected_bazel_test_results": [
       {
-        "invocation_id": "5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
-        "url": "https://app.buildbuddy.io/invocation/5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
-        "target": "//agentplane/system_tests/suites:test_vm",
-        "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
-        "test_summary": {
-          "overall_status": "FAILED",
-          "total_run_count": 1,
-          "cached_runs": 0,
-          "cache_basis": "All matching TestResult events have remote execution strategy; zero cached is an omitted protobuf scalar.",
-          "test_result_statuses": ["FAILED"],
-          "test_result_strategies": ["remote"]
-        },
-        "test_action_digest": "88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
-        "test_execution_ids": [
-          "/uploads/91cdfab9-e49a-4882-bb1c-5cbc15574f6a/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850"
-        ]
-      },
-      {
-        "invocation_id": "8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
-        "url": "https://app.buildbuddy.io/invocation/8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
-        "target": "//agentplane/system_tests/suites:test_vm",
-        "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
-        "test_summary": {
-          "overall_status": "FAILED",
-          "total_run_count": 1,
-          "cached_runs": 0,
-          "cache_basis": "All matching TestResult events have remote execution strategy; zero cached is an omitted protobuf scalar.",
-          "test_result_statuses": ["FAILED"],
-          "test_result_strategies": ["remote"]
-        },
-        "test_action_digest": "88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
-        "test_execution_ids": [
-          "/uploads/08a1a264-7ee3-42a6-8b2e-e5f8bb90d146/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850"
-        ]
-      },
-      {
-        "invocation_id": "bcefe708-4e57-5d94-a33c-b33fdae6e31a",
-        "url": "https://app.buildbuddy.io/invocation/bcefe708-4e57-5d94-a33c-b33fdae6e31a",
-        "target": "//agentplane/system_tests/suites:test_vm",
-        "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
-        "test_summary": {
-          "overall_status": "FAILED",
-          "total_run_count": 1,
-          "cached_runs": 0,
-          "cache_basis": "TestResult has remote execution strategy; zero cached is an omitted protobuf scalar.",
-          "test_result_statuses": ["FAILED"],
-          "test_result_strategies": ["remote"],
-          "duration_seconds": 739.222
-        },
-        "test_action_digest": "a77ce2e6a7c8d5c4c3f20171fb79146a21e9519aeaef936250d2409c533ae6b6/1850",
-        "test_execution_ids": [
-          "/uploads/71eb7cfc-0d8d-468c-9f79-d362e507824e/blobs/a77ce2e6a7c8d5c4c3f20171fb79146a21e9519aeaef936250d2409c533ae6b6/1850"
-        ]
-      }
-    ],
-    "attempt_1": {
-      "buildbuddy_child": "5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
-      "verdict": "one fresh remote FAILED VM test, 724.016 s",
-      "first_missing_progress": "Codex setup accepted VM2 input at 22:19:10 UTC and app-server launch completed 22:19:11.506; both CRI and independent serial consoles end around 22:19:11.5, guest monotonic about 86 s; no harness completion or failure event before the 300 s turn wait ends at 22:24:10.",
-      "later_effects": "pytest outer timeout at 600 s and sandbox teardown leak; K3s API timeout warnings are not established as the first cause.",
-      "limits": "QEMU was reported running with vCPUs HLT later; available evidence does not distinguish guest kernel timer, userspace wedge, or telemetry loss.",
-      "retained_artifacts": [
-        "test.log",
-        "test-spans.jsonl",
-        "process-spans.jsonl",
-        "VM2 CRI console",
-        "VM2 QEMU serial",
-        "VM2 QEMU status",
-        "session metadata"
-      ]
-    },
-    "attempt_2": {
-      "buildbuddy_child": "d1131cb0-8e38-509f-8b02-eaca85afba23",
-      "test_verdict": "none: RBE execution failed before a TestResult",
-      "physical_executions": [
-        {
-          "id": "/uploads/14d90697-50ab-461b-97a0-b4d9b3b943e8/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
-          "worker": "84f34bc5-705b-490d-af75-f679643a2514",
-          "host": "gke-prod-hs6in-spot-executor-c3-2b496e5e-5dxg",
-          "duration_seconds_approx": 188.2,
-          "observation": "guest Linux 5.15.0 general-protection fault at update_blocked_averages+0x273, kernel panic, Firecracker exit; subsequent pause failed with fc.sock connection refused",
-          "vm_log_tail_cas": "9a722578078f334356e2e651f8ca4ae94bba617d8d21d01353999c265cb608c0/46101"
-        },
-        {
-          "id": "/uploads/4292ad4f-aac6-42e2-9ce1-862f73007f83/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
-          "worker": "797ca2c7-42d7-4430-8035-2a51e1800e76",
-          "host": "gke-prod-dtib7-spot-executor-c2-66369769-k94w",
-          "duration_seconds_approx": 0.5,
-          "observation": "snapshot/load failed: Could not set TSC scaling within the snapshot: Invalid argument (os error 22)"
+        "label": "//agentplane/app:test_thread_browser",
+        "data": {
+          "totalRuns": "49",
+          "likelyFlakyRuns": "2",
+          "failedRuns": "17",
+          "totalFlakeRuntimeUsec": "3831198000"
         }
-      ],
-      "root_cause_limits": "The first physical attempt cold-booted and did not create the failing snapshot. The failed snapshot creator/CPU/TSC values are not exposed; C3-to-C2 across these attempts does not prove cross-model reuse caused the restore failure.",
-      "related_issue": "https://github.com/agentydragon/ducktape/issues/14952",
-      "rejected_policy_candidate": {
-        "proposal": "allow-remote-snapshots=false plus snapshot-read-policy=local-only for VM test",
-        "reason": "BuildBuddy shouldSaveLocalSnapshot returns false for a restored local snapshot when remote snapshots are disabled, before the save policy is considered; changed k3s fingerprints would not refresh the local snapshot.",
-        "source_note": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/debug/k3s_persistence.md#L230-L236",
-        "status": "rejected; no provider policy changed"
       },
-      "snapshot_tracking_issue": "https://github.com/agentydragon/ducktape/issues/15581"
-    },
-    "attempt_3": {
-      "buildbuddy_child": "8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
-      "verdict": "one fresh remote FAILED VM test, 451.645 s",
-      "first_failure": "VM1 guest supervision fixture subtest reap_retries_property_deadline_on_connected_manager failed at final assertSystemdProofEmpty / ReadSystemdUnit with context deadline exceeded; native unit had exited status 23.",
-      "rerun": "same fixture reran later in the test and passed, but check_boot retained the earlier failure marker and correctly rejected boot evidence",
-      "context_limit": "The 10 s readCtx spans prior retries, WriteLine, Wait, stream joins and final proof read. Retained logs do not timestamp Wait completion or final read entry; it is unknown whether context was already ended before that read or the D-Bus call consumed the remaining budget.",
-      "source": "https://github.com/agentydragon/ducktape/blob/31568ce99bd545d962e7212c9d43101227e662e8/agentplane/env/runtime/supervision/systemd_kernel_test.go#L547-L613",
-      "diagnostic_pr": "https://github.com/agentydragon/ducktape/pull/15571"
-    },
-    "fixture_timeout_change": "PR head changed central_sampler turn_timeout_seconds 60 to 240 only inside if central_sampler; local-model-vm renders central_sampler=false. The VM driver's independent TURN_SECONDS remains 300; this PR setting did not cause or prolong these VM waits.",
-    "fixture_timeout_sources": {
-      "central_sampler_conditional": "https://github.com/agentydragon/ducktape/blob/a065ad40c83321f6a15612c48ca221422695ce10/agentplane/system_tests/deployment/fixture_chart.py#L195-L225",
-      "vm_fixture_variant": "https://github.com/agentydragon/ducktape/blob/a065ad40c83321f6a15612c48ca221422695ce10/agentplane/system_tests/deployment/render_fixture.py#L90-L100",
-      "driver_turn_bound": "https://github.com/agentydragon/ducktape/blob/a065ad40c83321f6a15612c48ca221422695ce10/agentplane/system_tests/driver/agent.py#L38"
-    },
-    "measurement_window_utc": ["2026-11-10T22:10:23Z", "2026-11-10T23:13:00Z"],
-    "attempt_4": {
-      "buildbuddy_child": "bcefe708-4e57-5d94-a33c-b33fdae6e31a",
-      "github_job": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130188140965",
-      "verdict": "one fresh remote FAILED VM test, 739.222 s; pytest-timeout >600 s",
-      "physical_execution_id": "/uploads/71eb7cfc-0d8d-468c-9f79-d362e507824e/blobs/a77ce2e6a7c8d5c4c3f20171fb79146a21e9519aeaef936250d2409c533ae6b6/1850",
-      "worker": "6f085186-527d-455f-9e42-57fa874bba7c",
-      "host": "sjc-prod-r2208m03vm5ppr",
-      "persistence": "cold; firecracker.VMMetadata.lastExecutedTask=null and persistence-suite.json outcome=cold",
-      "first_failure": "JUnit test start 23:00:52.406424 UTC; pytest 600 s deadline about 23:10:52.406. Test failed with Timeout (>600.0s) from pytest-timeout, not a scenario assertion.",
-      "setup": "system_test.stack.setup 23:00:54.227\u201323:06:17.756 =323.5 s; k3s bootstrap 36.8 s; serial image imports include KubeVirt virt-launcher 46.6 s and VM guest root 49.1 s.",
-      "scenario": "system_test.case 23:06:21.257\u201323:11:25.398 =304.1 s; three concurrent scenarios. At pytest deadline VM1 final turn.wait was active (23:10:45.205\u201323:10:52.975), VM2 and OOM sandbox delete had been accepted (23:10:18.130 and 23:10:36.847) but lacked deleted events. VM1 sandbox cleanup started 23:10:53.166 and recorded deleted 23:11:25.389.",
-      "mechanism_limit": "The aggregate 600 s budget was exhausted with active setup and scenarios. VM2/OOM cleanup spans ended around the pytest deadline without deleted events; teardown Kubernetes events show their VM shutdown/deletion continuing. These data do not prove a deletion wedge or explain why setup/import took these durations. No timeout increase is justified by matched timing evidence yet.",
-      "action_digest_note": "Different test-action digest from attempts 1\u20133 despite the same tested synthetic merge SHA; do not treat it as a same-action execution.",
-      "artifact_cas": {
-        "test_log": "a1c5a7e4a28b52f31cd7ebd0975ddd33c385bc2d0dee93cf0d4453094aaca916/59658",
-        "junit_xml": "e0d07ac70d8727a9d8f0d835b3bff9814918f5c7e5af57cf2e304b52aa415fdd/3037",
-        "test_spans": "e653fcf2e71e483636a1229c381d8aa99760b8e8f164ddd638acd64e275c6f47/93179",
-        "persistence_receipt": "ccd5b6683f6afeff8ebee1261e40bb12220e95504b35e6c5a491c10f29e19c27/1683"
+      {
+        "label": "//agentplane/system_tests/vm:test_tcg_vmi_shutdown_synthetic_slice",
+        "data": {
+          "totalRuns": "20",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "3",
+          "totalFlakeRuntimeUsec": "60610000"
+        }
       },
-      "setup_phase_counts": {
-        "image_import_spans": 26,
-        "image_import_span_seconds_sum": 272.4,
-        "image_prune_spans": 8,
-        "image_prune_span_seconds_sum": 3.9,
-        "remove_undeclared_seconds": 0.4,
-        "interpretation": "Import spans are serial with one importer, but overlap other stack setup; their sum is not an additional critical-path duration. Pruning is too small to explain the 600 s deadline."
+      {
+        "label": "//agentplane/app:test_thread_window_browser",
+        "data": {
+          "totalRuns": "48",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "16",
+          "totalFlakeRuntimeUsec": "152624000"
+        }
       },
-      "source_assessment": {
-        "stack_importer": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/deployment/stack.py#L461-L527",
-        "stored_blob_dedup": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/baseline.py#L555-L632",
-        "historical_parallel_trial": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/debug/stack_timings.md#L15-L31",
-        "controlled_pruning_pressure_experiment": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/debug/2026_11_02_image_store_pressure.md#L30-L68",
-        "finding": "Existing importer overlaps one serial, blob-deduplicated stream with other setup. A historical concurrent-import trial was slower on a generally slower worker and cannot establish a speedup; controlled image-store pressure evidence supports retaining pruning. No source regression or safe optimization sufficient to avert this attempt is established."
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_actions",
+        "data": {
+          "totalRuns": "59",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "9",
+          "totalFlakeRuntimeUsec": "142369000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_delegation",
+        "data": {
+          "totalRuns": "60",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "8",
+          "totalFlakeRuntimeUsec": "437838000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+        "data": {
+          "totalRuns": "10",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "1",
+          "totalFlakeRuntimeUsec": "232266000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+        "data": {
+          "totalRuns": "60",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "8",
+          "totalFlakeRuntimeUsec": "444924000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+        "data": {
+          "totalRuns": "12",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "1",
+          "totalFlakeRuntimeUsec": "647641000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_services",
+        "data": {
+          "totalRuns": "61",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "8",
+          "totalFlakeRuntimeUsec": "1054437000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_dispatcher",
+        "data": {
+          "totalRuns": "56",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "10",
+          "totalFlakeRuntimeUsec": "613551000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/vm:test_tcg_vmi_shutdown_cgroup_pilot",
+        "data": {
+          "totalRuns": "21",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "4",
+          "totalFlakeRuntimeUsec": "60768000"
+        }
+      },
+      {
+        "label": "//agentplane/system_tests/vm:test_tcg_vmi_shutdown_proof_progress",
+        "data": {
+          "totalRuns": "21",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "3",
+          "totalFlakeRuntimeUsec": "65844000"
+        }
+      },
+      {
+        "label": "//cluster/validation:test_generator_namespace",
+        "data": {
+          "totalRuns": "261",
+          "likelyFlakyRuns": "1",
+          "failedRuns": "1",
+          "totalFlakeRuntimeUsec": "60386000"
+        }
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/shared/examples:isolated_edit_test",
+        "data": {
+          "totalRuns": "38",
+          "failedRuns": "10"
+        }
+      },
+      {
+        "label": "//x/ai_session_archive:test_claude_title_projection",
+        "data": {
+          "totalRuns": "2"
+        }
       }
-    }
-  },
-  "post_cutoff_update": {
-    "recorded_at_utc": "2026-11-11T01:01:35Z",
-    "historical_sample_unchanged": true,
-    "pr_15493": {
-      "merged_at_utc": "2026-11-11T00:09:59Z",
-      "merge_commit": "506b5dc8e5f23f34c6eafc3849da7945c260b7a7",
-      "attempt_5": {
-        "github_job": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130219235738",
-        "job_conclusion": "SUCCESS",
-        "buildbuddy_child": "https://app.buildbuddy.io/invocation/37e78259-3dd8-571f-a79d-fe40b46c558f",
-        "tested_synthetic_merge_sha": "31568ce99bd545d962e7212c9d43101227e662e8",
-        "vm_target": "//agentplane/system_tests/suites:test_vm",
-        "vm_test_summary": {
-          "overall_status": "PASSED",
-          "total_run_count": 1,
-          "cached_runs": 1,
-          "strategy": "remote cache hit"
-        },
-        "matching_fresh_warm_result": {
-          "invocation": "https://app.buildbuddy.io/invocation/ada176c7-0a2f-5535-a3d5-678316d0467a",
-          "tested_source_sha": "b8f712744fc47b461078cfa4c241e5d120750e2f",
-          "vm_result": "PASSED with remote execution strategy",
-          "persistence_outcome": "warm",
-          "matching_test_log_cas": "3ecf1f106aa95bb6bed848262cd65c517c4aa0ccddd067bc90833042320bce33/4760",
-          "matching_persistence_receipt_cas": "5beb95665284269d6854e834c323f1fc3fca855893e0b774c1ad14bdfbdb4a88/1683"
-        },
-        "interpretation": "The fifth job passed, but its VM result was cached. Matching artifacts identify a separate fresh warm pass; they do not make attempt 5 a fresh execution or prove that the earlier failure paths were fixed."
-      }
-    },
-    "additional_snapshot_tsc_failure": {
-      "observed_at_utc": "2026-11-10T23:26:50Z",
-      "pr": "https://github.com/agentydragon/ducktape/pull/15564",
-      "buildbuddy_child": "https://app.buildbuddy.io/invocation/c6e943d6-8bc8-50a7-98d5-9799c97fcb3e",
-      "failed_execution_id": "/uploads/58f989e9-eed7-40aa-aadf-abe0b167d963/blobs/0f40a07f199804f798b7aa21d732d0e3e5385b89eff7c9eabed61ba994a9c168/1216",
-      "issue": "https://github.com/agentydragon/ducktape/issues/15581",
-      "limit": "The failed snapshot's creator, CPU model and saved/current TSC frequencies remain unknown."
-    }
-  },
-  "prior_snapshot": {
-    "branch_commit": "4aa6b2d2148fc8365a04985680295b39c2542d29",
-    "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
-    "measured_window_utc": ["2026-10-30T22:10:00Z", "2026-11-01T21:45:00Z"],
-    "presentation_only_update_utc": "2026-11-09",
-    "measured_vm_stats": "5 failed / 45 tracked VM target outcomes in that earlier window; not a current-window rate",
-    "unresolved": [
-      "VM sampler first response and guest shutdown evidence",
-      "prior VM OOM exec-server restart and distinct memory-before stall",
-      "Firecracker pause failures without guest lifecycle evidence for those older physical attempts",
-      "thread projection cursor 334 and bridge event/owner identity",
-      "remote-log observer resubmission after INTERNAL reset"
-    ],
-    "landed_unmeasured": [
-      "#12702 Dispatcher SQLite journal repair",
-      "#12896 bounded Bazel action retry",
-      "#12629 streaming channel race patch"
     ]
   },
-  "limits": [
-    "This is a focused VM and #15493 snapshot, not a repository-wide failure-rate census. No complete GitHub PR job or merged-PR population was collected for this new window.",
-    "GetTargetStats 98 and target-history 917 use different API definitions; neither is a verified count of fresh physical executions. Complete cache status was not retrieved.",
-    "The target history lacks a per-row branch field; selected invocation metadata confirms devel, and the #15493 PR child IDs are absent. The report does not claim every indexed row is independently branch-verified.",
-    "The first four #15493 jobs failed before the 10 November 23:13 UTC cutoff; they are a selected PR run, not a full PR-attempt census. Three fresh failed VM TestResults and one RBE pre-verdict failure must remain separate. Attempt 4 used a different test-action digest.",
-    "The devel-filtered stats and branch-unverified target history sample ended at 23:04 UTC; selected PR observations ended at 23:13 UTC. The separate populations and cutoffs are not combined into one rate.",
-    "No guest kernel trace after the VM2 console cutoff, snapshot creator metadata, or timestamp at entry to the final systemd proof read was retained.",
-    "Full API payloads, logs and profiles remain in local scratch; only reviewed measurements and identifiers are published."
+  "target_history": {
+    "api": "BuildBuddy GetTargetHistory with explicit canonical repo and all pages requested; filtered locally on invocationCreatedAtUsec for the report window.",
+    "collected_at_utc": "2026-11-12T07:30:18Z",
+    "branch_attribution": "Every non-green row in the selected exact-window history was verified devel from invocation metadata. Target-history rows do not include branch; passing rows remain branch-ambiguous and may be cached.",
+    "test_vm_exact_window": {
+      "target_status_rows": {
+        "passed": 708,
+        "failed_test_results": 13,
+        "failed_to_build": 15,
+        "total": 736
+      },
+      "failed_test_result_cache_status": "All 13 failed TestResults were uncached remote results.",
+      "physical_attempts": 15,
+      "physical_attempt_note": "The 15 attempts belong to the 13 failed TestResults and include two executor failures followed by retries; executor failures are not TestResults and the 15 FAILED_TO_BUILD target statuses are a separate count.",
+      "failed_to_build_visibility": {
+        "count": 15,
+        "representative_invocation": "0fbd857c-f445-51a0-9dca-4ed3a8d1db95",
+        "representative_invocation_url": "https://app.buildbuddy.io/invocation/0fbd857c-f445-51a0-9dca-4ed3a8d1db95",
+        "representative_invocation_status": "COMPLETE_INVOCATION_STATUS with bazelExitCode REMOTE_ERROR; target TestResult event is aborted.",
+        "target_log_visibility": "bbapi target log returned no test.log for test_vm. Invocation-wide execution listing had errors but did not map them to this target; no target-specific causal diagnosis is supported."
+      },
+      "same_sha_fresh_recovery_count": 1,
+      "denominator_limit": "Pass rows can be cached, target status rows are not all physical tests, and 15 is not a repository-wide execution denominator."
+    },
+    "limit": "GetTargetStats and GetTargetHistory have different API definitions and different boundaries; do not combine them into one rate.",
+    "query_since": "180h",
+    "target_status_rows_scanned_before_exact_window_filter": 10635,
+    "selected_target_label_count": 16,
+    "exact_window_status_rows_by_status": {
+      "PASSED": 9794,
+      "FAILED": 22,
+      "FAILED_TO_BUILD": 100,
+      "TIMED_OUT": 5
+    },
+    "exact_window_status_row_count_selected_targets": 9921,
+    "all_selected_target_status_rows_exact_window": 9921
+  },
+  "pr_head_checks_final_24h": {
+    "window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
+    "collected_at_utc": "2026-11-12T07:46:51Z",
+    "method": "159 observed distinct exact PR heads in the final 24-hour Actions snapshot after trusted-fork workflow linkage, including heads superseded later; each row records that observed head\u2019s latest visible required-gate outcome.",
+    "required_gates": [
+      "bazel-ci / Test & Build",
+      "Pre-commit checks",
+      "Build artifacts + imports check"
+    ],
+    "outcomes": {
+      "failed": 33,
+      "canceled": 31,
+      "green-proxy": 94,
+      "pending": 1
+    },
+    "failure_breakdown": {
+      "bazel_only_failed": 16,
+      "precommit_failed_bazel_canceled": 10,
+      "bazel_and_precommit_failed": 4,
+      "precommit_only_failed": 3
+    },
+    "limit": "GitHub's collected latest workflow attempts do not reconstruct every historical required-check state or prove auto-merge eligibility",
+    "representative_fork_failure": {
+      "pull_request": 15713,
+      "head_sha": "02d35bd16049098264a00d195584dae91af3aff2",
+      "head_repository_type": "trusted fork",
+      "buildbuddy_or_github_job": "https://github.com/agentydragon/ducktape/actions/runs/43136160421/job/130912024621",
+      "diagnosis": "sandbox-controller service account could not list/watch serviceaccounts and PolicyBindings; cache sync timed out and the controller exited before readiness. The candidate test then failed waiting for the controller.",
+      "classification": "candidate-source RBAC/setup failure; separate from devel target statistics"
+    },
+    "population_note": "Observed distinct PR heads, not only the current head of each open PR; superseded heads remain in the denominator."
+  },
+  "merged_pr_gates": {
+    "window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
+    "method": "complete UTC-day merged-PR partitions; current exact-head CheckRun rollups compared with mergedAt; latest visible matching attempt per named gate",
+    "returned_partition_records": 1229,
+    "merged_prs_in_window": 1176,
+    "daily_partition_completeness": [
+      {
+        "day_utc": "2026-11-05",
+        "reported": 92,
+        "returned": 92,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-06",
+        "reported": 192,
+        "returned": 192,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-07",
+        "reported": 165,
+        "returned": 165,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-08",
+        "reported": 124,
+        "returned": 124,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-09",
+        "reported": 204,
+        "returned": 204,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-10",
+        "reported": 277,
+        "returned": 277,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-11",
+        "reported": 131,
+        "returned": 131,
+        "complete": true
+      },
+      {
+        "day_utc": "2026-11-12",
+        "reported": 44,
+        "returned": 44,
+        "complete": true
+      }
+    ],
+    "required_gates_at_collection": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "pr_level_classes": {
+      "all_gates_visible_green_by_merge": 1068,
+      "missing_from_current_rollup": 30,
+      "latest_attempt_started_after_merge": 5,
+      "latest_attempt_straddled_merge": 59,
+      "visible_cancelled_by_merge": 1,
+      "visible_red_by_merge": 13
+    },
+    "gate_level_classes": {
+      "Build artifacts + imports check": {
+        "visible_green_by_merge": 1124,
+        "missing_from_current_rollup": 28,
+        "latest_attempt_started_after_merge": 3,
+        "latest_attempt_straddled_merge": 20,
+        "visible_red_by_merge": 1
+      },
+      "Pre-commit checks": {
+        "visible_green_by_merge": 1132,
+        "missing_from_current_rollup": 29,
+        "latest_attempt_started_after_merge": 2,
+        "latest_attempt_straddled_merge": 13
+      },
+      "bazel-ci / Test & Build": {
+        "visible_green_by_merge": 1072,
+        "missing_from_current_rollup": 28,
+        "latest_attempt_started_after_merge": 5,
+        "latest_attempt_straddled_merge": 58,
+        "visible_cancelled_by_merge": 1,
+        "visible_red_by_merge": 12
+      }
+    },
+    "visible_red_by_merge_candidates": [
+      15153, 15155, 15166, 15174, 15170, 15157, 15162, 15164, 15175, 15195,
+      15215, 15457, 15639
+    ],
+    "limit": "statusCheckRollup exposes current latest-visible checks, not complete historical attempts; later reruns can hide the state that was visible at merge",
+    "inference_boundary": "These classifications identify candidates for review. They do not prove a required-check bypass or forced merge because current latest-visible check state does not reconstruct every attempt available at merge time.",
+    "candidate_review_method": "For all 13 visible-red-by-merge candidates, inspected current exact-head gate rollup, merge and check timestamps, failed GitHub job logs, PR REST metadata, issue timeline and available owner comments. BuildBuddy failed-target logs were also retrieved for the test_pod / mcp:test_actions failure and test_gateway_crash failure.",
+    "visible_red_by_merge_candidates_detail": [
+      {
+        "pull_request": 15153,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15153",
+        "merged_at_utc": "2026-11-09T17:40:49Z",
+        "head_sha": "66c933a3d3efc15cbe4127356ab125bd591ac9f0",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T12:41:50Z",
+          "completed_at_utc": "2026-11-09T12:44:11Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42617753566/job/129164590733",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": "Owner comment attributes an earlier exit-34 REMOTE_ERROR to all 69 test targets aborting without test failures, notes the PR is documentation plus a comment, and says the failed job was rerun once.",
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15155,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15155",
+        "merged_at_utc": "2026-11-09T17:41:08Z",
+        "head_sha": "ecb2d05ac645040d60a83bee6048550cf2b85946",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T12:45:55Z",
+          "completed_at_utc": "2026-11-09T12:48:47Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42619501042/job/129167689667",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15166,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15166",
+        "merged_at_utc": "2026-11-09T17:41:27Z",
+        "head_sha": "16fc47ac073ca0977ce29c895502d1b4f037acc6",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T17:38:03Z",
+          "completed_at_utc": "2026-11-09T17:41:04Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42666522583/job/129331524632",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15174,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15174",
+        "merged_at_utc": "2026-11-09T17:41:47Z",
+        "head_sha": "5d595670a2def6cd6f9dde9e45ff58072cbaca60",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T17:38:01Z",
+          "completed_at_utc": "2026-11-09T17:41:20Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42666516073/job/129331496078",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15170,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15170",
+        "merged_at_utc": "2026-11-09T17:42:01Z",
+        "head_sha": "a9b3ba377f9bdcfb1210b83d6c0fcf640fc78786",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T12:41:22Z",
+          "completed_at_utc": "2026-11-09T12:44:49Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42618646801/job/129164782886",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15157,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15157",
+        "merged_at_utc": "2026-11-09T17:42:24Z",
+        "head_sha": "8179f51db2f7dd2ea68b6165438ea6fb3a3567b7",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T12:43:41Z",
+          "completed_at_utc": "2026-11-09T12:45:34Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42617818123/job/129166925648",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": "Owner comment says exit-34 REMOTE_ERROR had no reported test failures, affected unrelated PRs, and this Markdown-only change was rerun once.",
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15162,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15162",
+        "merged_at_utc": "2026-11-09T17:42:40Z",
+        "head_sha": "1d2f3f25cea3409eca0116e4f2655c38d88ccbbd",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T14:28:10Z",
+          "completed_at_utc": "2026-11-09T14:30:01Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42617971162/job/129220585997",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15164,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15164",
+        "merged_at_utc": "2026-11-09T17:43:03Z",
+        "head_sha": "b6e33a678ed9aad61605650fffe5840f57b7ee3f",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T15:31:52Z",
+          "completed_at_utc": "2026-11-09T15:33:56Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42617986436/job/129257817281",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15175,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15175",
+        "merged_at_utc": "2026-11-09T17:43:14Z",
+        "head_sha": "b177ddb0366324d992dbd803ceb7142a0d37ed57",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T12:47:02Z",
+          "completed_at_utc": "2026-11-09T12:53:50Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42619390785/job/129167318989",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15195,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15195",
+        "merged_at_utc": "2026-11-09T19:08:54Z",
+        "head_sha": "4f12085201526397892b4a272620ad731993938e",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T18:28:04Z",
+          "completed_at_utc": "2026-11-09T18:56:06Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42674245229/job/129351730059",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Build artifacts + imports check: absent from current rollup; state at merge unknown",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "Mixed failures in one Bazel invocation: the test_pod messaging case was Unschedulable because the node reported insufficient memory; five mcp:test_actions cases timed out waiting for Sandbox Ready while environment-runtime restarted. No retained previous-container exit reason ties the readiness failures to a deeper common cause.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": ["2026-11-09T19:08:41Z"],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15215,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15215",
+        "merged_at_utc": "2026-11-09T21:34:07Z",
+        "head_sha": "cd805996615edcd3bcc02305a0cd72e0111f289a",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-09T20:26:52Z",
+          "completed_at_utc": "2026-11-09T20:44:45Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42690093342/job/129417487419",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "The retained job log includes mypy diagnostics (int | None returned where int was expected, a missing tenacity stub, and a WorkloadCredential argument type mismatch). The owner comment also describes test_pod and test_vm failures: the test_pod cases reproduced on devel, while test_vm lost exec-server transport. The available evidence does not isolate one cause or link it to this diff.",
+        "owner_comment_summary": "Owner comment says the test_pod failures reproduce on devel and the test_vm disconnect is an exec-server continuity failure; it explicitly says there is no evidence tying that failure to the PR change.",
+        "auto_merge_disabled_events_utc": [],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15457,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15457",
+        "merged_at_utc": "2026-11-10T16:43:19Z",
+        "head_sha": "5764a760d045648d88b527b65c025783a5b4a946",
+        "author": "agentydragon",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "Build artifacts + imports check",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-10T12:48:14Z",
+          "completed_at_utc": "2026-11-10T13:13:20Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42818850601/job/129838847074",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Pre-commit: green by merge",
+          "Bazel CI: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "The artifact check saw cache.allegedly.works return HTTP 503 / connection refused; Nix disabled that substituter and required store paths were unavailable. Its dependency build also hit an AnyIO test timeout in test_thread_cancelled_and_abandoned[asyncio+uvloop]. The gate had multiple failures; no single root cause was established.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": ["2026-11-10T16:43:09Z"],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      },
+      {
+        "pull_request": 15639,
+        "pull_request_url": "https://github.com/agentydragon/ducktape/pull/15639",
+        "merged_at_utc": "2026-11-11T05:51:22Z",
+        "head_sha": "08bd28ae25d0edaa20f49fcfcca3afea86e8dc8b",
+        "author": "agentydragon-agent",
+        "merged_by": "agentydragon",
+        "observed_red_gate": {
+          "name": "bazel-ci / Test & Build",
+          "conclusion": "FAILURE",
+          "started_at_utc": "2026-11-11T05:27:35Z",
+          "completed_at_utc": "2026-11-11T05:38:38Z",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42965859269/job/130342894610",
+          "classification": "visible_red_by_merge"
+        },
+        "other_required_gates_visible_by_merge": [
+          "Artifacts + imports: green by merge",
+          "Pre-commit: green by merge"
+        ],
+        "diagnosis_or_visibility_limit": "mcp:test_gateway_crash failed with KeyError(holderIdentity) while central_sampler.py read resumed lease data at line 638; a later log entry reports history NOT_FOUND. The immediate exception is clear, but why the field was absent is unresolved.",
+        "owner_comment_summary": null,
+        "auto_merge_disabled_events_utc": ["2026-11-11T05:51:14Z"],
+        "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
+      }
+    ],
+    "owner_and_bypass_review": {
+      "merged_by": "agentydragon for all 13 candidates; author is agentydragon for 12 and agentydragon-agent for #15639.",
+      "owner_comment_summaries": {
+        "15153": "Owner comment attributes an earlier exit-34 REMOTE_ERROR to all 69 test targets aborting without test failures, notes the PR is documentation plus a comment, and says the failed job was rerun once.",
+        "15157": "Owner comment says exit-34 REMOTE_ERROR had no reported test failures, affected unrelated PRs, and this Markdown-only change was rerun once.",
+        "15215": "Owner comment says the test_pod failures reproduce on devel and the test_vm disconnect is an exec-server continuity failure; it explicitly says there is no evidence tying that failure to the PR change."
+      },
+      "other_candidates": "No owner-authored failure rationale appeared in the retrieved issue comments for the remaining candidates.",
+      "auto_merge_disabled_events": {
+        "15195": "2026-11-09T19:08:41Z, 13 seconds before merge",
+        "15457": "2026-11-10T16:43:09Z, 10 seconds before merge",
+        "15639": "2026-11-11T05:51:14Z, 8 seconds before merge"
+      },
+      "bypass_evidence": "No queried issue timeline/comment explicitly records a check waiver or branch-protection bypass. PR REST timeline and current statusCheckRollup are not organization ruleset audit logs and do not establish whether a historical exception occurred; no bypass conclusion is made."
+    }
+  },
+  "diagnoses": {
+    "pr_15741_tool_oom": {
+      "pull_request": 15741,
+      "tested_source_sha": "ebde9f0051adab3336975fa7ad60313b300ceba7",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "failed_invocation": "https://app.buildbuddy.io/invocation/d75c1d3d-d600-5aa6-af7c-fcb44190d3da",
+      "fresh_same_source_same_action_pass": "https://app.buildbuddy.io/invocation/771f2d2b-8ca3-5b0e-b445-c6ea88ad0840",
+      "guest_events_utc": [
+        {
+          "at": "2026-11-12T06:51:32.250Z",
+          "observation": "Executor memcg usage and limit were both 262144 KiB; oom_group=0. Kernel selected the intended tool process awk (PID 1125, oom_score_adj=1000, RSS about 217472 KiB)."
+        },
+        {
+          "at": "2026-11-12T06:51:33.751Z",
+          "observation": "Before oom_reaper completed awk at 06:51:34.275Z, a second memcg OOM selected codex PID 414 (anonymous RSS about 41564 KiB), the native exec-server. It exited 137; no VM_EXEC_RESULT arrived, then the client observed websocket reset and unknown session."
+        }
+      ],
+      "source_contract": {
+        "fixture": "agentplane/system_tests/scenarios/vm_sandbox.py:69-80 and :302-360",
+        "limit": "agentplane/system_tests/vm/configuration.py:38-43 sets 256 MiB executor memory maximum",
+        "isolation": "agentplane/env/runtime/execution/ISOLATION.md:24-56 documents one shared executor cgroup for Codex server and commands in VMs and a shared companion-container limit in Pods",
+        "restart": "agentplane/env/runtime/execution/SPEC.md:53-63 says backend restart loses native session state and commands are not replayed"
+      },
+      "causal_conclusion": "The second kernel OOM kill explains the exec-server exit and transport/session loss. The evidence does not support a stale-session delete as the initial fault or a standalone websocket fault.",
+      "repair_boundary": "This leaves a product-contract decision. If a tool OOM must never kill the server, implement a per-command memory boundary beneath the server budget in both VM and Pod backends. If the shared budget is intended contract, revise aggregate-OOM assertions to state it explicitly while preserving exit 137, missing-result, and no-replay coverage. Raising the cap or retrying does not decide or implement isolation. No runtime repair was made or validated in this analysis.",
+      "raw_evidence": "BuildBuddy invocation metadata, execution/test spans, guest console, journal and serial logs were inspected locally and are not published."
+    },
+    "thread_window_browser": {
+      "target": "//agentplane/app:test_thread_window_browser",
+      "invocation": "https://app.buildbuddy.io/invocation/b48eb4c8-d3bc-54cb-be56-3b66759cc62c",
+      "source_assertion": "agentplane/app/test_thread_window_browser.py:193",
+      "observation": "After appending items 130\u2013164, projection cursor 334 remained absent after 30 seconds (63 zero-result polls); three runner-connection UNAVAILABLE warnings named a Gateway replica.",
+      "limit": "The observations do not prove the Gateway warnings caused the missing projection cursor, and do not unite this failure with a separate thread-browser scenario."
+    }
+  },
+  "prior_inventory_dispositions": {
+    "older_vm_and_application_failures": "The 30 Oct\u20131 Nov 5/45 VM failures and 3\u201310 Nov #15493 observations keep their original windows. #15741 confirms a shared-cgroup server-loss mechanism for that incident only; it does not reclassify older guest stalls, TSC restore errors, supervision proof timeouts, or outer test deadlines.",
+    "landed_fixes_unmeasured": [
+      "#12702 SQLite journal repair",
+      "#12896 bounded Bazel action retry",
+      "#12629 streaming-channel race patch"
+    ],
+    "capacity_and_test-layout": {
+      "#15212": "closed as redundant",
+      "#15210": "shared workload-trust cases run late",
+      "#15233": "retain four CU: Claude and Codex run sequentially with per-harness Sandbox scope, halving the peak count; no 8 CU change without new same-path evidence",
+      "#15214": "image split remains open"
+    },
+    "kernel_and_supervision_followups": {
+      "pr_15571": {
+        "state": "MERGED",
+        "merged_at_utc": "2026-11-11T00:02:54Z",
+        "merge_commit": "73d185842b0a473005a9428a8b58282eb80a54d7",
+        "title": "Clarify guest systemd proof deadline failures",
+        "current_source_observation": "At agentplane/env/runtime/supervision/systemd_kernel_test.go:614-616, source checks readCtx.Err() before assertSystemdProofEmpty.",
+        "disposition": "Diagnostic coverage is present in the pinned source; this does not repair runtime memory isolation or prove the earlier guest/snapshot failures fixed."
+      },
+      "issue_14952": {
+        "state": "OPEN",
+        "title": "BuildBuddy Firecracker worker kernel panics during Agentplane VM tests"
+      },
+      "issue_15581": {
+        "state": "OPEN",
+        "title": "Investigate BuildBuddy Firecracker snapshot TSC restore failures"
+      }
+    }
+  },
+  "collection_limits": [
+    "BuildBuddy stats interval starts and ends 326 seconds later than the exact report window because GetTargetStats accepts relative duration only.",
+    "GetTargetStats likelyFlakyRuns is a service heuristic, not an independent test-level flake classification.",
+    "Target history pass rows can be branch-ambiguous or cache-served; test failures, build failures, and executor retries are counted separately.",
+    "PR-head latest outcomes are not every workflow attempt; fork linkage was explicitly supplied by the parent collector.",
+    "Merged-PR counts compare current latest-visible exact-head rollups with merge time; superseded historical check states are unavailable.",
+    "No CI reruns, cancellations, deployment mutations, or policy changes were made.",
+    "The merged-candidate review covers all 13 PRs surfaced by the current exact-head rollup. Current rollups are latest-visible attempts and do not recover superseded statuses or historical ruleset decisions.",
+    "Nine merged PR Bazel jobs report no registered Linux/amd64 executors in pool kvm-vm; that exact failure is not mapped to the 15 devel FAILED_TO_BUILD test_vm rows.",
+    "For the 15 devel test_vm FAILED_TO_BUILD rows, BuildBuddy retained aborted TestResult/REMOTE_ERROR status but no representative test.log or target-specific failure reason; root cause remains unassigned.",
+    "No raw Action or BuildBuddy logs are included in the published reliability namespace; failure diagnoses are summarized from local retained logs and linked to their public PR/check/invocation pages."
   ],
-  "report_validation": {
-    "desktop_width_px": 1440,
-    "mobile_width_px": 390,
-    "themes": ["light", "dark"],
-    "visual_review": "Initial desktop/mobile light/dark screenshots inspected. Final desktop light and mobile dark screenshots inspected after the fourth attempt and issue links; desktop Attempt and BuildBuddy columns remain on one line, mobile cards and bars show no observed horizontal clipping.",
-    "live_browser": "Chrome CDP confirmed Mantine chart rendered, five section links present, and document color scheme changed light to dark to light when prefers-color-scheme changed.",
-    "local_screenshots": "desktop-light-final3.png and mobile-dark-final3.png in task scratch; not published"
+  "report_review": {
+    "author_review": "Corrected all status denominators; reviewed selected target histories, representative FTB API visibility, dispatcher and same-invocation MCP failures, all 13 merged red jobs, PR timelines/owner comments, and source limitations. No raw logs were published.",
+    "browser_visual_review": "Deferred to parent integration review as requested; CDN loading, desktop/mobile layout, both initial themes and live color-scheme changes remain to be inspected."
+  },
+  "current_branch_policy": {
+    "observed_at_utc": "2026-11-12",
+    "required_status_checks": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "strict_up_to_date": false,
+    "required_approving_reviews": 0,
+    "code_owner_review": false,
+    "linear_history_required": true,
+    "merge_queue_listed": false,
+    "deploy_gate_listed": false,
+    "extra_approval_for_unattributed_changes": true,
+    "codeql": "not configured",
+    "interpretation_limit": "This current policy snapshot does not reconstruct the check state that was visible at each historical merge."
+  },
+  "current_failure_clusters": {
+    "dispatcher_tls_startup": {
+      "target": "//agentplane/system_tests/suites:test_dispatcher",
+      "stats_api_failed_total": "10 / 56",
+      "representative_invocation": "cfecc04e-ac6f-571c-8421-660fdce441ec",
+      "representative_invocation_url": "https://app.buildbuddy.io/invocation/cfecc04e-ac6f-571c-8421-660fdce441ec",
+      "observation": "Three setup errors in one fresh invocation share runner-gateway CrashLoopBackOff; startup certificate verification reports an unknown authority and possible ECDSA verification failure. Deployment readiness waited 459 seconds.",
+      "causal_boundary": "Direct startup failure is identified. Leaf/root certificate serials and secret contents were not retained, so the certificate mismatch itself is unresolved."
+    },
+    "mcp_same_invocation_readiness": {
+      "source_sha": "b55239863dd62a89d7fdb00bb9571a58db8706eb",
+      "invocation": "1e6dc3d2-1d13-565b-b32f-0c399df96474",
+      "invocation_url": "https://app.buildbuddy.io/invocation/1e6dc3d2-1d13-565b-b32f-0c399df96474",
+      "failed_targets": [
+        "//agentplane/system_tests/suites/mcp:test_delegation",
+        "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+        "//agentplane/system_tests/suites/mcp:test_services"
+      ],
+      "observation": "Three target failures in the same devel invocation each wait 300 seconds for Sandbox Ready. Pods are Running but WorkloadReady=false and EnvironmentRuntimeConnected=false; test_services events include environment-runtime BackOff.",
+      "causal_boundary": "This is one shared readiness cluster, not three independent observations. Previous-container stderr and the runtime exit reason were not retained, so the mechanism beneath readiness is unknown."
+    }
   }
 }
