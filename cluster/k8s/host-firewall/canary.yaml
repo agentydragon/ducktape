@@ -15,6 +15,7 @@ spec:
           - ovh-ns102453
           - ovh-ns103656
           - ovh-ns103711
+          - ovh-ns104952
   ingress:
     # Node, Pod and health identities need the existing cluster paths.
     - fromEntities:
