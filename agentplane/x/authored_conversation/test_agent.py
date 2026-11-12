@@ -172,11 +172,19 @@ async def test_incomplete_or_conflicting_calls_never_execute(make_agent, setting
 
 async def test_step_limit_stops_tool_loop(make_agent, settings: Settings):
     settings.max_steps = 2
-    agent = await make_agent(lambda request: response([call("read_thread", {})]))
+    calls = iter(["read-1", "read-2"])
+    agent = await make_agent(lambda request: response([call("read_thread", {}, call_id=next(calls))]))
     agent.submit("Work")
     result = await agent.run()
     assert result.status is Status.STEP_LIMIT
     assert result.steps == 2
+
+
+async def test_duplicate_call_from_later_response_does_not_repeat_effect(make_agent, settings: Settings):
+    agent = await make_agent(lambda request: response([call("run_command", {"command": "printf x >> counter"})]))
+    agent.submit("Perform work")
+    assert (await agent.run()).status is Status.INCOMPLETE_RESPONSE
+    assert (settings.workspace / "counter").read_text() == "x"
 
 
 async def test_provider_failure_is_not_retried_or_replayed(make_agent, settings: Settings):

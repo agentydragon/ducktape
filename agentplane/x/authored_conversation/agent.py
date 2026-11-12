@@ -60,6 +60,7 @@ class Agent:
         self.tools = Tools(settings, store, self.publish)
         self.active = False
         self.context: list[ResponseInputItemParam] = []
+        self.completed_call_ids: set[str] = set()
         self.announced_through = 0
         self.run_id: UUID | None = None
         self.step = 0
@@ -78,13 +79,15 @@ class Agent:
         if self.active:
             raise ValueError("wait for the active run before resetting context")
         self.context.clear()
+        self.completed_call_ids.clear()
         self.announced_through = 0
         if self.settings.mode is Mode.CHAT:
             for message in self.store.messages():
-                role = "user" if message.author is Author.HUMAN else "assistant"
-                self.context.append({"role": role, "content": message.body})
                 if message.author is Author.HUMAN:
+                    self.context.append({"role": "user", "content": message.body})
                     self.announced_through = message.position
+                else:
+                    self.context.append({"role": "assistant", "content": message.body})
         self.trace.record("context_reset", data={"mode": self.settings.mode.value})
 
     def has_pending_input(self) -> bool:
@@ -126,6 +129,7 @@ class Agent:
             for step in range(1, self.settings.max_steps + 1):
                 self.step = step
                 self.announce_input()
+                self.trace.record("sample_started", run_id=self.run_id, step=self.step)
                 response = await self.client.responses.create(
                     model=self.settings.model,
                     instructions=AUTHORED_INSTRUCTIONS if self.settings.mode is Mode.AUTHORED else CHAT_INSTRUCTIONS,
@@ -144,9 +148,12 @@ class Agent:
                 if response.status != "completed":
                     return self.finish(Status.INCOMPLETE_RESPONSE)
                 calls = [item for item in response.output if isinstance(item, ResponseFunctionToolCall)]
-                if any(call.status not in (None, "completed") or not call.call_id for call in calls) or len(
-                    {call.call_id for call in calls}
-                ) != len(calls):
+                if any(
+                    call.status not in (None, "completed")
+                    or not call.call_id
+                    or call.call_id in self.completed_call_ids
+                    for call in calls
+                ) or len({call.call_id for call in calls}) != len(calls):
                     return self.finish(Status.INCOMPLETE_RESPONSE)
                 for item in response.output:
                     if not isinstance(item, ResponseOutputMessage | ResponseFunctionToolCall | ResponseReasoningItem):
@@ -166,6 +173,7 @@ class Agent:
                     )
                     result = await self.tools.execute(call.name, call.arguments)
                     self.context.append({"type": "function_call_output", "call_id": call.call_id, "output": result})
+                    self.completed_call_ids.add(call.call_id)
                     self.trace.record(
                         "tool_result",
                         run_id=self.run_id,

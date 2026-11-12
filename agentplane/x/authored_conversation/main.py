@@ -23,6 +23,11 @@ async def interact(agent: Agent, reader: asyncio.StreamReader, trace_path: Path)
     running: asyncio.Task[RunResult] | None = None
     eof = False
     barrier = False
+
+    def start_run() -> asyncio.Task[RunResult]:
+        print("[working]", flush=True)
+        return asyncio.create_task(agent.run())
+
     async with AsyncExitStack() as stack:
 
         async def cancel_tasks() -> None:
@@ -63,7 +68,7 @@ async def interact(agent: Agent, reader: asyncio.StreamReader, trace_path: Path)
                                 barrier = running is not None
                             case "/continue":
                                 if running is None:
-                                    running = asyncio.create_task(agent.run())
+                                    running = start_run()
                             case _ if text.startswith("/"):
                                 raise ValueError(
                                     "unknown command; use /thread, /models, /trace, /reset-context, /wait, /continue, /quit"
@@ -71,7 +76,9 @@ async def interact(agent: Agent, reader: asyncio.StreamReader, trace_path: Path)
                             case _ if text.strip():
                                 agent.submit(text)
                                 if running is None:
-                                    running = asyncio.create_task(agent.run())
+                                    running = start_run()
+                    except OpenAIError as exc:
+                        print(f"[API error: {type(exc).__name__}]", file=sys.stderr, flush=True)
                     except ValueError as exc:
                         print(f"[input error] {exc}", file=sys.stderr, flush=True)
             if running is not None and running.done():
@@ -83,7 +90,7 @@ async def interact(agent: Agent, reader: asyncio.StreamReader, trace_path: Path)
                 running = None
                 barrier = False
                 if agent.has_pending_input():
-                    running = asyncio.create_task(agent.run())
+                    running = start_run()
             if reading is None and not eof and not barrier:
                 reading = asyncio.create_task(reader.readline())
 
