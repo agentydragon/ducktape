@@ -323,7 +323,7 @@ py_test(
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/native/testing:async_process",
-        "//util:net",
+        "//util/testing:net",
         "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
