@@ -11,7 +11,7 @@ async def test_authorship_is_assigned_by_tool_and_invalid_posts_do_not_commit(
     settings: Settings, store: Store, published
 ):
     tools = Tools(settings, store, published.append)
-    result = json.loads(await tools.execute("post_message", '{"body":"Answer", "author":"human"}'))
+    result = json.loads((await tools.execute("post_message", '{"body":"Answer", "author":"human"}')).output)
     assert "error" in result
     assert store.messages() == []
     await tools.execute("post_message", '{"body":"Answer"}')
@@ -26,8 +26,11 @@ async def test_file_reads_are_bounded_and_reject_symlink_escape(settings: Settin
     outside.write_text("outside content")
     (settings.workspace / "link").symlink_to(outside)
     tools = Tools(settings, store, published.append)
-    assert json.loads(await tools.execute("read_file", '{"path":"inside"}')) == {"text": "1234", "truncated": True}
-    assert "error" in json.loads(await tools.execute("read_file", '{"path":"link"}'))
+    assert json.loads((await tools.execute("read_file", '{"path":"inside"}')).output) == {
+        "text": "1234",
+        "truncated": True,
+    }
+    assert "error" in json.loads((await tools.execute("read_file", '{"path":"link"}')).output)
 
 
 async def test_command_output_is_bounded_and_timed_out_processes_are_reaped(settings: Settings):

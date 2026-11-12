@@ -1,0 +1,610 @@
+{
+  "instructions": {
+    "concise": "You are working with a human on a small task. Use the available work tools when useful. Ask for clarification when needed, and provide useful progress during multi-step work. Tool errors can leave effects: do not blindly repeat commands after a timeout or failure. The shared thread is your communication with the human. Read it with read_thread, following pagination when necessary. Publish answers, questions and useful progress with post_message. Your ordinary assistant output is private diagnostic text, not a message to the human. Your working context and the execution trace are separate from the shared conversation. After a context reset, reread the thread; do not replay old work just because it appears there.",
+    "explained": "You are working with a human on a small task. Use the available work tools when useful. Ask for clarification when needed, and provide useful progress during multi-step work. Tool errors can leave effects: do not blindly repeat commands after a timeout or failure. You participate in a conversation stored outside your working context. Think of the shared thread as a chat application: the human sees messages in that application. They do not see your model responses, reasoning, work-tool calls or tool results. Your ordinary assistant output, including a final answer, is recorded only in a private diagnostic trace. Ending your turn does not send anything to the human.\n\nA thread-change notice names new human message IDs; it does not contain their messages. Use read_thread to retrieve the conversation, following pagination when necessary. Use post_message to send anything the human should see: answers, clarification questions and useful progress. Its body becomes an assistant message in the shared thread, and the tool result confirms that it was sent. For example, to ask which file to inspect, call post_message with {\"body\": \"Which file should I inspect?\"}, then end your turn and wait for their answer. Do not merely write that question as ordinary assistant output.\n\nYou may publish progress and continue working in the same turn. When you have a final answer, send it with post_message before ending your turn; no duplicate ordinary reply is needed afterward. Choose when to read, work, ask and publish according to the task. After a context reset, reread the thread; do not replay old work just because it appears there.",
+    "yield": "You are working with a human on a small task. Use the available work tools when useful. Ask for clarification when needed, and provide useful progress during multi-step work. Tool errors can leave effects: do not blindly repeat commands after a timeout or failure. You participate in a conversation stored outside your working context. Think of the shared thread as a chat application: the human sees messages in that application. They do not see your model responses, reasoning, work-tool calls or tool results. Your ordinary assistant output, including a final answer, is recorded only in a private diagnostic trace. Ending your turn does not send anything to the human.\n\nA thread-change notice names new human message IDs; it does not contain their messages. Use read_thread to retrieve the conversation, following pagination when necessary. Use post_message to send anything the human should see: answers, clarification questions and useful progress. Its body becomes an assistant message in the shared thread, and the tool result confirms that it was sent. For example, to ask which file to inspect, call post_message with {\"body\": \"Which file should I inspect?\"}, then end your turn and wait for their answer. Do not merely write that question as ordinary assistant output.\n\nYou may publish progress and continue working in the same turn. When you have a final answer, send it with post_message before ending your turn; no duplicate ordinary reply is needed afterward. Choose when to read, work, ask and publish according to the task. After a context reset, reread the thread; do not replay old work just because it appears there.\n\nEvery response in this mode must use a tool. When you have finished working or need to wait for the human, call yield_turn with {} to end the run. Publishing a message does not end the run; you can keep working or publish more messages before yielding. Ordinary assistant text does not yield. Publish any answer or question before calling yield_turn."
+  },
+  "retained_thread": [
+    {
+      "position": 1,
+      "id": "ac30a9d119204840935ec64d80879b84",
+      "author": "human",
+      "body": "Read note.txt and tell me the release codename."
+    },
+    {
+      "position": 2,
+      "id": "41c8d4dc1dbb40b1ba164f578516800f",
+      "author": "agent",
+      "body": "The release codename in note.txt is **Heron**."
+    },
+    {
+      "position": 3,
+      "id": "b46bb888812d40f18c1a60e947e3eedc",
+      "author": "agent",
+      "body": "Done \u2014 note.txt read; the release codename is **Heron**.\n\nOne note: the workspace contains only `note.txt` (25 bytes) \u2014 there is no TODO.md or spec file, so there's no further implementation task for me to pick up. If you expected one here, it may not have been added yet; let me know what you'd like done and I'll get on it."
+    },
+    {
+      "position": 4,
+      "id": "9598aa2d65f94388971718942ed72898",
+      "author": "human",
+      "body": "Before choosing our next release codename, find out whether I want bird names or plant names."
+    },
+    {
+      "position": 5,
+      "id": "3ff3aa91dc4b4538b64f4bc9421fe03b",
+      "author": "agent",
+      "body": "I looked for your preference before picking anything, and here's what I could establish:\n\n- **Evidence found:** the only file in the workspace is `note.txt`, containing `Release codename: Heron.` \u2014 a bird name. That's the sole signal, and it only tells us what the *current* release is called, not what you want next.\n- **No other sources:** no TODO/spec, no release notes, no git history, no config or docs mentioning a naming convention (grep for \"codename\"/\"heron\"/\"bird\"/\"plant\" matched only note.txt). The conversation history doesn't state a preference either.\n\nSo I can't determine this from the workspace \u2014 you'll need to tell me:\n\n**Do you want bird names or plant names for the next release?**\n\nIf it helps you decide: \"Heron\" suggests a bird theme, and continuing it keeps the sequence coherent (e.g. Sandpiper, Curlew, Kestrel). Switching to plants is fine too (e.g. Alder, Sorrel, Juniper) \u2014 just note it breaks the existing pattern. Give me a direction and any constraints (alphabetical progression, length, must be pronounceable, etc.) and I'll propose candidates."
+    },
+    {
+      "position": 6,
+      "id": "db91ab7b993f4033a1706046e0384e9e",
+      "author": "human",
+      "body": "Use short bird names. Leave capitalization undecided; we will decide it later."
+    },
+    {
+      "position": 7,
+      "id": "7e851de70eb440878eb1d8fd223c0b3e",
+      "author": "agent",
+      "body": "Got it \u2014 short bird names, capitalization explicitly deferred. Here's the shortlist (all \u22646 letters, no repeats of the current \"Heron\"). Casing is left uncommitted below; I'll apply whatever convention we settle on later.\n\n**Top pick: `tern`** \u2014 4 letters, a bird like the current release, and a natural follow-on since terns and herons are both wading/coastal birds, so the sequence reads as a coherent theme. Easy to spell, say, and type in tags.\n\nOther strong options:\n- `wren` \u2014 4 letters, clean, no meaning collisions.\n- `egret` \u2014 5 letters, same heron-family family, distinctive.\n- `lark` \u2014 4 letters, upbeat; note an existing Python parser library and an airline use the name.\n- `plover` \u2014 6 letters, shorebird, pairs well with heron.\n- `finch` \u2014 5 letters, friendly, but common in other projects.\n\nOnes I'd avoid: `swift` (collides with the language), `rail` (Rails ecosystem), `raven`/`robin` (read as personal names), `gull` (weak connotation).\n\nTell me which one (or say \"go with your pick\" and I'll take `tern`), and whether you want it written into `note.txt` \u2014 I haven't changed any files yet."
+    },
+    {
+      "position": 8,
+      "id": "ebe6f92a7f184fe68707a087b4a11666",
+      "author": "human",
+      "body": "What naming decision did we make, and what is still undecided?"
+    }
+  ],
+  "input": {
+    "reset": "/continue\n/wait\n",
+    "correction": "Inspect note.txt again and give me a short progress update before the final result. Tell me the release codename.\nCorrection for that investigation: the final codename must be in ALL CAPS. Do not change any files.\n/wait\n"
+  },
+  "tool_schemas": {
+    "implicit": [
+      {
+        "type": "function",
+        "name": "read_file",
+        "description": "Read a UTF-8 file relative to the configured workspace.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Read a UTF-8 file relative to the configured workspace.",
+          "properties": {
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "required": ["path"],
+          "title": "ReadFile",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "run_command",
+        "description": "Run a shell command in the workspace. A timeout may leave effects; do not blindly retry it.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Run a shell command in the workspace. A timeout may leave effects; do not blindly retry it.",
+          "properties": {
+            "command": {
+              "minLength": 1,
+              "title": "Command",
+              "type": "string"
+            }
+          },
+          "required": ["command"],
+          "title": "RunCommand",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "read_thread",
+        "description": "Read ordered conversation messages. Follow next_after_message_id to read another page.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Read ordered conversation messages. Follow next_after_message_id to read another page.",
+          "properties": {
+            "after_message_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "After Message Id"
+            }
+          },
+          "title": "ReadThread",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "post_message",
+        "description": "Publish a message to the human: an answer, useful progress, or a clarification question.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Publish a message to the human: an answer, useful progress, or a clarification question.",
+          "properties": {
+            "body": {
+              "minLength": 1,
+              "title": "Body",
+              "type": "string"
+            }
+          },
+          "required": ["body"],
+          "title": "PostMessage",
+          "type": "object"
+        },
+        "strict": false
+      }
+    ],
+    "yield_tool": [
+      {
+        "type": "function",
+        "name": "read_file",
+        "description": "Read a UTF-8 file relative to the configured workspace.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Read a UTF-8 file relative to the configured workspace.",
+          "properties": {
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "required": ["path"],
+          "title": "ReadFile",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "run_command",
+        "description": "Run a shell command in the workspace. A timeout may leave effects; do not blindly retry it.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Run a shell command in the workspace. A timeout may leave effects; do not blindly retry it.",
+          "properties": {
+            "command": {
+              "minLength": 1,
+              "title": "Command",
+              "type": "string"
+            }
+          },
+          "required": ["command"],
+          "title": "RunCommand",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "read_thread",
+        "description": "Read ordered conversation messages. Follow next_after_message_id to read another page.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Read ordered conversation messages. Follow next_after_message_id to read another page.",
+          "properties": {
+            "after_message_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "After Message Id"
+            }
+          },
+          "title": "ReadThread",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "post_message",
+        "description": "Publish a message to the human: an answer, useful progress, or a clarification question.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Publish a message to the human: an answer, useful progress, or a clarification question.",
+          "properties": {
+            "body": {
+              "minLength": 1,
+              "title": "Body",
+              "type": "string"
+            }
+          },
+          "required": ["body"],
+          "title": "PostMessage",
+          "type": "object"
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "yield_turn",
+        "description": "End this run and wait for human input. Publish any answer or question before yielding.",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "End this run and wait for human input. Publish any answer or question before yielding.",
+          "properties": {},
+          "title": "YieldTurn",
+          "type": "object"
+        },
+        "strict": false
+      }
+    ]
+  },
+  "settings": {
+    "temperature": 0,
+    "max_steps": 12,
+    "max_output_tokens": 2048,
+    "request_timeout_seconds": 600,
+    "stream": false,
+    "sdk_retries": 0
+  },
+  "runs": {
+    "luna-concise-reset": {
+      "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+      "turn_control": "implicit",
+      "result": {
+        "run_id": "8de52a0b-5a3e-4475-9fa9-327bbb39a75a",
+        "status": "missing_publication",
+        "steps": 2
+      },
+      "tools": ["read_thread"],
+      "requested_tool_choices": [null, null],
+      "response_tool_choices": ["auto", "auto"],
+      "final_output_types": ["message"],
+      "publications": [],
+      "tokens": {
+        "input_tokens": 2829,
+        "output_tokens": 62,
+        "total_tokens": 2891
+      },
+      "trace_bytes": 21278,
+      "thread_bytes": 12288,
+      "trace_sha256": "5093b40ab7441f7c9acd2472cad64e11204467b6d7a3d36e2a998f78c5dcbbb7",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": null
+    },
+    "luna-concise-correction": {
+      "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+      "turn_control": "implicit",
+      "result": {
+        "run_id": "02e32b75-5b6b-4c6b-b70f-f4871293c166",
+        "status": "completed",
+        "steps": 4
+      },
+      "tools": ["read_thread", "read_file", "post_message"],
+      "requested_tool_choices": [null, null, null, null],
+      "response_tool_choices": ["auto", "auto", "auto", "auto"],
+      "final_output_types": ["message"],
+      "publications": [
+        {
+          "position": 11,
+          "id": "da20e14701784c54b6cf8a34e9c50932",
+          "body": "Progress update: I re-read `note.txt`; it says `Release codename: Heron.` No files were changed. Applying your correction that the final codename must be all caps: **HERON**."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 7602,
+        "output_tokens": 133,
+        "total_tokens": 7735
+      },
+      "trace_bytes": 41166,
+      "thread_bytes": 12288,
+      "trace_sha256": "90d1af758531ab00b5e8b4f71fbfa2c172e54c381275a904c9eab3f5b88614b3",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": {
+        "first_sample_started": "2026-11-12T22:33:35.805336Z",
+        "correction_committed": "2026-11-12T22:33:36.386384Z",
+        "first_response_recorded": "2026-11-12T22:33:37.654816Z"
+      }
+    },
+    "qwen-explained-reset": {
+      "model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k",
+      "turn_control": "implicit",
+      "result": {
+        "run_id": "4288ed43-ba94-4a03-8758-b381b30a9276",
+        "status": "completed",
+        "steps": 4
+      },
+      "tools": ["read_thread", "run_command", "post_message"],
+      "requested_tool_choices": [null, null, null, null],
+      "response_tool_choices": ["auto", "auto", "auto", "auto"],
+      "final_output_types": ["reasoning", "message"],
+      "publications": [
+        {
+          "position": 9,
+          "id": "8c425a752b8a48a3b484b0143cdee67e",
+          "body": "Here's the state of the naming decision:\n\n**Decided**\n- Theme: **bird names** (not plant names) for the next release.\n- Length: **short** bird names (I've been working with \u22646 letters).\n- Context: the current release codename is `Heron`, per `note.txt` \u2014 that stays as-is.\n\n**Still undecided**\n- **The actual name.** My shortlist was tern, wren, egret, lark, plover, finch, with `tern` as my recommendation \u2014 but you haven't picked, so nothing is chosen. (`tern` is a suggestion, not a decision.)\n- **Capitalization.** Explicitly deferred to later, so I've been writing candidates lowercase rather than committing to `Tern` vs `tern`.\n- **Where it gets recorded.** Whether the new codename goes into `note.txt` (replacing/augmenting the Heron line) or somewhere else. No files have been changed.\n\nSay the word on the name and I'll handle the rest \u2014 I can still leave casing to you, or apply whatever convention we settle on."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 8307,
+        "output_tokens": 635,
+        "total_tokens": 8942
+      },
+      "trace_bytes": 40035,
+      "thread_bytes": 20480,
+      "trace_sha256": "f0e9828105e1cc0c5314a7f922b72bf286588959716079d98eaefc686729b952",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": null
+    },
+    "qwen-explained-correction": {
+      "model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k",
+      "turn_control": "implicit",
+      "result": {
+        "run_id": "89d66a3b-060c-4722-ba6a-fdad11ac58b5",
+        "status": "completed",
+        "steps": 4
+      },
+      "tools": ["read_thread", "run_command", "post_message"],
+      "requested_tool_choices": [null, null, null, null],
+      "response_tool_choices": ["auto", "auto", "auto", "auto"],
+      "final_output_types": ["reasoning", "message"],
+      "publications": [
+        {
+          "position": 11,
+          "id": "d11565d63aea49998e80b70d85214963",
+          "body": "**Progress update \u2014 `note.txt` re-inspected (read-only, nothing changed)**\n\n- File is unchanged: 25 bytes, single line `Release codename: Heron.` (md5 `b0aa1707ed2f674977d3d90c937b60df`, mtime Nov 12 14:12). My earlier read and this one agree.\n- Your correction is recorded: **final codename must be ALL CAPS**. I have not edited `note.txt` or any other file, and I won't unless you ask me to.\n\n**Release codename (current, per note.txt): `HERON`**\nThe file stores it as `Heron`; under your new ALL CAPS rule the canonical form is `HERON`.\n\n**Naming decisions made so far**\n1. Theme: **bird names** (not plants).\n2. Length: **short** names (I was using \u22646 letters).\n3. Casing: **ALL CAPS** \u2014 this replaces the earlier \"capitalization undecided, decide later\" position.\n\n**Still undecided**\n- Which bird name the *next* release gets. My shortlist, now in ALL CAPS: `TERN` (top pick \u2014 same wading/coastal family as HERON), then `WREN`, `EGRET`, `LARK`, `PLOVER`, `FINCH`. Avoiding `SWIFT`, `RAIL`, `RAVEN`, `ROBIN`, `GULL`.\n- Whether the new codename should be written into `note.txt` at all, and whether the existing `Heron` line should be restyled to `HERON` for consistency.\n\nTell me the name (or say \"go with your pick\" \u2192 `TERN`) and whether to write it into `note.txt`, and I'll do it in one edit."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 9515,
+        "output_tokens": 1284,
+        "total_tokens": 10799
+      },
+      "trace_bytes": 46224,
+      "thread_bytes": 20480,
+      "trace_sha256": "2a5a051578670f0ee7e06c18c9eb004aae456054bf95e21ba6d25741cb35b6c4",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": {
+        "first_sample_started": "2026-11-12T22:37:41.931261Z",
+        "correction_committed": "2026-11-12T22:37:42.679401Z",
+        "first_response_recorded": "2026-11-12T22:37:44.928212Z"
+      }
+    },
+    "luna-explained-reset": {
+      "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+      "turn_control": "implicit",
+      "result": {
+        "run_id": "0f7dba06-27d5-4e5d-98cf-a66b9d7ec267",
+        "status": "completed",
+        "steps": 3
+      },
+      "tools": ["read_thread", "post_message"],
+      "requested_tool_choices": [null, null, null],
+      "response_tool_choices": ["auto", "auto", "auto"],
+      "final_output_types": ["message"],
+      "publications": [
+        {
+          "position": 9,
+          "id": "3fd17dba5f5744d1a3c86ab375760be8",
+          "body": "We decided the next codename should be a **short bird name**. The leading suggestion was `tern`, but you haven\u2019t selected or approved a specific name yet. **Capitalization is explicitly undecided**; we\u2019ll settle it later."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 5481,
+        "output_tokens": 84,
+        "total_tokens": 5565
+      },
+      "trace_bytes": 32871,
+      "thread_bytes": 12288,
+      "trace_sha256": "2cdcbd5a43b8f134adc3be8257530f7d219370e2735be780dd623f5e013b3cf0",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": null
+    },
+    "luna-explained-correction": {
+      "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+      "turn_control": "implicit",
+      "result": {
+        "run_id": "08fb59d5-2ffc-4ffb-9ff1-d0daef8c3bce",
+        "status": "completed",
+        "steps": 5
+      },
+      "tools": ["read_thread", "read_thread", "read_file", "post_message"],
+      "requested_tool_choices": [null, null, null, null, null],
+      "response_tool_choices": ["auto", "auto", "auto", "auto", "auto"],
+      "final_output_types": ["message"],
+      "publications": [
+        {
+          "position": 11,
+          "id": "955fd3bad5f84634a7a399893bd89e2b",
+          "body": "Progress update: I re-read `note.txt`; it still says `Release codename: Heron.` I did not change any files.\n\nThe release codename is **HERON**."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 10879,
+        "output_tokens": 133,
+        "total_tokens": 11012
+      },
+      "trace_bytes": 53693,
+      "thread_bytes": 12288,
+      "trace_sha256": "1e9a88c0d1e8d572551488572b40a8e135b1209f097451c30be163908df9fc03",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": {
+        "first_sample_started": "2026-11-12T22:35:11.690440Z",
+        "correction_committed": "2026-11-12T22:35:12.619035Z",
+        "first_response_recorded": "2026-11-12T22:35:14.036338Z"
+      }
+    },
+    "qwen-yield-reset": {
+      "model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k",
+      "turn_control": "yield_tool",
+      "result": {
+        "run_id": "1d26842c-705c-4598-913e-2764edb358b9",
+        "status": "completed",
+        "steps": 4
+      },
+      "tools": ["read_thread", "read_file", "run_command", "post_message", "yield_turn"],
+      "requested_tool_choices": ["required", "required", "required", "required"],
+      "response_tool_choices": ["auto", "auto", "auto", "auto"],
+      "final_output_types": ["reasoning", "function_call"],
+      "publications": [
+        {
+          "position": 9,
+          "id": "8d4e924a0a3644f2a412838986addf05",
+          "body": "Here's the current state of the naming decision.\n\n**Decided**\n- **Theme: bird names** (not plants) \u2014 your call, replacing the open question I raised.\n- **Constraint: short names** \u2014 your words; I interpreted that as roughly \u22646 letters and filtered my candidate list to that. Flag me if you meant something stricter (e.g. \u22644 letters).\n- The current release stays **Heron** (from `note.txt`); it's the existing baseline, not a new choice.\n\n**Still undecided**\n- **Which bird name** \u2014 nothing has been picked. My shortlist was tern (my recommendation), wren, egret, lark, plover, finch; I ruled out swift/rail/raven/robin/gull on collision or connotation grounds.\n- **Capitalization** \u2014 explicitly deferred by you to decide later, so I've written candidates lowercase and haven't committed to a convention.\n- **Whether the new name gets written into `note.txt`** \u2014 no files have been changed; `note.txt` still reads exactly `Release codename: Heron.`\n\nSo: theme and length are settled, the actual name is not. Say the word on the name and I'll record it (and apply whatever casing you want once that's settled too)."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 9035,
+        "output_tokens": 594,
+        "total_tokens": 9629
+      },
+      "trace_bytes": 45416,
+      "thread_bytes": 20480,
+      "trace_sha256": "3876c7fe9636e316163f2365dc58125ba808c337cc0d3bef8d6fbd2906dcf530",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": null
+    },
+    "qwen-yield-correction": {
+      "model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k",
+      "turn_control": "yield_tool",
+      "result": {
+        "run_id": "243b04a6-abfc-488f-857a-aca8d30a8b70",
+        "status": "completed",
+        "steps": 5
+      },
+      "tools": ["read_thread", "read_file", "run_command", "post_message", "post_message", "yield_turn"],
+      "requested_tool_choices": ["required", "required", "required", "required", "required"],
+      "response_tool_choices": ["auto", "auto", "auto", "auto", "auto"],
+      "final_output_types": ["reasoning", "function_call"],
+      "publications": [
+        {
+          "position": 11,
+          "id": "1bc8b787cd2442ae9ee0d8792469b9c3",
+          "body": "**Progress update \u2014 note.txt re-inspected (read-only, nothing modified)**\n\n- `note.txt` is 25 bytes, mtime unchanged (14:12:29), content is exactly `Release codename: Heron.` \u2014 I have not written to it at any point.\n- **Release codename in the file: Heron** (that's the current release; the file spells it title-case with a trailing period).\n\n**Decisions made so far**\n- Theme: **bird names** (not plants).\n- Length: **short** names (I've been treating that as \u22646 letters).\n- Not used again: `Heron` itself.\n- **NEW, per your correction: the final codename must be ALL CAPS.** This replaces the earlier \"capitalization undecided\" stance, so casing is now settled \u2014 I'll render whatever name we pick in all caps.\n\n**Still undecided**\n- The actual name. My recommendation was `tern` \u2192 now it would be **`TERN`**. Other candidates, recased to the new rule: `WREN`, `EGRET`, `LARK`, `PLOVER`, `FINCH`.\n- Whether the name gets written into `note.txt` or somewhere else (I won't touch any file unless you ask).\n\nSay the word and I'll confirm **`TERN`** as the final answer, or pick a different one from the list."
+        },
+        {
+          "position": 12,
+          "id": "201fb0b86a804383935b95e8b7d0d302",
+          "body": "**Final result**\n\n- Release codename currently recorded in `note.txt`: **HERON** \u2014 the file itself reads `Release codename: Heron.` (title-case, trailing period); I did not modify it.\n- Next release codename, applying all constraints (short bird name, ALL CAPS): **`TERN`**\n\nNo files were changed. If you'd rather have a different candidate, the alternatives under the same rules are `WREN`, `EGRET`, `LARK`, `PLOVER`, `FINCH`."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 14506,
+        "output_tokens": 1524,
+        "total_tokens": 16030
+      },
+      "trace_bytes": 63156,
+      "thread_bytes": 20480,
+      "trace_sha256": "1e54eda631460283dfbb67a1b1be0ace24c240d8df193467607cf6c86918fdca",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": {
+        "first_sample_started": "2026-11-12T22:55:25.137765Z",
+        "correction_committed": "2026-11-12T22:55:25.888355Z",
+        "first_response_recorded": "2026-11-12T22:55:28.003236Z"
+      }
+    },
+    "luna-yield-reset": {
+      "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+      "turn_control": "yield_tool",
+      "result": {
+        "run_id": "9341c31f-1aeb-4a65-a9b7-3425d080b2d0",
+        "status": "completed",
+        "steps": 3
+      },
+      "tools": ["read_thread", "post_message", "yield_turn"],
+      "requested_tool_choices": ["required", "required", "required"],
+      "response_tool_choices": ["required", "required", "required"],
+      "final_output_types": ["function_call"],
+      "publications": [
+        {
+          "position": 9,
+          "id": "017d3df87e974e43808513a41f1a7766",
+          "body": "We decided the next release should use a **short bird name**. The suggested top pick was `tern`, but you haven\u2019t selected a specific name yet. Capitalization is explicitly undecided for later."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 5751,
+        "output_tokens": 87,
+        "total_tokens": 5838
+      },
+      "trace_bytes": 36159,
+      "thread_bytes": 12288,
+      "trace_sha256": "e3b36e681b36a75187e82e7c1942572dc310c87f8906831f5d89849629236991",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": null
+    },
+    "luna-yield-correction": {
+      "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+      "turn_control": "yield_tool",
+      "result": {
+        "run_id": "8723c081-079d-4e79-a0a3-37014941f316",
+        "status": "completed",
+        "steps": 4
+      },
+      "tools": ["read_thread", "read_file", "post_message", "yield_turn"],
+      "requested_tool_choices": ["required", "required", "required", "required"],
+      "response_tool_choices": ["required", "required", "required", "required"],
+      "final_output_types": ["function_call"],
+      "publications": [
+        {
+          "position": 11,
+          "id": "b61b291718f04da8a3032b97629c3418",
+          "body": "Progress update: I re-inspected `note.txt`; it contains `Release codename: Heron.` The final codename, in ALL CAPS as requested, is **HERON**. I did not change any files."
+        }
+      ],
+      "tokens": {
+        "input_tokens": 8624,
+        "output_tokens": 110,
+        "total_tokens": 8734
+      },
+      "trace_bytes": 48055,
+      "thread_bytes": 12288,
+      "trace_sha256": "6ae7267a0a0266f1b0c678c4ceef56e3af42b905c472d25bb9429a356191bd44",
+      "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+      "correction_timing": {
+        "first_sample_started": "2026-11-12T22:55:28.655833Z",
+        "correction_committed": "2026-11-12T22:55:29.500960Z",
+        "first_response_recorded": "2026-11-12T22:55:30.975890Z"
+      }
+    }
+  },
+  "required_choice_counterexample": {
+    "description": "Intermediate concise-prompt probe without a yield tool. All three requests required a tool before publication; the last response was ordinary text. This gated policy is not part of the final CLI.",
+    "model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k",
+    "turn_control": "implicit",
+    "result": {
+      "run_id": "204e4efb-2eb5-4c58-b581-841e3d25ced0",
+      "status": "missing_publication",
+      "steps": 3
+    },
+    "tools": ["read_thread", "run_command"],
+    "requested_tool_choices": ["required", "required", "required"],
+    "response_tool_choices": ["auto", "auto", "auto"],
+    "final_output_types": ["reasoning", "message"],
+    "publications": [],
+    "tokens": {
+      "input_tokens": 5473,
+      "output_tokens": 946,
+      "total_tokens": 6419
+    },
+    "trace_bytes": 31337,
+    "thread_bytes": 12288,
+    "trace_sha256": "25706db0734412188960af325317c3d0aa92b06712e78f9f8d4a0e7cb4edd328",
+    "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+    "correction_timing": {
+      "first_sample_started": "2026-11-12T22:45:06.275974Z",
+      "correction_committed": "2026-11-12T22:45:07.163833Z",
+      "first_response_recorded": "2026-11-12T22:45:08.896184Z"
+    }
+  }
+}

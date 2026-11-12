@@ -2,6 +2,11 @@
 
 ## Result
 
+This run used the original concise prompt. A subsequent
+[prompting and Luna comparison](2026_11_12_authored_conversation_prompting.md) fixed the observed
+missing publications with a clearer explanation on both models. The assessment below is retained
+as evidence about the original configuration.
+
 **Unpromising on the tested Qwen/LiteLLM configuration.** The CLI mechanism worked, and Qwen
 initially published answers and a clarification through `post_message`. After context reset it
 retrieved the conversation and composed an appropriate answer, but left that answer in ordinary

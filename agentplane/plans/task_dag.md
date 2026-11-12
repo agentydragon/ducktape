@@ -1166,16 +1166,22 @@ transition proposal. Recording the broader model does not dispatch a worker or a
 
 ### `AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT` — try an authored conversation in a CLI
 
-**In review, 2026-11-12:** [#15896](https://github.com/agentydragon/ducktape/pull/15896) implements the
+**Follow-up in review, 2026-11-12.** The implementation merged as
+[#15896](https://github.com/agentydragon/ducktape/pull/15896), providing the
 [bounded CLI experiment](authored_conversation_experiment.md): our own agent loop with Qwen through
 LiteLLM's OpenAI-compatible API, a retained thread read/written through tools, separate working
 context and diagnostic trace, and a same-model ordinary-chat comparison. No deployed Agentplane
 service is required. The broader conversation design is not a prerequisite.
 
-The [bounded Qwen findings](../debug/2026_11_12_authored_conversation_cli.md) classify the tested
-configuration as unpromising: after reset and during correction, answers remained private rather
-than being published, including one repeat of each case. Deterministic tests and provider access
-passed. This result does not select a broader conversation design or a History migration.
+The [first Qwen run](../debug/2026_11_12_authored_conversation_cli.md) missed publications after reset
+and during correction, including single repeats. A follow-up
+[prompting and Luna comparison](../debug/2026_11_12_authored_conversation_prompting.md) fixed those
+observed omissions with an explanatory prompt on both models. An always-required explicit-yield
+variant also published and yielded in both cases on both models; Qwen's route did not demonstrate
+API enforcement. Preliminary progress remains inconsistent, and the focused probes do not establish
+all original win conditions or reliability.
+Deterministic tests and provider access passed. No broader conversation design or History migration
+is selected.
 
 **Exit:** the spec's paired scenarios and win conditions evaluated, with artifacts and a findings
 note classifying the result as promising, unpromising on the tested model, or inconclusive. A useful
