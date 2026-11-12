@@ -314,7 +314,6 @@ py_library(
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
-        "@pypi//tenacity",
     ],
 )
 
@@ -508,6 +507,6 @@ py_library(
     deps = [
         ":cluster",
         "//agentplane:crd_group",
-        "@pypi//tenacity",
+        "@pypi//kubernetes_asyncio",
     ],
 )

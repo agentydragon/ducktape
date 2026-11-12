@@ -1007,8 +1007,9 @@ func podHasSchedulingFailure(pod *corev1.Pod) bool {
 	return failed
 }
 
-// SetupWithManager wires the watches: each Sandbox, the objects it owns, the Pods, VMIs and state
-// PVC carrying its label, the Events about those Pods, and the templates it names.
+// SetupWithManager wires the watches: each Sandbox, its ConfigMap, Service and WorkloadCredential,
+// the Pods, VMIs and state PVC carrying its label, the Events about those Pods, and the templates
+// and Identity it names.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxapi.Sandbox{}, templateIndex, func(obj client.Object) []string {
 		return []string{obj.(*sandboxapi.Sandbox).Spec.Template}
@@ -1040,10 +1041,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	setup := ctrl.NewControllerManagedBy(mgr).
 		For(&sandboxapi.Sandbox{}).
-		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
-		Owns(&policyapi.PolicyBinding{}).
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).

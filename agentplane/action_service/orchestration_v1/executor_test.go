@@ -2,6 +2,7 @@ package orchestrationv1
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,12 +16,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -159,9 +163,91 @@ func TestALaunchWithoutGrantsWritesNone(t *testing.T) {
 	if err := kube.List(t.Context(), &bindings, client.InNamespace(f.namespace)); err != nil {
 		t.Fatal(err)
 	}
-	if len(sets.Items) != 2 || len(bindings.Items) != 1 || bindings.Items[0].Name != "test-worker.identity" {
-		t.Errorf("after a launch without grants there are %d PolicySets and %d PolicyBindings, want the fixture's 2 and the Identity's grant alone",
+	if len(sets.Items) != 2 || len(bindings.Items) != 0 {
+		t.Errorf("after a launch without grants there are %d PolicySets and %d PolicyBindings, want the fixture's 2 sets and no bindings",
 			len(sets.Items), len(bindings.Items))
+	}
+}
+
+func TestRefusedChangedLaunchPreservesItsAdoptedIdentity(t *testing.T) {
+	f := newFixture(t)
+	launch := `{"name":"test-worker","template":"test-template","policy_sets":["test-extra-policy"]%s}`
+	first := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, "")))
+	key := client.ObjectKey{Namespace: f.namespace, Name: first.Sandbox.Name}
+	var identity policyapi.Identity
+	if err := kube.Get(t.Context(), key, &identity); err != nil {
+		t.Fatal(err)
+	}
+	uid := identity.UID
+	changed := fmt.Sprintf(launch, `,"bootstrap":"different launch"`)
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, changed).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("changed launch failed %v, want sandbox_exists", kind)
+	}
+	if err := kube.Get(t.Context(), key, &identity); err != nil || identity.UID != uid {
+		t.Fatalf("refused changed launch removed or replaced the adopted Identity: %v", err)
+	}
+	var binding policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.identity"}, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if len(binding.OwnerReferences) != 1 || binding.OwnerReferences[0].UID != uid {
+		t.Fatalf("Identity binding owners = %v, want the original Identity", binding.OwnerReferences)
+	}
+	var sandbox sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), key, &sandbox); err != nil || sandbox.UID != first.Sandbox.UID || sandbox.Spec.Identity == nil || sandbox.Spec.Identity.Name != identity.Name {
+		t.Fatalf("refused changed launch altered the original Sandbox: %+v, %v", sandbox.Spec, err)
+	}
+}
+
+func TestRefusedNewLaunchRollsBackItsNewIdentity(t *testing.T) {
+	f := newFixture(t)
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-worker", Namespace: f.namespace},
+		Spec:       sandboxapi.SandboxSpec{Template: "test-template", Identity: &sandboxapi.IdentityRef{Name: "another-identity"}},
+	}
+	if err := kube.Create(t.Context(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, `{"name":"test-worker","template":"test-template"}`).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("new launch failed %v, want sandbox_exists", kind)
+	}
+	key := client.ObjectKeyFromObject(sandbox)
+	if err := kube.Get(t.Context(), key, &policyapi.Identity{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("new Identity after refused launch: %v, want NotFound", err)
+	}
+	var preserved sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), key, &preserved); err != nil || preserved.UID != sandbox.UID {
+		t.Fatalf("refused new launch altered the existing Sandbox: %v", err)
+	}
+}
+
+type competingLaunchEnvironment struct {
+	environmentpb.EnvironmentServiceClient
+}
+
+func (e competingLaunchEnvironment) CreateEnvironment(ctx context.Context, request *environmentpb.CreateEnvironmentRequest, options ...grpc.CallOption) (*identitypb.EnvironmentTarget, error) {
+	competing := proto.Clone(request).(*environmentpb.CreateEnvironmentRequest)
+	competing.Bootstrap = "competing launch"
+	if _, err := e.EnvironmentServiceClient.CreateEnvironment(ctx, competing, options...); err != nil {
+		return nil, err
+	}
+	return e.EnvironmentServiceClient.CreateEnvironment(ctx, request, options...)
+}
+
+func TestRefusedLaunchPreservesItsIdentityAdoptedByACompetingLaunch(t *testing.T) {
+	f := newFixture(t)
+	f.executor.environment = competingLaunchEnvironment{f.executor.environment}
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, `{"name":"test-worker","template":"test-template"}`).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("losing launch failed %v, want sandbox_exists", kind)
+	}
+	key := client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}
+	var identity policyapi.Identity
+	if err := kube.Get(t.Context(), key, &identity); err != nil {
+		t.Fatalf("losing launch deleted the winning launch's Identity: %v", err)
+	}
+	var sandbox sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), key, &sandbox); err != nil || sandbox.Spec.Identity == nil || sandbox.Spec.Identity.Name != identity.Name || sandbox.Spec.Bootstrap != "competing launch" {
+		t.Fatalf("winning launch = %+v, %v", sandbox.Spec, err)
 	}
 }
 

@@ -15,14 +15,18 @@ import httpx
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
 from opentelemetry import trace
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
+from agentplane.system_tests.driver.identity import (
+    LAUNCH_DEFAULT_POLICY_SETS,
+    ScenarioIdentity,
+    create_scenario_identity,
+    delete_scenario_identity,
+)
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.vm import boot_rcu
 from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
@@ -100,22 +104,14 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 raise cleanup_error
             return False
 
-        launched_identities: list[dict[str, str]] = []
+        launched_identities: list[ScenarioIdentity] = []
 
         async def delete_launched_identities() -> None:
-            # After every Sandbox is released. Garbage collection removes a deleted Sandbox's
-            # WorkloadCredential shortly after, and the delete guard refuses while one acts as it.
             for identity in reversed(launched_identities):
-                async for attempt in AsyncRetrying(
-                    retry=retry_if_exception_type(httpx.HTTPStatusError),
-                    stop=stop_after_delay(60),
-                    wait=wait_fixed(2),
-                    reraise=True,
-                ):
-                    with attempt:
-                        await client.delete_identity(identity)
+                await delete_scenario_identity(cluster, identity)
 
-        # Registered first, so it runs after release_owned.
+        # Run after every Sandbox is released so its WorkloadCredential no longer references the
+        # Identity. Deletion uses the exact Identity UID and retries while controller-owned refs clear.
         cleanup.push_async_callback(delete_launched_identities)
         cleanup.push_async_exit(release_owned)
 
@@ -143,8 +139,18 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                     request.idle_suspend_after.seconds = idle_suspend_after_seconds
                 # The baseline sets a preset grants, beside the scenario's own: these launches use no preset.
                 sets = sorted({*LAUNCH_DEFAULT_POLICY_SETS, *(policies or [])})
-                created, identity = await client.launch_sandbox(request, sets)
-            launched_identities.append(identity)
+                identity = await create_scenario_identity(cluster, name, sets)
+                request.identity = identity["name"]
+                try:
+                    created = await client.create_sandbox(request)
+                except httpx.HTTPStatusError as error:
+                    # A definite refusal means no Sandbox references this Identity. Timeouts and
+                    # throttling may hide an accepted create, so leave the Identity for recovery.
+                    status = error.response.status_code
+                    if 400 <= status < 500 and status not in (408, 429):
+                        await delete_scenario_identity(cluster, identity)
+                    raise
+                launched_identities.append(identity)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
             owned.append((created.name, created.uid))
             try:

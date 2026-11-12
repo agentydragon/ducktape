@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -136,6 +138,86 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 			return nil
 		case <-ticker.C:
 		}
+	}
+}
+
+func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
+	const ns = "sandbox-controller-watch-contract"
+	kube, err := kubeapiserver.Start(kubeapiserver.WithAPIServerFlag("authorization-mode", "RBAC"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := kube.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx := context.Background()
+	if _, err := kube.Clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// The serving controller acts through WorkloadCredentials and has no use for either resource.
+	if _, err := kube.Clientset.RbacV1().Roles(ns).Create(ctx, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "sandbox-controller"},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods", "persistentvolumeclaims", "configmaps", "services", "events"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{sandboxapi.GroupVersion.Group}, Resources: []string{"sandboxes", "sandboxtemplates"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{policyapi.SchemeGroupVersion.Group}, Resources: []string{"identities", "workloadcredentials"}, Verbs: []string{"get", "list", "watch"}},
+		},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kube.Clientset.RbacV1().RoleBindings(ns).Create(ctx, &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "sandbox-controller"},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "sandbox-controller"},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: kubeapiserver.User}},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	controllerConfig := rest.CopyConfig(kube.Config)
+	controllerConfig.BearerToken = kube.UserToken
+	controllerConfig.BearerTokenFile = ""
+	controllerConfig.Username, controllerConfig.Password = "", ""
+	controllerConfig.TLSClientConfig.CertFile, controllerConfig.TLSClientConfig.KeyFile = "", ""
+	controllerConfig.TLSClientConfig.CertData, controllerConfig.TLSClientConfig.KeyData = nil, nil
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{
+		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, workloadapi.AddToScheme, kubevirtv1.AddToScheme,
+	} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byObject, err := CacheByObject(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := ctrl.NewManager(controllerConfig, ctrl.Options{
+		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"}, HealthProbeBindAddress: "0",
+		Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: byObject},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), Leases: mgr.GetClient(), Now: time.Now}
+	if err := r.SetupWithManager(mgr); err != nil {
+		t.Fatal(err)
+	}
+	startCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	started := make(chan error, 1)
+	go func() { started <- mgr.Start(startCtx) }()
+	if !mgr.GetCache().WaitForCacheSync(startCtx) {
+		cancel()
+		if err := <-started; err != nil {
+			t.Fatalf("manager failed before its watch cache synced: %v", err)
+		}
+		t.Fatal("manager watch cache did not sync with the granted resource permissions")
+	}
+	cancel()
+	if err := <-started; err != nil {
+		t.Fatal(err)
 	}
 }
 

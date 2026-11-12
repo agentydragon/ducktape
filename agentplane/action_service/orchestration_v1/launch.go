@@ -60,7 +60,7 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 	}
 	// A launch is three operations: the Identity the Sandbox acts as, its PolicySets bound to that
 	// Identity, then the Sandbox naming it. No environment operation creates an Identity.
-	identity, err := e.launchIdentity(ctx, caller, args)
+	identity, created, err := e.launchIdentity(ctx, caller, args)
 	if err != nil {
 		return Launched{}, err
 	}
@@ -79,8 +79,8 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 	if err != nil {
 		failure := launchError(err)
 		var refused *refusal
-		if errors.As(failure, &refused) {
-			// Refused, so no Sandbox names the Identity: take back what this launch created.
+		if created && errors.As(failure, &refused) {
+			// Roll back only an Identity this attempt created after a definite refusal.
 			e.deleteLaunchIdentity(ctx, identity)
 		}
 		return Launched{}, failure
@@ -115,11 +115,11 @@ const (
 
 // launchIdentity creates, or on a retry adopts, the Identity a launched Sandbox acts as, named after
 // it, and binds the request's PolicySets to it in one binding the Identity owns.
-func (e *Executor) launchIdentity(ctx context.Context, caller store.ServiceAccount, args contract.LaunchArgs) (*policyapi.Identity, error) {
+func (e *Executor) launchIdentity(ctx context.Context, caller store.ServiceAccount, args contract.LaunchArgs) (*policyapi.Identity, bool, error) {
 	launcher := caller.Namespace + "/" + caller.Name
 	sets := slices.Compact(slices.Sorted(slices.Values(args.PolicySets)))
 	if err := e.requireBindablePolicySets(ctx, sets); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	intent := strings.Join(sets, ",")
 	identity := &policyapi.Identity{
@@ -129,18 +129,20 @@ func (e *Executor) launchIdentity(ctx context.Context, caller store.ServiceAccou
 		},
 		Spec: policyapi.IdentitySpec{Description: fmt.Sprintf("Agent of Sandbox %s, launched by %s through %s.", args.Name, launcher, e.group)},
 	}
+	created := true
 	if err := e.kube.Create(ctx, identity); apierrors.IsAlreadyExists(err) {
+		created = false
 		if err := e.kube.Get(ctx, client.ObjectKeyFromObject(identity), identity); err != nil {
-			return nil, kubeError("reading Identity "+args.Name, err)
+			return nil, false, kubeError("reading Identity "+args.Name, err)
 		}
 		if identity.Annotations[launchIdentityAnnotation] != launcher || identity.Annotations[launchSetsAnnotation] != intent || identity.DeletionTimestamp != nil {
-			return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS, "Identity %s exists and is not this launch's", args.Name)
+			return nil, false, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS, "Identity %s exists and is not this launch's", args.Name)
 		}
 	} else if err != nil {
-		return nil, kubeError("creating Identity "+args.Name, err)
+		return nil, false, kubeError("creating Identity "+args.Name, err)
 	}
 	if len(sets) == 0 {
-		return identity, nil
+		return identity, created, nil
 	}
 	controller, blockOwnerDeletion := false, false
 	binding := &policyapi.PolicyBinding{
@@ -154,9 +156,9 @@ func (e *Executor) launchIdentity(ctx context.Context, caller store.ServiceAccou
 		Spec: policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}}, PolicySets: sets},
 	}
 	if err := e.createOwned(ctx, binding, identity.UID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return identity, nil
+	return identity, created, nil
 }
 
 // requireBindablePolicySets refuses a launch naming a PolicySet that does not exist, or another
@@ -192,8 +194,21 @@ func (e *Executor) requireBindablePolicySets(ctx context.Context, names []string
 // deleteLaunchIdentity deletes exactly the Identity this launch created, and by garbage collection
 // its binding, after the Sandbox was refused. A failure only leaves an unreferenced Identity behind.
 func (e *Executor) deleteLaunchIdentity(ctx context.Context, identity *policyapi.Identity) {
-	uid := identity.UID
-	if err := e.kube.Delete(context.WithoutCancel(ctx), identity, client.Preconditions{UID: &uid}); err != nil && !apierrors.IsNotFound(err) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.readBudget)
+	defer cancel()
+	var sandboxes sandboxapi.SandboxList
+	if err := e.kube.List(cleanup, &sandboxes, client.InNamespace(identity.Namespace)); err != nil {
+		slog.WarnContext(ctx, "orchestration_v1 could not check a refused launch's Identity references", "identity", identity.Name, "error", err)
+		return
+	}
+	// Another launch can adopt this attempt's Identity and win creation before this refusal.
+	if slices.ContainsFunc(sandboxes.Items, func(sandbox sandboxapi.Sandbox) bool {
+		return sandbox.Spec.Identity != nil && sandbox.Spec.Identity.Name == identity.Name
+	}) {
+		return
+	}
+	uid, resourceVersion := identity.UID, identity.ResourceVersion
+	if err := e.kube.Delete(cleanup, identity, client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}); err != nil && !apierrors.IsNotFound(err) {
 		slog.WarnContext(ctx, "orchestration_v1 could not delete a refused launch's Identity", "identity", identity.Name, "error", err)
 	}
 }

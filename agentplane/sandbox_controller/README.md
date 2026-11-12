@@ -38,21 +38,22 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   generates the controller-gen deep-copy methods; build `//agentplane/sandboxes/api:deepcopy` to
   check them directly. The pinned upstream `controller-gen` binary and Go SDK run with declared
   Bazel inputs, so no generated Go file is committed.
-- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its Pods, VMI and
-  state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
+- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its ConfigMap,
+  Service and WorkloadCredential, its Pods, VMI and state PVC (by the Sandbox label), and the
+  templates and Identity it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
 - [`environment_runtime_credential.go`](environment_runtime_credential.go): the WorkloadCredential
   request, incarnation binding and credential mounts.
 - [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
-- [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
-  conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
+- [`identity.go`](identity.go): the live `Identity` gate and the credential subject each workload
+  incarnation keeps.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
-  Services and the other kinds it creates or watches), the namespace's WorkloadCredentials, Pod Events
-  and the Gateway's connection Leases. RBAC cannot select by label, so the Role still grants
-  `list`/`watch` on those kinds.
+  Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the
+  namespace, Pod Events and the Gateway's connection Leases. RBAC cannot select by label, so the Role
+  still grants `list`/`watch` on those kinds.
 
 Ordinary child resources use narrow server-side apply updates after an uncached ownership
 check. Creation is exclusive, so a same-name collision cannot adopt a foreign resource. PVCs

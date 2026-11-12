@@ -163,7 +163,15 @@ export async function launchEnvironment(
     if (policySets.length > 0) await grantIdentityPolicyBinding(identity, policySets);
     return await createEnvironment({ ...request, identity: request.name });
   } catch (failure) {
-    if (failure instanceof HttpError && failure.status >= 400 && failure.status < 500) await deleteIdentity(identity);
+    if (
+      failure instanceof HttpError &&
+      failure.status >= 400 &&
+      failure.status < 500 &&
+      failure.status !== 408 &&
+      failure.status !== 429
+    ) {
+      await deleteIdentity(identity);
+    }
     throw failure;
   }
 }

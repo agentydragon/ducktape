@@ -28,6 +28,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         client.opened_sandbox_uids = set()
 
         async def create(spec: environment_service_pb2.CreateEnvironmentRequest) -> identity_pb2.EnvironmentTarget:
+            assert spec.identity == spec.name
             view = views[spec.name] = environment_service_pb2.EnvironmentDescriptor(
                 target=identity_pb2.EnvironmentTarget(namespace="test", name=spec.name, uid=str(uuid4())),
                 execution_account=identity_pb2.ServiceAccountIdentity(
@@ -46,15 +47,18 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
                 if view.target.uid in opened.opened_sandbox_uids
             )
 
-        async def launch(
-            spec: environment_service_pb2.CreateEnvironmentRequest, policy_sets: list[str]
-        ) -> tuple[identity_pb2.EnvironmentTarget, dict[str, str]]:
-            return await create(spec), {"namespace": "test", "name": spec.name, "uid": str(uuid4())}
-
         client.create_sandbox.side_effect = create
-        client.launch_sandbox.side_effect = launch
         client.__aexit__.side_effect = close
         return cast(Client, client)
+
+    async def create_identity(_cluster: Cluster, name: str, _policy_sets: list[str]) -> dict[str, str]:
+        return {"namespace": "test", "name": name, "uid": f"identity-{name}"}
+
+    async def delete_identity(_cluster: Cluster, _identity: dict[str, str]) -> None:
+        return None
+
+    monkeypatch.setattr(sandbox, "create_scenario_identity", create_identity)
+    monkeypatch.setattr(sandbox, "delete_scenario_identity", delete_identity)
 
     async def ready(
         client: Client, target: identity_pb2.EnvironmentTarget

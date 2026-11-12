@@ -22,6 +22,11 @@ from agentplane.proto import identity_pb2, session_pb2
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver import egress_decisions
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import (
+    LAUNCH_DEFAULT_POLICY_SETS,
+    create_scenario_identity,
+    delete_scenario_identity,
+)
 from agentplane.system_tests.driver.mcp_connection import ExternalMCPSession, connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
@@ -270,13 +275,23 @@ async def test_external_connection_delegates_without_the_integration_app(
 
     cluster = deployment.cluster
     name = "systest-delegation-caller"
-    created = await client.create_sandbox(
-        environment_service_pb2.CreateEnvironmentRequest(name=name, template=POD_TEMPLATE)
-    )
+    identity = await create_scenario_identity(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS))
+    created: identity_pb2.EnvironmentTarget | None = None
     app_needs_restore = False
     boundary_evidence: dict[str, Any] | None = None
     try:
-        view = await wait_until_running(client, created)
+        request = environment_service_pb2.CreateEnvironmentRequest(
+            name=name, template=POD_TEMPLATE, identity=identity["name"]
+        )
+        try:
+            target = await client.create_sandbox(request)
+            created = target
+        except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            if 400 <= status < 500 and status not in (408, 429):
+                await delete_scenario_identity(cluster, identity)
+            raise
+        view = await wait_until_running(client, target)
         assert view.kubernetes_diagnostics.HasField("pod")
         await policy_objects.ensure_basic_binding(view)
 
@@ -482,7 +497,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 await cluster.kubectl("scale", "deployment/app", "--replicas=1")
                 await cluster.kubectl("wait", "--for=condition=Available", "deployment/app", "--timeout=180s")
                 await _wait_app(cluster, replicas=1)
-                if boundary_evidence is not None:
+                if boundary_evidence is not None and created is not None:
                     try:
                         boundary_evidence["egress_decisions_after_app_restore"] = await _capture_egress_decisions(
                             cluster, deployment.token, name, created.uid
@@ -497,7 +512,10 @@ async def test_external_connection_delegates_without_the_integration_app(
             await cluster.kubectl("scale", "deployment/app", "--replicas=1")
             await cluster.kubectl("wait", "--for=condition=Available", "deployment/app", "--timeout=180s")
             await _wait_app(cluster, replicas=1)
-        await _cleanup_sandbox(cluster, deployment.token, created.name, created.uid)
+        if created is not None:
+            await _cleanup_sandbox(cluster, deployment.token, created.name, created.uid)
+            await policy_objects.delete_all()
+            await delete_scenario_identity(cluster, identity)
 
 
 if __name__ == "__main__":

@@ -165,6 +165,7 @@ k3s_suite(
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:egress_decisions",
+        "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:mcp_connection",
         "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/driver:port_forward",

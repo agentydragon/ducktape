@@ -136,43 +136,6 @@ class Client:
         self.opened_sandbox_uids.add(target.uid)
         return target
 
-    async def launch_sandbox(
-        self, spec: environment_service_pb2.CreateEnvironmentRequest, policy_sets: list[str]
-    ) -> tuple[identity_pb2.EnvironmentTarget, dict[str, str]]:
-        """Launch as the app's form does: create the Identity the Sandbox acts as, grant it
-        policy_sets, then create the Sandbox naming it. Returns the target and the Identity's
-        namespace, name and UID; a refused create deletes the Identity again."""
-        created = await self._json(
-            "POST",
-            "/upstream/policy/v1/identities",
-            json={"name": spec.name, "description": f"System-test agent of Sandbox {spec.name}."},
-        )
-        identity = created["identity"]["identity"]
-        try:
-            if policy_sets:
-                await self._json(
-                    "POST",
-                    f"/upstream/policy/v1/identities/{quote(identity['name'])}/policy-bindings",
-                    json={"identityUid": identity["uid"], "policySets": policy_sets},
-                )
-            launched = environment_service_pb2.CreateEnvironmentRequest()
-            launched.CopyFrom(spec)
-            launched.identity = identity["name"]
-            target = await self.create_sandbox(launched)
-        except httpx.HTTPStatusError as error:
-            if HTTPStatus.BAD_REQUEST <= error.response.status_code < HTTPStatus.INTERNAL_SERVER_ERROR:
-                await self.delete_identity(identity)
-            raise
-        return target, identity
-
-    async def delete_identity(self, identity: dict[str, str]) -> None:
-        """Delete exactly this Identity incarnation, and with it the grants it owns."""
-        await self._json(
-            "DELETE",
-            f"/upstream/policy/v1/identities/{quote(identity['namespace'])}/{quote(identity['name'])}",
-            params={"uid": identity["uid"]},
-        )
-
     async def get_environment(
         self, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
