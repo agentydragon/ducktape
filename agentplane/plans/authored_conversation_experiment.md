@@ -20,8 +20,8 @@ Current annoyances:
 Hypothesis: an agent can naturally communicate with a user through a shared thread that it reads
 and contributes to using tools. That thread need not mirror model context or execution steps.
 Harness transcripts could then be a secondary diagnostic view, with a faithful JSON rendering
-sufficient for the experiment. Useful live progress and folding streamed extensions into their
-parent item remain desirable regardless of whether this hypothesis succeeds.
+sufficient for the experiment. Progress updates are complete authored messages. Streaming input
+display, incremental rendering and delta settlement are outside this experiment.
 
 Today's Agentplane `Thread` is a projection of Session history
 ([layering](../docs/thread_layering.md#authorities-and-representations)). This experiment's authored
@@ -47,9 +47,9 @@ Keep three representations separate:
 | Working context | The system instructions, notices, model responses and tool results supplied to the model; initially in memory.          |
 | Execution trace | Local JSONL model responses, tool calls/results and input notices, correlated to thread message IDs and sampling steps. |
 
-Record actual model/provider fields needed to understand a run, including streamed tool arguments.
-Never execute an incomplete tool call. Keep credentials and authorization headers out of artifacts.
-Full repeated request/context snapshots are not required for this experiment.
+Use non-streaming model responses (`stream: false`) and record complete model responses and tool
+arguments. Never execute an incomplete tool call. Keep credentials and authorization headers out of
+artifacts. Full repeated request/context snapshots are not required for this experiment.
 
 ## Interaction contract
 
@@ -115,14 +115,6 @@ Focused deterministic Bazel tests should establish the mechanism: read paginatio
 authorship, separation of thread/trace/context, delivery of input arriving during a run or at its
 end, reset persistence, and reporting a missing published answer. Live Qwen runs establish whether
 participation is natural; scripted model responses alone cannot establish that.
-
-## Streaming extension
-
-After the core runs, try one stream into a stable progress item and settle its extensions into the
-completed parent body. Check that the final text equals the accumulated extensions, that normal
-rendering does not duplicate it, and compare retained bytes before/after settlement. Keep raw
-diagnostic evidence for the experiment. Structural folding is distinct from generating a semantic
-summary. This extension is reported separately and does not gate the first interaction result.
 
 ## Evidence and stopping condition
 
