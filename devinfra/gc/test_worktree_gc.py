@@ -224,6 +224,25 @@ def test_detached_reflog_commits_survive_removal(repo: GitRepo) -> None:
     assert repo.rev(f"refs/workspace-gc/recovery/{abandoned}") == abandoned
 
 
+def test_detached_reflog_oldest_old_oid_survives(repo: GitRepo) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    _commit_detached(detached, "abandoned commit")
+    abandoned = detached.rev("HEAD")
+    detached.run("reset", "--hard", "main")
+    reflog = Path(detached.run("rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD").stdout.strip())
+    last_entry = reflog.read_text().splitlines()[-1]
+    assert last_entry.split()[0] == abandoned
+    reflog.write_text(last_entry + "\n")
+    assert abandoned not in detached.run("reflog", "show", "--format=%H", "HEAD").stdout
+    result = wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+    assert result == Removed(path)
+    assert repo.rev(f"refs/workspace-gc/recovery/{abandoned}") == abandoned
+
+
 def test_detached_patch_landed_even_when_main_changed_again(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")

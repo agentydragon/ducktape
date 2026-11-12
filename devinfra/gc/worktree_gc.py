@@ -9,6 +9,7 @@ from __future__ import annotations
 import enum
 import logging
 import os
+import re
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -278,10 +279,26 @@ def remove_worktree(
         if pg.head_is_detached:
             if detached_head is None or str(pg.head.peel(pygit2.Commit).id) != detached_head:
                 return Skipped(path, "detached HEAD changed or was not proven safe for removal")
-            # Removing the worktree also removes its private HEAD reflog. Keep every
-            # recorded tip, including commits abandoned by reset or checkout.
-            reflog = git(path, "reflog", "show", "--format=%H", "HEAD")
-            for commit in {detached_head, *reflog.stdout.splitlines()}:
+            # The oldest entry's old OID is omitted by `git reflog show`; preserve
+            # both sides of each entry before Git deletes this worktree's reflog.
+            reflog_path = Path(
+                git(path, "rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD").stdout.strip()
+            )
+            try:
+                entries = reflog_path.read_text().splitlines()
+            except FileNotFoundError:
+                entries = []  # Reflogs can be disabled.
+            commits = {detached_head}
+            for entry in entries:
+                fields = entry.split(maxsplit=2)
+                if len(fields) < 3:
+                    raise ValueError("malformed worktree HEAD reflog")
+                for oid in fields[:2]:
+                    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid):
+                        raise ValueError("malformed worktree HEAD reflog object ID")
+                    if oid.strip("0"):
+                        commits.add(oid)
+            for commit in commits:
                 git(repo, "update-ref", f"refs/workspace-gc/recovery/{commit}", commit)
         elif detached_head is not None or (expected_branch is not None and pg.head.shorthand != expected_branch):
             return Skipped(path, "checked-out branch changed since classification")
