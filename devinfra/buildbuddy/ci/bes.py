@@ -59,6 +59,10 @@ class Invocation:
     requested_patterns: tuple[str, ...] | None = None
     explicit_cmd_line: tuple[str, ...] | None = None
     commit_sha: str | None = None
+    invocation_id: str | None = None
+    parent_invocation_id: str | None = None
+    child_invocation_ids: tuple[str, ...] = ()
+    exit_code_name: str | None = None
 
     def by_path(self) -> dict[str, Output]:
         """Outputs keyed by their full path. A later duplicate wins, as in Bazel."""
@@ -108,7 +112,10 @@ def read(
     except CLIError as e:
         raise BuildBuddyError(str(e)) from e
     try:
-        return _invocation_from_export(json.loads(raw))
+        invocation = _invocation_from_export(json.loads(raw))
+        if invocation.invocation_id is not None and invocation.invocation_id != invocation_id:
+            raise ValueError(f"requested invocation {invocation_id}, received {invocation.invocation_id}")
+        return invocation
     except (TypeError, ValueError, KeyError) as e:
         raise BuildBuddyError(f"bbapi invocation export returned invalid JSON: {e}") from e
 
@@ -155,6 +162,10 @@ def _invocation_from_export(document: object) -> Invocation:
         requested_patterns=tuple(patterns["values"]) if patterns is not None else None,
         explicit_cmd_line=tuple(explicit["values"]) if explicit is not None else None,
         commit_sha=document.get("commitSha"),
+        invocation_id=document.get("invocationId"),
+        parent_invocation_id=document.get("parentInvocationId"),
+        child_invocation_ids=tuple(document.get("childInvocationIds", [])),
+        exit_code_name=document.get("exitCodeName"),
     )
 
 
