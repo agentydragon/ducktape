@@ -24,6 +24,7 @@ entries:
         # keep-sorted start
         - !Find [authentik_providers_proxy.proxyprovider, [name, activitywatch]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, alertmanager]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-sf]]
