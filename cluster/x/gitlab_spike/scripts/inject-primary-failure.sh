@@ -4,7 +4,7 @@ set -euo pipefail
 namespace=gitlab-spike
 statefulset=gitlab-spike-gitaly-default
 fault_key=gitlab-spike.ducktape.io/fault
-policy=gitlab-spike-fault-isolation
+policy=fault-isolation
 if [[ ${ALLOW_GITLAB_SPIKE_FAILURE:-} != YES || ${BENCH_TARGET:-} != spike/acceptance ]]; then
   echo 'refusing failure injection: require ALLOW_GITLAB_SPIKE_FAILURE=YES and BENCH_TARGET=spike/acceptance' >&2
   exit 2
@@ -532,7 +532,7 @@ done
 
 policy_json=$(kubectl -n "$namespace" get ciliumnetworkpolicies.cilium.io "$policy" -o json)
 printf '%s\n' "$policy_json" | jq -e --arg key "$fault_key" '
-  .metadata.namespace == "gitlab-spike" and .metadata.name == "gitlab-spike-fault-isolation" and
+  .metadata.namespace == "gitlab-spike" and .metadata.name == "fault-isolation" and
   .spec.endpointSelector.matchLabels.app == "gitaly" and
   .spec.endpointSelector.matchLabels.release == "gitlab-spike" and
   .spec.endpointSelector.matchLabels[$key] == "isolated" and
