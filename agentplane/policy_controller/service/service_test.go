@@ -252,6 +252,11 @@ func TestGrantRejectsStaleSandboxAndInvalidPolicySets(t *testing.T) {
 	if err := call("sandbox-replaced", "base"); status.Code(err) != codes.NotFound {
 		t.Fatalf("stale Sandbox UID grant: %v", err)
 	}
+	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), &policypb.GrantSandboxPolicyBindingRequest{
+		SandboxNamespace: "policies", SandboxName: "Upper", SandboxUid: "sandbox-current", PolicySets: []string{"base"},
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("grant with invalid Sandbox name: %v", err)
+	}
 	for _, sets := range [][]string{nil, {"missing"}, {"base", "base"}, {""}} {
 		if err := call("sandbox-current", sets...); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("grant with PolicySets %q: %v", sets, err)

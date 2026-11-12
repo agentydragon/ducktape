@@ -393,7 +393,7 @@ func validateCreate(request *environmentpb.CreateEnvironmentRequest) error {
 		return &InvalidSandboxError{Reason: "valid name and template are required"}
 	}
 	name := request.GetName()
-	if !validSandboxName(name) || len(name) > 57 || request.GetTemplate() == "" {
+	if !sandboxapi.IsValidSandboxName(name) || request.GetTemplate() == "" {
 		return &InvalidSandboxError{Reason: "valid name and template are required"}
 	}
 	if request.Preset != nil && !validLabelValue(request.GetPreset()) {
@@ -418,24 +418,6 @@ func validateIdleSuspendAfter(value *durationpb.Duration) error {
 	return nil
 }
 
-func validSandboxName(value string) bool {
-	if len(value) == 0 || len(value) > 57 {
-		return false
-	}
-	if !isLowerAlphaNumeric(value[0]) || !isLowerAlphaNumeric(value[len(value)-1]) {
-		return false
-	}
-	for _, character := range value {
-		if character > 0x7f {
-			return false
-		}
-		if !isLowerAlphaNumeric(byte(character)) && character != '-' {
-			return false
-		}
-	}
-	return true
-}
-
 func validLabelValue(value string) bool {
 	if value == "" || len(value) > 63 {
 		return false
@@ -452,10 +434,6 @@ func validLabelValue(value string) bool {
 		}
 	}
 	return true
-}
-
-func isLowerAlphaNumeric(value byte) bool {
-	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
 }
 
 func isAlphaNumeric(value byte) bool {

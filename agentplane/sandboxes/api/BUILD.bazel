@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path", "go_test")
 load("//devinfra/go:controller_gen.bzl", "controller_crds", "controller_deepcopy")
 
 go_library(
@@ -6,6 +6,7 @@ go_library(
     srcs = [
         "constants.go",
         "doc.go",
+        "sandbox_name.go",
         "scheme.go",
         "types.go",
         ":deepcopy",
@@ -17,9 +18,16 @@ go_library(
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/util/validation",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
         "@io_kubevirt_api//core/v1:core",
     ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = ["sandbox_name_test.go"],
+    embed = [":api"],
 )
 
 go_library(
