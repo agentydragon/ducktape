@@ -14,7 +14,7 @@ configMapGenerator:
       - 'anthropic-integration.json={"integrations": [{"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"}]}'
       - 'chatgpt-integration.json={"integrations": [{"id": "chatgpt", "type": "chatgpt", "state_dir": "/data/session/chatgpt"}]}'
       - 'blueshield-integration.json={"integrations": [{"id": "blueshield", "type": "blueshield", "state_dir": "/data/session/blueshield", "poll_interval_seconds": 300}]}'
-      - 'quest-integration.json={"integrations": [{"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform"}]}'
+      - 'quest-integration.json={"integrations": [{"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform", "poll_interval_seconds": 300}]}'
       - 'thrive-integration.json={"integrations": [{"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"}]}'
       - 'openai-routes.json=[{"method": "GET", "path": "/v1/dashboard/billing/credit_grants"}]'
       - 'anthropic-routes.json=[{"method": "GET", "path": "/api/organizations"}, {"method": "GET", "path": "/api/organizations/*/prepaid/credits"}]'
