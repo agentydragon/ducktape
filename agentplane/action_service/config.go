@@ -40,6 +40,8 @@ type config struct {
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
 	// ReaderAccounts read every account's requests and change none, written `namespace/name` or as a mapping.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
+	// ConnectionDelegationActor is the Action workload that may present a Connection delegation.
+	ConnectionDelegationActor *auth.Account `mapstructure:"connection_delegation_actor"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
 	OperatorOIDC api.OperatorOIDCSettings `mapstructure:"operator_oidc"`
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on

@@ -29,7 +29,10 @@ type config struct {
 	ActionsTLS    *environment_runtime_transport.ClientTLS `mapstructure:"actions_tls" json:"actions_tls,omitempty"`
 	DatabaseURL   string                                   `mapstructure:"database_url" yaml:"database_url"`
 	ActionsTarget string                                   `mapstructure:"actions_target" yaml:"actions_target"`
-	Host          string                                   `mapstructure:"host" yaml:"host"`
+	// PolicyNamespace and ActionsTokenFile are accepted ahead of the MCP Identity cutover image.
+	PolicyNamespace  string `mapstructure:"policy_namespace" yaml:"policy_namespace"`
+	ActionsTokenFile string `mapstructure:"actions_token_file" yaml:"actions_token_file"`
+	Host             string `mapstructure:"host" yaml:"host"`
 	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
 	// OAuth and the metrics.
 	Port                           int      `mapstructure:"port" yaml:"port"`

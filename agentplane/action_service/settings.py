@@ -59,6 +59,9 @@ class Settings(YamlFileSettings):
     log_levels: LogLevels
     rpc: Listener = Field(description="The single gRPC listener and its explicitly enabled authentication methods.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+    connection_delegation_actor: ServiceAccountRef | None = Field(
+        default=None, description="Action Service workload allowed to receive MCP Connection delegations."
+    )
 
     policy_namespace: str = Field(
         description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "

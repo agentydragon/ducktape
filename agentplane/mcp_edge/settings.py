@@ -39,6 +39,8 @@ class Settings(YamlFileSettings):
 
     database_url: str = Field(min_length=1)
     actions_target: str = Field(min_length=1)
+    policy_namespace: str | None = None
+    actions_token_file: str | None = None
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535, description="The gRPC listener's port.")
     http_port: int = Field(
