@@ -3,7 +3,8 @@
 import asyncio
 import json
 import re
-from contextlib import aclosing
+from collections.abc import AsyncIterator
+from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -541,8 +542,11 @@ async def _wait_for_cell_result_in_history(
             await asyncio.sleep(0.1)
 
 
-async def _kill_gateway_process(cluster: Cluster, pod: dict[str, object], crictl_command: tuple[str, ...]) -> None:
-    """SIGKILL the exact Gateway container, bypassing its orderly Lease release."""
+@asynccontextmanager
+async def _stopped_gateway_process(
+    cluster: Cluster, pod: dict[str, object], crictl_command: tuple[str, ...]
+) -> AsyncIterator[None]:
+    """Stop the exact Gateway until its Pod is terminating, then kill it without Lease release."""
     metadata = pod["metadata"]
     assert isinstance(metadata, dict)
     current = json.loads(await cluster.kubectl("get", "pod", metadata["name"], "-o", "json"))
@@ -579,19 +583,49 @@ async def _kill_gateway_process(cluster: Cluster, pod: dict[str, object], crictl
     assert matching == [[container_id, str(pid), "RUNNING"]], matching
     executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
     assert executable.name == "runner-gateway", executable
-    kill = await asyncio.create_subprocess_exec(
-        *ctr_command,
-        "tasks",
-        "kill",
-        "--signal",
-        "SIGKILL",
-        container_id,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await asyncio.wait_for(kill.communicate(), timeout=15)
-    if kill.returncode:
-        raise RuntimeError(f"ctr tasks kill exited {kill.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+
+    async def signal_gateway(signal: str) -> None:
+        process = await asyncio.create_subprocess_exec(
+            *ctr_command,
+            "tasks",
+            "kill",
+            "--signal",
+            signal,
+            container_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+        if process.returncode:
+            raise RuntimeError(
+                f"ctr tasks kill {signal} exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}"
+            )
+
+    try:
+        await signal_gateway("SIGSTOP")
+        async with asyncio.timeout(5):
+            while True:
+                status = await asyncio.to_thread(Path(f"/proc/{pid}/status").read_text)
+                if re.search(r"^State:\s+T ", status, re.MULTILINE):
+                    break
+                await asyncio.sleep(0.01)
+        (undeclared_outputs_dir() / "gateway-crash-process.json").write_text(
+            json.dumps(
+                {
+                    "pod": metadata,
+                    "container": container,
+                    "container_id": container_id,
+                    "pid": pid,
+                    "stopped_status": status,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        yield
+    finally:
+        # This must run even if scaling, the deletion wait or diagnostics fail.
+        await signal_gateway("SIGKILL")
 
 
 async def _roll_gateway_for_central_session(
@@ -625,8 +659,42 @@ async def _roll_gateway_for_central_session(
     try:
         if abrupt:
             assert crictl_command is not None
-            await _kill_gateway_process(cluster, old_pod, crictl_command)
-        await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
+            (undeclared_outputs_dir() / "gateway-crash-before.json").write_text(
+                json.dumps({"pod": old_pod, "lease": old_lease}, indent=2) + "\n"
+            )
+            # Killing first lets kubelet restart this Pod before scale-down; the restarted
+            # Gateway can claim a new epoch and gracefully release it on SIGTERM. SIGSTOP
+            # prevents cleanup while deletion removes this Pod from kubelet's desired set.
+            async with _stopped_gateway_process(cluster, old_pod, crictl_command):
+                await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
+                await cluster.kubectl(
+                    "wait",
+                    f"pod/{old_pod['metadata']['name']}",
+                    "--for=jsonpath={.metadata.deletionTimestamp}",
+                    "--timeout=15s",
+                )
+                (undeclared_outputs_dir() / "gateway-crash-terminating.json").write_text(
+                    json.dumps(
+                        {
+                            "pod": json.loads(
+                                await cluster.kubectl("get", "pod", old_pod["metadata"]["name"], "-o", "json")
+                            ),
+                            "lease": json.loads(
+                                await cluster.kubectl(
+                                    "get",
+                                    "lease",
+                                    f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}",
+                                    "-o",
+                                    "json",
+                                )
+                            ),
+                        },
+                        indent=2,
+                    )
+                    + "\n"
+                )
+        else:
+            await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
         if old_lease is not None:
             lease = json.loads(
@@ -634,6 +702,7 @@ async def _roll_gateway_for_central_session(
                     "get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"
                 )
             )
+            (undeclared_outputs_dir() / "gateway-crash-deleted.json").write_text(json.dumps(lease, indent=2) + "\n")
             assert lease["metadata"]["uid"] == old_lease["metadata"]["uid"], lease
             assert lease["spec"]["holderIdentity"] == old_lease["spec"]["holderIdentity"], lease
             assert lease["spec"]["leaseTransitions"] == old_lease["spec"]["leaseTransitions"], lease
