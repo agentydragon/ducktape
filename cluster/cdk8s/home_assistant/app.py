@@ -638,13 +638,13 @@ def chart(app: App) -> Chart:
     configuration = ConfigMap(
         chart,
         "configuration",
-        metadata=ApiObjectMetadata(name="home-assistant-configuration", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="configuration", namespace=_NAMESPACE),
         data={"configuration.yaml": (config_dir / "configuration.yaml.conf").read_text()},
     )
     caddy_config = ConfigMap(
         chart,
         "caddy-config",
-        metadata=ApiObjectMetadata(name="home-assistant-caddy", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="caddy", namespace=_NAMESPACE),
         data={"Caddyfile": (config_dir / "Caddyfile").read_text()},
     )
     _deployment(chart, configuration, caddy_config)
