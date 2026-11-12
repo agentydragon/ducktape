@@ -241,6 +241,7 @@ py_library(
     srcs = ["central_sampler.py"],
     deps = [
         ":cluster",
+        ":identity",
         ":tls",
         ":tracing",
         "//agentplane:crd_group",
