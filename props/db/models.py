@@ -969,15 +969,6 @@ class RecallByExample(Base):
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
-class WinningDefinition(BaseModel):
-    image_digest: str
-    credit_stats: StatsWithCI
-    n_runs: int
-
-
-_WinningDefinitionListAdapter: TypeAdapter[list[WinningDefinition]] = TypeAdapter(list[WinningDefinition])
-
-
 class ParetoFrontierByExample(Base):
     """Definitions tied at best mean credit for each (snapshot, split, kind, files_hash, model).
 
@@ -999,14 +990,6 @@ class ParetoFrontierByExample(Base):
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
-
-    @property
-    def winning_definitions(self) -> list[WinningDefinition]:
-        return _WinningDefinitionListAdapter.validate_python(self._winning_definitions_raw)
-
-    @property
-    def best_mean_credit(self) -> float:
-        return self.winning_definitions[0].credit_stats.mean
 
 
 class OccurrenceStatistics(Base):
