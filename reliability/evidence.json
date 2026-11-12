@@ -672,7 +672,7 @@
         "restart": "agentplane/env/runtime/execution/SPEC.md:53-63 says backend restart loses native session state and commands are not replayed"
       },
       "causal_conclusion": "The second kernel OOM kill explains the exec-server exit and transport/session loss. The evidence does not support a stale-session delete as the initial fault or a standalone websocket fault.",
-      "repair_boundary": "This leaves a product-contract decision. If a tool OOM must never kill the server, implement a per-command memory boundary beneath the server budget in both VM and Pod backends. If the shared budget is intended contract, revise aggregate-OOM assertions to state it explicitly while preserving exit 137, missing-result, and no-replay coverage. Raising the cap or retrying does not decide or implement isolation. No runtime repair was made or validated in this analysis.",
+      "repair_boundary": "Current follow-up disposition: existing OOM and no-replay assertions remain unchanged. The pinned bundled Codex 0.162.1 exec-server does not expose per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; PRs #15800 and #15869 were closed. The CLI supports CODEX_EXEC_SERVER_URL; replacing the executor is a separate architecture and ownership decision covering process, session, PTY, sandbox and filesystem behavior. The shared-cgroup OOM evidence remains valid; no exec-server-survival guarantee or runtime repair is established. Capability audit: https://github.com/agentydragon/ducktape/pull/15883.",
       "raw_evidence": "BuildBuddy invocation metadata, execution/test spans, guest console, journal and serial logs were inspected locally and are not published."
     },
     "thread_window_browser": {
@@ -768,6 +768,158 @@
       ],
       "observation": "Three target failures in the same devel invocation each wait 300 seconds for Sandbox Ready. Pods are Running but WorkloadReady=false and EnvironmentRuntimeConnected=false; test_services events include environment-runtime BackOff.",
       "causal_boundary": "This is one shared readiness cluster, not three independent observations. Previous-container stderr and the runtime exit reason were not retained, so the mechanism beneath readiness is unknown."
+    }
+  },
+  "followup_refresh": {
+    "observed_at_utc": "2026-11-12T12:00:20Z",
+    "population_refresh": {
+      "performed": false,
+      "retained_window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
+      "retained_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
+      "note": "Selected PR and intervention updates only. The existing target, PR-head, and merged-PR denominators above remain tied to their original windows and collection methods."
+    },
+    "workstreams": [
+      {
+        "id": "1",
+        "topic": "Codex 0.162.1 memory-control capability boundary",
+        "pr_numbers": [15800, 15869, 15883],
+        "pr_urls": [
+          "https://github.com/agentydragon/ducktape/pull/15800",
+          "https://github.com/agentydragon/ducktape/pull/15869",
+          "https://github.com/agentydragon/ducktape/pull/15883"
+        ],
+        "capability_note_commit": "b02b2b4d9c6e666a931ae3b45a12b593b97fd590",
+        "capability_note_url": "https://github.com/agentydragon/ducktape/blob/b02b2b4d9c6e666a931ae3b45a12b593b97fd590/agentplane/env/runtime/debug/2026_11_12_codex_memory_capability.md",
+        "status_at_observation": "Capability audit PR #15883 merged at 2026-11-12T12:00:02Z with all required CI green; the ancillary visual-review run was still in progress at the status check. Runtime design PR #15800 and patch-dependent producer PR #15869 are closed; no runtime change was made.",
+        "audited_codex_version": "0.162.1",
+        "audited_bundled_exec_server_controls": {
+          "components": [
+            "ExecParams",
+            "SpawnRequest",
+            "ExecServerRuntimeOptions"
+          ],
+          "per_command_memory_or_cgroup_placement": "Unsupported by the pinned bundled exec-server configuration.",
+          "pre_exec_placement_or_hook": "Unsupported by the pinned bundled exec-server configuration."
+        },
+        "finding": "The unmodified pinned Codex bundled exec-server does not expose the controls needed for a per-command memory boundary or pre-exec placement. The patch-dependent native fork route was rejected; PRs #15800 and #15869 are closed. The CLI supports CODEX_EXEC_SERVER_URL, so an external executor remains a possible extension point.",
+        "claim_limit": "This verifies a limit of the bundled Codex 0.162.1 configuration, not a universal CLI impossibility. Replacing the executor is a separate architecture and ownership decision covering process, session, PTY, sandbox and filesystem behavior. Existing shared-cgroup OOM evidence and OOM/no-replay assertions remain unchanged. The current arrangement does not guarantee exec-server survival after tool OOM; no runtime repair is claimed.",
+        "external_executor_extension_point": "CODEX_EXEC_SERVER_URL is supported by the CLI; an alternative server would require separate ownership of the current process/session/PTY/sandbox/filesystem contract.",
+        "source_evidence": "agentplane/env/runtime/execution/ISOLATION.md:24-56 documents the shared executor cgroup in VMs and shared companion-container budget in Pods; agentplane/env/runtime/execution/SPEC.md:53-63 documents loss of native session state on backend restart and no command replay."
+      },
+      {
+        "id": "4",
+        "topic": "Browser projection evidence and setup failure separation",
+        "pr_numbers": [15811, 15821, 15848],
+        "pr_urls": [
+          "https://github.com/agentydragon/ducktape/pull/15811",
+          "https://github.com/agentydragon/ducktape/pull/15821",
+          "https://github.com/agentydragon/ducktape/pull/15848"
+        ],
+        "statuses_at_observation": [
+          "#15811 merged",
+          "#15821 merged",
+          "#15848 open; all required exact-head check runs green"
+        ],
+        "prior_observation": "The History 334 versus DOM 264 cursor gap remains unexplained; the merged bounded-history and DOM artifacts did not repair runtime behavior. Six fresh focused runs passed without reproducing the cause.",
+        "new_observation": "A browser-auth ReadTimeout occurs before browser/assertion setup and is distinct from the projection cursor failure.",
+        "diagnosis_limit": "The exact HTTP redirect hop is not visible in retained evidence; the new timeout does not resolve the older cursor gap."
+      },
+      {
+        "id": "5",
+        "topic": "Registration-aware empty-pool alert",
+        "pr_number": 15806,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15806",
+        "head_commit": "d815f4fb02d2dede87c5eeeeccf53f5e587a96a0",
+        "status_at_observation": "Open; required CI green",
+        "finding": "The alert checks executor registration when the pool is empty. Existing native shutdown already drains and deregisters workers.",
+        "claim_limit": "No duplicate KEDA scaling or shutdown path is needed. Alerting improves visibility; it does not add executor capacity or prevent an empty pool."
+      },
+      {
+        "id": "7",
+        "topic": "Snapshot restore TSC scaling metadata",
+        "pr_number": 15849,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15849",
+        "head_commit": "98ce47e50a1c446bd49aaa0ca147310aaa6befa9",
+        "status_at_observation": "Open documentation follow-up; required CI green",
+        "finding": "The provider snapshot restore EINVAL occurs before guest boot and is separate from the cold-boot kernel panic. The snapshot producer does not expose the TSC metadata needed to attribute the restore decision.",
+        "claim_limit": "No local snapshot cache-key workaround or kernel-availability improvement is established."
+      },
+      {
+        "id": "8",
+        "topic": "Certificate identity and rotation evidence",
+        "pr_number": 15839,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15839",
+        "merged_commit": "eef1d8f02ea44f04b589b14c1ae2898b54446611",
+        "status_at_observation": "Merged; required CI green",
+        "invocation_id": "f7eb60f9-84ca-4da2-8f49-826aa2f9f305",
+        "invocation_url": "https://app.buildbuddy.io/invocation/f7eb60f9-84ca-4da2-8f49-826aa2f9f305",
+        "finding": "A real two-cycle rotation passed. Downloaded evidence for root, workload and gateway certificates contains two distinct Secret UIDs and public chain fingerprints per identity.",
+        "claim_limit": "The earlier cfecc04e gateway failure predates the known cleanup fix in #15193; the original certificate bytes are unavailable, so this does not identify its past cause."
+      },
+      {
+        "id": "9",
+        "topic": "Environment-runtime crash evidence before cleanup",
+        "pr_number": 15810,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15810",
+        "status_at_observation": "Merged; required CI green",
+        "finding": "Capture current and previous runtime stderr and status before cleanup, bound to the owning Sandbox UID and fenced against Pod replacement after collection.",
+        "claim_limit": "This adds diagnostic evidence for the environment-runtime container only; it does not reproduce or repair the historical crash."
+      },
+      {
+        "id": "runtime-race",
+        "topic": "Shutdown worker resealing a reopened Runtime journal",
+        "pr_number": 15858,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15858",
+        "head_commit": "b28fd61ca4b6084cc77382a82d66e147d5a07bfd",
+        "status_at_observation": "Merged at unchanged head b28fd61ca4b6084cc77382a82d66e147d5a07bfd; exact-head race rerun passed",
+        "control_invocation_id": "f0ad523a-55a4-45a5-a910-bde11c9aae08",
+        "control_invocation_url": "https://app.buildbuddy.io/invocation/f0ad523a-55a4-45a5-a910-bde11c9aae08",
+        "candidate_invocation_id": "a2aa6aa3-b905-4ca0-aba4-7dc508193696",
+        "candidate_invocation_url": "https://app.buildbuddy.io/invocation/a2aa6aa3-b905-4ca0-aba4-7dc508193696",
+        "finding": "A deterministic original-behavior control failed because an old shutdown worker sealed its successor after journal reopen. The candidate holds the admission mutex across revision validation, cutoff and seal; full PID1 Session and Runtime race suites passed in the candidate run, and the unchanged head passed the later classified exact-head rerun (BuildBuddy 3bc1cf26-cc18-558a-ac49-5540e8488872). An earlier exact-head CI attempt separately failed ordinary_stop_waits_for_domain: Stop took 3.048 s against a 3 s caller assertion while the guest journal recorded stop-timeout, SIGKILL of sh+sleep and Stopped in the same logged second. Independent test PR #15878 now verifies the actual D-Bus TimeoutStopUSec=50_000 property plus exit 137 and an empty domain; its real VM test passed.",
+        "claim_limit": "PR #15858 is merged, and the unchanged-head rerun passed. The earlier caller-side 3 s assertion failure is retained as a separate test observation, not evidence that the Runtime journal race remains. PR #15878 improves the guest stop-grace proof; neither item establishes a broader VM shutdown timing guarantee.",
+        "ci_failure": {
+          "test_name": "ordinary_stop_waits_for_domain",
+          "observed_at_utc": "2026-11-12T11:05:47Z",
+          "caller_stop_elapsed_seconds": 3.048,
+          "assertion_threshold_seconds": 3.0,
+          "journal": "At the same second, the guest journal records stop-timeout, SIGKILL of sh+sleep, and Stopped.",
+          "source_changed_for_retry": false,
+          "retry_run_id": "43204893730",
+          "retry_url": "https://github.com/agentydragon/ducktape/actions/runs/43204893730",
+          "retry_status": "Passed on unchanged source in the later classified exact-head run; PR #15858 merged.",
+          "retry_invocation_id": "3bc1cf26-cc18-558a-ac49-5540e8488872",
+          "retry_invocation_url": "https://app.buildbuddy.io/invocation/3bc1cf26-cc18-558a-ac49-5540e8488872"
+        },
+        "independent_stop_grace_proof": {
+          "pr_number": 15878,
+          "pr_url": "https://github.com/agentydragon/ducktape/pull/15878",
+          "head_commit": "7221b92336382830075a017a3799b35e270d851c",
+          "status": "Merged 2026-11-12T11:36:49Z",
+          "invocation_id": "a69df8c6-9c41-5af3-b488-5e15f4d5d3a9",
+          "invocation_url": "https://app.buildbuddy.io/invocation/a69df8c6-9c41-5af3-b488-5e15f4d5d3a9",
+          "result": "Real VM test passed in 369.760 s; asserts D-Bus TimeoutStopUSec=50_000, retains child exit 137 and proves the domain is empty; serial-console real_systemd_supervision marker confirmed.",
+          "change": "Replaces an arbitrary outer 3 s elapsed-time assertion with direct stop-grace property and postcondition checks; no runtime timeout was increased.",
+          "claim_limit": "This improves contract-test evidence; it is not a Runtime shutdown fix or a general shutdown-latency guarantee."
+        }
+      },
+      {
+        "id": "stop-grace-proof",
+        "topic": "Guest systemd stop-grace contract test",
+        "pr_number": 15878,
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/15878",
+        "head_commit": "7221b92336382830075a017a3799b35e270d851c",
+        "status_at_observation": "Merged 2026-11-12T11:36:49Z",
+        "invocation_id": "a69df8c6-9c41-5af3-b488-5e15f4d5d3a9",
+        "invocation_url": "https://app.buildbuddy.io/invocation/a69df8c6-9c41-5af3-b488-5e15f4d5d3a9",
+        "finding": "The real VM test passed in 369.760 s. It asserts D-Bus TimeoutStopUSec=50_000, retains the child exit status 137 and verifies the systemd domain is empty; the serial-console real_systemd_supervision marker was confirmed. It replaces an arbitrary 3 s outer elapsed-time assertion without increasing the runtime timeout.",
+        "claim_limit": "This strengthens the shutdown contract test and explains how to distinguish configured guest grace from caller-side elapsed time. It is not a Runtime shutdown fix or a general shutdown-latency guarantee."
+      }
+    ],
+    "sibling_latency_followups": {
+      "pr_numbers": [15188, 15822, 15842],
+      "report_path": "../latency/",
+      "note": "Store acceptance, admission-width and KVM placement experiments are reported with timings and their non-speedup limits in the latency report supplement."
     }
   }
 }

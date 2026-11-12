@@ -66,6 +66,11 @@
       import { html, mount } from "../report.js";
       import { DailyVmChart } from "./charts.js";
 
+      const evidenceResponse = await fetch("./evidence.json");
+      if (!evidenceResponse.ok)
+        throw new Error(`Evidence HTTP ${evidenceResponse.status}`);
+      const followup = (await evidenceResponse.json()).followup_refresh;
+
       const pr = "https://github.com/agentydragon/ducktape/pull/15493";
       const run =
         "https://github.com/agentydragon/ducktape/actions/runs/42911870369";
@@ -335,6 +340,47 @@
       ];
       const sourceLink =
         "https://github.com/agentydragon/ducktape/blob/31568ce99bd545d962e7212c9d43101227e662e8/agentplane/env/runtime/supervision/systemd_kernel_test.go#L547-L613";
+      const linksForFollowup = (workstream) => {
+        const prNumbers = workstream.pr_numbers ?? [workstream.pr_number];
+        const prUrls = workstream.pr_urls ?? [workstream.pr_url];
+        const prLinks = prUrls.map(
+          (url, index) =>
+            html`<${Anchor} key=${url} href=${url}>#${prNumbers[index]}<//>`,
+        );
+        if (workstream.implementation_pr_url) {
+          prLinks.push(
+            html`<${Anchor}
+              key="implementation"
+              href=${workstream.implementation_pr_url}
+              >producer #${workstream.implementation_pr_number}<//
+            >`,
+          );
+        }
+        const invocations = [
+          ["pass", workstream.invocation_url],
+          ["control", workstream.control_invocation_url],
+          ["candidate", workstream.candidate_invocation_url],
+          ["classified rerun", workstream.ci_failure?.retry_invocation_url],
+        ].filter(([, url]) => url);
+        const runLinks = [
+          ...invocations.map(
+            ([label, url]) =>
+              html`<${Anchor} key=${label} href=${url}>${label}<//>`,
+          ),
+          ...(workstream.ci_failure?.retry_url
+            ? [
+                html`<${Anchor}
+                  key="ci-retry"
+                  href=${workstream.ci_failure.retry_url}
+                  >CI retry<//
+                >`,
+              ]
+            : []),
+        ];
+        return html`<${Group} gap="xs" wrap="wrap">
+          ${prLinks} ${runLinks}
+        <//>`;
+      };
 
       function Report() {
         return html`<${Container}
@@ -381,6 +427,9 @@
               <${Anchor} href="manifest.json">${"snapshot manifest"}<//>
               ${"."}
             <//>
+            <${Text} size="sm" c="dimmed" component="p" my="sm">
+              ${"Selected intervention evidence and PR states were refreshed on 12 November; the 5–12 November populations, denominators and source pin above were not recollected."}
+            <//>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" my="lg">
               <${Paper} withBorder p="lg" radius="md">
                 <${Text} size="xl" fw=${700}>${"28 / 88"}<//>
@@ -413,6 +462,7 @@
             <${Anchor} href="#oom">${"Confirmed OOM mechanism"}<//>
             <${Anchor} href="#other-failures">${"Other current failures"}<//>
             <${Anchor} href="#merged">${"Merged PR gates"}<//>
+            <${Anchor} href="#followups">${"Nov 12 follow-ups"}<//>
             <${Anchor} href="#prior">${"Prior findings"}<//>
             <${Anchor} href="#previous-report">${"Previous snapshot"}<//>
           <//>
@@ -539,7 +589,25 @@
               ${"The isolation contract says Codex exec-server and its commands share one executor cgroup in VMs, and one companion-container budget in Pods. Restarting that backend loses its in-memory native session registry; commands are never reconstructed or replayed. The test's same-session-survives expectation therefore exceeds the current production resource contract. Raising the shared cap or retrying would not create command/server ownership."}
             <//>
             <${Text} component="p">
-              ${"This leaves a product-contract decision. If a tool OOM must never kill the server, implement a distinct per-command memory boundary beneath the server budget and enforce it in both VM and Pod backends. If the shared budget is the intended contract, revise the aggregate-OOM assertion to state that contract explicitly while preserving exit 137, missing-result and no-replay coverage. Raising the cap or retrying does not decide or implement isolation; no runtime repair was made or validated here."}
+              ${"The current shared-cgroup evidence remains: one memcg OOM killed the tool and then the Codex exec-server, losing the native session. The pinned Codex 0.162.1 bundled exec-server configuration exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; existing OOM and no-replay assertions remain unchanged. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate architecture and ownership decision covering process, session, PTY, sandbox and filesystem behavior. The capability audit is documented in "}
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/15883"
+                >${"PR #15883"}<//
+              >
+              ${"."}
+            <//>
+            <${Text} component="p">
+              ${"The runtime design PR "}
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/15800"
+                >${"#15800"}<//
+              >
+              ${" and patch-dependent producer PR #15869 are closed. The capability audit PR "}
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/15883"
+                >${"#15883"}<//
+              >
+              ${" merged at 12:00:02 UTC with required CI green. It verifies that bundled Codex 0.162.1 lacks per-command memory/cgroup placement and pre-exec controls; the CLI's CODEX_EXEC_SERVER_URL remains an external extension point. The current shared-cgroup setup still has no exec-server-survival guarantee. Existing OOM and no-replay assertions remain unchanged; no runtime repair is claimed."}
             <//>
             <${Text} size="sm" c="dimmed" component="p">
               ${"Source: "}
@@ -669,6 +737,57 @@
                         <//>
                       <//>`,
                   )}
+                <//>
+              <//>
+            <//>
+          <//>
+
+          <${Stack} component="section" id="followups" gap="md" my="xl">
+            <${Title} order=${2}>${"12 November intervention follow-up"}<//>
+            <${Text} component="p">
+              ${followup.population_refresh.note}
+              ${" Status is a snapshot at "}${followup.observed_at_utc}${"; recheck open PRs before publishing."}
+            <//>
+            ${followup.workstreams.map((w) => {
+              const detail =
+                w.finding ??
+                [w.prior_observation, w.new_observation]
+                  .filter(Boolean)
+                  .join(" ");
+              return html`<${Paper} key=${w.id} withBorder p="md">
+                <${Stack} gap="sm">
+                  <${Stack} gap=${4}>
+                    <${Text} fw=${600}>${w.topic}<//>
+                    ${linksForFollowup(w)}
+                    <${Text} size="sm" c="dimmed"
+                      >${w.status_at_observation ?? w.statuses_at_observation?.join("; ")}<//
+                    >
+                  <//>
+                  <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
+                    <${Stack} gap=${4}>
+                      <${Text} fw=${600} size="sm">${"New observation"}<//>
+                      <${Text} size="sm">${detail}<//>
+                    <//>
+                    <${Stack} gap=${4}>
+                      <${Text} fw=${600} size="sm"
+                        >${"What remains unproven"}<//
+                      >
+                      <${Text} size="sm"
+                        >${w.claim_limit ?? w.diagnosis_limit}<//
+                      >
+                    <//>
+                  <//>
+                <//>
+              <//>`;
+            })}
+            <${Paper} withBorder p="md">
+              <${Stack} gap="xs">
+                <${Text} fw=${600}>${"BuildBuddy client-admission run"}<//>
+                <${Text} component="p" size="sm">
+                  ${"The same-source 50/100/50-job sequence completed 429/430 targets each time. Its distinct failures were Runtime journal reopen, browser authentication ReadTimeout before browser/assertion setup, and the known VM tool-OOM case. This is three selected experiments, not a refreshed reliability denominator; exact run commands and action identity are in the "}
+                  <${Anchor} href="../latency/#nov12-followups"
+                    >${"latency report"}<//
+                  >.
                 <//>
               <//>
             <//>

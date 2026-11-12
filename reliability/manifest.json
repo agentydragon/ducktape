@@ -2,10 +2,14 @@
   "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "window_start_utc": "2026-11-05T07:20:00Z",
   "window_end_utc": "2026-11-12T07:20:00Z",
-  "published_at_utc": "2026-11-12T08:53:19.343095+00:00",
+  "published_at_utc": "2026-11-12T12:22:25.262963+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "624f59060b605015f3614555baeae27f5ee6f859",
-  "report_sha256": "601741b192857354444425970dd61f66d57b54c5bd6d99708e469f3ff1ceb64f",
-  "evidence_sha256": "c9be31d3429a84af3c56c92a7e9c2d53c76256c0abb91d975ba3a6c3ddd96ba1",
-  "visual_validation": "visual-validation.json"
+  "previous_report_commit": "31971eb057e89cc1d579c5848e32d185a33c11a1",
+  "report_sha256": "24cb8152f7da7cbc62d1b6fd14aafe45edfa4693641e50f78be594a4f567798e",
+  "evidence_sha256": "23372ab11a00e6a189b5013cda2751619b2540b67b04b6077a82810bc43298c6",
+  "visual_validation": "visual-validation.json",
+  "supplemental_followup_observed_at_utc": "2026-11-12T12:00:20Z",
+  "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
+  "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
+  "supplemental_followup_scope": "Selected Nov 12 interventions and PR status only; the original population window and rates are unchanged."
 }
