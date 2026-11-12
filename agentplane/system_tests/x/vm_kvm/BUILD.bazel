@@ -11,7 +11,6 @@ package(
 k3s_suite(
     name = "test_vm_kvm",
     srcs = ["//agentplane/system_tests/suites:test_vm.py"],
-    boot_evidence = True,
     # Fits the existing 4-CPU/8-GiB worker; measured in ../../debug/vm_kvm_existing_pool_2026_11_12.md.
     exec_properties = {
         "test.EstimatedCPU": "4",

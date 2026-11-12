@@ -266,9 +266,8 @@ success receipt from that guest's own console. No separate root image or extra V
 Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
 detached-child cleanup run through ordinary Session setup and retained History in both harness
 scenarios. Their turns also verify the runner certificate and identity, authenticated session,
-command admission and retained History. The two turn guests and one Codex sandbox/OOM guest boot together.
-The suite requests an 8-unit worker so the guests and k3s services fit without waiting for another
-group to exit.
+command admission and retained History. The two turn guests boot together. The manual
+`test_vm_oom` target runs the Codex tool-OOM survival probe separately.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd signals Environment Runtime first; Runtime
@@ -337,7 +336,7 @@ skip this additional assertion while retaining their logs. Launcher `compute` lo
 namespace's `virt-handler` logs are retained under `vm-artifacts/launchers/` and
 `vm-artifacts/handlers/`, respectively, for graceful-shutdown and domain-exit evidence.
 
-The normal `test_vm` target also selects block-device boot evidence on its OOM guest only. An early
+The manual `test_vm_oom` target selects block-device boot evidence on its OOM guest. An early
 guest unit runs `udevadm monitor --kernel --udev --property --subsystem-match=block`; it reports
 `AGENTPLANE_UDEV_MONITOR_READY` after both monitor sockets are bound and before systemd coldplug.
 This captures coldplug and udev rule completion for block devices, including their serial and
