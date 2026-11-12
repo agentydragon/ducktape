@@ -23,8 +23,8 @@ GitHub event, or an API call. This is essentially v0-plus-triggers (today Haku i
 a manual web session).
 
 - **Pros:** ~zero ops, the mature Claude Code harness, the Console session view;
-  **flat subscription billing** — runs on the operator's Claude subscription
-  rather than metered API rates.
+  access through the operator's Claude subscription, subject to the applicable
+  plan and terms.
 - **Cons:** Anthropic-managed container **only** (no BYOC); full lock-in (loop +
   infra + model all Anthropic); in-cluster access only via the public
   `kubeapi.allegedly.works` proxy (as today).
@@ -38,12 +38,10 @@ in `haku-sandbox` (BYOC) rather than Anthropic's cloud. It is **not** Managed
 Agents (B) — the Agent SDK runs the loop locally around the CLI, whereas B runs
 the loop server-side at Anthropic. The CLI honors `ANTHROPIC_BASE_URL` and
 `ANTHROPIC_AUTH_TOKEN`, so its model leg can point at LiteLLM's Anthropic-format
-passthrough — but the harness stays Anthropic-request-shaped (prompt-caching
-fidelity, beta param shapes, OAuth/subscription auth), so routing to a
-non-Anthropic provider through LiteLLM is lossy and the subscription benefit
-doesn't survive. Net: it collapses to "A's harness in front of LiteLLM →
-Anthropic" — self-hosted infra, same model lock-in — which is why it's a variant
-of A, not a peer of C.
+passthrough. The harness remains Anthropic-request-shaped (prompt-caching
+fidelity and beta parameter shapes), so routing to another provider can be lossy.
+Using this harness keeps an Anthropic loop dependency even if the infrastructure
+is self-hosted; credential support and billing require separate validation.
 
 The 2026-07-31 Kubernetes compatibility spike passed: a `claude setup-token`
 credential authenticated Agent SDK 0.1.48/Claude CLI 2.1.71 headlessly through
@@ -53,39 +51,24 @@ feasibility, not the credential-boundary or model-lock-in tradeoffs above. The
 runtime was then built, run briefly, and retired; its lessons are in
 <../docs/agent_sdk_runtime.md>.
 
-**Amendment (2026-07-31).** The above conflates two separable choices —
-self-hosting the loop, and routing the model leg through LiteLLM. Only the second
-kills the subscription:
+**Authentication and observability are open decisions.** The 2026-07-31 spike
+showed that headless subscription authentication worked at that time; it did not
+establish that the same credential arrangement is supported for every deployment.
+Anthropic's [authentication policy](https://code.claude.com/docs/en/legal-and-compliance)
+distinguishes individual use from third-party products and advises developers using
+the Agent SDK to use API keys. Before adopting either the direct SDK path or a
+proxy, check the current policy and confirm the intended use with Anthropic where
+needed. Do not treat the old experiment as authorization or a billing guarantee.
 
-- **Agent SDK → LiteLLM → Anthropic.** As described: subscription benefit lost,
-  because LiteLLM terminates and re-emits the request, so what reaches Anthropic is
-  not a Claude Code request. It is also **blocked** — consumer OAuth tokens are
-  rejected outside Claude Code with `This credential is only authorized for use with
-Claude Code`, and Anthropic's [legal-and-compliance
-  doc](https://code.claude.com/docs/en/legal-and-compliance) scopes OAuth to
-  "ordinary use of Claude Code and other native Anthropic applications".
-- **Agent SDK → Anthropic directly.** Keeps flat subscription billing: the same doc
-  puts advertised Pro/Max limits on "ordinary, individual usage of Claude Code **and
-  the Agent SDK**". This buys BYOC — the loop inside the perimeter, in-cluster access
-  without Runtime A's public `kubeapi.allegedly.works` hop — while staying on the
-  subscription. It is the option this section didn't separate out.
+Running the loop where Haku has CRUD access also puts any credential held there in
+reach of the agent. Design credential isolation and revocation explicitly; see
+<../docs/agent_sdk_runtime.md> for the retired experiment's lessons.
 
-Two things to weigh before adopting it:
-
-- **It inverts a deliberate credential boundary.** Today the launch credential lives
-  in `haku-console`, a namespace Haku has no RBAC into — see <../console/README.md>
-  ("the confidentiality boundary that lets the console hold secrets Haku may not
-  read"). Running the loop in `haku-sandbox` puts the subscription OAuth token where
-  Haku has full CRUD. Blast radius is worse than a LiteLLM virtual key: misuse is
-  enforceable against the **personal Anthropic account**, without prior notice, and
-  there is no per-lane Terraform kill switch. Mitigations exist (loop in a third
-  namespace; Agent SDK with built-in tools disabled, reaching `haku-sandbox` only
-  through an MCP server) but they are design work, not defaults.
-- **The observability motivation is gone.** Wanting traces/metrics out of Haku was a
-  main driver for moving off Runtime A. That gap was a monitoring-stack bug, not a
-  runtime limitation — see
-  <../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
-  Runtime A emits all three signals once the env var is set on the web environment.
+Claude Code's native telemetry can emit metrics and traces when configured; the
+July 2026 delta-temporality issue was fixed for that setup (see
+<../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>).
+This does not establish complete tool-call or worker traces for a new runtime.
+Verify trace contents, attribution, access and retention for the chosen deployment.
 
 ## Runtime B — Anthropic Managed Agents (self-hosted sandbox)
 
@@ -143,34 +126,15 @@ servers), so it never needed Anthropic's server tools, Files, or batches. Prompt
 caching still works on the Anthropic _leg_ (framework → LiteLLM → Anthropic
 honors `cache_control`); it just isn't portable across OpenAI/GLM.
 
-## The subscription paradox
+## Billing and credential decision
 
-The Max/Pro **subscription** benefit and **provider-agnosticism** are mutually
-exclusive within one runtime: the subscription is Anthropic OAuth + Anthropic
-inference, i.e. itself a form of lock-in. So it's either "cheap via the Max plan,
-Anthropic-locked" (A/B) **or** "provider-agnostic, pay each provider directly,
-incl. cheap GLM" (C). You can run both as separate Haku runtimes; you can't
-collapse them into one.
-
-**Beyond billing mode, there is a coverage nuance** (policy/ToS, not technical).
-Running Haku as a **Claude Code web routine (A) is fine — routines are a first-party
-feature of the product**, i.e. a supported use of the subscription; scheduling one is
-not "programmatic use" in the ToS sense. **The A-variant is also in scope**, on the
-[legal-and-compliance doc](https://code.claude.com/docs/en/legal-and-compliance)'s own words:
-"Advertised usage limits for Pro and Max plans assume ordinary, individual usage of Claude
-Code **and the Agent SDK**." The restriction there is aimed elsewhere — at "third-party
-developers" building products, who may not "offer Claude.ai login or … route requests through
-Free, Pro, or Max plan credentials **on behalf of their users**." A single operator running
-their own agent on their own subscription is the named-in-scope case, not the prohibited one.
-The Agent SDK overview's blunter "use the API key authentication methods instead" reads as
-guidance for that developer audience; note also that `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere
-in the SDK's documented auth surface, so the mechanics still need proving even where the
-policy allows it. Design caveats (chiefly the credential-boundary inversion) are in
-<../docs/agent_sdk_runtime.md>. Managed Agents (B) bill **API rates
-regardless**, so they never draw on the subscription in the first place. Net:
-A-as-routine is defensible; the caution is specifically about self-hosted
-subscription-CLI automation, and it is one more reason C (pay each provider directly,
-no subscription entanglement) is clean if Haku's automation grows beyond routines.
+Compare the actual credential, provider, pricing and terms for each candidate at
+adoption time. The first-party web routine, a self-hosted Agent SDK loop and
+Managed Agents have different authentication and billing paths; neither a past
+subscription-authentication experiment nor provider-agnostic model routing proves
+that a given combination is authorized or covered by a subscription. Runtime C
+can route to several providers but needs its own credentials and per-provider cost
+controls. Keep credential isolation and trace-data handling in the comparison.
 
 ## Comparison
 
@@ -180,7 +144,7 @@ no subscription entanglement) is clean if Haku's automation grows beyond routine
 | Tools execute                | Anthropic container         | your worker (`haku-sandbox`)    | your process (`haku-sandbox`)            |
 | Model providers              | Anthropic only              | Anthropic only                  | any (LiteLLM: Anthropic/OpenAI/GLM)      |
 | Provider lock-in             | full                        | model-locked                    | none                                     |
-| Billing                      | subscription / seats        | API rates + session runtime     | per-provider (cheap GLM option)          |
+| Billing                      | verify plan and terms       | verify API and runtime pricing  | per-provider; verify pricing             |
 | In-cluster access            | via `kubeapi` proxy         | direct                          | direct                                   |
 | MCP auth                     | native                      | vaults (managed)                | you wire it                              |
 | Triggers                     | routines (sched/GitHub/API) | you wire (webhook → session)    | you wire (webhook → loop)                |

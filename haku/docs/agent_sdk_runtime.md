@@ -9,10 +9,11 @@ re-derive; Agent SDK facts are as of SDK 0.1.48 / Claude CLI 2.1.71 (2026-07-31)
 
 ## Credential
 
-- **Subscription use is in policy for one operator.** The
-  [legal-and-compliance doc](https://code.claude.com/docs/en/legal-and-compliance) scopes Pro/Max
-  limits to "ordinary, individual usage of Claude Code and the Agent SDK"; its restriction targets
-  developers routing plan credentials "on behalf of their users".
+- **Policy must be checked for a new deployment.** The
+  [legal-and-compliance doc](https://code.claude.com/docs/en/legal-and-compliance) distinguishes
+  individual use from third-party products and advises developers using the Agent SDK to use API
+  keys. The 2026 experiment does not establish that a future use or credential path is authorized;
+  check current terms and confirm with Anthropic where needed.
 - **Headless subscription auth works although undocumented.** A `claude setup-token` token as
   `CLAUDE_CODE_OAUTH_TOKEN` authenticated multi-turn inference in a container with no login and
   no API key. The SDK's documented auth surface does not mention it.
