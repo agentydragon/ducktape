@@ -687,7 +687,7 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 		annotations[FirecrackerRunningAnnotation] = "true"
 		labels[EnvironmentBackendLabel] = "firecracker"
 	}
-	labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credential.ID
+	labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = credential.ID
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,

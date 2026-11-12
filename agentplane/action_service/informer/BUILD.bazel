@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/informer",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
+        "//agentplane/action_service/callers",
         "//agentplane/action_service/policies",
         "//agentplane/policy/reader",
         "//agentplane/watchhealth",
@@ -28,6 +29,7 @@ go_test(
     ],
     embed = [":informer"],
     deps = [
+        "//agentplane/action_service/callers",
         "//agentplane/action_service/policies",
         "//agentplane/action_service/store",
         "//agentplane/policy/api/v1alpha1",

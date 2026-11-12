@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,11 +15,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
-// ActionCallerLabel on a ServiceAccount is what admits its workload to the Action Service. It
-// grants nothing alone: the account's PolicyBinding action rules decide. Must equal CALLER_LABEL in
-// agentplane/action_service/policies/resources.py and CallerLabel in agentplane/action_service/informer.
-const ActionCallerLabel = "agentplane.allegedly.works/use-action-service"
-
 // ensureIdentity keeps the Sandbox's own ServiceAccount and, while it names PolicySets, its one
 // PolicyBinding. Both are controlled by the Sandbox, so deleting the Sandbox revokes them. It
 // returns why no Pod may start yet; a running Pod is never stopped for it. A Pod does not wait for
@@ -26,7 +22,10 @@ const ActionCallerLabel = "agentplane.allegedly.works/use-action-service"
 // refused, the same as for a running Pod whose PolicySets change.
 func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *sandboxapi.Sandbox) (*unready, error) {
 	account := corev1ac.ServiceAccount(sandbox.Name, sandbox.Namespace).
-		WithLabels(map[string]string{sandboxapi.SandboxLabel: sandbox.Name, ActionCallerLabel: "true"})
+		WithLabels(map[string]string{
+			sandboxapi.SandboxLabel:        sandbox.Name,
+			callers.ServiceAccountLabelKey: callers.ServiceAccountLabelValue,
+		})
 	if blocked, err := r.applyOwned(ctx, sandbox, account, "ServiceAccountConflict"); blocked != nil || err != nil {
 		return blocked, err
 	}

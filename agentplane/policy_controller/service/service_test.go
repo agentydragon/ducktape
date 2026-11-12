@@ -349,7 +349,7 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 		{name: "stale binding uid", binding: func() *policyapi.PolicyBinding { return operatorBinding("sandbox-uid") }, bindingUID: "another-binding-uid"},
 		{name: "Flux owned", binding: func() *policyapi.PolicyBinding {
 			item := operatorBinding("sandbox-uid")
-			item.Labels = map[string]string{"kustomize.toolkit.fluxcd.io/name": "agentplane-staging"}
+			item.Labels = map[string]string{policyapi.FluxKustomizationNameLabel: "agentplane-staging"}
 			return item
 		}, bindingUID: "uid-operator-grant"},
 		{name: "Sandbox controller owned", binding: func() *policyapi.PolicyBinding {
@@ -622,7 +622,7 @@ func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 }
 
 func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
-	flux := map[string]string{"kustomize.toolkit.fluxcd.io/name": "fake-kustomization"}
+	flux := map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}
 	api, kube, _ := fixture(t, testIdentity("git-origin-identity", flux))
 	stream, err := api.WatchIdentities(tokenContext(t, "app"), &policypb.WatchIdentitiesRequest{})
 	if err != nil {
@@ -634,7 +634,7 @@ func TestIdentityWatchFollowsIdentitiesForBroadReadersOnly(t *testing.T) {
 	}
 	got := first.GetSnapshot().GetIdentities()
 	if len(got) != 1 || got[0].GetIdentity().GetName() != "git-origin-identity" || got[0].GetSpec().GetDescription() != "Fake agent git-origin-identity" ||
-		got[0].GetLabels()["kustomize.toolkit.fluxcd.io/name"] != "fake-kustomization" {
+		got[0].GetLabels()[policyapi.FluxKustomizationNameLabel] != "fake-kustomization" {
 		t.Fatalf("snapshot = %v", got)
 	}
 	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
@@ -754,7 +754,7 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
 		referenced, identityBinding("standing-grant", "referenced-identity", nil), identityBinding("stale-owner", "referenced-identity", previous),
-		testIdentity("git-origin-identity", map[string]string{"kustomize.toolkit.fluxcd.io/name": "fake-kustomization"}),
+		testIdentity("git-origin-identity", map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}),
 	)
 	for _, tc := range []struct {
 		name    string

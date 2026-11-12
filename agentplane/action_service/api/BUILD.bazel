@@ -112,6 +112,7 @@ go_test(
         "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service:web_push_service_go_proto",
+        "//agentplane/action_service/callers",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/linkage",

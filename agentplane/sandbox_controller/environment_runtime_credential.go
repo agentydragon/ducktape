@@ -33,7 +33,6 @@ const (
 
 	// A VM's active credential and the VMI accepted for it. The Sandbox's binding is in
 	// status.runnerCredential.
-	RunnerCredentialIDAnnotation         = "agentplane.allegedly.works/environment-runtime-credential"
 	RunnerCredentialVMIUIDAnnotation     = "agentplane.allegedly.works/environment-runtime-credential-vmi-uid"
 	RunnerCredentialLastVMIUIDAnnotation = "agentplane.allegedly.works/environment-runtime-credential-last-vmi-uid"
 
@@ -123,7 +122,7 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 
 func (r *Reconciler) ensurePodRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
 	pod := w.pod
-	id := pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]
+	id := pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	if !validRunnerCredentialID(id) {
 		// A legacy runner can stay published only while it is the exact incarnation already
 		// recorded in status. A replacement without a credential must never inherit that route.
@@ -183,7 +182,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 		return w, nil, nil
 	}
-	id := vm.Annotations[RunnerCredentialIDAnnotation]
+	id := vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	acceptedVMI := vm.Annotations[RunnerCredentialVMIUIDAnnotation]
 	if w.vmi == nil && !vmRunning(vm) {
 		if !needsRunner {
@@ -200,7 +199,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 			if acceptedVMI != "" {
 				vm.Annotations[RunnerCredentialLastVMIUIDAnnotation] = acceptedVMI
 			}
-			vm.Annotations[RunnerCredentialIDAnnotation] = issued.ID
+			vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = issued.ID
 			vm.Annotations[RunnerCredentialVMIUIDAnnotation] = ""
 			if err := r.Update(ctx, vm); err != nil {
 				return w, nil, err
@@ -226,7 +225,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		// KubeVirt has yet to create the running VM's VMI.
 		return w, nil, nil
 	}
-	if vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] != id {
+	if vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] != id {
 		// A VMI of an earlier template may still be stopping. Keep the VM halted and wait; never
 		// accept it or bind the record to it.
 		if err := r.haltVM(ctx, vm); err != nil {
