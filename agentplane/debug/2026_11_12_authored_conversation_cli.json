@@ -1,0 +1,137 @@
+{
+  "live-authored": {
+    "responses": 4,
+    "runs": [
+      {
+        "run_id": "0087a1b1-b1c5-4f57-81e4-7bd2f7d1ebbf",
+        "status": "completed",
+        "steps": 4
+      }
+    ],
+    "trace_sha256": "99e22d8cb153cafcc1fb4532aed5b09726981d3a91e525800f9d2d8c67bb20f0",
+    "trace_bytes": 26556,
+    "thread_bytes": 12288,
+    "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+    "tokens": {
+      "input_tokens": 3338,
+      "output_tokens": 194,
+      "total_tokens": 3532
+    }
+  },
+  "paired-authored": {
+    "responses": 21,
+    "runs": [
+      {
+        "run_id": "718023ca-d11e-41a9-a0ca-d1c46d95713d",
+        "status": "completed",
+        "steps": 6
+      },
+      {
+        "run_id": "f151d534-a153-42cf-b026-01a4a469287b",
+        "status": "completed",
+        "steps": 5
+      },
+      {
+        "run_id": "88720f8e-4a1f-4398-96e0-05c4cfb20eb0",
+        "status": "completed",
+        "steps": 4
+      },
+      {
+        "run_id": "557b1d03-e1ff-47e7-a572-d20136466147",
+        "status": "missing_publication",
+        "steps": 3
+      },
+      {
+        "run_id": "852534e7-435b-47d8-b0c8-0506c0bd7082",
+        "status": "missing_publication",
+        "steps": 3
+      }
+    ],
+    "trace_sha256": "36c4e9363035e8e783a0e82b004a093a01e848fcdd14c04d8ba0e5ecf754121f",
+    "trace_bytes": 174328,
+    "thread_bytes": 12288,
+    "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+    "tokens": {
+      "input_tokens": 43630,
+      "output_tokens": 5119,
+      "total_tokens": 48749
+    }
+  },
+  "paired-chat": {
+    "responses": 11,
+    "runs": [
+      {
+        "run_id": "7c6da0c0-4a1f-4a5f-99b7-a20622af427b",
+        "status": "completed",
+        "steps": 2
+      },
+      {
+        "run_id": "3eacef29-9598-45ee-82f7-fec09295b806",
+        "status": "completed",
+        "steps": 5
+      },
+      {
+        "run_id": "abb4e451-941b-487c-a617-2ef359de3d3f",
+        "status": "missing_publication",
+        "steps": 1
+      },
+      {
+        "run_id": "f77af62d-3e6c-4826-849b-957af9b83f89",
+        "status": "completed",
+        "steps": 1
+      },
+      {
+        "run_id": "dd3fc9fb-ee1a-4f18-b8d2-954b924f2e22",
+        "status": "completed",
+        "steps": 2
+      }
+    ],
+    "trace_sha256": "6b0c427603af9e84ee9daddd4395ff37c57bb0da53e3c70b191074a83ebb2d4f",
+    "trace_bytes": 97209,
+    "thread_bytes": 20480,
+    "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+    "tokens": {
+      "input_tokens": 16620,
+      "output_tokens": 4998,
+      "total_tokens": 21618
+    }
+  },
+  "repeat-reset": {
+    "responses": 3,
+    "runs": [
+      {
+        "run_id": "cf746f92-4743-4790-81d7-3ae475a4a0c2",
+        "status": "missing_publication",
+        "steps": 3
+      }
+    ],
+    "trace_sha256": "18ebddb7a34d8ba842136efcd43ae32dd9be8144ff0d8c7b31bff41e79829a84",
+    "trace_bytes": 27051,
+    "thread_bytes": 12288,
+    "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+    "tokens": {
+      "input_tokens": 4876,
+      "output_tokens": 511,
+      "total_tokens": 5387
+    }
+  },
+  "repeat-correction": {
+    "responses": 3,
+    "runs": [
+      {
+        "run_id": "5f9fdcff-092a-44ed-8ddf-e04181524ffd",
+        "status": "missing_publication",
+        "steps": 3
+      }
+    ],
+    "trace_sha256": "82776add705f13897b2000a2e3795f52fde8b06010c2d1c4b02d1123979fe63b",
+    "trace_bytes": 34475,
+    "thread_bytes": 12288,
+    "note_sha256": "6a382c0ef7a2e8feaa56a8834da03da265e8891dd1155ed1b521326e94bc5174",
+    "tokens": {
+      "input_tokens": 5561,
+      "output_tokens": 1347,
+      "total_tokens": 6908
+    }
+  }
+}

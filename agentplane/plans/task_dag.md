@@ -1166,11 +1166,16 @@ transition proposal. Recording the broader model does not dispatch a worker or a
 
 ### `AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT` — try an authored conversation in a CLI
 
-**Unscheduled; experiment specified at the operator's request, 2026-11-12.** Implement and run the
+**In review, 2026-11-12:** [#15896](https://github.com/agentydragon/ducktape/pull/15896) implements the
 [bounded CLI experiment](authored_conversation_experiment.md): our own agent loop with Qwen through
 LiteLLM's OpenAI-compatible API, a retained thread read/written through tools, separate working
 context and diagnostic trace, and a same-model ordinary-chat comparison. No deployed Agentplane
 service is required. The broader conversation design is not a prerequisite.
+
+The [bounded Qwen findings](../debug/2026_11_12_authored_conversation_cli.md) classify the tested
+configuration as unpromising: after reset and during correction, answers remained private rather
+than being published, including one repeat of each case. Deterministic tests and provider access
+passed. This result does not select a broader conversation design or a History migration.
 
 **Exit:** the spec's paired scenarios and win conditions evaluated, with artifacts and a findings
 note classifying the result as promising, unpromising on the tested model, or inconclusive. A useful
@@ -1190,6 +1195,10 @@ separate concerns; incoming-message delivery and harness-specific notification s
 Start by evaluating the bounded CLI experiment above before committing to the broader model. Its
 local tool dispatch and storage choices are experimental, not decisions about service ownership,
 MCP exposure or migration. This decision and its full exit criteria do not gate that experiment.
+
+**Operator clarification, 2026-11-12:** authored threads are optional. Background agents can use
+other tools, inputs and outputs without a user-facing conversation object; the app can expose their
+relatively raw transcripts/logs. Do not make this component a prerequisite for running a Session.
 
 Recommendation for review: distinguish the authored conversation, harness continuation state and
 retained evidence of harness activity. Today's History conversation view is already a lossy

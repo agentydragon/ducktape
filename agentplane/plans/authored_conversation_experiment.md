@@ -1,6 +1,9 @@
 # Authored conversation CLI experiment
 
-Specification for a bounded experiment; no implementation or run results yet. The
+Specification for a bounded experiment. Prototype source is under
+[`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md). The first bounded Qwen
+paired pass and failed-case repeats are recorded in the
+[findings](../debug/2026_11_12_authored_conversation_cli.md). The
 [task DAG](task_dag.md#agent_authored_conversations_experiment--try-an-authored-conversation-in-a-cli)
 owns its scheduling. The experiment informs the broader conversation decision without choosing
 Agentplane's eventual history architecture.
@@ -31,13 +34,17 @@ thread is a separate object; using the word does not change that existing contra
 
 One Python CLI process under `agentplane/x/authored_conversation/`, owning sampling, context and
 tool execution. Use Qwen on the operator's Ollama through LiteLLM's OpenAI-compatible
-`/v1/chat/completions` endpoint. Configure the base URL, model route and credential source; discover
+`/v1/responses` endpoint. Configure the base URL, model route and credential source; discover
 the available route rather than pinning an assumed model tag. A direct Ollama connection is optional,
 not a second required adapter. Reuse existing client/tool helpers where they fit this wire contract.
 
 The CLI needs no Agentplane app, History, Dispatcher, Notifications, Kubernetes resources, browser,
 native Codex/Claude harness or MCP server. Direct function dispatch is sufficient. Its model endpoint
 is its only service dependency.
+
+Authored threads are optional in eventual Agentplane designs. An agent may instead work in the
+background with other tools, inputs and outputs, while the app presents its relatively raw
+transcript/logs. This experiment does not make a conversation view a Session prerequisite.
 
 Keep three representations separate:
 
