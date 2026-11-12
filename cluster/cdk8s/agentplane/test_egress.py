@@ -16,15 +16,17 @@ from more_itertools import one
 from agentplane.crd_group import GROUP
 from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.settings import Settings as EgressSettings
-from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI, SESSION_DISPATCHER_URI
+from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
     environment_sandbox,
+    history_service,
     kubernetes_account_ref,
     llm_ingress,
     notifications,
+    platform_routes,
     runner_gateway,
     session_dispatcher,
     staging,
@@ -340,13 +342,17 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     )
 
 
-def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(catalog_manifests: list[dict[str, Any]]) -> None:
-    """Keep the CLI origin credential-free while the sidecar presents its SVID."""
+def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dict[str, Any]]) -> None:
+    """Keep managed CLI origins credential-free while the sidecar presents its Sandbox SVID."""
     namespace = staging.ENV.namespace
     service_url = (
         f"http://{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
     )
     destination = runner_gateway.service(namespace)
+    history = history_service.service(namespace)
+    history_origin = f"{history.fqdn}:{history.port.number}"
+    history_route = platform_routes.history_grpc(namespace)
+    history_url = f"http://{history_route.local_target}"
     dispatcher_origin = (
         f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
     )
@@ -358,7 +364,9 @@ def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(catalog_ma
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
     assert session_dispatcher.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    assert history_service.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
     assert f"{destination.fqdn}:{destination.pod_port}" in proxy_settings["tls_passthrough_targets"]
+    assert f"{history.fqdn}:{history.pod_port}" in proxy_settings["tls_passthrough_targets"]
 
     configured: list[tuple[str, Any]] = []
     for item in catalog_manifests:
@@ -371,6 +379,21 @@ def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(catalog_ma
         assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
         assert route["server_uri"] == SESSION_DISPATCHER_URI
 
+    history_configured: list[dict[str, Any]] = []
+    for item in catalog_manifests:
+        if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
+            continue
+        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
+        assert history_origin not in routes, "Runtime's History ingress already sends opaque TLS"
+        platform = yaml.safe_load(item["data"]["settings.yaml"]).get("platform_routes", {}).get("routes", {})
+        if "history" in platform:
+            history_configured.append(platform["history"])
+    assert history_configured
+    for route in history_configured:
+        assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]
+        assert route["upstream"] == f"{history.fqdn}:{history.pod_port}"
+        assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI}
+
     pod_template = _by_name(catalog_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
         container
@@ -379,11 +402,24 @@ def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(catalog_ma
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
+    assert pod_env["AGENTPLANE_HISTORY_URL"] == history_url
     assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
     assert all(
         source.get("serviceAccountToken", {}).get("audience") != session_dispatcher.TOKEN_AUDIENCE
         for volume in pod_template["spec"]["pod"]["spec"]["volumes"]
         for source in volume.get("projected", {}).get("sources", [])
+    )
+    assert all(
+        source.get("serviceAccountToken", {}).get("audience") != history_service.TOKEN_AUDIENCE
+        for volume in pod_template["spec"]["pod"]["spec"]["volumes"]
+        for source in volume.get("projected", {}).get("sources", [])
+    )
+
+    vm_runtime = json.loads(
+        _by_name(catalog_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+    )
+    assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
+        f"http://{environment_sandbox.launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
     )
 
 
