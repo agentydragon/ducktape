@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest_bazel
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
@@ -22,7 +22,12 @@ from finance.plaid.spend.portfolio_queries import select_account_balances, selec
 
 
 def _capture(
-    connection: Connection, *, item_id: str, captured_at: datetime, accounts: dict[str, tuple[Decimal, str]]
+    connection: Connection,
+    *,
+    item_id: str,
+    captured_at: datetime,
+    accounts: dict[str, tuple[Decimal, str]],
+    api_event_created_at: datetime | None = None,
 ) -> int:
     api_event_id = connection.execute(
         insert(PlaidApiEventRow)
@@ -32,7 +37,7 @@ def _capture(
             status="ok",
             request_json={},
             response_json={},
-            created_at=captured_at,
+            created_at=api_event_created_at if api_event_created_at is not None else captured_at,
         )
         .returning(PlaidApiEventRow.id)
     ).scalar_one()
@@ -219,8 +224,11 @@ def test_selectors_use_latest_item_capture_coverage_and_balances(postgres_engine
         assert connection.execute(select_holding_batches([])).all() == []
 
 
-def test_holding_balance_selector_flags_unlinked_rows(postgres_engine: Engine) -> None:
+def test_holding_balance_selector_flags_late_legacy_row_with_older_receipt(postgres_engine: Engine) -> None:
     now = datetime(2026, 1, 2, tzinfo=UTC)
+    legacy_started = now + timedelta(seconds=1)
+    legacy_receipt_at = legacy_started + timedelta(seconds=1)
+    new_capture_receipt_at = legacy_receipt_at + timedelta(seconds=1)
     with postgres_engine.begin() as connection:
         connection.execute(
             insert(LinkRow),
@@ -259,9 +267,33 @@ def test_holding_balance_selector_flags_unlinked_rows(postgres_engine: Engine) -
                 "updated_at": now,
             },
         )
+        legacy_receipt_id = connection.execute(
+            insert(PlaidApiEventRow)
+            .values(
+                endpoint="investments/holdings/get",
+                item_id="fake-active",
+                status="ok",
+                request_json={},
+                response_json={
+                    "accounts": [{"account_id": "fake-selected"}],
+                    "securities": [{"security_id": "fake-held"}],
+                    "holdings": [{"account_id": "fake-selected", "security_id": "fake-held"}],
+                },
+                created_at=legacy_receipt_at,
+            )
+            .returning(PlaidApiEventRow.id)
+        ).scalar_one()
         capture_id = _capture(
-            connection, item_id="fake-active", captured_at=now, accounts={"fake-selected": (Decimal(25), "USD")}
+            connection,
+            item_id="fake-active",
+            captured_at=now,
+            accounts={"fake-selected": (Decimal(25), "USD")},
+            api_event_created_at=new_capture_receipt_at,
         )
+        latest_capture_receipt_id = connection.execute(
+            select(HoldingCaptureRow.api_event_id).where(HoldingCaptureRow.id == capture_id)
+        ).scalar_one()
+        assert legacy_receipt_id < latest_capture_receipt_id
         connection.execute(
             insert(HoldingSnapshotRow),
             {
@@ -269,7 +301,7 @@ def test_holding_balance_selector_flags_unlinked_rows(postgres_engine: Engine) -
                 "item_id": "fake-active",
                 "security_id": "fake-held",
                 "capture_id": None,
-                "captured_at": now,
+                "captured_at": legacy_started,
                 "institution_value": 25,
                 "iso_currency_code": "USD",
                 "raw_json": {},

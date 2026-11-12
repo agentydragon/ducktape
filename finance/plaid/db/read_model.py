@@ -53,6 +53,7 @@ def latest_holding_captures(account_ids: Sequence[str]) -> CTE:
         .where(ranked.c.capture_rank == 1)
         .cte("latest_holding_capture_rows")
     )
+    # After stale-run recovery, an older process may apply with a newer captured_at.
     unlinked_rows = (
         select(HoldingSnapshotRow.id)
         .where(

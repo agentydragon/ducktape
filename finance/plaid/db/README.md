@@ -74,13 +74,14 @@ covered capture with no holdings means the account currently has no positions.
 `read_current_holdings` returns only rows from the newest Item capture, so positions
 that disappear from a complete observation disappear from the projection too. An
 account with no capture or missing coverage is an error, distinct from an explicitly
-covered empty capture. During rollout, readers reject unlinked snapshot rows
-(`capture_id IS NULL`) at or after the newest complete capture and a later successful
-`/investments/holdings/get` API receipt that has no linked capture. The receipt check
-also catches older writers that return a successful empty response without appending
-any rows. A later complete capture supersedes older unlinked rows and receipts; the
-orphan-row timestamp only bounds the rollout guard and never matches a position to a
-capture.
+covered empty capture. While rollback to a pre-capture application remains supported,
+readers reject unlinked snapshot rows (`capture_id IS NULL`) at or after the newest
+complete capture and a later successful `/investments/holdings/get` API receipt that
+has no linked capture. A later receipt catches an application failure after a
+successful response or a successful empty response. The row timestamp also catches a
+late unlinked write when its receipt ID precedes the latest capture. A later complete
+capture supersedes older unlinked rows and receipts. The timestamp only bounds orphan
+rows; it never identifies a batch.
 
 Migration `0010` matches each retained historical batch to exactly one successful
 API receipt using its Item, sync window and complete retained holding JSON. It also
@@ -90,10 +91,11 @@ Missing or ambiguous matches abort the migration transaction. Empty legacy
 responses are recoverable only when the overall sync succeeded, since the old
 writer left no row proving that an empty response was applied.
 
-The migration keeps old columns for existing processes and accepts legacy writers'
-null capture IDs during rollout. Schema downgrade is rejected: converting back to
-floats and dropping capture membership would lose exact values and historical
-coverage. A rollback requires a corrective forward migration. Startup migrations
+The migration keeps old columns for existing processes and leaves `capture_id`
+nullable so a pre-capture application rollback can still write against the expanded
+schema. Schema downgrade is rejected: converting back to floats and dropping capture
+membership would lose exact values and historical coverage. Reverting the schema
+requires a corrective forward migration. Startup migrations
 serialize with a transaction advisory lock and roll back on validation failure.
 
 ## Sandbox smoke test
