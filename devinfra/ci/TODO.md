@@ -28,16 +28,6 @@ requires an exact label's own `testSummary`, so it does not infer suite expansio
 from a partial affected-target stream or wildcard match. Extending it requires
 reliable test-suite expansion and exact coverage evidence from BEP.
 
-## Resolve the actual test invocation for publication evidence
-
-If Bazel retries a test command in a new BuildBuddy invocation and succeeds,
-`bazel-ci.outputs.test_invocation_id` can still name the failed first attempt.
-Release and image-push workflows consume that output as publication test
-evidence. Finalizing the live GitHub status from the successful CI outcome does
-not update that workflow output. Capture and propagate the invocation that
-actually completed the test command; see
-[live test status retry evidence](../buildbuddy/debug/live_test_status_retries.md).
-
 ## Scope the undeclared-outputs download narrower than "every test"
 
 `test:rbe --remote_download_regex=...` in <devinfra/bazel/rbe.bazelrc> forces

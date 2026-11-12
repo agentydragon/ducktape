@@ -28,14 +28,30 @@ test-gate authority.
 
 The reuse boundary is deliberately small. Only literal `//package:test` labels
 with exactly one `PASSED` summary, a configuration id, and one attempt are
-eligible. The CI stream must be the current push's deterministic test
-invocation, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
+eligible. The CI command must request the current push's deterministic test
+invocation ID, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
 successfully, and match the publication job's `--config=rbe`, `--config=ci`
 and RBE image. A cached one-attempt pass is accepted because Bazel keys test
 results by source and configuration. Missing or unreadable evidence, custom
-release flags, retries, multiple configurations, failed summaries, suites,
+release flags, per-test retries, multiple configurations, failed summaries, suites,
 external labels, wildcards, PR runs and dispatch runs preserve the publication
 test step.
+
+The workflow's test ID names the initial invocation. After `REMOTE_CACHE_EVICTED`,
+the loader follows its `PARENT_INVOCATION_ID` to the runner's ordered
+`ChildInvocationsConfigured` events. A cache retry has a new `Started.uuid` but
+retains the original requested `--invocation_id`. Every linked attempt must keep
+the same parent, command, source, requested targets and explicit options; only
+cache-evicted attempts may precede the final result. The final attempt supplies
+both reusable passes and recorded failures. The initial attempt's failures do
+not suppress publication after a successful retry.
+
+An unfinished runner, unreadable child, contradictory lineage or missing final
+result preserves the publication test step without suppressing it from an
+earlier attempt's failures. The `bbapi invocation export` contract carries the
+attempt and parent IDs, ordered children and terminal exit-code name. Until a
+CLI with those fields is pinned, successful initial invocations remain reusable,
+while failed invocations with no exit-code evidence keep their test gates enabled.
 
 ## Identity
 

@@ -119,6 +119,90 @@ func TestParseInvocationExportPreservesUnambiguousProvenance(t *testing.T) {
 	}
 }
 
+func TestParseInvocationExportCapturesIdentityAndChildOrder(t *testing.T) {
+	stream := `[
+ {"started":{"uuid":"invocation-1","command":"test"}},
+ {"optionsParsed":{"explicitCmdLine":["test","--invocation_id=deterministic-id"]}},
+ {"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":"parent-1","OTHER":"value"}}},
+ {"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":"parent-1"}}},
+ {"id":{"childInvocationsConfigured":{}},"childInvocationsConfigured":{"invocation":[{"invocationId":"child-a"},{"invocationId":"child-b"}]}},
+ {"id":{"childInvocationsConfigured":{}},"childInvocationsConfigured":{"invocation":[{"invocationId":"child-c"}]}},
+ {"finished":{"exitCode":{"name":"TESTS_FAILED"}}}
+]`
+	got, err := parseInvocationExport([]byte(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.InvocationId == nil || *got.InvocationId != "invocation-1" {
+		t.Errorf("invocation ID = %v, want Started.uuid invocation-1", got.InvocationId)
+	}
+	if got.ParentInvocationId == nil || *got.ParentInvocationId != "parent-1" {
+		t.Errorf("parent invocation ID = %v, want parent-1", got.ParentInvocationId)
+	}
+	if strings.Join(got.GetChildInvocationIds(), ",") != "child-a,child-b,child-c" {
+		t.Errorf("child invocation IDs = %v, want stream order child-a, child-b, child-c", got.GetChildInvocationIds())
+	}
+	if got.ExitCodeName == nil || *got.ExitCodeName != "TESTS_FAILED" {
+		t.Errorf("exit code name = %v, want TESTS_FAILED", got.ExitCodeName)
+	}
+}
+
+func TestParseInvocationExportOmitsMissingOrAmbiguousIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream string
+	}{
+		{name: "missing", stream: `[]`},
+		{name: "command line ID without Started UUID", stream: `[{"optionsParsed":{"explicitCmdLine":["test","--invocation_id=deterministic-id"]}}]`},
+		{name: "multiple started events", stream: `[{"started":{"uuid":"one"}},{"started":{"uuid":"two"}}]`},
+		{name: "empty started UUID", stream: `[{"started":{"uuid":""}}]`},
+		{name: "conflicting parent IDs", stream: `[{"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":"one"}}},{"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":"two"}}}]`},
+		{name: "empty and nonempty parent IDs", stream: `[{"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":""}}},{"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":"parent"}}}]`},
+		{name: "only empty parent ID", stream: `[{"buildMetadata":{"metadata":{"PARENT_INVOCATION_ID":""}}}]`},
+		{name: "multiple exit code names", stream: `[{"finished":{"exitCode":{"name":"SUCCESS"}}},{"finished":{"exitCode":{"name":"BUILD_FAILURE"}}}]`},
+		{name: "empty and nonempty finished events", stream: `[{"finished":{}},{"finished":{"exitCode":{"name":"SUCCESS"}}}]`},
+		{name: "empty exit code name", stream: `[{"finished":{"exitCode":{"name":""}}}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseInvocationExport([]byte(tt.stream))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.InvocationId != nil || got.ParentInvocationId != nil || got.ExitCodeName != nil || len(got.ChildInvocationIds) != 0 {
+				t.Errorf("missing or ambiguous identity was exported: %+v", got)
+			}
+		})
+	}
+}
+
+func TestParseInvocationExportRejectsInvalidChildInvocationIDs(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream string
+	}{
+		{
+			name: "empty ID",
+			stream: `[{"id":{"childInvocationsConfigured":{}},` +
+				`"childInvocationsConfigured":{"invocation":[{"invocationId":""}]}}]`,
+		},
+		{
+			name: "duplicate ID",
+			stream: `[{"id":{"childInvocationsConfigured":{}},` +
+				`"childInvocationsConfigured":{"invocation":[{"invocationId":"child"}]}},` +
+				`{"id":{"childInvocationsConfigured":{}},` +
+				`"childInvocationsConfigured":{"invocation":[{"invocationId":"child"}]}}]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := parseInvocationExport([]byte(tt.stream)); err == nil {
+				t.Fatal("expected invalid child invocation IDs to be rejected")
+			}
+		})
+	}
+}
+
 func TestParseInvocationExportRejectsAmbiguousProvenance(t *testing.T) {
 	stream := `[
  {"started":{"command":"test"}},

@@ -1,7 +1,15 @@
 import dataclasses
+import json
+import os
+import threading
+from collections.abc import Callable
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
@@ -40,6 +48,7 @@ def push_sweep(summaries: list[TestSummary], *, finished: bool = True) -> Invoca
             "//...",
         ),
         commit_sha=SOURCE,
+        exit_code_name="SUCCESS" if all(s.status == "PASSED" for s in summaries) else "TESTS_FAILED",
     )
 
 
@@ -193,6 +202,221 @@ def test_unreadable_test_invocation_keeps_test_gates_enabled(monkeypatch: pytest
     assert evidence.outputs is not None
     assert not evidence.tests.is_covered("//a:test")[0]
     assert not evidence.tests.already_failed("//a:test")[0]
+
+
+def retry_run() -> dict[str, Invocation]:
+    initial = dataclasses.replace(
+        push_sweep([summary("//a:test", "FAILED")]),
+        invocation_id=TEST_INVOCATION_ID,
+        parent_invocation_id="runner",
+        exit_code_name="REMOTE_CACHE_EVICTED",
+    )
+    retry = dataclasses.replace(
+        push_sweep([summary("//a:test", "PASSED")]),
+        invocation_id="retry",
+        parent_invocation_id="runner",
+        exit_code_name="SUCCESS",
+    )
+    return {
+        TEST_INVOCATION_ID: initial,
+        "retry": retry,
+        "runner": Invocation(
+            outputs=[],
+            test_status={},
+            invocation_id="runner",
+            finished=True,
+            child_invocation_ids=("query", TEST_INVOCATION_ID, "retry", "build"),
+        ),
+        "build": Invocation(outputs=[], test_status={}, command="build", invocation_id="build"),
+    }
+
+
+def load_retry_run(monkeypatch: pytest.MonkeyPatch, invocations: dict[str, Invocation]) -> TestEvidence:
+    monkeypatch.setenv("GITHUB_SHA", SOURCE)
+    monkeypatch.setenv("GITHUB_RUN_ID", RUN_ID)
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", ATTEMPT)
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+
+    def read(identifier: str) -> Invocation:
+        if identifier not in invocations:
+            raise BuildBuddyError(f"unavailable: {identifier}")
+        return invocations[identifier]
+
+    monkeypatch.setattr(publication_evidence, "read", read)
+    return publication_evidence.load(
+        ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
+    ).tests
+
+
+def test_cache_retry_reuses_final_pass_instead_of_suppressing_publication(monkeypatch: pytest.MonkeyPatch) -> None:
+    evidence = load_retry_run(monkeypatch, retry_run())
+    assert evidence.is_covered("//a:test")[0]
+    assert not evidence.already_failed("//a:test")[0]
+
+
+def test_multiple_cache_retries_use_the_last_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    invocations = retry_run()
+    invocations["cache-retry"] = dataclasses.replace(invocations[TEST_INVOCATION_ID], invocation_id="cache-retry")
+    invocations["runner"] = dataclasses.replace(
+        invocations["runner"], child_invocation_ids=(TEST_INVOCATION_ID, "cache-retry", "retry", "build")
+    )
+    assert load_retry_run(monkeypatch, invocations).is_covered("//a:test")[0]
+
+
+def test_failed_final_retry_still_blocks_its_failed_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    invocations = retry_run()
+    invocations["retry"] = dataclasses.replace(
+        invocations["retry"],
+        successful=False,
+        test_summaries=[summary("//a:test", "FAILED")],
+        exit_code_name="TESTS_FAILED",
+    )
+    evidence = load_retry_run(monkeypatch, invocations)
+    assert not evidence.is_covered("//a:test")[0]
+    assert evidence.already_failed("//a:test")[0]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(lambda i: dataclasses.replace(i, parent_invocation_id="another-runner"), id="parent"),
+        pytest.param(lambda i: dataclasses.replace(i, invocation_id="another-invocation"), id="identity"),
+        pytest.param(lambda i: dataclasses.replace(i, commit_sha="another-source"), id="source"),
+        pytest.param(lambda i: dataclasses.replace(i, requested_patterns=("//a:...",)), id="scope"),
+        pytest.param(
+            lambda i: dataclasses.replace(
+                i, explicit_cmd_line=("test", f"--invocation_id={TEST_INVOCATION_ID}", "--config=local", "//...")
+            ),
+            id="options",
+        ),
+        pytest.param(lambda i: dataclasses.replace(i, finished=False), id="unfinished"),
+        pytest.param(lambda i: dataclasses.replace(i, exit_code_name=None), id="missing-exit-code"),
+    ],
+)
+def test_unproven_retry_keeps_the_test_gate_without_old_failure_suppression(
+    monkeypatch: pytest.MonkeyPatch, change: Callable[[Invocation], Invocation]
+) -> None:
+    invocations = retry_run()
+    invocations["retry"] = change(invocations["retry"])
+    evidence = load_retry_run(monkeypatch, invocations)
+    assert not evidence.is_covered("//a:test")[0]
+    assert not evidence.already_failed("//a:test")[0]
+
+
+@pytest.mark.parametrize(
+    "children",
+    [
+        ("retry", "build"),
+        (TEST_INVOCATION_ID, TEST_INVOCATION_ID, "retry", "build"),
+        (TEST_INVOCATION_ID, "unreadable", "retry", "build"),
+        (TEST_INVOCATION_ID, "build"),
+    ],
+)
+def test_incomplete_runner_lineage_does_not_reuse_a_neighboring_pass(
+    monkeypatch: pytest.MonkeyPatch, children: tuple[str, ...]
+) -> None:
+    invocations = retry_run()
+    invocations["runner"] = dataclasses.replace(invocations["runner"], child_invocation_ids=children)
+    evidence = load_retry_run(monkeypatch, invocations)
+    assert not evidence.is_covered("//a:test")[0]
+    assert not evidence.already_failed("//a:test")[0]
+
+
+def test_unfinished_parent_does_not_hide_a_later_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    invocations = retry_run()
+    invocations["runner"] = dataclasses.replace(invocations["runner"], finished=False)
+    assert not load_retry_run(monkeypatch, invocations).is_covered("//a:test")[0]
+
+
+def test_older_export_without_exit_code_does_not_suppress_publication(monkeypatch: pytest.MonkeyPatch) -> None:
+    invocations = retry_run()
+    invocations[TEST_INVOCATION_ID] = dataclasses.replace(invocations[TEST_INVOCATION_ID], exit_code_name=None)
+    evidence = load_retry_run(monkeypatch, invocations)
+    assert not evidence.is_covered("//a:test")[0]
+    assert not evidence.already_failed("//a:test")[0]
+
+
+def test_a_non_cache_result_cannot_be_followed_by_another_reusable_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    invocations = retry_run()
+    invocations["later"] = dataclasses.replace(invocations["retry"], invocation_id="later")
+    invocations["runner"] = dataclasses.replace(
+        invocations["runner"], child_invocation_ids=(TEST_INVOCATION_ID, "retry", "later", "build")
+    )
+    assert not load_retry_run(monkeypatch, invocations).is_covered("//a:test")[0]
+
+
+@pytest.mark.parametrize("retry_passed", [True, False])
+def test_publication_reads_retry_evidence_through_the_real_go_exporter(
+    monkeypatch: pytest.MonkeyPatch, retry_passed: bool
+) -> None:
+    invocations = retry_run()
+    if not retry_passed:
+        invocations["retry"] = dataclasses.replace(
+            invocations["retry"],
+            successful=False,
+            test_summaries=[summary("//a:test", "FAILED")],
+            exit_code_name="TESTS_FAILED",
+        )
+    streams: dict[str, bytes] = {}
+    for identifier, invocation in invocations.items():
+        events: list[dict[str, object]] = [{"started": {"uuid": identifier, "command": invocation.command}}]
+        if invocation.parent_invocation_id:
+            events.append({"buildMetadata": {"metadata": {"PARENT_INVOCATION_ID": invocation.parent_invocation_id}}})
+        if invocation.explicit_cmd_line is not None:
+            events.append({"optionsParsed": {"explicitCmdLine": list(invocation.explicit_cmd_line)}})
+        if invocation.requested_patterns:
+            events.append({"id": {"pattern": {"pattern": list(invocation.requested_patterns)}}})
+        if invocation.commit_sha:
+            events.append({"workspaceStatus": {"item": [{"key": "COMMIT_SHA", "value": invocation.commit_sha}]}})
+        events.extend(
+            {"childInvocationsConfigured": {"invocation": [{"invocationId": child}]}}
+            for child in invocation.child_invocation_ids
+        )
+        events.extend(
+            {
+                "id": {"testSummary": {"label": result.label, "configuration": {"id": result.configuration_id}}},
+                "testSummary": {"overallStatus": result.status, "attemptCount": result.attempt_count},
+            }
+            for result in invocation.test_summaries
+        )
+        if invocation.finished:
+            events.append({"finished": {"exitCode": {"name": invocation.exit_code_name or "OK"}}})
+        streams[identifier] = json.dumps(events).encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            query = parse_qs(urlsplit(self.path).query)
+            assert query["artifact"] == ["raw_json"]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(streams[query["invocation_id"][0]])
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    runfiles = Runfiles.Create()
+    assert runfiles is not None
+    binary = runfiles.Rlocation(os.environ["BBAPI_RLOCATION"])
+    assert binary is not None
+    monkeypatch.setenv("PATH", f"{Path(binary).parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("BUILDBUDDY_API_KEY", "fixture-key")
+    monkeypatch.setenv("GITHUB_SHA", SOURCE)
+    monkeypatch.setenv("GITHUB_RUN_ID", RUN_ID)
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", ATTEMPT)
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            monkeypatch.setenv("BUILDBUDDY_URL", f"http://127.0.0.1:{server.server_port}")
+            evidence = publication_evidence.load(
+                ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
+            ).tests
+        finally:
+            server.shutdown()
+            thread.join()
+    assert evidence.is_covered("//a:test")[0] is retry_passed
+    assert evidence.already_failed("//a:test")[0] is not retry_passed
 
 
 if __name__ == "__main__":
