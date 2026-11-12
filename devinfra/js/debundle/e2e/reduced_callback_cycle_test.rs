@@ -1,7 +1,10 @@
 use debundle_e2e_support::*;
 
+// This is a pending conditional reproduction. It assumes the standard String
+// methods are intact while these initializers execute. The current spec does
+// not encode that host condition; without it the split need not be safe.
 #[test]
-fn string_normalization_and_array_map_can_split() {
+fn string_normalization_and_array_map_can_split_with_intact_string_methods() {
     let source = "const input = ['a'];\n\
                   const marker = 'X'.toLowerCase();\n\
                   const upper = input.map(x => x.toUpperCase());\n\
@@ -32,5 +35,8 @@ fn string_normalization_and_array_map_can_split() {
         outcome.emitted.stderr
     );
     assert_eq!(outcome.emitted.stdout, outcome.source.stdout);
-    assert!(outcome.accepted, "the valid module split was rejected");
+    assert!(
+        outcome.accepted,
+        "the split was rejected under intact String methods"
+    );
 }
