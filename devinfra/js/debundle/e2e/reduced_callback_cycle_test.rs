@@ -15,6 +15,12 @@ fn string_normalization_and_array_map_can_split() {
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline())
+        .with_program_premises(
+            serde_json::from_value(serde_json::json!({
+                "intrinsics_never_written": {"families": ["Array"]}
+            }))
+            .unwrap(),
+        )
         .with_dataflow_aware_s_chain()
         .with_trusted_dataflow_summaries(),
     );

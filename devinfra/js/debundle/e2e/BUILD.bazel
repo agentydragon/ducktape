@@ -1558,4 +1558,5 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "reduced_callback_cycle_test",
+    deps = ["@crates//:serde_json"],
 )
