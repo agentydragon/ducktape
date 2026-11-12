@@ -6,8 +6,10 @@ no native harness and no dependency on Agentplane's Session, History or notifica
 
 ## State and presentation
 
-- `thread.sqlite` retains append-only messages with stable UUIDs, ordering and CLI-assigned authors.
-  Only explicit `post_message` calls publish assistant messages in authored mode. Model text,
+- `thread.sqlite` retains messages with stable UUIDs, original ordering and CLI-assigned authors.
+  Bodies are immutable revisions with a monotonically increasing change sequence and UTC recording
+  time. The thread displays the latest revision; past revisions remain readable.
+  Explicit `post_message` and `edit_message` calls publish assistant messages in authored mode. Model text,
   reasoning and tool results remain diagnostic; they are never promoted into conversation text.
 - Working context is in memory. Resetting it preserves the thread and trace. Authored mode starts
   again with instructions and notices, then reads the thread through tools. Chat mode can rebuild
@@ -18,16 +20,41 @@ no native harness and no dependency on Agentplane's Session, History or notifica
 
 ## Input and tools
 
-Human input commits before a run starts. Authored-mode notices identify new human messages without
-copying their bodies into context. Input arriving while a sample or tool is active is announced at
+Human input commits before a run starts. Authored-mode notices identify human posts and edits by
+message ID and revision without copying their bodies into context. Changes to old messages wake an
+idle agent too. Input arriving while a sample or tool is active is announced at
 the next sampling boundary, including before stopping after a final response. A notice does not
 claim that a message was read or addressed. One loop owns context at a time; reset requires idle.
 Terminal input setup preserves stdout/stderr flags, including when all three streams share a TTY,
 so large diagnostic events remain printable.
 
-`read_thread` returns ordered, bounded pages and an exclusive continuation cursor. `post_message`
+`read_thread` returns ordered, bounded pages of current revisions and an exclusive message-position
+cursor. Edits do not move messages or change that cursor; notices identify which old messages need
+rereading. `read_message` retrieves the current revision by ID, or a specific past revision.
+`post_message`
 commits an agent message before displaying it and returns its ID; publication does not wake the
-agent. The model cannot choose a message's author. Chat mode exposes neither conversation tool.
+agent. `edit_message` replaces an agent message's visible body while keeping its identity and
+position; it returns the committed revision before displaying it. Both participants may edit only
+their own messages and must supply the revision they read. Stale edits fail without changing state;
+concurrent writers cannot silently overwrite. Empty or oversized replacements fail as posts do.
+The model cannot choose a message's author. Chat mode exposes no conversation tools.
+
+Edits are new information. Earlier tool results, model context and trace entries remain unchanged;
+editing never undoes or replays commands. An agent edit counts as a publication. An edit-only notice
+may be acknowledged by yielding without publishing; it does not erase an unanswered new post.
+
+Interactive terminals use Prompt Toolkit for asynchronous prompts, input history, completion and
+background output. `/edit <id>` opens the human message's current body as a multiline draft. Enter
+inserts a newline, Esc followed by Enter saves, and Ctrl+C cancels without changing state. The version
+check uses the revision captured when the draft opened. Normal prompts use Enter to submit and
+Ctrl+C to cancel a draft. Piped input remains line-oriented and supports explicit-version edits.
+Reading terminal input does not make shared stdout/stderr nonblocking, including during `/trace`.
+
+Opening a legacy state directory migrates it transactionally, retaining message IDs, authors,
+positions and exact bodies as revision 1. Legacy recording timestamps denote migration time.
+The CLI rejects a database from a newer schema version. One CLI owns a state directory; stop the
+old process before upgrading. Older binaries cannot open the upgraded schema; use a pre-upgrade
+copy if rolling back. Never replace the upgraded database with a copy that discards newer messages.
 
 `read_file` reads within the resolved workspace, reports truncation, and refuses symlink escapes.
 `run_command` starts a shell in that workspace, bounds time/output, and reaps its process group
@@ -40,9 +67,9 @@ Only completed provider responses and completed function calls can execute tools
 and call/result items are retained in working context across requests. With default implicit turn
 control, a response without calls ends a run only after newly arrived human input has been considered
 for announcement. A missing
-published reply after the latest announced input is reported as `missing_publication`; the CLI
+published reply after the latest announced new post is reported as `missing_publication`; the CLI
 does not repair it with reminders or publish the model's private text.
-`completed` reports loop completion with a publication, not whether that publication answered the
+`completed` reports loop completion with any required publication, not whether that publication answered the
 question well. The experiment's conversation review assesses that semantic condition.
 
 By default, `turn_control=implicit` uses automatic tool choice. The authored-mode

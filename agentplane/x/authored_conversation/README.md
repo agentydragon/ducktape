@@ -33,16 +33,32 @@ bb run //agentplane/x/authored_conversation:main_bin -- --config /absolute/path/
 Type a message and press Enter. You can submit another message while the model works. The next
 model request receives a notice naming it. Published agent messages appear in the terminal as
 complete messages, along with run status. Ordinary model text is visible through `/trace`.
+The interactive prompt supports cursor editing, Up/Down input history and Tab completion for
+commands and message IDs. Background output appears above your draft. Ctrl+C cancels the draft;
+Ctrl+D on an empty prompt drains active work and exits.
 
-| Command          | Effect                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| `/thread`        | Show all retained human and agent messages.                                          |
-| `/models`        | List routes accessible with the configured key, for selecting `model` in the config. |
-| `/trace`         | Show raw diagnostic events from `trace.jsonl`.                                       |
-| `/reset-context` | While idle, clear working context while retaining the thread and trace.              |
-| `/continue`      | Start another bounded run, including after reopening retained state.                 |
-| `/wait`          | Finish the active run before reading another input line; useful in piped scenarios.  |
-| `/quit`          | Exit and cancel active work. EOF instead drains active work before exiting.          |
+| Command           | Effect                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `/thread`         | Show all retained human and agent messages.                                                 |
+| `/edit <id>`      | Edit your own message in a prefilled multiline draft; Esc then Enter saves, Ctrl+C cancels. |
+| `/revisions <id>` | Show every retained version of a message, including its recording time.                     |
+| `/help`           | Show commands and editing keys.                                                             |
+| `/models`         | List routes accessible with the configured key, for selecting `model` in the config.        |
+| `/trace`          | Show raw diagnostic events from `trace.jsonl`.                                              |
+| `/reset-context`  | While idle, clear working context while retaining the thread and trace.                     |
+| `/continue`       | Start another bounded run, including after reopening retained state.                        |
+| `/wait`           | Finish the active run before reading another input line; useful in piped scenarios.         |
+| `/quit`           | Exit and cancel active work. EOF instead drains active work before exiting.                 |
+
+Edits keep message IDs and original positions. The thread shows the latest body with its revision
+number and an edited marker. The agent can read particular revisions through `read_message` and
+revise its own messages through `edit_message`. Each edit checks the expected revision and refuses
+a stale overwrite. Human edits notify the model at its next sampling boundary. Its previous context
+and executed commands remain intact; the next read reveals the current text.
+
+For piped input, use `/edit <id> <expected-revision> <replacement text>` on one line. `/wait` remains
+a barrier before reading the next input line. Existing databases migrate automatically without
+discarding messages; stop the old CLI first. An older binary cannot read the upgraded database.
 
 For the ordinary-chat comparison, use `"mode": "chat"` and separate state/workspace directories.
 It exposes the same work tools and renders ordinary assistant replies directly. Keep model and
@@ -71,3 +87,5 @@ natural participation by a live model.
 
 [Live prompting comparison](../../debug/2026_11_12_authored_conversation_prompting.md) records the
 original publication failures and the clearer interface explanation tested on Qwen and Luna.
+[Live editing probe](../../debug/2026_11_12_authored_conversation_editing.md) records both models
+revising an existing answer after a human edit, including Luna's unnecessary extra acknowledgement.

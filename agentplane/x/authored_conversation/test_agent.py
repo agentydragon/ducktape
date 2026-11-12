@@ -371,5 +371,113 @@ async def test_chat_control_uses_direct_replies_and_rebuilds_visible_context(mak
     ]
 
 
+@pytest.mark.parametrize("turn_control", ["implicit", "yield_tool"])
+async def test_edit_during_final_sample_is_announced_without_rewriting_context_or_replaying_work(
+    make_agent, settings: Settings, store: Store, published, turn_control
+):
+    settings.turn_control = turn_control
+    sampling = asyncio.Event()
+    release = asyncio.Event()
+    requests = []
+
+    def end_turn(call_id):
+        return [call("yield_turn", {}, call_id=call_id)] if turn_control == "yield_tool" else []
+
+    async def handler(request):
+        requests.append(json.loads(request.content))
+        match len(requests):
+            case 1:
+                return response([call("read_thread", {}, call_id="read")])
+            case 2:
+                return response([call("run_command", {"command": "printf x >> counter"}, call_id="work")])
+            case 3:
+                return response([call("post_message", {"body": "Original answer"}, call_id="post")])
+            case 4:
+                sampling.set()
+                await release.wait()
+                return response(end_turn("first-yield"))
+            case 5:
+                return response([call("read_message", {"message_id": str(human.id)}, call_id="reread")])
+            case 6:
+                answer = store.messages(author=Author.AGENT)[0]
+                return response(
+                    [
+                        call(
+                            "edit_message",
+                            {"message_id": str(answer.id), "expected_revision": 1, "body": "Corrected answer"},
+                            call_id="edit",
+                        )
+                    ]
+                )
+            case _:
+                return response(end_turn("final-yield"))
+
+    agent = await make_agent(handler)
+    human = agent.submit("Original instruction")
+    running = asyncio.create_task(agent.run())
+    await sampling.wait()
+    edited = agent.edit(human.id, expected_revision=1, body="Corrected instruction")
+    assert agent.has_pending_input()
+    release.set()
+    assert (await running).status is Status.COMPLETED
+    assert len(requests) == 7
+    notice = requests[4]["input"][-1]["content"]
+    assert str(human.id) in notice
+    assert "revision 2 (edited)" in notice
+    assert edited.body not in json.dumps(requests[4]["input"])
+    assert human.body in json.dumps(requests[4]["input"])
+    assert edited.body in requests[5]["input"][-1]["output"]
+    assert [message.body for message in published] == ["Original answer", "Corrected answer"]
+    assert len(store.messages()) == 2
+    assert (settings.workspace / "counter").read_text() == "x"
+    assert not agent.has_pending_input()
+    agent.reset_context()
+    assert agent.context == []
+    reread = await agent.tools.execute("read_thread", "{}")
+    assert edited.body in reread.output
+    assert human.body not in reread.output
+    events = read_trace(settings.state_directory / "trace.jsonl")
+    assert any(event.kind == "human_message" and human.body in event.model_dump_json() for event in events)
+    assert any(event.kind == "human_edit" and edited.body in event.model_dump_json() for event in events)
+
+
+async def test_agent_can_answer_new_input_by_editing_an_older_message(make_agent, settings: Settings, store: Store):
+    settings.turn_control = "yield_tool"
+    store.append(Author.HUMAN, "First question")
+    answer = store.append(Author.AGENT, "Original answer")
+    agent = await make_agent(
+        lambda request: response(
+            [
+                call(
+                    "edit_message",
+                    {"message_id": str(answer.id), "expected_revision": 1, "body": "Updated answer"},
+                    call_id="edit",
+                ),
+                call("yield_turn", {}, call_id="yield"),
+            ]
+        )
+    )
+    agent.submit("Please update that answer")
+    assert (await agent.run()).status is Status.COMPLETED
+    assert store.get(answer.id).position == answer.position
+    assert len(store.messages()) == 3
+
+
+@pytest.mark.parametrize("answered", [False, True])
+async def test_edit_only_may_yield_but_does_not_clear_an_unanswered_post(
+    make_agent, settings: Settings, store: Store, answered
+):
+    settings.turn_control = "yield_tool"
+    ids = iter(["yield-original", "yield-edit"])
+    agent = await make_agent(lambda request: response([call("yield_turn", {}, call_id=next(ids))]))
+    human = agent.submit("Question")
+    if answered:
+        store.append(Author.AGENT, "Answer")
+    expected = Status.COMPLETED if answered else Status.MISSING_PUBLICATION
+    assert (await agent.run()).status is expected
+    agent.edit(human.id, expected_revision=1, body="Minor correction")
+    assert (await agent.run()).status is expected
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

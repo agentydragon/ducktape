@@ -3,7 +3,7 @@ import json
 import pytest_bazel
 
 from agentplane.x.authored_conversation.settings import Settings
-from agentplane.x.authored_conversation.store import Author, Store
+from agentplane.x.authored_conversation.store import Author, Message, Store
 from agentplane.x.authored_conversation.tools import Tools, run_command
 
 
@@ -31,6 +31,29 @@ async def test_file_reads_are_bounded_and_reject_symlink_escape(settings: Settin
         "truncated": True,
     }
     assert "error" in json.loads((await tools.execute("read_file", '{"path":"link"}')).output)
+
+
+async def test_edit_tool_owns_agent_messages_and_exposes_current_and_old_revisions(
+    settings: Settings, store: Store, published
+):
+    human = store.append(Author.HUMAN, "Request")
+    original = store.append(Author.AGENT, "Draft answer")
+    tools = Tools(settings, store, published.append)
+    arguments = {"message_id": str(human.id), "expected_revision": 1, "body": "Revised"}
+    denied = await tools.execute("edit_message", json.dumps(arguments))
+    assert "own messages" in denied.output
+    arguments["message_id"] = str(original.id)
+    result = await tools.execute("edit_message", json.dumps(arguments))
+    edited = Message.model_validate_json(result.output)
+    assert edited.body == "Revised"
+    assert published == [edited]
+    stale = await tools.execute("edit_message", json.dumps(arguments))
+    assert "revision conflict" in stale.output
+    assert len(store.revisions(original.id)) == 2
+    latest = await tools.execute("read_message", json.dumps({"message_id": str(original.id)}))
+    past = await tools.execute("read_message", json.dumps({"message_id": str(original.id), "revision": 1}))
+    assert Message.model_validate_json(latest.output) == edited
+    assert Message.model_validate_json(past.output) == original
 
 
 async def test_command_output_is_bounded_and_timed_out_processes_are_reaped(settings: Settings):

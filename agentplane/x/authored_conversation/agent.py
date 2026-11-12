@@ -31,7 +31,7 @@ AUTHORED_INSTRUCTIONS = COMMON_INSTRUCTIONS + (
     "your model responses, reasoning, work-tool calls or tool results. Your ordinary assistant "
     "output, including a final answer, is recorded only in a private diagnostic trace. Ending "
     "your turn does not send anything to the human.\n\n"
-    "A thread-change notice names new human message IDs; it does not contain their messages. "
+    "A thread-change notice names human message IDs and revisions; it does not contain their messages. "
     "Use read_thread to retrieve the conversation, following pagination when necessary. "
     "Use post_message to send anything the human should see: answers, clarification questions "
     "and useful progress. Its body becomes an assistant message in the shared thread, and the "
@@ -41,6 +41,13 @@ AUTHORED_INSTRUCTIONS = COMMON_INSTRUCTIONS + (
     "You may publish progress and continue working in the same turn. When you have a final "
     "answer, send it with post_message before ending your turn; no duplicate ordinary reply is "
     "needed afterward. Choose when to read, work, ask and publish according to the task. "
+    "Use read_message to retrieve a particular message or its past revisions. You can edit your own "
+    "messages with edit_message(message_id, expected_revision, body), after reading their current "
+    "revision. Edits keep the message's original position. A revision conflict means reread and "
+    "reconsider; never blindly overwrite. You cannot edit the human's messages. Human edits are new "
+    "information: reread the changed message, reconsider your work and explain any consequences. "
+    "Prior context and already executed commands remain historical facts; edits never undo them. "
+    "An edit alone does not require an acknowledgement or another message if nothing needs saying. "
     "After a context reset, reread the thread; do not replay old work just because it appears there."
 )
 CHAT_INSTRUCTIONS = COMMON_INSTRUCTIONS + "Communicate directly through your ordinary assistant replies."
@@ -79,6 +86,7 @@ class Agent:
         self.context: list[ResponseInputItemParam] = []
         self.completed_call_ids: set[str] = set()
         self.announced_through = 0
+        self.publication_required_after = 0
         self.run_id: UUID | None = None
         self.step = 0
         self.reset_context()
@@ -92,43 +100,75 @@ class Agent:
         self.trace.record("published_message", run_id=self.run_id, step=self.step, data=message.model_dump(mode="json"))
         self.display(message)
 
+    def edit(self, message_id: UUID, *, expected_revision: int, body: str) -> Message:
+        message = self.store.edit(message_id, author=Author.HUMAN, expected_revision=expected_revision, body=body)
+        self.trace.record("human_edit", data=message.model_dump(mode="json"))
+        return message
+
     def reset_context(self) -> None:
         if self.active:
             raise ValueError("wait for the active run before resetting context")
         self.context.clear()
         self.completed_call_ids.clear()
         self.announced_through = 0
+        self.publication_required_after = 0
         if self.settings.mode is Mode.CHAT:
             for message in self.store.messages():
                 if message.author is Author.HUMAN:
                     self.context.append({"role": "user", "content": message.body})
-                    self.announced_through = message.position
                 else:
                     self.context.append({"role": "assistant", "content": message.body})
+            changes = self.store.changes(author=Author.HUMAN)
+            if changes:
+                self.announced_through = changes[-1].change_sequence
         self.trace.record("context_reset", data={"mode": self.settings.mode.value})
 
     def has_pending_input(self) -> bool:
-        return bool(self.store.messages(after_position=self.announced_through, author=Author.HUMAN))
+        return bool(self.store.changes(after_sequence=self.announced_through, author=Author.HUMAN))
 
     def has_publication_after_input(self) -> bool:
-        publications = self.store.messages(author=Author.AGENT)
-        return bool(publications and publications[-1].position > self.announced_through)
+        return self.publication_required_after == 0 or bool(
+            self.store.changes(after_sequence=self.publication_required_after, author=Author.AGENT)
+        )
 
     def announce_input(self) -> bool:
-        messages = self.store.messages(after_position=self.announced_through, author=Author.HUMAN)
+        messages = self.store.changes(after_sequence=self.announced_through, author=Author.HUMAN)
         if not messages:
             return False
         if self.settings.mode is Mode.AUTHORED:
-            ids = ", ".join(str(message.id) for message in messages)
-            self.context.append({"role": "user", "content": f"Shared thread changed. New human message IDs: {ids}."})
+            changes = ", ".join(
+                f"{message.id} revision {message.revision} ({'posted' if message.revision == 1 else 'edited'})"
+                for message in messages
+            )
+            self.context.append({"role": "user", "content": f"Shared thread changed. Human messages: {changes}."})
         else:
-            self.context.extend({"role": "user", "content": message.body} for message in messages)
-        self.announced_through = messages[-1].position
+            self.context.extend(
+                {
+                    "role": "user",
+                    "content": message.body
+                    if message.revision == 1
+                    else f"Human message {message.id} edited to revision {message.revision}:\n{message.body}",
+                }
+                for message in messages
+            )
+        self.announced_through = messages[-1].change_sequence
+        for message in messages:
+            if message.revision == 1:
+                self.publication_required_after = message.change_sequence
         self.trace.record(
             "input_notice",
             run_id=self.run_id,
             step=self.step,
-            data={"message_ids": [str(message.id) for message in messages]},
+            data={
+                "changes": [
+                    {
+                        "message_id": str(message.id),
+                        "revision": message.revision,
+                        "change_sequence": message.change_sequence,
+                    }
+                    for message in messages
+                ]
+            },
         )
         return True
 

@@ -9,9 +9,13 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 
 import httpx2
+import pytest
 import pytest_bazel
+from prompt_toolkit import PromptSession
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 
-from agentplane.x.authored_conversation.main import interact
+from agentplane.x.authored_conversation.main import edit_input, interact, read_input
 from agentplane.x.authored_conversation.settings import Settings
 from agentplane.x.authored_conversation.store import Author, Store
 from agentplane.x.authored_conversation.trace import Trace
@@ -67,6 +71,49 @@ async def test_cli_wait_barrier_eof_and_separate_trace(make_agent, settings: Set
     assert "Private detail" not in output
     assert len(requests) == 2
     assert agent.context == []
+
+
+async def test_prompt_editor_prefill_multiline_save_and_cancel(make_agent, store: Store):
+    agent = await make_agent(lambda request: httpx2.Response(500))
+    original = agent.submit("Original draft")
+    with create_pipe_input() as pipe:
+        session: PromptSession[str] = PromptSession(input=pipe, output=DummyOutput())
+        pipe.send_text("\x01\x0bCorrected first line\nsecond line\x1b\r")
+        edited = await edit_input(agent, session, f"/edit {original.id}")
+        assert edited is not None
+        assert edited.body == "Corrected first line\nsecond line"
+        assert edited.revision == 2
+        assert edited.id == original.id
+        pipe.send_text("\x03")
+        assert await edit_input(agent, session, f"/edit {original.id}") is None
+        assert store.get(original.id) == edited
+        # Normal input retains the framework's cursor editing and history behavior.
+        pipe.send_text("hello\x01Say \r")
+        assert await read_input(session) == "Say hello"
+        pipe.send_text("\x1b[A\r")
+        assert await read_input(session) == "Say hello"
+
+
+async def test_scripted_edit_and_revision_view(make_agent, settings: Settings, store: Store, capsys):
+    original = store.append(Author.HUMAN, "Original request")
+    store.append(Author.AGENT, "Existing answer")
+    agent = await make_agent(
+        lambda request: httpx2.Response(
+            200, json={"id": "resp_edit", "object": "response", "created_at": 1, "status": "completed", "output": []}
+        )
+    )
+    reader = asyncio.StreamReader()
+    reader.feed_data(f"/edit {original.id} 1 Revised request\n/wait\n/revisions {original.id}\n".encode())
+    reader.feed_eof()
+    await interact(agent, reader, settings.state_directory / "trace.jsonl")
+    output = capsys.readouterr().out
+    assert "r2; edited" in output
+    assert "Original request" in output
+    assert "Revised request" in output
+    assert store.get(original.id).body == "Revised request"
+    assert len(store.messages()) == 2
+    with pytest.raises(ValueError, match="expected-revision"):
+        await edit_input(agent, reader, f"/edit {original.id}")
 
 
 def test_large_trace_on_shared_terminal_does_not_make_stdout_nonblocking(settings: Settings):
