@@ -30,6 +30,23 @@ class PostMessage(BaseModel):
     body: str = Field(min_length=1)
 
 
+class ReadMessage(BaseModel):
+    """Read a message's current text and revision, or a specific immutable past revision."""
+
+    model_config = ConfigDict(extra="forbid")
+    message_id: UUID
+    revision: int | None = Field(default=None, ge=1)
+
+
+class EditMessage(BaseModel):
+    """Revise your own message in place. Read first; expected_revision rejects stale edits."""
+
+    model_config = ConfigDict(extra="forbid")
+    message_id: UUID
+    expected_revision: int = Field(ge=1)
+    body: str = Field(min_length=1)
+
+
 class YieldTurn(BaseModel):
     """End this run and wait for human input. Publish any answer or question before yielding."""
 
@@ -109,7 +126,12 @@ class Tools:
     def schemas(self) -> list[FunctionToolParam]:
         parameters: dict[str, type[BaseModel]] = {"read_file": ReadFile, "run_command": RunCommand}
         if self.settings.mode is Mode.AUTHORED:
-            parameters |= {"read_thread": ReadThread, "post_message": PostMessage}
+            parameters |= {
+                "read_thread": ReadThread,
+                "read_message": ReadMessage,
+                "post_message": PostMessage,
+                "edit_message": EditMessage,
+            }
         if self.settings.turn_control == "yield_tool":
             parameters["yield_turn"] = YieldTurn
         return [
@@ -136,6 +158,18 @@ class Tools:
                 case "post_message" if self.settings.mode is Mode.AUTHORED:
                     post = PostMessage.model_validate_json(arguments)
                     message = self.store.append(Author.AGENT, post.body)
+                    self.publish(message)
+                    return ToolResult(output=message.model_dump_json())
+                case "read_message" if self.settings.mode is Mode.AUTHORED:
+                    read_message = ReadMessage.model_validate_json(arguments)
+                    return ToolResult(
+                        output=self.store.get(read_message.message_id, revision=read_message.revision).model_dump_json()
+                    )
+                case "edit_message" if self.settings.mode is Mode.AUTHORED:
+                    edit = EditMessage.model_validate_json(arguments)
+                    message = self.store.edit(
+                        edit.message_id, author=Author.AGENT, expected_revision=edit.expected_revision, body=edit.body
+                    )
                     self.publish(message)
                     return ToolResult(output=message.model_dump_json())
                 case "yield_turn" if self.settings.turn_control == "yield_tool":
