@@ -33,6 +33,8 @@ editing a route.
       enforce on one worker before expanding to other workers and control planes.
       Keep public Kubernetes API access on TCP 6443 initially; revisit whether
       its source addresses can be restricted after client paths are inventoried.
+      Cilium's host policy matches Nebula source IPs on public interfaces too;
+      verify or add underlay anti-spoofing before trusting those identities.
       Host firewall enablement alone does not restrict satellite listeners.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
@@ -279,9 +281,9 @@ SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encr
 
 ### Firewall Hardening
 
-Restrict K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet
-(10250), Nebula (4242), and VXLAN (8472) to admin IPs and inter-node CIDRs.
-Keep 80/443/53 public.
+Inventory node ingress and canary the Cilium host firewall before expanding it.
+Keep the Kubernetes API (6443) public initially; consider tightening it after
+inventorying clients. Keep required public services and Nebula access working.
 
 ### OpenTofu State Backend
 
