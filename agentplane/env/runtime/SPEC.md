@@ -90,6 +90,8 @@ At the exact Sealing barrier, each Session closes admission for all new command 
 same lock as journal admission and sealing. The Session lifecycle status reports
 `AdmissionClosed` for its observed environment generation only after this live gate closes and
 accepted commands are settled.
+A seal worker checks its exact shutdown revision under this lock before closing the gate;
+obsolete shutdown work cannot close or seal a reopened successor.
 An exact-turn interrupt may enter during halt before that cutoff; an identical admitted command
 can return its original receipt afterward. A failed settlement or seal leaves the gate closed.
 The live gate reopens only after a successor journal reopen and its acknowledgement and seal

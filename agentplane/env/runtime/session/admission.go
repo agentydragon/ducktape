@@ -22,15 +22,10 @@ type admissionCutoff struct {
 	live bool
 }
 
-// closeAdmission is the per-Session final cutoff. Admission and sealing take
-// the same lock, so a racing command either commits before this boundary or
-// returns without creating a journal entry.
-func (s *Session) closeAdmission(generation uint64) {
-	s.admitMu.Lock()
+func (s *Session) closeAdmissionLocked(generation uint64) {
 	if s.cutoff == nil {
 		s.cutoff = &admissionCutoff{generation: generation, live: true}
 	}
-	s.admitMu.Unlock()
 }
 
 func (s *Session) admissionClosed() bool {

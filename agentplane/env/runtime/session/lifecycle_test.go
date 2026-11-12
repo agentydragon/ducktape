@@ -214,9 +214,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			if err := s.stopProcess(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.sealJournal(ctx); err != nil {
-				t.Fatal(err)
-			}
+			sealFixtureJournal(t, s)
 			command, err := s.journal.GetCommand(ctx, "test-input")
 			if err != nil || command == nil || command.TerminalCursor == nil {
 				t.Fatalf("undispatched admission was not settled: command=%+v err=%v", command, err)

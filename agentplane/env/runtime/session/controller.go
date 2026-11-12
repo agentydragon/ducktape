@@ -295,10 +295,9 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.PreFenceSettled = s.preFenceSettled(current)
 		fenceReady := outer.Generation == desiredState.Generation && outer.NativeStopped && outer.Stage >= lifecycle.Sealing
 		if current.PreFenceSettled && fenceReady && desiredState.SealUID != "" {
-			s.closeAdmission(desiredState.Generation)
 			if s.journal.SealState() == nil {
 				if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
-					return s.sealJournal(ctx)
+					return s.sealJournal(ctx, desiredState)
 				}); err != nil {
 					current.Error = err.Error()
 					return write()

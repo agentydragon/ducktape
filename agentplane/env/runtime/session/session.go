@@ -332,24 +332,30 @@ func (s *Session) stopProcess(ctx context.Context) error {
 }
 
 // sealJournal fails the commands never dispatched and seals the journal, once the harness has stopped.
-func (s *Session) sealJournal(ctx context.Context) error {
+func (s *Session) sealJournal(ctx context.Context, expected lifecycle.EnvironmentDesired) error {
 	// Serialize sealing with command admission. An interrupt admitted while a
 	// lameduck halt is in progress must either be dispatched before halt completes
 	// or be durably settled before the journal is sealed.
 	s.admitMu.Lock()
 	defer s.admitMu.Unlock()
-	if s.cutoff == nil {
-		s.cutoff = &admissionCutoff{live: true}
+	if expected.Mode == lifecycle.Running || expected.SealUID == "" {
+		return errors.New("journal sealing requires a shutdown revision and seal UID")
 	}
+	// A reconcile can retain an old revision across successor adoption. Reopen
+	// holds admitMu too, so obsolete work cannot close or reseal its successor.
+	current, found, err := lifecycle.ReadEnvironmentDesired(ctx, s.deps.state)
+	if err != nil {
+		return err
+	}
+	if !found || current != expected {
+		return nil
+	}
+	s.closeAdmissionLocked(expected.Generation)
 	if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
 		return err
 	}
 	s.cutoff.settled = true
-	uid := s.deps.environmentState().IncarnationUID
-	if uid == "" {
-		return errors.New("environment incarnation is not bound")
-	}
-	_, err := s.journal.Seal(ctx, uid)
+	_, err = s.journal.Seal(ctx, expected.SealUID)
 	return err
 }
 
