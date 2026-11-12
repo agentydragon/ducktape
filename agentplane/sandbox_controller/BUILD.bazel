@@ -29,12 +29,10 @@ go_library(
         "//agentplane/sandbox_controller:__subpackages__",
     ],
     deps = [
-        "//agentplane/action_service/callers",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
-        "//agentplane/policy/client:applyconfiguration_api",
         "//agentplane/proto:session_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environmentruntimeclient",
@@ -95,7 +93,6 @@ go_test(
     embed = [":sandbox_controller"],
     x_defs = {"github.com/agentydragon/ducktape/agentplane/sandbox_controller.vmGuestContractRlocation": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
     deps = [
-        "//agentplane/action_service/callers",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
@@ -137,7 +134,6 @@ go_test(
     srcs = ["children_integration_test.go"],
     embed = [":sandbox_controller"],
     deps = [
-        "//agentplane/action_service/callers",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",
