@@ -19,7 +19,6 @@ const (
 	AdmissionCountType          = "EnvironmentAdmissionCounts.agentplane"
 	AggregateStatusType         = "EnvironmentSessionStatuses.agentplane"
 	ResourceID                  = "environment-runtime"
-	SessionOwner                = "environment-sessions"
 	EnvironmentDesiredStateType = "EnvironmentRuntimeDesiredStates.agentplane"
 	// ExecutionStatusType is observed by the app-server controller to
 	// wake its live Execution readiness check.
