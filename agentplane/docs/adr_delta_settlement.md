@@ -16,9 +16,10 @@ When an item completes, the History Service drops its delta entries from `sessio
 same transaction, and records a `SettledDeltas` (template, completion cursor, cursor ranges, chunk
 count, first and last chunk time) in their place. It settles only when all of these hold:
 
-- **Clean span:** nothing anomalous between the item's start and completion (a malformed or
-  duplicate-key frame, a failed command, harness stderr or exit, a reconciliation). Interrupted,
-  failed and process-lost items never complete, so they never settle; recovery reads their deltas.
+- **Clean span:** no malformed or duplicate-key frame, failed command, harness exit or
+  reconciliation between the item's start and completion. Harness stderr stays retained but
+  does not veto settlement when the content and source checks pass. Interrupted and process-lost
+  items without a completion keep their deltas for recovery.
 - **Exact templates:** every delta is a pair of a native frame matching a versioned template in
   `agentplane/history_service/storage/delta_templates.go` exactly, as a parsed JSON value, and the derived event made
   from it. Templates are only added, never edited, so an old settlement is never reinterpreted.

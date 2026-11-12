@@ -189,7 +189,9 @@ Each `Store.Append` batch that completes an item drops that
 item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
 the same transaction, when every frame matches an exact versioned template
 (`storage/delta_templates.go`) and the retained completion holds exactly their
-concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
+concatenation. Malformed frames, failed commands, harness exits and recovery boundaries keep the
+span whole. Harness stderr remains stored at its original cursor but does not prevent settlement
+of otherwise redundant deltas. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
 them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
 journal keeps every entry. On by default; setting `ingress.settle_deltas` to false keeps every

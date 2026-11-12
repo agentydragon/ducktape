@@ -51,7 +51,7 @@ func (s *Span) Derived(sources []uint64, event *eventpb.Event) uint64 {
 	return entry.Cursor
 }
 
-// Stderr appends a harness stderr line, an anomaly that keeps a span whole.
+// Stderr appends a harness stderr line.
 func (s *Span) Stderr(line string) uint64 {
 	entry := s.next()
 	entry.Event.Observation = &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: line}}
