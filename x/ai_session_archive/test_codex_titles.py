@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from x.ai_session_archive.codex_titles_testing import snapshot_sqlite, transcript
-from x.ai_session_archive.database import CodexTitleObservationRow, SessionRow
+from x.ai_session_archive.database import CodexTitleBackfillRow, CodexTitleObservationRow, SessionRow
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
 from x.ai_session_archive.models import Harness
 from x.ai_session_archive.testing import _backup, _new_repository
@@ -18,7 +18,7 @@ from x.ai_session_archive.testing import _backup, _new_repository
 pytest_plugins = ["util.testing.postgres_fixtures", "x.ai_session_archive.testing"]
 
 
-def test_codex_titles_backfill(tmp_path: Path, postgres_engine: Engine) -> None:
+def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine) -> None:
     repository, env = _new_repository(tmp_path)
     home = Path(env["HOME"])
     codex = home / ".codex"
@@ -36,6 +36,7 @@ def test_codex_titles_backfill(tmp_path: Path, postgres_engine: Engine) -> None:
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert db.scalar(select(SessionRow.title)) is None
+        assert db.get(CodexTitleBackfillRow, "host") is None
 
     # A partially captured index must not hide the good SQLite image.
     (codex / "session_index.jsonl").write_text('{"id":"unfinished"')
@@ -47,6 +48,7 @@ def test_codex_titles_backfill(tmp_path: Path, postgres_engine: Engine) -> None:
     assert report.codex_metadata_partial == 1
     with factory() as db:
         assert db.scalar(select(SessionRow.title)) == "First name"
+        assert db.get(CodexTitleBackfillRow, "host") is None
         observation = db.get(CodexTitleObservationRow, ("host", second_snapshot.id, "thread-one"))
         assert observation is not None
         assert observation.title_source == "sqlite_name"

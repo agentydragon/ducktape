@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session as DbSession, aliased, load_only
 
 from x.ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
 from x.ai_session_archive.codex_metadata import classify_codex_source, read_codex_titles
-from x.ai_session_archive.codex_title_projection import ensure_codex_title_candidates
 from x.ai_session_archive.database import (
     CodexTitleCandidateRow,
     CodexTitleObservationRow,
@@ -654,7 +653,6 @@ class SnapshotIngestor:
                     row.codex_metadata_error = _error_text(exc)
 
     def _project_codex_titles(self, *, allow_index_only: bool) -> None:
-        ensure_codex_title_candidates(self._session_factory, self._source.machine_id)
         with self._session_factory() as db, db.begin():
             sessions = list(
                 db.scalars(

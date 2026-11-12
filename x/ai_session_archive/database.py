@@ -185,6 +185,8 @@ class CodexTitleCandidateRow(Base):
 
 
 class CodexTitleBackfillRow(Base):
+    """Retained migration state for existing databases and older importer rollback."""
+
     __tablename__ = "codex_title_backfill"
 
     machine_id: Mapped[str] = mapped_column(ForeignKey("machines.id", ondelete="RESTRICT"), primary_key=True)

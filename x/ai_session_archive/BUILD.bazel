@@ -157,7 +157,6 @@ py_library(
     deps = [
         ":claude_titles",
         ":codex_metadata",
-        ":codex_title_projection",
         ":database",
         ":models",
         ":record_json",
@@ -697,15 +696,6 @@ py_library(
     srcs = ["statuses.py"],
 )
 
-py_library(
-    name = "codex_title_projection",
-    srcs = ["codex_title_projection.py"],
-    deps = [
-        ":database",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_test(
     name = "test_codex_title_candidates",
     size = "medium",
@@ -713,17 +703,10 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":codex_title_projection",
         ":database",
-        ":database_migrate",
-        ":ingest",
-        ":models",
-        ":restic",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
