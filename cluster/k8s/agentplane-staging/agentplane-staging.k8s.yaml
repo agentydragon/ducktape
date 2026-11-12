@@ -2164,7 +2164,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: basic
+  name: basic-identity
   namespace: agentplane-staging
 spec:
   rules:
@@ -4083,7 +4083,7 @@ data:
         title: Public coder
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - packages
@@ -4112,7 +4112,7 @@ data:
         title: Haku
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - forgejo-haku
@@ -4149,7 +4149,7 @@ data:
         title: Finance agent
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - packages
@@ -4176,7 +4176,7 @@ data:
         title: Public coder / ducktape
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - packages
@@ -7217,7 +7217,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - packages
@@ -7274,7 +7274,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - forgejo-haku
@@ -7329,7 +7329,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - packages
@@ -7481,7 +7481,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - packages
@@ -12319,7 +12319,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   policySets:
-    - basic
+    - basic-identity
     - inference-experiments
     - forgejo-haku
     - packages
@@ -12453,7 +12453,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   policySets:
-    - basic
+    - basic-identity
     - inference-experiments
     - forgejo-haku
     - packages

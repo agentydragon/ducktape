@@ -123,7 +123,7 @@ _API_SERVER_TOKEN_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
 # construct that creates it, so renaming or dropping a policy is a change in one file.
-BASIC_POLICY = "basic"
+BASIC_POLICY = "basic-identity"
 PACKAGES_POLICY = "packages"
 INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
