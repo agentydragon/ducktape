@@ -1,8 +1,7 @@
 # Renewing the operator session instead of bouncing it hourly
 
-**Status: proposal, undecided.** Written after five separate mechanisms were added in one day to
-make an hourly forced logout tolerable. It argues the policy is the thing to revisit, not the
-mechanisms. Nothing here is implemented.
+**Status: proposal, undecided.** Revisit the hourly session policy and its user-visible
+reauthentication cost. Silent renewal is not implemented.
 
 ## The observation
 
@@ -15,7 +14,6 @@ only to absorb what happens when it elapses:
 | `return_to` on `/auth/login`              | The bounce dropped the operator at `/` (F2)                        |
 | Pre-expiry warning in the rail            | The bounce arrived with no notice (F3)                             |
 | Auto-restart once on a stale callback     | A bounce that raced or sat too long dead-ended (F1/F1b)            |
-| WS close code 4001                        | The bounce looked like a network outage (F4)                       |
 | `operatorLoginRedirectStarted()`          | The bounce painted an error on its way out (F7)                    |
 
 That is a lot of machinery in service of one policy line. The premortem question: in three months,
