@@ -276,10 +276,8 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 	return w.deliver(ctx, claim, claim.DestinationRef.Name, *notice)
 }
 
-// establishOwner checks the claimed inbox's owner against what the Session authority recorded the
-// Session as executing as, establishing it on the inbox: its ServiceAccount incarnation, or, for a
-// Session recorded as executing as an Identity alone, that Identity incarnation, whose inbox has no
-// account owner.
+// establishOwner checks the claimed inbox's Identity against what the Session authority recorded.
+// Legacy ServiceAccount-owned inboxes remain retained but are not delivered as Session-owned inboxes.
 func (w *Worker) establishOwner(ctx context.Context, claim *store.Claim, session *dispatcherpb.Session) error {
 	if identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef); ok {
 		if claim.OwnerUID != nil {
@@ -292,20 +290,7 @@ func (w *Worker) establishOwner(ctx context.Context, claim *store.Claim, session
 		claim.OwnerIdentity = &identity
 		return err
 	}
-	uid, err := sessionidentity.AccountUID(session, claim.SessionID, claim.DestinationRef, claim.Owner)
-	if err != nil || (claim.OwnerUID != nil && *claim.OwnerUID != uid) {
-		return errOwnerMismatch
-	}
-	if err := w.Store.EstablishInboxOwner(ctx, claim.Owner, claim.DestinationRef, claim.SessionID, uid); err != nil {
-		return err
-	}
-	if identity, ok := sessionidentity.Identity(session, claim.SessionID, claim.DestinationRef); ok {
-		if err := w.Store.EstablishInboxIdentity(ctx, claim.DestinationRef, claim.SessionID, identity); err != nil {
-			return err
-		}
-	}
-	claim.OwnerUID = &uid
-	return nil
+	return errOwnerMismatch
 }
 
 // readSource reads the claimed inbox's next due subscription, if any, and records the outcome on it.

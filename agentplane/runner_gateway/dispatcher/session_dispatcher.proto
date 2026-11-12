@@ -249,11 +249,10 @@ message Session {
   reserved "harness", "initial_executor", "environment_hosted", "central_sampler_v1";
   // Read-only projection of the placement stored in SessionSpec, without exposing instructions.
   agentplane.proto.SessionPlacement placement = 12;
-  // The exact ServiceAccount bound to this Session, if established. Absence means its identity
-  // is not yet known, not that a current account with the same name owns it.
-  agentplane.proto.ServiceAccountIdentity execution_identity = 15;
+  reserved 15;
+  reserved "execution_identity";
   // The Identity incarnation this Session executes as, recorded from its Sandbox's
-  // `spec.identity` at creation beside execution_identity; absent when the Sandbox named none.
+  // `spec.identity` at creation; absent for legacy rows without an exact Identity.
   agentplane.proto.Identity identity = 16;
 }
 

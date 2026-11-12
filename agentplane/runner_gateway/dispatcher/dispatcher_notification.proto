@@ -9,9 +9,8 @@ message TerminalNotificationPart {
   uint32 part = 2;
   uint32 part_count = 3;
   bytes data = 4;
-  string execution_account_namespace = 5;
-  string execution_account_name = 6;
-  string execution_account_uid = 7;
+  reserved 5 to 7;
+  reserved "execution_account_namespace", "execution_account_name", "execution_account_uid";
   // The Session's execution Identity, empty when it has none.
   string execution_identity_name = 8;
   string execution_identity_uid = 9;

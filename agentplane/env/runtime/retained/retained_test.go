@@ -27,26 +27,26 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	budget := int64(32768)
 	native := "native-session"
 	wantScript := []byte("printf 'exact \\t'\n")
-	record := &Record{Placement: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
+	record := &Record{Placement: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionIdentity: &identitypb.Identity{Name: "identity", Uid: "uid"}}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
 	budget = 1
 	native = "changed"
 	record.SetupScript[0] = 'X'
-	record.ExecutionPrincipal.Account.Name = "changed"
+	record.ExecutionIdentity.Name = "changed"
 	read, err := store.Read("session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *read.TotalContextBudgetTokens != 32768 || *read.NativeSessionId != "native-session" || !bytes.Equal(read.SetupScript, wantScript) || read.ExecutionPrincipal.GetAccount().GetName() != "account" {
+	if *read.TotalContextBudgetTokens != 32768 || *read.NativeSessionId != "native-session" || !bytes.Equal(read.SetupScript, wantScript) || read.ExecutionIdentity.GetName() != "identity" {
 		t.Fatalf("record = %+v", read)
 	}
 	*read.NativeSessionId = "mutated"
 	read.SetupScript[0] = 'X'
-	read.ExecutionPrincipal.Account.Name = "mutated"
+	read.ExecutionIdentity.Name = "mutated"
 	again, err := store.Read("session-1")
-	if err != nil || *again.NativeSessionId != "native-session" || !bytes.Equal(again.SetupScript, wantScript) || again.ExecutionPrincipal.GetAccount().GetName() != "account" {
+	if err != nil || *again.NativeSessionId != "native-session" || !bytes.Equal(again.SetupScript, wantScript) || again.ExecutionIdentity.GetName() != "identity" {
 		t.Fatalf("mutated resource: %+v, %v", again, err)
 	}
 	ids, err := store.SessionIDs()

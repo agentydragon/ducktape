@@ -24,28 +24,18 @@ type CentralTarget struct {
 	TokenFile string `mapstructure:"token_file"`
 }
 
-// SessionExecution is who a Session executes as: its ServiceAccount execution principal and, when its
-// Sandbox named one at creation, its Identity.
-type SessionExecution struct {
-	Principal *ServiceAccountIdentity
-	Identity  *identitypb.Identity
-}
+// SessionExecution is the exact Identity incarnation a Session executes as.
+type SessionExecution struct{ Identity *identitypb.Identity }
 
-// recordsExecution reports whether the Session recorded what it executes as: a ServiceAccount, an
-// Identity, or both. A legacy row recorded neither, and delivery checks nothing for it.
-func (s *Session) recordsExecution() bool {
-	return s.ExecutionPrincipal != nil || s.ExecutionIdentity != nil
+func hasExecutionIdentity(session *Session) bool {
+	return session != nil && session.ExecutionIdentity != nil && session.ExecutionIdentity.GetName() != "" && session.ExecutionIdentity.GetUid() != ""
 }
 
 func (s *Session) execution() SessionExecution {
-	result := SessionExecution{}
-	if s.ExecutionPrincipal != nil {
-		result.Principal = proto.Clone(s.ExecutionPrincipal).(*identitypb.ServiceAccountIdentity)
+	if !hasExecutionIdentity(s) {
+		return SessionExecution{}
 	}
-	if s.ExecutionIdentity != nil {
-		result.Identity = proto.Clone(s.ExecutionIdentity).(*identitypb.Identity)
-	}
-	return result
+	return SessionExecution{Identity: proto.Clone(s.ExecutionIdentity).(*identitypb.Identity)}
 }
 
 type sessionReader interface {
@@ -102,6 +92,9 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 }
 
 func (r *RoutingRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, execution SessionExecution) error {
+	if execution.Identity == nil || execution.Identity.GetName() == "" || execution.Identity.GetUid() == "" {
+		return status.Error(codes.FailedPrecondition, "central Session requires a complete execution Identity")
+	}
 	session, err := r.Store.GetSession(ctx, id)
 	if err != nil {
 		return err
@@ -121,8 +114,8 @@ func (r *RoutingRunner) CreateSession(ctx context.Context, sandbox SandboxSnapsh
 	return r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
 		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{
 			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
-			ExecutionPrincipal: execution.Principal, ExecutionIdentity: execution.Identity,
-			Executor: &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Target: &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID}},
+			ExecutionIdentity: execution.Identity,
+			Executor:          &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Target: &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID}},
 		})
 		return err
 	})

@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"golang.org/x/sys/unix"
@@ -208,7 +209,7 @@ func openLifecycleSession(id, cwd string) *environmentruntimepb.CreateSessionReq
 		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
 			Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE,
 		}}}, Cwd: cwd, Model: "test-model",
-	}}
+	}, ExecutionIdentity: &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}}
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }

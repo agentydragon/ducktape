@@ -93,10 +93,6 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 		Status:    &dispatcherpb.SessionStatus{Materialization: materialization, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
 		CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 	}
-	// A name without an incarnation UID is not evidence of Session ownership.
-	if row.ExecutionPrincipal != nil && row.ExecutionPrincipal.GetAccount().GetNamespace() != "" && row.ExecutionPrincipal.GetAccount().GetName() != "" && row.ExecutionPrincipal.GetUid() != "" {
-		result.ExecutionIdentity = proto.Clone(row.ExecutionPrincipal).(*ServiceAccountIdentity)
-	}
 	if row.ExecutionIdentity != nil {
 		result.Identity = proto.Clone(row.ExecutionIdentity).(*identitypb.Identity)
 	}

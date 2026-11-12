@@ -393,37 +393,16 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 			return err
 		}
 	}
+	// Retained Sessions without an exact Identity remain readable but cannot be newly executed or
+	// attributed to the Sandbox's current Identity. Leave their durable rows and queued effects intact.
+	if !hasExecutionIdentity(principalSession) {
+		return nil
+	}
 	if head != nil && principalSession != nil && principalSession.Placement.requiresReadyExecutor() &&
 		(principalSession.State == SessionFailedState || principalSession.State == SessionUnknownState) {
 		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
 	}
-	if principalSession != nil && principalSession.ExecutionPrincipal != nil {
-		account, found, err := w.executionAccount(ctx, sandbox)
-		if err != nil {
-			return err
-		}
-		expected := principalSession.ExecutionPrincipal
-		if !found && expected.GetUid() == "" && head == nil {
-			return w.Store.NoteSessionWaiting(ctx, principalSession.SessionID, owner, "execution_identity_pending")
-		}
-		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(expected) ||
-			accountOfIdentity(expected) != (Account{Namespace: sandbox.Namespace, Name: sandbox.Name}) {
-			return w.failExecutionIdentity(ctx, principalSession, head, owner)
-		}
-		if expected.GetUid() == "" && head == nil {
-			principalSession, err = w.Store.BindExecutionPrincipal(ctx, principalSession.SessionID, principalSession.SandboxUID,
-				accountOfIdentity(expected).Namespace, accountOfIdentity(expected).Name, account.GetUid())
-			if err != nil {
-				return err
-			}
-			expected = principalSession.ExecutionPrincipal
-			queuedSession = principalSession
-		}
-		if account.GetUid() != expected.GetUid() || expected.GetUid() == "" {
-			return w.failExecutionIdentity(ctx, principalSession, head, owner)
-		}
-	}
-	if principalSession != nil && principalSession.recordsExecution() {
+	if principalSession != nil {
 		identity, found, err := w.executionIdentity(ctx, sandbox)
 		if err != nil {
 			return err
@@ -452,35 +431,19 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	return nil
 }
 
-func (w *DeliveryWorker) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
-	reader, ok := w.Catalog.(ExecutionAccountReader)
-	if !ok {
-		return nil, false, errors.New("Sandbox execution account reader unavailable")
-	}
-	return reader.GetExecutionAccount(ctx, sandbox)
-}
-
 func (w *DeliveryWorker) executionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	reader, ok := w.Catalog.(ExecutionAccountReader)
+	reader, ok := w.Catalog.(ExecutionIdentityReader)
 	if !ok {
-		return nil, false, errors.New("Sandbox execution account reader unavailable")
+		return nil, false, errors.New("Sandbox execution Identity reader unavailable")
 	}
 	return reader.GetExecutionIdentity(ctx, sandbox)
 }
 
-// executionCurrent reports whether the Sandbox still runs as the exact ServiceAccount and Identity
-// session recorded: an Identity changed while the Sandbox was stopped strands the Session rather
-// than re-attributing it.
+// executionCurrent reports whether the Sandbox still names the exact Identity incarnation recorded
+// for the Session. Legacy rows without one cannot be executed or re-attributed.
 func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *Session, sandbox SandboxSnapshot) (bool, error) {
-	if session.ExecutionPrincipal != nil {
-		account, found, err := w.executionAccount(ctx, sandbox)
-		if err != nil {
-			return false, err
-		}
-		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(session.ExecutionPrincipal) ||
-			session.ExecutionPrincipal.GetUid() == "" || account.GetUid() != session.ExecutionPrincipal.GetUid() {
-			return false, nil
-		}
+	if session == nil || session.ExecutionIdentity == nil || session.ExecutionIdentity.GetName() == "" || session.ExecutionIdentity.GetUid() == "" {
+		return false, nil
 	}
 	identity, found, err := w.executionIdentity(ctx, sandbox)
 	if err != nil {
@@ -615,6 +578,9 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 }
 
 func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, session *Session) bool {
+	if !hasExecutionIdentity(session) {
+		return false
+	}
 	ctx = observability.WithTraceparent(ctx, head.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Command",
@@ -633,7 +599,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if claimed == nil {
 		return false
 	}
-	if session != nil && session.recordsExecution() {
+	if session != nil {
 		current, identityErr := w.executionCurrent(ctx, session, sandbox)
 		if identityErr != nil {
 			w.retryStorage(ctx, func() error {
@@ -688,6 +654,9 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 }
 
 func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner Owner) bool {
+	if !hasExecutionIdentity(session) {
+		return false
+	}
 	ctx = observability.WithTraceparent(ctx, session.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Session",
@@ -707,24 +676,22 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 	if claimed == nil {
 		return false
 	}
-	if session.recordsExecution() {
-		current, identityErr := w.executionCurrent(ctx, session, sandbox)
-		if identityErr != nil {
-			w.retryStorage(ctx, func() error {
-				_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionWaitingState, "execution_identity_unavailable")
-				return err
-			})
-			w.backoff(session.SessionID, key)
-			return true
-		}
-		if !current {
-			w.retryStorage(ctx, func() error {
-				_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionFailedState, "execution_identity_changed")
-				return err
-			})
-			w.clearRetry(session.SessionID)
-			return true
-		}
+	current, identityErr := w.executionCurrent(ctx, session, sandbox)
+	if identityErr != nil {
+		w.retryStorage(ctx, func() error {
+			_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionWaitingState, "execution_identity_unavailable")
+			return err
+		})
+		w.backoff(session.SessionID, key)
+		return true
+	}
+	if !current {
+		w.retryStorage(ctx, func() error {
+			_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionFailedState, "execution_identity_changed")
+			return err
+		})
+		w.clearRetry(session.SessionID)
+		return true
 	}
 	callErr := w.Runner.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript, session.execution())
 	if callErr != nil {

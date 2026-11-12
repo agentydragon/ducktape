@@ -29,16 +29,10 @@ import (
 
 const identitySandboxUID = "00000000-0000-4000-8000-000000009021"
 
-// identityCatalog is a live Sandbox view whose execution account and named Identity a test sets.
+// identityCatalog is a live Sandbox view whose named Identity a test sets.
 type identityCatalog struct {
 	testCatalog
-	account  *ServiceAccountIdentity
 	identity *identitypb.Identity
-}
-
-// GetExecutionAccount finds no account when account is nil: the Sandbox's managed ServiceAccount is absent.
-func (c *identityCatalog) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
-	return c.account, c.account != nil, nil
 }
 
 func (c *identityCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
@@ -118,15 +112,17 @@ func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace str
 func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 10)
-	owner := serviceAccountIdentityFor(Account(caller), "owner-uid")
 	named := &identitypb.Identity{Name: "named-identity", Uid: "00000000-0000-4000-8000-0000000090a1"}
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: identitySandboxUID}
-	inventory := &authorityInventory{sandbox: snapshot, account: owner, accountFound: true, identity: named}
+	inventory := &authorityInventory{sandbox: snapshot, identity: named}
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
-	client := authorityClient(t, store, inventory, tokenReviewStub{"owner-account": {account: caller, uid: owner.GetUid()}}, hub)
+	client := authorityClient(t, store, inventory, tokenReviewStub{
+		"owner-account": {account: caller, uid: "owner-uid"},
+		"owner-pod":     {account: caller, uid: "owner-uid", pod: true},
+	}, hub)
 	open := func() string {
 		sessionID := uuid.NewString()
-		if _, err := client.CreateSession(authorityContext(t, "owner-account"), &dispatcherpb.CreateSessionRequest{
+		if _, err := client.CreateSession(authorityContext(t, "owner-pod"), &dispatcherpb.CreateSessionRequest{
 			SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: snapshot.Name, Uid: snapshot.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}},
 		}); err != nil {
 			t.Fatalf("CreateSession: %v", err)
@@ -135,15 +131,15 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	}
 	placed, stranded := open(), open()
 	stored, err := store.GetSession(ctx, placed)
-	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) || !proto.Equal(stored.ExecutionPrincipal, owner) {
-		t.Fatalf("stored Session executes as %v / %v (%v), want %v beside %v", stored.ExecutionIdentity, stored.ExecutionPrincipal, err, named, owner)
+	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) {
+		t.Fatalf("stored Session executes as %v (%v), want %v", stored.ExecutionIdentity, err, named)
 	}
-	read, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: placed})
+	read, err := client.GetSession(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionRequest{SessionId: placed})
 	if err != nil || !proto.Equal(read.GetSession().GetIdentity(), named) {
 		t.Fatalf("GetSession reads the Session as executing as %v (%v), want %v", read.GetSession().GetIdentity(), err, named)
 	}
 
-	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, account: owner, identity: named}
+	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, identity: named}
 	runner := &placingRunner{placed: make(chan SessionExecution, 2)}
 	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Runner: runner}
 	worker.init()
@@ -158,8 +154,8 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	}
 	select {
 	case execution := <-runner.placed:
-		if !proto.Equal(execution.Identity, named) || !proto.Equal(execution.Principal, owner) {
-			t.Fatalf("placed Session executes as %v / %v, want %v beside %v", execution.Identity, execution.Principal, named, owner)
+		if !proto.Equal(execution.Identity, named) {
+			t.Fatalf("placed Session executes as %v, want %v", execution.Identity, named)
 		}
 	default:
 		t.Fatal("Session was not placed")
@@ -201,7 +197,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	otherIdentity := &identitypb.Identity{Name: other.Identity.Name, Uid: string(other.Identity.UID)}
 	ownerAccount := serviceAccountIdentityFor(owner.Principal.Account, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerAccount, accountFound: true, identity: ownerIdentity}
+	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 
 	store, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, inventory)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
@@ -219,7 +215,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
 		testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID), ownedSpec, nil, nil,
-		SessionExecution{Principal: ownerAccount, Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}}); err != nil {
+		SessionExecution{Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed the Identity's Session: %v", err)
 	}
 	ownerAttribution := &IdentityAttribution{Identity: ownerIdentity, Pod: &PodIdentity{Name: owner.Principal.PodName, UID: owner.Principal.PodUID}}
@@ -239,19 +235,19 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatalf("Identity caller GetDispatch: %v, %v", got, err)
 	}
 
-	// Another Identity's Session, and one its own Sandbox's ServiceAccount owns with no Identity.
+	// Another Identity's Session and a Session created by a ServiceAccount actor for another Identity.
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
 	otherSession, otherSpec := uuid.NewString(), &sessionpb.SessionSpec{}
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
 		testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID), otherSpec, nil, nil,
-		SessionExecution{Principal: serviceAccountIdentityFor(other.Principal.Account, other.Principal.ServiceAccountUID), Identity: otherIdentity},
+		SessionExecution{Identity: otherIdentity},
 		IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed another Identity's Session: %v", err)
 	}
 	accountSession := uuid.NewString()
-	if _, err := store.CreateSessionForCaller(ctx, accountSession, ownerSandbox.Name, ownerSandbox.UID, &sessionpb.SessionSpec{}, nil, nil, ownerAccount,
-		ServiceAccountCaller{ServiceAccountIdentity: ownerAccount, Attribution: &AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}}); err != nil {
-		t.Fatalf("seed the ServiceAccount's Session: %v", err)
+	if _, err := store.CreateSessionForCaller(ctx, accountSession, ownerSandbox.Name, ownerSandbox.UID, &sessionpb.SessionSpec{}, nil, nil, otherIdentity,
+		ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}}); err != nil {
+		t.Fatalf("seed a platform-created Session for another Identity: %v", err)
 	}
 	for _, foreign := range []string{otherSession, accountSession} {
 		if _, err := ownerClient.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: foreign}); status.Code(err) != codes.NotFound {
@@ -330,8 +326,8 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	}
 	select {
 	case execution := <-runner.placed:
-		if !proto.Equal(execution.Identity, named) || execution.Principal != nil {
-			t.Fatalf("placed Session executes as %v / %v, want %v alone", execution.Identity, execution.Principal, named)
+		if !proto.Equal(execution.Identity, named) {
+			t.Fatalf("placed Session executes as %v, want %v", execution.Identity, named)
 		}
 	default:
 		t.Fatal("Session was not placed")

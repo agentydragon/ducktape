@@ -120,13 +120,8 @@ func (openingDispatcher) GetSession(ctx context.Context, request *dispatcherpb.G
 	if request.GetSessionId() != testSession {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName})
-	if err != nil {
-		return nil, err
-	}
 	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
-		ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, Uid: string(account.UID)},
-		SessionId:         testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
+		SessionId: testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
 	}}, nil
 }
 

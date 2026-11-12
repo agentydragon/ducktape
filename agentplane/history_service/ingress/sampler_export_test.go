@@ -155,8 +155,9 @@ type samplerExportFixture struct {
 	target    string
 	token     string
 	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
-	identity workloadauthtesting.IdentityWorkload
-	ingress  *samplerExportIngressServer
+	identity  workloadauthtesting.IdentityWorkload
+	ingress   *samplerExportIngressServer
+	samplerDB *sql.DB
 }
 
 const samplerExportPolicyNamespace = "test-sampler-export-policies"
@@ -230,18 +231,17 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 		t.Fatal(err)
 	}
 	return samplerExportFixture{
-		history: history, historyDB: historyDB, sampler: samplerStore, target: listener.Addr().String(), token: tokenFile,
+		history: history, historyDB: historyDB, samplerDB: samplerDB, sampler: samplerStore, target: listener.Addr().String(), token: tokenFile,
 		identity: named, ingress: ingressServer,
 	}
 }
 
 func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session {
 	t.Helper()
-	return f.openSessionExecutingAs(t, nil)
+	return f.openSessionExecutingAs(t, &identitypb.Identity{Name: f.identity.Identity.Name, Uid: string(f.identity.Identity.UID)})
 }
 
-// openSessionExecutingAs opens a Session the Dispatcher recorded as executing as identity, or as
-// no Identity when nil.
+// openSessionExecutingAs opens a Session the Dispatcher recorded as executing as identity.
 func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *identitypb.Identity) *centralsampler.Session {
 	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
@@ -264,6 +264,27 @@ func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *ide
 	if err != nil {
 		t.Fatal(err)
 	}
+	return session
+}
+
+// openLegacySession represents a retained pre-cutover request with no execution Identity. New
+// Session creation still requires one; only this fixture installs the historical wire shape.
+func (f samplerExportFixture) openLegacySession(t *testing.T) *centralsampler.Session {
+	t.Helper()
+	session := f.openSession(t)
+	var request samplerpb.CreateSessionRequest
+	if err := proto.Unmarshal(session.Configuration, &request); err != nil {
+		t.Fatal(err)
+	}
+	request.ExecutionIdentity = nil
+	wire, err := proto.Marshal(&request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.samplerDB.ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", session.ID, wire); err != nil {
+		t.Fatal(err)
+	}
+	session.Configuration = wire
 	return session
 }
 

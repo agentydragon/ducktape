@@ -28,9 +28,6 @@ type terminalAssembly struct {
 	started      time.Time
 	count        int
 	parts        map[int][]byte
-	ownerNS      string
-	ownerName    string
-	ownerUID     string
 	identityName string
 	identityUID  string
 }
@@ -207,10 +204,9 @@ func (h *WatchHub) terminalPart(payload string) error {
 	if len(data) > terminalChunkBytes {
 		return errors.New("terminal part is too large")
 	}
-	ownerNS, ownerName, ownerUID := item.GetExecutionAccountNamespace(), item.GetExecutionAccountName(), item.GetExecutionAccountUid()
 	identityName, identityUID := item.GetExecutionIdentityName(), item.GetExecutionIdentityUid()
-	if (ownerNS == "") != (ownerName == "") || ownerUID != "" && ownerNS == "" || (identityName == "") != (identityUID == "") {
-		return errors.New("terminal notification has an incomplete Session principal association")
+	if (identityName == "") != (identityUID == "") {
+		return errors.New("terminal notification has an incomplete Session Identity")
 	}
 	h.mu.Lock()
 	assembly := h.pending[item.GetEventId()]
@@ -221,11 +217,11 @@ func (h *WatchHub) terminalPart(payload string) error {
 		}
 		assembly = &terminalAssembly{
 			started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{},
-			ownerNS: ownerNS, ownerName: ownerName, ownerUID: ownerUID, identityName: identityName, identityUID: identityUID,
+			identityName: identityName, identityUID: identityUID,
 		}
 		h.pending[item.GetEventId()] = assembly
 	}
-	if assembly.count != int(item.GetPartCount()) || assembly.ownerNS != ownerNS || assembly.ownerName != ownerName || assembly.ownerUID != ownerUID ||
+	if assembly.count != int(item.GetPartCount()) ||
 		assembly.identityName != identityName || assembly.identityUID != identityUID {
 		h.mu.Unlock()
 		return errors.New("terminal part count changed")
@@ -258,11 +254,7 @@ func (h *WatchHub) terminalPart(payload string) error {
 		(dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED && dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN) {
 		return errors.New("terminal snapshot did not describe Sandbox deletion")
 	}
-	var owner *ServiceAccountIdentity
-	if assembly.ownerNS != "" && assembly.ownerName != "" {
-		owner = serviceAccountIdentityFor(Account{Namespace: assembly.ownerNS, Name: assembly.ownerName}, assembly.ownerUID)
-	}
-	event := TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch, Owner: owner}
+	event := TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch}
 	if assembly.identityName != "" {
 		event.OwnerIdentity = &identitypb.Identity{Name: assembly.identityName, Uid: assembly.identityUID}
 	}

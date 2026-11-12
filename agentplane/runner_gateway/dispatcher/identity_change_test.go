@@ -36,12 +36,11 @@ func waitForAdvisoryWaiter(t *testing.T, store *Store) {
 func seedIdentitySession(t *testing.T, store *Store, sandboxUID string, identity *identitypb.Identity, check func(context.Context) error) string {
 	t.Helper()
 	id := uuid.NewString()
-	account := serviceAccountIdentityFor(caller, "test-account-uid")
 	spec := &sessionpb.SessionSpec{}
 	_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), id, "test-sandbox", sandboxUID,
 		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
-		SessionExecution{Principal: account, Identity: identity},
-		ServiceAccountCaller{ServiceAccountIdentity: account, Attribution: &AdmissionAttribution{Actor: account, EffectiveCaller: account}}, check)
+		SessionExecution{Identity: identity},
+		IdentityCaller{Identity: identity, Proof: IdentitySVID{}}, check)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +97,7 @@ func TestIdentityChangeSerializesWithSessionAdmissionAndPostLockRecheck(t *testi
 		spec := &sessionpb.SessionSpec{}
 		_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), uuid.NewString(), "test-sandbox", sandboxUID,
 			testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
-			SessionExecution{Principal: account, Identity: old},
+			SessionExecution{Identity: old},
 			ServiceAccountCaller{ServiceAccountIdentity: account, Attribution: &AdmissionAttribution{Actor: account, EffectiveCaller: account}},
 			func(context.Context) error {
 				stateMu.Lock()
@@ -136,7 +135,7 @@ func TestSessionAdmissionBeforeIdentityChangeRefusesPatch(t *testing.T) {
 		spec := &sessionpb.SessionSpec{}
 		_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), id, "test-sandbox", sandboxUID,
 			testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
-			SessionExecution{Principal: account, Identity: old},
+			SessionExecution{Identity: old},
 			ServiceAccountCaller{ServiceAccountIdentity: account, Attribution: &AdmissionAttribution{Actor: account, EffectiveCaller: account}},
 			func(context.Context) error { close(checkEntered); <-releaseCreate; return nil })
 		createDone <- err
@@ -163,13 +162,12 @@ func TestIdentityChangeCheckDoesNotRejectExistingSessionReceipt(t *testing.T) {
 	sandboxUID := uuid.NewString()
 	identity := &identitypb.Identity{Name: "test-agent", Uid: uuid.NewString()}
 	id := seedIdentitySession(t, store, sandboxUID, identity, nil)
-	account := serviceAccountIdentityFor(caller, "test-account-uid")
 	spec := &sessionpb.SessionSpec{}
 	checked := false
 	_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), id, "test-sandbox", sandboxUID,
 		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
-		SessionExecution{Principal: account, Identity: identity},
-		ServiceAccountCaller{ServiceAccountIdentity: account, Attribution: &AdmissionAttribution{Actor: account, EffectiveCaller: account}},
+		SessionExecution{Identity: identity},
+		IdentityCaller{Identity: identity, Proof: IdentitySVID{}},
 		func(context.Context) error { checked = true; return status.Error(codes.FailedPrecondition, "changed") })
 	if err != nil || checked {
 		t.Fatalf("existing receipt = %v, check called=%t", err, checked)

@@ -47,7 +47,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	otherIdentity := &identitypb.Identity{Name: other.Identity.Name, Uid: string(other.Identity.UID)}
 	ownerAccount := serviceAccountIdentityFor(owner.Principal.Account, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerAccount, accountFound: true, identity: ownerIdentity}
+	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 
 	actor := auth.Account{Namespace: caller.Namespace, Name: "test-delegating-actions"}
 	resolver, err := auth.NewResolver(tokenReviewStub{"test-actions-token": {account: actor, uid: "test-actions-uid", pod: true}},
@@ -111,14 +111,13 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		}
 		return sessionID
 	}
-	owned := seed(ownerSandbox, SessionExecution{Principal: ownerAccount, Identity: ownerIdentity},
+	owned := seed(ownerSandbox, SessionExecution{Identity: ownerIdentity},
 		IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}})
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
-	otherSession := seed(otherSandbox, SessionExecution{
-		Principal: serviceAccountIdentityFor(other.Principal.Account, other.Principal.ServiceAccountUID), Identity: otherIdentity,
-	}, IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}})
-	accountSession := seed(ownerSandbox, SessionExecution{Principal: ownerAccount},
-		ServiceAccountCaller{ServiceAccountIdentity: ownerAccount, Attribution: &AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}})
+	otherSession := seed(otherSandbox, SessionExecution{Identity: otherIdentity},
+		IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}})
+	accountSession := seed(ownerSandbox, SessionExecution{Identity: otherIdentity},
+		ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}})
 
 	const command = "delegated-identity-input"
 	if _, err := client.SubmitInput(actingFor(ownerIdentity), &dispatcherpb.SubmitInputRequest{

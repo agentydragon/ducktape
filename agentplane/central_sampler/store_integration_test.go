@@ -30,8 +30,15 @@ import (
 
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 
+func fixtureExecutionIdentity() *identitypb.Identity {
+	return &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
+}
+
 func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
 	t.Helper()
+	if request.GetExecutionIdentity() == nil {
+		request.ExecutionIdentity = fixtureExecutionIdentity()
+	}
 	if request.GetExecutor() == nil {
 		request.Executor = &identitypb.SandboxDestination{
 			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
@@ -77,6 +84,7 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 			Owner:  &identitypb.ServiceAccount{Namespace: "fixture-executor-namespace", Name: "fixture-execution-account"},
 			Target: &identitypb.EnvironmentTarget{Namespace: "fixture-executor-namespace", Name: "fixture-executor", Uid: "fixture-executor-uid"},
 		},
+		ExecutionIdentity: fixtureExecutionIdentity(),
 	}
 	checkSessionID := func(prompt, sessionID string) {
 		t.Helper()
@@ -127,6 +135,12 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if reopened.ConversationID != opened.ConversationID || !bytes.Equal(reopened.Configuration, opened.Configuration) {
 		t.Fatal("duplicate open replaced the conversation or raw opening")
 	}
+	olderRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	olderRetry.ExecutionIdentity = nil
+	olderDispatcherRetry, err := store.CreateSession(t.Context(), olderRetry, "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
+	if err != nil || olderDispatcherRetry.ConversationID != opened.ConversationID || !bytes.Equal(olderDispatcherRetry.Configuration, opened.Configuration) {
+		t.Fatalf("retained opening rejected an older retry without Identity or rewrote configuration: session=%+v err=%v", olderDispatcherRetry, err)
+	}
 	after, err := store.Read(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
@@ -175,6 +189,7 @@ func TestStoreSessionWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "fixture-executor"},
 			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-executor", Uid: "fixture-executor-uid"},
 		},
+		ExecutionIdentity: fixtureExecutionIdentity(),
 	}
 	opened, err := store.CreateSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, nil)
 	if err != nil {
@@ -2180,6 +2195,52 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 	admitInput(t, store, session.ID, "steer", "too late")
 	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
 		t.Fatalf("drain during pending interrupt=%v err=%v", drained, err)
+	}
+}
+
+func TestStoreRequiresIdentityForNewSessionAndDoesNotBackfillRetainedSession(t *testing.T) {
+	store := newTestStore(t)
+	target := &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "identity-contract-sandbox", Uid: "identity-contract-sandbox-uid"}
+	request := &samplerpb.CreateSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec: &sessionpb.SessionSpec{
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: target.GetName(), Uid: target.GetUid()},
+			}}},
+			Cwd: "/fixture", Model: "fixture-model",
+		},
+		Executor: &identitypb.SandboxDestination{
+			Owner: &identitypb.ServiceAccount{Namespace: target.GetNamespace(), Name: "executor"}, Target: target,
+		},
+	}
+	if _, err := store.CreateSession(t.Context(), request, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, protocol.ErrInvalid) {
+		t.Fatalf("new Session without execution Identity error=%v, want invalid", err)
+	}
+	var count int
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_session WHERE id=$1", request.GetSessionId()).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("missing-Identity creation left a row: count=%d err=%v", count, err)
+	}
+
+	request.ExecutionIdentity = fixtureExecutionIdentity()
+	opened, err := store.CreateSession(t.Context(), request, "fixture-owner-uid", protocol.APIStyleResponses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyRequest := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	legacyRequest.ExecutionIdentity = nil
+	legacyConfiguration, err := proto.MarshalOptions{Deterministic: true}.Marshal(legacyRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", opened.ID, legacyConfiguration); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSession(t.Context(), request, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Identity retry silently backfilled retained legacy configuration: %v", err)
+	}
+	var retained []byte
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, legacyConfiguration) {
+		t.Fatalf("legacy configuration changed after retry: equal=%t err=%v", bytes.Equal(retained, legacyConfiguration), err)
 	}
 }
 

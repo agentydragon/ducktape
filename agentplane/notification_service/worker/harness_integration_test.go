@@ -158,8 +158,6 @@ func (h *fakeHistory) readRequests() []*historypb.ReadSessionEventsRequest {
 
 // fakeDispatcher records what is submitted to it, and says the command is queued unless a test says otherwise.
 type fakeDispatcher struct {
-	// accountUID is the ServiceAccount the Session is recorded as executing as; empty records none.
-	accountUID string
 	// identity is the Identity the Session is recorded as executing as, if any.
 	identity *identitypb.Identity
 	mu       sync.Mutex
@@ -259,7 +257,7 @@ func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settin
 	db := postgres.Open(t, databaseURL)
 	h := &harness{
 		db: db, settings: settings, sandboxes: &fakeSandboxes{view: matchingSandbox()},
-		history: &fakeHistory{}, dispatcher: &fakeDispatcher{accountUID: "test-account-uid"}, actions: newFakeProvider(),
+		history: &fakeHistory{}, dispatcher: &fakeDispatcher{identity: &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}}, actions: newFakeProvider(),
 	}
 	h.exec(t, `TRUNCATE inbox CASCADE`)
 	h.restart()
@@ -555,9 +553,6 @@ func (d *fakeDispatcher) GetSession(_ context.Context, request *dispatcherpb.Get
 		SessionId: request.GetSessionId(),
 		Identity:  d.identity,
 		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}},
-	}
-	if d.accountUID != "" {
-		session.ExecutionIdentity = &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: d.accountUID}
 	}
 	return &dispatcherpb.GetSessionResponse{Session: session}, nil
 }

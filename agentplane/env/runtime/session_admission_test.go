@@ -88,7 +88,6 @@ func TestOpenSessionRetainsItsExecutionIdentity(t *testing.T) {
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	ctx := sessionCallContext(r, t.Context())
 	request := openLifecycleSession("identity", filepath.Join(workspace, "project"))
-	request.ExecutionPrincipal = &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "test-sandboxes", Name: "sandbox"}, Uid: "account-uid"}
 	request.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity", Uid: "identity-uid"}
 	opened, err := r.CreateSession(ctx, request)
 	if err != nil || !proto.Equal(opened.GetAttached().GetExecutionIdentity(), request.ExecutionIdentity) {
@@ -106,10 +105,36 @@ func TestOpenSessionRetainsItsExecutionIdentity(t *testing.T) {
 	if _, err := r.CreateSession(ctx, replaced); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("retry under another Identity = %v, want AlreadyExists", err)
 	}
+	missing := openLifecycleSession("missing-identity", filepath.Join(workspace, "project"))
+	missing.ExecutionIdentity = nil
+	if _, err := r.CreateSession(ctx, missing); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("new Session without an Identity = %v, want InvalidArgument", err)
+	}
 	incomplete := openLifecycleSession("incomplete-identity", filepath.Join(workspace, "project"))
 	incomplete.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity"}
 	if _, err := r.CreateSession(ctx, incomplete); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("Identity without a UID = %v, want InvalidArgument", err)
+	}
+}
+
+func TestLegacySessionCannotBeAssignedAnIdentityOnRetry(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	record, err := retained.NewRecord(openLifecycleSession("legacy", filepath.Join(workspace, "project")).GetSpec(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.Write("legacy", record); err != nil {
+		t.Fatal(err)
+	}
+	request := openLifecycleSession("legacy", filepath.Join(workspace, "project"))
+	if _, err := r.CreateSession(sessionCallContext(r, t.Context()), request); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("legacy Session assigned an Identity on retry = %v, want AlreadyExists", err)
+	}
+	retainedRecord, err := r.store.Read("legacy")
+	if err != nil || retainedRecord.GetExecutionIdentity() != nil {
+		t.Fatalf("legacy Session record after rejected retry = %v, %v; want no Identity", retainedRecord, err)
 	}
 }
 

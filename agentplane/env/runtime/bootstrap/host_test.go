@@ -708,7 +708,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	record.NativeSessionId = &native
-	record.ExecutionPrincipal = &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}
+	record.ExecutionIdentity = &identitypb.Identity{Name: "identity", Uid: "uid"}
 	if err := sessions.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
@@ -784,7 +784,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatalf("restored Session IDs = %v, %v", ids, err)
 	}
 	restoredRecord, err := restoredSessions.Read("session-1")
-	if err != nil || restoredRecord.InitialModel != "new-model" || !bytes.Equal(restoredRecord.SetupScript, record.SetupScript) || restoredRecord.EventSourceId != record.EventSourceId || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != native || restoredRecord.TotalContextBudgetTokens == nil || *restoredRecord.TotalContextBudgetTokens != int64(budget) || restoredRecord.ExecutionPrincipal.GetAccount().GetName() != "account" || restoredRecord.ExecutionPrincipal.GetUid() != "uid" {
+	if err != nil || restoredRecord.InitialModel != "new-model" || !bytes.Equal(restoredRecord.SetupScript, record.SetupScript) || restoredRecord.EventSourceId != record.EventSourceId || restoredRecord.NativeSessionId == nil || *restoredRecord.NativeSessionId != native || restoredRecord.TotalContextBudgetTokens == nil || *restoredRecord.TotalContextBudgetTokens != int64(budget) || restoredRecord.ExecutionIdentity.GetName() != "identity" || restoredRecord.ExecutionIdentity.GetUid() != "uid" {
 		t.Fatalf("restored Session record = %+v, %v", restoredRecord, err)
 	}
 	restoredRecord.InitialModel = "after-restart"

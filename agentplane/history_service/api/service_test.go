@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +34,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -145,7 +149,7 @@ func bearing(t *testing.T, token string) context.Context {
 func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	var position uint64
@@ -155,10 +159,11 @@ func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 	return sessionID, position
 }
 
-func (s testServer) recordFor(t *testing.T, principal storage.ExecutionPrincipal) (uuid.UUID, uint64) {
+func (s testServer) recordAs(t *testing.T, identity storage.Identity) (uuid.UUID, uint64) {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := s.history.BindWriter(t.Context(), sessionID, testWriter, "", &principal); err != nil {
+	if _, err := s.history.BindSamplerWriter(t.Context(), sessionID, testWriter,
+		storage.Sandbox{Namespace: testNamespace, Name: testWriter.Name, UID: uuid.NewString()}, &identity); err != nil {
 		t.Fatal(err)
 	}
 	var position uint64
@@ -166,6 +171,32 @@ func (s testServer) recordFor(t *testing.T, principal storage.ExecutionPrincipal
 		t.Fatal(err)
 	}
 	return sessionID, position
+}
+
+// Legacy account tuples are retained audit data, never new ownership assignments.
+func (s testServer) recordLegacyFor(t *testing.T, account auth.Account, uid string) uuid.UUID {
+	t.Helper()
+	sessionID, _ := s.record(t)
+	if _, err := s.db.ExecContext(t.Context(), `UPDATE session_history
+		SET execution_principal_namespace=$2, execution_principal_name=$3, execution_principal_uid=$4 WHERE id=$1`,
+		sessionID, account.Namespace, account.Name, uid); err != nil {
+		t.Fatal(err)
+	}
+	return sessionID
+}
+
+func delegatedIdentity(t *testing.T, token string, identity storage.Identity) context.Context {
+	t.Helper()
+	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+token, auth.DelegationMetadataKey, string(encoded),
+	))
 }
 
 func testEntry(cursor uint64) *eventlogpb.EventEntry {
@@ -304,6 +335,213 @@ func containsSession(found *historypb.FindSessionsResponse, sessionID uuid.UUID)
 	return false
 }
 
+func TestServiceAccountAttributionDoesNotOwnRetainedHistory(t *testing.T) {
+	server := newServer(t, time.Second)
+	account := auth.Account{Namespace: testNamespace, Name: "legacy-owner-" + uuid.NewString()}
+	token, err := kube.WorkloadToken(t.Context(), account, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Get(t.Context(), account.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := server.recordLegacyFor(t, account, string(current.UID))
+	identitySession, _ := server.recordAs(t, storage.Identity{Name: account.Name, UID: uuid.NewString()})
+	for _, sessionID := range []uuid.UUID{legacy, identitySession} {
+		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, ctx := range map[string]context.Context{
+		"direct account": bearing(t, token),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, sessionID := range []uuid.UUID{legacy, identitySession} {
+				_, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10})
+				if status.Code(err) != codes.NotFound {
+					t.Errorf("account read of %s = %v, want NotFound", sessionID, err)
+				}
+			}
+			batch, err := server.client.BatchGetSessionSummaries(ctx, &historypb.BatchGetSessionSummariesRequest{
+				SessionIds: []string{legacy.String(), identitySession.String()},
+			})
+			if err != nil || len(batch.GetSummaries()) != 0 {
+				t.Fatalf("account summary batch = %+v, %v", batch, err)
+			}
+			found, err := server.client.FindSessions(ctx, &historypb.FindSessionsRequest{
+				Sandbox: &historypb.FindSessionsRequest_SandboxName{SandboxName: testWriter.Name},
+			})
+			if err != nil || containsSession(found, legacy) || containsSession(found, identitySession) {
+				t.Fatalf("account Session search = %+v, %v", found, err)
+			}
+		})
+	}
+	// The explicitly configured Pod-bound platform reader keeps its existing retained-data path.
+	page, err := server.client.ReadSessionEvents(bearing(t, readerToken), &historypb.ReadSessionEventsRequest{SessionId: legacy.String(), Limit: 10})
+	if err != nil || len(page.GetEntries()) != 1 {
+		t.Fatalf("platform read of retained legacy history = %+v, %v", page, err)
+	}
+	var namespace, name, uid string
+	var identityName, identityUID sql.NullString
+	if err := server.db.QueryRowContext(t.Context(), `SELECT execution_principal_namespace,
+		execution_principal_name, execution_principal_uid, execution_identity_name, execution_identity_uid
+		FROM session_history WHERE id=$1`, legacy).Scan(&namespace, &name, &uid, &identityName, &identityUID); err != nil {
+		t.Fatal(err)
+	}
+	if namespace != account.Namespace || name != account.Name || uid != string(current.UID) || identityName.Valid || identityUID.Valid {
+		t.Fatalf("legacy attribution changed or acquired an Identity: %s/%s/%s, %v/%v", namespace, name, uid, identityName, identityUID)
+	}
+}
+
+// All read paths, including watches and follows, use the delegated Identity rather than the
+// allowlisted platform actor's broad reader role. Direct Identity SVIDs exercise the same scope in
+// the serving-binary SVID tests.
+func TestDelegatedHistoryUsesTheRetainedIdentityScope(t *testing.T) {
+	owner := storage.Identity{Name: "scope-owner-" + uuid.NewString(), UID: uuid.NewString()}
+	other := storage.Identity{Name: "scope-other-" + uuid.NewString(), UID: uuid.NewString()}
+	live := newLiveIdentities(owner, other)
+	server := newServerWithDelegation(t, time.Second, callDeadline,
+		&auth.Delegator{Account: auth.Account{Namespace: testNamespace, Name: "test-reader"}, IdentityCallers: true},
+		live)
+	position := uint64(0)
+	owned, _ := server.recordAs(t, owner)
+	foreignSession, _ := server.recordAs(t, other)
+	legacy, _ := server.record(t)
+	for _, sessionID := range []uuid.UUID{owned, foreignSession, legacy} {
+		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	action := delegatedIdentity(t, readerToken, owner)
+
+	for name, ctx := range map[string]context.Context{"delegated Identity": action} {
+		t.Run(name, func(t *testing.T) {
+			for _, sessionID := range []uuid.UUID{owned} {
+				response, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10})
+				if err != nil || len(response.GetEntries()) != 1 || response.GetEntries()[0].GetCursor() != 1 {
+					t.Fatalf("owned raw read: %+v %v", response, err)
+				}
+				if _, err := server.client.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()}); err != nil {
+					t.Fatalf("owned summary: %v", err)
+				}
+			}
+			for _, sessionID := range []uuid.UUID{foreignSession, legacy} {
+				if _, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10}); status.Code(err) != codes.NotFound {
+					t.Errorf("foreign or unassociated raw read = %v, want NotFound", err)
+				}
+			}
+			batch, err := server.client.BatchGetSessionSummaries(ctx, &historypb.BatchGetSessionSummariesRequest{
+				SessionIds: []string{owned.String(), foreignSession.String(), legacy.String()},
+			})
+			if err != nil || len(batch.GetSummaries()) != 1 || batch.GetSummaries()[0].GetSessionId() != owned.String() {
+				t.Fatalf("scoped summary batch: %+v %v", batch, err)
+			}
+			found, err := server.client.FindSessions(ctx, &historypb.FindSessionsRequest{
+				Sandbox: &historypb.FindSessionsRequest_SandboxName{SandboxName: testWriter.Name},
+			})
+			if err != nil || !containsSession(found, owned) || containsSession(found, foreignSession) || containsSession(found, legacy) {
+				t.Fatalf("scoped Session search: %+v %v", found, err)
+			}
+
+			follow, err := server.client.FollowSession(ctx, &historypb.FollowSessionRequest{
+				SessionId: owned.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},
+			})
+			if err != nil {
+				t.Fatalf("owned follow: %v", err)
+			}
+			var entries int
+			for {
+				frame, err := follow.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("owned follow frame: %v", err)
+				}
+				if page := frame.GetEntries(); page != nil {
+					entries += len(page.GetEntries())
+				}
+			}
+			if entries != 1 {
+				t.Fatalf("owned FollowSession returned %d entries", entries)
+			}
+			foreignFollow, err := server.client.FollowSession(ctx, &historypb.FollowSessionRequest{
+				SessionId: foreignSession.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},
+			})
+			if err == nil {
+				_, err = foreignFollow.Recv()
+			}
+			if status.Code(err) != codes.NotFound {
+				t.Errorf("foreign FollowSession = %v, want NotFound", err)
+			}
+
+			watchCtx, stopWatch := context.WithTimeout(ctx, 100*time.Millisecond)
+			watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(position)})
+			if err != nil {
+				stopWatch()
+				t.Fatalf("open scoped watch: %v", err)
+			}
+			changed, err := watch.Recv()
+			if err != nil || changed.GetChanged() == nil {
+				stopWatch()
+				t.Fatalf("watch changed frame: %+v %v", changed, err)
+			}
+			opened, err := watch.Recv()
+			if err != nil || opened.GetSessionRecorded().GetSessionId() != owned.String() {
+				stopWatch()
+				t.Fatalf("watch leaked foreign or legacy opening: %+v %v", opened, err)
+			}
+			for {
+				frame, err := watch.Recv()
+				if err != nil {
+					break
+				}
+				if opened := frame.GetSessionRecorded(); opened != nil && opened.GetSessionId() != owned.String() {
+					stopWatch()
+					t.Fatalf("watch leaked another principal's opening: %v", opened)
+				}
+			}
+			stopWatch()
+		})
+	}
+
+	watchCtx, stopWatch := context.WithTimeout(delegatedIdentity(t, readerToken, owner), 5*time.Second)
+	watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(position)})
+	if err != nil {
+		stopWatch()
+		t.Fatal(err)
+	}
+	if changed, err := watch.Recv(); err != nil || changed.GetChanged() == nil {
+		stopWatch()
+		t.Fatalf("revalidation watch changed frame: %+v %v", changed, err)
+	}
+	if opened, err := watch.Recv(); err != nil || opened.GetSessionRecorded().GetSessionId() != owned.String() {
+		stopWatch()
+		t.Fatalf("revalidation watch owner frame: %+v %v", opened, err)
+	}
+	live.replace(owner.Name, uuid.NewString())
+	var reconnected bool
+	for {
+		frame, err := watch.Recv()
+		if err != nil {
+			stopWatch()
+			t.Fatalf("watch did not complete its bounded lease: %v", err)
+		}
+		if frame.GetReconnectRequired() != nil {
+			reconnected = true
+			break
+		}
+	}
+	stopWatch()
+	if !reconnected {
+		t.Fatal("delegated watch lease did not request fresh authorization")
+	}
+	if _, err := server.client.ReadSessionEvents(delegatedIdentity(t, readerToken, owner), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("delegation with replaced effective caller UID = %v, want PermissionDenied", err)
+	}
+}
+
 func TestAnUnfoldedOrUnknownSessionReadsAsNotFoundWhereItHasNoHistory(t *testing.T) {
 	server := newServer(t, time.Minute)
 	ctx := bearing(t, readerToken)
@@ -348,66 +586,28 @@ func TestACallThatOutlastsTheRequestTimeoutIsAbandoned(t *testing.T) {
 	}
 }
 
-type liveIdentities map[string]string
+type liveIdentities struct {
+	mu   sync.RWMutex
+	uids map[string]string
+}
 
-func (live liveIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
-	uid, found := live[name]
+func newLiveIdentities(identities ...storage.Identity) *liveIdentities {
+	live := &liveIdentities{uids: make(map[string]string)}
+	for _, identity := range identities {
+		live.uids[identity.Name] = identity.UID
+	}
+	return live
+}
+
+func (live *liveIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
+	live.mu.RLock()
+	defer live.mu.RUnlock()
+	uid, found := live.uids[name]
 	return uid, found, nil
 }
 
-// A platform component acting for an Identity reads exactly the Sessions recorded with that
-// Identity incarnation, as the Identity's own workload would.
-func TestDelegatedIdentityReadsOnlyItsIdentitysSessions(t *testing.T) {
-	owner := storage.Identity{Name: "test-delegated-owner", UID: uuid.NewString()}
-	other := storage.Identity{Name: "test-delegated-other", UID: uuid.NewString()}
-	server := newServerWithDelegation(t, time.Second, callDeadline,
-		&auth.Delegator{Account: auth.Account{Namespace: testNamespace, Name: "test-reader"}, IdentityCallers: true},
-		liveIdentities{owner.Name: owner.UID, other.Name: other.UID})
-	recordAs := func(identity storage.Identity) uuid.UUID {
-		sessionID := uuid.New()
-		if _, err := server.history.BindSamplerWriter(t.Context(), sessionID, testWriter,
-			storage.Sandbox{Namespace: testNamespace, Name: testWriter.Name, UID: uuid.NewString()}, nil, &identity); err != nil {
-			t.Fatal(err)
-		}
-		return sessionID
-	}
-	owned, foreign := recordAs(owner), recordAs(other)
-	account, _ := server.recordFor(t, storage.ExecutionPrincipal{Namespace: testNamespace, Name: "test-delegated-account", UID: uuid.NewString()})
-	for _, sessionID := range []uuid.UUID{owned, foreign, account} {
-		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	actingFor := func(identity storage.Identity) context.Context {
-		encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
-			EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-			Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
-			"authorization", "Agentplane-Delegated "+readerToken, auth.DelegationMetadataKey, string(encoded),
-		))
-	}
-
-	response, err := server.client.ReadSessionEvents(actingFor(owner), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10})
-	if err != nil || len(response.GetEntries()) != 1 {
-		t.Fatalf("delegated Identity read of its Session: %+v %v", response, err)
-	}
-	for _, sessionID := range []uuid.UUID{foreign, account} {
-		if _, err := server.client.ReadSessionEvents(actingFor(owner), &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10}); status.Code(err) != codes.NotFound {
-			t.Errorf("delegated Identity read of another's Session = %v, want NotFound", err)
-		}
-	}
-	batch, err := server.client.BatchGetSessionSummaries(actingFor(owner), &historypb.BatchGetSessionSummariesRequest{
-		SessionIds: []string{owned.String(), foreign.String(), account.String()},
-	})
-	if err != nil || len(batch.GetSummaries()) != 1 || batch.GetSummaries()[0].GetSessionId() != owned.String() {
-		t.Fatalf("delegated Identity summary batch: %+v %v", batch, err)
-	}
-	stale := storage.Identity{Name: owner.Name, UID: uuid.NewString()}
-	if _, err := server.client.ReadSessionEvents(actingFor(stale), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("delegation naming another incarnation = %v, want PermissionDenied", err)
-	}
+func (live *liveIdentities) replace(name, uid string) {
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	live.uids[name] = uid
 }

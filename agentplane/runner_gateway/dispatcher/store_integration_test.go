@@ -106,7 +106,7 @@ func admitted(t *testing.T) context.Context {
 type oneSandbox struct{}
 
 func (oneSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	return nil, true, nil
+	return testExecutionIdentity(), true, nil
 }
 
 func (oneSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -123,7 +123,7 @@ func (oneSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, b
 type blockedSandbox struct{}
 
 func (blockedSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	return nil, true, nil
+	return testExecutionIdentity(), true, nil
 }
 
 func (blockedSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -1194,10 +1194,14 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
 	runner := &rejectingRunner{err: status.Error(codes.FailedPrecondition, "turn is no longer current")}
-	worker := &DeliveryWorker{Store: store, Runner: runner}
+	session, err := store.GetSession(ctx, request.SessionId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &DeliveryWorker{Store: store, Runner: runner, Catalog: testCatalog{}}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, nil) {
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
 		t.Fatal("worker did not attempt interrupt")
 	}
 	row, err := store.GetDispatch(ctx, request.CommandId)
@@ -1207,6 +1211,10 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 }
 
 type testCatalog struct{ sandbox SandboxSnapshot }
+
+func (testCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return testExecutionIdentity(), true, nil
+}
 
 func (c testCatalog) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
 	return c.sandbox, name == c.sandbox.Name, nil
@@ -1223,6 +1231,10 @@ func (testCatalog) Changes() <-chan struct{}        { return nil }
 func (testCatalog) WaitSynced(context.Context) bool { return true }
 
 type growingCatalog struct{ sandboxes []SandboxSnapshot }
+
+func (*growingCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return testExecutionIdentity(), true, nil
+}
 
 func (c *growingCatalog) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
 	for _, sandbox := range c.sandboxes {
@@ -1312,12 +1324,12 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	actorIdentity := proto.Clone(actor).(*ServiceAccountIdentity)
 	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
 	opening, err := store.CreateSessionForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
-		callerIdentity, ServiceAccountCaller{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+		testExecutionIdentity(), ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
 	dispatch, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input(commandID, "hello"), nil,
-		ServiceAccountCaller{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+		ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2178,7 +2190,7 @@ func (s deletedDuringLookup) GetSandbox(context.Context, string) (SandboxSnapsho
 }
 
 func (deletedDuringLookup) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	return nil, true, nil
+	return testExecutionIdentity(), true, nil
 }
 
 func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -2720,10 +2732,15 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			store, databaseURL := testStoreWithURL(t, 3)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			identity := serviceAccountIdentityFor(Account(caller), "test-owner-uid")
-			admission := ServiceAccountCaller{Privileged: privileged, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+			var admission Caller
+			if privileged {
+				identity := serviceAccountIdentityFor(Account(caller), "test-owner-uid")
+				admission = ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+			} else {
+				admission = IdentityCaller{Identity: testExecutionIdentity(), Proof: IdentitySVID{}}
+			}
 			sessionID := uuid.NewString()
-			if _, err := store.CreateSessionForCaller(ctx, sessionID, "test-deletion", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
+			if _, err := store.CreateSession(ctx, sessionID, "test-deletion", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			// Simulate the API's successful read before the concurrent delete.
@@ -2792,13 +2809,9 @@ type deletingSessionInventory struct {
 	sessionID string
 }
 
-func (deletingSessionInventory) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	return nil, true, nil
-}
-
-func (i deletingSessionInventory) GetExecutionAccount(ctx context.Context, _ SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+func (i deletingSessionInventory) GetExecutionIdentity(ctx context.Context, _ SandboxSnapshot) (*identitypb.Identity, bool, error) {
 	_, err := i.store.DB.ExecContext(ctx, "DELETE FROM session WHERE session_id=$1", i.sessionID)
-	return serviceAccountIdentityFor(Account(caller), "test-account-uid"), true, err
+	return testExecutionIdentity(), true, err
 }
 
 func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
@@ -2807,7 +2820,7 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	identity := serviceAccountIdentityFor(Account(caller), "test-account-uid")
 	admission := ServiceAccountCaller{ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
 	sessionID := uuid.NewString()
-	if _, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
+	if _, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, testExecutionIdentity(), admission); err != nil {
 		t.Fatal(err)
 	}
 	service := &Service{Store: store, Sandboxes: deletingSessionInventory{store: store, sessionID: sessionID}}
@@ -2881,7 +2894,7 @@ func TestSessionWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testin
 			if _, err := fixture.store.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, ServiceAccountCaller{ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
+			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 				t.Fatal(err)
 			}
 			for range 2 {
@@ -2929,7 +2942,7 @@ func TestCancellationDuringWakeRetainsUncertaintyForSession(t *testing.T) {
 	if err != nil || row.State != CancelledState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || row.WakeAssessment.GetTargetGeneration() != fixture.sandbox.WakeGeneration {
 		t.Fatalf("lost in-flight wake marker: %+v %v", row, err)
 	}
-	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, ServiceAccountCaller{ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
+	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 		t.Fatal(err)
 	}
 	worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake, Leases: testLease{store: fixture.store}}
@@ -3028,7 +3041,11 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
-	worker := &DeliveryWorker{Store: store, Runner: &attemptProbeRunner{retryRunner: &retryRunner{}, before: func() {
+	session, err := store.GetSession(ctx, head.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Runner: &attemptProbeRunner{retryRunner: &retryRunner{}, before: func() {
 		row, err := store.GetDispatch(ctx, head.CommandID)
 		if err != nil || !row.DeliveryAttempted || row.State != DeliveringState {
 			t.Fatalf("RPC preceded durable marker: %+v, %v", row, err)
@@ -3036,7 +3053,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	}}}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if !worker.deliverCommand(ctx, head, SandboxSnapshot{Name: "sandbox-worker", UID: sandboxUID, Incarnation: "pod-1"}, *owner, nil) {
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{Name: "sandbox-worker", UID: sandboxUID, Incarnation: "pod-1"}, *owner, session) {
 		t.Fatal("worker did not attempt delivery")
 	}
 	queued, err := store.GetDispatch(ctx, head.CommandID)
@@ -3182,10 +3199,14 @@ func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Runner: &rejectingRunner{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
+	session, err := store.GetSession(ctx, head.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Runner: &rejectingRunner{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, nil) {
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
 		t.Fatal("retry did not run")
 	}
 	row, err := store.GetDispatch(ctx, head.CommandID)
@@ -3218,10 +3239,14 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 			}
 			// The fake external owner commits before returning an error code.
 			runner := &rejectingRunner{err: status.Error(test.code, "response unavailable"), admitted: map[string]bool{}}
-			worker := &DeliveryWorker{Store: store, Runner: runner}
+			session, err := store.GetSession(ctx, head.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Runner: runner}
 			worker.init()
 			defer worker.queue.ShutDown()
-			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, nil) {
+			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
 				t.Fatal("worker did not attempt delivery")
 			}
 			if !runner.admitted[head.CommandID] {

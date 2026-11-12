@@ -63,16 +63,11 @@ func (actorReviews) Create(_ context.Context, review *authenticationv1.TokenRevi
 // identitySandbox is one live Sandbox naming an Identity.
 type identitySandbox struct {
 	sandbox  dispatcher.SandboxSnapshot
-	account  *dispatcher.ServiceAccountIdentity
 	identity *identitypb.Identity
 }
 
 func (s identitySandbox) GetSandbox(_ context.Context, name string) (dispatcher.SandboxSnapshot, bool, error) {
 	return s.sandbox, name == s.sandbox.Name, nil
-}
-
-func (s identitySandbox) GetExecutionAccount(context.Context, dispatcher.SandboxSnapshot) (*dispatcher.ServiceAccountIdentity, bool, error) {
-	return s.account, true, nil
 }
 
 func (s identitySandbox) GetExecutionIdentity(context.Context, dispatcher.SandboxSnapshot) (*identitypb.Identity, bool, error) {
@@ -97,11 +92,6 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, integrationNamespace, "test-delegating-identity", policyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := dispatcher.SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	account := &dispatcher.ServiceAccountIdentity{
-		Account: &identitypb.ServiceAccount{Namespace: owner.Principal.Account.Namespace, Name: owner.Principal.Account.Name},
-		Uid:     owner.Principal.ServiceAccountUID,
-	}
-
 	resolver, err := auth.NewResolver(actorReviews{}, "test-dispatcher", []string{integrationNamespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +112,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	server := grpc.NewServer(served.ServerOptions(time.Second)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &dispatcher.Service{
 		Store: sessions, DispatcherCallers: sets.New(integrationActor), WatchLease: 10 * time.Second,
-		Sandboxes: identitySandbox{sandbox: sandbox, account: account, identity: ownerIdentity},
+		Sandboxes: identitySandbox{sandbox: sandbox, identity: ownerIdentity},
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -152,7 +142,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	seed := func(identity *identitypb.Identity) string {
 		sessionID := uuid.NewString()
 		if _, err := sessions.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID, dispatcher.EnvironmentHosted,
-			spec, nil, nil, dispatcher.SessionExecution{Principal: account, Identity: identity},
+			spec, nil, nil, dispatcher.SessionExecution{Identity: identity},
 			dispatcher.IdentityCaller{Identity: identity, Proof: dispatcher.IdentitySVID{}}); err != nil {
 			t.Fatalf("seed Session: %v", err)
 		}

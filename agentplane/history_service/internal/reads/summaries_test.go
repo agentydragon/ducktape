@@ -236,7 +236,7 @@ func TestSessionsExposeAndFilterBySandboxUID(t *testing.T) {
 		writer := storage.ServiceAccountWriter{
 			Namespace: "test-sandbox-namespace", Name: "same-name", UID: "writer-account-" + sandboxUID,
 		}
-		if _, err := f.history.BindWriter(t.Context(), sessionID, writer, sandboxUID, nil); err != nil {
+		if _, err := f.history.BindWriter(t.Context(), sessionID, writer, sandboxUID); err != nil {
 			t.Fatal(err)
 		}
 		summary, err := f.reader.GetSessionSummary(t.Context(), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})

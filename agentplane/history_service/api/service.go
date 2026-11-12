@@ -51,7 +51,7 @@ type Options struct {
 }
 
 // Methods admits a reviewed ServiceAccount or an Identity SVID to the read API. The handler scopes
-// ordinary callers to their retained execution principal or Identity and keeps the configured
+// ordinary callers to their retained execution Identity and keeps the configured
 // Pod-bound backend readers explicit.
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccountOrIdentity(resolver)
@@ -127,12 +127,9 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 			return s.reader.WithReadScope(storage.AllSessions()), nil
 		}
 	}
-	principal := storage.ExecutionPrincipal{
-		Namespace: account.GetNamespace(),
-		Name:      account.GetName(),
-		UID:       caller.GetUid(),
-	}
-	return s.reader.WithReadScope(storage.OwnedBy(principal)), nil
+	// A component account may be an explicit platform reader, but it never acquires ownership
+	// from a retained execution account, its writer provenance, or an actor's reader role.
+	return s.reader.WithReadScope(storage.ReadScope{}), nil
 }
 
 func serve[Request, Response any](ctx context.Context, s *Service, request *Request, read func(context.Context, *reads.Reader, *Request) (*Response, error)) (*Response, error) {

@@ -189,15 +189,11 @@ type fakeSessions struct {
 }
 
 func nativeSession(sessionID, name, uid string) *dispatcherpb.Session {
-	identityName := name
-	if identityName == "" {
-		identityName = sandboxName
+	identity := &identitypb.Identity{Name: name}
+	if name != "" {
+		identity.Uid = name + "-identity-uid"
 	}
-	account, err := kube.ServiceAccount(context.Background(), auth.Account{Namespace: testNamespace, Name: identityName})
-	if err != nil {
-		panic(err)
-	}
-	return &dispatcherpb.Session{SessionId: sessionID, ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: name}, Uid: string(account.UID)}, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
+	return &dispatcherpb.Session{SessionId: sessionID, Identity: identity, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 		EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}},
 	}}}
 }

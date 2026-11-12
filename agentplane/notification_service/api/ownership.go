@@ -35,50 +35,10 @@ func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 		inboxOwner, err := s.identityOwner(ctx, caller.identity, caller.sandbox)
 		return workload{owner: inboxOwner, sandbox: caller.sandbox}, err
 	case accountActor:
-		view, err := s.sandbox(ctx, model.DestinationRef{Namespace: caller.account.Namespace, Name: caller.account.Name})
-		if err != nil {
-			return workload{}, err
-		}
-		inboxOwner, err := s.owner(ctx, caller.account, view.Identity.Uid)
-		return workload{owner: inboxOwner, sandbox: model.DestinationRef{Namespace: caller.account.Namespace, Name: caller.account.Name, UID: view.Identity.Uid}}, err
+		return workload{}, store.ErrNotFound
 	default:
 		panic(fmt.Sprintf("unknown actor %T", caller))
 	}
-}
-
-func (s *Notifications) owner(ctx context.Context, account model.ServiceAccount, sandboxUID string) (store.Owner, error) {
-	principal, err := auth.Caller(ctx)
-	if err != nil {
-		return nil, admissionRefused{err}
-	}
-	owner := store.AccountOwner{Account: account, AccountUID: principal.ServiceAccountUID, SandboxUID: sandboxUID}
-	if owner.AccountUID == "" {
-		return nil, store.ErrNotFound
-	}
-	inboxes, err := s.store.UnestablishedInboxes(ctx, owner)
-	if err != nil {
-		return nil, err
-	}
-	for _, inbox := range inboxes {
-		response, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: inbox.SessionID})
-		if err != nil {
-			// Reconciliation is best effort: already established inboxes remain accessible
-			// while the authority is unavailable. Unknown identities stay inaccessible.
-			slog.WarnContext(ctx, "inbox owner identity unavailable", "inbox", inbox.ID, "error", err)
-			continue
-		}
-		uid, err := sessionidentity.AccountUID(response.GetSession(), inbox.SessionID, inbox.DestinationRef, account)
-		if err != nil {
-			continue
-		}
-		if err := s.store.EstablishInboxOwner(ctx, account, inbox.DestinationRef, inbox.SessionID, uid); err != nil {
-			return nil, err
-		}
-		if err := s.establishIdentity(ctx, response.GetSession(), inbox.DestinationRef, inbox.SessionID); err != nil {
-			return nil, err
-		}
-	}
-	return owner, nil
 }
 
 // identityOwner is owner for an Identity caller: it establishes, from the Session authority, the
@@ -102,8 +62,7 @@ func (s *Notifications) identityOwner(ctx context.Context, identity model.Identi
 	return owner, nil
 }
 
-// establishIdentity records the Identity the Session authority recorded the inbox's Session as
-// executing as, if any, beside the ServiceAccount owner.
+// establishIdentity records the Identity the Session authority recorded the inbox's Session as executing as.
 func (s *Notifications) establishIdentity(ctx context.Context, session *dispatcherpb.Session, ref model.DestinationRef, sessionID string) error {
 	identity, ok := sessionidentity.Identity(session, sessionID, ref)
 	if !ok {

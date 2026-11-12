@@ -132,15 +132,13 @@ message Attached {
   // The UID of the incarnation (the Pod or VM launcher Pod) whose runner took this snapshot. Absent from a
   // runner that predates the field.
   optional string incarnation_uid = 8;
-  // Immutable logical principal under which this Session executes, independent of the journal writer.
-  // Absent on legacy retained Sessions without a trustworthy association.
-  ServiceAccountIdentity execution_principal = 9;
+  reserved 9;
+  reserved "execution_principal";
   // Preserves an archived pre-placement harness when exact historical placement cannot be
   // reconstructed. New Sessions leave this unset and use spec.placement.
   Harness historical_harness = 10;
   // The Identity this Session executes as, recorded by the Dispatcher from its Sandbox's
-  // `spec.identity` at creation. Absent when the Sandbox named none, and from a runner that
-  // predates the field; execution_principal is set either way.
+  // `spec.identity` at creation. Absent for legacy retained Sessions without an exact Identity.
   Identity execution_identity = 11;
 }
 

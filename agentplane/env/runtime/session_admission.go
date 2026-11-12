@@ -40,9 +40,6 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 	if _, err := retained.ValidateSessionID(request.SessionId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := validateExecutionPrincipal(request.GetExecutionPrincipal()); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	if err := validateExecutionIdentity(request.GetExecutionIdentity()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -95,9 +92,6 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 		if request.SetupScript != nil && !retained.MatchesSetupScript(record, request.GetSetupScript()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 		}
-		if !compatibleExecutionPrincipal(record.ExecutionPrincipal, request.GetExecutionPrincipal()) {
-			return nil, status.Error(codes.AlreadyExists, "session exists with a different execution principal")
-		}
 		if !compatibleExecutionIdentity(record.ExecutionIdentity, request.GetExecutionIdentity()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different execution identity")
 		}
@@ -114,6 +108,9 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 		}
 		return &environmentruntimepb.CreateSessionResponse{Attached: attached}, nil
 	}
+	if request.GetExecutionIdentity() == nil {
+		return nil, status.Error(codes.InvalidArgument, "execution_identity is required for a new Session")
+	}
 	budget, err := r.config.ResolveModelConfig(ctx, placement.GetHarness(), spec.Model)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -122,12 +119,7 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	if request.GetExecutionPrincipal() != nil {
-		record.ExecutionPrincipal = proto.Clone(request.GetExecutionPrincipal()).(*identitypb.ServiceAccountIdentity)
-	}
-	if request.GetExecutionIdentity() != nil {
-		record.ExecutionIdentity = proto.Clone(request.GetExecutionIdentity()).(*identitypb.Identity)
-	}
+	record.ExecutionIdentity = proto.Clone(request.GetExecutionIdentity()).(*identitypb.Identity)
 	admitted := false
 	s, err := r.sessions.ReserveFresh(r.lifecycleContext, request.SessionId, func() error {
 		return r.withSessionAdmission(ctx, true, &expected, func() error {
@@ -154,25 +146,6 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 	}
 	r.changed()
 	return &environmentruntimepb.CreateSessionResponse{Attached: s.Attached()}, nil
-}
-
-func validateExecutionPrincipal(principal *identitypb.ServiceAccountIdentity) error {
-	if principal == nil {
-		return nil
-	}
-	if principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "" {
-		return errors.New("execution_principal must include an account namespace, account name, and UID")
-	}
-	return nil
-}
-
-// A retry may omit a principal after it was durably recorded, but it may not replace one or assign
-// an identity to an older unassociated record.
-func compatibleExecutionPrincipal(retained, incoming *identitypb.ServiceAccountIdentity) bool {
-	if retained == nil {
-		return incoming == nil
-	}
-	return incoming == nil || proto.Equal(retained, incoming)
 }
 
 func validateExecutionIdentity(identity *identitypb.Identity) error {

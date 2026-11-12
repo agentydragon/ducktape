@@ -30,19 +30,6 @@ func Target(session *dispatcherpb.Session, sessionID string) *sessionpb.ExactEnv
 	return target
 }
 
-// AccountUID accepts only the identity established for this exact Session placement.
-// The current same-name Kubernetes account cannot establish historical ownership.
-func AccountUID(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef, account model.ServiceAccount) (string, error) {
-	target := Target(session, sessionID)
-	identity := session.GetExecutionIdentity()
-	if target == nil || target.GetName() != ref.Name || target.GetUid() != ref.UID ||
-		identity.GetAccount().GetNamespace() != ref.Namespace || identity.GetAccount().GetNamespace() != account.Namespace ||
-		identity.GetAccount().GetName() != account.Name || identity.GetUid() == "" {
-		return "", store.ErrNotFound
-	}
-	return identity.GetUid(), nil
-}
-
 // Identity is the Identity incarnation the Session authority recorded this exact Session placement as
 // executing as; ok is false when it recorded none or the placement is another Sandbox's.
 func Identity(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) (identity model.Identity, ok bool) {
@@ -55,12 +42,8 @@ func Identity(session *dispatcherpb.Session, sessionID string, ref model.Destina
 	return model.Identity{Name: recorded.GetName(), UID: recorded.GetUid()}, true
 }
 
-// IdentityRun is the Identity incarnation the Session authority recorded this exact Session placement
-// as executing as with no ServiceAccount, its Sandbox having had none; ok is false for any Session
-// that records a ServiceAccount, records no Identity, or is another Sandbox's.
+// IdentityRun is the Identity incarnation the Session authority recorded this exact Session placement as
+// executing as; ok is false when it recorded none or the placement is another Sandbox's.
 func IdentityRun(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) (identity model.Identity, ok bool) {
-	if session.GetExecutionIdentity() != nil {
-		return model.Identity{}, false
-	}
 	return Identity(session, sessionID, ref)
 }

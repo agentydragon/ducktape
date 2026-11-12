@@ -82,14 +82,13 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
 	execution := SessionExecution{
-		Principal: &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "test", Name: "executor"}, Uid: "account-uid"},
-		Identity:  &identitypb.Identity{Name: "executor-identity", Uid: "identity-uid"},
+		Identity: &identitypb.Identity{Name: "executor-identity", Uid: "00000000-0000-4000-8000-00000000a008"},
 	}
 	if err := runner.CreateSession(context.Background(), sandbox, "session", spec, &setup, execution); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" ||
-		!proto.Equal(fixture.opened.GetExecutionPrincipal(), execution.Principal) || !proto.Equal(fixture.opened.GetExecutionIdentity(), execution.Identity) {
+		!proto.Equal(fixture.opened.GetExecutionIdentity(), execution.Identity) {
 		t.Fatalf("unexpected opening: %v token %q", fixture.opened, fixture.token)
 	}
 	admission, err := runner.Deliver(context.Background(), sandbox, "session", &commandpb.Command{CommandId: "interrupt", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn"}}})
