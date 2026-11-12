@@ -156,7 +156,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -200,10 +200,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-openai
@@ -436,7 +436,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-openai
+  name: openai
   namespace: platform-sessions
 spec:
   ports:
@@ -571,7 +571,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -615,10 +615,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-anthropic
@@ -851,7 +851,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-anthropic
+  name: anthropic
   namespace: platform-sessions
 spec:
   ports:
@@ -986,7 +986,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -1030,10 +1030,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-chatgpt
@@ -1266,7 +1266,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-chatgpt
+  name: chatgpt
   namespace: platform-sessions
 spec:
   ports:
@@ -1401,7 +1401,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -1445,10 +1445,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-blueshield
@@ -1679,7 +1679,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-blueshield
+  name: blueshield
   namespace: platform-sessions
 spec:
   ports:
@@ -1814,7 +1814,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-quest
+  name: quest
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -1858,10 +1858,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-quest
+  name: quest
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-quest
@@ -2096,7 +2096,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-quest
+  name: quest
   namespace: platform-sessions
 spec:
   ports:
@@ -2234,7 +2234,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -2278,10 +2278,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-thrive
@@ -2514,7 +2514,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-thrive
+  name: thrive
   namespace: platform-sessions
 spec:
   ports:
@@ -2644,7 +2644,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-sessions-gateway
+  name: gateway
   namespace: platform-sessions
 spec:
   dnsNames:
@@ -2658,10 +2658,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: platform-sessions-gateway
+  name: gateway
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-gateway
@@ -2901,7 +2901,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: platform-sessions-gateway
+  name: gateway
   namespace: platform-sessions
 spec:
   ports:
