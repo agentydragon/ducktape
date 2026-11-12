@@ -786,6 +786,54 @@ export { first, second, shared };
 }
 
 #[test]
+fn later_reader_can_share_module_with_a_captured_array() {
+    let source = r#"class Empty {}
+class Holder {
+  constructor(record, checker) { this.record = record; this.checker = checker; this.size = record.size ?? 0; }
+  size;
+  run() { return this.record.callback(); }
+}
+function create(record) { return new Holder(record, new Empty()); }
+const shared = [0];
+const first = create({ size: 1, items: [1], callback: () => shared.push(1) });
+const second = create({ size: 2, items: [2], callback: () => shared.push(2) });
+const after = first.size;
+console.log(after, second.size, first.run(), second.run(), shared.join(','));
+export { first, second, shared, after };
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "framework",
+                    &[
+                        Member::new("Empty"),
+                        Member::new("Holder"),
+                        Member::new("create").with_retained_record_factory(),
+                    ],
+                ),
+                logical_module("first", &[Member::new("first")]),
+                logical_module("second", &[Member::new("second")]),
+                logical_module("shared", &[Member::new("shared"), Member::new("after")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "1 2 2 3 0,1,2\n");
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+    for module in ["first", "second", "shared"] {
+        assert!(
+            fixture
+                .out_root
+                .join(format!("static/app/modules/{module}.js"))
+                .is_file(),
+            "missing emitted {module} module"
+        );
+    }
+}
+
+#[test]
 fn argument_mutation_keeps_its_heap_edge_beside_a_checked_call() {
     let source = r#"class Holder {
   constructor(record) { this.items = record.items; }

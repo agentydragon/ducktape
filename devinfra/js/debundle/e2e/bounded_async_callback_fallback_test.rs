@@ -56,6 +56,35 @@ fn post_await_read_does_not_become_an_at_init_dependency() {
 }
 
 #[test]
+fn post_await_read_allows_registration_before_its_late_value() {
+    let source = source("async", "await 0; return late;").replace(
+        "const late = 'ready';",
+        "const late = registration === undefined ? 'ready' : 'other';",
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("registration", &[Member::new("registration")]),
+                logical_module("value", &[Member::new("late")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "ready\n");
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+    for module in ["registration", "value"] {
+        assert!(
+            fixture
+                .out_root
+                .join(format!("static/app/modules/{module}.js"))
+                .is_file(),
+            "missing emitted {module} module"
+        );
+    }
+}
+
+#[test]
 fn independently_invocable_prefix_reads_still_constrain_initialization() {
     for (async_keyword, body) in [
         ("", "return late;"),
