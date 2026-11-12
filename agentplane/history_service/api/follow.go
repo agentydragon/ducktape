@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
