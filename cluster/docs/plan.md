@@ -27,17 +27,15 @@ editing a route.
 
 ## Next Actions
 
-- [ ] **Canary Cilium host ingress policies.** Inventory public, Nebula,
-      pod-to-host, management, storage, and recovery traffic first. Verify an
-      out-of-band recovery path and the own-node Gateway probe, then audit and
-      enforce on one worker before expanding to other workers and control planes.
-      Keep public Kubernetes API access on TCP 6443 initially; revisit whether
-      its source addresses can be restricted after client paths are inventoried.
-      Cilium's host policy matches Nebula source IPs on public interfaces too;
-      verify or add underlay anti-spoofing before trusting those identities.
-      Cilium IPv6 is disabled while optiplex has a global IPv6 address; verify
-      IPv6 exposure and implement IPv6 ingress protection independently. Host
-      firewall enablement alone does not restrict satellite listeners.
+- [ ] **Complete host firewall hardening.** Cilium host ingress policies are
+      enforced on all seven Talos nodes. Keep public Kubernetes API access on
+      TCP 6443 initially; revisit source restrictions after client paths are
+      inventoried. Cilium's host policy matches Nebula source IPs on public
+      interfaces too; verify or add underlay anti-spoofing before trusting
+      those identities. Cilium IPv6 is disabled while host IPv6 is enabled;
+      verify IPv6 exposure and implement IPv6 ingress protection independently.
+      Investigate binding LINSTOR satellites to the Nebula interface as an
+      additional restriction.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
       `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
@@ -283,9 +281,8 @@ SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encr
 
 ### Firewall Hardening
 
-Inventory node ingress and canary the Cilium host firewall before expanding it.
-Keep the Kubernetes API (6443) public initially; consider tightening it after
-inventorying clients. Keep required public services and Nebula access working.
+Cilium host ingress policies cover the Talos nodes. Outstanding source-spoofing,
+IPv6 and public Kubernetes API work is tracked in Next Actions above.
 
 ### OpenTofu State Backend
 
