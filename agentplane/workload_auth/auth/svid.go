@@ -227,17 +227,6 @@ func (r *Resolver) ResolveSubject(ctx context.Context) (Subject, error) {
 	return r.Resolve(ctx)
 }
 
-// ResolveRequest uses the HTTP listener's verified TLS peer and the same
-// authentication selection as native RPCs. Identity is never read from headers.
-func (r *Resolver) ResolveRequest(request *http.Request) (Principal, error) {
-	return r.Resolve(requestContext(request))
-}
-
-// ResolveSubjectRequest is ResolveSubject for an HTTP request.
-func (r *Resolver) ResolveSubjectRequest(request *http.Request) (Subject, error) {
-	return r.ResolveSubject(requestContext(request))
-}
-
 // requestContext carries an HTTP request's credentials as the gRPC middleware reads them. The
 // delegation header is base64 on the wire (EncodeDelegationHeader), as gRPC's own `-bin` transport.
 func requestContext(request *http.Request) context.Context {
