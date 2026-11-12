@@ -66,3 +66,55 @@ Those do not reproduce the CA-chain mismatch. Their underlying causes and repair
 are separate work; full CI is not green.
 The cleanup helper now participates in the baseline fingerprint, so the first
 attachment also rejects old snapshots certified by the incomplete cleanup.
+
+## MCP Sandbox startup failures on November 9
+
+The [devel invocation `1e6dc3d2`](https://app.buildbuddy.io/invocation/1e6dc3d2-1d13-565b-b32f-0c399df96474)
+tested `b55239863dd62a89d7fdb00bb9571a58db8706eb`. Three independent test
+actions, `mcp:test_delegation`, `mcp:test_parent_delegation`, and
+`mcp:test_services`, timed out waiting for Sandboxes to become Ready. Each action
+retained its own `test.outputs/certificates/resources.yaml`. In each, the
+`agentplane-workload-ca-1` CertificateRequest predates `test-runner-root-1` by
+about 16 minutes. The request's recorded signing root differs from the new root:
+
+| Test action              | Workload CA request | New root request | Old root SHA256                                                    | New root SHA256                                                    |
+| ------------------------ | ------------------- | ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `test_delegation`        | 17:54:37 UTC        | 18:10:31 UTC     | `c25ab543a4941004aed2c66fbd7e3f809afc77f336bbc1f87391e671ad0549ce` | `93742571db266482fb02a5e96e1d00f52d8946abe8c7ea73c8022d6d3834a643` |
+| `test_parent_delegation` | 17:54:28 UTC        | 18:10:39 UTC     | `0f918e3dca675919bb96d5312d36b6de2816cdae3aad912ea3cd66b4a0f7f350` | `4c6748ec0e031d0101c0954e699a19b903abbd7f42c42a302c87e9873b338d86` |
+| `test_services`          | 17:54:37 UTC        | 18:10:39 UTC     | `cf4deac7f65986569fdee7f5665cd62d9c80ba6dac32de65b82fecbbcf1d80eb` | `008639775ecdd4fa348d0e34d53f054fc0e4aa4800bac2023a0a00084812373c` |
+
+These SHA256 values are X.509 certificate fingerprints, not hashes of the PEM
+files. For each action, `openssl verify` accepts the recorded workload CA
+certificate against its old signing root and rejects it against the new root
+(`error 20: unable to get local issuer certificate`). Thus the recorded fixture
+chain is incoherent in all three actions.
+
+`test_services` also retained two central Sandbox Pod snapshots and their
+`environment-runtime.log` files. Pods `systest-central-8f84786e` (UID
+`ed8ec59b-8fc7-4606-b06f-e100ecc4a979`) and `systest-central-a66b0b13`
+(UID `7c8fa11e-025d-4703-a890-6db2ba76ae52`) each show five runtime restarts,
+last exit code 1, and `CrashLoopBackOff`. Both runtime logs end at startup with
+`Runner control certificate: verify local certificate chain`, followed by an
+unknown-authority error and ECDSA verification failure against
+`test-k3s-runner-root`. The first observed failure is local certificate
+verification during Runtime construction, before a Runner connection could
+establish Sandbox readiness. The retained logs prove this for those two UIDs.
+The timed-out delegation and policy Sandbox UIDs are different, and their
+previous-container stderr was not retained; their identical recorded CA
+mismatch supports the same cause but does not prove each Pod's exit reason.
+
+The tested commit did not contain [#15193](https://github.com/agentydragon/ducktape/pull/15193):
+`git merge-base --is-ancestor 1371e88ac93bcd67d9755138dc3511047f6178c7 b55239863dd62a89d7fdb00bb9571a58db8706eb`
+exits 1. That cleanup merged at 19:04:13 UTC, after this invocation began;
+`git show b5523986:agentplane/system_tests/deployment/stack.py` confirms the
+tested `_baseline_clean` still removed only the hardcoded root Certificate.
+Current devel's fixture-derived cleanup removes both fixture CAs, their owned
+requests, and their Secrets. The comparison source includes the cleanup:
+`git merge-base --is-ancestor 1371e88ac93bcd67d9755138dc3511047f6178c7 9189044f28c05244ce64daabaa5ab9d8ff05ec95`
+exits 0. After both #15193 and the diagnostic change in #15810 merged,
+all three targets passed in a fresh, uncached remote execution at
+[invocation `0514b26f`](https://app.buildbuddy.io/invocation/0514b26f-a4b0-5abf-81ba-076ceea0c132)
+on source `9189044f28c05244ce64daabaa5ab9d8ff05ec95`. That is one selected
+post-fix comparison, not a recurrence-rate estimate. If a later readiness
+failure appears, compare its captured current and previous Runtime logs and
+Pod UID with the public certificate identities before assigning it this cause.
