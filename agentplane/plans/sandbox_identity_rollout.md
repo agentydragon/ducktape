@@ -1,6 +1,6 @@
 # Sandbox Identity switch rollout
 
-Prepared for the switch and its dependent cleanup. Remove this plan after live acceptance and
+Prepared for the switch and its dependent cleanup. Remove this plan and its companion hold patch after live acceptance and
 move any lasting operational instructions to the owning service's documentation.
 
 ## Scope and accepted state
@@ -59,6 +59,14 @@ hold in Git until the coordinated release is ready; an imperative suspend alone 
 by the parent reconciler. If image automation must also be held, coordinate the shared
 `all-images` automation with its other consumers and record its previous state. Preparation of
 this plan does not apply any hold or change running workloads.
+
+The companion [`sandbox_identity_rollout_hold.patch`](sandbox_identity_rollout_hold.patch) is a
+rendered candidate for that temporary hold. It changes the three owning cdk8s functions and only
+these three generated Kustomizations. The delivery function currently has a single caller, for
+staging. Apply the patch in a separate hold PR based on the current deployment branch, regenerate
+with `bb run //cluster/cdk8s:generate_manifests`, and review its exact scope before merging. Its
+generation and `git apply --check` passed against the repaired switch. The cutover stack itself
+leaves reconciliation enabled; merely checking out or merging this patch artifact applies no hold.
 
 ## Cutover
 
