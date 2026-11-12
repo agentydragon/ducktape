@@ -28,7 +28,6 @@ py_wheel(
     distribution = "ducktape_ws",
     entry_points = {"console_scripts": ["ws = devinfra.ws.cli:main"]},
     python_requires = ">=3.14",
-    # The current Nix pin still requires ducktape-util; its input has a cleanup gate.
     requires = [
         "typer",
     ],
