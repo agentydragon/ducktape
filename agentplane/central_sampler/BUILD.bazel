@@ -397,6 +397,7 @@ go_library(
     deps = [
         ":sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
@@ -467,6 +468,7 @@ go_test(
     deps = [
         ":sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",
         "//agentplane/env/runtime/execution:executor_go_proto",
@@ -514,6 +516,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",
         "//agentplane/proto:delegation_go_proto",

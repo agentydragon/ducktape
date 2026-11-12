@@ -1,6 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/central_sampler:__pkg__"])
+package(default_visibility = [
+    "//agentplane/central_sampler:__pkg__",
+    "//agentplane/central_sampler/internal/storage:__pkg__",
+])
 
 go_library(
     name = "anthropic",
@@ -10,7 +13,6 @@ go_library(
         "config.go",
         "context.go",
         "observations.go",
-        "stored.go",
         "wire.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic",
@@ -25,7 +27,6 @@ go_test(
     size = "small",
     srcs = [
         "anthropic_test.go",
-        "stored_test.go",
     ],
     embed = [":anthropic"],
     race = "on",

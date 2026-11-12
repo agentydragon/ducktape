@@ -678,6 +678,14 @@ Content IDs hash the kind and standard-JSON payload with a versioned domain sepa
 bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
 general JSON node format or serializer.
 
+Persistence formats and provider-specific packing/reconstruction codecs live in
+`internal/storage`, private to the sampler. Native `anthropic`/`responses` packages own API
+types, request construction, streaming and conversation semantics; they do not save/load content
+or depend on storage IDs. The shared `protocol` package defines semantic contracts, not stored
+records. The sampler implements the private content reader/writer against PostgreSQL and owns
+transactions, context roots, authorization and request history. The shared content table contains
+provider-specific JSON payloads, rather than a universal message schema.
+
 `sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
 shares the entire prior prefix. The conversation transcript retains the full native conversation
 across compaction. Transcript and optional active roots reference these contexts; small controls

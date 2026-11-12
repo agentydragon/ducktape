@@ -1,19 +1,23 @@
-package anthropic
+package storage
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
+type contentMode string
+
 const (
-	contentModeAbsent = "absent"
-	contentModeArray  = "array"
-	contentModeText   = "text"
-	contentModeInline = "inline"
-	contentModeNull   = "null"
+	contentModeNone   contentMode = ""
+	contentModeAbsent contentMode = "absent"
+	contentModeArray  contentMode = "array"
+	contentModeText   contentMode = "text"
+	contentModeInline contentMode = "inline"
+	contentModeNull   contentMode = "null"
 )
 
 // messageContent stores the provider's envelope fields and references each ordered content block.
@@ -21,53 +25,53 @@ const (
 // preserves numbers and metadata the sampler does not interpret.
 type messageContent struct {
 	Fields      map[string]json.RawMessage `json:"fields"`
-	ContentMode string                     `json:"content_mode"`
-	Blocks      []protocol.ContentID       `json:"blocks,omitempty"`
-	TextID      protocol.ContentID         `json:"text_id,omitempty"`
+	ContentMode contentMode                `json:"content_mode"`
+	Blocks      []ContentID                `json:"blocks,omitempty"`
+	TextID      ContentID                  `json:"text_id,omitempty"`
 }
 
 // blockContent is the typed storage envelope for Anthropic content blocks. Large native scalar
 // values and nested tool-result content are references; all other provider fields stay raw JSON.
 type blockContent struct {
-	Type        BlockType                  `json:"type"`
+	Type        anthropic.BlockType        `json:"type"`
 	Fields      map[string]json.RawMessage `json:"fields,omitempty"`
 	ScalarField string                     `json:"scalar_field,omitempty"`
-	ScalarID    protocol.ContentID         `json:"scalar_id,omitempty"`
-	ContentMode string                     `json:"content_mode,omitempty"`
-	Blocks      []protocol.ContentID       `json:"blocks,omitempty"`
+	ScalarID    ContentID                  `json:"scalar_id,omitempty"`
+	ContentMode contentMode                `json:"content_mode,omitempty"`
+	Blocks      []ContentID                `json:"blocks,omitempty"`
 	Source      *imageSourceContent        `json:"source,omitempty"`
 }
 
 type imageSourceContent struct {
 	Fields map[string]json.RawMessage `json:"fields"`
-	DataID protocol.ContentID         `json:"data_id"`
+	DataID ContentID                  `json:"data_id"`
 }
 
 // requestContent removes the repetitive system prompt and tool definitions from a request
 // profile. Message records are returned separately in their original order.
 type requestContent struct {
 	Fields       map[string]json.RawMessage `json:"fields"`
-	SystemID     protocol.ContentID         `json:"system_id,omitempty"`
-	SystemMode   string                     `json:"system_mode"`
-	Tools        []protocol.ContentID       `json:"tools,omitempty"`
-	ToolsMode    string                     `json:"tools_mode"`
-	MessagesMode string                     `json:"messages_mode"`
+	SystemID     ContentID                  `json:"system_id,omitempty"`
+	SystemMode   contentMode                `json:"system_mode"`
+	Tools        []ContentID                `json:"tools,omitempty"`
+	ToolsMode    contentMode                `json:"tools_mode"`
+	MessagesMode contentMode                `json:"messages_mode"`
 }
 
 type requestMetadata struct {
-	CacheControl *CacheControl        `json:"cache_control,omitempty"`
-	Compaction   *CompactionDirective `json:"compaction,omitempty"`
-	Diagnostics  *Diagnostics         `json:"diagnostics,omitempty"`
-	MaxTokens    int                  `json:"max_tokens"`
-	Model        string               `json:"model"`
-	OutputConfig *OutputConfig        `json:"output_config,omitempty"`
-	Stream       bool                 `json:"stream"`
-	Thinking     *ThinkingConfig      `json:"thinking,omitempty"`
+	CacheControl *anthropic.CacheControl        `json:"cache_control,omitempty"`
+	Compaction   *anthropic.CompactionDirective `json:"compaction,omitempty"`
+	Diagnostics  *anthropic.Diagnostics         `json:"diagnostics,omitempty"`
+	MaxTokens    int                            `json:"max_tokens"`
+	Model        string                         `json:"model"`
+	OutputConfig *anthropic.OutputConfig        `json:"output_config,omitempty"`
+	Stream       bool                           `json:"stream"`
+	Thinking     *anthropic.ThinkingConfig      `json:"thinking,omitempty"`
 }
 
-// StoreRecord stores a native Anthropic message or response envelope as typed content rows.
+// StoreAnthropicRecord stores a native Anthropic message or response envelope as typed content rows.
 // Content blocks remain ordered, while their large text and image payloads deduplicate by value.
-func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protocol.ContentID, error) {
+func StoreAnthropicRecord(writer ContentWriter, record json.RawMessage) (ContentID, error) {
 	fields, err := decodeObject(record)
 	if err != nil {
 		return "", fmt.Errorf("decode Anthropic record: %w", err)
@@ -81,7 +85,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 				return "", fmt.Errorf("decode Anthropic message content: %w", err)
 			}
 			content.ContentMode = contentModeArray
-			content.Blocks = make([]protocol.ContentID, 0, len(blocks))
+			content.Blocks = make([]ContentID, 0, len(blocks))
 			for index, block := range blocks {
 				id, err := storeBlock(writer, block)
 				if err != nil {
@@ -91,7 +95,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 			}
 			delete(fields, "content")
 		case isJSONString(raw):
-			id, err := storeString(writer, protocol.ContentText, raw)
+			id, err := storeString(writer, ContentText, raw)
 			if err != nil {
 				return "", fmt.Errorf("store Anthropic message text: %w", err)
 			}
@@ -103,12 +107,12 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 			content.ContentMode = contentModeInline
 		}
 	}
-	return putContent(writer, protocol.ContentAnthropicMessage, content)
+	return putContent(writer, ContentAnthropicMessage, content)
 }
 
-// RestoreRecord resolves an Anthropic message/response content graph back to provider JSON.
-func RestoreRecord(reader protocol.ContentReader, id protocol.ContentID) (json.RawMessage, error) {
-	stored, err := loadContent(reader, id, protocol.ContentAnthropicMessage)
+// RestoreAnthropicRecord resolves an Anthropic message/response content graph back to provider JSON.
+func RestoreAnthropicRecord(reader ContentReader, id ContentID) (json.RawMessage, error) {
+	stored, err := loadContent(reader, id, ContentAnthropicMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +128,7 @@ func RestoreRecord(reader protocol.ContentReader, id protocol.ContentID) (json.R
 			return nil, fmt.Errorf("stored Anthropic message %s has inline content mode without content", id)
 		}
 	case contentModeText:
-		text, err := loadString(reader, content.TextID, protocol.ContentText)
+		text, err := loadString(reader, content.TextID, ContentText)
 		if err != nil {
 			return nil, fmt.Errorf("restore Anthropic message text: %w", err)
 		}
@@ -153,9 +157,9 @@ func RestoreRecord(reader protocol.ContentReader, id protocol.ContentID) (json.R
 	return raw, nil
 }
 
-// StoreRequest stores a native Anthropic request as a reusable profile plus ordered messages.
+// StoreAnthropicRequest stores a native Anthropic request as a reusable profile plus ordered messages.
 // Diagnostics and other per-call fields stay on the profile, while system and tools are shared.
-func StoreRequest(writer protocol.ContentWriter, request Request) (protocol.ContentID, []protocol.ContentID, error) {
+func StoreAnthropicRequest(writer ContentWriter, request anthropic.Request) (ContentID, []ContentID, error) {
 	encoded, err := json.Marshal(requestMetadata{
 		CacheControl: request.CacheControl,
 		Compaction:   request.Compaction,
@@ -173,25 +177,25 @@ func StoreRequest(writer protocol.ContentWriter, request Request) (protocol.Cont
 	if err != nil {
 		return "", nil, fmt.Errorf("decode Anthropic request metadata: %w", err)
 	}
-	systemID, err := putContent(writer, protocol.ContentText, request.System)
+	systemID, err := putContent(writer, ContentText, request.System)
 	if err != nil {
 		return "", nil, fmt.Errorf("store Anthropic system prompt: %w", err)
 	}
-	toolIDs := make([]protocol.ContentID, 0, len(request.Tools))
+	toolIDs := make([]ContentID, 0, len(request.Tools))
 	for index, tool := range request.Tools {
 		toolJSON, err := json.Marshal(tool)
 		if err != nil {
 			return "", nil, fmt.Errorf("encode Anthropic tool %d: %w", index, err)
 		}
-		id, err := putRawContent(writer, protocol.ContentAnthropicTool, toolJSON)
+		id, err := putRawContent(writer, ContentAnthropicTool, toolJSON)
 		if err != nil {
 			return "", nil, fmt.Errorf("store Anthropic tool %d: %w", index, err)
 		}
 		toolIDs = append(toolIDs, id)
 	}
-	messageIDs := make([]protocol.ContentID, 0, len(request.Messages))
+	messageIDs := make([]ContentID, 0, len(request.Messages))
 	for index, message := range request.Messages {
-		id, err := StoreRecord(writer, message)
+		id, err := StoreAnthropicRecord(writer, message)
 		if err != nil {
 			return "", nil, fmt.Errorf("store Anthropic request message %d: %w", index, err)
 		}
@@ -204,7 +208,7 @@ func StoreRequest(writer protocol.ContentWriter, request Request) (protocol.Cont
 	if request.Messages == nil {
 		messagesMode = contentModeNull
 	}
-	profile, err := putContent(writer, protocol.ContentAnthropicRequest, requestContent{
+	profile, err := putContent(writer, ContentAnthropicRequest, requestContent{
 		Fields: fields, SystemID: systemID, SystemMode: contentModeText,
 		Tools: toolIDs, ToolsMode: toolsMode, MessagesMode: messagesMode,
 	})
@@ -214,10 +218,10 @@ func StoreRequest(writer protocol.ContentWriter, request Request) (protocol.Cont
 	return profile, messageIDs, nil
 }
 
-// StoreRequestJSON converts a historical native request object to the shared profile format.
+// StoreAnthropicRequestJSON converts a historical native request object to the shared profile format.
 // The raw request path retains unknown envelope and tool fields without decoding them into the
 // current Request struct.
-func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (protocol.ContentID, []protocol.ContentID, error) {
+func StoreAnthropicRequestJSON(writer ContentWriter, raw json.RawMessage) (ContentID, []ContentID, error) {
 	nativeFields, err := decodeObject(raw)
 	if err != nil {
 		return "", nil, fmt.Errorf("decode historical Anthropic request: %w", err)
@@ -225,7 +229,7 @@ func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (proto
 	content := requestContent{Fields: cloneFields(nativeFields)}
 
 	if system, ok := nativeFields["system"]; ok && isJSONString(system) {
-		content.SystemID, err = storeString(writer, protocol.ContentText, system)
+		content.SystemID, err = storeString(writer, ContentText, system)
 		if err != nil {
 			return "", nil, fmt.Errorf("store historical Anthropic system prompt: %w", err)
 		}
@@ -247,16 +251,16 @@ func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (proto
 		return "", nil, err
 	}
 	content.MessagesMode = messagesMode
-	profile, err := putContent(writer, protocol.ContentAnthropicRequest, content)
+	profile, err := putContent(writer, ContentAnthropicRequest, content)
 	if err != nil {
 		return "", nil, fmt.Errorf("store historical Anthropic request profile: %w", err)
 	}
 	return profile, messageIDs, nil
 }
 
-// RestoreRequest reconstructs a request from its shared profile and already-restored messages.
-func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, records []json.RawMessage) ([]byte, error) {
-	stored, err := loadContent(reader, profile, protocol.ContentAnthropicRequest)
+// RestoreAnthropicRequest reconstructs a request from its shared profile and already-restored messages.
+func RestoreAnthropicRequest(reader ContentReader, profile ContentID, records []json.RawMessage) ([]byte, error) {
+	stored, err := loadContent(reader, profile, ContentAnthropicRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +270,7 @@ func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, r
 	}
 	fields := cloneFields(content.Fields)
 	if content.SystemMode == contentModeText {
-		system, err := loadString(reader, content.SystemID, protocol.ContentText)
+		system, err := loadString(reader, content.SystemID, ContentText)
 		if err != nil {
 			return nil, fmt.Errorf("restore Anthropic system prompt: %w", err)
 		}
@@ -281,7 +285,7 @@ func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, r
 	case contentModeArray:
 		tools := make([]json.RawMessage, 0, len(content.Tools))
 		for index, toolID := range content.Tools {
-			tool, err := loadContent(reader, toolID, protocol.ContentAnthropicTool)
+			tool, err := loadContent(reader, toolID, ContentAnthropicTool)
 			if err != nil {
 				return nil, fmt.Errorf("restore Anthropic tool %d: %w", index, err)
 			}
@@ -320,18 +324,18 @@ func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, r
 	return encoded, nil
 }
 
-// ContentReferences returns the provider-owned children of one stored Anthropic row.
+// AnthropicContentReferences returns the provider-owned children of one stored Anthropic row.
 // The typed payloads keep context hydration bounded to a small number of batched reads.
-func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]protocol.ContentID, error) {
-	var refs []protocol.ContentID
-	appendRef := func(id protocol.ContentID, field string) error {
+func AnthropicContentReferences(kind ContentKind, payload json.RawMessage) ([]ContentID, error) {
+	var refs []ContentID
+	appendRef := func(id ContentID, field string) error {
 		if id == "" {
 			return fmt.Errorf("stored Anthropic %s has no %s reference: %w", kind, field, protocol.ErrInvalid)
 		}
 		refs = append(refs, id)
 		return nil
 	}
-	appendRefs := func(ids []protocol.ContentID, field string) error {
+	appendRefs := func(ids []ContentID, field string) error {
 		for index, id := range ids {
 			if err := appendRef(id, fmt.Sprintf("%s[%d]", field, index)); err != nil {
 				return err
@@ -341,7 +345,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 	}
 
 	switch kind {
-	case protocol.ContentAnthropicMessage:
+	case ContentAnthropicMessage:
 		var content messageContent
 		if err := json.Unmarshal(payload, &content); err != nil {
 			return nil, fmt.Errorf("decode stored Anthropic message references: %w", err)
@@ -359,7 +363,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 		default:
 			return nil, fmt.Errorf("stored Anthropic message has unknown content mode %q: %w", content.ContentMode, protocol.ErrInvalid)
 		}
-	case protocol.ContentAnthropicRequest:
+	case ContentAnthropicRequest:
 		var content requestContent
 		if err := json.Unmarshal(payload, &content); err != nil {
 			return nil, fmt.Errorf("decode stored Anthropic request references: %w", err)
@@ -382,13 +386,13 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 		default:
 			return nil, fmt.Errorf("stored Anthropic request has unknown tools mode %q: %w", content.ToolsMode, protocol.ErrInvalid)
 		}
-	case protocol.ContentAnthropicText,
-		protocol.ContentAnthropicThinking,
-		protocol.ContentAnthropicRedactedThinking,
-		protocol.ContentAnthropicToolUse,
-		protocol.ContentAnthropicToolResult,
-		protocol.ContentAnthropicImage,
-		protocol.ContentAnthropicCompaction:
+	case ContentAnthropicText,
+		ContentAnthropicThinking,
+		ContentAnthropicRedactedThinking,
+		ContentAnthropicToolUse,
+		ContentAnthropicToolResult,
+		ContentAnthropicImage,
+		ContentAnthropicCompaction:
 		var block blockContent
 		if err := json.Unmarshal(payload, &block); err != nil {
 			return nil, fmt.Errorf("decode stored Anthropic block references: %w", err)
@@ -403,7 +407,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 			}
 		}
 		switch block.ContentMode {
-		case "", contentModeText:
+		case contentModeNone, contentModeText:
 		case contentModeArray:
 			if err := appendRefs(block.Blocks, "blocks"); err != nil {
 				return nil, err
@@ -420,12 +424,13 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 	return refs, nil
 }
 
-func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.ContentID, error) {
+func storeBlock(writer ContentWriter, raw json.RawMessage) (ContentID, error) {
 	fields, err := decodeObject(raw)
 	if err != nil {
 		return "", fmt.Errorf("decode block: %w", err)
 	}
-	typeName := BlockType(rawString(fields, "type"))
+	typeValue, _ := jsonString(fields["type"])
+	typeName := anthropic.BlockType(typeValue)
 	if typeName == "" {
 		return "", fmt.Errorf("Anthropic block has no type")
 	}
@@ -434,9 +439,9 @@ func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Co
 	kind, scalarField := blockStorageKind(typeName)
 	if scalarField != "" {
 		if scalar, ok := fields[scalarField]; ok && isJSONString(scalar) {
-			payloadKind := protocol.ContentText
-			if typeName == BlockRedactedThinking {
-				payloadKind = protocol.ContentOpaque
+			payloadKind := ContentText
+			if typeName == anthropic.BlockRedactedThinking {
+				payloadKind = ContentOpaque
 			}
 			id, err := storeString(writer, payloadKind, scalar)
 			if err != nil {
@@ -447,12 +452,12 @@ func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Co
 			delete(fields, scalarField)
 		}
 	}
-	if typeName == BlockImage {
+	if typeName == anthropic.BlockImage {
 		if source, ok := fields["source"]; ok {
 			sourceFields, err := decodeObject(source)
 			if err == nil {
 				if data, ok := sourceFields["data"]; ok && isJSONString(data) {
-					id, err := storeString(writer, protocol.ContentImageData, data)
+					id, err := storeString(writer, ContentImageData, data)
 					if err != nil {
 						return "", fmt.Errorf("store Anthropic image data: %w", err)
 					}
@@ -463,7 +468,7 @@ func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Co
 			}
 		}
 	}
-	if typeName == BlockToolResult {
+	if typeName == anthropic.BlockToolResult {
 		if nested, ok := fields["content"]; ok {
 			switch {
 			case isJSONArray(nested):
@@ -472,7 +477,7 @@ func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Co
 					return "", fmt.Errorf("decode tool_result content: %w", err)
 				}
 				content.ContentMode = contentModeArray
-				content.Blocks = make([]protocol.ContentID, 0, len(blocks))
+				content.Blocks = make([]ContentID, 0, len(blocks))
 				for index, block := range blocks {
 					id, err := storeBlock(writer, block)
 					if err != nil {
@@ -482,7 +487,7 @@ func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Co
 				}
 				delete(fields, "content")
 			case isJSONString(nested):
-				id, err := storeString(writer, protocol.ContentText, nested)
+				id, err := storeString(writer, ContentText, nested)
 				if err != nil {
 					return "", fmt.Errorf("store tool_result text: %w", err)
 				}
@@ -495,12 +500,12 @@ func storeBlock(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Co
 	return putContent(writer, kind, content)
 }
 
-func restoreBlock(reader protocol.ContentReader, id protocol.ContentID) (json.RawMessage, error) {
+func restoreBlock(reader ContentReader, id ContentID) (json.RawMessage, error) {
 	stored, err := reader.GetContent(id)
 	if err != nil {
 		return nil, fmt.Errorf("load Anthropic block %s: %w", id, err)
 	}
-	if err := protocol.VerifyContent(stored); err != nil {
+	if err := VerifyContent(stored); err != nil {
 		return nil, err
 	}
 	var block blockContent
@@ -513,9 +518,9 @@ func restoreBlock(reader protocol.ContentReader, id protocol.ContentID) (json.Ra
 	}
 	fields := cloneFields(block.Fields)
 	if block.ScalarID != "" && block.ScalarField != "" {
-		payloadKind := protocol.ContentText
-		if block.Type == BlockRedactedThinking {
-			payloadKind = protocol.ContentOpaque
+		payloadKind := ContentText
+		if block.Type == anthropic.BlockRedactedThinking {
+			payloadKind = ContentOpaque
 		}
 		scalar, err := loadString(reader, block.ScalarID, payloadKind)
 		if err != nil {
@@ -528,7 +533,7 @@ func restoreBlock(reader protocol.ContentReader, id protocol.ContentID) (json.Ra
 		fields[field] = scalar
 	}
 	if block.Source != nil {
-		data, err := loadString(reader, block.Source.DataID, protocol.ContentImageData)
+		data, err := loadString(reader, block.Source.DataID, ContentImageData)
 		if err != nil {
 			return nil, fmt.Errorf("restore Anthropic image data: %w", err)
 		}
@@ -540,10 +545,10 @@ func restoreBlock(reader protocol.ContentReader, id protocol.ContentID) (json.Ra
 		}
 		fields["source"] = source
 	}
-	if block.Type == BlockToolResult && block.ContentMode != "" {
+	if block.Type == anthropic.BlockToolResult && block.ContentMode != contentModeNone {
 		switch block.ContentMode {
 		case contentModeText:
-			text, err := loadString(reader, block.ScalarID, protocol.ContentText)
+			text, err := loadString(reader, block.ScalarID, ContentText)
 			if err != nil {
 				return nil, fmt.Errorf("restore tool_result text: %w", err)
 			}
@@ -578,28 +583,28 @@ func restoreBlock(reader protocol.ContentReader, id protocol.ContentID) (json.Ra
 	return raw, nil
 }
 
-func blockStorageKind(blockType BlockType) (protocol.ContentKind, string) {
+func blockStorageKind(blockType anthropic.BlockType) (ContentKind, string) {
 	switch blockType {
-	case BlockText:
-		return protocol.ContentAnthropicText, "text"
-	case BlockThinking:
-		return protocol.ContentAnthropicThinking, "thinking"
-	case BlockRedactedThinking:
-		return protocol.ContentAnthropicRedactedThinking, "data"
-	case BlockToolUse:
-		return protocol.ContentAnthropicToolUse, ""
-	case BlockToolResult:
-		return protocol.ContentAnthropicToolResult, ""
-	case BlockImage:
-		return protocol.ContentAnthropicImage, ""
-	case BlockCompaction:
-		return protocol.ContentAnthropicCompaction, "content"
+	case anthropic.BlockText:
+		return ContentAnthropicText, "text"
+	case anthropic.BlockThinking:
+		return ContentAnthropicThinking, "thinking"
+	case anthropic.BlockRedactedThinking:
+		return ContentAnthropicRedactedThinking, "data"
+	case anthropic.BlockToolUse:
+		return ContentAnthropicToolUse, ""
+	case anthropic.BlockToolResult:
+		return ContentAnthropicToolResult, ""
+	case anthropic.BlockImage:
+		return ContentAnthropicImage, ""
+	case anthropic.BlockCompaction:
+		return ContentAnthropicCompaction, "content"
 	default:
 		return "", ""
 	}
 }
 
-func putContent(writer protocol.ContentWriter, kind protocol.ContentKind, value any) (protocol.ContentID, error) {
+func putContent(writer ContentWriter, kind ContentKind, value any) (ContentID, error) {
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return "", err
@@ -607,11 +612,11 @@ func putContent(writer protocol.ContentWriter, kind protocol.ContentKind, value 
 	return putRawContent(writer, kind, payload)
 }
 
-func putRawContent(writer protocol.ContentWriter, kind protocol.ContentKind, payload json.RawMessage) (protocol.ContentID, error) {
+func putRawContent(writer ContentWriter, kind ContentKind, payload json.RawMessage) (ContentID, error) {
 	return writer.PutContent(kind, payload)
 }
 
-func storeHistoricalTools(writer protocol.ContentWriter, source, profile map[string]json.RawMessage) ([]protocol.ContentID, string, error) {
+func storeHistoricalTools(writer ContentWriter, source, profile map[string]json.RawMessage) ([]ContentID, contentMode, error) {
 	raw, ok := source["tools"]
 	if !ok {
 		return nil, contentModeAbsent, nil
@@ -627,12 +632,12 @@ func storeHistoricalTools(writer protocol.ContentWriter, source, profile map[str
 	if err := json.Unmarshal(raw, &tools); err != nil {
 		return nil, "", fmt.Errorf("decode historical Anthropic tools: %w", err)
 	}
-	ids := make([]protocol.ContentID, 0, len(tools))
+	ids := make([]ContentID, 0, len(tools))
 	for index, tool := range tools {
 		if _, err := decodeObject(tool); err != nil {
 			return nil, "", fmt.Errorf("decode historical Anthropic tool %d: %w", index, err)
 		}
-		id, err := putRawContent(writer, protocol.ContentAnthropicTool, tool)
+		id, err := putRawContent(writer, ContentAnthropicTool, tool)
 		if err != nil {
 			return nil, "", fmt.Errorf("store historical Anthropic tool %d: %w", index, err)
 		}
@@ -642,7 +647,7 @@ func storeHistoricalTools(writer protocol.ContentWriter, source, profile map[str
 	return ids, contentModeArray, nil
 }
 
-func storeHistoricalMessages(writer protocol.ContentWriter, source, profile map[string]json.RawMessage) ([]protocol.ContentID, string, error) {
+func storeHistoricalMessages(writer ContentWriter, source, profile map[string]json.RawMessage) ([]ContentID, contentMode, error) {
 	raw, ok := source["messages"]
 	if !ok {
 		return nil, contentModeAbsent, nil
@@ -658,9 +663,9 @@ func storeHistoricalMessages(writer protocol.ContentWriter, source, profile map[
 	if err := json.Unmarshal(raw, &messages); err != nil {
 		return nil, "", fmt.Errorf("decode historical Anthropic messages: %w", err)
 	}
-	ids := make([]protocol.ContentID, 0, len(messages))
+	ids := make([]ContentID, 0, len(messages))
 	for index, message := range messages {
-		id, err := StoreRecord(writer, message)
+		id, err := StoreAnthropicRecord(writer, message)
 		if err != nil {
 			return nil, "", fmt.Errorf("store historical Anthropic message %d: %w", index, err)
 		}
@@ -670,7 +675,7 @@ func storeHistoricalMessages(writer protocol.ContentWriter, source, profile map[
 	return ids, contentModeArray, nil
 }
 
-func storeString(writer protocol.ContentWriter, kind protocol.ContentKind, raw json.RawMessage) (protocol.ContentID, error) {
+func storeString(writer ContentWriter, kind ContentKind, raw json.RawMessage) (ContentID, error) {
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return "", err
@@ -678,21 +683,21 @@ func storeString(writer protocol.ContentWriter, kind protocol.ContentKind, raw j
 	return putContent(writer, kind, value)
 }
 
-func loadContent(reader protocol.ContentReader, id protocol.ContentID, kind protocol.ContentKind) (protocol.StoredContent, error) {
+func loadContent(reader ContentReader, id ContentID, kind ContentKind) (StoredContent, error) {
 	content, err := reader.GetContent(id)
 	if err != nil {
-		return protocol.StoredContent{}, fmt.Errorf("load content %s: %w", id, err)
+		return StoredContent{}, fmt.Errorf("load content %s: %w", id, err)
 	}
-	if err := protocol.VerifyContent(content); err != nil {
-		return protocol.StoredContent{}, err
+	if err := VerifyContent(content); err != nil {
+		return StoredContent{}, err
 	}
 	if content.Kind != kind {
-		return protocol.StoredContent{}, fmt.Errorf("content %s has kind %q, want %q", id, content.Kind, kind)
+		return StoredContent{}, fmt.Errorf("content %s has kind %q, want %q", id, content.Kind, kind)
 	}
 	return content, nil
 }
 
-func loadString(reader protocol.ContentReader, id protocol.ContentID, kind protocol.ContentKind) (json.RawMessage, error) {
+func loadString(reader ContentReader, id ContentID, kind ContentKind) (json.RawMessage, error) {
 	if id == "" {
 		return nil, fmt.Errorf("missing %s content reference", kind)
 	}

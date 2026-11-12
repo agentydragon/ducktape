@@ -1,10 +1,12 @@
-package protocol
+package storage
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 type (
@@ -62,7 +64,7 @@ func CanonicalContent(kind ContentKind, payload json.RawMessage) (StoredContent,
 	if !kind.Valid() {
 		return StoredContent{}, fmt.Errorf("unknown content kind %q", kind)
 	}
-	value, err := DecodeJSONValue(payload)
+	value, err := protocol.DecodeJSONValue(payload)
 	if err != nil {
 		return StoredContent{}, err
 	}

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
 
@@ -12,7 +12,6 @@ go_library(
         "instructions.go",
         "json.go",
         "status.go",
-        "stored_content.go",
         "tool_definitions.go",
         "tool_invocation.go",
         "tool_surface.go",
@@ -26,10 +25,4 @@ go_library(
     deps = [
         "//agentplane/proto:event_go_proto",
     ],
-)
-
-go_test(
-    name = "protocol_test",
-    srcs = ["stored_content_test.go"],
-    embed = [":protocol"],
 )

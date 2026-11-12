@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -195,14 +197,14 @@ type IntentRequest struct {
 // ProviderRequest records a provider call before dispatch. Authentication is deliberately absent:
 // it is committed in the same transaction as the pending intent, before any upstream request.
 type ProviderRequest struct {
-	API           protocol.APIStyle  `json:"api"`
-	Connection    string             `json:"connection"`
-	ProviderModel string             `json:"provider_model"`
-	Method        string             `json:"method"`
-	URL           string             `json:"url"`
-	Headers       map[string]string  `json:"headers"`
-	ContextID     string             `json:"context_id,omitempty"`
-	ProfileID     protocol.ContentID `json:"profile_id"`
+	API           protocol.APIStyle `json:"api"`
+	Connection    string            `json:"connection"`
+	ProviderModel string            `json:"provider_model"`
+	Method        string            `json:"method"`
+	URL           string            `json:"url"`
+	Headers       map[string]string `json:"headers"`
+	ContextID     string            `json:"context_id,omitempty"`
+	ProfileID     storage.ContentID `json:"profile_id"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested

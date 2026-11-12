@@ -1,4 +1,4 @@
-package responses
+package storage
 
 import (
 	"bytes"
@@ -8,35 +8,36 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 )
 
 // storedItem keeps provider-owned fields as RawMessages while splitting repeated
 // text and known content arrays into separately addressable content rows.
 type storedItem struct {
-	Type             ItemType                   `json:"type"`
+	Type             responses.ItemType         `json:"type"`
 	Envelope         map[string]json.RawMessage `json:"envelope,omitempty"`
-	Content          *[]protocol.ContentID      `json:"content_refs,omitempty"`
-	Summary          *[]protocol.ContentID      `json:"summary_refs,omitempty"`
-	Output           *[]protocol.ContentID      `json:"output_refs,omitempty"`
-	Input            *protocol.ContentID        `json:"input_text_ref,omitempty"`
-	ContentText      *protocol.ContentID        `json:"content_text_ref,omitempty"`
-	Arguments        *protocol.ContentID        `json:"arguments_text_ref,omitempty"`
-	OutputText       *protocol.ContentID        `json:"output_text_ref,omitempty"`
-	EncryptedContent *protocol.ContentID        `json:"encrypted_content_ref,omitempty"`
+	Content          *[]ContentID               `json:"content_refs,omitempty"`
+	Summary          *[]ContentID               `json:"summary_refs,omitempty"`
+	Output           *[]ContentID               `json:"output_refs,omitempty"`
+	Input            *ContentID                 `json:"input_text_ref,omitempty"`
+	ContentText      *ContentID                 `json:"content_text_ref,omitempty"`
+	Arguments        *ContentID                 `json:"arguments_text_ref,omitempty"`
+	OutputText       *ContentID                 `json:"output_text_ref,omitempty"`
+	EncryptedContent *ContentID                 `json:"encrypted_content_ref,omitempty"`
 }
 
 type storedPart struct {
 	Raw       json.RawMessage            `json:"raw,omitempty"`
 	Type      *string                    `json:"type,omitempty"`
 	Envelope  map[string]json.RawMessage `json:"envelope,omitempty"`
-	Text      *protocol.ContentID        `json:"text_ref,omitempty"`
+	Text      *ContentID                 `json:"text_ref,omitempty"`
 	ImageData *storedImageData           `json:"image_data,omitempty"`
 }
 
 type storedImageData struct {
-	Field  string             `json:"field"`
-	Prefix string             `json:"prefix"`
-	Ref    protocol.ContentID `json:"ref"`
+	Field  string    `json:"field"`
+	Prefix string    `json:"prefix"`
+	Ref    ContentID `json:"ref"`
 }
 
 type storedRequestProfile struct {
@@ -46,28 +47,28 @@ type storedRequestProfile struct {
 	Store            bool                       `json:"store"`
 	Include          []string                   `json:"include,omitempty"`
 	PromptCacheKey   string                     `json:"prompt_cache_key"`
-	ClientMetadata   *ClientMetadata            `json:"client_metadata,omitempty"`
-	Reasoning        *ReasoningConfig           `json:"reasoning,omitempty"`
+	ClientMetadata   *responses.ClientMetadata  `json:"client_metadata,omitempty"`
+	Reasoning        *responses.ReasoningConfig `json:"reasoning,omitempty"`
 	ParallelToolCall bool                       `json:"parallel_tool_calls"`
-	Instructions     protocol.ContentID         `json:"instructions_ref"`
-	Tools            []protocol.ContentID       `json:"tool_refs,omitempty"`
+	Instructions     ContentID                  `json:"instructions_ref"`
+	Tools            []ContentID                `json:"tool_refs,omitempty"`
 }
 
 type requestProfileFields struct {
-	Model            string           `json:"model"`
-	Instructions     string           `json:"instructions"`
-	Stream           bool             `json:"stream"`
-	Store            bool             `json:"store"`
-	Include          []string         `json:"include,omitempty"`
-	PromptCacheKey   string           `json:"prompt_cache_key"`
-	ClientMetadata   *ClientMetadata  `json:"client_metadata,omitempty"`
-	Reasoning        *ReasoningConfig `json:"reasoning,omitempty"`
-	ParallelToolCall bool             `json:"parallel_tool_calls"`
+	Model            string                     `json:"model"`
+	Instructions     string                     `json:"instructions"`
+	Stream           bool                       `json:"stream"`
+	Store            bool                       `json:"store"`
+	Include          []string                   `json:"include,omitempty"`
+	PromptCacheKey   string                     `json:"prompt_cache_key"`
+	ClientMetadata   *responses.ClientMetadata  `json:"client_metadata,omitempty"`
+	Reasoning        *responses.ReasoningConfig `json:"reasoning,omitempty"`
+	ParallelToolCall bool                       `json:"parallel_tool_calls"`
 }
 
-// StoreRecord stores one native Responses item, removing every extracted field
+// StoreResponsesRecord stores one native Responses item, removing every extracted field
 // from its provider envelope before writing the item row.
-func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protocol.ContentID, error) {
+func StoreResponsesRecord(writer ContentWriter, record json.RawMessage) (ContentID, error) {
 	if writer == nil {
 		return "", errors.New("nil content writer")
 	}
@@ -79,7 +80,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 	if !ok {
 		return "", fmt.Errorf("Responses item has no type: %w", protocol.ErrInvalid)
 	}
-	var itemType ItemType
+	var itemType responses.ItemType
 	if err := json.Unmarshal(typeRaw, &itemType); err != nil || itemType == "" {
 		return "", fmt.Errorf("Responses item has invalid type: %w", protocol.ErrInvalid)
 	}
@@ -88,11 +89,11 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 
 	for _, field := range []struct {
 		name string
-		dst  **protocol.ContentID
+		dst  **ContentID
 	}{{"input", &stored.Input}, {"arguments", &stored.Arguments}, {"content", &stored.ContentText}} {
 		if raw, present := fields[field.name]; present {
 			if value, isString := jsonString(raw); isString {
-				id, err := putString(writer, protocol.ContentText, value)
+				id, err := putString(writer, ContentText, value)
 				if err != nil {
 					return "", err
 				}
@@ -103,7 +104,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 	}
 	if raw, present := fields["output"]; present {
 		if value, isString := jsonString(raw); isString {
-			id, err := putString(writer, protocol.ContentText, value)
+			id, err := putString(writer, ContentText, value)
 			if err != nil {
 				return "", err
 			}
@@ -120,7 +121,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 	}
 	for _, field := range []struct {
 		name string
-		dst  **[]protocol.ContentID
+		dst  **[]ContentID
 	}{{"content", &stored.Content}, {"summary", &stored.Summary}} {
 		if raw, present := fields[field.name]; present {
 			if parts, isArray := jsonArray(raw); isArray {
@@ -135,7 +136,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 	}
 	if raw, present := fields["encrypted_content"]; present {
 		if value, isString := jsonString(raw); isString {
-			id, err := putString(writer, protocol.ContentOpaque, value)
+			id, err := putString(writer, ContentOpaque, value)
 			if err != nil {
 				return "", err
 			}
@@ -150,20 +151,20 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 	if err != nil {
 		return "", err
 	}
-	return writer.PutContent(protocol.ContentOpenAIItem, payload)
+	return writer.PutContent(ContentOpenAIItem, payload)
 }
 
-// RestoreRecord reconstructs one native Responses item and verifies every
+// RestoreResponsesRecord reconstructs one native Responses item and verifies every
 // referenced row before its bytes are exposed to the provider adapter.
-func RestoreRecord(reader protocol.ContentReader, id protocol.ContentID) (json.RawMessage, error) {
-	payload, err := getPayload(reader, id, protocol.ContentOpenAIItem)
+func RestoreResponsesRecord(reader ContentReader, id ContentID) (json.RawMessage, error) {
+	payload, err := getPayload(reader, id, ContentOpenAIItem)
 	if err != nil {
 		return nil, err
 	}
 	return restoreRecordPayload(reader, id, payload)
 }
 
-func restoreRecordPayload(reader protocol.ContentReader, id protocol.ContentID, payload json.RawMessage) (json.RawMessage, error) {
+func restoreRecordPayload(reader ContentReader, id ContentID, payload json.RawMessage) (json.RawMessage, error) {
 	var stored storedItem
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return nil, fmt.Errorf("decode stored Responses item %s: %w", id, err)
@@ -177,10 +178,10 @@ func restoreRecordPayload(reader protocol.ContentReader, id protocol.ContentID, 
 	}
 	for _, value := range []struct {
 		name string
-		ref  *protocol.ContentID
+		ref  *ContentID
 	}{{"input", stored.Input}, {"arguments", stored.Arguments}, {"output", stored.OutputText}, {"content", stored.ContentText}} {
 		if value.ref != nil {
-			text, err := restoreString(reader, *value.ref, protocol.ContentText)
+			text, err := restoreString(reader, *value.ref, ContentText)
 			if err != nil {
 				return nil, fmt.Errorf("restore %s: %w", value.name, err)
 			}
@@ -190,7 +191,7 @@ func restoreRecordPayload(reader protocol.ContentReader, id protocol.ContentID, 
 		}
 	}
 	if stored.EncryptedContent != nil {
-		text, err := restoreString(reader, *stored.EncryptedContent, protocol.ContentOpaque)
+		text, err := restoreString(reader, *stored.EncryptedContent, ContentOpaque)
 		if err != nil {
 			return nil, fmt.Errorf("restore encrypted_content: %w", err)
 		}
@@ -200,7 +201,7 @@ func restoreRecordPayload(reader protocol.ContentReader, id protocol.ContentID, 
 	}
 	for _, value := range []struct {
 		name string
-		refs *[]protocol.ContentID
+		refs *[]ContentID
 	}{{"content", stored.Content}, {"summary", stored.Summary}, {"output", stored.Output}} {
 		if value.refs != nil {
 			parts := make([]json.RawMessage, 0, len(*value.refs))
@@ -219,20 +220,20 @@ func restoreRecordPayload(reader protocol.ContentReader, id protocol.ContentID, 
 	return json.Marshal(fields)
 }
 
-// StoreRequest splits a native request into an immutable profile and ordered
+// StoreResponsesRequest splits a native request into an immutable profile and ordered
 // item references. Instructions and tools are shared independently of per-call
 // attribution and other profile fields.
-func StoreRequest(writer protocol.ContentWriter, request Request) (profile protocol.ContentID, records []protocol.ContentID, err error) {
+func StoreResponsesRequest(writer ContentWriter, request responses.Request) (profile ContentID, records []ContentID, err error) {
 	if writer == nil {
 		return "", nil, errors.New("nil content writer")
 	}
-	records = make([]protocol.ContentID, 0, len(request.Input))
+	records = make([]ContentID, 0, len(request.Input))
 	for index, input := range request.Input {
 		raw, marshalErr := json.Marshal(input)
 		if marshalErr != nil {
 			return "", nil, fmt.Errorf("encode request input %d: %w", index, marshalErr)
 		}
-		id, storeErr := StoreRecord(writer, raw)
+		id, storeErr := StoreResponsesRecord(writer, raw)
 		if storeErr != nil {
 			return "", nil, fmt.Errorf("store request input %d: %w", index, storeErr)
 		}
@@ -253,10 +254,10 @@ func StoreRequest(writer protocol.ContentWriter, request Request) (profile proto
 	return profile, records, nil
 }
 
-// StoreRequestJSON is a migration-only path for pre-profile request JSON. It
+// StoreResponsesRequestJSON is a migration-only path for pre-profile request JSON. It
 // splits raw input items before decoding the remaining request envelope so
 // provider-owned item fields and number tokens are retained.
-func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (profile protocol.ContentID, records []protocol.ContentID, err error) {
+func StoreResponsesRequestJSON(writer ContentWriter, raw json.RawMessage) (profile ContentID, records []ContentID, err error) {
 	if writer == nil {
 		return "", nil, errors.New("nil content writer")
 	}
@@ -271,9 +272,9 @@ func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (profi
 		if !isArray {
 			return "", nil, fmt.Errorf("historical Responses request input must be an array: %w", protocol.ErrInvalid)
 		}
-		records = make([]protocol.ContentID, 0, len(parts))
+		records = make([]ContentID, 0, len(parts))
 		for index, item := range parts {
-			id, storeErr := StoreRecord(writer, item)
+			id, storeErr := StoreResponsesRecord(writer, item)
 			if storeErr != nil {
 				return "", nil, fmt.Errorf("store historical request input %d: %w", index, storeErr)
 			}
@@ -300,7 +301,7 @@ func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (profi
 	if err != nil {
 		return "", nil, err
 	}
-	var request Request
+	var request responses.Request
 	if err := json.Unmarshal(requestJSON, &request); err != nil {
 		return "", nil, fmt.Errorf("decode historical Responses request profile: %w", err)
 	}
@@ -314,13 +315,13 @@ func StoreRequestJSON(writer protocol.ContentWriter, raw json.RawMessage) (profi
 	return profile, records, nil
 }
 
-// ContentReferences returns the child content IDs encoded by one of the three
+// ResponsesContentReferences returns the child content IDs encoded by one of the three
 // Responses storage envelopes. It deliberately does not inspect provider JSON
 // kept in an envelope: only fields owned by these typed storage records are
 // graph edges.
-func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]protocol.ContentID, error) {
-	var refs []protocol.ContentID
-	add := func(id protocol.ContentID) error {
+func ResponsesContentReferences(kind ContentKind, payload json.RawMessage) ([]ContentID, error) {
+	var refs []ContentID
+	add := func(id ContentID) error {
 		if id == "" {
 			return fmt.Errorf("stored Responses %s has an empty content reference: %w", kind, protocol.ErrInvalid)
 		}
@@ -329,7 +330,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 	}
 
 	switch kind {
-	case protocol.ContentOpenAIItem:
+	case ContentOpenAIItem:
 		var stored storedItem
 		if err := json.Unmarshal(payload, &stored); err != nil {
 			return nil, fmt.Errorf("decode stored Responses item references: %w", err)
@@ -337,7 +338,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 		if stored.Type == "" {
 			return nil, fmt.Errorf("stored Responses item has no type: %w", protocol.ErrInvalid)
 		}
-		for _, ids := range []*[]protocol.ContentID{stored.Content, stored.Summary, stored.Output} {
+		for _, ids := range []*[]ContentID{stored.Content, stored.Summary, stored.Output} {
 			if ids == nil {
 				continue
 			}
@@ -347,14 +348,14 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 				}
 			}
 		}
-		for _, id := range []*protocol.ContentID{stored.Input, stored.Arguments, stored.OutputText, stored.ContentText, stored.EncryptedContent} {
+		for _, id := range []*ContentID{stored.Input, stored.Arguments, stored.OutputText, stored.ContentText, stored.EncryptedContent} {
 			if id != nil {
 				if err := add(*id); err != nil {
 					return nil, err
 				}
 			}
 		}
-	case protocol.ContentOpenAIContent:
+	case ContentOpenAIContent:
 		var stored storedPart
 		if err := json.Unmarshal(payload, &stored); err != nil {
 			return nil, fmt.Errorf("decode stored Responses content references: %w", err)
@@ -378,7 +379,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 				return nil, err
 			}
 		}
-	case protocol.ContentOpenAIRequest:
+	case ContentOpenAIRequest:
 		var stored storedRequestProfile
 		if err := json.Unmarshal(payload, &stored); err != nil {
 			return nil, fmt.Errorf("decode stored Responses request references: %w", err)
@@ -396,21 +397,21 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 }
 
 func storeRequestProfile(
-	writer protocol.ContentWriter,
-	request Request,
+	writer ContentWriter,
+	request responses.Request,
 	toolRecords []json.RawMessage,
 	envelope map[string]json.RawMessage,
-) (protocol.ContentID, error) {
-	instructionID, err := putString(writer, protocol.ContentText, request.Instructions)
+) (ContentID, error) {
+	instructionID, err := putString(writer, ContentText, request.Instructions)
 	if err != nil {
 		return "", fmt.Errorf("store request instructions: %w", err)
 	}
-	toolIDs := make([]protocol.ContentID, 0, len(toolRecords))
+	toolIDs := make([]ContentID, 0, len(toolRecords))
 	for index, tool := range toolRecords {
 		if _, err := rawObject(tool); err != nil {
 			return "", fmt.Errorf("request tool %d: %w", index, err)
 		}
-		id, err := writer.PutContent(protocol.ContentOpenAITool, tool)
+		id, err := writer.PutContent(ContentOpenAITool, tool)
 		if err != nil {
 			return "", fmt.Errorf("store request tool %d: %w", index, err)
 		}
@@ -426,13 +427,13 @@ func storeRequestProfile(
 	if err != nil {
 		return "", err
 	}
-	return writer.PutContent(protocol.ContentOpenAIRequest, payload)
+	return writer.PutContent(ContentOpenAIRequest, payload)
 }
 
-// RestoreRequest restores a request profile and inserts the already-restored
+// RestoreResponsesRequest restores a request profile and inserts the already-restored
 // native item JSON records in their original order.
-func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, records []json.RawMessage) ([]byte, error) {
-	payload, err := getPayload(reader, profile, protocol.ContentOpenAIRequest)
+func RestoreResponsesRequest(reader ContentReader, profile ContentID, records []json.RawMessage) ([]byte, error) {
+	payload, err := getPayload(reader, profile, ContentOpenAIRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -440,13 +441,13 @@ func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, r
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return nil, fmt.Errorf("decode stored Responses request profile: %w", err)
 	}
-	instructions, err := restoreString(reader, stored.Instructions, protocol.ContentText)
+	instructions, err := restoreString(reader, stored.Instructions, ContentText)
 	if err != nil {
 		return nil, fmt.Errorf("restore request instructions: %w", err)
 	}
 	tools := make([]json.RawMessage, 0, len(stored.Tools))
 	for index, id := range stored.Tools {
-		toolPayload, err := getPayload(reader, id, protocol.ContentOpenAITool)
+		toolPayload, err := getPayload(reader, id, ContentOpenAITool)
 		if err != nil {
 			return nil, fmt.Errorf("restore request tool %d: %w", index, err)
 		}
@@ -455,20 +456,20 @@ func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, r
 		}
 		tools = append(tools, protocol.CloneJSON(toolPayload))
 	}
-	input := make([]RequestInput, 0, len(records))
+	input := make([]json.RawMessage, 0, len(records))
 	for index, record := range records {
 		if _, err := rawObject(record); err != nil {
 			return nil, fmt.Errorf("request input %d: %w", index, err)
 		}
-		input = append(input, rawRequestInput{raw: protocol.CloneJSON(record)})
+		input = append(input, protocol.CloneJSON(record))
 	}
-	request := Request{
-		Model: stored.Model, Instructions: instructions, Input: input, Stream: stored.Stream, Store: stored.Store,
+	request := responses.Request{
+		Model: stored.Model, Instructions: instructions, Stream: stored.Stream, Store: stored.Store,
 		Include: stored.Include, PromptCacheKey: stored.PromptCacheKey, ClientMetadata: stored.ClientMetadata,
 		Reasoning: stored.Reasoning, ParallelToolCalls: stored.ParallelToolCall,
 	}
 	if len(stored.Envelope) == 0 {
-		return json.Marshal(requestWithTools{Request: request, Tools: tools})
+		return json.Marshal(requestWithTools{Request: request, Input: input, Tools: tools})
 	}
 
 	// Historical requests may have provider-owned top-level fields. Marshal only
@@ -510,24 +511,14 @@ func RestoreRequest(reader protocol.ContentReader, profile protocol.ContentID, r
 	return json.Marshal(envelope)
 }
 
-type rawRequestInput struct{ raw json.RawMessage }
-
-func (rawRequestInput) requestInput() {}
-
-func (input rawRequestInput) MarshalJSON() ([]byte, error) {
-	if !json.Valid(input.raw) {
-		return nil, fmt.Errorf("invalid raw Responses request input: %w", protocol.ErrInvalid)
-	}
-	return protocol.CloneJSON(input.raw), nil
-}
-
 type requestWithTools struct {
-	Request
+	responses.Request
+	Input []json.RawMessage `json:"input"`
 	Tools []json.RawMessage `json:"tools,omitempty"`
 }
 
-func storeParts(writer protocol.ContentWriter, parts []json.RawMessage) ([]protocol.ContentID, error) {
-	refs := make([]protocol.ContentID, 0, len(parts))
+func storeParts(writer ContentWriter, parts []json.RawMessage) ([]ContentID, error) {
+	refs := make([]ContentID, 0, len(parts))
 	for _, part := range parts {
 		payload, err := storePart(writer, part)
 		if err != nil {
@@ -538,7 +529,7 @@ func storeParts(writer protocol.ContentWriter, parts []json.RawMessage) ([]proto
 	return refs, nil
 }
 
-func storePart(writer protocol.ContentWriter, raw json.RawMessage) (protocol.ContentID, error) {
+func storePart(writer ContentWriter, raw json.RawMessage) (ContentID, error) {
 	fields, err := rawObject(raw)
 	if err != nil {
 		if !json.Valid(raw) {
@@ -548,7 +539,7 @@ func storePart(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Con
 		if marshalErr != nil {
 			return "", marshalErr
 		}
-		return writer.PutContent(protocol.ContentOpenAIContent, payload)
+		return writer.PutContent(ContentOpenAIContent, payload)
 	}
 	stored := storedPart{}
 	if typeRaw, present := fields["type"]; present {
@@ -559,7 +550,7 @@ func storePart(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Con
 	}
 	if textRaw, present := fields["text"]; present {
 		if textValue, ok := jsonString(textRaw); ok {
-			id, err := putString(writer, protocol.ContentText, textValue)
+			id, err := putString(writer, ContentText, textValue)
 			if err != nil {
 				return "", err
 			}
@@ -571,7 +562,7 @@ func storePart(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Con
 		if imageRaw, present := fields[field]; present {
 			if imageValue, ok := jsonString(imageRaw); ok {
 				if prefix, data, isDataURL := splitDataURL(imageValue); isDataURL {
-					id, err := putString(writer, protocol.ContentImageData, data)
+					id, err := putString(writer, ContentImageData, data)
 					if err != nil {
 						return "", err
 					}
@@ -589,11 +580,11 @@ func storePart(writer protocol.ContentWriter, raw json.RawMessage) (protocol.Con
 	if err != nil {
 		return "", err
 	}
-	return writer.PutContent(protocol.ContentOpenAIContent, payload)
+	return writer.PutContent(ContentOpenAIContent, payload)
 }
 
-func restorePart(reader protocol.ContentReader, id protocol.ContentID) (json.RawMessage, error) {
-	payload, err := getPayload(reader, id, protocol.ContentOpenAIContent)
+func restorePart(reader ContentReader, id ContentID) (json.RawMessage, error) {
+	payload, err := getPayload(reader, id, ContentOpenAIContent)
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +608,7 @@ func restorePart(reader protocol.ContentReader, id protocol.ContentID) (json.Raw
 		}
 	}
 	if stored.Text != nil {
-		text, err := restoreString(reader, *stored.Text, protocol.ContentText)
+		text, err := restoreString(reader, *stored.Text, ContentText)
 		if err != nil {
 			return nil, fmt.Errorf("restore part text: %w", err)
 		}
@@ -626,7 +617,7 @@ func restorePart(reader protocol.ContentReader, id protocol.ContentID) (json.Raw
 		}
 	}
 	if stored.ImageData != nil {
-		data, err := restoreString(reader, stored.ImageData.Ref, protocol.ContentImageData)
+		data, err := restoreString(reader, stored.ImageData.Ref, ContentImageData)
 		if err != nil {
 			return nil, fmt.Errorf("restore image data: %w", err)
 		}
@@ -643,7 +634,7 @@ func restorePart(reader protocol.ContentReader, id protocol.ContentID) (json.Raw
 	return json.Marshal(fields)
 }
 
-func putString(writer protocol.ContentWriter, kind protocol.ContentKind, value string) (protocol.ContentID, error) {
+func putString(writer ContentWriter, kind ContentKind, value string) (ContentID, error) {
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return "", err
@@ -651,7 +642,7 @@ func putString(writer protocol.ContentWriter, kind protocol.ContentKind, value s
 	return writer.PutContent(kind, payload)
 }
 
-func restoreString(reader protocol.ContentReader, id protocol.ContentID, kind protocol.ContentKind) (string, error) {
+func restoreString(reader ContentReader, id ContentID, kind ContentKind) (string, error) {
 	payload, err := getPayload(reader, id, kind)
 	if err != nil {
 		return "", err
@@ -663,7 +654,7 @@ func restoreString(reader protocol.ContentReader, id protocol.ContentID, kind pr
 	return value, nil
 }
 
-func getPayload(reader protocol.ContentReader, id protocol.ContentID, kind protocol.ContentKind) (json.RawMessage, error) {
+func getPayload(reader ContentReader, id ContentID, kind ContentKind) (json.RawMessage, error) {
 	if reader == nil {
 		return nil, errors.New("nil content reader")
 	}

@@ -10,26 +10,26 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	"github.com/lib/pq"
 )
 
-// contentStore interns only the provider records defined in protocol.ContentKind.
+// contentStore interns only the provider records defined in storage.ContentKind.
 // Pending rows are saved together in deterministic order before publishing any roots.
 type contentStore struct {
 	ctx     context.Context
 	tx      *sql.Tx
-	cache   map[protocol.ContentID]protocol.StoredContent
-	pending map[protocol.ContentID]protocol.StoredContent
+	cache   map[storage.ContentID]storage.StoredContent
+	pending map[storage.ContentID]storage.StoredContent
 }
 
 func newContentStore(ctx context.Context, tx *sql.Tx) *contentStore {
-	return &contentStore{ctx: ctx, tx: tx, cache: map[protocol.ContentID]protocol.StoredContent{}, pending: map[protocol.ContentID]protocol.StoredContent{}}
+	return &contentStore{ctx: ctx, tx: tx, cache: map[storage.ContentID]storage.StoredContent{}, pending: map[storage.ContentID]storage.StoredContent{}}
 }
 
-func (s *contentStore) PutContent(kind protocol.ContentKind, payload json.RawMessage) (protocol.ContentID, error) {
-	content, err := protocol.CanonicalContent(kind, payload)
+func (s *contentStore) PutContent(kind storage.ContentKind, payload json.RawMessage) (storage.ContentID, error) {
+	content, err := storage.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
@@ -38,15 +38,15 @@ func (s *contentStore) PutContent(kind protocol.ContentKind, payload json.RawMes
 	return content.ID, nil
 }
 
-func (s *contentStore) GetContent(id protocol.ContentID) (protocol.StoredContent, error) {
+func (s *contentStore) GetContent(id storage.ContentID) (storage.StoredContent, error) {
 	if content, ok := s.cache[id]; ok {
 		return content, nil
 	}
-	content := protocol.StoredContent{ID: id}
+	content := storage.StoredContent{ID: id}
 	if err := s.tx.QueryRowContext(s.ctx, `SELECT kind,payload FROM sampler_content WHERE id=$1`, id).Scan(&content.Kind, &content.Payload); err != nil {
 		return content, err
 	}
-	if err := protocol.VerifyContent(content); err != nil {
+	if err := storage.VerifyContent(content); err != nil {
 		return content, err
 	}
 	s.cache[id] = content
@@ -55,10 +55,10 @@ func (s *contentStore) GetContent(id protocol.ContentID) (protocol.StoredContent
 
 // The provider envelopes have a bounded nesting depth. Resolve each breadth in
 // batches so reading a long context does not make a database roundtrip per block.
-func (s *contentStore) prefetch(ids []protocol.ContentID) error {
-	seen := map[protocol.ContentID]bool{}
+func (s *contentStore) prefetch(ids []storage.ContentID) error {
+	seen := map[storage.ContentID]bool{}
 	for len(ids) > 0 {
-		level := make([]protocol.ContentID, 0, len(ids))
+		level := make([]storage.ContentID, 0, len(ids))
 		missing := []string{}
 		for _, id := range ids {
 			if id == "" || seen[id] {
@@ -77,12 +77,12 @@ func (s *contentStore) prefetch(ids []protocol.ContentID) error {
 				return err
 			}
 			for rows.Next() {
-				var content protocol.StoredContent
+				var content storage.StoredContent
 				if err := rows.Scan(&content.ID, &content.Kind, &content.Payload); err != nil {
 					rows.Close()
 					return err
 				}
-				if err := protocol.VerifyContent(content); err != nil {
+				if err := storage.VerifyContent(content); err != nil {
 					rows.Close()
 					return err
 				}
@@ -101,15 +101,15 @@ func (s *contentStore) prefetch(ids []protocol.ContentID) error {
 			if !ok {
 				return fmt.Errorf("missing provider content %s", id)
 			}
-			var refs []protocol.ContentID
+			var refs []storage.ContentID
 			var err error
 			switch content.Kind {
-			case protocol.ContentOpenAIItem, protocol.ContentOpenAIContent, protocol.ContentOpenAIRequest:
-				refs, err = responses.ContentReferences(content.Kind, content.Payload)
-			case protocol.ContentAnthropicMessage, protocol.ContentAnthropicText, protocol.ContentAnthropicThinking,
-				protocol.ContentAnthropicRedactedThinking, protocol.ContentAnthropicToolUse, protocol.ContentAnthropicToolResult,
-				protocol.ContentAnthropicImage, protocol.ContentAnthropicCompaction, protocol.ContentAnthropicRequest:
-				refs, err = anthropic.ContentReferences(content.Kind, content.Payload)
+			case storage.ContentOpenAIItem, storage.ContentOpenAIContent, storage.ContentOpenAIRequest:
+				refs, err = storage.ResponsesContentReferences(content.Kind, content.Payload)
+			case storage.ContentAnthropicMessage, storage.ContentAnthropicText, storage.ContentAnthropicThinking,
+				storage.ContentAnthropicRedactedThinking, storage.ContentAnthropicToolUse, storage.ContentAnthropicToolResult,
+				storage.ContentAnthropicImage, storage.ContentAnthropicCompaction, storage.ContentAnthropicRequest:
+				refs, err = storage.AnthropicContentReferences(content.Kind, content.Payload)
 			}
 			if err != nil {
 				return err
@@ -121,7 +121,7 @@ func (s *contentStore) prefetch(ids []protocol.ContentID) error {
 }
 
 func (s *contentStore) save() error {
-	ids := make([]protocol.ContentID, 0, len(s.pending))
+	ids := make([]storage.ContentID, 0, len(s.pending))
 	for id := range s.pending {
 		ids = append(ids, id)
 	}
@@ -139,9 +139,9 @@ func (s *contentStore) save() error {
 		if err != nil {
 			return err
 		}
-		known := map[protocol.ContentID]bool{}
+		known := map[storage.ContentID]bool{}
 		for rows.Next() {
-			var id protocol.ContentID
+			var id storage.ContentID
 			if err := rows.Scan(&id); err != nil {
 				rows.Close()
 				return err
@@ -178,9 +178,9 @@ func (s *contentStore) save() error {
 }
 
 type contextItem struct {
-	API     protocol.APIStyle  `json:"api"`
-	Parent  string             `json:"parent"`
-	Content protocol.ContentID `json:"content"`
+	API     protocol.APIStyle `json:"api"`
+	Parent  string            `json:"parent"`
+	Content storage.ContentID `json:"content"`
 }
 
 func contextItemID(item contextItem) string {
@@ -197,7 +197,7 @@ func nullableContextID(id string) any {
 	return id
 }
 
-func (s *contentStore) storeContext(api protocol.APIStyle, contents []protocol.ContentID) (string, error) {
+func (s *contentStore) storeContext(api protocol.APIStyle, contents []storage.ContentID) (string, error) {
 	if api != protocol.APIStyleResponses && api != protocol.APIStyleAnthropicMessages {
 		return "", protocol.ErrInvalid
 	}
@@ -286,7 +286,7 @@ func (s *contentStore) checkTranscriptPrefix(previous, current string) error {
 	return nil
 }
 
-func (s *contentStore) loadContext(id string) ([]protocol.ContentID, error) {
+func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
 	if id == "" {
 		return nil, nil
 	}
@@ -298,7 +298,7 @@ func (s *contentStore) loadContext(id string) ([]protocol.ContentID, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []protocol.ContentID
+	var ids []storage.ContentID
 	previous := ""
 	for rows.Next() {
 		var key string
@@ -322,18 +322,18 @@ func (s *contentStore) loadContext(id string) ([]protocol.ContentID, error) {
 	return ids, nil
 }
 
-func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage) (protocol.ContentID, error) {
+func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage) (storage.ContentID, error) {
 	switch api {
 	case protocol.APIStyleResponses:
-		return responses.StoreRecord(s, record)
+		return storage.StoreResponsesRecord(s, record)
 	case protocol.APIStyleAnthropicMessages:
-		return anthropic.StoreRecord(s, record)
+		return storage.StoreAnthropicRecord(s, record)
 	default:
 		return "", protocol.ErrInvalid
 	}
 }
 
-func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []protocol.ContentID) ([]json.RawMessage, error) {
+func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []storage.ContentID) ([]json.RawMessage, error) {
 	if err := s.prefetch(ids); err != nil {
 		return nil, err
 	}
@@ -343,9 +343,9 @@ func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []protocol.Cont
 		var err error
 		switch api {
 		case protocol.APIStyleResponses:
-			record, err = responses.RestoreRecord(s, id)
+			record, err = storage.RestoreResponsesRecord(s, id)
 		case protocol.APIStyleAnthropicMessages:
-			record, err = anthropic.RestoreRecord(s, id)
+			record, err = storage.RestoreAnthropicRecord(s, id)
 		default:
 			return nil, protocol.ErrInvalid
 		}
@@ -362,7 +362,7 @@ func (s *contentStore) storeNativeContext(native protocol.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	ids := make([]protocol.ContentID, 0, len(records))
+	ids := make([]storage.ContentID, 0, len(records))
 	for _, record := range records {
 		id, err := s.storeRecord(native.API(), record)
 		if err != nil {

@@ -1,4 +1,4 @@
-package protocol
+package storage
 
 import (
 	"bytes"

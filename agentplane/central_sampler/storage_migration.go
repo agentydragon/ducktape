@@ -12,6 +12,8 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
@@ -217,7 +219,7 @@ func convertTranscriptBatch(ctx context.Context, db *sql.DB, conversationID stri
 	if err != nil {
 		return fmt.Errorf("read legacy transcript for conversation %s: %w", conversationID, err)
 	}
-	var suffix []protocol.ContentID
+	var suffix []storage.ContentID
 	for rows.Next() {
 		var ordinal int64
 		var record []byte
@@ -287,7 +289,7 @@ func convertTranscriptBatch(ctx context.Context, db *sql.DB, conversationID stri
 
 // appendContextIDs inserts only the newly converted suffix. Rehashing the whole prefix in each
 // transaction would make a long conversation quadratic in the number of batches.
-func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, prefixCount int, suffix []protocol.ContentID) (string, error) {
+func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, prefixCount int, suffix []storage.ContentID) (string, error) {
 	if prefixCount > 0 && root == "" {
 		return "", errors.New("nonempty provider context prefix has no root")
 	}
@@ -383,7 +385,7 @@ func convertActiveContextBatch(ctx context.Context, db *sql.DB, conversationID s
 		}
 	}
 	end := min(len(records), len(prefix)+batchSize)
-	suffix := make([]protocol.ContentID, 0, end-len(prefix))
+	suffix := make([]storage.ContentID, 0, end-len(prefix))
 	for i := len(prefix); i < end; i++ {
 		id, err := store.storeRecord(api, records[i])
 		if err != nil {
@@ -430,17 +432,17 @@ func convertActiveContextBatch(ctx context.Context, db *sql.DB, conversationID s
 }
 
 type legacyProviderRequest struct {
-	Kind          PendingIntentKind  `json:"kind"`
-	API           protocol.APIStyle  `json:"api"`
-	Connection    string             `json:"connection"`
-	ProviderModel string             `json:"provider_model"`
-	Method        string             `json:"method"`
-	URL           string             `json:"url"`
-	Headers       map[string]string  `json:"headers"`
-	Body          json.RawMessage    `json:"body"`
-	WireRequest   string             `json:"wire_request"`
-	ContextID     string             `json:"context_id"`
-	ProfileID     protocol.ContentID `json:"profile_id"`
+	Kind          PendingIntentKind `json:"kind"`
+	API           protocol.APIStyle `json:"api"`
+	Connection    string            `json:"connection"`
+	ProviderModel string            `json:"provider_model"`
+	Method        string            `json:"method"`
+	URL           string            `json:"url"`
+	Headers       map[string]string `json:"headers"`
+	Body          json.RawMessage   `json:"body"`
+	WireRequest   string            `json:"wire_request"`
+	ContextID     string            `json:"context_id"`
+	ProfileID     storage.ContentID `json:"profile_id"`
 }
 
 type modelRequestOrder struct {

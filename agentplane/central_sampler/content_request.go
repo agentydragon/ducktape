@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
@@ -18,7 +20,7 @@ func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	roots := append([]protocol.ContentID{request.ProfileID}, ids...)
+	roots := append([]storage.ContentID{request.ProfileID}, ids...)
 	if err := store.prefetch(roots); err != nil {
 		return nil, err
 	}
@@ -28,15 +30,15 @@ func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte
 	}
 	switch request.API {
 	case protocol.APIStyleResponses:
-		return responses.RestoreRequest(store, request.ProfileID, records)
+		return storage.RestoreResponsesRequest(store, request.ProfileID, records)
 	case protocol.APIStyleAnthropicMessages:
-		return anthropic.RestoreRequest(store, request.ProfileID, records)
+		return storage.RestoreAnthropicRequest(store, request.ProfileID, records)
 	default:
 		return nil, protocol.ErrInvalid
 	}
 }
 
-func finishStoredRequest(store *contentStore, request ProviderRequest, profile protocol.ContentID, ids []protocol.ContentID) (ProviderRequest, []byte, error) {
+func finishStoredRequest(store *contentStore, request ProviderRequest, profile storage.ContentID, ids []storage.ContentID) (ProviderRequest, []byte, error) {
 	contextID, err := store.storeContext(request.API, ids)
 	if err != nil {
 		return ProviderRequest{}, nil, err
@@ -54,19 +56,19 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, conversationID stri
 		return ProviderRequest{}, nil, err
 	}
 	store := newContentStore(ctx, tx)
-	var profile protocol.ContentID
-	var ids []protocol.ContentID
+	var profile storage.ContentID
+	var ids []storage.ContentID
 	switch body := native.(type) {
 	case responses.Request:
 		if request.API != protocol.APIStyleResponses {
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
-		profile, ids, err = responses.StoreRequest(store, body)
+		profile, ids, err = storage.StoreResponsesRequest(store, body)
 	case anthropic.Request:
 		if request.API != protocol.APIStyleAnthropicMessages {
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
-		profile, ids, err = anthropic.StoreRequest(store, body)
+		profile, ids, err = storage.StoreAnthropicRequest(store, body)
 	default:
 		return ProviderRequest{}, nil, fmt.Errorf("unsupported provider request %T", native)
 	}
@@ -79,14 +81,14 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, conversationID stri
 // Only the one-time historical migration disassembles an already-serialized request.
 func packLegacyRequest(ctx context.Context, tx *sql.Tx, request ProviderRequest, body json.RawMessage) (ProviderRequest, []byte, error) {
 	store := newContentStore(ctx, tx)
-	var profile protocol.ContentID
-	var ids []protocol.ContentID
+	var profile storage.ContentID
+	var ids []storage.ContentID
 	var err error
 	switch request.API {
 	case protocol.APIStyleResponses:
-		profile, ids, err = responses.StoreRequestJSON(store, body)
+		profile, ids, err = storage.StoreResponsesRequestJSON(store, body)
 	case protocol.APIStyleAnthropicMessages:
-		profile, ids, err = anthropic.StoreRequestJSON(store, body)
+		profile, ids, err = storage.StoreAnthropicRequestJSON(store, body)
 	default:
 		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
@@ -107,7 +109,7 @@ func saveProviderRequest(ctx context.Context, tx *sql.Tx, id, conversationID str
 // Signed Anthropic continuations depend on unchanged system/tool definitions.
 // Freeze those authored fields at the first request rather than rebuilding them after a roll.
 func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID string, native any) (any, error) {
-	var profile protocol.ContentID
+	var profile storage.ContentID
 	var previousContext sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT profile_id,context_id FROM sampler_model_request WHERE conversation_id=$1 ORDER BY position DESC LIMIT 1`, conversationID).Scan(&profile, &previousContext)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -119,7 +121,7 @@ func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID 
 	store := newContentStore(ctx, tx)
 	switch body := native.(type) {
 	case responses.Request:
-		wire, err := responses.RestoreRequest(store, profile, nil)
+		wire, err := storage.RestoreResponsesRequest(store, profile, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +156,7 @@ func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID 
 		}
 		return body, nil
 	case anthropic.Request:
-		wire, err := anthropic.RestoreRequest(store, profile, nil)
+		wire, err := storage.RestoreAnthropicRequest(store, profile, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +175,7 @@ func freezeProviderInstructions(ctx context.Context, tx *sql.Tx, conversationID 
 type StoredProviderRequest struct {
 	RequestID string
 	ContextID string
-	ProfileID protocol.ContentID
+	ProfileID storage.ContentID
 	Method    string
 	URL       string
 	Headers   map[string]string

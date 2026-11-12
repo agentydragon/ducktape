@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
@@ -89,7 +91,7 @@ func fixtureResponsesTool(name, description string, parameters string) []respons
 	}}
 }
 
-func contentRowCount(t *testing.T, store *Store, kind protocol.ContentKind) int {
+func contentRowCount(t *testing.T, store *Store, kind storage.ContentKind) int {
 	t.Helper()
 	var count int
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sampler_content WHERE kind=$1`, string(kind)).Scan(&count); err != nil {
@@ -230,10 +232,10 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 	if got := tableRowCount(t, store, "sampler_context"); got != turns {
 		t.Fatalf("sampler_context rows=%d after %d append-only inputs, want linear count %d", got, turns, turns)
 	}
-	if got := contentRowCount(t, store, protocol.ContentText); got != turns+1 {
+	if got := contentRowCount(t, store, storage.ContentText); got != turns+1 {
 		t.Fatalf("text content rows=%d, want %d unique prompts plus one shared instruction", got, turns+1)
 	}
-	if got := contentRowCount(t, store, protocol.ContentOpenAITool); got != 1 {
+	if got := contentRowCount(t, store, storage.ContentOpenAITool); got != 1 {
 		t.Fatalf("OpenAI tool content rows=%d, want one frozen shared definition", got)
 	}
 	assertDispatchBoundaryUsesContentReferences(t, store, session.ID, firstID, "Unique persistent-context prompt 00.")
@@ -269,7 +271,7 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 	if got := tableRowCount(t, store, "sampler_context"); got != firstContextRows {
 		t.Fatalf("identical cross-account input added context rows: before=%d after=%d", firstContextRows, got)
 	}
-	if got := contentRowCount(t, store, protocol.ContentOpenAITool); got != 1 {
+	if got := contentRowCount(t, store, storage.ContentOpenAITool); got != 1 {
 		t.Fatalf("shared tool content rows=%d, want one", got)
 	}
 
