@@ -241,19 +241,11 @@ def test_detached_unmerged_commit_is_review(repo: GitRepo, proc: Path) -> None:
     assert isinstance(_classify(repo, path, proc), wg.ReviewWorktree)
 
 
-def test_detached_worktree_is_not_directly_removable(repo: GitRepo) -> None:
+def test_detached_worktree_is_directly_removable(repo: GitRepo) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
-    detached = GitRepo(path)
-    _commit_detached(detached, "detached empty commit")
-    detached_head = detached.rev("HEAD")
-    assert detached_head not in _surviving_ref_commits(repo)
-
-    result = wg.remove_worktree(repo.path, path)
-
-    assert isinstance(result, Skipped)
-    assert GitRepo(path).rev("HEAD") == detached_head
-    assert path.exists()
+    assert wg.remove_worktree(repo.path, path) == Removed(path)
+    assert not path.exists()
 
 
 def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:

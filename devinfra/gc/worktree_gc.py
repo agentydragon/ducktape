@@ -263,7 +263,7 @@ def remove_worktree(
 ) -> RemovalResult[Path]:
     """Remove a worktree after checking its checkout has not changed.
 
-    A detached checkout requires its classified HEAD. Git refuses tracked and untracked
+    Classified callers can pass the expected checkout. Git refuses tracked and untracked
     changes but removes ignored files. Checking HEAD and removing are not atomic.
     """
     try:
@@ -274,10 +274,10 @@ def remove_worktree(
         return Failed(path, f"cannot inspect worktree directory before removal: {error}")
     try:
         pg = open_repo(path)
-        if pg.head_is_detached:
-            if detached_head is None or str(pg.head.peel(pygit2.Commit).id) != detached_head:
-                return Skipped(path, "detached HEAD changed or was not proven safe for removal")
-        elif detached_head is not None or (expected_branch is not None and pg.head.shorthand != expected_branch):
+        if detached_head is not None:
+            if not pg.head_is_detached or str(pg.head.peel(pygit2.Commit).id) != detached_head:
+                return Skipped(path, "detached HEAD changed before removal")
+        elif expected_branch is not None and (pg.head_is_detached or pg.head.shorthand != expected_branch):
             return Skipped(path, "checked-out branch changed before removal")
     except INSPECTION_ERRORS as error:
         return Failed(path, f"cannot inspect worktree safety before removal: {error}")
