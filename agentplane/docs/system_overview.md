@@ -134,9 +134,14 @@ flowchart LR
     runner -.->|History mTLS through CONNECT| sidecar
     sidecar -.->|opaque History TLS| egress
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
+    agent -.->|managed CLI History reads through exact-origin route| sidecar
+    sidecar -.->|History Service SVID TLS through CONNECT| egress
+    egress -.->|opaque History read TLS| hs
     agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
     guest -.->|History mTLS through CONNECT| relay
     relay -.->|opaque History TLS| egress
+    guest_agent -.->|managed CLI History reads through exact-origin route| relay
+    relay -.->|History Service SVID TLS through CONNECT| egress
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|opaque Dispatcher SVID TLS| gw
 
@@ -296,6 +301,13 @@ and the `wakeOnSend` and `wake_callers` checks.
 The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
 History reads. Those receivers enforce their own same-principal checks; the existing
 `orchestration_v1` broker path retains its separate authority.
+
+Managed Pod, VM and Firecracker CLIs also receive `AGENTPLANE_HISTORY_URL`, set to
+`http://history-service.<namespace>.svc.cluster.local:8080`. The exact-origin route sends CLI gRPC
+through the Pod sidecar or VM relay, which presents the Sandbox Workload SVID with
+and verifies History's `HISTORY_SERVICE_URI`; the central proxy carries that TLS connection opaquely. History authorizes the
+read against the exact Identity name and UID in the SVID. This path uses no History bearer credential
+or projected audience token and adds no `reader_accounts` grant.
 
 ## Central code-mode sampling (opt in)
 

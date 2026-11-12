@@ -10,7 +10,8 @@ import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, staging
+from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI
+from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
 from cluster.cdk8s.pod_policy import harden, pod_spec
 
 
@@ -103,6 +104,11 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
     ):
         target = urlsplit(url)
         assert (target.hostname, target.port) == (environment_firecracker.GATEWAY, listener.port)
+    history = history_service.service(staging.ENV.namespace)
+    origin = f"{history.fqdn}:{history.port.number}"
+    assert harness["AGENTPLANE_HISTORY_URL"] == f"http://{origin}"
+    route = yaml.safe_load(relay["data"]["settings.yaml"])["workload_routes"][origin]
+    assert route == {"upstream": f"{history.fqdn}:{history.port.number}", "server_uri": HISTORY_SERVICE_URI}
 
 
 def test_staging_keeps_firecracker_disabled(staging_manifests: list[dict[str, Any]]) -> None:

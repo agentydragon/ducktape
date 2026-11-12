@@ -1,13 +1,14 @@
 # History Service
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
-public Session ID. Readers authenticate with a projected ServiceAccount token (TokenReview),
-and can read only Sessions whose retained execution principal has the same
-ServiceAccount namespace, name and UID. This read authority does not depend on a live Sandbox.
-Configured backend readers retain their explicit Pod-bound, service-wide read path; a ServiceAccount
-token alone does not grant it. A Session UUID by itself grants nothing. Consumers use `client.py`;
-`testing/go_service.py` runs the built Go service over a test database. Tests can inspect the fold's
-storage through `fold/models.py` and use the generated Thread entity messages for semantic reads.
+public Session ID. A projected ServiceAccount token (TokenReview) reads Sessions whose retained
+execution principal has the same ServiceAccount namespace, name and UID. A Sandbox Workload SVID
+naming an Identity reads Sessions retained under that exact Identity name and UID. Neither read scope
+depends on the original Sandbox remaining. Configured backend readers retain their explicit Pod-bound, service-wide
+read path; a ServiceAccount token alone does not grant it. A Session UUID by itself grants nothing.
+Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test database.
+Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
+messages for semantic reads.
 
 An optional, separate `delegation` setting names the Actions actor, caller namespaces, whether it may
 assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
@@ -17,6 +18,12 @@ with that incarnation, as its own workload does. Delegated Actions calls retain 
 read scope even if the actor is also a configured backend reader; actor Pod proof does not widen the read.
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.
+
+Managed Pod, VM and Firecracker CLI environments set `AGENTPLANE_HISTORY_URL` to
+`http://<History Service FQDN>:8080`. The CLI connects without a bearer token through the Sandbox's
+exact-origin sidecar route; the sidecar presents the workload SVID, and this service scopes the read
+to the Identity name and UID in that credential. No projected History token or `reader_accounts`
+grant is needed for this path.
 
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
