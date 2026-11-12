@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -847,7 +849,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := store.StampCodeHostInstance(t.Context(), newOwner, successor); !errors.Is(err, errCodeHostInstanceChanged) {
+			if err := store.StampCodeHostInstance(t.Context(), newOwner, successor); !errors.Is(err, codemode.ErrHostInstanceChanged) {
 				t.Fatalf("new host overwrote unacknowledged state loss: %v", err)
 			}
 			changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, encoding)

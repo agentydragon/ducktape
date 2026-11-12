@@ -1,17 +1,17 @@
 package centralsampler
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -568,7 +568,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	requestJSON, err := protocolObject(map[string]any{"method": method, "params": params})
+	requestJSON, err := protocol.Object(map[string]any{"method": method, "params": params})
 	if err != nil {
 		return nil, err
 	}
@@ -1261,7 +1261,7 @@ func responseObject(method executionMethod, response proto.Message) (map[string]
 			x := int(*r.ExitCode)
 			code = &x
 		}
-		return protocolObject(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
+		return protocol.Object(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
 	case *executorpb.WriteProcessResponse:
 		return map[string]any{"status": r.WriteStatus}, nil
 	case *executorpb.SignalProcessResponse:
@@ -1269,44 +1269,16 @@ func responseObject(method executionMethod, response proto.Message) (map[string]
 	case *executorpb.TerminateProcessResponse:
 		return map[string]any{"running": r.Running}, nil
 	case *executorpb.GetFileMetadataResponse:
-		return protocolObject(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
+		return protocol.Object(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
 	case *executorpb.OpenFileResponse:
 		return map[string]any{"handleId": r.HandleId}, nil
 	case *executorpb.ReadFileResponse:
-		return protocolObject(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
+		return protocol.Object(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
 	case *executorpb.CloseFileResponse:
 		return map[string]any{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported typed execution response for %s", method)
 	}
-}
-
-func decodeProtocolObject(data []byte, value any) error {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return errors.New("protocol payload must be a JSON object")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(trimmed))
-	decoder.UseNumber()
-	if err := decoder.Decode(value); err != nil {
-		return err
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return errors.New("protocol payload has trailing JSON")
-	}
-	return nil
-}
-
-func protocolObject(value any) (map[string]any, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var object map[string]any
-	if err := decodeProtocolObject(data, &object); err != nil {
-		return nil, err
-	}
-	return object, nil
 }
 
 func executorRPC[R any, P any](ctx context.Context, e *Executor, method executionMethod, params P) (*R, error) {
@@ -1319,7 +1291,7 @@ func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, met
 		return nil, err
 	}
 	var result R
-	if err := decodeProtocolObject(raw, &result); err != nil {
+	if err := protocol.DecodeObject(raw, &result); err != nil {
 		return nil, fmt.Errorf("decode typed execution %s result: %w", method, err)
 	}
 	return &result, nil

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -509,8 +511,6 @@ func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) 
 	return epoch, err
 }
 
-var errCodeHostInstanceChanged = errors.New("code-mode host instance changed before session/open")
-
 // StampCodeHostInstance records a host generation only after a logical session has opened.
 // A changed marker must first be reconciled before any cell is dispatched on the new host.
 func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instanceID string) error {
@@ -527,7 +527,7 @@ func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instance
 		}
 		if previous.Valid {
 			if previous.String != instanceID {
-				return errCodeHostInstanceChanged
+				return codemode.ErrHostInstanceChanged
 			}
 			return nil
 		}

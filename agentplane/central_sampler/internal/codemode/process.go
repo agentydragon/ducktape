@@ -1,4 +1,4 @@
-package centralsampler
+package codemode
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-type Host struct {
+type Process struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
 	stdout    io.ReadCloser
@@ -27,11 +27,11 @@ type Host struct {
 	capabilities []string
 }
 
-func (h *Host) acknowledged(capability string) bool {
+func (h *Process) acknowledged(capability string) bool {
 	return slices.Contains(h.capabilities, capability)
 }
 
-func StartHost(ctx context.Context, binary, logPath string) (*Host, error) {
+func StartProcess(ctx context.Context, binary, logPath string) (*Process, error) {
 	if binary == "" || logPath == "" {
 		return nil, errors.New("code-mode binary and log path are required")
 	}
@@ -42,7 +42,7 @@ func StartHost(ctx context.Context, binary, logPath string) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	host := &Host{log: log, done: make(chan struct{})}
+	host := &Process{log: log, done: make(chan struct{})}
 	command := exec.CommandContext(ctx, binary, "--listen", "stdio")
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
@@ -87,24 +87,24 @@ func killProcessGroup(pid int) error {
 	return nil
 }
 
-func (h *Host) Stdin() io.WriteCloser { return h.stdin }
-func (h *Host) Stdout() io.ReadCloser { return h.stdout }
-func (h *Host) PID() int {
+func (h *Process) Stdin() io.WriteCloser { return h.stdin }
+func (h *Process) Stdout() io.ReadCloser { return h.stdout }
+func (h *Process) PID() int {
 	if h.cmd == nil || h.cmd.Process == nil {
 		return 0
 	}
 	return h.cmd.Process.Pid
 }
-func (h *Host) Done() <-chan struct{} { return h.done }
+func (h *Process) Done() <-chan struct{} { return h.done }
 
-func (h *Host) Wait() error {
+func (h *Process) Wait() error {
 	<-h.done
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.waitErr
 }
 
-func (h *Host) Kill() error {
+func (h *Process) Kill() error {
 	if h.cmd == nil || h.cmd.Process == nil {
 		return nil
 	}
@@ -114,7 +114,7 @@ func (h *Host) Kill() error {
 	return killProcessGroup(h.cmd.Process.Pid)
 }
 
-func (h *Host) Close() error {
+func (h *Process) Close() error {
 	h.closeOnce.Do(func() {
 		killErr := h.Kill()
 		select {

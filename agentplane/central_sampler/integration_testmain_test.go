@@ -18,6 +18,9 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
+	if runCodeModePeer() {
+		return
+	}
 	migrate := func(ctx context.Context, db *sql.DB) error { return Migrate(ctx, db) }
 	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
 		integrationDatabase = database

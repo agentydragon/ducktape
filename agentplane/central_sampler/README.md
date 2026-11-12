@@ -18,6 +18,10 @@ The placement-owner RPC is `Sampler.CreateSession`; it receives the committed pl
 these V1 admission semantics. `Executor.OpenSession` is separate: its stream owns one execution
 connection to the Runner and does not create the logical Session.
 
+The shared child process, wire framing, request routing and logical-session lifecycle live in
+`internal/codemode`. The sampler binds each session to its lease-fenced journal and delegated tool
+handler; model tool adaptation, nested executor intents and result evidence remain sampler-owned.
+
 The service, sampling loop, persistence and exporter are implemented in Go. The JavaScript host is
 the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
 
