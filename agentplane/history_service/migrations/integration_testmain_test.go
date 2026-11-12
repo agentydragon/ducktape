@@ -1,8 +1,6 @@
 package migrations
 
 import (
-	"context"
-	"database/sql"
 	"os"
 	"testing"
 
@@ -12,9 +10,7 @@ import (
 var migrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(func(ctx context.Context, db *sql.DB) error {
-		return postgres.EnsureElectricRole(ctx, db)
-	}, func(database *postgres.Database) int {
+	os.Exit(postgres.RunIntegrationTests(postgres.EnsureElectricRole, func(database *postgres.Database) int {
 		migrationDatabase = database
 		return m.Run()
 	}))
