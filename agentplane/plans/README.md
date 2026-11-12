@@ -69,6 +69,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   design covers backend grants per operation and bounds on launcher delegation
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
   moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
+- [Managed CLI access to retained History](managed_cli_history.md) — inject the History endpoint into
+  managed launch environments and use the existing Identity SVID route and exact-Identity read scope
 - [Scoped Session reads](scoped_session_reads.md) — held broader cross-ServiceAccount read policy;
   narrow same-principal retained reads are implemented
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
