@@ -383,17 +383,17 @@ per-market snapshots and Manifold bet/comment mirroring, and `finance/evidence/`
 existing loaders. Add only the missing discovery, historical-data and task-building paths;
 the names below are possible modules, not a requirement to duplicate those clients.
 
-| module             | responsibility                                                                                                   |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `manifold_dump.py` | fetch/verify the three dump zips, stream-parse, emit normalized records                                          |
-| `manifold_api.py`  | post-2024-07 discovery sweep; reuse the shared mirror for survivor `bets`/`comments` where its contract fits          |
-| `polymarket.py`    | missing gamma discovery, CLOB `prices-history` and event comments; reuse existing per-market snapshots             |
-| `kalshi.py`        | missing historical/live discovery, candlesticks and `event→series` join; reuse existing per-market snapshots       |
-| `record.py`        | normalized Pydantic records: `MarketRecord`, `PricePoint`, `CommentRecord` (platform-tagged)                     |
-| `quality.py`       | mechanical + self-resolving + clarity filters; emits (record, verdict, reason)                                   |
-| `dedup.py`         | embedding clustering → `cluster_id`                                                                              |
-| `snapshots.py`     | grid `as_of` selection, price-as-of, dossier assembly + the leakage assertions                                   |
-| `store.py`         | S3 IO under the `harvest/` prefix (below)                                                                        |
+| module             | responsibility                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `manifold_dump.py` | fetch/verify the three dump zips, stream-parse, emit normalized records                                      |
+| `manifold_api.py`  | post-2024-07 discovery sweep; reuse the shared mirror for survivor `bets`/`comments` where its contract fits |
+| `polymarket.py`    | missing gamma discovery, CLOB `prices-history` and event comments; reuse existing per-market snapshots       |
+| `kalshi.py`        | missing historical/live discovery, candlesticks and `event→series` join; reuse existing per-market snapshots |
+| `record.py`        | normalized Pydantic records: `MarketRecord`, `PricePoint`, `CommentRecord` (platform-tagged)                 |
+| `quality.py`       | mechanical + self-resolving + clarity filters; emits (record, verdict, reason)                               |
+| `dedup.py`         | embedding clustering → `cluster_id`                                                                          |
+| `snapshots.py`     | grid `as_of` selection, price-as-of, dossier assembly + the leakage assertions                               |
+| `store.py`         | S3 IO under the `harvest/` prefix (below)                                                                    |
 
 Task minting lives gym-side as `loom/gym/market_tasks.py` (mirrors
 `series_tasks.py`): reads the normalized store, emits `Task` objects +
