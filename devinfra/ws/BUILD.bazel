@@ -28,11 +28,8 @@ py_wheel(
     distribution = "ducktape_ws",
     entry_points = {"console_scripts": ["ws = devinfra.ws.cli:main"]},
     python_requires = ">=3.14",
-    # SYNC: propagatedBuildInputs in nix/packages/default.nix (ws).
-    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the Nix
-    # inputs once the pinned ws wheel no longer imports util.agent_sandbox.
+    # The current Nix pin still requires ducktape-util; its input has a cleanup gate.
     requires = [
-        "ducktape-util",
         "typer",
     ],
     version = "0.1.0",

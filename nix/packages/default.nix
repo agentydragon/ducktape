@@ -660,9 +660,9 @@ rec {
       mainProgram = "ws";
       importsCheck = [ "devinfra.ws.cli" ];
       entrypointChecks = [ "ws" ];
-      # SYNC: requires in //devinfra/ws:ws_wheel.
-      # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
-      # requirements once the pinned ws wheel no longer imports util.agent_sandbox.
+      # SYNC: Requires-Dist in the currently pinned ws wheel.
+      # CLEANUP(added 2026-11-11): Remove ducktape-util once artifact-pins.json
+      # points to a ws wheel without `Requires-Dist: ducktape-util`.
       propagatedBuildInputs = [ ducktape-util ] ++ (with python314Packages; [ typer ]);
     }).overrideAttrs
       (old: {
