@@ -53,7 +53,12 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
             "state_dir": "/data/session/blueshield",
             "poll_interval_seconds": 300,
         },
-        {"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform"},
+        {
+            "id": "quest",
+            "type": "quest",
+            "state_dir": "/data/session/quest-platform",
+            "poll_interval_seconds": 300,
+        },
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
 }
