@@ -3,21 +3,12 @@ kind: CiliumClusterwideNetworkPolicy
 metadata:
   name: host-ingress-canary
   annotations:
-    description: Restrict host ingress on the selected OVH nodes while preserving public services and Nebula access.
+    description: Restrict Talos host ingress while preserving public services and Nebula access.
 spec:
-  # Cilium's host endpoint includes this Piraeus node label; Kubernetes'
-  # kubernetes.io/hostname label is not present on the host endpoint.
+  # Talos machine configuration sets node-vendor on every Talos node.
   nodeSelector:
-    matchExpressions:
-      - key: linbit.com/hostname
-        operator: In
-        values:
-          - ovh-ns1001419
-          - ovh-ns102453
-          - ovh-ns103656
-          - ovh-ns103711
-          - ovh-ns104952
-          - ovh-ns104963
+    matchLabels:
+      node-vendor: talos
   ingress:
     # Node, Pod and health identities need the existing cluster paths.
     - fromEntities:
