@@ -1,11 +1,11 @@
 {
-  "source_devel_commit": "17ed98e8ea69787689c908a3ed49749b6ee7e554",
-  "window_start_utc": "2026-11-03T00:00:00Z",
-  "window_end_utc": "2026-11-10T23:13:00Z",
-  "published_at_utc": "2026-11-11T01:02:21+00:00",
+  "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
+  "window_start_utc": "2026-11-05T07:20:00Z",
+  "window_end_utc": "2026-11-12T07:20:00Z",
+  "published_at_utc": "2026-11-12T08:53:19.343095+00:00",
   "attribution": "not collected",
-  "previous_report_branch_commit": "4aa6b2d2148fc8365a04985680295b39c2542d29",
-  "report_html_sha256": "81e2bcda3e487428ceceee758ef7cc4e7100f0d62dc9cd33878fd05d77cf9dda",
-  "evidence_sha256": "e9b2238aafe2e76906f2569febe1f4778ad977c88379c1294ec7d1c2edabb958",
-  "sampling_design": "Focused eight-day devel-filtered VM stats and branch-unverified target history through 23:04 UTC, plus selected #15493 PR attempts through 23:13 UTC; no repository-wide PR or fresh physical denominator."
+  "previous_report_commit": "624f59060b605015f3614555baeae27f5ee6f859",
+  "report_sha256": "601741b192857354444425970dd61f66d57b54c5bd6d99708e469f3ff1ceb64f",
+  "evidence_sha256": "c9be31d3429a84af3c56c92a7e9c2d53c76256c0abb91d975ba3a6c3ddd96ba1",
+  "visual_validation": "visual-validation.json"
 }
