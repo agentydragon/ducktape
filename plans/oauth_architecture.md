@@ -97,11 +97,12 @@ invariant tests, before H2 makes lifecycle contracts depend on the current graph
 
 ### Haku product sequence
 
-These are vertical product PRs, not another identity migration:
+The Operator-scoped Agent list API and settings UI already show basic identity and status. H1
+extends that existing surface; the remaining slices are product PRs, not another identity migration:
 
 | Order | Slice                           | Boundary and acceptance                                                                                                                                                                                                                                                                              |
 | ----- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H1    | Connected Agents                | Operator-scoped API and trusted-console UI together. Derive name, client metadata, scopes, binding status/generation, timestamps, and reconnect history through canonical joins. Do not call inactivity “disconnected” or claim DCR/CIMD provenance that current public FastMCP inputs cannot prove. |
+| H1    | Fuller Agent detail             | Extend the existing Operator-scoped API and trusted-console UI with safe client metadata, scopes, binding generation and reconnect history through canonical joins. Do not call inactivity “disconnected” or claim DCR/CIMD provenance that current public FastMCP inputs cannot prove. |
 | H2a   | Revoke and disable              | Operator-owned API, UI, audit representation, and negative tests. Distinguish revoking one credential binding/grant from disabling the Agent and all usable bindings; keep the public control scoped to the Agent rather than an internal grant identifier.                                          |
 | H2b   | Rename                          | Atomically replace the Agent's required normalized, globally unique name. Add append-only rename audit only if the product needs history; retired names need not remain authority-bearing reservations.                                                                                              |
 | H2c   | Tombstone and reconnect history | Add explicit delete/tombstone semantics and cleanup/history UI after revoke/disable and rename semantics are stable.                                                                                                                                                                                 |

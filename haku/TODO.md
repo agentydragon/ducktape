@@ -26,10 +26,10 @@ component checklist rather than being copied here: haku-console's tool/API backl
 The canonical authority/enrollment cutover and migration squash are complete. These are product
 slices over the deployed schema, not another identity migration:
 
-- **Connected Agents:** ship an Operator-scoped API and trusted-console UI showing canonical Agent
-  name/status, safe client metadata, scopes, binding generations, creation time, last-authenticated
-  time, and reconnect history. Do not call inactivity "disconnected" or expose secrets/raw OAuth
-  metadata. The existing schema is sufficient for this slice; do not block it on schema cleanup.
+- **Fuller Agent detail:** extend the existing Operator-scoped Agent API and settings UI with safe
+  client metadata, scopes, binding generations and reconnect history. Do not call inactivity
+  "disconnected" or expose secrets/raw OAuth metadata. The existing schema is sufficient for this
+  slice; do not block it on schema cleanup.
 - **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect
   history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
   the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
