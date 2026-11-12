@@ -22,7 +22,6 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 )
@@ -82,7 +81,5 @@ type SecretList struct {
 // Secret type metadata.
 var (
 	SecretKind             = reflect.TypeOf(Secret{}).Name()
-	SecretGroupKind        = schema.GroupKind{Group: Group, Kind: SecretKind}.String()
-	SecretKindAPIVersion   = SecretKind + "." + SchemeGroupVersion.String()
 	SecretGroupVersionKind = SchemeGroupVersion.WithKind(SecretKind)
 )
