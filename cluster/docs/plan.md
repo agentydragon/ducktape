@@ -27,6 +27,13 @@ editing a route.
 
 ## Next Actions
 
+- [ ] **Canary Cilium host ingress policies.** Inventory public, Nebula,
+      pod-to-host, management, storage, and recovery traffic first. Verify an
+      out-of-band recovery path and the own-node Gateway probe, then audit and
+      enforce on one worker before expanding to other workers and control planes.
+      Keep public Kubernetes API access on TCP 6443 initially; revisit whether
+      its source addresses can be restricted after client paths are inventoried.
+      Host firewall enablement alone does not restrict satellite listeners.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
       `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
