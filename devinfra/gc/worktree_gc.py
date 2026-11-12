@@ -259,6 +259,13 @@ def _classify_worktree(
     return review(ReviewWorktreeReason.UNMERGED)
 
 
+def _read_reflog(path: Path) -> str | None:
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        return None  # Reflogs can be disabled.
+
+
 def remove_worktree(
     repo: Path, path: Path, *, expected_branch: str | None = None, detached_head: str | None = None
 ) -> RemovalResult[Path]:
@@ -284,12 +291,9 @@ def remove_worktree(
             reflog_path = Path(
                 git(path, "rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD").stdout.strip()
             )
-            try:
-                entries = reflog_path.read_text().splitlines()
-            except FileNotFoundError:
-                entries = []  # Reflogs can be disabled.
+            reflog = _read_reflog(reflog_path)
             commits = {detached_head}
-            for entry in entries:
+            for entry in (reflog or "").splitlines():
                 fields = entry.split(maxsplit=2)
                 if len(fields) < 3:
                     raise ValueError("malformed worktree HEAD reflog")
@@ -299,7 +303,13 @@ def remove_worktree(
                     if oid.strip("0"):
                         commits.add(oid)
             for commit in commits:
-                git(repo, "update-ref", f"refs/workspace-gc/recovery/{commit}", commit)
+                ref = f"refs/workspace-gc/recovery/{commit}"
+                created = git(repo, "update-ref", "--no-deref", ref, commit, "", check=False)
+                if created.returncode:
+                    symbolic = git(repo, "symbolic-ref", "-q", ref, check=False)
+                    existing = git(repo, "show-ref", "--verify", "--hash", ref, check=False)
+                    if symbolic.returncode == 0 or existing.returncode or existing.stdout.strip() != commit:
+                        return Failed(path, f"cannot create recovery ref {ref}: {created.stderr.strip()}")
         elif detached_head is not None or (expected_branch is not None and pg.head.shorthand != expected_branch):
             return Skipped(path, "checked-out branch changed since classification")
         # Reopen after creating the ref: the checkout may have changed during that operation.
@@ -307,6 +317,8 @@ def remove_worktree(
         if detached_head is not None:
             if not pg.head_is_detached or str(pg.head.peel(pygit2.Commit).id) != detached_head:
                 return Skipped(path, "detached HEAD changed before removal")
+            if _read_reflog(reflog_path) != reflog:
+                return Skipped(path, "detached HEAD reflog changed before removal")
         elif pg.head_is_detached or (expected_branch is not None and pg.head.shorthand != expected_branch):
             return Skipped(path, "checked-out branch changed before removal")
     except INSPECTION_ERRORS as error:

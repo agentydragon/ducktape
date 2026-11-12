@@ -282,6 +282,48 @@ def test_detached_head_change_during_preservation_stops_removal(repo: GitRepo, m
     assert path.exists()
 
 
+def test_detached_reflog_change_with_same_head_stops_removal(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    real_git = wg.git
+    changed = False
+
+    def change_head(repo_path: Path, *args: str, **kwargs: bool) -> subprocess.CompletedProcess[str]:
+        nonlocal changed
+        result = real_git(repo_path, *args, **kwargs)
+        if args[0] == "update-ref" and not changed:
+            changed = True
+            _commit_detached(detached, "transient commit")
+            detached.run("reset", "--hard", "main")
+        return result
+
+    monkeypatch.setattr(wg, "git", change_head)
+    result = wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+    assert isinstance(result, Skipped)
+    assert "reflog changed" in result.reason
+    assert path.exists()
+
+
+def test_recovery_ref_collision_does_not_overwrite(repo: GitRepo) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    detached = GitRepo(path)
+    _commit_detached(detached, "landed empty commit")
+    head = detached.rev("HEAD")
+    other = repo.rev("main")
+    ref = f"refs/workspace-gc/recovery/{head}"
+    repo.run("update-ref", ref, other)
+    result = wg.remove_if_still_prunable(
+        repo.path, Worktree(path, None), main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+    assert isinstance(result, Failed)
+    assert repo.rev(ref) == other
+    assert path.exists()
+
+
 def test_detached_unmerged_commit_is_review(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
