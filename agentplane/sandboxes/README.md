@@ -29,11 +29,10 @@ nullable Session IDs.
 
 `spec.inboxTags` are plain strings with no backing object; a `session_inbox_access` rule targeting
 one covers every Sandbox holding it ([messages](../notification_service/docs/api.md#messages)).
-Sandbox RBAC is the only gate, with no admission rule: whoever can patch a Sandbox can already set
-its `spec.policySets`, which grants at least as much. Flux and the app both write tags. Server-side
-apply owns each entry of the set-typed list separately, so on a Sandbox that Flux creates, Flux and
-the app can each own different tags, and Flux reverts a tag it declares if someone changes it live.
-Flux cannot tag a Sandbox the app created, because it would then own the whole object. A recreated
+Sandbox RBAC controls who can change those tags; Flux and the app both write them. Server-side apply
+owns each entry of the set-typed list separately, so on a Sandbox that Flux creates, Flux and the
+app can each own different tags, and Flux reverts a tag it declares if someone changes it live. Flux
+cannot tag a Sandbox the app created, because it would then own the whole object. A recreated
 Sandbox has only the tags its manifest or launch gives it.
 
 `testing/kubernetes.py` seeds a running Sandbox and its Pod (`SandboxCluster`) on an envtest API

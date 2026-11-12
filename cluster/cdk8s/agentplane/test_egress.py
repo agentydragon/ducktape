@@ -58,12 +58,11 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def _environment_default_policies(docs: list[dict[str, Any]]) -> list[str]:
-    """The PolicySets every launch preset grants: those all presets share."""
+def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str]]:
+    """The explicitly configured PolicySets for each Sandbox launch preset."""
     config = _by_name(docs, "ConfigMap", "app-config")
     presets = yaml.safe_load(config["data"]["config.yaml"])["sandbox_presets"]
-    shared = set.intersection(*(set(spec["policy_sets"]) for spec in presets.values()))
-    return sorted(shared)
+    return {name: set(spec["policy_sets"]) for name, spec in presets.items()}
 
 
 def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: list[dict[str, Any]]) -> None:
@@ -180,12 +179,12 @@ def test_app_projects_egress_admin_audience(catalog_manifests: list[dict[str, An
     ] == "/var/run/secrets/agentplane-egress-admin"
 
 
-def test_environment_default_policy_sets_are_canonical(catalog_manifests: list[dict[str, Any]]) -> None:
-    app_defaults = _environment_default_policies(catalog_manifests)
-    assert set(DEFAULT_POLICIES) <= set(app_defaults)
-    # The identity catalog adds the shared diagnostics account's use set, and nothing else.
-    assert set(app_defaults) - set(DEFAULT_POLICIES) <= {shared_diagnostics(staging.ENV.namespace).credential_name}
-    assert PUBLIC_INTERNET_POLICY not in app_defaults
+def test_sandbox_presets_explicitly_grant_the_baseline_policy_sets(catalog_manifests: list[dict[str, Any]]) -> None:
+    presets = _sandbox_preset_policy_sets(catalog_manifests)
+    expected = {*DEFAULT_POLICIES[1:], shared_diagnostics(staging.ENV.namespace).credential_name}
+    assert presets
+    for name, policy_sets in presets.items():
+        assert expected <= policy_sets, (name, policy_sets)
 
 
 def test_basic_policy_auto_approves_only_same_principal_session_actions(
@@ -213,22 +212,24 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
 
     # `basic` stays on the standing ServiceAccount bindings. New Identity launches get the sibling
     # without its projected-token Kubernetes route while retaining the same Action approval.
-    assert BASIC_POLICY in _environment_default_policies(catalog_manifests)
     for account in ("claude-ai", "haku-agent"):
         binding = _by_name(catalog_manifests, "PolicyBinding", account)
         assert BASIC_POLICY in binding["spec"]["policySets"]
-    app_config = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
-    assert app_config["sandbox_presets"]
-    for preset in app_config["sandbox_presets"].values():
-        assert (BASIC_IDENTITY_POLICY in preset["policy_sets"]) != (BASIC_POLICY in preset["policy_sets"])
+    presets = _sandbox_preset_policy_sets(catalog_manifests)
+    assert presets
+    for policy_sets in presets.values():
+        assert (BASIC_IDENTITY_POLICY in policy_sets) != (BASIC_POLICY in policy_sets)
 
 
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
     public = _by_name(catalog_manifests, "PolicySet", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
-    # Every preset, not just today's public-coder preset, and the defaults.
+    # Every preset spells out its grants; none grants public Internet implicitly.
     assert PUBLIC_INTERNET_POLICY not in _by_name(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"]
-    assert PUBLIC_INTERNET_POLICY not in _environment_default_policies(catalog_manifests)
+    assert all(
+        PUBLIC_INTERNET_POLICY not in policy_sets
+        for policy_sets in _sandbox_preset_policy_sets(catalog_manifests).values()
+    )
     for doc in catalog_manifests:
         if doc["kind"] == "PolicyBinding":
             if doc["metadata"]["name"] == "public-coder-openclaw":
@@ -694,7 +695,10 @@ def test_external_delegation_binds_exactly_the_granted_roles(
 def test_inference_is_granted_separately_from_platform_operations(catalog_manifests: list[dict[str, Any]]) -> None:
     granted = _by_name(catalog_manifests, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = _by_name(catalog_manifests, "PolicySet", BASIC_POLICY)
-    assert INFERENCE_EXPERIMENTS_POLICY in _environment_default_policies(catalog_manifests)
+    assert all(
+        INFERENCE_EXPERIMENTS_POLICY in policy_sets
+        for policy_sets in _sandbox_preset_policy_sets(catalog_manifests).values()
+    )
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in catalog_manifests if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]

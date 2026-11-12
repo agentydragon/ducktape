@@ -636,8 +636,8 @@ func renderedSpec(spec any) string {
 }
 
 // render is the template's Pod for this Sandbox, with the state volume filled in. It runs as the
-// Sandbox's ServiceAccount or, acting as an Identity, as the namespace's default account with no
-// token mounted: the template's own projections, such as its egress sidecar's, are all it gets.
+// namespace's default account with no ServiceAccount token mounted: the template's own projections,
+// such as its egress sidecar's, are all it gets.
 func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*corev1.Pod, *unready) {
 	if blocked := validateStateVolume(template); blocked != nil {
 		return nil, blocked
