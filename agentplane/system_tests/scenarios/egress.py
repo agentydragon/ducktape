@@ -521,7 +521,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
             cluster, client, first.target.name, first.target.uid, KUBERNETES_HOST, after=after
         )
         assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
-        assert refused.reason == Decision.REASON_PLACEHOLDER_UNRESOLVED, f"{refused!r}"
+        assert refused.reason == Decision.REASON_NO_RULE, f"{refused!r}"
         assert await _whoami(cluster, second, credential) == username
     finally:
         await cluster.kubectl("delete", "serviceaccount", account, "-n", accounts, "--ignore-not-found")
@@ -629,6 +629,16 @@ async def _egress_refusal(cluster: Cluster, pod: str, url: str, *headers: str) -
         "-c",
         "workload",
         "--",
+        "/bin/bash",
+        "-c",
+        """response=$("$0" "$@")
+status=$?
+if [ "$status" -eq 56 ] && printf '%s\\n' "$response" | grep -Eiq '^[[:space:]]*X-Agentplane-Egress:[[:space:]]*denied;[[:space:]]*reason='; then
+  printf '%s\\n' "$response"
+  exit 0
+fi
+printf '%s\\n' "$response"
+exit "$status""",
         "curl",
         "--silent",
         # The destination's TLS is the proxy's interception, which this test does not check.
