@@ -4106,6 +4106,8 @@ data:
         template: environment-tools
         policy_sets:
           - basic
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - packages
           - github-agentydragon-agent
           - github-clone
@@ -4136,6 +4138,8 @@ data:
         template: environment-tools
         policy_sets:
           - basic
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - forgejo-haku
           - packages
           - google-readonly
@@ -4174,6 +4178,8 @@ data:
         template: environment-tools
         policy_sets:
           - basic
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - packages
           - aiquota-read
           - forgejo-finance-agent
@@ -4203,6 +4209,8 @@ data:
         template: environment-tools
         policy_sets:
           - basic
+          - inference-experiments
+          - k8s-account-shared-diagnostics
           - packages
           - github-agentydragon-agent
           - github-clone
@@ -7262,6 +7270,8 @@ data:
                 template: environment-tools
                 policy_sets:
                   - basic
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - packages
                   - github-agentydragon-agent
                   - github-clone
@@ -7320,6 +7330,8 @@ data:
                 template: environment-tools
                 policy_sets:
                   - basic
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - forgejo-haku
                   - packages
                   - google-readonly
@@ -7376,6 +7388,8 @@ data:
                 template: environment-tools
                 policy_sets:
                   - basic
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - packages
                   - aiquota-read
                   - forgejo-finance-agent
@@ -7530,6 +7544,8 @@ data:
                 template: environment-tools
                 policy_sets:
                   - basic
+                  - inference-experiments
+                  - k8s-account-shared-diagnostics
                   - packages
                   - github-agentydragon-agent
                   - github-clone
