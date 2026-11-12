@@ -185,8 +185,7 @@ state; …) — treat this as scaffolding to extend.
 - **Which runtime** (A web-routine / B managed-agents / C self-hosted loop):
   [`runtime_options.md`](runtime_options.md). The closure path lands on PATH identically in A's
   web home and C's worker, so CLI-delivery is largely runtime-independent.
-- **Subscription / ToS coverage** — see `runtime_options.md` → _The subscription paradox_ (now
-  extended with the non-programmatic-use risk). Orthogonal to CLI delivery but part of the same
+- **Subscription / ToS coverage** — see `runtime_options.md` → _Billing and credential decision_. Orthogonal to CLI delivery but part of the same
   "how does Haku run sustainably" question.
 
 ## Status
