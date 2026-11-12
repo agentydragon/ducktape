@@ -449,10 +449,11 @@ const BINDINGS = [
   { name: "ready-sandbox-github-public", source: "git", sets: ["github-public"], state: "True" },
   { name: "ready-sandbox-7q4xk", source: "operator", sets: ["pypi"], state: "True", expires: ago(2 * HOUR) },
   {
-    name: "ready-sandbox-unjudged-grant",
+    name: "ready-sandbox-stale-refusal",
     source: "operator",
     sets: ["harness-reviews"],
-    state: null,
+    state: "False",
+    generation: 2n,
     expires: ago(-HOUR),
   },
   {
@@ -462,10 +463,10 @@ const BINDINGS = [
     state: "False",
     expires: ago(-3 * HOUR),
   },
-].map(({ name, source, sets, state, expires }) =>
+].map(({ name, source, sets, state, expires, generation = 1n }) =>
   create(PolicyBindingSchema, {
     identity: { namespace: "agentplane-visual", name, uid: `binding-${name}` },
-    generation: 1n,
+    generation,
     labels: source === "git" ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
     ownerReferences:
       source === "sandbox"
