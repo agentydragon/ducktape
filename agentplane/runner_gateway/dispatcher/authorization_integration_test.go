@@ -298,7 +298,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(auth.AnyAccount(svids))
+	methods := Methods(auth.AnySubject(svids))
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
 	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)

@@ -55,13 +55,12 @@ Service uses this path. Other callers use Pod-bound `Principal` values.
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../docs/grpc_services.md#authentication)).
 
-`AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
-TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
-only the identity fields it proves. `Accounts` applies an explicit account allowlist. `SVIDOrAccounts` admits current Sandbox SVIDs
+`Accounts` admits only the listed ServiceAccounts. `SVIDOrAccounts` admits current Sandbox SVIDs
 and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
 an SVID naming an Identity is admitted as `AnySubject` admits it.
-`ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver` and
-admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmission`.
+`ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver`
+and admits any ServiceAccount or Identity that source authenticates; Identity callers are returned
+as an `IdentityAdmission`.
 `ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity
 as an `IdentityAdmission`.
 
@@ -89,7 +88,7 @@ checks. `DirectAdmission` keeps the direct caller and optional Pod proof togethe
 provenance separate, and `DelegatedIdentityAdmission` the same with an effective `Identity`, which
 `EffectiveCaller` refuses as it refuses an `IdentityAdmission`. A delegated actor is never installed in the legacy `Caller` context, which
 continues to mean the direct principal. For TokenReview callers that principal is Pod-bound; other
-`AnyAccount` sources supply only the fields they prove. The effective caller is account identity
+`AnySubject` sources supply only the fields they prove. The effective caller is account identity
 only and cannot prove a Pod binding.
 
 [`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the

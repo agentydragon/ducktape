@@ -90,6 +90,8 @@ func start(t *testing.T, tune func(*config)) running {
 	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
+	// Keep bearer-only Push namespace-scoped: the journal test admits a writer; the
+	// caller-contract test rejects a reader.
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
 	// The fold waits for a commit's wakeup rather than for its next cycle.
 	c.FoldIntervalSeconds = 3600

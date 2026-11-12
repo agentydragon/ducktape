@@ -77,7 +77,15 @@ func newIngressPacedBy(t *testing.T, timing Timing) testIngress {
 
 func serveIngress(t *testing.T, service *Service) testIngress {
 	t.Helper()
-	return serveIngressAdmitting(t, service, func(principals *auth.Resolver) auth.Rule { return auth.AnyAccount(principals) })
+	accounts := []auth.Account{
+		{Namespace: testNamespace, Name: "test-sandbox-a"},
+		{Namespace: testNamespace, Name: "test-first-writer"},
+		{Namespace: testNamespace, Name: "test-sandbox-b"},
+	}
+	accounts = append(accounts, service.SamplerAccounts...)
+	return serveIngressAdmitting(t, service, func(principals *auth.Resolver) auth.Rule {
+		return auth.Accounts(principals, accounts)
+	})
 }
 
 // serveIngressAdmitting serves the ingress with the Push rule pushRule builds over the test API

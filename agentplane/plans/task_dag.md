@@ -3779,10 +3779,6 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
 
 Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside tests).
 
-- **`auth.AnyAccount`** has one production site, History's `SessionJournalIngress.Push` when the
-  listener has no `spiffe` mode (`history_service/main.go`); staging's listener has it, so the rule
-  runs only in fixtures. Require `spiffe` on the ingress listener and delete `AnyAccount`, leaving
-  `SVIDOrAccounts` (runners by SVID, the sampler by bearer). No gate; a listener-contract change.
 - **`agentplane-runner-ingress`** (`RUNNER_INGRESS_AUDIENCE`, `history_service/settings.py`): runners
   push by SVID, so its only sender is the central sampler's `history` projected token
   (`central_sampler_workload.py`). Rename it for the sampler, or fold it into History's own audience;

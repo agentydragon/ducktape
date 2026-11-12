@@ -86,7 +86,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(auth.AnyAccount(svids))
+	methods := Methods(auth.AnySubject(svids))
 
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)

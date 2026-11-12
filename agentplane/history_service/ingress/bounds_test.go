@@ -61,7 +61,7 @@ func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(principals)}
+			methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.Accounts(principals, []auth.Account{{Namespace: testNamespace, Name: "test-sandbox-a"}})}
 			interceptor := methods.StreamInterceptor(time.Second)
 			err = interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: session_ingresspb.SessionJournalIngress_Push_FullMethodName}, func(_ any, admitted grpc.ServerStream) error {
 				principal, err := auth.Caller(admitted.Context())
