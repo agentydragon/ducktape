@@ -11,6 +11,11 @@ the Sandbox. Presets contain their full grant list. The cleanup removes `spec.po
 Runner Gateway's default PolicySets and the legacy Sandbox credential fallback in the same paused
 cutover. Platform components retain their ServiceAccounts for service authentication. The separate
 standing-workload/MCP Identity cutover and environment-rule design remain separate work.
+Direct Identity callers and caller-delegated `sessions/create` cannot create Sessions in this cutover,
+and Identities have no explicit-resume authority. Operator provisioning and the existing approved
+`orchestration_v1` broker flow remain available. Caller-authorized child Sessions are tracked separately as
+[`SESSION_SUBAGENT_DELEGATION`](task_dag.md#session_subagent_delegation--a-session-creates-and-messages-a-sub-session)
+(operator reaffirmed 2026-11-12).
 
 The operator completed the one-time migration from #15712; #15720 removed its script. Its namespace
 was `agentplane-staging`. Do not rerun it. On 2026-11-12 the live Sandbox inventory was empty.
@@ -24,7 +29,7 @@ This does not authorize removing workspaces, other databases or work created aft
    switch. Keep both draft until the maintenance window is agreed. Do not merge just the cleanup
    or let image automation deploy a partially reviewed switch.
 2. Require green final-head CI, including controller startup under the deployed RBAC, app/API and
-   orchestration launch tests, cdk8s generation drift, and the affected Pod/VM, MCP, egress,
+   orchestration launch and grant-admission tests, cdk8s generation drift, and the affected Pod/VM, MCP, egress,
    suspend/resume and Session-deletion system tests. Inspect visual artifacts for the changed app
    launch flow. A timeout needs diagnosis; it is not a reason to widen it.
 3. Verify rollback is possible before reopening launches. Record exact source/artifact revisions,
@@ -87,7 +92,9 @@ this plan does not apply any hold or change running workloads.
 - From inside the launched Sandbox, discover the egress Kubernetes account and perform a permitted
   diagnostics read. Verify the intended shared account/authorization, and verify an operation
   outside its grant is denied. Host-admin `kubectl` is not evidence for this path.
-- Create a fresh supported Session, finish a tool-using turn and submit its next input. Exercise
+- Have the operator create a fresh Session, finish a tool-using turn and submit its next input.
+  Verify its Identity's direct and caller-delegated `sessions/create` attempts are denied and create no
+  child, while it can steer an operator-provisioned same-Identity child. Exercise operator
   suspend/resume and the changed VM launcher path. Archived sampler continuations need not resume.
 - Refuse a changed same-name launch and confirm the existing Identity, grants and Sandbox survive.
   A definitively refused new launch may roll back only the Identity that attempt created; an

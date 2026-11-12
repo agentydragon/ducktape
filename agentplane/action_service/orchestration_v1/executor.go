@@ -104,13 +104,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		caller, ok := request.Caller.(store.ServiceAccountCaller)
-		if !ok {
-			// TODO: refuse an Identity caller at submission, so no operator approves a doomed request.
-			return store.ExecutionOutcome{}, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT,
-				"a launch binds its launcher grants to the calling ServiceAccount, and this request's caller is not one")
-		}
-		return worker.Succeeded(e.launch(ctx, caller.Account, args))
+		return worker.Succeeded(e.launch(ctx, request.Caller, args))
 	case contract.ActionCreateSession:
 		args, err := e.inputs.CreateSession.Decode(request.Arguments)
 		if err != nil {

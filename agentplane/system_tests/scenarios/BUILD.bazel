@@ -195,6 +195,7 @@ py_library(
         "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
@@ -265,9 +266,7 @@ py_library(
 py_library(
     name = "suspend_resume",
     srcs = ["suspend_resume.py"],
-    data = ["//agentplane/cli:agentplane"],
     deps = [
-        "//agentplane:crd_group",
         "//agentplane/app/testing:client",
         "//agentplane/env/runtime:harness",
         "//agentplane/environments/v1:environment_service_pb2",
@@ -279,18 +278,15 @@ py_library(
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//tenacity",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -402,6 +398,7 @@ py_library(
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
     ],
 )

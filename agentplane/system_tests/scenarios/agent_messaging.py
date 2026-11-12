@@ -7,9 +7,8 @@ The recipient learns of the message only from the notice the platform delivers, 
 acknowledges its inbox through the CLI, as the inbox-handling guide tells an agent to.
 
 What is checked is what the Notification Service recorded, never what either agent said: the entry names
-the sender's ServiceAccount, which only the service's own authentication of the caller can put there, and the
-sender's view of its message is covered but unacknowledged while the recipient holds the notice, and
-acknowledged once the recipient acknowledged its inbox.
+the Sandbox and Identity that authenticated the sender, and the sender's view of its message is covered but
+unacknowledged while the recipient holds the notice, and acknowledged once the recipient acknowledged its inbox.
 """
 
 from __future__ import annotations
@@ -101,6 +100,9 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     recipient, sender = recipient_started.result(), sender_started.result()
     assert recipient.kubernetes_diagnostics.HasField("pod")
     assert sender.kubernetes_diagnostics.HasField("pod")
+    assert sender.identity_name
+    sender_identity = json.loads(await cluster.kubectl("get", "identity", sender.identity_name, "-o", "json"))
+    sender_identity_uid = sender_identity["metadata"]["uid"]
     recipient_model = scripted.model(recipient.kubernetes_diagnostics.pod.name, harness)
     sender_model = scripted.model(sender.kubernetes_diagnostics.pod.name, harness)
     recipient_agent = await Agent.create(
@@ -158,7 +160,12 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
             inbox = _parsed(_output(read_request, read), notifications_pb2.ReadInboxResponse())
         assert inbox.inbox.session_id == str(recipient_agent.thread_id), inbox.inbox
         entry = one(entry for entry in inbox.entries if entry.event.message.message_id == sent.id)
-        assert entry.event.message.sender == sender.execution_account.account, entry
+        message_event = entry.event.message
+        assert message_event.sender.namespace == sender.target.namespace, entry
+        assert message_event.sender.name == sender.target.name, entry
+        assert message_event.HasField("sender_identity"), entry
+        assert message_event.sender_identity.name == sender.identity_name, entry
+        assert message_event.sender_identity.uid == sender_identity_uid, entry
         assert entry.payload["body"] == BODY, entry
         assert entry.payload["from_session"] == str(sender_agent.thread_id), entry
 

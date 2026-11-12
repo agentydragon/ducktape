@@ -223,7 +223,16 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
                     expression=(
                         "(size(variables.owners) == 1"
                         f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Sandbox'"
-                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}')"
+                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}'"
+                        " && (request.resource.resource != 'policybindings' || !has(object.spec.subject.identity)))"
+                        # An Identity caller's launcher binding pins that caller as a second owner.
+                        " || (request.resource.resource == 'policybindings' && size(variables.owners) == 2"
+                        f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Sandbox'"
+                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}'"
+                        f" && variables.owners[1].apiVersion.startsWith('{GROUP}/')"
+                        " && variables.owners[1].kind == 'Identity' && variables.owners[1].uid != ''"
+                        " && has(object.spec.subject.identity)"
+                        " && object.spec.subject.identity.name == variables.owners[1].name)"
                         # A launch's grant to the Identity it created: owned by that Identity, named
                         # for it, and binding only it (orchestration_v1 launchIdentity).
                         " || (request.resource.resource == 'policybindings' && size(variables.owners) == 1"
@@ -233,7 +242,8 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
                         f" && object.spec.subject.identity.name == {owner}.name)"
                     ),
                     message=(
-                        "A launcher grant is owned by one Sandbox and named for it; a launch's Identity "
+                        "A launcher grant is owned by its Sandbox, with an Identity caller pinned as a second "
+                        "owner for an Identity subject; a launch's Identity "
                         "grant is owned by that Identity, named for it and binds only it."
                     ),
                 ),

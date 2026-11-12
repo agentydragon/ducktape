@@ -85,9 +85,11 @@ message CreateEnvironmentRequest {
 }
 
 message EnvironmentLaunchOrigin {
+  // Exactly one caller variant is required. The broker remains the authenticated platform actor.
   agentplane.proto.ServiceAccount caller = 1;
   string action_group = 2;
   repeated string launcher_grants = 3;
+  agentplane.proto.Identity caller_identity = 4;
 }
 
 message ListEnvironmentTemplatesResponse {

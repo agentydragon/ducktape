@@ -402,6 +402,24 @@ func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
 	}
 }
 
+func TestActionLauncherOriginRequiresExactlyOneCompleteCaller(t *testing.T) {
+	objects := readerWithObjects(t, &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "test-agent", UID: "test-agent-uid"}})
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	for name, origin := range map[string]*environmentpb.EnvironmentLaunchOrigin{
+		"both":           {Caller: &identitypb.ServiceAccount{Namespace: discoveryNamespace, Name: "test-launcher"}, CallerIdentity: &identitypb.Identity{Name: "test-launcher", Uid: "test-launcher-uid"}, ActionGroup: "orchestration_v1"},
+		"missing UID":    {CallerIdentity: &identitypb.Identity{Name: "test-launcher"}, ActionGroup: "orchestration_v1"},
+		"missing name":   {CallerIdentity: &identitypb.Identity{Uid: "test-launcher-uid"}, ActionGroup: "orchestration_v1"},
+		"missing caller": {ActionGroup: "orchestration_v1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := rpc.CreateEnvironment(bearing(t, launcherToken), &environmentpb.CreateEnvironmentRequest{Name: "identity-launched", Template: "test", Identity: "test-agent", LaunchOrigin: origin})
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("invalid launch origin result = %v", err)
+			}
+		})
+	}
+}
+
 func TestManagementRejectsUnrepresentableDuration(t *testing.T) {
 	rpc := serveDiscovery(t, baseReader(t), runtimeconfig.Catalog{})
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}

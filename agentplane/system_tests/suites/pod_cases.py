@@ -117,8 +117,10 @@ async def sandbox_cli_reaches_the_dispatcher_with_its_workload_svid(resources: R
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
             client,
-            lambda harness, model, sandboxes: dispatcher_workload.sandbox_cli_lists_its_svid_created_session(
-                client, resources.dispatcher, sandboxes, harness, model, resources.scripted
+            lambda harness, model, sandboxes: (
+                dispatcher_workload.sandbox_cli_denies_create_but_reads_its_identity_session(
+                    client, resources.dispatcher, sandboxes, harness, model, resources.scripted
+                )
             ),
         )
 
@@ -190,9 +192,9 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(re
         )
 
 
-async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(resources: Resources) -> None:
+async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control(resources: Resources) -> None:
     async with resources.open() as (client, sandboxes):
-        await suspend_resume.agent_resumes_an_idle_suspended_pod_with_its_execution_account(
+        await suspend_resume.operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control(
             resources.cluster, client, resources.dispatcher, sandboxes, resources.scripted
         )
 
@@ -269,7 +271,7 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources
 SCENARIOS = (
     # CaseBatch runs storage exclusively first, then starts this first remaining case.
     pytest.param(
-        agent_resumes_an_idle_suspended_pod_with_its_execution_account,
+        operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
     pytest.param(a_command_box_presents_its_own_svid),

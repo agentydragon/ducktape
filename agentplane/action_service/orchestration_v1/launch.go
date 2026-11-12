@@ -51,26 +51,28 @@ func launcherName(sandbox string) string { return sandbox + ".launcher" }
 // launch creates the Environment through its owning service, then writes Action-owned launcher grants.
 // The authorized Action broker supplies caller and grant intent so same-name retries cannot adopt
 // another launch, including one that requested a different set of grants.
-func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args contract.LaunchArgs) (Launched, error) {
+func (e *Executor) launch(ctx context.Context, caller store.Caller, args contract.LaunchArgs) (Launched, error) {
 	for _, list := range [][]string{args.PolicySets, args.InboxTags, args.LauncherGrants} {
 		slices.Sort(list)
 	}
 	if e.environment == nil {
 		return Launched{}, fmt.Errorf("%w: EnvironmentService is unavailable", worker.ErrOutcomeUnknown)
 	}
+	origin, launcher, err := e.launchCaller(ctx, caller)
+	if err != nil {
+		return Launched{}, err
+	}
+	origin.ActionGroup, origin.LauncherGrants = e.group, args.LauncherGrants
 	// A launch is three operations: the Identity the Sandbox acts as, its PolicySets bound to that
 	// Identity, then the Sandbox naming it. No environment operation creates an Identity.
-	identity, created, err := e.launchIdentity(ctx, caller, args)
+	identity, created, err := e.launchIdentity(ctx, launcher, args)
 	if err != nil {
 		return Launched{}, err
 	}
 	request := &environmentpb.CreateEnvironmentRequest{
 		Name: args.Name, Template: args.Template, Identity: identity.Name, InboxTags: args.InboxTags,
 		Bootstrap: args.Bootstrap, WakeOnSend: args.WakeOnSend,
-		LaunchOrigin: &environmentpb.EnvironmentLaunchOrigin{
-			Caller:      &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name},
-			ActionGroup: e.group, LauncherGrants: args.LauncherGrants,
-		},
+		LaunchOrigin: origin,
 	}
 	if args.IdleSuspendAfterSeconds != nil {
 		request.IdleSuspendAfter = durationpb.New(time.Duration(*args.IdleSuspendAfterSeconds) * time.Second)
@@ -105,6 +107,25 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 	return Launched{Sandbox: contract.SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, LauncherGrants: append([]string{}, args.LauncherGrants...)}, nil
 }
 
+// launchCaller preserves the authenticated effective caller separately from the Action Service actor.
+func (e *Executor) launchCaller(ctx context.Context, caller store.Caller) (*environmentpb.EnvironmentLaunchOrigin, string, error) {
+	switch caller := caller.(type) {
+	case store.ServiceAccountCaller:
+		if caller.Account.Namespace != "" && caller.Account.Name != "" {
+			return &environmentpb.EnvironmentLaunchOrigin{Caller: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name}}, "serviceaccount:" + caller.Account.Namespace + "/" + caller.Account.Name, nil
+		}
+	case store.IdentityCaller:
+		var identity policyapi.Identity
+		if err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: caller.Identity.Name}, &identity); err != nil {
+			return nil, "", kubeError("reading launcher Identity", err)
+		}
+		if caller.Identity.UID != "" && string(identity.UID) == caller.Identity.UID && identity.DeletionTimestamp == nil {
+			return &environmentpb.EnvironmentLaunchOrigin{CallerIdentity: &identitypb.Identity{Name: caller.Identity.Name, Uid: caller.Identity.UID}}, "identity:" + caller.Identity.Name + "/" + caller.Identity.UID, nil
+		}
+	}
+	return nil, "", refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED, "launch caller is unknown or its Identity was replaced")
+}
+
 // launchIdentityAnnotation and launchSetsAnnotation record which caller's launch created an Identity
 // and what it granted, so a retry of the same launch adopts it while another caller's launch, another
 // launch of the name or a foreign Identity of the name is refused.
@@ -115,8 +136,7 @@ const (
 
 // launchIdentity creates, or on a retry adopts, the Identity a launched Sandbox acts as, named after
 // it, and binds the request's PolicySets to it in one binding the Identity owns.
-func (e *Executor) launchIdentity(ctx context.Context, caller store.ServiceAccount, args contract.LaunchArgs) (*policyapi.Identity, bool, error) {
-	launcher := caller.Namespace + "/" + caller.Name
+func (e *Executor) launchIdentity(ctx context.Context, launcher string, args contract.LaunchArgs) (*policyapi.Identity, bool, error) {
 	sets := slices.Compact(slices.Sorted(slices.Values(args.PolicySets)))
 	if err := e.requireBindablePolicySets(ctx, sets); err != nil {
 		return nil, false, err
@@ -238,8 +258,9 @@ func launchError(err error) error {
 }
 
 // grant writes the launcher grants on sandbox for caller, when there are any: a PolicySet of their rules and a
-// PolicyBinding of it to caller. Both are owned by the Sandbox, so deleting it revokes them.
-func (e *Executor) grant(ctx context.Context, caller store.ServiceAccount, sandbox *sandboxapi.Sandbox, grants []string) error {
+// PolicyBinding of it to caller. The Sandbox owns both; an Identity caller also owns its binding,
+// which pins that incarnation while either owner remains.
+func (e *Executor) grant(ctx context.Context, caller store.Caller, sandbox *sandboxapi.Sandbox, grants []string) error {
 	if len(grants) == 0 {
 		return nil
 	}
@@ -256,8 +277,21 @@ func (e *Executor) grant(ctx context.Context, caller store.ServiceAccount, sandb
 	if err := e.createOwned(ctx, &policyapi.PolicySet{ObjectMeta: meta, Spec: policyapi.PolicySetSpec{Rules: rules}}, sandbox.UID); err != nil {
 		return err
 	}
-	return e.createOwned(ctx, &policyapi.PolicyBinding{ObjectMeta: *meta.DeepCopy(), Spec: policyapi.PolicyBindingSpec{
-		Subject:    policyapi.Subject{Namespace: caller.Namespace, Name: caller.Name},
+	bindingMeta := *meta.DeepCopy()
+	var subject policyapi.Subject
+	switch caller := caller.(type) {
+	case store.ServiceAccountCaller:
+		subject = policyapi.Subject{Namespace: caller.Account.Namespace, Name: caller.Account.Name}
+	case store.IdentityCaller:
+		subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: caller.Identity.Name}}
+		bindingMeta.OwnerReferences = append(bindingMeta.OwnerReferences, metav1.OwnerReference{
+			APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity", Name: caller.Identity.Name, UID: types.UID(caller.Identity.UID),
+		})
+	default:
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED, "launch caller is unknown")
+	}
+	return e.createOwned(ctx, &policyapi.PolicyBinding{ObjectMeta: bindingMeta, Spec: policyapi.PolicyBindingSpec{
+		Subject:    subject,
 		PolicySets: []string{meta.Name},
 	}}, sandbox.UID)
 }

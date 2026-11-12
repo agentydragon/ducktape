@@ -438,13 +438,24 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         if doc["kind"] == "ServiceAccount"
     }
     static_account = f"{fixture.namespace}/mcp-edge-test-caller"
-    sandbox_account = f"{fixture.namespace}/systest-delegation-caller"
-    assert set(mintable_accounts) == {static_account, sandbox_account}
-    # The static OAuth fixture caller is chart-owned and must remain labeled for Actions.
-    assert set(mintable_accounts) & chart_service_accounts.keys() == {static_account}
+    assert set(mintable_accounts) == {static_account}
+    # The standing OAuth fixture caller is chart-owned and remains labeled for Actions.
     caller = chart_service_accounts[static_account]
     assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
-    # The Sandbox controller creates and labels this account after chart rendering.
+
+    binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
+    assert binding["spec"] == {
+        "subject": {"namespace": fixture.namespace, "name": "mcp-edge-test-caller"},
+        "policySets": ["mcp-edge-test-caller-session-delegation"],
+    }
+    policy = _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")
+    assert policy["spec"]["rules"] == [
+        {
+            "type": "action_auto_approve",
+            "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
+        }
+    ]
+
     token_rules = [
         rule for rule in _resource(docs, "Role", "mcp-edge")["rules"] if "serviceaccounts/token" in rule["resources"]
     ]

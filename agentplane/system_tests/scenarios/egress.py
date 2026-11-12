@@ -7,9 +7,9 @@ cross-checked against the proxy's decision history, which is the system's own re
 admitted -- an agent saying "I fetched it" is equally consistent with a request the proxy admitted,
 one that never reached the proxy, and a model that ran nothing.
 
-The Kubernetes assertion is the value of a fresh, unpredictable ConfigMap entry granted only to
-the Sandbox's own ServiceAccount. Reading it proves the model used the platform's Kubernetes
-guidance, the projected workload token, and the proxy's credential substitution.
+The Kubernetes assertion is the value of a fresh, unpredictable ConfigMap entry granted only to a
+fixture ServiceAccount. The Sandbox Identity reaches it through an explicitly bound EgressCredential
+and the proxy's credential substitution; no per-Sandbox ServiceAccount is involved.
 
 What these encode is the deployed form of agentplane/egress/SPEC.md: a sandbox reaches what its
 policies name and nothing else, and the model call uses the Sandbox SVID route through the proxy.
@@ -24,6 +24,8 @@ import asyncio
 import json
 import secrets
 import textwrap
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -58,8 +60,8 @@ GITHUB_CLONE = "github-clone"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # Named by no policy the deployment has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
-# The app's default egress PolicySet. It allows model ingress and the Kubernetes API without an
-# additional Sandbox policy.
+# The app's default egress PolicySet. It allows model ingress; Kubernetes access is an explicit
+# account-use grant in the identity catalog.
 BASIC_POLICY = "basic"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The sandbox Actions' group key in the fixture deployment (agentplane/system_tests/deployment/fixture_chart.py),
@@ -107,21 +109,19 @@ class Probe(BaseModel):
 async def _decision_for(
     cluster: Cluster, client: Client, sandbox: str, uid: str, host: str, *, after: datetime | None = None
 ) -> Decision:
-    """The newest decision for this live Sandbox ServiceAccount about `host`, after `after`."""
+    """The newest decision for this live Sandbox Identity about `host`, after `after`."""
     with tracer.start_as_current_span(
         "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
     ):
         target = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
         environment = await client.get_environment(target)
-        subject = environment.execution_account.account
-        assert subject.namespace == cluster.namespace
-        assert subject.name == sandbox
+        assert environment.identity_name
         async with egress_decisions.watch_client(cluster) as (stub, caller):
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True
             ):
                 with attempt:
-                    decisions = await egress_decisions.snapshot(stub, caller, subject)
+                    decisions = await egress_decisions.snapshot_identity(stub, caller, environment.identity_name)
                     for decision in reversed(decisions):
                         if decision.host == host and (after is None or decision.at.ToDatetime(tzinfo=UTC) > after):
                             return decision
@@ -131,63 +131,103 @@ async def _decision_for(
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
 
+@asynccontextmanager
 async def _create_kubernetes_probe(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
-) -> tuple[str, str, str]:
-    """Create a private ConfigMap and a get-only grant for this Sandbox's exact ServiceAccount."""
-    account = view.execution_account.account
-    if account.namespace != view.target.namespace or account.namespace != cluster.namespace:
-        raise AssertionError(
-            f"fixture expected the Sandbox's own ServiceAccount and namespace to match: "
-            f"{account.namespace}/{account.name}, Sandbox {view.target.namespace}/{view.target.name}, "
-            f"fixture namespace {cluster.namespace}"
-        )
-
+) -> AsyncIterator[tuple[str, str, str, str, str]]:
+    """Create a private ConfigMap and grant its exact get permission through the Sandbox Identity."""
+    assert view.identity_name
+    suffix = secrets.token_hex(4)
     name = f"{view.target.name}-kubernetes-probe"
+    policy_set = f"k8s-probe-{suffix}"
+    account_namespace = kubernetes_accounts_namespace(cluster.namespace)
+    account = f"probe-{suffix}"
     value = secrets.token_urlsafe(32)
-    metadata: dict[str, object] = {
-        "namespace": account.namespace,
-        "ownerReferences": [
-            {
+    owner_references = [
+        {"apiVersion": SANDBOX_API_VERSION, "kind": SANDBOX_KIND, "name": view.target.name, "uid": str(view.target.uid)}
+    ]
+    resource_metadata: dict[str, object] = {"namespace": cluster.namespace, "ownerReferences": owner_references}
+    named_metadata = {**resource_metadata, "name": name}
+    await cluster.kubectl(
+        "create",
+        "-n",
+        account_namespace,
+        "-f",
+        "-",
+        body={"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": account}},
+    )
+    try:
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={"apiVersion": "v1", "kind": "ConfigMap", "metadata": named_metadata, "data": {"value": value}},
+        )
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": "rbac.authorization.k8s.io/v1",
+                "kind": "Role",
+                "metadata": named_metadata,
+                "rules": [{"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [name], "verbs": ["get"]}],
+            },
+        )
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": "rbac.authorization.k8s.io/v1",
+                "kind": "RoleBinding",
+                "metadata": named_metadata,
+                "subjects": [{"kind": "ServiceAccount", "name": account, "namespace": account_namespace}],
+                "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name},
+            },
+        )
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
                 "apiVersion": f"{GROUP}/{VERSION}",
-                "kind": SANDBOX_KIND,
-                "name": view.target.name,
-                "uid": str(view.target.uid),
-            }
-        ],
-    }
-    named_metadata = metadata.copy()
-    named_metadata["name"] = name
-    await cluster.kubectl(
-        "create",
-        "-f",
-        "-",
-        body={"apiVersion": "v1", "kind": "ConfigMap", "metadata": named_metadata, "data": {"value": value}},
-    )
-    await cluster.kubectl(
-        "create",
-        "-f",
-        "-",
-        body={
-            "apiVersion": "rbac.authorization.k8s.io/v1",
-            "kind": "Role",
-            "metadata": named_metadata,
-            "rules": [{"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [name], "verbs": ["get"]}],
-        },
-    )
-    await cluster.kubectl(
-        "create",
-        "-f",
-        "-",
-        body={
-            "apiVersion": "rbac.authorization.k8s.io/v1",
-            "kind": "RoleBinding",
-            "metadata": named_metadata,
-            "subjects": [{"kind": "ServiceAccount", "name": account.name, "namespace": account.namespace}],
-            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name},
-        },
-    )
-    return name, account.namespace, value
+                "kind": "EgressCredential",
+                "metadata": {"name": policy_set, "ownerReferences": owner_references},
+                "spec": {
+                    "description": f"Read ConfigMap {cluster.namespace}/{name} as {account_namespace}/{account}.",
+                    "source": {"kubernetesServiceAccount": {"namespace": account_namespace, "name": account}},
+                    "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
+                },
+            },
+        )
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "PolicySet",
+                "metadata": {"name": policy_set, "ownerReferences": owner_references},
+                "spec": {
+                    "rules": [
+                        {
+                            "type": "egress",
+                            "hosts": [KUBERNETES_HOST],
+                            "clusterInternal": True,
+                            "credentialRef": {"name": policy_set},
+                        }
+                    ]
+                },
+            },
+        )
+        binding = await _kubectl_create_binding(cluster, view, policy_set)
+        await cluster.kubectl("wait", "--for=condition=EgressReady", f"policybinding/{binding}", "--timeout=90s")
+        yield name, cluster.namespace, value, account, policy_set
+    finally:
+        await cluster.kubectl(
+            "delete", "serviceaccount", account, "-n", account_namespace, "--ignore-not-found", "--wait=true"
+        )
 
 
 async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
@@ -198,31 +238,35 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     harness: session_pb2.Harness,
     model: str,
 ) -> None:
-    """The agent reads a private ConfigMap using its own projected ServiceAccount, while the same
-    Sandbox reaches a named public host and is refused elsewhere."""
+    """The agent reads a private ConfigMap through its Identity's explicit account-use grant, while
+    the same Sandbox reaches a named public host and is refused elsewhere."""
     view = await sandbox(f"systest-probe-{harness}", policies=[GITHUB_CLONE])
-    configmap, namespace, expected_value = await _create_kubernetes_probe(cluster, view)
-    agent = await Agent.create(
-        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
-    )
-    turn = await agent.run(_probe(configmap, namespace))
-    probe = turn.report(Probe)
+    async with _create_kubernetes_probe(cluster, view) as (configmap, namespace, expected_value, account, policy_set):
+        agent = await Agent.create(
+            client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
+        )
+        turn = await agent.run(_probe(configmap, namespace))
+        probe = turn.report(Probe)
 
-    assert probe.configmap_value == expected_value, (
-        f"the sandbox did not read the ConfigMap using its own ServiceAccount; "
-        f"expected {expected_value!r}, got {probe.configmap_value!r}:\n{turn.transcript}"
-    )
-    assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
-    assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
+        assert probe.configmap_value == expected_value, (
+            f"the sandbox did not read the ConfigMap using its explicitly granted ServiceAccount; "
+            f"expected {expected_value!r}, got {probe.configmap_value!r}:\n{turn.transcript}"
+        )
+        assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
+        assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
-    refused = await _decision_for(cluster, client, view.target.name, view.target.uid, UNLISTED_HOST)
-    assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
-    assert refused.reason == Decision.REASON_NO_RULE, f"{refused!r}"
+        refused = await _decision_for(cluster, client, view.target.name, view.target.uid, UNLISTED_HOST)
+        assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
+        assert refused.reason == Decision.REASON_NO_RULE, f"{refused!r}"
 
-    kubernetes = await _decision_for(cluster, client, view.target.name, view.target.uid, KUBERNETES_HOST)
-    assert kubernetes.outcome == Decision.OUTCOME_ALLOW, f"{kubernetes!r}"
-    assert kubernetes.policy == BASIC_POLICY, f"{kubernetes!r}"
-    assert kubernetes.substituted, f"kubectl reached the API server without credential substitution: {kubernetes!r}"
+        kubernetes = await _decision_for(cluster, client, view.target.name, view.target.uid, KUBERNETES_HOST)
+        assert kubernetes.outcome == Decision.OUTCOME_ALLOW, f"{kubernetes!r}"
+        assert kubernetes.policy == policy_set, f"{kubernetes!r}"
+        assert kubernetes.substituted, f"kubectl reached the API server without credential substitution: {kubernetes!r}"
+        assert (kubernetes.impersonated.namespace, kubernetes.impersonated.name) == (
+            kubernetes_accounts_namespace(cluster.namespace),
+            account,
+        ), f"the decision does not name the fixture account: {kubernetes!r}"
 
 
 async def the_model_call_itself_goes_through_the_proxy(
@@ -235,8 +279,8 @@ async def the_model_call_itself_goes_through_the_proxy(
     scripted: ScriptedUpstream,
 ) -> None:
     """The SVID route strips caller authorization and authenticates the destination TLS connection
-    with the runner's Runtime certificate. The proxy admits the CONNECT under the Sandbox's own
-    ServiceAccount; the ingress verifies the same live SVID and presents its server-held LiteLLM key
+    with the runner's Runtime certificate. The proxy admits the CONNECT under the Sandbox Identity;
+    the ingress verifies the same live SVID and presents its server-held LiteLLM key
     on the separate internal hop.
 
     That makes the turn its own proof of reachability -- an agent that answers has been served -- and
@@ -263,10 +307,7 @@ async def the_model_call_itself_goes_through_the_proxy(
     start = rules_output.find("{")
     assert start >= 0, rules_turn.transcript
     rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
-    assert rules["subject"] == {
-        "namespace": view.execution_account.account.namespace,
-        "name": view.execution_account.account.name,
-    }, rules_turn.transcript
+    assert rules["identity"] == {"name": view.identity_name}, rules_turn.transcript
     notifications_turn = await agent.run_shell(
         model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
     )
@@ -284,7 +325,7 @@ async def the_model_call_itself_goes_through_the_proxy(
 async def _kubectl_create_binding(
     cluster: Cluster, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_set: str
 ) -> str:
-    """Bind the Sandbox's account to `policy_set`, owned by the Sandbox; returns the binding's name."""
+    """Bind `policy_set` to the Sandbox Identity, owned by the Sandbox; return the binding name."""
     body = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "PolicyBinding",
@@ -496,68 +537,83 @@ async def a_command_box_presents_its_own_svid(
     """A box the sandbox Actions create for a Sandbox presents its own WorkloadCredential's SVID,
     subject the caller: rules, Kubernetes substitution and refusals as the caller, no credential in
     the workload container, and nothing once its record is revoked."""
-    configmap, namespace, expected = await _create_kubernetes_probe(cluster, view)
-    caller = view.execution_account.account.name
-    await policy_objects.bind(view, "box", [{"type": "exact_actions", "actions": {_SANDBOX_GROUP: ["create"]}}])
-    box = "svid-" + secrets.token_hex(4)
-    pod = f"{caller}-{box}"
+    async with _create_kubernetes_probe(cluster, view) as (configmap, namespace, expected, account, _policy_set):
+        assert view.identity_name
+        caller = view.identity_name
+        await policy_objects.bind(view, "box", [{"type": "exact_actions", "actions": {_SANDBOX_GROUP: ["create"]}}])
+        box = "svid-" + secrets.token_hex(4)
+        pod = f"{caller}-{box}"
 
-    async def in_box(*command: str) -> str:
-        return await cluster.kubectl("exec", pod, "-c", _BOX_CONTAINER, "--", *command)
+        async def in_box(*command: str) -> str:
+            return await cluster.kubectl("exec", pod, "-c", _BOX_CONTAINER, "--", *command)
 
-    try:
-        printed = await cluster.kubectl(
-            "exec",
-            view.kubernetes_diagnostics.pod.name,
-            "-c",
-            _RUNNER_CONTAINER,
-            "--",
-            CLI,
-            "--json",
-            *submission(
-                _SANDBOX_GROUP,
-                "create",
-                {"name": box, "template": svid_box.TEMPLATE},
-                title="Create an SVID box",
-                wait=True,
-            ),
-        )
-        receipt = json_format.Parse(
-            one(line for line in printed.splitlines() if line.startswith("{")), action_service_pb2.ActionRequest()
-        )
-        assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED, printed
-        await cluster.kubectl("wait", "--for=condition=Ready", "pod/" + pod, "--timeout=120s")
-        record = json.loads(await cluster.kubectl("get", "workloadcredentials", pod, "-o", "json"))
-        assert record["spec"]["subject"] == {"serviceAccount": caller}
-        assert record["spec"]["pod"]["name"] == pod
+        try:
+            printed = await cluster.kubectl(
+                "exec",
+                view.kubernetes_diagnostics.pod.name,
+                "-c",
+                _RUNNER_CONTAINER,
+                "--",
+                CLI,
+                "--json",
+                *submission(
+                    _SANDBOX_GROUP,
+                    "create",
+                    {"name": box, "template": svid_box.TEMPLATE},
+                    title="Create an SVID box",
+                    wait=True,
+                ),
+            )
+            receipt = json_format.Parse(
+                one(line for line in printed.splitlines() if line.startswith("{")), action_service_pb2.ActionRequest()
+            )
+            assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED, printed
+            await cluster.kubectl("wait", "--for=condition=Ready", "pod/" + pod, "--timeout=120s")
+            record = json.loads(await cluster.kubectl("get", "workloadcredentials", pod, "-o", "json"))
+            box_identity = record["spec"]["subject"]["identity"]
+            assert box_identity["name"] == caller
+            assert box_identity["uid"]
+            assert record["spec"]["pod"]["name"] == pod
 
-        rules = json.loads(await in_box(CLI, "egress", "rules", "--json"))
-        assert rules["subject"] == {"namespace": namespace, "name": caller}
-        actual = await in_box(
-            "kubectl",
-            f"--server=https://{KUBERNETES_HOST}",
-            "--token=agentplane-credential-kubernetes-workload",
-            "get",
-            "configmap",
-            configmap,
-            "-n",
-            namespace,
-            "-o",
-            "jsonpath={.data.value}",
-        )
-        assert actual == expected
-        curl = ("curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code}", "--max-time", "15")
-        assert await in_box(*curl, "http://unlisted.test/") == "403"
-        await in_box(
-            "/bin/bash", "-c", f"test ! -e {_BOX_SVID_DIR} && test ! -e /run/agentplane/environment-runtime-tls/tls.key"
-        )
+            rules = json.loads(await in_box(CLI, "egress", "rules", "--json"))
+            assert rules["identity"] == {"name": caller}
+            credential = one(
+                rule["credential"]
+                for policy in rules["policies"]
+                for rule in policy["rules"]
+                if KUBERNETES_HOST in rule["hosts"]
+            )
+            assert credential["kubernetesServiceAccount"] == {
+                "namespace": kubernetes_accounts_namespace(cluster.namespace),
+                "name": account,
+            }
+            actual = await in_box(
+                "kubectl",
+                f"--server=https://{KUBERNETES_HOST}",
+                f"--token={credential['placeholder']}",
+                "get",
+                "configmap",
+                configmap,
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.data.value}",
+            )
+            assert actual == expected
+            curl = ("curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code}", "--max-time", "15")
+            assert await in_box(*curl, "http://unlisted.test/") == "403"
+            await in_box(
+                "/bin/bash",
+                "-c",
+                f"test ! -e {_BOX_SVID_DIR} && test ! -e /run/agentplane/environment-runtime-tls/tls.key",
+            )
 
-        # Revoked, as dispose does first; orphaning keeps the Pod, whose SVID now names no record.
-        await cluster.kubectl("delete", "workloadcredentials", pod, "--cascade=orphan", "--wait=true")
-        await in_box("/bin/bash", "-c", f"! {CLI} egress rules --json >/dev/null 2>&1")
-    finally:
-        await cluster.kubectl("delete", "pod", pod, "--wait=true", "--timeout=60s", "--ignore-not-found")
-        await cluster.kubectl("delete", "workloadcredentials", pod, "--ignore-not-found")
+            # Revoked, as dispose does first; orphaning keeps the Pod, whose SVID now names no record.
+            await cluster.kubectl("delete", "workloadcredentials", pod, "--cascade=orphan", "--wait=true")
+            await in_box("/bin/bash", "-c", f"! {CLI} egress rules --json >/dev/null 2>&1")
+        finally:
+            await cluster.kubectl("delete", "pod", pod, "--wait=true", "--timeout=60s", "--ignore-not-found")
+            await cluster.kubectl("delete", "workloadcredentials", pod, "--ignore-not-found")
 
 
 # The sidecar's listener (agentplane/egress/sidecar_config.py `Settings.listen_address`).
@@ -644,11 +700,11 @@ def _standing_pod_spec(runner: dict[str, Any], box_labels: dict[str, str], secre
 async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
-    """Two replicas of a Deployment share one standing WorkloadCredential, as Haku UI's do: no owner and
-    no binding, so its Secret name is stable and no Pod is proven. Both authenticate as its subject, no
-    forwarded Pod token is substituted for it, and deleting the record revokes both."""
+    """Two replicas of a Deployment share a standing Identity WorkloadCredential: no owner and no
+    binding, so its Secret name is stable and no Pod is proven. Both authenticate as its subject, and
+    deleting the record revokes both."""
     name = "standing-" + secrets.token_hex(6)
-    subject = view.execution_account.account
+    assert view.identity_name
     await cluster.kubectl(
         "create",
         "-f",
@@ -657,7 +713,7 @@ async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
             "apiVersion": f"{GROUP}/{VERSION}",
             "kind": "WorkloadCredential",
             "metadata": {"name": name},
-            "spec": {"subject": {"serviceAccount": subject.name}},
+            "spec": {"subject": {"identity": {"name": view.identity_name}}},
         },
     )
     try:
@@ -693,7 +749,7 @@ async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
         for pod in pods:
             # Authenticated as the subject, whose policies name no such host.
             assert await _egress_refusal(cluster, pod, f"http://{UNLISTED_HOST}/") == "no-rule"
-            # The subject's own Pod-bound Kubernetes token is presented, but a standing record proves no Pod.
+            # This Identity has no Kubernetes host grant, even when the request presents a placeholder.
             assert (
                 await _egress_refusal(
                     cluster,
@@ -701,7 +757,7 @@ async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
                     f"https://{KUBERNETES_HOST}/api",
                     f"Authorization: Bearer {placeholder_of('kubernetes-workload')}",
                 )
-                == "credential-unavailable"
+                == "no-rule"
             )
         await cluster.kubectl("delete", "workloadcredential", name, "--wait=true", "--timeout=60s")
         for pod in pods:

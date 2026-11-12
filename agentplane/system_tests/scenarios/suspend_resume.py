@@ -5,17 +5,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict
-from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
-from agentplane.crd_group import GROUP
 from agentplane.env.runtime.harness import Harness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.native.codex.testing import responses_sse
@@ -29,11 +27,9 @@ from agentplane.system_tests.driver.agent import (
     environment_runtime_startup_retries,
 )
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.dispatcher_transport import TOKEN_AUDIENCE, forward
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.driver.tls import service_root_certificates
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
@@ -137,62 +133,22 @@ async def _wait_until_idle_suspended_without_pod(
     raise AssertionError("unreachable")
 
 
-async def _run_cli(environment: dict[str, str], *arguments: str) -> dict[str, object]:
-    binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/cli/agentplane_/agentplane"
-    process = await asyncio.create_subprocess_exec(
-        binary, "--json", *arguments, env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    try:
-        async with asyncio.timeout(45):
-            stdout, stderr = await process.communicate()
-    except BaseException:
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
-        raise
-    if process.returncode != 0:
-        raise AssertionError(f"agentplane {' '.join(arguments[:2])} failed: {stderr.decode().strip()}")
-    try:
-        result = json.loads(stdout)
-    except json.JSONDecodeError as error:
-        raise AssertionError(f"agentplane {' '.join(arguments[:2])} returned invalid JSON: {stdout!r}") from error
-    assert isinstance(result, dict), f"agentplane {' '.join(arguments[:2])} returned {type(result).__name__}"
-    return result
-
-
-async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
+async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control(
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
 ) -> None:
-    """An authenticated ordinary-account RPC resumes an idle Pod before a fresh command is sent."""
+    """Its Identity has no explicit-resume authority; an operator resumes it without replaying work."""
     view = await sandbox(
         f"systest-explicit-resume-{uuid4().hex[:8]}", template=POD_TEMPLATE, idle_suspend_after_seconds=60
     )
     assert view.kubernetes_diagnostics.HasField("pod")
-    assert view.HasField("execution_account")
+    assert view.identity_name
+    assert not view.HasField("execution_account")
     old_pod = view.kubernetes_diagnostics.pod
     target = view.target
-    account = view.execution_account
-    assert account.account.namespace == target.namespace
-
-    # The app API intentionally does not expose lifecycle policy edits. Set the opt-in only on this
-    # test-owned Sandbox, fencing the JSON Patch by the immutable Sandbox UID.
-    await cluster.kubectl(
-        "patch",
-        f"sandboxes.{GROUP}",
-        target.name,
-        "--type=json",
-        "-p",
-        json.dumps(
-            [
-                {"op": "test", "path": "/metadata/uid", "value": target.uid},
-                {"op": "add", "path": "/spec/resumePolicy", "value": {"allowOwnServiceAccount": True}},
-            ]
-        ),
-    )
 
     harness = session_pb2.HARNESS_CODEX
     model_name = (await client.models()).harnesses[Harness.CODEX][0]
@@ -206,6 +162,28 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         cwd=WORKING_DIRECTORY,
     )
     model = scripted.model(old_pod.name, harness)
+    # A token is a generation precondition, not authority. Even the operator's current token
+    # cannot give this authenticated Identity permission to control the Environment lifecycle.
+    assert view.actions.resume_token
+    resume_command = shlex.join(
+        [
+            "/run/agentplane/environment/bin/agentplane",
+            "--json",
+            "environments",
+            "resume",
+            target.namespace,
+            target.name,
+            target.uid,
+            "--resume-token",
+            view.actions.resume_token,
+        ]
+    )
+    denied_turn = await agent.run_shell(model, resume_command + " || true")
+    denied_output = "\n".join(denied_turn.tool_outputs)
+    start = denied_output.find("{")
+    assert start >= 0, denied_turn.transcript
+    denied, _ = json.JSONDecoder().raw_decode(denied_output[start:])
+    assert denied["error"]["code"] == "UNAUTHENTICATED", denied_turn.transcript
     failed_prompt = "Reply with exactly MODEL_HTTP_ERROR."
     failed_task = asyncio.create_task(agent.run(failed_prompt))
     for _ in range(3):
@@ -220,8 +198,8 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     else:
         raise AssertionError("the scripted upstream errors did not fail the original command")
 
-    failed_history = await _history(client, agent.thread_id, completed_turns=1)
-    (failed_entry,) = [entry for entry in failed_history if entry.event.HasField("command_admitted")]
+    failed_history = await _history(client, agent.thread_id, completed_turns=2)
+    failed_entry = [entry for entry in failed_history if entry.event.HasField("command_admitted")][-1]
     failed_command_id = failed_entry.event.command_admitted.command.command_id
     (failed_turn_entry,) = [
         entry
@@ -233,56 +211,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         suspended = await _wait_until_idle_suspended_without_pod(client, target)
     assert suspended.target.uid == target.uid
 
-    service_account = json.loads(
-        await cluster.kubectl(
-            "get", "serviceaccounts", account.account.name, "-n", account.account.namespace, "-o", "json"
-        )
-    )
-    account_meta = service_account["metadata"]
-    assert account_meta["namespace"] == account.account.namespace
-    assert account_meta["uid"] == account.uid
-    token = await cluster.kubectl(
-        "create",
-        "token",
-        account.account.name,
-        "-n",
-        account.account.namespace,
-        f"--audience={TOKEN_AUDIENCE}",
-        "--duration=600s",
-    )
-
-    async with forward(cluster) as forwarded_target:
-        environment = os.environ.copy()
-        ca_file = undeclared_outputs_dir() / "gateway-ca.pem"
-        ca_file.write_bytes(await service_root_certificates(cluster))
-        environment["SSL_CERT_FILE"] = str(ca_file)
-        environment["AGENTPLANE_SESSIONS_URL"] = f"https://{forwarded_target}"
-        environment["AGENTPLANE_SESSIONS_CREDENTIAL"] = token
-        descriptor = await _run_cli(environment, "environments", "get", target.namespace, target.name, target.uid)
-        actions = descriptor["actions"]
-        assert isinstance(actions, dict), descriptor
-        eligibility = actions["resume_eligibility"]
-        assert isinstance(eligibility, dict), descriptor
-        assert eligibility["state"] == "RESUME_ELIGIBILITY_STATE_AVAILABLE", descriptor
-        assert descriptor["execution_account"] == MessageToDict(account, preserving_proto_field_name=True), descriptor
-        resume_token = actions["resume_token"]
-        assert isinstance(resume_token, str)
-        assert resume_token
-
-        response = await _run_cli(
-            environment,
-            "environments",
-            "resume",
-            target.namespace,
-            target.name,
-            target.uid,
-            "--resume-token",
-            resume_token,
-        )
-    assert response["outcome"] == "RESUME_OUTCOME_REQUESTED", response
-    resumed_target = response["target"]
-    assert isinstance(resumed_target, dict), response
-    assert resumed_target["uid"] == target.uid, response
+    await client.resume_sandbox(target)
 
     resumed = await wait_until_running(client, target)
     assert resumed.kubernetes_diagnostics.HasField("pod")
@@ -295,16 +224,16 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
     assert fresh_turn.resumed
     assert any("EXPLICIT_RESUME_EXEC_OK" in output for output in fresh_turn.tool_outputs), fresh_turn.transcript
 
-    resumed_history = await _history(client, agent.thread_id, completed_turns=2)
+    resumed_history = await _history(client, agent.thread_id, completed_turns=3)
     _assert_prefix(failed_history, resumed_history)
     admitted = [
         entry.event.command_admitted.command.command_id
         for entry in resumed_history
         if entry.event.HasField("command_admitted")
     ]
-    assert len(admitted) == 2, f"expected one failed command and one fresh command, got {admitted}"
-    assert admitted[0] == failed_command_id
-    fresh_turn_command_id = admitted[1]
+    assert len(admitted) == 3, f"expected the denied lifecycle probe, failed command and fresh command, got {admitted}"
+    assert admitted[1] == failed_command_id
+    fresh_turn_command_id = admitted[2]
     assert fresh_turn_command_id != failed_command_id
     (retained_failed_turn,) = [
         entry
@@ -317,10 +246,11 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
         json.dumps(
             {
                 "sandbox": MessageToDict(target, preserving_proto_field_name=True),
-                "execution_account": MessageToDict(account, preserving_proto_field_name=True),
+                "identity_name": view.identity_name,
+                "identity_resume_denial": denied["error"],
                 "old_pod_uid": old_pod.uid,
                 "new_pod_uid": resumed.kubernetes_diagnostics.pod.uid,
-                "resume_outcome": response["outcome"],
+                "resumed_by": "operator",
                 "failed_command_id": failed_command_id,
                 "failed_turn_id": failed_turn_entry.event.turn_completed.turn_id,
                 "fresh_command_id": fresh_turn_command_id,

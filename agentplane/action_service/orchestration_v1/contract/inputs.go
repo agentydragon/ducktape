@@ -50,7 +50,7 @@ type LaunchArgs struct {
 	Bootstrap               string   `json:"bootstrap,omitempty" jsonschema_description:"Shell source its runner runs once, before its first Session." jsonschema:"maxLength=65536"`
 	WakeOnSend              bool     `json:"wake_on_send,omitempty" jsonschema_description:"Whether an inbox message or a submitted input resumes it once it is suspended."`
 	IdleSuspendAfterSeconds *int     `json:"idle_suspend_after_seconds,omitempty" jsonschema_description:"How long its runner stays idle before it is suspended. Absent, it never is." jsonschema:"minimum=60,maximum=31536000"`
-	LauncherGrants          []string "json:\"launcher_grants,omitempty\" jsonschema_description:\"What you may then do to this Sandbox without asking again, bound to your own account and deleted with the Sandbox: `send_message` to its Session inboxes, and each named Action of this group on it.\" jsonschema:\"uniqueItems=true\""
+	LauncherGrants          []string "json:\"launcher_grants,omitempty\" jsonschema_description:\"What you may then do to this Sandbox without asking again, bound to your authenticated ServiceAccount or Identity incarnation and deleted with the Sandbox: `send_message` to its Session inboxes, and each named Action of this group on it.\" jsonschema:\"uniqueItems=true\""
 }
 
 type CreateSessionArgs struct {
@@ -168,7 +168,7 @@ func NewInputs() (Inputs, error) {
 	if inputs.ListSessions, err = newInput[ListSessionsArgs](ActionListSessions, fmt.Sprintf("Every Session a launched Sandbox has written, newest first, as %s reads each from its history. A Session is listed once its runner has written it; %s shows one still queued. %s", ActionGetSession, ActionGetSession, sandboxNote), "List Sessions", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
 		return Inputs{}, err
 	}
-	if inputs.LaunchSandbox, err = newInput[LaunchArgs](ActionLaunchSandbox, fmt.Sprintf("Launch a Session Sandbox running from a template, with its own ServiceAccount bound to the PolicySets named and this deployment's defaults, and grant yourself what launcher_grants names on it. Answers with its name and UID once it exists, before it is Ready; %s queues until it is. Repeating the same launch as the same caller answers with the same Sandbox; any other launch of a taken name is refused.", ActionCreateSession), "Launch Session Sandbox", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, configureLauncherGrants(inputs.SandboxActions())); err != nil {
+	if inputs.LaunchSandbox, err = newInput[LaunchArgs](ActionLaunchSandbox, fmt.Sprintf("Launch a Session Sandbox running from a template, with an acting Identity bound to the PolicySets named, and grant yourself what launcher_grants names on it. Answers with its name and UID once it exists, before it is Ready; %s queues until it is. Repeating the same launch as the same caller answers with the same Sandbox; any other launch of a taken name is refused.", ActionCreateSession), "Launch Session Sandbox", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, configureLauncherGrants(inputs.SandboxActions())); err != nil {
 		return Inputs{}, err
 	}
 	return inputs, nil

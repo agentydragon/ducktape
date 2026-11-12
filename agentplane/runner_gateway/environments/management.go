@@ -46,8 +46,11 @@ func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.En
 		if _, ok := s.launchers[account]; !ok {
 			return nil, status.Error(codes.PermissionDenied, "caller cannot launch environments on behalf of an Action caller")
 		}
-		if origin.GetCaller().GetNamespace() == "" || origin.GetCaller().GetName() == "" || origin.GetActionGroup() == "" {
-			return nil, status.Error(codes.InvalidArgument, "launch origin requires caller and Action group")
+		account, identity := origin.GetCaller(), origin.GetCallerIdentity()
+		validAccount := account != nil && account.GetNamespace() != "" && account.GetName() != ""
+		validIdentity := identity != nil && identity.GetName() != "" && identity.GetUid() != ""
+		if origin.GetActionGroup() == "" || !(validAccount && identity == nil || validIdentity && account == nil) {
+			return nil, status.Error(codes.InvalidArgument, "launch origin requires exactly one complete caller and Action group")
 		}
 	}
 	return management.New(s.namespace, s.objects, &identitypb.ServiceAccount{

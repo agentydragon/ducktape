@@ -150,6 +150,83 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	}
 }
 
+func TestIdentityLauncherRetriesAndGrantsRemainBoundToItsIncarnation(t *testing.T) {
+	f := newFixture(t)
+	launcher := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-launcher", Namespace: f.namespace},
+		Spec:       policyapi.IdentitySpec{Description: "Test launcher."},
+	}
+	if err := kube.Create(t.Context(), launcher); err != nil {
+		t.Fatal(err)
+	}
+	caller := store.IdentityCaller{Identity: store.Identity{Name: launcher.Name, UID: string(launcher.UID)}}
+	launch := func(caller store.Caller) attempted {
+		outcome, err := f.executor.attempt(t.Context(), store.ExecutionRequest{
+			RequestID: uuid.New(), Action: store.ActionIdentity{Group: testGroup, Name: contract.ActionLaunchSandbox},
+			Arguments: json.RawMessage(`{"name":"test-worker","template":"test-template","launcher_grants":["submit_input"]}`), Caller: caller,
+		})
+		return attempted{t, outcome, err}
+	}
+	first := resultOf[Launched](launch(caller))
+	if again := resultOf[Launched](launch(caller)); again.Sandbox != first.Sandbox {
+		t.Fatalf("retry launched %+v, want %+v", again.Sandbox, first.Sandbox)
+	}
+	var binding policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.launcher"}, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding.Spec.Subject.Identity == nil || binding.Spec.Subject.Identity.Name != launcher.Name || binding.Spec.Subject.Namespace != "" || binding.Spec.Subject.Name != "" {
+		t.Fatalf("launcher grant subject = %+v", binding.Spec.Subject)
+	}
+	if len(binding.OwnerReferences) != 2 || binding.OwnerReferences[0].Kind != sandboxapi.SandboxKind || binding.OwnerReferences[0].UID != first.Sandbox.UID ||
+		binding.OwnerReferences[1].Kind != "Identity" || binding.OwnerReferences[1].Name != launcher.Name || binding.OwnerReferences[1].UID != launcher.UID {
+		t.Fatalf("launcher grant owners = %+v", binding.OwnerReferences)
+	}
+	var sandbox sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &sandbox); err != nil {
+		t.Fatal(err)
+	}
+	var intent struct {
+		Caller  struct{ Namespace, Name string } `json:"caller"`
+		Request struct {
+			LaunchOrigin struct {
+				CallerIdentity store.Identity `json:"caller_identity"`
+			} `json:"launch_origin"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal([]byte(sandbox.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
+		t.Fatal(err)
+	}
+	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" || intent.Request.LaunchOrigin.CallerIdentity != caller.Identity {
+		t.Fatalf("actor and effective launcher attribution = %+v", intent)
+	}
+	if err := kube.Delete(t.Context(), launcher); err != nil {
+		t.Fatal(err)
+	}
+	replacement := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Name: launcher.Name, Namespace: f.namespace},
+		Spec:       policyapi.IdentitySpec{Description: "Replacement test launcher."},
+	}
+	if err := kube.Create(t.Context(), replacement); err != nil {
+		t.Fatal(err)
+	}
+	if kind := launch(caller).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED {
+		t.Fatalf("stale Identity caller failure = %v", kind)
+	}
+	successor := store.IdentityCaller{Identity: store.Identity{Name: replacement.Name, UID: string(replacement.UID)}}
+	if kind := launch(successor).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("replacement Identity adopted old launch: %v", kind)
+	}
+	// No garbage collector runs in this fixture: the old grant must retain its original UID pin.
+	var retained policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKeyFromObject(&binding), &retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained.OwnerReferences[1].UID != launcher.UID {
+		t.Fatalf("replacement caller changed old grant: %+v", retained.OwnerReferences)
+	}
+}
+
 func TestALaunchWithoutGrantsWritesNone(t *testing.T) {
 	f := newFixture(t)
 	if launched := f.launch(t, "test-worker"); launched.UID == "" {

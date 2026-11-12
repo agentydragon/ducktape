@@ -3558,6 +3558,12 @@ show account-owned objects going with their account. **Exit:** the scenarios pas
 
 ### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
 
+The operator reaffirmed on 2026-11-12 that the Sandbox Identity cutover keeps Identity
+`CreateSession` denied. Cutover tests assert that denial while retaining parent steering of an
+operator-provisioned same-Identity child and the existing approved `orchestration_v1` broker flow.
+This node owns restoring caller-authorized child Sessions
+under an explicit lifecycle grant; it does not block removal of Sandbox ServiceAccount mode.
+
 **Design, not started (operator, 2026-11-10).** How a Session asks Agentplane to create a new
 Session, a sub-agent, and then messages it: the way one Session delegates to another. Dispatcher's
 `CreateSession` refuses an Identity caller (`PermissionDenied`), deliberately retired pending this
