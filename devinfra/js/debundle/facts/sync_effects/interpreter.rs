@@ -12673,24 +12673,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .as_ref()
                         .filter(|(factory_key, _, _, _)| *factory_key == key);
                     if let Some((_, _, _, properties)) = scoped_factory.filter(|_| outcome.complete)
+                        && !properties.is_empty()
                     {
-                        if !properties.is_empty() {
-                            let ValueExpr::Binding(factory) = &call.callee else {
-                                unreachable!()
-                            };
-                            outcome.effects.local_record_factory_uses.push(
-                                crate::reports::schema::LocalRecordFactoryUse {
-                                    factory_binding: factory.0.to_string(),
-                                    prototype_properties: properties.clone(),
-                                    lexical_statement_ordinal: self
-                                        .state
-                                        .current_top_owner
-                                        .unwrap_or(call.owner),
-                                    source_location: None,
-                                    span: call.span,
-                                },
-                            );
-                        }
+                        let ValueExpr::Binding(factory) = &call.callee else {
+                            unreachable!()
+                        };
+                        outcome.effects.local_record_factory_uses.push(
+                            crate::reports::schema::LocalRecordFactoryUse {
+                                factory_binding: factory.0.to_string(),
+                                prototype_properties: properties.clone(),
+                                lexical_statement_ordinal: self
+                                    .state
+                                    .current_top_owner
+                                    .unwrap_or(call.owner),
+                                source_location: None,
+                                span: call.span,
+                            },
+                        );
                     }
                     if scoped_factory.is_some() {
                         *self.observations.record_factory_prototype_premises_mut() =
