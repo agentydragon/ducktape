@@ -86,10 +86,8 @@ py_library(
     srcs = ["ground_truth.py"],
     deps = [
         "//props/core:ids",
-        "//props/core/models:true_positive",
         "//props/db:examples",
         "//props/db:models",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],

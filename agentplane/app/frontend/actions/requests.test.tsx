@@ -2,11 +2,13 @@
 
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 
-import { ActionIdentitySchema, ActionState } from "../../../action_service/action_service_pb";
+import { ActionIdentitySchema, ActionRequestSchema, ActionState } from "../../../action_service/action_service_pb";
+import { IdentitySchema } from "../../../proto/identity_pb";
 import { STALE_AFTER_MS, streamRegistry } from "../stream_status";
 import { actionCaller, timestampText } from "./presentation";
+import { listActionRequests } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
 import {
   ACTION_REQUEST_WATCH,
@@ -35,14 +37,77 @@ describe("ActionRequests", () => {
     const row = request(ActionState.DECISION_PENDING, 1);
     const container = await renderLive(<ActionRequests />, [row]);
     const caller = actionCaller(row);
-    const control = button(container, caller.name);
+    if (caller.kind !== "service-account") throw new Error("Expected the fixture's ServiceAccount caller.");
+    const control = button(container, caller.account.name);
     expect(control.getAttribute("aria-expanded")).toBe("false");
     const requested = control.querySelector("time");
     if (!requested) throw new Error("missing the request time in the audit summary");
     expect(Date.parse(requested.dateTime)).toBe(Date.parse(timestampText(row.createdAt) ?? ""));
-    expect(container.textContent).toContain(`Requested by ${caller.namespace}/${caller.name}`);
+    expect(container.textContent).toContain(`Requested by ${caller.account.namespace}/${caller.account.name}`);
     expect(container.textContent).toContain(row.id);
     expect(button(container, "Approve").disabled).toBe(false);
+  });
+
+  it("renders an Identity caller with its UID in the pending list", async () => {
+    const identity = { name: "fake-workload", uid: "fake-workload-uid" };
+    const row = {
+      ...request(ActionState.DECISION_PENDING, 2),
+      caller: undefined,
+      callerIdentity: create(IdentitySchema, identity),
+    };
+    const container = await renderLive(<ActionRequests />, [row]);
+
+    expect(container.textContent).toContain("Pending (1)");
+    const audit = button(container, `Identity ${identity.name}`);
+    expect(audit.getAttribute("aria-expanded")).toBe("false");
+    expect(button(container, "Approve").disabled).toBe(false);
+    expect(button(container, "Deny").disabled).toBe(false);
+    await act(async () => audit.click());
+    expect(container.textContent).toContain(`Requested by Identity ${identity.name} · UID ${identity.uid}`);
+    expect(container.textContent).not.toContain(`agentplane-test/${identity.name}`);
+  });
+
+  it("keeps the ServiceAccount namespace and includes its known caller UID in expanded audit details", async () => {
+    const row = request(ActionState.DECISION_PENDING, 6);
+    row.callerUid = "fake-service-account-uid";
+    const container = await renderLive(<ActionRequests />, [row]);
+
+    await act(async () => button(container, "test-agent").click());
+    expect(container.textContent).toContain("Requested by agentplane-test/test-agent · UID fake-service-account-uid");
+  });
+
+  it("keeps a request with an unrecognized future caller visible", async () => {
+    const row = { ...request(ActionState.DECISION_PENDING, 3), caller: undefined };
+    const container = await renderLive(<ActionRequests />, [row]);
+
+    expect(container.textContent).toContain("Pending (1)");
+    expect(container.textContent).toContain("Unknown caller");
+    expect(button(container, "Approve").disabled).toBe(false);
+    expect(button(container, "Deny").disabled).toBe(false);
+  });
+
+  it.each([
+    ["name", "", "fake-identity-uid"],
+    ["UID", "fake-identity", ""],
+  ])("rejects an Identity caller without a %s", async (field, name, uid) => {
+    const row = request(ActionState.DECISION_PENDING, 4);
+    row.caller = undefined;
+    row.callerIdentity = create(IdentitySchema, { name, uid });
+    const response = toJson(ActionRequestSchema, row);
+
+    await expect(
+      listActionRequests(undefined, async () => Response.json({ actionRequests: [response] }))
+    ).rejects.toThrow(`The Action Service returned an Identity caller without a ${field}.`);
+  });
+
+  it("rejects an ActionRequest that has both known caller kinds", async () => {
+    const row = request(ActionState.DECISION_PENDING, 5);
+    row.callerIdentity = create(IdentitySchema, { name: "fake-identity", uid: "fake-identity-uid" });
+    const response = toJson(ActionRequestSchema, row);
+
+    await expect(
+      listActionRequests(undefined, async () => Response.json({ actionRequests: [response] }))
+    ).rejects.toThrow("The Action Service returned an ActionRequest with multiple callers.");
   });
 
   it("renders every pending request with its arguments", async () => {

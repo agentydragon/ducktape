@@ -52,13 +52,13 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Public browser smoke.** The Excalidraw corpus, its accepted spec and its
-   browser smoke landed (<excalidraw/README.md>); the smoke loads swapped
-   packages through an import map. The public canonical-spec check is
-   `excalidraw:canonical_summary` (<plans/convergence_landing.md>). Remaining
-   per <plans/excalidraw_live_smoke.md>: lazy-chunk coverage.
-   Node probes already run; browser loading is the missing contract, not a
-   missing vendor schema.
+3. **Excalidraw smoke follow-up.** The public corpus, accepted
+   spec and self-hosted browser smoke landed (<excalidraw/README.md>); the
+   smoke loads swapped packages through an import map. The public canonical
+   spec check is `excalidraw:canonical_summary`
+   (<plans/convergence_landing.md>). Remaining per
+   <plans/excalidraw_live_smoke.md>: dynamic-import coverage after startup and
+   a published screenshot. The current smoke covers startup and drawing.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
@@ -226,16 +226,13 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Test infrastructure
 
-1. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
-   (<plans/excalidraw_live_smoke.md>) so private-corpus debundler issues can be
-   reproduced and protected in public CI.
-2. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
+1. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
    stylesheet reads through `new URL(..., import.meta.url)` under Node. Still
    uncontrolled: URL search/fragment and encoded path identity, nested CSS asset
    references, real browser worker/style loading, dynamic consumers of package
    replacements, and the direct `Worker`-string rewrite (whose browser document
    base is not the module URL; the resource inventory marks it unresolved).
-3. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
+2. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
 

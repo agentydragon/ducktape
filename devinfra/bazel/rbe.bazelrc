@@ -25,7 +25,7 @@ build:rbe --modify_execution_info=^(?!TestRunner$).*=-no-remote-exec
 # select local; an RBE execution failure still cannot fall back locally.
 test:rbe --strategy=TestRunner=remote,local
 build:rbe --shell_executable=/bin/bash
-build:rbe --jobs=50
+build:rbe --jobs=100
 build:rbe --remote_download_minimal
 # Deviation: minimal deliberately excludes a test runner action's outputs from
 # the download set, which empties `test.outputs/` out of the build event stream

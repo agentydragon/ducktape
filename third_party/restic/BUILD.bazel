@@ -10,7 +10,6 @@ genrule(
     ],
     tools = ["@bzip2"],
     visibility = [
-        "//cluster/session_backup_maintenance:__pkg__",
         "//nix/home/services:__pkg__",
         "//x/ai_session_archive:__pkg__",
     ],

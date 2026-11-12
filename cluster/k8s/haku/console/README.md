@@ -60,8 +60,8 @@ remove it only after outgoing replicas no longer initialize it.
 ## Rolling release compatibility
 
 The API and static shell are separate Deployments and roll independently. The API uses
-`maxUnavailable: 0`: a replacement that never becomes Ready leaves the running version serving,
-but old and new replicas overlap while a healthy release converges.
+two replicas, `maxUnavailable: 1`, and `maxSurge: 0`: a replacement that never becomes Ready
+leaves the other replica serving, while a healthy release rolls one replica at a time.
 
 Each static image contains only its own fingerprinted assets. During a static roll, a browser can
 load a shell from one replica and request its chunk from another replica that does not have it. The

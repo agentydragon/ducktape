@@ -32,10 +32,9 @@ history holds the original full design rationale. The **actionable build checkli
   (An earlier "richer declarative UI" direction — a typed widget schema rendered by the
   trusted console — is retired: the console renders nothing by design now; free-form UI in
   Haku's own iframe service superseded it.)
-- **Share the iframe bridge protocol** instead of hand-duplicating the message shapes
-  between `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared
-  package or a sync-checked artifact. (The remaining cleanup from the realized free-form
-  UI design; see `console/docs/containment.md` → _The bridge protocol_.)
+- **Migrate Haku's UI to the shared iframe bridge protocol.** The console owns the
+  `@haku/console-bridge` package; Haku's UI still needs to consume it. See
+  `console/docs/containment.md` → _The bridge protocol_.
 - **An in-cluster runtime as the default instead of the web home.** Both candidates are
   built — `runtime/x/agent_framework` (Runtime C) and `runtime/x/managed_agent/self_hosted` (Runtime B) —
   so what is undecided is whether either replaces the web home rather than sitting beside
@@ -87,13 +86,6 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   secret?), how Haku proves it's acting under one, how scopes compose with the existing
   token/RBAC model, how "less-restricted browsing" stays contained, and where the line
   sits between "draft for review" and "act."
-
-## Haku Console risky-tool broker
-
-Haku Console is the MCP/HTTP policy and approval boundary: calls that pass reviewed auto-approval
-policy execute immediately, while all others become operator approval requests. The invariant stays
-the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
-credentials scoped or proxied rather than trusted to Haku's restraint.
 
 ## A conversational interface with Haku (operator, 2026-07-06)
 

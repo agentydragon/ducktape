@@ -644,22 +644,6 @@ func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Requ
 	}
 }
 
-func grpcFailure(err error) string {
-	if err == nil {
-		return "Unknown"
-	}
-	converted := status.Convert(err)
-	return converted.Code().String() + ": " + converted.Message()
-}
-
-func writeGRPCOpenError(w http.ResponseWriter, err error) {
-	code := http.StatusServiceUnavailable
-	if status.Code(err) == codes.DeadlineExceeded {
-		code = http.StatusGatewayTimeout
-	}
-	writeDetailError(w, code, grpcFailure(err))
-}
-
 func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
 	switch {
 	case status.Code(err) == codes.NotFound:

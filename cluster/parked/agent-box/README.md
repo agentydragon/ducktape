@@ -75,4 +75,3 @@ adding it back to Flux; see <../../docs/kubevirt_vm_image_artifacts.md>.
 - <nix/nixos.nix> — NixOS host config
 - <virtualmachine.yaml> — KubeVirt VM definition
 - <../../docs/agent_rbac.md> — current cluster RBAC for agent identities
-- Per-VM SSH beyond a few VMs: <../../docs/plans/vm_ssh_exposure.md>

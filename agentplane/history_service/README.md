@@ -306,5 +306,17 @@ The SessionSpec placement cutover's History migration 8 moved a legacy archived
 `SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when
 the old record had no exact placement to report. It did not invent an environment identity or
 change raw events, cursors or event ordering. New live openings use the typed placement in
-`SessionSpec`; historical evidence remains available. A database that has not completed the old
-migrations must run the previous image before adopting the current baseline.
+`SessionSpec`; historical evidence remains available.
+
+Migration 15 is the selected Goose baseline. It creates the current schema on a fresh database and
+adopts a completed version-14 database after validating its schema. Adoption preserves existing rows,
+schema object identities, and Goose history. A deployed database below version 14 must first run the
+previous History image through migration 14 and finish that rollout; version 15 fails closed for
+older or partial predecessors. Migration 14 removes the temporary command-operation bridge, so
+starting version 15 while an older rollout is still active is unsupported.
+
+Use a version-15-compatible image for fresh databases. Their ledger records version 15 without
+versions 11-14, so a version-14 image would reject that ledger as missing out-of-order migrations.
+On a database adopted from version 14, the prior migration rows remain present and the version-14
+Goose provider sees no pending migrations after version 15. That check covers migration startup;
+runtime rollback to an older image is unsupported.

@@ -343,18 +343,6 @@ def test_snapshot(synced_db: Database) -> SnapshotSlug:
 
 
 @pytest.fixture
-def test_validation_snapshot_slug(synced_db: Database) -> SnapshotSlug:
-    """Return test-validation fixture snapshot slug."""
-    return SnapshotSlug("test-fixtures/valid1")
-
-
-@pytest.fixture
 def test_train_example_with_runs(synced_db: Database) -> tuple[ExampleSpec, AgentRun, AgentRun]:
     """Provide a train example with critic and grader runs."""
     return _make_example_with_runs(SnapshotSlug("test-fixtures/train1"), credit=0.8, db=synced_db)
-
-
-@pytest.fixture
-def test_valid_example_with_runs(synced_db: Database) -> tuple[ExampleSpec, AgentRun, AgentRun]:
-    """Provide a valid example with critic and grader runs."""
-    return _make_example_with_runs(SnapshotSlug("test-fixtures/valid1"), credit=0.6, db=synced_db)

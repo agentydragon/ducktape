@@ -1,12 +1,19 @@
 # Framework-neutral test outputs and visual reviews
 
-Implementation is in progress. The chosen comparison profile is
-`bazel-configuration-exact-v1`: only equal, known configuration IDs are
-comparable. The cutover intentionally starts fresh baseline pointers in a new
-namespace; preserving the old filename-based comparisons is not required.
-Keep this plan until the pinned publisher has shipped and end-to-end publication
-has been verified. References to the previous protocol below describe the
-starting point.
+The framework-neutral `ducktape.test-output.v1` protocol, its Python writer and
+pytest adapter, the collector, and the publisher wheel are implemented. The
+`pr-visuals` Nix pin now references release `pr-visuals-678708031ac9`. The chosen
+comparison profile is `bazel-configuration-exact-v1`: only equal, known
+configuration IDs are comparable. The cutover intentionally starts fresh
+baseline pointers in a new namespace; preserving the old filename-based
+comparisons is not required.
+
+Keep this plan for the remaining end-to-end acceptance: verify that a real RBE
+visual test publishes and serves the expected pages, images, baselines, PR
+comment, and determinism result. A successful workflow that finds no structured
+outputs does not establish that coverage. The prior protocol below is migration
+context; the current record contract is documented in
+[the test-output protocol](../docs/test_output_protocol.md).
 
 ## Goal
 
@@ -16,14 +23,12 @@ screenshot must line up across Bazel invocations even when its shard, run, or
 attempt changes. Different cases and checkpoints must not be silently treated as
 the same screenshot.
 
-The current `visual-review.json` protocol identifies a review image by target and
-PNG basename. `VisualPage.capture()` can derive a basename from the pytest case
-name, but an explicit checkpoint replaces that name. Shards have separate output
-directories, so the same basename can be declared by different cases without a
-local overwrite. The publisher currently unions those declarations. The
-cross-shard guard in [PR #13692](https://github.com/agentydragon/ducktape/pull/13692)
-is an interim protection if it lands before this work; the protocol must uphold
-the invariant regardless.
+Before this migration, `visual-review.json` identified a review image by
+target and PNG basename. `VisualPage.capture()` could derive a basename from the
+pytest case name, while an explicit checkpoint replaced that name. Shards had
+separate output directories, so the same basename could be declared by different
+cases without a local overwrite. The structured-record collector now binds each
+output to its logical identity and rejects conflicting claims across shards.
 
 ## Identity and protocol
 
@@ -148,8 +153,10 @@ The desktop screenshot would have `case_id` `dialog/desktop` and can reuse the
 adapter would instead derive its case ID from the full node ID. A writer must
 create each payload completely before atomically publishing its record and fail
 a duplicate claim; the collector validates the full identity rather than
-trusting the placeholder key. This is a proposed layout and schema to validate,
-not the current `visual-review.json` format.
+trusting the placeholder key. This illustrates the implemented
+`ducktape.test-output.v1` record format; the current contract and supported
+fields are documented in
+[the test-output protocol](../docs/test_output_protocol.md).
 
 The collector attaches the target and result provenance from its source, not
 from producer-controlled fields. Its materialized observation could look like:
@@ -297,6 +304,6 @@ is known; unknown or partial coverage remains incomplete.
    changed and unchanged results. Update owning specifications and operational
    docs, and delete this plan when the migration is complete.
 
-The released wheel and its Nix pin must still advance after merge. Until then,
-the old publisher and migrated producers cannot exchange records; monitor the
-pin rollout and allow devel runs to populate the new baseline namespace.
+The publisher wheel has been released and its Nix pin has advanced. The
+remaining rollout evidence is an end-to-end run that emits records and verifies
+the new baseline namespace and publicly readable review assets.

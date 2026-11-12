@@ -20,7 +20,6 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 )
@@ -111,7 +110,5 @@ type APIKeyList struct {
 // APIKey type metadata.
 var (
 	APIKeyKind             = reflect.TypeOf(APIKey{}).Name()
-	APIKeyGroupKind        = schema.GroupKind{Group: Group, Kind: APIKeyKind}.String()
-	APIKeyKindAPIVersion   = APIKeyKind + "." + SchemeGroupVersion.String()
 	APIKeyGroupVersionKind = SchemeGroupVersion.WithKind(APIKeyKind)
 )

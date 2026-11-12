@@ -68,24 +68,6 @@ func syncDirectory(path string) error {
 	return file.Sync()
 }
 
-// WriteDurable atomically replaces path with data, syncing the file and parent directory.
-func WriteDurable(path string, data []byte) error {
-	file, err := os.OpenFile(path+".tmp", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.Write(data)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(path+".tmp", path); err != nil {
-		return err
-	}
-	return syncDirectory(filepath.Dir(path))
-}
-
 // Record is the durable Session reservation and native recovery identity.
 // The generated protobuf spec is the sole in-memory and on-disk representation.
 type Record = persistencepb.SessionRecordSpec

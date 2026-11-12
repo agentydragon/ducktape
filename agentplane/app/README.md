@@ -90,8 +90,6 @@ get their Threads once it does.
   frontend API comes from `//agentplane/app/go:export_schema_bin`.
 - `go/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
-- `go/policyaccess/`: Kubernetes policy projections.
-  The Action Service independently streams its effective policy through its generated facade.
 - `go/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
 - `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
