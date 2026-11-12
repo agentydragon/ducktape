@@ -7,11 +7,14 @@ Register in downstream packages via:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 import aiodocker
 import pytest
 
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
+
+WORKING_DIR: Final[Path] = Path("/workspace")
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace")) -> ContainerExecServerConfig:
