@@ -103,6 +103,7 @@ def shares_a_remote(a: pygit2.Repository, b: pygit2.Repository) -> bool:
 class Worktree:
     path: Path
     branch: str | None  # None for a detached HEAD
+    head: str | None = None  # captured commit for a detached HEAD
 
 
 async def list_worktrees(repo: Path) -> list[Worktree]:
@@ -110,14 +111,17 @@ async def list_worktrees(repo: Path) -> list[Worktree]:
     worktrees: list[Worktree] = []
     path: Path | None = None
     branch: str | None = None
+    head: str | None = None
     for line in [*(await git_out(repo, "worktree", "list", "--porcelain")).splitlines(), ""]:
         if line.startswith("worktree "):
             path = Path(line.removeprefix("worktree "))
+        elif line.startswith("HEAD "):
+            head = line.removeprefix("HEAD ")
         elif line.startswith("branch "):
             branch = line.removeprefix("branch ").removeprefix("refs/heads/")
         elif line == "" and path is not None:
-            worktrees.append(Worktree(path=path, branch=branch))
-            path, branch = None, None
+            worktrees.append(Worktree(path=path, branch=branch, head=head if branch is None else None))
+            path, branch, head = None, None, None
     return worktrees
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import subprocess
@@ -235,6 +236,118 @@ async def test_detached_worktree_is_not_directly_removable(repo: GitRepo) -> Non
     assert isinstance(result, Skipped)
     assert GitRepo(path).rev("HEAD") == detached_head
     assert path.exists()
+
+
+async def _remove_detached(repo: GitRepo, worktree: Worktree) -> RemovalResult[Path]:
+    return await wg.remove_if_still_prunable(
+        repo.path, worktree, main="main", pr_states={}, main_path=repo.path, active_path=None, live_pids=[]
+    )
+
+
+async def test_detached_ancestor_is_prunable_and_recoverable(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    assert item.reason is wg.PrunableWorktreeReason.CONTENT_IN_MAIN
+    head = item.worktree.head
+    assert head
+    assert await _remove_detached(repo, item.worktree) == Removed(path)
+    assert repo.rev(f"refs/workspace-gc-preserved/{head}") == head
+
+
+async def test_detached_patch_landed_preserves_exact_commit(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    wt = GitRepo(path)
+    (path / "change").write_text("hello\n")
+    wt.run("add", "change")
+    wt.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "feature")
+    head = wt.rev("HEAD")
+    repo.run("-c", "user.name=t", "-c", "user.email=t@t", "cherry-pick", head)
+    repo.run("-c", "user.name=t", "-c", "user.email=t@t", "revert", "--no-edit", "HEAD")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    assert item.reason is wg.PrunableWorktreeReason.PATCHES_IN_MAIN
+    assert await _remove_detached(repo, item.worktree) == Removed(path)
+    assert repo.rev(f"refs/workspace-gc-preserved/{head}") == head
+
+
+async def test_detached_head_change_since_scan_is_skipped(repo: GitRepo, proc: Path) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    _commit_detached(GitRepo(path), "new work")
+    assert isinstance(await _remove_detached(repo, item.worktree), Skipped)
+    assert path.exists()
+
+
+async def test_detached_head_change_after_ref_creation_is_skipped(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    real_git = wg.git
+
+    async def racing_git(repo_path: Path, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        result = await real_git(repo_path, *args, **kwargs)
+        if args[0] == "rev-parse" and args[-1].startswith("refs/workspace-gc-preserved/"):
+            _commit_detached(GitRepo(path), "new work")
+        return result
+
+    monkeypatch.setattr(wg, "git", racing_git)
+    assert isinstance(await _remove_detached(repo, item.worktree), Skipped)
+    assert path.exists()
+    assert repo.rev(f"refs/workspace-gc-preserved/{item.worktree.head}") == item.worktree.head
+
+
+async def test_detached_ref_creation_failure_does_not_remove(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    real_git = wg.git
+
+    async def failing_git(repo_path: Path, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if args[0] == "update-ref":
+            raise OSError("injected ref failure")
+        return await real_git(repo_path, *args, **kwargs)
+
+    monkeypatch.setattr(wg, "git", failing_git)
+    assert isinstance(await _remove_detached(repo, item.worktree), Failed)
+    assert path.exists()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_detached_recovery_ref_survives_failed_or_cancelled_removal(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch, cancel: bool
+) -> None:
+    path = repo.path.parent / "wt"
+    repo.run("worktree", "add", "-q", "--detach", str(path), "main")
+    item = await _classify(repo, path, proc)
+    assert isinstance(item, wg.PrunableWorktree)
+    real_git = wg.git
+
+    async def failing_git(repo_path: Path, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ("worktree", "remove"):
+            if cancel:
+                raise asyncio.CancelledError
+            raise OSError("injected failure")
+        return await real_git(repo_path, *args, **kwargs)
+
+    monkeypatch.setattr(wg, "git", failing_git)
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            await _remove_detached(repo, item.worktree)
+    else:
+        assert isinstance(await _remove_detached(repo, item.worktree), Failed)
+    assert path.exists()
+    assert repo.rev(f"refs/workspace-gc-preserved/{item.worktree.head}") == item.worktree.head
 
 
 async def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:

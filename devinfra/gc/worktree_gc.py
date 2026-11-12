@@ -1,19 +1,16 @@
 """Classify and safely remove local git worktrees whose work is already merged.
 
 Mirrors output_base_gc's PRUNE/KEEP/REVIEW model. A worktree is prunable only when it is
-clean (no tracked or untracked changes), idle (not the main checkout, not the
-invoking worktree, no process cwd'd inside), attached to a branch, and its work is already in the main branch —
-established by git (HEAD is an ancestor of main; merging HEAD into main is a no-op, which
-catches squash/rebase-merges; or the branch is empty) or by a merged or closed GitHub PR
-for its branch. Everything else is kept (dirty/active/live/open-PR) or reported
-for manual review (clean but unique unmerged work, a detached HEAD, undeterminable main).
+clean (no tracked or untracked changes), idle (not the main checkout, the invoking worktree,
+or a process's working directory), and its work has landed in the main branch or its branch's
+PR has merged or closed. Detached commits qualify by content or patch equivalence. Dirty,
+active, and open-PR worktrees are kept; unique work is reported for review.
 
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
-GitHub. `git worktree remove` refuses tracked or untracked changes, but deletes ignored files
-too, including local data. A detached HEAD is always held for review because content or patch
-equivalence does not preserve that exact commit. A detached commit created after the final
-check can still be lost.
+GitHub. `git worktree remove` refuses tracked or untracked changes, but deletes ignored files.
+Detached commits are preserved under refs/workspace-gc-preserved/ before removal. The final
+HEAD check and removal are not atomic.
 """
 
 from __future__ import annotations
@@ -278,7 +275,10 @@ async def _classify_worktree(
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
     pg = await run_blocking(pygit2.Repository, os.fspath(path))
     branch = await run_blocking(lambda: None if pg.head_is_detached else pg.head.shorthand)
-    worktree = Worktree(path, branch)
+    head = await run_blocking(lambda: str(pg.head.peel(pygit2.Commit).id)) if branch is None else None
+    if branch is None and (worktree.head is None or head != worktree.head):
+        return ReviewWorktree(worktree, ReviewWorktreeReason.DETACHED_HEAD, None, main)
+    worktree = Worktree(path, branch, head)
     logger.info("Scanning worktree %s: reading Git status", path)
     status = await _status(path)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
@@ -312,9 +312,14 @@ async def _classify_worktree(
         # caught separately by branch_gc, which does have to care (deleting a branch ref
         # is destructive).
         return prune(PrunableWorktreeReason.PR_LANDED, pr=pr)
-    # A detached HEAD has no branch ref that survives worktree removal. Its tree or patch
-    # being equivalent to main does not preserve this particular commit object.
     if worktree.branch is None:
+        assert head is not None
+        head_oid = pygit2.Oid(hex=head)
+        main_oid = await run_blocking(lambda: pg.revparse_single(main).peel(pygit2.Commit).id)
+        if await run_blocking(lambda: pg.merge_base(main_oid, head_oid) == head_oid):
+            return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
+        if await patches_landed_in_main(path, head, main):
+            return prune(PrunableWorktreeReason.PATCHES_IN_MAIN)
         return review(ReviewWorktreeReason.DETACHED_HEAD)
     if await run_blocking(lambda: content_in_main(pg, pg.head.peel(pygit2.Commit).id, main)):
         return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
@@ -324,7 +329,7 @@ async def _classify_worktree(
     return review(ReviewWorktreeReason.UNMERGED)
 
 
-async def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
+async def remove_worktree(repo: Path, path: Path, *, expected_detached_head: str | None = None) -> RemovalResult[Path]:
     """Remove one worktree with `git worktree remove` (never `--force`).
 
     Git refuses tracked or untracked changes but deletes ignored data. This entry point checks
@@ -343,7 +348,25 @@ async def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     try:
         head_is_detached = await run_blocking(lambda: open_repo(path).head_is_detached)
         if head_is_detached:
-            return Skipped(path, "detached HEAD commit reachability is not proven safe for removal")
+            if expected_detached_head is None:
+                return Skipped(path, "detached HEAD requires a fresh classification")
+            current_head = await run_blocking(lambda: str(open_repo(path).head.peel(pygit2.Commit).id))
+            if current_head != expected_detached_head:
+                return Skipped(path, "detached HEAD changed since classification")
+            # The deterministic ref also survives cancellation or a failed removal. Never
+            # overwrite another value; an existing matching ref is already sufficient.
+            recovery_ref = f"refs/workspace-gc-preserved/{current_head}"
+            logger.warning("Preserving detached commit at %s before removing %s", recovery_ref, path)
+            # Create only if absent, then verify even when an existing ref won the race.
+            await git(repo, "update-ref", recovery_ref, current_head, "", check=False, interruptible=False)
+            resolved = await git(repo, "rev-parse", "--verify", recovery_ref)
+            if resolved.stdout.strip() != current_head:
+                return Failed(path, f"cannot preserve detached HEAD at {recovery_ref}")
+            current = await run_blocking(lambda: open_repo(path))
+            if not current.head_is_detached or str(current.head.peel(pygit2.Commit).id) != current_head:
+                return Skipped(path, f"HEAD changed; original commit preserved at {recovery_ref}")
+        elif expected_detached_head is not None:
+            return Skipped(path, "HEAD changed since classification")
     except INSPECTION_ERRORS as error:
         return Failed(path, f"cannot inspect worktree safety before removal: {error}")
     try:
@@ -385,4 +408,4 @@ async def remove_if_still_prunable(
         return Skipped(worktree.path, "checked-out branch changed since the scan")
     if not isinstance(fresh, PrunableWorktree):
         return Skipped(worktree.path, describe_reason(fresh))
-    return await remove_worktree(repo, worktree.path)
+    return await remove_worktree(repo, worktree.path, expected_detached_head=fresh.worktree.head)

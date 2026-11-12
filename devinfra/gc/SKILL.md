@@ -92,21 +92,19 @@ default is the only root.
 `workspace-gc worktrees` classifies each worktree; interpret it literally:
 
 - `PRUNE`: clean (no tracked or untracked changes), idle (not main/active, no process cwd'd inside),
-  attached to a branch, and its work is already in the main branch — an ancestor, a
-  squash/rebase-merge (merging into main is a no-op), an empty branch, or a **merged GitHub PR**
-  for its branch. Remove with
-  `workspace-gc worktrees --prune`: it re-classifies each worktree right before removing it, runs `git worktree remove` **without
-  `--force`** (so a tree that turned tracked/untracked dirty is skipped), checks the current HEAD again at the removal entry point, and **never deletes branches** — the
-  work stays reachable through its attached branch. A branch change during revalidation is
+  and its work has landed on the default branch, or its branch has a merged or closed PR.
+  `workspace-gc worktrees --prune` reclassifies before calling `git worktree remove` without
+  `--force`; Git deletes ignored files. Attached branches survive worktree removal. A detached
+  HEAD with landed content or patches is eligible, and its captured commit is retained under
+  `refs/workspace-gc-preserved/<commit>`. A branch or detached HEAD change during revalidation is
   skipped. If the worktree directory is already missing, removal is skipped; review stale
   entries with `git worktree prune --dry-run --verbose` and prune only confirmed records.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
   changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
   (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the
   dirt is real work.
-- `REVIEW`: clean but has commits not in main and no merged PR, any detached HEAD, or an
-  undeterminable default branch. A detached commit stays reachable only through the worktree's
-  private HEAD/reflog unless another ref points to it, even if its tree or patch matches main.
+- `REVIEW`: clean but has commits not in main and no merged PR, a detached HEAD with unique commits, or an
+  undeterminable default branch.
   Judge these yourself — inspect the
   commits/PR and decide; removal must not make any commit unreachable.
 
@@ -227,7 +225,7 @@ is deleted — that base re-fetches the repo, the same exposure Bazel's own GC a
 
 Handle these manually per situation instead of expanding the tool's deletion surface:
 
-- `REVIEW` worktrees (unmerged commits, detached heads, missing upstreams) and open PRs;
+- `REVIEW` worktrees (unmerged commits, unique detached heads, missing upstreams) and open PRs;
 - stale directories that are not registered Git worktrees;
 - `REVIEW` output bases and failed GC quarantines;
 - nondefault output-base layouts and additional output-user-roots; and

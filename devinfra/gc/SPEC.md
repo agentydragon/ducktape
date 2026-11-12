@@ -36,16 +36,14 @@ repository may contain user data that checking worktrees alone cannot establish 
 
 ## Worktree data safety
 
-A worktree is not eligible for removal if it has tracked or untracked changes or a detached
-HEAD. Ignored files and directories do not prevent removal and are deleted by Git, including
-local data such as ignored secrets. Every detached HEAD is REVIEW because matching tree content
-or patch IDs does not prove that the exact commit is reachable from a surviving ref.
+A worktree is not eligible for removal if it has tracked or non-ignored untracked changes.
+Ignored files and directories do not prevent removal and are deleted by Git. A clean detached
+HEAD is eligible when its content or patches have landed on the default branch. Before removal,
+its captured commit is retained under `refs/workspace-gc-preserved/<commit>`.
 
-Before removal, re-listing worktrees and reclassification must confirm that the checked-out
-branch still matches the scanned branch. The removal entry point independently checks current
-HEAD so direct callers cannot bypass that protection. Inspection errors fail closed. A worktree
-whose directory is already missing is skipped by removal; inspect `git worktree prune --dry-run
---verbose` and remove stale Git metadata only after confirming each record.
+Re-listing worktrees and reclassification confirm that the checked-out branch and detached HEAD
+still match the scan. Inspection errors fail closed. A missing worktree directory is skipped;
+inspect `git worktree prune --dry-run --verbose` and prune only confirmed stale records.
 
 These checks are not atomic with `git worktree remove`. A concurrent detached commit created
 after the final check can still be lost; a concurrent branch change after the branch comparison
