@@ -10,6 +10,7 @@ from pathlib import Path
 from python.runfiles import Runfiles
 
 from agentplane.env.config import (
+    Codex,
     Configuration,
     ContainerExecutor,
     DebugCheckpoint,
@@ -143,7 +144,7 @@ def runner_command(
         claude=Harness(binary=str(claude.binary), base_url=claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN")
         if claude
         else None,
-        codex=Harness(binary=str(codex_binary or codex.binary), base_url=codex.base_url, token_env="OPENAI_API_KEY")
+        codex=Codex(binary=str(codex_binary or codex.binary), base_url=codex.base_url, token_env="OPENAI_API_KEY")
         if codex
         else None,
         debug_checkpoint=DebugCheckpoint(name=test_debug_checkpoint[0], command_id=test_debug_checkpoint[1])
@@ -184,7 +185,7 @@ def command(
         )
         if config.claude
         else None,
-        codex=Harness(binary=str(config.codex.binary), base_url=config.codex.base_url, token_env="OPENAI_API_KEY")
+        codex=Codex(binary=str(config.codex.binary), base_url=config.codex.base_url, token_env="OPENAI_API_KEY")
         if config.codex
         else None,
         environment=PodEnvironment(

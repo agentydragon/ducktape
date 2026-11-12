@@ -65,6 +65,7 @@ type Resolved struct {
 	Supervision                      string
 	CodexExecServer                  *codexexecserver.Config
 	CodexAppServerReadiness          codexappserver.Readiness
+	CodexTurnDiffNotifications       bool
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *session.DebugCheckpointConfig
 }

@@ -72,20 +72,21 @@ func resolveDuration(name string, value *time.Duration, defaultValue time.Durati
 }
 
 type Dependencies struct {
-	Context            context.Context
-	State              state.State
-	Workers            *sync.WaitGroup
-	Processes          *supervision.Host
-	Supervisor         *supervision.Supervisor
-	HarnessEnvironment map[string]string
-	StateDir           string
-	RequestAdmission   RequestAdmission
-	Admission          lifecycle.EnvironmentAdmissionGuard
-	ExecServerURL      string
-	ExecutionReady     func(context.Context) (bool, error)
-	Readiness          Readiness
-	OnError            func(error)
-	OnChange           func()
+	Context               context.Context
+	State                 state.State
+	Workers               *sync.WaitGroup
+	Processes             *supervision.Host
+	Supervisor            *supervision.Supervisor
+	HarnessEnvironment    map[string]string
+	StateDir              string
+	RequestAdmission      RequestAdmission
+	Admission             lifecycle.EnvironmentAdmissionGuard
+	ExecServerURL         string
+	ExecutionReady        func(context.Context) (bool, error)
+	Readiness             Readiness
+	TurnDiffNotifications bool
+	OnError               func(error)
+	OnChange              func()
 }
 
 // Host owns the one shared Codex process and its protocol readers.
@@ -337,7 +338,7 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 	if c.deps.ExecServerURL != "" {
 		env["CODEX_EXEC_SERVER_URL"] = c.deps.ExecServerURL
 	}
-	initialize, initialized, err := codex.InitializeFrames()
+	initialize, initialized, err := codex.InitializeFrames(c.deps.TurnDiffNotifications)
 	if err != nil {
 		return err
 	}

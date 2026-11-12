@@ -37,7 +37,7 @@ type Configuration struct {
 	EnvironmentRuntimeEnvironment EnvironmentVariables                   `json:"environment_runtime_environment"`
 	HarnessEnvironment            *EnvironmentVariables                  `json:"harness_environment"`
 	Claude                        *HarnessConfiguration                  `json:"claude"`
-	Codex                         *HarnessConfiguration                  `json:"codex"`
+	Codex                         *CodexConfiguration                    `json:"codex"`
 	Environment                   json.RawMessage                        `json:"environment"`
 	CodexReadiness                *CodexReadinessConfiguration           `json:"codex_readiness"`
 	DebugCheckpoint               *DebugCheckpointConfiguration          `json:"debug_checkpoint"`
@@ -141,6 +141,11 @@ func validateEnvironmentName(name string) error {
 		return errors.New("environment names must be nonempty and contain neither '=' nor NUL")
 	}
 	return nil
+}
+
+type CodexConfiguration struct {
+	HarnessConfiguration
+	TurnDiffNotifications bool `json:"turn_diff_notifications"`
 }
 
 type HarnessConfiguration struct {
@@ -398,9 +403,14 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if err != nil {
 		return Resolved{}, nil, err
 	}
-	codex, err := f.Codex.resolve(environ)
-	if err != nil {
-		return Resolved{}, nil, err
+	var codex *harness.LaunchConfig
+	var turnDiffNotifications bool
+	if f.Codex != nil {
+		codex, err = f.Codex.HarnessConfiguration.resolve(environ)
+		if err != nil {
+			return Resolved{}, nil, err
+		}
+		turnDiffNotifications = f.Codex.TurnDiffNotifications
 	}
 	launcher, executor, _, podPID1, supervisionMode, err := f.resolveEnvironment()
 	if err != nil {
@@ -435,6 +445,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		ModelConfigTarget:           f.ModelConfigTarget,
 		Claude:                      claude,
 		Codex:                       codex,
+		CodexTurnDiffNotifications:  turnDiffNotifications,
 		VMProcessLauncher:           launcher,
 		PodPID1:                     podPID1,
 		Supervision:                 supervisionMode,

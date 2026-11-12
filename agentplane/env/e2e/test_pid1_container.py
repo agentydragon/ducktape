@@ -17,7 +17,7 @@ from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core import testcontainers_config
 
-from agentplane.env.config import Configuration, Endpoint, EnvironmentVariables, Harness, PodEnvironment
+from agentplane.env.config import Codex, Configuration, Endpoint, EnvironmentVariables, PodEnvironment
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
@@ -239,7 +239,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         harness_environment=EnvironmentVariables(
             values={"PATH": "/bin:/usr/bin", "HOME": "/proof/state", "OPENAI_API_KEY": "test-key"}
         ),
-        codex=Harness(binary="/bin/false", base_url="http://127.0.0.1:8082/v1", token_env="OPENAI_API_KEY"),
+        codex=Codex(binary="/bin/false", base_url="http://127.0.0.1:8082/v1", token_env="OPENAI_API_KEY"),
         environment=PodEnvironment(supervision="pid1"),
     )
     (tmp_path / "environment-runtime.json").write_text(config.model_dump_json(exclude_none=True))

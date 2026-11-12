@@ -59,6 +59,13 @@ Environment Runtime environment changes or state ownership begins.
 | `codex_readiness`                 | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                                         |
 | `debug_checkpoint`                | Optional test-only object containing nonempty `name` and `command_id`.                                                                         |
 
+`codex.turn_diff_notifications` is an optional boolean, disabled when omitted or `false`.
+Set it to `true` to receive and retain Codex's aggregate `turn/diff/updated` notifications
+for debugging. The setting applies to the shared app-server connection and every Codex
+Session hosted by this Environment Runtime. It takes effect at app-server initialization;
+restart Environment Runtime after changing it. When disabled, initialization opts out of
+that notification at Codex, before any frame reaches the Session journal or History.
+
 `codex_readiness` accepts these optional positive `int64` millisecond values. Omitted fields keep
 the listed defaults; each window is configured independently.
 
