@@ -34,7 +34,7 @@ Consumes: `loom/gym/task.py` (Task schema), `loom/gym/model_cutoffs.py`
   `createdTime`).
 
 **Full-site dump** (the big prize): `https://docs.manifold.markets/data` links
-three Firebase zips, HEAD-verified live today —
+three Firebase zips, HEAD-verified during the June 2026 survey —
 `manifold-{dump-bets-04072024,contracts-20240706,comments-20240706}.json.zip`
 (1014MB / 91MB / 133MB). License: **personal/academic/non-commercial only**
 (commercial + AI-training-for-commercial requires a license from
@@ -376,14 +376,19 @@ helper reconstructs historical prices. Implement price-as-of from dated bets in
 this harvest, with the strict `< as_of` dossier cutoff above; keep the raw
 history so the harvest can be built and rechecked later.
 
-### Modules (`loom/harvest/`, new package; gym stays network-free)
+### Harvest responsibilities
+
+Keep the gym network-free. Reuse `finance/scraper/market_mirror.py` for its existing
+per-market snapshots and Manifold bet/comment mirroring, and `finance/evidence/` for the
+existing loaders. Add only the missing discovery, historical-data and task-building paths;
+the names below are possible modules, not a requirement to duplicate those clients.
 
 | module             | responsibility                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | `manifold_dump.py` | fetch/verify the three dump zips, stream-parse, emit normalized records                                          |
-| `manifold_api.py`  | post-2024-07 sweep (`search-markets` paging) + per-market `bets`/`comments` backfill for survivors               |
-| `polymarket.py`    | gamma keyset sweep (markets + events), CLOB `prices-history` per `clobTokenId`, comments per event               |
-| `kalshi.py`        | historical + live settled sweeps (cursor, client-side close windows), candlesticks, `event→series` category join |
+| `manifold_api.py`  | post-2024-07 discovery sweep; reuse the shared mirror for survivor `bets`/`comments` where its contract fits          |
+| `polymarket.py`    | missing gamma discovery, CLOB `prices-history` and event comments; reuse existing per-market snapshots             |
+| `kalshi.py`        | missing historical/live discovery, candlesticks and `event→series` join; reuse existing per-market snapshots       |
 | `record.py`        | normalized Pydantic records: `MarketRecord`, `PricePoint`, `CommentRecord` (platform-tagged)                     |
 | `quality.py`       | mechanical + self-resolving + clarity filters; emits (record, verdict, reason)                                   |
 | `dedup.py`         | embedding clustering → `cluster_id`                                                                              |
