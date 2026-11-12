@@ -483,6 +483,7 @@ py_library(
         ":tls",
         "//agentplane/egress:egress_admin_pb2",
         "//agentplane/egress:egress_admin_pb2_grpc",
+        "//agentplane/egress:egress_rules_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/proto:identity_pb2",
         "@pypi//grpcio",

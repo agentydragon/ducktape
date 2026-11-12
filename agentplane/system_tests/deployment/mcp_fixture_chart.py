@@ -114,7 +114,7 @@ def objects(
     )
     PolicyBinding(
         fixture.chart,
-        "mcp-edge-test-caller-session-delegation",
+        "mcp-edge-test-caller-session-delegation-binding",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
         subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER),
         policy_sets=[_MCP_EDGE_TEST_POLICY],

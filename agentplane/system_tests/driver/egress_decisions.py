@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
+from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc, egress_rules_pb2
 from agentplane.grpc.calls import dial
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
@@ -46,7 +46,9 @@ async def snapshot(
 
 
 async def snapshot_identity(stub: rpc.EgressAdminAsyncStub, caller: Caller, identity_name: str) -> list[pb.Decision]:
-    return await _snapshot(stub, caller, pb.DecisionFilter(identity=pb.IdentitySubject(name=identity_name)))
+    return await _snapshot(
+        stub, caller, pb.DecisionFilter(identity=egress_rules_pb2.IdentitySubject(name=identity_name))
+    )
 
 
 async def _snapshot(
