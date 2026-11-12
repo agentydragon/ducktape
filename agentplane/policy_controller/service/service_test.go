@@ -740,6 +740,34 @@ func TestDeleteIdentityRefusesWhileAWorkloadCredentialActsAsIt(t *testing.T) {
 	}
 }
 
+func TestDeleteIdentityRefusesNameOnlyCredentialUntilRemoved(t *testing.T) {
+	identity := testIdentity("credentialed-identity", nil)
+	credential := identityCredential("fake-workloads", "standing-agent", identity)
+	credential.Spec.Subject.Identity.UID = ""
+	api, kube, _ := fixture(t, identity, credential)
+	request := &policypb.DeleteIdentityRequest{Namespace: identity.Namespace, Name: identity.Name, Uid: string(identity.UID)}
+	_, err := api.DeleteIdentity(tokenContext(t, "app"), request)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("delete with name-only credential: %v, want FailedPrecondition", err)
+	}
+	if got, want := refusalViolations(err), []string{"WorkloadCredential/fake-workloads/standing-agent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("refusal names %v, want %v", got, want)
+	}
+	var kept policyapi.Identity
+	if err := kube.Get(t.Context(), client.ObjectKeyFromObject(identity), &kept); err != nil || kept.UID != identity.UID {
+		t.Fatalf("refused deletion changed Identity: %+v, %v", kept, err)
+	}
+	if err := kube.Delete(t.Context(), credential); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.DeleteIdentity(tokenContext(t, "app"), request); err != nil {
+		t.Fatalf("delete after credential removal: %v", err)
+	}
+	if err := kube.Get(t.Context(), client.ObjectKeyFromObject(identity), &policyapi.Identity{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("deleted Identity remains: %v", err)
+	}
+}
+
 func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	referenced := testIdentity("referenced-identity", nil)
 	// A binding owned by another incarnation of the same name is not this identity's own.

@@ -3155,8 +3155,6 @@ flowchart LR
     ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
-    IDENTITY_DELETE_CREDENTIAL_GUARD[Follow-up: include name-only credential references]
-    STANDING_WORKLOAD_IDENTITY -. #15450 permits UID-optional records .-> IDENTITY_DELETE_CREDENTIAL_GUARD
     SANDBOX_IDENTITY_SPEC[Live accepted; verifier configuration cleanup pending]
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
@@ -3443,8 +3441,9 @@ field names a ServiceAccount, and the services' tests pass without one.
 
 **Decision; independent of the other app slices.** #15444's Sandbox-delete dialog scans the live
 Sandbox inventory, PolicyBindings and retained Sessions before it calls `DeleteIdentity`. The
-Policy Controller separately checks unowned PolicyBindings and UID-matching WorkloadCredentials;
-neither scan is atomic with creating a reference. A Sandbox or Session can begin naming the Identity
+Policy Controller separately checks unowned PolicyBindings and WorkloadCredentials whose Identity
+subject has the same name and either no UID or the current UID. Neither scan is atomic with creating
+a reference. A Sandbox or Session can begin naming the Identity
 after the browser scan. The [operator UI plan](identity_and_kubernetes_accounts.md#operator-ui)
 currently accepts an advisory check, with a concurrent launch failing closed if the Identity is
 gone. Decide whether that failure and the recovery of a stranded reference are acceptable, or
@@ -3453,20 +3452,8 @@ accepted advisory contract until reviewed; a UID/resourceVersion precondition on
 does not serialize references in Kubernetes and Dispatcher.
 
 Cover already referenced, concurrently created, removed and same-name replacement cases, as well
-as failures and recovery. `IDENTITY_DELETE_CREDENTIAL_GUARD` separately handles existing name-only
-credential references if UID-optional records land. **Exit:** a reviewed reference contract and
+as failures and recovery. **Exit:** a reviewed reference contract and
 independently actionable follow-ups, without changing the existing rule by implication.
-
-### `IDENTITY_DELETE_CREDENTIAL_GUARD` — include name-only credentials in Identity deletion checks
-
-**Follow-up to merged [#15450](https://github.com/agentydragon/ducktape/pull/15450); independent
-of the reference-race decision.** The merged change allows WorkloadCredentials without an Identity
-UID that resolve to the live Identity by name. `DeleteIdentity` currently counts a credential only when its
-subject name **and UID** match, so an existing name-only credential is missed even though it
-can act as that Identity. Include it in the refusal now, retaining
-the distinction from a UID-pinned credential for a different incarnation. Test name-only,
-matching-UID and mismatched-UID records and their removal; this point-in-time check does not resolve
-the concurrent-creation race in `IDENTITY_CLEANUP_REFERENCE_DECISION`.
 
 ### `APP_IDENTITIES_UI` — identities in the app
 

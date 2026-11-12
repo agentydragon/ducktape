@@ -499,7 +499,7 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		referencing = append(referencing, binding.Name)
 	}
 	slices.Sort(referencing)
-	// A credential acting as this incarnation; its subject's UID fences it from any other.
+	// Match the resolver: name-only subjects follow the live Identity.
 	var credentials []string
 	for _, namespace := range s.workloadNamespaces {
 		var list workloadapi.WorkloadCredentialList
@@ -508,7 +508,8 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 			return nil, status.Error(codes.Unavailable, "WorkloadCredential inventory is unavailable")
 		}
 		for _, credential := range list.Items {
-			if subject := credential.Spec.Subject.Identity; subject != nil && subject.Name == identity.Name && subject.UID == identity.UID {
+			if subject := credential.Spec.Subject.Identity; subject != nil && subject.Name == identity.Name &&
+				(subject.UID == "" || subject.UID == identity.UID) {
 				credentials = append(credentials, credential.Namespace+"/"+credential.Name)
 			}
 		}

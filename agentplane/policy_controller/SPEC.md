@@ -82,8 +82,9 @@ Identity owns. It refuses an Identity carrying Flux's `kustomize.toolkit.fluxcd.
 which Flux would recreate, and an Identity named by a PolicyBinding with no owner reference to that
 Identity's UID: such a binding names a subject by name only, so it would grant a later Identity of
 the same name. It also refuses while a `WorkloadCredential` in a namespace the workload-identity
-issuer serves has an Identity subject naming this Identity's name and UID, since that workload acts
-as it. That refusal is `FAILED_PRECONDITION` with a `PreconditionFailure` violation per binding
+issuer serves has an Identity subject with the same name and either no UID or the current UID,
+since that workload acts as it. A credential pinned to a different UID does not block deletion.
+That refusal is `FAILED_PRECONDITION` with a `PreconditionFailure` violation per binding
 (type `PolicyBinding`, subject its name) and per credential (type `WorkloadCredential`, subject
 `namespace/name`). The check is advisory; a reference created between the read and the delete is
 not fenced.
