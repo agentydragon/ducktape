@@ -31,10 +31,8 @@ from agentplane.system_tests.driver.operator_login import OperatorCredentials
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, suspend_and_delete, wait_until_running
 
-_REQUIRED_TOOLS = {
-    "environments__list",
-    "environments__get",
-    "sessions__create",
+_REQUIRED_TOOLS = {"environments__list", "environments__get", "sessions__create"}
+_UNGRANTED_TOOLS = {
     "sessions__submit_input",
     "sessions__observe_input",
     "sessions__get",
@@ -157,7 +155,9 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
             await cluster.kubectl("scale", "deployment/app", "--replicas=0")
             await _wait_app(cluster, replicas=0)
             catalog = await session.list_tools()
-            assert {tool.name for tool in catalog.tools} >= _REQUIRED_TOOLS
+            tools = {tool.name for tool in catalog.tools}
+            assert tools >= _REQUIRED_TOOLS
+            assert tools.isdisjoint(_UNGRANTED_TOOLS)
 
             page = await _tool(session, "environments__list", {"limit": 10})
             environments = page.get("items")
