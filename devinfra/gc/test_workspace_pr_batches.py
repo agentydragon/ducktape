@@ -9,7 +9,6 @@ import pytest_bazel
 
 from devinfra.gc import branch_gc, output_base_gc, workspace_run, workspace_scan, worktree_gc
 from devinfra.gc.conftest import GitRepo, make_base
-from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrLookup, PrState
 
 PrSource = Callable[[pathlib.Path, set[str]], Awaitable[PrLookup]]
@@ -128,19 +127,6 @@ async def test_inspected_worktree_requests_its_current_branch_pr(
     item = next(item for item in report.scan.worktrees if item.worktree.path == worktree.path)
     assert isinstance(item, worktree_gc.RetainedWorktree)
     assert item.reason is worktree_gc.RetainedWorktreeReason.OPEN_PR
-
-
-@pytest.mark.parametrize("state", [PrState.OPEN, PrState.MERGED, PrState.CLOSED])
-def test_resolved_pr_never_overrides_ignored_worktree_safety(state: PrState) -> None:
-    worktree = Worktree(pathlib.Path("/worktree"), "topic")
-    item = worktree_gc.RetainedWorktree(worktree, worktree_gc.RetainedWorktreeReason.IGNORED_FILES, None)
-    pr = PrInfo(42, state)
-
-    resolved = worktree_gc.resolve_worktree_pr(item, PrLookup({"topic": pr}))
-
-    assert isinstance(resolved, worktree_gc.RetainedWorktree)
-    assert resolved.reason is worktree_gc.RetainedWorktreeReason.IGNORED_FILES
-    assert resolved.pr == pr
 
 
 async def test_one_pr_batch_resolves_while_another_is_blocked(repo: GitRepo) -> None:

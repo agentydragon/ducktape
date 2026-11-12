@@ -36,25 +36,21 @@ repository may contain user data that checking worktrees alone cannot establish 
 
 ## Worktree data safety
 
-A worktree is not eligible for removal if it has tracked or untracked changes, ignored
-untracked paths, or a detached HEAD. Ignored paths are inventoried with
-`git ls-files --others --ignored --exclude-standard --directory -z`, so fully ignored output
-directories are represented by one path rather than traversed file by file. Ignored data is a
-KEEP verdict even if the branch's PR is merged or closed; the PR annotation does not replace
-that safety verdict. Every detached HEAD is REVIEW because matching tree content or patch IDs
-does not prove that the exact commit is reachable from a surviving ref.
+A worktree is not eligible for removal if it has tracked or untracked changes or a detached
+HEAD. Ignored files and directories do not prevent removal and are deleted by Git, including
+local data such as ignored secrets. Every detached HEAD is REVIEW because matching tree content
+or patch IDs does not prove that the exact commit is reachable from a surviving ref.
 
 Before removal, re-listing worktrees and reclassification must confirm that the checked-out
-branch still matches the scanned branch. The removal entry point independently checks the
-ignored-path inventory and current HEAD so direct callers cannot bypass those protections.
-Inspection errors fail closed. A worktree whose directory is already missing is skipped by
-removal; inspect `git worktree prune --dry-run --verbose` and remove stale Git metadata only
-after confirming each record.
+branch still matches the scanned branch. The removal entry point independently checks current
+HEAD so direct callers cannot bypass that protection. Inspection errors fail closed. A worktree
+whose directory is already missing is skipped by removal; inspect `git worktree prune --dry-run
+--verbose` and remove stale Git metadata only after confirming each record.
 
-These checks are not atomic with `git worktree remove`. A concurrent ignored file or detached
-commit created after the final check can still be lost; a concurrent branch change after the
-branch comparison can also invalidate the PR snapshot. Git's normal refusal to remove tracked
-or untracked changes remains the final guard for those two classes of files.
+These checks are not atomic with `git worktree remove`. A concurrent detached commit created
+after the final check can still be lost; a concurrent branch change after the branch comparison
+can also invalidate the PR snapshot. Git's normal refusal to remove tracked or untracked changes
+remains the final guard for those classes of files.
 
 ## Interruption
 

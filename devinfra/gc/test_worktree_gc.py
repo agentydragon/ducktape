@@ -187,9 +187,7 @@ async def test_existing_worktree_with_broken_gitdir_is_review(repo: GitRepo, pro
     assert wt.path.is_dir()
 
 
-@pytest.mark.parametrize(
-    "stage", ["_status", "_ignored_paths", "_last_activity", "content_in_main", "patches_landed_in_main"]
-)
+@pytest.mark.parametrize("stage", ["_status", "_last_activity", "content_in_main", "patches_landed_in_main"])
 @pytest.mark.parametrize("error_type", [KeyError, ValueError, PermissionError])
 async def test_worktree_inspection_failure_is_review(
     repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch, stage: str, error_type: type[Exception]
@@ -251,33 +249,20 @@ async def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) ->
     assert result.reason is wg.ReviewWorktreeReason.DETACHED_HEAD
 
 
-async def test_ignored_file_is_retained_even_for_a_closed_pr(repo: GitRepo, proc: Path) -> None:
+async def test_ignored_data_does_not_prevent_pruning(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, ".env")
-    (wt.path / ".env").write_text("local secret\n")
+    _ignore_in_repo(repo, ".env", "generated/")
+    (wt.path / ".env").write_text("local data\n")
+    (wt.path / "generated").mkdir()
+    (wt.path / "generated" / "output").write_text("generated\n")
     closed_pr = PrInfo(11, PrState.CLOSED)
 
     result = await _classify(repo, wt.path, proc, pr_states={"feature": closed_pr})
 
-    assert isinstance(result, wg.RetainedWorktree)
-    assert (result.reason, result.pr) == (wg.RetainedWorktreeReason.IGNORED_FILES, closed_pr)
-    assert "ignored" in wg.describe_reason(result)
-    assert "11" in wg.describe_reason(result)
-
-
-async def test_ignored_directory_is_retained_with_git_directory_collapse(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, "generated/")
-    nested = wt.path / "generated" / "nested"
-    nested.mkdir(parents=True)
-    for index in range(10):
-        (nested / f"output-{index}").write_text("generated\n")
-
-    result = await _classify(repo, wt.path, proc)
-
-    assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason is wg.RetainedWorktreeReason.IGNORED_FILES
-    assert await wg._ignored_paths(wt.path) == ["generated/"]
+    assert isinstance(result, wg.PrunableWorktree)
+    assert (result.reason, result.pr) == (wg.PrunableWorktreeReason.PR_LANDED, closed_pr)
+    assert await wg.remove_worktree(repo.path, wt.path) == Removed(wt.path)
+    assert not wt.path.exists()
 
 
 @pytest.mark.parametrize(
@@ -354,35 +339,6 @@ async def test_remove_worktree_skips_missing_directory_for_git_worktree_prune(re
     assert any(item.path == wt.path for item in await git_repo.list_worktrees(repo.path))
 
 
-async def test_remove_worktree_skips_ignored_file_for_direct_call(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    _ignore_in_repo(repo, ".env")
-    local_env = wt.path / ".env"
-    local_env.write_text("local data\n")
-
-    result = await wg.remove_worktree(repo.path, wt.path)
-
-    assert isinstance(result, Skipped)
-    assert local_env.read_text() == "local data\n"
-    assert wt.path.exists()
-
-
-async def test_remove_worktree_fails_closed_if_ignored_inventory_fails(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    wt = repo.worktree("wt", "feature")
-
-    async def fail(*args: object, **kwargs: object) -> None:
-        raise PermissionError("cannot read ignore state")
-
-    monkeypatch.setattr(wg, "_ignored_paths", fail)
-    result = await wg.remove_worktree(repo.path, wt.path)
-
-    assert isinstance(result, Failed)
-    assert "cannot inspect worktree safety" in result.error
-    assert wt.path.exists()
-
-
 async def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> RemovalResult[Path]:
     return await wg.remove_if_still_prunable(
         repo.path,
@@ -444,9 +400,7 @@ async def test_remove_if_still_prunable_skips_a_worktree_that_detached_after_the
     assert wt.rev("HEAD") == detached_head
 
 
-async def test_remove_if_still_prunable_skips_a_worktree_with_ignored_file_added_after_scan(
-    repo: GitRepo, proc: Path
-) -> None:
+async def test_remove_if_still_prunable_removes_ignored_file_added_after_scan(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     _ignore_in_repo(repo, ".env")
     assert isinstance(await _classify(repo, wt.path, proc), wg.PrunableWorktree)
@@ -455,9 +409,8 @@ async def test_remove_if_still_prunable_skips_a_worktree_with_ignored_file_added
 
     result = await _remove_if_still_prunable(repo, wt, live_pids=[])
 
-    assert isinstance(result, Skipped)
-    assert local_env.read_text() == "new after scan\n"
-    assert wt.path.exists()
+    assert result == Removed(wt.path)
+    assert not wt.path.exists()
 
 
 async def test_remove_if_still_prunable_skips_when_branch_changes_during_revalidation(

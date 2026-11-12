@@ -238,7 +238,6 @@ py_test(
     deps = [
         ":branch_gc",
         ":conftest",
-        ":git_repo",
         ":output_base_gc",
         ":pull_request",
         ":workspace_run",

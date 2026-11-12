@@ -9,7 +9,7 @@ dependencies permit. The subcommands scope which domains are shown and removed:
 
   * `all`          — the default; `--prune` removes eligible worktrees, branches, bases, and
                      repo-cache entries as their dependencies permit.
-  * `worktrees`    — the worktree slice; `--prune` removes clean, attached worktrees without ignored files.
+  * `worktrees`    — the worktree slice; `--prune` removes eligible worktrees.
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
   * `repo-cache`   — the repo-contents-cache slice; `--delete` removes unreferenced entries.
 
@@ -23,9 +23,8 @@ beforehand: a worktree is re-classified, and a base or repo-cache entry is reche
 Bazel lock. Branch deletion checks worktree holders and uses Git's compare-and-delete operation
 to avoid deleting a branch whose tip changed; Git does not make those checks atomic with a
 concurrent checkout. Skipped items are reported but exit 0; failed removals exit 1.
-Gitignored files do not count as uncommitted work, so worktrees with detected ignored paths
-are kept; removal checks again immediately before `git worktree remove`. A concurrent ignored
-file or detached commit created after the final check can still be lost because Git does not
+Gitignored files do not count as uncommitted work and are deleted with the worktree.
+A detached commit created after the final check can still be lost because Git does not
 make inspection and removal atomic. `github_prs` owns GitHub access (PR state); the scan itself
 is network-free.
 """
@@ -285,8 +284,7 @@ class _Command:
 
 
 _WORKTREES_COMMAND = _Command(
-    frozenset({workspace_run.Domain.WORKTREES}),
-    "Dry run only; pass --prune to remove clean, attached worktrees without ignored files.",
+    frozenset({workspace_run.Domain.WORKTREES}), "Dry run only; pass --prune to remove eligible worktrees."
 )
 _BASES_COMMAND = _Command(
     frozenset({workspace_run.Domain.BASES}), "Dry run only; pass --delete to remove the prunable bases."
@@ -524,9 +522,7 @@ def _worktrees_command(
     no_prs: _NoPrsOption = False,
     verbose: _VerboseOption = False,
     workers: _WorkersOption = DEFAULT_WORKERS,
-    prune: Annotated[
-        bool, typer.Option("--prune", help="remove clean, attached worktrees without ignored files (revalidated first)")
-    ] = False,
+    prune: Annotated[bool, typer.Option("--prune", help="remove eligible worktrees (revalidated first)")] = False,
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)

@@ -27,12 +27,8 @@ With a deletion flag, removals start while other items are being scanned; comple
 unlock further work. Findings describe each item as observed, not a single snapshot. The live
 display shows ready, running, dependency-waiting, and finished counts; each bar covers only work
 discovered so far, so it can move backward as new work is added.
-Gitignored files are not uncommitted changes, so removing a worktree deletes them (a
-gitignored `.env` or local data could be lost). The scan inventories ignored paths with
-`git ls-files --others --ignored --exclude-standard --directory`, which reports fully ignored
-directories as one entry. It keeps those worktrees and rechecks the inventory at the removal
-entry point. The inventory and deletion are separate operations, so a concurrent file created
-after the final check can still be deleted. Foreign clones are only reported and remain in place.
+Gitignored files are not uncommitted changes, so removing a worktree deletes them, including
+local data such as a gitignored `.env`. Foreign clones are only reported and remain in place.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
@@ -95,18 +91,17 @@ default is the only root.
 
 `workspace-gc worktrees` classifies each worktree; interpret it literally:
 
-- `PRUNE`: clean (including no ignored paths), idle (not main/active, no process cwd'd inside),
+- `PRUNE`: clean (no tracked or untracked changes), idle (not main/active, no process cwd'd inside),
   attached to a branch, and its work is already in the main branch — an ancestor, a
   squash/rebase-merge (merging into main is a no-op), an empty branch, or a **merged GitHub PR**
   for its branch. Remove with
   `workspace-gc worktrees --prune`: it re-classifies each worktree right before removing it, runs `git worktree remove` **without
-  `--force`** (so a tree that turned tracked/untracked dirty is skipped), checks ignored paths
-  and the current HEAD again at the removal entry point, and **never deletes branches** — the
+  `--force`** (so a tree that turned tracked/untracked dirty is skipped), checks the current HEAD again at the removal entry point, and **never deletes branches** — the
   work stays reachable through its attached branch. A branch change during revalidation is
   skipped. If the worktree directory is already missing, removal is skipped; review stale
   entries with `git worktree prune --dry-run --verbose` and prune only confirmed records.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
-  changes, ignored files or directories, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
+  changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
   (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the
   dirt is real work.
 - `REVIEW`: clean but has commits not in main and no merged PR, any detached HEAD, or an
