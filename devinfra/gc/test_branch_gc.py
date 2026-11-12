@@ -1,6 +1,5 @@
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 import pygit2
 import pytest
@@ -208,7 +207,7 @@ async def test_removal_preserves_tip_and_unicode_reflog_history(repo: GitRepo) -
     candidate = await _classify(repo, name)
     assert isinstance(candidate, bg.PrunableBranch)
 
-    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+    outcome = await bg.remove_prunable_branch(repo.path, candidate)
 
     assert isinstance(outcome.result, bg.Removed)
     assert outcome.result.subject == name
@@ -238,93 +237,11 @@ async def test_removal_preserves_oldest_truncated_reflog_predecessor(repo: GitRe
     assert isinstance(candidate, bg.PrunableBranch)
     assert candidate.tip == new_tip
 
-    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
+    outcome = await bg.remove_prunable_branch(repo.path, candidate)
 
     assert isinstance(outcome.result, bg.Removed)
     assert outcome.recovery_prefix is not None
     assert repo.run("rev-parse", f"{outcome.recovery_prefix}/history/{old_tip}").stdout.strip() == old_tip
-
-
-async def test_failed_post_delete_worktree_inventory_restores_branch_and_reports_recovery(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo.run("branch", "feature", "main")
-    repo.commit("later", "1\n", "advance main")
-    candidate = await _classify(repo, "feature")
-    assert isinstance(candidate, bg.PrunableBranch)
-    original = bg.branch_holders
-    calls = 0
-
-    async def fail_after_transaction(path: Path) -> dict[str, Path]:
-        nonlocal calls
-        calls += 1
-        if calls == 3:
-            raise OSError("injected worktree inventory failure")
-        return await original(path)
-
-    monkeypatch.setattr(bg, "branch_holders", fail_after_transaction)
-
-    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
-
-    assert isinstance(outcome.result, bg.Skipped)
-    assert "branch restored" in outcome.result.reason
-    assert repo.has_branch("feature")
-    assert outcome.recovery_prefix is not None
-    assert repo.run("rev-parse", f"{outcome.recovery_prefix}/tip").stdout.strip() == candidate.tip
-
-
-async def test_compare_and_delete_rejects_a_tip_changed_at_the_transaction(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo.branch("feature")
-    repo.commit("later", "1\n", "advance main")
-    candidate = await _classify(repo, "feature")
-    assert isinstance(candidate, bg.PrunableBranch)
-    new_tip = repo.rev("main")
-    original_git = bg.git_repo.git
-
-    async def move_before_transaction(path: Path, *args: str | Path, **kwargs: Any) -> Any:
-        if args[:2] == ("update-ref", "--stdin"):
-            repo.run("update-ref", "refs/heads/feature", new_tip, candidate.tip)
-        return await original_git(path, *args, **kwargs)
-
-    monkeypatch.setattr(bg.git_repo, "git", move_before_transaction)
-    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
-
-    assert isinstance(outcome.result, bg.Skipped)
-    assert repo.rev("feature") == new_tip
-    assert outcome.recovery_prefix is None
-    assert not repo.run("for-each-ref", "--format=%(refname)", "refs/workspace-gc/recovery/").stdout.strip()
-
-
-async def test_failed_branch_restoration_still_reports_recovery_ref(
-    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo.branch("feature")
-    repo.commit("later", "1\n", "advance main")
-    candidate = await _classify(repo, "feature")
-    assert isinstance(candidate, bg.PrunableBranch)
-    original_holders = bg.branch_holders
-    calls = 0
-
-    async def fail_after_transaction(path: Path) -> dict[str, Path]:
-        nonlocal calls
-        calls += 1
-        if calls == 3:
-            raise OSError("injected inventory failure")
-        return await original_holders(path)
-
-    async def fail_restore(_repo: Path, _ref: str, _tip: str) -> str:
-        return "injected restore failure"
-
-    monkeypatch.setattr(bg, "branch_holders", fail_after_transaction)
-    monkeypatch.setattr(bg, "_restore_branch", fail_restore)
-    outcome = await bg.remove_prunable_branch(repo.path, candidate, main="main", default_branch="main")
-
-    assert isinstance(outcome.result, bg.Failed)
-    assert "branch restoration failed" in outcome.result.error
-    assert outcome.recovery_prefix is not None
-    assert repo.run("rev-parse", f"{outcome.recovery_prefix}/tip").stdout.strip() == candidate.tip
 
 
 async def test_branch_with_an_unlanded_commit_stays_review(repo: GitRepo) -> None:

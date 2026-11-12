@@ -2,10 +2,8 @@
 
 A PRUNE classification means the branch is a historical content candidate, not that its
 commits are disposable. Removal anchors the captured branch tip and available reflog commits
-under `refs/workspace-gc/recovery/` in the same compare-and-delete transaction. Tip changes
-are guarded atomically. Worktree checkouts cannot be included in that ref transaction, so
-holder checks before and after deletion reduce but do not eliminate a checkout race; the
-post-delete check restores the branch when a holder appears or cannot be inventoried.
+under `refs/workspace-gc/recovery/` in the same transaction as deletion. Classification and
+removal assume branches and worktree checkouts do not change during the run.
 """
 
 from __future__ import annotations
@@ -281,51 +279,28 @@ async def _reflog_oids(repo: Path, ref: str, tip: str) -> list[str] | None:
     return candidates
 
 
-async def _restore_branch(repo: Path, ref: str, tip: str) -> str | None:
-    zeros = "0" * len(tip)
-    restored = await git_repo.git(repo, "update-ref", "--no-deref", ref, tip, zeros, check=False, interruptible=False)
-    return None if restored.returncode == 0 else restored.stderr.strip() or "compare-and-restore failed"
-
-
 async def _recovery_tip_exists(repo: Path, prefix: str) -> bool:
     result = await git_repo.git(repo, "show-ref", "--verify", "--hash", f"{prefix}/tip", check=False)
     return result.returncode == 0
 
 
-async def remove_prunable_branch(
-    repo: Path, candidate: PrunableBranch, *, main: str, default_branch: str
-) -> BranchRemoval:
-    """Remove a classified branch only after fresh proof and recoverable CAS deletion."""
+async def remove_prunable_branch(repo: Path, candidate: PrunableBranch) -> BranchRemoval:
+    """Remove a classified branch, preserving its tip and reflog in recovery refs."""
     name = candidate.branch
     ref = f"refs/heads/{name}"
     prefix: str | None = None
     transaction_committed = False
     transaction_started = False
     try:
-        holders = await branch_holders(repo)
-        if name in holders:
-            return BranchRemoval(Skipped(name, f"checked out in worktree {holders[name]}"))
-        pg = await run_blocking(git_repo.open_repo, repo)
-        current = await classify_branch(
-            name, pg=pg, main=main, default_branch=default_branch, pr=candidate.pr, holder=None
-        )
-        if not isinstance(current, PrunableBranch):
-            return BranchRemoval(Skipped(name, "branch no longer qualifies as a content candidate"))
-        if current.tip != candidate.tip:
-            return BranchRemoval(Skipped(name, "branch tip changed since classification"))
         history = await _reflog_oids(repo, ref, candidate.tip)
         if history is None:
             return BranchRemoval(Failed(name, "could not safely inventory branch reflog"))
-        # Inventory can take time; repeat the holder check immediately before ref mutation.
-        holders = await branch_holders(repo)
-        if name in holders:
-            return BranchRemoval(Skipped(name, f"checked out in worktree {holders[name]}"))
         # Keep the branch name in the ref so recovery remains discoverable even if the
         # process dies before it can print its report. The attempt ID prevents collisions.
         prefix = f"refs/workspace-gc/recovery/{uuid.uuid4().hex}/{name}"
         commands = ["start", f"create {prefix}/tip {candidate.tip}"]
         commands.extend(f"create {prefix}/history/{oid} {oid}" for oid in history if oid != candidate.tip)
-        commands.extend(["option no-deref", f"delete {ref} {candidate.tip}", "prepare", "commit", ""])
+        commands.extend(["option no-deref", f"delete {ref}", "prepare", "commit", ""])
         transaction_started = True
         transaction = await git_repo.git(
             repo, "update-ref", "--stdin", check=False, input_text="\n".join(commands), interruptible=False
@@ -340,8 +315,6 @@ async def remove_prunable_branch(
                 transaction_committed = True
             else:
                 prefix = prefix if recovery_exists else None
-                if actual.returncode == 0 and actual.stdout.strip() != candidate.tip:
-                    return BranchRemoval(Skipped(name, "branch tip changed before compare-and-delete"), prefix)
                 if actual.returncode != 0:
                     return BranchRemoval(Skipped(name, "branch no longer exists"), prefix)
                 return BranchRemoval(
@@ -349,35 +322,6 @@ async def remove_prunable_branch(
                 )
         transaction_committed = True
 
-        try:
-            holders = await branch_holders(repo)
-        except Exception as error:
-            try:
-                restore_error = await _restore_branch(repo, ref, candidate.tip)
-            except Exception as restore_exception:
-                return BranchRemoval(
-                    Failed(
-                        name,
-                        f"worktree inventory failed after deletion; branch restoration failed: {restore_exception}",
-                    ),
-                    prefix,
-                )
-            reason = f"worktree inventory failed after deletion: {type(error).__name__}: {error}"
-            if restore_error is not None:
-                return BranchRemoval(Failed(name, f"{reason}; branch restoration failed: {restore_error}"), prefix)
-            return BranchRemoval(Skipped(name, f"{reason}; branch restored"), prefix)
-        if name in holders:
-            try:
-                restore_error = await _restore_branch(repo, ref, candidate.tip)
-            except Exception as restore_exception:
-                return BranchRemoval(
-                    Failed(name, f"checkout appeared during deletion; branch restoration failed: {restore_exception}"),
-                    prefix,
-                )
-            reason = f"checkout appeared during deletion in worktree {holders[name]}"
-            if restore_error is not None:
-                return BranchRemoval(Failed(name, f"{reason}; branch restoration failed: {restore_error}"), prefix)
-            return BranchRemoval(Skipped(name, f"{reason}; branch restored"), prefix)
         return BranchRemoval(Removed(name), prefix)
     except (OSError, subprocess.SubprocessError, git_repo.GitError) as error:
         recovery_prefix: str | None = prefix if transaction_committed else None

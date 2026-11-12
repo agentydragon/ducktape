@@ -537,6 +537,33 @@ async def test_interrupt_drains_admitted_worktree_removal(
     assert not worktree.path.exists()
 
 
+async def test_branch_only_prune_keeps_branch_held_by_prunable_worktree(repo: GitRepo, tmp_path: pathlib.Path) -> None:
+    checkout = repo.clone("checkout")
+    worktree = checkout.worktree("held-worktree", "held")
+    checkout.branch("unheld")
+    root = tmp_path / "output"
+    root.mkdir()
+    options = workspace_run.Options(
+        domains=frozenset({workspace_run.Domain.BRANCHES}),
+        root=root,
+        session_bases=(),
+        workers=2,
+        apply=True,
+        sizes=False,
+        repo=checkout.path,
+        pr_source=workspace_gc._without_prs,
+    )
+
+    report = await workspace_run.Run(options).run()
+
+    assert worktree.path.is_dir()
+    assert checkout.has_branch("held")
+    assert not checkout.has_branch("unheld")
+    held = next(item for item in report.scan.branches if item.branch == "held")
+    assert isinstance(held, branch_gc.RetainedBranch)
+    assert held.reason is branch_gc.RetainedBranchReason.HELD_BY_WORKTREE
+
+
 async def test_interrupt_drains_admitted_branch_removal_with_recovery_prefix(
     repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -793,127 +820,6 @@ def test_joint_prune_removes_a_worktree_then_its_base_and_cache_entry(
     )
     recovery_ref = recovery_line.removeprefix("Recovery ref for branch landed: ")
     assert checkout.run("rev-parse", recovery_ref).stdout.strip() == repo.rev("main")
-
-
-def test_prune_skips_a_branch_that_moves_after_its_content_scan(
-    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    checkout = repo.clone("checkout")
-    checkout.branch("feature")
-    root = tmp_path / "output"
-    root.mkdir()
-    classify = branch_gc.classify_branch
-    run_git = git_repo.git
-    branch_transactions: list[tuple[str, ...]] = []
-
-    async def classify_then_advance(name: str, **kwargs: Any) -> branch_gc.BranchClassification:
-        item = await classify(name, **kwargs)
-        if name == "feature" and isinstance(item, branch_gc.PrunableBranch):
-            before = checkout.rev("feature")
-            checkout.commit("later", "new main commit\n", "advance main after the branch scan")
-            checkout.run("branch", "-f", "feature", "main")
-            assert checkout.rev("feature") != before
-
-        return item
-
-    async def record_branch_transaction(repo_path: pathlib.Path, *args: str, **kwargs: Any) -> Any:
-        if args[:2] == ("update-ref", "--stdin"):
-            branch_transactions.append(args)
-        return await run_git(repo_path, *args, **kwargs)
-
-    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
-    monkeypatch.setattr(branch_gc, "classify_branch", classify_then_advance)
-    monkeypatch.setattr(git_repo, "git", record_branch_transaction)
-    with pytest.raises(SystemExit) as exit_info:
-        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
-    assert exit_info.value.code == 0
-    captured = capsys.readouterr()
-    assert checkout.has_branch("feature")
-    assert checkout.rev("feature") == checkout.rev("main")
-    assert branch_transactions == []
-    assert "Branches: 0 deleted, 1 skipped, 0 failed" in captured.out
-
-
-def test_prune_skips_a_branch_checked_out_after_its_content_scan(
-    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    checkout = repo.clone("checkout")
-    checkout.branch("feature")
-    root = tmp_path / "output"
-    root.mkdir()
-    classify = branch_gc.classify_branch
-    run_git = git_repo.git
-    branch_transactions: list[tuple[str, ...]] = []
-    late_checkout: GitRepo | None = None
-
-    async def classify_then_checkout(name: str, **kwargs: Any) -> branch_gc.BranchClassification:
-        nonlocal late_checkout
-        item = await classify(name, **kwargs)
-        if name == "feature" and isinstance(item, branch_gc.PrunableBranch):
-            late_checkout_path = checkout.path.parent / "late-checkout"
-            checkout.run("worktree", "add", str(late_checkout_path), "feature")
-            late_checkout = GitRepo(late_checkout_path)
-        return item
-
-    async def record_branch_transaction(repo_path: pathlib.Path, *args: str, **kwargs: Any) -> Any:
-        if args[:2] == ("update-ref", "--stdin"):
-            branch_transactions.append(args)
-        return await run_git(repo_path, *args, **kwargs)
-
-    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
-    monkeypatch.setattr(branch_gc, "classify_branch", classify_then_checkout)
-    monkeypatch.setattr(git_repo, "git", record_branch_transaction)
-    with pytest.raises(SystemExit) as exit_info:
-        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
-    assert exit_info.value.code == 0
-    captured = capsys.readouterr()
-    assert checkout.has_branch("feature")
-    assert late_checkout is not None
-    assert late_checkout.path.is_dir()
-    assert branch_transactions == []
-    assert "Branches: 0 deleted, 1 skipped, 0 failed" in captured.out
-
-
-def test_prune_restores_a_branch_when_a_symbolic_worktree_head_appears_during_delete(
-    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    checkout = repo.clone("checkout")
-    checkout.branch("feature")
-    expected_tip = checkout.rev("feature")
-    root = tmp_path / "output"
-    root.mkdir()
-    run_git = git_repo.git
-    late_checkout: GitRepo | None = None
-    dangling_holder_detected = False
-
-    async def create_checkout_before_transaction(repo_path: pathlib.Path, *args: str, **kwargs: Any) -> Any:
-        nonlocal late_checkout, dangling_holder_detected
-        if args[:2] == ("update-ref", "--stdin") and late_checkout is None:
-            late_path = checkout.path.parent / "racing-checkout"
-            checkout.run("worktree", "add", "--detach", str(late_path), "feature")
-            late_checkout = GitRepo(late_path)
-            late_checkout.run("symbolic-ref", "HEAD", "refs/heads/feature")
-            outcome = await run_git(repo_path, *args, **kwargs)
-            listing = await run_git(repo_path, "worktree", "list", "--porcelain")
-            dangling_holder_detected = (
-                "branch refs/heads/feature" in listing.stdout and f"HEAD {'0' * len(expected_tip)}" in listing.stdout
-            )
-            return outcome
-        return await run_git(repo_path, *args, **kwargs)
-
-    monkeypatch.setattr(output_base_gc, "session_env_output_bases", list)
-    monkeypatch.setattr(git_repo, "git", create_checkout_before_transaction)
-    with pytest.raises(SystemExit) as exit_info:
-        workspace_gc.main(["--repo", str(checkout.path), "--output-user-root", str(root), "--no-prs", "--prune"])
-
-    assert exit_info.value.code == 0
-    captured = capsys.readouterr()
-    assert checkout.has_branch("feature")
-    assert late_checkout is not None
-    assert dangling_holder_detected
-    assert late_checkout.run("rev-parse", "HEAD").stdout.strip() == expected_tip
-    assert "checkout appeared during deletion" in captured.err
-    assert "Recovery ref for branch feature: refs/workspace-gc/recovery/" in captured.out
 
 
 def test_base_and_cache_cleanup_can_finish_while_worktree_scan_is_blocked(

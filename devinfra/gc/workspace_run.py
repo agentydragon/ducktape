@@ -687,14 +687,11 @@ class Run:
                 or holder is None
                 or (
                     self.options.apply
-                    and Domain.WORKTREES in self.options.domains
                     and isinstance(holder, PrunableWorktree)
                     and not isinstance(state.removal, Removed)
                 )
             ):
-                self.branches[name].classification = RetainedBranch(
-                    name, RetainedBranchReason.HELD_BY_WORKTREE, path
-                )
+                self.branches[name].classification = RetainedBranch(name, RetainedBranchReason.HELD_BY_WORKTREE, path)
                 return
             if state is not None and isinstance(state.removal, Removed):
                 holder = None
@@ -735,11 +732,7 @@ class Run:
         if isinstance(item, PrunableBranch) and self.options.apply:
             with self._step("remove branches", name) as record:
                 try:
-                    outcome = await self._owned(
-                        branch_gc.remove_prunable_branch(
-                            facts.repo, item, main=item.main, default_branch=facts.default_branch
-                        )
-                    )
+                    outcome = await self._owned(branch_gc.remove_prunable_branch(facts.repo, item))
                 except Exception as error:
                     self.branches[name].removal = Failed(name, f"{type(error).__name__}: {error}")
                     raise
