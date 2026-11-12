@@ -1,10 +1,9 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
-
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
-
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "image_manifest")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
 
@@ -15,6 +14,43 @@ image_manifest(
         "testdata/manifest_layout_b.txt": "example/fixture-b:1",
     },
     pki = {"testdata/manifest_layout_a.txt": "example/fixture-a:1"},
+)
+
+oci_image(
+    name = "retained_store_probe_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = ["/bin/true"],
+    labels = {"org.opencontainers.image.title": "agentplane-retained-store-acceptance"},
+)
+
+image_manifest(
+    name = "retained_store_image_manifest",
+    testonly = True,
+    fixture = {":retained_store_probe_image": "git.allegedly.works/ducktape-ci/retained-store-probe:v1"},
+)
+
+py_test(
+    name = "test_retained_store",
+    size = "medium",
+    srcs = ["test_retained_store.py"],
+    data = [
+        ":retained_store_image_manifest",
+        K3S_BINARY,
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :retained_store_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | {"test.workload-isolation-type": "firecracker"},
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":baseline",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 py_test(

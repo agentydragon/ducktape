@@ -1,8 +1,10 @@
 """Retained-node compatibility and ownership gates without starting Kubernetes."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -141,6 +143,36 @@ def test_reused_pid_cannot_be_stopped(retained_root: Path, monkeypatch: pytest.M
     }
     with pytest.raises(RuntimeError, match="PID was reused"):
         baseline.stop_owned(node, previous)
+
+
+@pytest.mark.parametrize(
+    ("previous_binary", "state", "free_bytes", "retainable"),
+    [
+        (None, "clean", baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES, False),
+        (b"test-k3s", "clean", baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES, True),
+        (b"test-k3s", "dirty", baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES, False),
+        (b"other-k3s", "clean", baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES, False),
+        (b"test-k3s", "clean", baseline.RETAINED_IMAGE_STORE_MIN_FREE_BYTES - 1, False),
+    ],
+)
+def test_image_store_requires_compatible_clean_state_and_disk_headroom(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    previous_binary: bytes | None,
+    state: str,
+    free_bytes: int,
+    retainable: bool,
+) -> None:
+    binary = tmp_path / "test-k3s"
+    binary.write_bytes(b"test-k3s")
+    node = baseline.K3s(tmp_path, binary)
+    node.data_dir = tmp_path / "k3s-env"
+    marker = node.data_dir / "agent/containerd/.stack-state.json"
+    marker.parent.mkdir(parents=True)
+    if previous_binary is not None:
+        marker.write_text(json.dumps({"state": state, "binary_sha256": hashlib.sha256(previous_binary).hexdigest()}))
+    monkeypatch.setattr(baseline.shutil, "disk_usage", lambda _path: SimpleNamespace(free=free_bytes))
+    assert node.image_store_is_retainable() is retainable
 
 
 if __name__ == "__main__":
