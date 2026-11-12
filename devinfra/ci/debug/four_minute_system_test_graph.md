@@ -22,6 +22,17 @@ TestRunner queue was about 0.06 seconds for these managed suites; the outer
 remote runner's admission and source/image prerequisites are separate clocks.
 No provider allocation clock or account entitlement was observed.
 
+A newer current-source Pod control then entered a different queue regime:
+its TestRunner action queued at 22:31:16.974 UTC, started on a worker at
+22:40:13.796 (536.82 seconds later), executed from 22:40:18.119 to
+22:46:24.758 (366.64 seconds), and completed worker output upload at
+22:46:27.929. The action's result blob was unavailable when checked, so
+these timestamps establish physical work, not its test verdict. The old
+0.06-second queue samples cannot be extrapolated to current load; this
+single long queue does not identify an account quota or provider capacity
+limit. A four-minute design must test admission under comparable concurrent
+load as well as shorten the action graph.
+
 The retained [2e817 Pod trace](https://app.buildbuddy.io/invocation/2e817264-db20-5c8e-82a1-5faf0bcc781e)
 records 111.01 seconds of stack setup, 430.44 summed seconds across 21
 case spans, and 30.25 seconds of cleanup. The longest individual case was
@@ -44,16 +55,20 @@ moved the OOM probe to manual. Claude was already the last scenario in this
 older trace, so that trace gives no VM critical-path saving from the move.
 Do not propose cgroup isolation as a guaranteed Codex repair. A same-source
 KVM pilot measured 262.3 seconds versus 474.5 seconds for managed TCG, but
-used different worker resources and cleanup. The existing self-hosted worker
-advertises 7 GiB while the current manual VM target requests 10 GiB; a
-required-CI placement change needs a resource-matched, capacity-aware pilot.
+used different worker resources and cleanup. The earlier, now-closed #15822
+placement candidate requested 10 GB, above the existing worker's 7-GiB
+advertisement. Current `x/vm_kvm:test_vm_kvm` instead requests 7 GiB on the
+four-CPU worker. A required-CI placement change still needs a resource-matched,
+capacity-aware pilot under the current suite.
 
 The following **conditional path models** hold the measured 2e817 case work
 fixed. The 40-second action start and 50-second warm setup are assumed target
 budgets, not observed results. Starting within 40 seconds requires the Bazel
 analysis, exact-source image builds/runfiles and remote action admission to
-finish within that interval. The models exclude GitHub admission and outer
-runner startup, plus extra transfer/scheduling and changes in contention;
+finish within that interval. The newer control's 536.82-second queue shows
+that this admission budget is not presently reliable. The models exclude
+GitHub admission and outer runner startup, plus extra transfer/scheduling
+and changes in contention;
 the full gate is the maximum of all required paths, not any one row. Setup
 and cleanup can change under the proposed architectures too.
 
@@ -66,8 +81,9 @@ and cleanup can change under the proposed architectures too.
 For the VM, moving the measured 262.3-second KVM pilot action to a hypothetical
 40-second start still ends at 302.3 seconds. A 50-second setup in place of
 its measured 128-second setup would make the arithmetic about 224 seconds,
-holding the rest of that action fixed. No such combined run exists, and the
-present KVM worker cannot admit the 10-GiB target. These conditional examples
+holding the rest of that action fixed. No such combined run exists; the
+earlier 10-GB pilot target is closed, and the current manual target has a
+different 7-GiB request. These conditional examples
 show why the options must be tested together without crediting their potential
 savings as an achieved four-minute CI result.
 
@@ -76,7 +92,8 @@ savings as an achieved four-minute CI result.
 | Choice                                                                                                | Graph term it changes                                                     | Coverage, cost, and discriminating evidence                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Narrow per-suite image inputs ([#15214](https://github.com/agentydragon/ducktape/pull/15214))         | Bazel prerequisites and OCI transfer before an action can start           | Keep exact-source service and tool images. The published layer reduction is bytes, not measured wall time. Compare cold and warm physical input-ready and action-start clocks on the same source. No standing capacity.                                                                                                                                                                                                                                 |
-| Reuse the pinned K3s base ([#15188](https://github.com/agentydragon/ducktape/pull/15188), now merged) | Repeated base import/setup inside each action                             | Its cold/warm, fresh-UID and forced-reset checks establish safety of the retained base, not a full-graph latency saving. Keep DB, PKI, workspaces, namespaces and scenario resources fresh. Measure hit rate, setup, cleanup and last gate on matched inputs; a miss must still pass.                                                                                                                                                                   |
+| Improve VM/Pod's pre-existing retained K3s baseline                                                   | Repeated import/setup inside each action                                  | These suites already preserve a compatible containerd store; #15188 did not introduce that behavior for them. Keep DB, PKI, workspaces, namespaces and scenario resources fresh. Measure reset/import spans, hit rate and last gate on matched inputs; a cold miss must still pass.                                                                                                                                                                     |
+| Firecracker image-store reuse ([#15188](https://github.com/agentydragon/ducktape/pull/15188), merged) | Firecracker's previously non-persisted image store                        | Its cold/warm, fresh-UID and forced-reset checks establish safety of this separate path, not a Pod/VM speedup. Measure Firecracker physical action and its contribution to the last gate; no standing pool cost.                                                                                                                                                                                                                                        |
 | Distribute independent Pod/MCP cases across separately owned stacks                                   | Case work bound and late tails, at the price of repeated stack setup      | Preserve every assertion and global-mutation isolation. The Pod batch currently uses two slots and an exclusive storage case; MCP Actions already batches three cases at two slots while OAuth linkage stays serial. Split targets need their own fresh fixture and additional 4-CU actions; measure case critical paths, duplicate setup, aggregate CU-minutes and final gate. The current Pod-tail experiment is only a bounded test of this premise. |
 | Place the VM suite on eligible KVM workers                                                            | VM scenario execution, particularly TCG guest time                        | Keep real KubeVirt, systemd and kernel checks. Provision enough memory, one action per worker, admission/drain ownership and matched cleanup; measure queue and full-graph end time under concurrent load. The existing pilot cannot be credited as a production CI saving.                                                                                                                                                                             |
 | Prebuild or retain a complete mutable test environment                                                | Multiple setup terms, potentially before source-specific action admission | Requires versioned image/CRD/PKI identity, fresh per-test DB and credentials, cleanup/reset after crash, and protection from cross-PR contamination. A standing pool adds idle compute and maintenance. First prove invalidation and fresh-state equivalence; no latency estimate is defensible yet.                                                                                                                                                    |
@@ -97,21 +114,45 @@ VM, another suite, the Bazel build/lint phase or GitHub's required checks.
 The current-source [Pod control](https://app.buildbuddy.io/invocation/88924b1e-808c-4da9-89ec-3ac634268d6c)
 uses `630fd860` with an uncached test request. Its outer `bbr` stream later
 closed with `Internal: stream closed with task still claimed` after buffered
-TestRunner progress reached 592 seconds. The inner invocation still had no
-final verdict at this note's refresh; neither a pass nor a workload duration
-can be inferred. This is remote observation/recovery overhead, separate from
+TestRunner progress reached 592 seconds. The accepted outer execution later
+returned terminal status code 13 with that message and no successful
+ExecuteResponse. Both outer and inner invocations became `DISCONNECTED`;
+the inner physical TestRunner action has completion clocks but its result
+blob cannot be read. Neither a pass nor a Bazel gate verdict can be inferred.
+This is remote observation/recovery overhead, separate from
 the physical critical-path timings above. A separate [Pod-tail split](https://app.buildbuddy.io/invocation/34d911a5-ebfa-4040-b7d7-b59ccd4880ec)
 uses that source plus a local patch, with both selected targets uncached. They
 were submitted at 22:30 and 22:39 UTC on Nov 12 and overlap. The split's main
 action failed before collection because a pytest `-k` exclusion was passed as
 two argv tokens; that failure is not workload timing. The TLS-only action
 continued, and a corrected [main action](https://app.buildbuddy.io/invocation/fa944edd-c4a0-4c18-b576-1f0ac09d5e58)
-was submitted at 22:42 UTC. These split actions remained partial at this
-note's last refresh. Their overlap, separate invocations and different action counts
-prevent an isolated causal speedup claim even after they finish. The older
+was submitted at 22:42 UTC. Its outer observer also lost the stream with
+the same error while the physical action was still executing. Their overlap,
+separate invocations and different action counts prevent an isolated causal
+speedup claim even after they finish. The older
 trace showed the security tail ending about 67.9 seconds after all other Pod
 cases; a second stack can remove at most that observed post-setup tail if it
 finishes in time, while repeated setup or resource contention can erase it.
+
+The split's TLS-only action subsequently passed uncached in 188.77 seconds;
+JUnit records exactly the intended security case. Its physical spans were
+101.57 seconds of setup, 22.16 seconds of case work, and 29.59 seconds of
+cleanup. The older run's corresponding case took about 91.7 seconds, so the
+case duration is unstable across these runs. The corrected main action later
+queued for about 0.064 seconds and executed for about 388.2 seconds, but its
+test verdict was not yet recovered at this refresh. Compared with the control's
+366.64 physical execution seconds, this is an uncontrolled process-time
+comparison across overlapping, differently selected actions. The TLS result
+establishes that the split case can pass in its own fresh stack, not a
+combined gate or causal latency reduction.
+The exact corrected spike is retained as a
+[patch](four_minute_system_test_graph.pod_split.patch), SHA256
+`f2078c91e574770b5be108aea1ada5ce03b6d404dcbf4aa9f925066a85b2bc80`,
+against `630fd860`. It adds an `args` passthrough to `k3s_suite`, leaves the
+main Pod target with 20 selected cases, and adds one manual TLS-only target.
+The initial failed action used an unquoted `-k` expression; the retained patch
+quotes that expression as one pytest argument. It is an experiment, not a
+proposed required-CI change.
 
 Evidence sources: the canonical report's
 [`evidence.json`](https://github.com/agentydragon/ducktape/blob/c342162ca9d66f0be60534a588dcaf137e6e1ef0/latency/evidence.json),
