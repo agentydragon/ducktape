@@ -375,6 +375,9 @@ impl Outcome {
             self.effects
                 .non_assumed_heap_accesses
                 .extend(&nested.non_assumed_heap_accesses);
+            self.effects
+                .local_record_factory_uses
+                .append(&mut nested.local_record_factory_uses);
         }
         self.effects
             .heap_contents
@@ -859,6 +862,21 @@ impl RecordFactoryPrototypePremises {
             .into_iter()
             .collect()
     }
+
+    fn properties_for(&self, class: u32, object: u32) -> Vec<String> {
+        self.constructor_fields
+            .iter()
+            .filter(|(checked, _)| *checked == class)
+            .chain(
+                self.missing_input_fields
+                    .iter()
+                    .filter(|(checked, _)| *checked == object),
+            )
+            .map(|(_, property)| property.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
 }
 
 pub(super) struct ExecutionInputs<'source> {
@@ -1185,6 +1203,9 @@ pub(super) struct ExecutionState {
     pub(super) proof_uses: Vec<CallbackFactoryUseFact>,
     pub(super) returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
     pub(super) checking_record_factory_contract: bool,
+    /// Scoped to the exact nested annotated call. It cannot license another
+    /// construction of the same class after this call returns.
+    nested_record_factory_premise: Option<(u32, u32)>,
     pub(super) prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
     /// Callables run so far by the current top-level owner; joins
     /// `prior_effect_owners` when it finishes.
@@ -1497,6 +1518,7 @@ impl ExecutionState {
             prior_reachability_roots: _,
             current_top_owner: _,
             checking_record_factory_contract: _,
+            nested_record_factory_premise: _,
             array_iteration_depth: _,
             iteration_element_records: _,
             invocation_depth: _,
@@ -1615,6 +1637,7 @@ impl Executor<'_, '_> {
             active_class_member_promotions: _,
             current_top_owner: _,
             checking_record_factory_contract: _,
+            nested_record_factory_premise: _,
             prior_effect_owners: _,
             array_iteration_depth: _,
             iteration_element_records: _,
@@ -2337,6 +2360,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(premise);
             return true;
         }
+        if self
+            .state
+            .nested_record_factory_premise
+            .is_some_and(|(checked, _)| checked == class)
+        {
+            self.observations
+                .record_factory_prototype_premises_mut()
+                .constructor_fields
+                .insert(premise);
+            return true;
+        }
         self.observations
             .record_factory_prototype_premises()
             .constructor_fields
@@ -2350,6 +2384,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let premise = (object, property.to_owned());
         if self.state.checking_record_factory_contract {
+            self.observations
+                .record_factory_prototype_premises_mut()
+                .missing_input_fields
+                .insert(premise);
+            return true;
+        }
+        if self
+            .state
+            .nested_record_factory_premise
+            .is_some_and(|(_, checked)| checked == object)
+        {
             self.observations
                 .record_factory_prototype_premises_mut()
                 .missing_input_fields
@@ -5208,6 +5253,148 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         })
     }
 
+    /// The annotation's prototype assertion may pass through a wrapper only
+    /// at the exact selected factory call. Its evaluated operand must still
+    /// be the source literal checked for accessors, spreads and computed keys.
+    /// All wrapper and argument effects have already run in the ordinary lane.
+    fn checked_nested_record_factory_call(
+        &mut self,
+        call: &Call,
+        args: &[Values],
+        env: &Context,
+        captures: &Context,
+    ) -> Option<(u32, u32, u32, Vec<String>)> {
+        if call.caller.is_none() || call.kind != CallKind::Call || call.has_spread {
+            return None;
+        }
+        let ValueExpr::Binding(factory) = &call.callee else {
+            return None;
+        };
+        let &factory_key = self.inputs.index.hoisted_bindings.get(factory)?;
+        if !self
+            .inputs
+            .index
+            .retained_record_factories
+            .contains(factory.0.as_ref())
+            || self.inputs.index.exported_bindings.contains(factory)
+            || self
+                .state
+                .world
+                .publication
+                .global_escaped_callbacks
+                .contains(&AbstractValue::Value(Value::Alloc(
+                    Kind::Function,
+                    factory_key,
+                )))
+        {
+            return None;
+        }
+        let record = self
+            .inputs
+            .index
+            .record_factory_calls
+            .get(&CallSite::from(call.span))?
+            .as_ref()
+            .ok()?;
+        if record.template_substitutions.iter().any(|(_, value)| {
+            if !matches!(value, ValueExpr::Binding(_)) {
+                return true;
+            }
+            let evaluated = self.evaluate(value, env, captures);
+            evaluated.is_empty() || !evaluated.iter().all(AbstractValue::is_primitive)
+        }) {
+            return None;
+        }
+        let ([ValueExpr::ObjectLiteral(object, _)], [values]) = (call.args.as_slice(), args) else {
+            return None;
+        };
+        if values.len() != 1
+            || !values.contains(&AbstractValue::Value(Value::Alloc(Kind::Object, *object)))
+            || !self.inputs.index.plain_data_objects.contains(object)
+            || !self.state.world.object_properties_are_settled(*object)
+            || !self.inputs.index.dynamic_scope_owners.is_empty()
+        {
+            return None;
+        }
+        let callable = self.inputs.index.callables.get(&factory_key)?.clone();
+        if callable.opaque
+            || callable.generator
+            || callable.may_fall_through
+            || self.inputs.index.async_callables.contains(&factory_key)
+            || !callable.rebinds.is_empty()
+            || !callable.local_assignments.is_empty()
+            || !callable.member_writes.is_empty()
+            || !callable.member_value_writes.is_empty()
+            || !callable.callback_result_writes.is_empty()
+            || callable.dynamic_property_effect
+            || !callable.escaped_bindings.is_empty()
+            || !callable.namespace_escape_values.is_empty()
+            || callable.params.len() != 1
+            || callable.params[0].binding.is_none()
+            || callable.params[0].default.is_some()
+        {
+            return None;
+        }
+        let [returned @ ValueExpr::New(callee, _, _)] = callable.body_facts.value_flow().returns()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(class_binding) = callee.as_ref() else {
+            return None;
+        };
+        let class_key = self.stable_local_class_key(class_binding)?;
+        let params = BTreeMap::from([(callable.params[0].binding.clone()?, &call.args[0])]);
+        let premises_before = self
+            .observations
+            .record_factory_prototype_premises()
+            .clone();
+        let previous = self
+            .state
+            .nested_record_factory_premise
+            .replace((class_key, *object));
+        let mut class_reads = BTreeSet::new();
+        let mut allocations = BTreeMap::new();
+        let checked = self.checked_constructor_return(
+            returned,
+            &params,
+            false,
+            &mut class_reads,
+            &mut allocations,
+        );
+        let required_prototype_properties = self
+            .observations
+            .record_factory_prototype_premises()
+            .properties_for(class_key, *object);
+        self.state.nested_record_factory_premise = previous;
+        *self.observations.record_factory_prototype_premises_mut() = premises_before;
+        if !checked
+            || !callable
+                .reads
+                .is_subset(&params.keys().cloned().chain(class_reads).collect())
+        {
+            return None;
+        }
+        let mut indexed_allocations = BTreeMap::new();
+        for nested in &callable.calls {
+            let ValueExpr::Binding(class) = &nested.callee else {
+                return None;
+            };
+            let key = self.stable_local_class_key(class)?;
+            if nested.kind != CallKind::New || nested.has_spread {
+                return None;
+            }
+            *indexed_allocations
+                .entry((key, nested.args.len()))
+                .or_insert(0) += 1;
+        }
+        (allocations == indexed_allocations).then_some((
+            factory_key,
+            class_key,
+            *object,
+            required_prototype_properties,
+        ))
+    }
+
     /// A checked constructor can retain callbacks in a fresh instance without
     /// exposing them during the initializer. The ordinary executor still runs
     /// the wrapper and constructor. Exported results require a closure that
@@ -5407,6 +5594,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn closed_constructor_input(&mut self, value: &ValueExpr) -> bool {
         match value {
             ValueExpr::ObjectLiteral(key, properties) => {
+                if self
+                    .state
+                    .nested_record_factory_premise
+                    .is_some_and(|(_, checked)| checked == *key)
+                {
+                    return self.inputs.index.plain_data_objects.contains(key);
+                }
                 if let Some(elements) = self.inputs.index.array_elements.get(key) {
                     return self.inputs.index.dense_array_literals.contains_key(key)
                         && elements.iter().all(|element| {
@@ -12265,6 +12459,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             None
         };
         let single_target = targets.len() == 1;
+        let nested_record_factory_premise = if single_target && !operands_may_throw {
+            self.checked_nested_record_factory_call(call, &args, env, captures)
+        } else {
+            None
+        };
         let mut result_selection = None;
         // `new` of a local plain function runs its body with an untracked
         // `this`: what it stores through `this` or into other bindings is
@@ -12443,6 +12642,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     if call.kind == CallKind::Call =>
                 {
+                    let premises_before = self
+                        .observations
+                        .record_factory_prototype_premises()
+                        .clone();
+                    let previous_premise = std::mem::replace(
+                        &mut self.state.nested_record_factory_premise,
+                        nested_record_factory_premise
+                            .as_ref()
+                            .filter(|(factory, _, _, _)| *factory == key)
+                            .map(|(_, class, object, _)| (*class, *object)),
+                    );
                     self.execute_local_call_target(
                         LocalCallTarget {
                             key,
@@ -12458,6 +12668,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         &mut result_selection,
                         outcome,
                     );
+                    self.state.nested_record_factory_premise = previous_premise;
+                    let scoped_factory = nested_record_factory_premise
+                        .as_ref()
+                        .filter(|(factory_key, _, _, _)| *factory_key == key);
+                    if let Some((_, _, _, properties)) = scoped_factory.filter(|_| outcome.complete)
+                    {
+                        if !properties.is_empty() {
+                            let ValueExpr::Binding(factory) = &call.callee else {
+                                unreachable!()
+                            };
+                            outcome.effects.local_record_factory_uses.push(
+                                crate::reports::schema::LocalRecordFactoryUse {
+                                    factory_binding: factory.0.to_string(),
+                                    prototype_properties: properties.clone(),
+                                    lexical_statement_ordinal: self
+                                        .state
+                                        .current_top_owner
+                                        .unwrap_or(call.owner),
+                                    source_location: None,
+                                    span: call.span,
+                                },
+                            );
+                        }
+                    }
+                    if scoped_factory.is_some() {
+                        *self.observations.record_factory_prototype_premises_mut() =
+                            premises_before;
+                    }
                 }
                 AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)
                     if call.kind == CallKind::Call =>
@@ -13603,6 +13841,7 @@ pub(crate) fn annotate_synchronous_calls(
         proof_uses: Vec::new(),
         returned_record_proof_uses: Vec::new(),
         checking_record_factory_contract: false,
+        nested_record_factory_premise: None,
         prior_effect_owners: BTreeSet::new(),
         statement_executed_owners: BTreeSet::new(),
         statement_invoked_callables: BTreeSet::new(),
