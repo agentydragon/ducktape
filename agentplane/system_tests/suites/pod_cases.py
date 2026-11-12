@@ -118,7 +118,7 @@ async def sandbox_cli_reaches_the_dispatcher_with_its_workload_svid(resources: R
             resources.cluster,
             client,
             lambda harness, model, sandboxes: (
-                dispatcher_workload.sandbox_cli_denies_create_but_reads_its_identity_session(
+                dispatcher_workload.sandbox_cli_denies_create_but_lists_its_identity_session(
                     client, resources.dispatcher, sandboxes, harness, model, resources.scripted
                 )
             ),

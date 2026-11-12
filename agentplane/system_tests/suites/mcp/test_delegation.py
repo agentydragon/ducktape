@@ -106,7 +106,7 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     deployment: Stack,
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
-    client: Client,
+    base_url: str,
     dispatcher: SessionDispatcherClient,
 ) -> None:
     """An external ServiceAccount Connection cannot discover or create Sessions for another Identity."""
@@ -120,17 +120,20 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     created: identity_pb2.EnvironmentTarget | None = None
     app_needs_restore = False
     try:
-        request = environment_service_pb2.CreateEnvironmentRequest(
-            name=name, template=POD_TEMPLATE, identity=identity["name"]
-        )
-        try:
-            created = await client.create_sandbox(request)
-        except httpx.HTTPStatusError as error:
-            status = error.response.status_code
-            if 400 <= status < 500 and status not in (408, 429):
-                await delete_scenario_identity(cluster, identity)
-            raise
-        view = await wait_until_running(client, created)
+        # Close this setup transport before deliberately removing its app Pod. Cleanup opens
+        # a fresh port-forward; a failed scenario must not capture diagnostics through a dead one.
+        async with Client(base_url=base_url, token=deployment.token) as setup_client:
+            request = environment_service_pb2.CreateEnvironmentRequest(
+                name=name, template=POD_TEMPLATE, identity=identity["name"]
+            )
+            try:
+                created = await setup_client.create_sandbox(request)
+            except httpx.HTTPStatusError as error:
+                status = error.response.status_code
+                if 400 <= status < 500 and status not in (408, 429):
+                    await delete_scenario_identity(cluster, identity)
+                raise
+            view = await wait_until_running(setup_client, created)
         assert view.kubernetes_diagnostics.HasField("pod")
         assert view.identity_name == identity["name"]
 
@@ -160,8 +163,8 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
             assert tools.isdisjoint(_UNGRANTED_TOOLS)
 
             page = await _tool(session, "environments__list", {"limit": 10})
-            environments = page.get("items")
-            assert environments == [], environments
+            environments = ParseDict(page, environment_service_pb2.ListEnvironmentsResponse())
+            assert not environments.items, environments
 
             target = {"namespace": created.namespace, "name": created.name, "uid": created.uid}
             await _tool(
