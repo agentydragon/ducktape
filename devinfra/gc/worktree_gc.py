@@ -28,7 +28,7 @@ import pygit2
 from devinfra.gc.async_io import run_blocking
 from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrLookup, PrState, pr_phrase
-from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.removal import Failed, RemovalResult, Removed
 from devinfra.gc.verdict import Prunable, Retained, Review
 
 logger = logging.getLogger(__name__)
@@ -261,8 +261,6 @@ async def _classify_worktree(
     try:
         await run_blocking(path.lstat)
     except FileNotFoundError:
-        if worktree.branch is None:
-            return ReviewWorktree(worktree, ReviewWorktreeReason.DETACHED_HEAD, None, main)
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
     pg = await run_blocking(pygit2.Repository, os.fspath(path))
     logger.info("Scanning worktree %s: reading Git status", path)
@@ -314,12 +312,6 @@ async def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     Git refuses tracked or untracked changes but deletes ignored data. An attached branch is
     left intact (branch GC is a separate step). The caller classifies the worktree first.
     """
-    try:
-        await run_blocking(path.lstat)
-    except FileNotFoundError:
-        return Skipped(path, "worktree directory is missing; review and prune its stale Git metadata separately")
-    except INSPECTION_ERRORS as error:
-        return Failed(path, f"cannot inspect worktree directory before removal: {error}")
     try:
         outcome = await git(repo, "worktree", "remove", path, check=False, interruptible=False)
     except (OSError, subprocess.SubprocessError) as error:

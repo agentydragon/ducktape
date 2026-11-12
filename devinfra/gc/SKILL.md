@@ -97,8 +97,7 @@ default is the only root.
   HEAD with landed content or patches is eligible; Git removes its HEAD and reflog without
   creating recovery refs. The tool assumes no external modifications to workspace state during
   its run, including worktrees and their checked-out branches and HEADs. If the worktree
-  directory is already missing, removal is skipped; review stale
-  entries with `git worktree prune --dry-run --verbose` and prune only confirmed records.
+  directory is already missing, Git removes its worktree registration.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
   changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
   (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the

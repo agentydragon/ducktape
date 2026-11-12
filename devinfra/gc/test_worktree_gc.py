@@ -13,7 +13,7 @@ from devinfra.gc import git_repo, worktree_gc as wg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.removal import Failed, RemovalResult, Removed
 
 
 async def _classify(
@@ -282,7 +282,7 @@ async def test_detached_patch_landed_is_prunable(repo: GitRepo, proc: Path) -> N
     assert not repo.run("for-each-ref", "--format=%(refname)", "refs/workspace-gc/recovery/").stdout
 
 
-async def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) -> None:
+async def test_missing_detached_worktree_is_prunable(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     _commit_detached(GitRepo(path), "detached empty commit")
@@ -290,8 +290,10 @@ async def test_missing_detached_worktree_is_review(repo: GitRepo, proc: Path) ->
 
     result = await _classify(repo, path, proc)
 
-    assert isinstance(result, wg.ReviewWorktree)
-    assert result.reason is wg.ReviewWorktreeReason.DETACHED_HEAD
+    assert isinstance(result, wg.PrunableWorktree)
+    assert result.reason is wg.PrunableWorktreeReason.DIRECTORY_MISSING
+    assert await wg.remove_worktree(repo.path, path) == Removed(path)
+    assert not any(item.path == path for item in await git_repo.list_worktrees(repo.path))
 
 
 async def test_ignored_data_does_not_prevent_pruning(repo: GitRepo, proc: Path) -> None:
@@ -373,15 +375,14 @@ async def test_remove_worktree_fails_on_dirty_tree(repo: GitRepo) -> None:
     assert wt.path.exists()
 
 
-async def test_remove_worktree_skips_missing_directory_for_git_worktree_prune(repo: GitRepo) -> None:
+async def test_remove_worktree_unregisters_missing_directory(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     shutil.rmtree(wt.path)
 
     result = await wg.remove_worktree(repo.path, wt.path)
 
-    assert isinstance(result, Skipped)
-    assert "prune its stale Git metadata separately" in result.reason
-    assert any(item.path == wt.path for item in await git_repo.list_worktrees(repo.path))
+    assert result == Removed(wt.path)
+    assert not any(item.path == wt.path for item in await git_repo.list_worktrees(repo.path))
 
 
 _MAIN = "origin/test-main"

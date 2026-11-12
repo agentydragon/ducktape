@@ -43,8 +43,8 @@ Git removes the worktree's HEAD and reflog; no recovery refs are created for the
 that are not reachable from surviving refs may eventually be garbage-collected.
 
 Workspace GC assumes no external modifications to workspace state during its run, including
-worktrees and their checked-out branches and HEADs. Git refuses tracked or untracked changes. A missing worktree directory is skipped; inspect
-`git worktree prune --dry-run --verbose` and prune only confirmed stale records.
+worktrees and their checked-out branches and HEADs. Git refuses tracked or untracked changes.
+A missing worktree directory is eligible; Git unregisters its worktree metadata.
 
 ## Interruption
 
