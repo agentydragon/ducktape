@@ -12915,6 +12915,78 @@ impl FreshRecordFreezeHeapProof {
 }
 
 impl PreparedSynchronousCallIndex {
+    /// A direct native Map consumes only private, dense entry arrays here.
+    /// The complete-program census must protect every native protocol step;
+    /// ordinary purity of the constructor does not establish heap locality.
+    pub(crate) fn primitive_map_literal_heap_proof(
+        &self,
+        construction: &NewExpr,
+        flow: &ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+    ) -> Option<ProofDependencies> {
+        let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
+            return None;
+        };
+        if callee.sym != "Map"
+            || flow.is_declared(&callee.to_id())
+            || shadowed.contains("Map")
+            || self.index.reassigned_map
+            || !self.index.dynamic_scope_owners.is_empty()
+        {
+            return None;
+        }
+        let [argument] = construction.args.as_deref()? else {
+            return None;
+        };
+        if argument.spread.is_some() {
+            return None;
+        }
+        let Expr::Array(entries) = argument.expr.unwrap_parens() else {
+            return None;
+        };
+        let primitive = |expr: &Expr| {
+            matches!(
+                expr.unwrap_parens(),
+                Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
+            )
+        };
+        for entry in &entries.elems {
+            let Some(entry) = entry else { return None };
+            if entry.spread.is_some() {
+                return None;
+            }
+            let Expr::Array(pair) = entry.expr.unwrap_parens() else {
+                return None;
+            };
+            let [Some(key), Some(value)] = pair.elems.as_slice() else {
+                return None;
+            };
+            if key.spread.is_some()
+                || value.spread.is_some()
+                || !primitive(&key.expr)
+                || !primitive(&value.expr)
+            {
+                return None;
+            }
+        }
+        // Map construction gets its adder from the new instance, then runs
+        // the Array iterator and reads each fresh pair's own 0/1 properties.
+        // The conservative whole-prototype guards include symbol-key writes.
+        self.index
+            .integrity
+            .require(
+                &[
+                    IntrinsicSlot::Global(NativeIntrinsic::Map),
+                    IntrinsicSlot::Static(NativeIntrinsic::Map, "prototype"),
+                    IntrinsicSlot::Prototype(NativeIntrinsic::Map),
+                    IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                    IntrinsicSlot::ArrayIteratorPrototype,
+                ],
+                None,
+            )
+            .dependencies()
+    }
+
     pub(crate) fn native_own_data_read_diagnostics(
         &self,
         owner: SourceUnitOrdinal,
