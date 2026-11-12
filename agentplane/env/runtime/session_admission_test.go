@@ -121,7 +121,7 @@ func TestLegacySessionCannotBeAssignedAnIdentityOnRetry(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	record, err := retained.NewRecord(openLifecycleSession("legacy", filepath.Join(workspace, "project")).GetSpec(), nil, nil)
+	record, err := retained.NewRecord(openLifecycleSession("legacy", filepath.Join(workspace, "project")).GetSpec(), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

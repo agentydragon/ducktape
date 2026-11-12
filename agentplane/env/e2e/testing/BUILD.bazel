@@ -119,6 +119,7 @@ py_library(
         "//agentplane/history_service/testing:unstored_ranges",
         "//agentplane/proto:environment_runtime_state_pb2",
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",

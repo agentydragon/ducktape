@@ -15,6 +15,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
@@ -25,6 +26,12 @@ import (
 )
 
 type queueCatalog struct{ sandbox dispatcher.SandboxSnapshot }
+
+const queueIdentityUID = "be36780a-b018-4d42-96a3-e8cc68bbe76a"
+
+func (queueCatalog) GetExecutionIdentity(context.Context, dispatcher.SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return &identitypb.Identity{Name: "queue-identity", Uid: queueIdentityUID}, true, nil
+}
 
 func (c queueCatalog) GetSandbox(_ context.Context, name string) (dispatcher.SandboxSnapshot, bool, error) {
 	return c.sandbox, name == c.sandbox.Name, nil
@@ -118,8 +125,10 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO session(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,now(),now())`, "session-queue", testSandbox, sandboxUID, spec, dispatcher.SessionAcceptedState); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO session(session_id,sandbox_name,sandbox_uid,spec,state,
+		execution_identity_name,execution_identity_uid,created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,now(),now())`, "session-queue", testSandbox, sandboxUID, spec,
+		dispatcher.SessionAcceptedState, "queue-identity", queueIdentityUID); err != nil {
 		t.Fatal(err)
 	}
 	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, sandboxUID, command, nil)

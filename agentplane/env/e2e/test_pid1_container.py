@@ -24,7 +24,7 @@ from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import Insecure
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
-from agentplane.proto import session_pb2
+from agentplane.proto import identity_pb2, session_pb2
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from third_party.containers import debian_slim, ryuk
@@ -263,6 +263,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         await stub.CreateSession(
             environment_runtime_pb2.CreateSessionRequest(
                 session_id=str(uuid.uuid4()),
+                execution_identity=identity_pb2.Identity(name="pid1-test", uid="7842f926-79f0-475a-862a-a12953b4bd10"),
                 spec=session_pb2.SessionSpec(
                     placement=session_pb2.SessionPlacement(
                         environment_hosted=session_pb2.EnvironmentHostedPlacement(

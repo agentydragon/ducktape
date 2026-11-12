@@ -21,7 +21,7 @@ from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, wait_for_history_session
 from agentplane.history_service.testing.unstored_ranges import unstored_ranges
-from agentplane.proto import environment_runtime_state_pb2, event_log_pb2, session_pb2
+from agentplane.proto import environment_runtime_state_pb2, event_log_pb2, identity_pb2, session_pb2
 
 # The `Runner` stub types its calls; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/env/runtime/control:environment_runtime_pb2_grpc
@@ -257,7 +257,11 @@ class RunnerDriver:
             )
             return self._follow(attached, after_cursor)
         runner = await self.gateway.control.runner()
-        create = environment_runtime_pb2.CreateSessionRequest(session_id=session_id, spec=spec)
+        create = environment_runtime_pb2.CreateSessionRequest(
+            session_id=session_id,
+            spec=spec,
+            execution_identity=identity_pb2.Identity(name="runner-test", uid="d055b012-50c2-4f03-abfb-13012a976101"),
+        )
         if setup_script is not None:
             create.setup_script = setup_script
         attached = (await runner.CreateSession(create)).attached
