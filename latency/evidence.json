@@ -1,6 +1,6 @@
 {
   "nov12_later_followup": {
-    "observed_through_utc": "2026-11-12T22:55:00Z",
+    "observed_through_utc": "2026-11-12T23:20:00Z",
     "scope": "Selected post-window investigations; existing cohort windows, source pin, population counts and rates remain unchanged.",
     "firecracker_store": {
       "implementation_pr": "https://github.com/agentydragon/ducktape/pull/15188",
@@ -31,7 +31,17 @@
       "corrected_split_queue_seconds": 0.064,
       "corrected_split_execution_seconds": 388.205,
       "isolated_tls_pass_seconds": 188.771,
-      "limit": "Control and corrected split have unavailable test results after terminal outer stream error and disconnected invocations. First split main failed before collection due malformed argument; its admission timestamp is valid. Neither a speedup nor full test selection is established; provider scheduling cause remains unknown."
+      "recovered_test_results": {
+        "control_execution_id": "/uploads/5e382bf0-e39e-4a42-945a-f0c37a097494/blobs/69793b7d7d6c328c3265b7416e144ede38acd3877f81a5e300fe0ae8dfe909a3/1218",
+        "control_junit_sha256": "178735e860261c01896fc06759e5d8f907c95f5a0aadc95d3b56ebea949922e1",
+        "control_passed": 21,
+        "split_execution_id": "/uploads/a89cd4d9-3c98-48b3-ac37-f0d0b85ad3d3/blobs/fddfd23561f8d122acbcfeaf04c644bc01ebb8f2aed8dd1be06c15a985d1808a/1218",
+        "split_junit_sha256": "cbb70823bffe9952ba18c7b13823f44f77dfac4cc41764292c5192d237e0d991",
+        "split_passed": 20,
+        "selection": "The split-main JUnit cases equal the control cases except the intended TLS scenario; the separate TLS action passed in the initial split experiment.",
+        "method": "Read each exact full execution ID with bb execution get, then fetch its output test.xml. Earlier slash-stripped ID lookup and advertised CAS digest returned NotFound; the exact-ID response was available but we misread omitted protobuf default values and failed to inspect its outputs."
+      },
+      "limit": "Recovered individual TestRunner/JUnit results do not establish either disconnected full Bazel invocation succeeded. First split main failed before collection due malformed argument; its admission timestamp is valid. Overlapping unmatched timings do not establish a speedup; provider scheduling cause remains unknown."
     },
     "policy_pr": "https://github.com/agentydragon/ducktape/pull/15897",
     "kvm_pilot_status": "PR #15822 closed; current manual test_vm_kvm requests 7 GiB on a four-CPU worker. A resource-matched required-CI pilot remains unvalidated."
