@@ -3,13 +3,17 @@ kind: CiliumClusterwideNetworkPolicy
 metadata:
   name: host-ingress-canary
   annotations:
-    description: Restrict host ingress on ovh-ns103711 while preserving its public services and Nebula access.
+    description: Restrict host ingress on the selected OVH nodes while preserving public services and Nebula access.
 spec:
   # Cilium's host endpoint includes this Piraeus node label; Kubernetes'
   # kubernetes.io/hostname label is not present on the host endpoint.
   nodeSelector:
-    matchLabels:
-      linbit.com/hostname: ovh-ns103711
+    matchExpressions:
+      - key: linbit.com/hostname
+        operator: In
+        values:
+          - ovh-ns102453
+          - ovh-ns103711
   ingress:
     # Node, Pod and health identities need the existing cluster paths.
     - fromEntities:
