@@ -1,41 +1,39 @@
 {
   "status": "PASSED",
   "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/04c8e734-4fed-4704-b250-0a0e282cdd21",
-  "complete_test_case_count": 12,
-  "pytest_seconds": 192.949,
-  "reviewed_at_utc": "2026-11-12T12:22:27.412943+00:00",
+  "invocation": "https://app.buildbuddy.io/invocation/3d26d1bd-cd85-4cbe-8a55-e1d33b82e490",
+  "case_count": 12,
+  "scope": "Full 12-case home, latency and reliability suite before the subsequent latency-only correction",
+  "reviewed_at_utc": "2026-11-12T23:13:18.809641+00:00",
   "tested_assets": [
     {
       "path": "reliability/index.html",
-      "sha256": "bf40eb50e48d93015714ba7d8db3875a453a3e77943d9987f18754d91af066de"
+      "sha256": "9d5a78b4081763f510d63c399729f2f0a44b992a9d17aeb91623afdf1824bf45"
     },
     {
       "path": "reliability/evidence.json",
-      "sha256": "aab9c0fa942e6df2c786ad5529d8906a4e67696cac700d855d5a4f5c2d4eb1ce"
+      "sha256": "75850e39e587f1894f6f33a4a0a3f273f9fd643336818cd6a411c5f4468ac167"
     },
     {
       "path": "reliability/manifest.json",
-      "sha256": "5c99b1200b0eb2abb96631db207e774402efe6807a44af8cd9585f7a755ce8c7"
-    },
-    {
-      "path": "report.js",
-      "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-    },
-    {
-      "path": "report.css",
-      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+      "sha256": "2913ad2bd3b6d02d9a8f06f70fcacfc624ea9c63d8577b8b186b87890e957c1b"
     }
   ],
   "published_assets": [
     {
       "path": "reliability/index.html",
-      "sha256": "24cb8152f7da7cbc62d1b6fd14aafe45edfa4693641e50f78be594a4f567798e"
+      "sha256": "9d5a78b4081763f510d63c399729f2f0a44b992a9d17aeb91623afdf1824bf45"
     },
     {
       "path": "reliability/evidence.json",
-      "sha256": "23372ab11a00e6a189b5013cda2751619b2540b67b04b6077a82810bc43298c6"
+      "sha256": "75850e39e587f1894f6f33a4a0a3f273f9fd643336818cd6a411c5f4468ac167"
     },
+    {
+      "path": "reliability/manifest.json",
+      "sha256": "64e167fb0f651cf795ac91d3ade3752b4f95f6dbc2916c3834d37667cede6c7c"
+    }
+  ],
+  "shared_assets": [
     {
       "path": "report.js",
       "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
@@ -45,6 +43,7 @@
       "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     }
   ],
+  "manifest_note": "Publication manifest differs from tested manifest only by the visual-validation reference.",
   "checks": [
     "Desktop and mobile",
     "Initial light and dark schemes",
@@ -56,49 +55,23 @@
   "manually_reviewed_screenshots": [
     {
       "case": "light-desktop-reliability",
-      "checkpoint": "section-reliability-followups",
-      "sha256": "1df4d551171f71bdcb562b3462e2213c9d38f7795a1e36cebd54bbaf1b5cb0ca",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/1df4d551171f71bdcb562b3462e2213c9d38f7795a1e36cebd54bbaf1b5cb0ca/369829",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
+      "checkpoint": "section-reliability-nov12-later",
+      "sha256": "2b379d092c6ded4a39b49d58a8f54a18757463839e7d8aa45429ef670d480cfb"
     },
     {
       "case": "light-mobile-reliability",
-      "checkpoint": "section-reliability-followups",
-      "sha256": "b9438e139f94148629a8004d8c32cc4a8e76d961ea76194bc0188772ec82475a",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b9438e139f94148629a8004d8c32cc4a8e76d961ea76194bc0188772ec82475a/368988",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
+      "checkpoint": "section-reliability-nov12-later",
+      "sha256": "75838e4a467a35b3191c39635b098c33fa246e28c79b801067be44950e1dcae9"
     },
     {
       "case": "dark-desktop-reliability",
-      "checkpoint": "section-reliability-followups",
-      "sha256": "96b1efa985c15f28e0fff2d13b7634818d3b1e56c6482779c3082bd294f6827d",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/96b1efa985c15f28e0fff2d13b7634818d3b1e56c6482779c3082bd294f6827d/364508",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
+      "checkpoint": "section-reliability-nov12-later",
+      "sha256": "45ac5fa830897014941b7b3a3aae858cb4feac86638d455ff0678d9eb4d4618f"
     },
     {
       "case": "dark-mobile-reliability",
-      "checkpoint": "section-reliability-followups",
-      "sha256": "4e0367bbd8dbf46f246b9c86243ca6fe9e8f3b8d2feaba262de08e18aee4f3c0",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4e0367bbd8dbf46f246b9c86243ca6fe9e8f3b8d2feaba262de08e18aee4f3c0/367697",
-      "review": "Manually inspected final capture; responsive cards are readable in this theme and viewport."
-    }
-  ],
-  "review_scope": "All four follow-up section theme/viewport captures for this report were manually inspected. Existing charts and controls passed automated checks; not every unchanged screenshot was manually reviewed again.",
-  "input_semantics": "Published HTML is the pinned Prettier normalization of the tested HTML; published evidence is JSON-equivalent to tested evidence. Publication timestamp/hash metadata and this receipt were generated after capture. The report cohort/source window remains unchanged.",
-  "execution": {
-    "queue_seconds": 0.059896,
-    "execution_start_utc": "2026-11-12T12:03:40.392240Z",
-    "execution_complete_utc": "2026-11-12T12:06:53.341345Z",
-    "observation": "HTTPS metadata confirmed completion after log streaming stopped updating; no duplicate run."
-  },
-  "validation_iterations": [
-    {
-      "invocation": "f9f53201-1715-42dd-bb1c-0c3da18fa188",
-      "result": "Failed template nesting; corrected."
-    },
-    {
-      "invocation": "3d671c3c-ddea-4cbc-b0c6-89466a983cad",
-      "result": "Passed; manual review found table header and mobile prose layout defects, replaced by responsive cards before final run."
+      "checkpoint": "section-reliability-nov12-later",
+      "sha256": "acf2af667b57efa2b95f0535ca022f337605c96edc2d6d46524660eefb6c1f44"
     }
   ]
 }

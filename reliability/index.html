@@ -402,7 +402,7 @@
                 href="https://github.com/agentydragon/ducktape/pull/15741"
                 >${"#15741"}<//
               >
-              ${": the 256 MiB Codex executor cgroup killed the deliberately memory-hungry tool, then killed the resident exec-server before the first victim was reaped. This matches the documented shared-memory boundary. The test currently requires same-session server survival, which the production resource contract does not provide. A same-source uncached pass proves the outcome is intermittent, not that a retry or larger limit repairs it."}
+              ${": the 256 MiB Codex executor cgroup killed the deliberately memory-hungry tool, then killed the resident exec-server before the first victim was reaped. This matches the documented shared-memory boundary. At the measured source, the test required same-session server survival, which the production resource contract does not provide; #15897 later moved that probe to a manual target. A same-source uncached pass proves the outcome is intermittent, not that a retry or larger limit repairs it."}
             <//>
             <${Group} gap="xs" my="md">
               <${Badge} variant="light">${"5 Nov 07:20–12 Nov 07:20 UTC"}<//>
@@ -428,7 +428,7 @@
               ${"."}
             <//>
             <${Text} size="sm" c="dimmed" component="p" my="sm">
-              ${"Selected intervention evidence and PR states were refreshed on 12 November; the 5–12 November populations, denominators and source pin above were not recollected."}
+              ${"Selected intervention evidence was updated through 12 November 22:55 UTC; the 5–12 November populations, denominators and source pin above were not recollected."}
             <//>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" my="lg">
               <${Paper} withBorder p="lg" radius="md">
@@ -583,13 +583,13 @@
               <//>
             <//>
             <${Text} component="p">
-              ${"This is not a stale-session-store deletion or independently initiated WebSocket reset: the kernel's second victim explains the transport loss and subsequent unknown-session error. The source currently sets the executor memory maximum to 256 MiB and the Codex tool-OOM test deliberately allocates beyond the leaf limit, preferring the tool as victim. The test then requires exec-server, native session, and follow-up execution to survive."}
+              ${"This is not a stale-session-store deletion or independently initiated WebSocket reset: the kernel's second victim explains the transport loss and subsequent unknown-session error. The measured source sets the executor memory maximum to 256 MiB and the Codex tool-OOM test deliberately allocates beyond the leaf limit, preferring the tool as victim. That historical test required exec-server, native session, and follow-up execution to survive; #15897 later moved it to a manual target."}
             <//>
             <${Text} component="p">
-              ${"The isolation contract says Codex exec-server and its commands share one executor cgroup in VMs, and one companion-container budget in Pods. Restarting that backend loses its in-memory native session registry; commands are never reconstructed or replayed. The test's same-session-survives expectation therefore exceeds the current production resource contract. Raising the shared cap or retrying would not create command/server ownership."}
+              ${"The isolation contract says Codex exec-server and its commands share one executor cgroup in VMs, and one companion-container budget in Pods. Restarting that backend loses its in-memory native session registry; commands are never reconstructed or replayed. The historical test's same-session-survives expectation therefore exceeds the current production resource contract. Raising the shared cap or retrying would not create command/server ownership."}
             <//>
             <${Text} component="p">
-              ${"The current shared-cgroup evidence remains: one memcg OOM killed the tool and then the Codex exec-server, losing the native session. The pinned Codex 0.162.1 bundled exec-server configuration exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; existing OOM and no-replay assertions remain unchanged. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate architecture and ownership decision covering process, session, PTY, sandbox and filesystem behavior. The capability audit is documented in "}
+              ${"The current shared-cgroup evidence remains: one memcg OOM killed the tool and then the Codex exec-server, losing the native session. The pinned Codex 0.162.1 bundled exec-server configuration exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; #15897 moved the unsupported OOM survival assertion to manual while no-replay behavior remains. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate architecture and ownership decision covering process, session, PTY, sandbox and filesystem behavior. The capability audit is documented in "}
               <${Anchor}
                 href="https://github.com/agentydragon/ducktape/pull/15883"
                 >${"PR #15883"}<//
@@ -607,7 +607,7 @@
                 href="https://github.com/agentydragon/ducktape/pull/15883"
                 >${"#15883"}<//
               >
-              ${" merged at 12:00:02 UTC with required CI green. It verifies that bundled Codex 0.162.1 lacks per-command memory/cgroup placement and pre-exec controls; the CLI's CODEX_EXEC_SERVER_URL remains an external extension point. The current shared-cgroup setup still has no exec-server-survival guarantee. Existing OOM and no-replay assertions remain unchanged; no runtime repair is claimed."}
+              ${" merged at 12:00:02 UTC with required CI green. It verifies that bundled Codex 0.162.1 lacks per-command memory/cgroup placement and pre-exec controls; the CLI's CODEX_EXEC_SERVER_URL remains an external extension point. The current shared-cgroup setup still has no exec-server-survival guarantee. The OOM survival scenario is now manual under #15897; no runtime repair is claimed."}
             <//>
             <${Text} size="sm" c="dimmed" component="p">
               ${"Source: "}
@@ -667,7 +667,7 @@
                 href="https://app.buildbuddy.io/invocation/cfecc04e-ac6f-571c-8421-660fdce441ec"
                 >${"cfecc04e"}<//
               >
-              ${", three setup errors share a runner-gateway CrashLoopBackOff. Its startup log says local certificate-chain verification rejected the leaf as signed by an unknown authority (with ECDSA verification failure); deployment readiness waited 459 s before the suite failed. This identifies the direct startup failure, but the leaf/root serials and secret contents were not retained, so the certificate mismatch itself is unresolved."}
+              ${", three setup errors share a runner-gateway CrashLoopBackOff. Its startup log says local certificate-chain verification rejected the leaf as signed by an unknown authority (with ECDSA verification failure); deployment readiness waited 459 s before the suite failed. Later artifact recovery showed the intermediate was signed by an earlier root, while the newly issued root rejected it. Why two roots were issued and the exact mounted Secret bytes remain unknown; see #15899."}
             <//>
             <${Text} component="p">
               ${"Three MCP targets failed in the same devel BuildBuddy invocation "}
@@ -675,7 +675,7 @@
                 href="https://app.buildbuddy.io/invocation/1e6dc3d2-1d13-565b-b32f-0c399df96474"
                 >${"1e6dc3d2"}<//
               >
-              ${" on source b55239863dd62a89d7fdb00bb9571a58db8706eb: mcp:test_delegation, mcp:test_parent_delegation and mcp:test_services. They each timed out waiting 300 s for Sandbox Ready. The retained status shows Pods Running but WorkloadReady false and EnvironmentRuntimeConnected false; test_services also records environment-runtime BackOff. This is a shared readiness cluster, not three independent failures. The previous-container stderr or runtime exit reason was not retained, so the cause beneath runtime readiness remains unknown."}
+              ${" on source b55239863dd62a89d7fdb00bb9571a58db8706eb: mcp:test_delegation, mcp:test_parent_delegation and mcp:test_services. They each timed out waiting 300 s for Sandbox Ready. The retained status shows Pods Running but WorkloadReady false and EnvironmentRuntimeConnected false; test_services also records environment-runtime BackOff. This is a shared readiness cluster, not three independent failures. Later artifact recovery found the same old-intermediate/new-root mismatch in all three actions; runtime stderr directly confirms certificate verification failure for two Pods. Other timed-out Pods lack that direct stderr, so their exact exit reason is inferred; see #15900."}
             <//>
           <//>
 
@@ -742,11 +742,64 @@
             <//>
           <//>
 
+          <${Stack} component="section" id="nov12-later" gap="sm" my="xl">
+            <${Title} order=${2}>${"Later Nov 12: incident dispositions"}<//>
+            <${Text} component="p"
+              >${"Selected observations through 22:55 UTC; the earlier failure windows and rates are unchanged. "}<${Anchor}
+                href="evidence.json"
+                >${"Evidence and limits"}<//
+              >.<//
+            >
+            <${Paper} withBorder p="md">
+              <${Text} fw=${600}
+                >${"Dispatcher and MCP certificate failures"}<//
+              >
+              <${Text} component="p"
+                >${"Recovered certificates show that the dispatcher intermediate was signed by an earlier root while a newly issued root failed to verify it. Both roots were issued within 0.44s; the reason and mounted Secret bytes remain unknown. The incident predates fixture CA cleanup "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/15193"
+                  >${"#15193"}<//
+                >${". Later sampled dispatcher passes may be cached. "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/15899"
+                  >${"Dispatcher evidence"}<//
+                >.<//
+              >
+              <${Text} component="p"
+                >${"The three historical MCP failing actions show the same chain mismatch. Two Pods have direct runtime certificate-verification stderr; the cause for other timed-out Pods is inferred. All three targets passed uncached in one post-fix invocation, not a measured recurrence rate. This concerns startup before runner connection, not a demonstrated shutdown race. "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/15900"
+                  >${"MCP evidence"}<//
+                >${" · "}<${Anchor}
+                  href="https://app.buildbuddy.io/invocation/0514b26f-a4b0-5abf-81ba-076ceea0c132"
+                  >${"Fresh invocation"}<//
+                >.<//
+              >
+            <//>
+            <${Paper} withBorder p="md">
+              <${Text} fw=${600}>${"KVM registration and alert"}<//>
+              <${Text} component="p"
+                >${"After alert "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/15806"
+                  >${"#15806"}<//
+                >${" deployed, 206 one-minute samples from 18:58–22:23 UTC showed registration in 205 and the healthy predicate in 204; desired count and scrape were present in all 206. No sustained-empty alert fired. One roughly three-second scheduler restart recovered while an existing action continued. In 29 post-deployment GitHub CI runs through 22:27:48, all four failure logs lacked the old no-registered-kvm-vm signature. This is limited exposure, and live sustained-empty firing remains untested; the rule has promtool unit coverage. "}<${Anchor}
+                  href="https://grafana.allegedly.works/d/buildbuddy-executor-pool"
+                  >${"Pool dashboard"}<//
+                >.<//
+              >
+            <//>
+            <${Paper} withBorder p="md">
+              <${Text} fw=${600}>${"Codex OOM contract"}<//>
+              <${Text} component="p"
+                >${"Merged "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/15897"
+                  >${"#15897"}<//
+                >${" moves the unsupported exec-server survival assertion to a manual target and documents why; ordinary Codex and Claude VM tests remain required. No executor isolation or runtime repair is claimed. The green CI rerun used a cached VM result."}<//
+              >
+            <//>
+          <//>
           <${Stack} component="section" id="followups" gap="md" my="xl">
             <${Title} order=${2}>${"12 November intervention follow-up"}<//>
             <${Text} component="p">
               ${followup.population_refresh.note}
-              ${" Status is a snapshot at "}${followup.observed_at_utc}${"; recheck open PRs before publishing."}
+              ${" The following cards preserve their original snapshot at "}${followup.observed_at_utc}${"; the later dispositions above supersede their status and visibility limits where applicable."}
             <//>
             ${followup.workstreams.map((w) => {
               const detail =
@@ -1127,7 +1180,7 @@
                         >${"Capture independent guest/kernel heartbeat and the first harness/provider request boundary at the console cutoff, with process state after the 300 s wait."}<//
                       >
                       <${Table.Td}
-                        >${"Separate guest clock/CPU loss from one userspace component or a logging-only gap. Preserve the real turn and OOM scenario assertions."}<//
+                        >${"Separate guest clock/CPU loss from one userspace component or a logging-only gap. Preserve the real turn and the separately manual OOM scenario."}<//
                       >
                     <//>
                     <${Table.Tr}>
