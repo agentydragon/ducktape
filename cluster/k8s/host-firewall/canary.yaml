@@ -13,6 +13,7 @@ spec:
         operator: In
         values:
           - ovh-ns102453
+          - ovh-ns103656
           - ovh-ns103711
   ingress:
     # Node, Pod and health identities need the existing cluster paths.
