@@ -121,6 +121,15 @@ def require_gitops_chart(app: App) -> Chart:
                             )
                             for name, namespace in exempt_service_accounts
                         ),
+                        # Crossplane installs provider Deployments from GitOps-managed packages.
+                        ClusterPolicySpecRulesExcludeAny(
+                            subjects=[
+                                ClusterPolicySpecRulesExcludeAnySubjects(
+                                    kind="ServiceAccount", name="crossplane", namespace="crossplane-system"
+                                )
+                            ],
+                            resources=ClusterPolicySpecRulesExcludeAnyResources(namespaces=["crossplane-system"]),
+                        ),
                         # System namespaces
                         ClusterPolicySpecRulesExcludeAny(
                             resources=ClusterPolicySpecRulesExcludeAnyResources(

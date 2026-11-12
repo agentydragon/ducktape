@@ -55,6 +55,13 @@ spec:
                 namespace: kube-system
           - resources:
               namespaces:
+                - crossplane-system
+            subjects:
+              - kind: ServiceAccount
+                name: crossplane
+                namespace: crossplane-system
+          - resources:
+              namespaces:
                 - kube-system
                 - kyverno
                 - flux-system
