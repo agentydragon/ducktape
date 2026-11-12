@@ -11,9 +11,3 @@ class PolicyKind(StrEnum):
     GITHUB_REPOSITORY = "github_repository"
     GITHUB_PUBLIC_REPOSITORY = "github_public_repository"
     HOME_ASSISTANT_ENTITY_CONTROL = "home_assistant_entity_control"
-
-
-class PolicySource(StrEnum):
-    """Which PolicySet list contains a policy."""
-
-    RULES = "rules"
