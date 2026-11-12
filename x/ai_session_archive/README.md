@@ -85,20 +85,19 @@ replace a title, retract a field, or move a path; retractions query only the
 previous winning mapping's native-ID history. Path-specific and index-only
 candidates remain separate until identity and ambiguity checks resolve them.
 
-Migration `0005_codex_title_candidates` creates empty projection tables and installs
-the triggers without scanning the historical ledger. Before first using candidates,
-the importer first seeds candidates from the latest SQL snapshot, then backfills
-all stored SQL observations in primary-key pages of 2,000 rows,
-committing each page and its cursor together. This is a one-time read of all retained
-observations, including observations from pruned Restic snapshots. A failed run
-resumes from its committed cursor; completion becomes durable only after the last
-page is populated. Per-machine transaction locks coordinate backfill with old
-and new writers. Session projection starts only after this backfill completes.
-Routine imports read the compact candidates instead of reducing the full history.
-The migration and backfill preserve the historical observation ledger; rolling
-back the importer leaves the triggers active and older importer binaries usable.
-Keep the new migrator image when rolling back: an older Alembic history cannot
-resolve revision `0005_codex_title_candidates`.
+Migration `0005_codex_title_candidates` creates the projection tables and installs
+triggers without scanning historical observations. New imports populate candidates
+as they write observations, and later observation inserts, corrections, or deletes
+update candidates through those triggers. Routine projection reads the compact
+candidate table; the importer no longer runs a one-time historical backfill.
+
+Existing observation and candidate rows are not changed by this code update. Fresh
+databases and newly registered machines build candidates as imports write
+observations. This release does not rebuild candidates from observations that
+predate migration 0005, or finish an interrupted backfill on a database at revision
+0005 or 0006; recovery of those databases is out of scope. The change adds no
+migration and drops no tables, so rolling back to the previous importer remains
+schema-compatible.
 
 ## Read API and browser
 

@@ -25,8 +25,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — candidate service topology,
   holder-owned delivery and an immediate-or-fail send, awaiting the delivery-ownership decision; they
   do not gate the Runner extractions
-- [History tags and History's Sandbox records](sandbox_tags.md) — agreed design for history tags
-  on the Sandbox and History's own record of each Sandbox, which outlives it
+- [History tags and History's Sandbox records](sandbox_tags.md) — older Sandbox-scoped History
+  proposal; inbox tags ship, but grouping ownership, grants and lifetimes need review for independent
+  Sessions before this is treated as an approved prerequisite
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
@@ -42,10 +43,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
-  the target (one `Identity`, three credential forms), what the identity cutover still changes
-  (Sandboxes naming an Identity, the proxy and services keying on it, identity lifetimes and UI) and
-  its open questions; the kinds, grants, impersonation, the catalog and the services' Identity
-  admission have landed, and the switch waits on its open question 11
+  the target (one `Identity`, three credential forms) and remaining Session/service/app cutover work
+  and identity-lifetime questions; the Sandbox switch is merged in source, rollout and acceptance
+  remain open, and question 11 is settled
 - [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
   worked examples for explicit environment lifecycle grants to Identities, with the operator's
   remaining questions
@@ -54,9 +54,10 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   app's token
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
-- [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements
-  (SA attribution, Sandbox scopes and tags, live bundles) and what is open after messaging shipped:
-  broader cross-SA transcript reads/archive policy, delegation usability and Sandbox launch
+- [Cross-agent communication and authorization](multiagent_communication.md) — messaging and
+  same-principal delegation shipped; broader cross-principal transcript reads, archive policy and
+  Session grouping remain open, and historical Sandbox-scoped examples do not settle the independent
+  Session contract
 - [Caller-privilege Session delegation](session_delegation_workflows.md) — natural-agent usability,
   instruction composition, budgets and deferred environment provisioning; the shipped tools are
   documented in [Session delegation](../action_service/session_delegation/README.md)
@@ -81,3 +82,20 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   [missed-update reliability](task_dag.md#github_mergeability_freshness--obtain-a-current-result-after-base-only-changes), and
   [deferred Action feed](task_freezer.md#notification_action_feed--remove-idle-action-history-polling).
   Current behavior belongs in the [service docs](../notification_service/README.md).
+
+## Other active design and rollout notes
+
+- [Runner delivery and harness identity](../docs/runner_delivery_and_harness_design.md) — approved
+  Session addressing and lifecycle direction, current delivery boundaries, and open send-authority,
+  store and harness-identity decisions
+- [Sandbox Identity rollout](sandbox_identity_rollout.md) — source is merged; perform the read-only
+  state audit and only the rollout and acceptance steps that remain
+- [Session and Environment model](session_environment_model.md) — selected placement baseline and
+  open zero-environment Session, attachment, authority and lifetime decisions
+- [Session command authority](session_send_authority.md) — implemented native Session addressing;
+  retained outcomes, revocation and cross-principal inbox sends remain gated
+- [Standard idioms](standard_idioms.md) — low-priority audit candidates and decisions; the task DAG
+  owns their status and dependencies
+- [Credential destination transport](../egress/plans/credential_transport.md) — historical source
+  inventory and a still-unselected scheme/port restriction proposal; desired config is not live
+  traffic evidence

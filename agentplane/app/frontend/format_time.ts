@@ -15,12 +15,6 @@ export function isoTime(value: string | number | Date): string {
   return new Date(value).toISOString();
 }
 
-/** An age a reader takes in at a glance: "40 minutes ago", not the 2417 seconds behind it. */
-export function ageAgo(seconds: number): string {
-  const now = Date.now();
-  return timeAgo(now - seconds * 1000, now);
-}
-
 /** A length of time a reader takes in at a glance: "1 hour 30 minutes", not the 5400 seconds behind it. */
 export function durationLabel(seconds: number): string {
   return formatDuration(intervalToDuration({ start: 0, end: seconds * 1000 }));

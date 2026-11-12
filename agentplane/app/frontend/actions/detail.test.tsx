@@ -20,7 +20,8 @@ import {
 } from "../../../action_service/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { answerApi, mount, request, send, TestNdjsonWatch, unmountLast, type Sent } from "./testing/harness";
+import { IdentitySchema } from "../../../proto/identity_pb";
+import { answerApi, button, mount, request, send, TestNdjsonWatch, unmountLast, type Sent } from "./testing/harness";
 import { actionRequestUpsertProtoJson } from "./testing/proto_fixtures";
 
 const ROW = request(ActionState.DECISION_PENDING, 21);
@@ -115,6 +116,19 @@ it("renders an Action's human-facing label on the full details page", async () =
 
   await vi.waitFor(() => expect(container.textContent).toContain("List pods in namespace tofu-controller"));
   expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
+});
+
+it("keeps an Identity caller's pending detail reviewable with its UID", async () => {
+  const row = clone(ActionRequestSchema, ROW);
+  row.caller = undefined;
+  row.callerIdentity = create(IdentitySchema, { name: "fake-detail-workload", uid: "fake-detail-workload-uid" });
+  serve({ stored: row });
+  const container = await mount(<App initialPath={`/actions/${row.id}`} />);
+
+  await vi.waitFor(() => expect(container.textContent).toContain("fake-detail-workload-uid"));
+  expect(container.textContent).toContain("Requested by Identity fake-detail-workload · UID fake-detail-workload-uid");
+  expect(button(container, "Approve").disabled).toBe(false);
+  expect(button(container, "Deny").disabled).toBe(false);
 });
 
 it.each([

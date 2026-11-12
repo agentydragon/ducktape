@@ -32,6 +32,7 @@ from agentplane.env import config as configuration
 from agentplane.env.config import (
     CONFIG_FILE,
     LAUNCH_FILE,
+    Codex,
     CodexReadiness,
     Configuration,
     ContainerExecutor,
@@ -447,7 +448,7 @@ class EnvironmentSandboxTemplate(Construct):
                 values={"HOME": _HOME_DIR},
             ),
             claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
-            codex=Harness(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
+            codex=Codex(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
             environment=PodEnvironment(
                 supervision="pid1",
                 executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)

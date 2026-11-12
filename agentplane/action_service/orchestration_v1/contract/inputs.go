@@ -45,7 +45,7 @@ func (Harness) JSONSchema() *jsonschema.Schema {
 type LaunchArgs struct {
 	Name                    string   `json:"name" jsonschema_description:"The new Sandbox's name, a DNS label no Sandbox in the namespace has." jsonschema:"minLength=1,maxLength=57,pattern=^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
 	Template                string   `json:"template" jsonschema_description:"The SandboxTemplate it runs from." jsonschema:"minLength=1"`
-	PolicySets              []string `json:"policy_sets,omitempty" jsonschema_description:"PolicySets its own account is bound to, beside this deployment's defaults." jsonschema:"uniqueItems=true"`
+	PolicySets              []string `json:"policy_sets,omitempty" jsonschema_description:"The complete PolicySet grant list for the new Sandbox Identity. No implicit deployment defaults are added." jsonschema:"uniqueItems=true"`
 	InboxTags               []string `json:"inbox_tags,omitempty" jsonschema_description:"Groups its Session inboxes take messages as." jsonschema:"uniqueItems=true"`
 	Bootstrap               string   `json:"bootstrap,omitempty" jsonschema_description:"Shell source its runner runs once, before its first Session." jsonschema:"maxLength=65536"`
 	WakeOnSend              bool     `json:"wake_on_send,omitempty" jsonschema_description:"Whether an inbox message or a submitted input resumes it once it is suspended."`

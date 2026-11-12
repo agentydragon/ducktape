@@ -31,8 +31,7 @@ func DecodeJSONValue(data []byte) (any, error) {
 	return value, nil
 }
 
-func MustJSON(value any) []byte      { data, _ := json.Marshal(value); return data }
-func EqualJSON(left, right any) bool { return bytes.Equal(MustJSON(left), MustJSON(right)) }
+func MustJSON(value any) []byte { data, _ := json.Marshal(value); return data }
 func CanonicalJSON(value any) string {
 	data, err := json.Marshal(value)
 	if err != nil {

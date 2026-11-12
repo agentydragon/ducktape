@@ -145,8 +145,9 @@ an operator follow-up; no model exercise is dispatched. Focused regression-test 
 runs remain authorized; broad disruption exercises remain waived. Revisit reliability work when
 normal use exposes a concrete regression. First such regression, 2026-11-10: three staging rollouts in four minutes
 (#15439, #15440) cost every central Session its exec-server session and wedged one on a lost
-JavaScript host; fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the automatic
-settlement of host loss (#15455) in flight; the remaining operator-only blocks are
+JavaScript host. Source fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the
+automatic settlement of host loss (#15455) merged on 2026-11-10. This records source status only;
+post-rollout acceptance is not established here. The remaining operator-only blocks are
 `SAMPLER_INTENT_LEASES`; the executor's survival across control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
@@ -177,20 +178,22 @@ its old ordering does not give it precedence over the selected tracks.
 **The second active track beside P1 (operator, 2026-11-10).** The
 work of the last week is [section 14](#14-identity-and-kubernetes-accounts-cutover): Sessions and
 workloads move from ServiceAccounts to Agentplane `Identity`s, expand → switch → contract. The
-expand phase is on staging. The switch (`SANDBOX_IDENTITY_SPEC`) waits on exactly one operator
-decision, [question 11](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), who
-creates the Identity a launched Sandbox runs as; the contract phase and the cutover follow it. Until
-it is answered the lanes below are the dispatchable work, in the order that makes the switch
-smaller and safer; each is independent of the others and of question 11.
+Sandbox Identity implementation is merged in [#15742](https://github.com/agentydragon/ducktape/pull/15742)
+and [#15744](https://github.com/agentydragon/ducktape/pull/15744). This records source status only;
+the coordinated rollout and live acceptance are not verified here. `SANDBOX_IDENTITY_SPEC` points
+to their [rollout plan](sandbox_identity_rollout.md); the Session contract and wider cutover retain
+their separate gates. The launch decision in
+[question 11](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits) is settled. The
+lanes below remain dispatchable in the order that makes the remaining cutover smaller and safer.
 
-| Lane                | Next reviewable outcome                                                            | Why now                                                                                 |
-| ------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Expand, last piece  | `SERVICES_IDENTITY_PRINCIPAL`: #15389 merged; #15442 renders its settings          | Unblocks the sampler and the MCP edge acting for an Identity                            |
-| Standing workloads  | `STANDING_WORKLOAD_IDENTITY`: Haku and the `haku-ci` relay run as Identities       | First real Identity traffic on staging; shrinks the cutover PR                          |
-| Lifecycle authority | `ENVIRONMENT_RULE_TYPE_DESIGN` then `ENVIRONMENT_LIFECYCLE_RULES`                  | The one missing rule type; gates sub-agent delegation and the deferred self-read branch |
-| Central Sessions    | `CENTRAL_SESSION_DELEGATED_ACTING`: landed; its manifest waits for the switch      | The central-sampler half of the migration; independent of environment-free Sessions     |
-| App                 | `APP_IDENTITIES_UI`: the permission-request card; the picker lands with the switch | What the switch renders in the launch path                                              |
-| Tests               | `APP_AGENT_TOKEN_DECISION`: the spike                                              | Removes the last agent-side TokenReview path                                            |
+| Lane                | Next reviewable outcome                                                                  | Why now                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Expand, last piece  | `SERVICES_IDENTITY_PRINCIPAL`: #15389 and settings PR #15442 merged; verify its apply    | Unblocks the sampler and the MCP edge acting for an Identity                            |
+| Standing workloads  | `STANDING_WORKLOAD_IDENTITY`: #15450 merged; verify Haku and the relay run as Identities | First real Identity traffic on staging; shrinks the cutover PR                          |
+| Lifecycle authority | `ENVIRONMENT_RULE_TYPE_DESIGN` then `ENVIRONMENT_LIFECYCLE_RULES`                        | The one missing rule type; gates sub-agent delegation and the deferred self-read branch |
+| Central Sessions    | `CENTRAL_SESSION_DELEGATED_ACTING`: landed; its manifest waits for the switch            | The central-sampler half of the migration; independent of environment-free Sessions     |
+| App                 | `APP_IDENTITIES_UI`: the permission-request card; the picker lands with the switch       | What the switch renders in the launch path                                              |
+| Tests               | `APP_AGENT_TOKEN_DECISION`: decide the remaining staging TokenReview callers             | Removes the last agent-side TokenReview path                                            |
 
 The environment-free central Session (`CENTRAL_SESSION_WITHOUT_ENVIRONMENT`, section 13) is part of
 the same goal but gated by three non-identity decisions (`CENTRAL_SESSION_CREATION_CONTRACT`,
@@ -204,7 +207,7 @@ flowchart LR
         SERVICES_IDENTITY_PRINCIPAL[#15389] --> CENTRAL_SESSION_DELEGATED_ACTING
         STANDING_WORKLOAD_IDENTITY --> IDENTITY_CUTOVER
         ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
-        QUESTION_11[Decision: who mints a launched Sandbox's Identity] --> SANDBOX_IDENTITY_SPEC
+        SANDBOX_IDENTITY_SPEC[Sandbox Identity rollout and acceptance] --> IDENTITY_SYSTEM_TESTS
         SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
@@ -3115,12 +3118,12 @@ old paths.
 ## 14. Identity and Kubernetes accounts cutover
 
 The implementation of [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md)
-under the 2026-11-05 decisions. The kinds, grants, managed ServiceAccounts, impersonation, the
-shared reader's Identity lookups and the identity catalog have landed, the catalog behind
-`Environment.identity_catalog`, which is off on staging; Sandbox SVIDs authenticate through
-per-incarnation `WorkloadCredential`s ([workload authentication](../docs/workload_authentication.md)).
-Stage edges are technical prerequisites; the fan-in to system tests is a sequencing hold, not
-permission to start them early.
+under the 2026-11-05 decisions. The identity kinds, grants, managed ServiceAccounts, impersonation,
+shared Identity lookups and workload authentication have landed in source. The Sandbox Identity
+switch implementation is merged in #15742 and #15744. This section tracks source-level dependencies;
+it does not assert which revisions, images or configuration are currently deployed. The coordinated
+rollout and live acceptance gates are in [the Sandbox Identity rollout plan](sandbox_identity_rollout.md).
+The fan-in to system tests remains a sequencing hold, not permission to start them early.
 
 The target is one identity source with three credential forms (operator decision, 2026-11-10;
 [plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
@@ -3129,53 +3132,32 @@ API alone. The paths that miss it are inventoried in the
 [lifecycle plan](workload_identity_lifecycle.md#remaining-paths), each tracked by a node below or by
 `APP_AGENT_TOKEN_DECISION`.
 
-**Where it stands, 2026-11-10 (expand → switch → contract).** The expand phase is on staging: every
-service verifies an Identity SVID subject (`auth.IdentityPrincipal`, `AnySubject`,
-`ReviewedServiceAccountOrIdentity`), the proxy decides an Identity caller by its bindings and
-impersonates accounts it has a use rule for, LLM ingress attributes it, the Action Service admits it
-and gives it unowned boxes (#15385), Dispatcher records a Session's Identity from its Sandbox's
-`spec.identity` and strands a mismatch, History and Notification own rows by Identity beside the
-ServiceAccount, in-Sandbox agents subscribe and message as Identities (#15374), and the manifests
-give every verifier its policy namespace and `get` on Identities (#15391; images
-`devel-20261110082910` running). `Sandbox.spec.identity` and its admission rule exist (#15235);
-nothing on staging sets it, so no Identity-run Session exists yet and every record's subject is
-still a ServiceAccount. The Sandbox template no longer projects a Kubernetes token (#15258), so
-Sandbox `kubectl` has no path until the switch. An Identity caller's `CreateSession` is refused
-(#15387).
-
-What stays provisional, each tracked by the node that removes it: the delegation envelope's effective
-caller is a ServiceAccount (`SERVICES_IDENTITY_PRINCIPAL`, #15389 in review); every
-`WorkloadCredential` names a ServiceAccount subject (`STANDING_WORKLOAD_IDENTITY` for the standing
-records, `SANDBOX_IDENTITY_SPEC` for Sandboxes, `IDENTITY_CUTOVER` for boxes); no explicit environment rule type exists, so an Identity caller gets
-no resume, wake or create (`ENVIRONMENT_RULE_TYPE_DESIGN`); the central sampler's delegated acting is in the code but not enabled on staging
-(`CENTRAL_SESSION_DELEGATED_ACTING`); an MCP edge Connection is bound to a
-ServiceAccount and the edge forwards a token minted for it (`IDENTITY_CUTOVER`).
-
-**The switch gate is one decision:** who creates the Identity a launched Sandbox runs as
-([open question 11](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). Everything
-below the switch waits on it; nothing above it does. Same-Identity messaging and wakes landed on 2026-11-10 (#15437, #15438), as did the sampler's
-delegated acting (#15439, #15440). The lanes that do not wait are `STANDING_WORKLOAD_IDENTITY`,
-`ENVIRONMENT_RULE_TYPE_DESIGN`, the remaining `APP_IDENTITIES_UI` slices and the
-`APP_AGENT_TOKEN_DECISION` spike. The migration's lanes and order are in
-[Identity and Sessions migration](#identity-and-sessions-migration-2026-11-10).
+**Open cutover work.** The launch decision is settled, and the Sandbox implementation is merged.
+Its coordinated rollout and live acceptance remain unverified; use the linked rollout plan for the
+holds, artifact and image checks, acceptance, rollback and reopening criteria. `IDENTITY_SYSTEM_TESTS`
+is the acceptance gate. `SESSION_SA_PRINCIPAL_REMOVAL` still removes the transitional ServiceAccount
+principal from Session-facing code, and `IDENTITY_CUTOVER` still has its own test, app, and standing-
+workload prerequisites. Explicit environment lifecycle rules remain in `ENVIRONMENT_RULE_TYPE_DESIGN`
+and `ENVIRONMENT_LIFECYCLE_RULES`; the remaining staging TokenReview callers are tracked by
+`APP_AGENT_TOKEN_DECISION`.
 
 ```mermaid
 flowchart LR
-    APP_AGENT_TOKEN_DECISION[Candidate: spike then decide the app's agent token]
-    SERVICES_IDENTITY_PRINCIPAL[In review #15442: the delegation settings on staging]
+    APP_AGENT_TOKEN_DECISION[Decision: staging live suites still use the agent token]
+    SERVICES_IDENTITY_PRINCIPAL[#15442 merged: delegation settings rendered; apply evidence pending]
     CENTRAL_SESSION_ACTING_DESIGN[Settled design: a central Session acting as its identity]
-    CENTRAL_SESSION_DELEGATED_ACTING[Landed; manifest after the switch]
+    CENTRAL_SESSION_DELEGATED_ACTING[Base source slices merged; manifest after the switch]
     CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
     SANDBOX_IDENTITY_SPEC -->|manifest flip| CENTRAL_SESSION_DELEGATED_ACTING
-    STANDING_WORKLOAD_IDENTITY[Candidate: standing workloads run as Identities]
+    STANDING_WORKLOAD_IDENTITY[#15450 merged: standing Identity rollout evidence pending]
     ENVIRONMENT_RULE_TYPE_DESIGN[Decision: explicit environment lifecycle rules]
     ENVIRONMENT_LIFECYCLE_RULES[Blocked: Identity callers resume, wake and create under rules]
     ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_LIFECYCLE_RULES
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
-    IDENTITY_DELETE_CREDENTIAL_GUARD[Candidate: include name-only credential references]
-    STANDING_WORKLOAD_IDENTITY -. if UID-optional records land .-> IDENTITY_DELETE_CREDENTIAL_GUARD
-    SANDBOX_IDENTITY_SPEC[Blocked on question 11: a Sandbox acts as its identity]
+    IDENTITY_DELETE_CREDENTIAL_GUARD[Follow-up: include name-only credential references]
+    STANDING_WORKLOAD_IDENTITY -. #15450 permits UID-optional records .-> IDENTITY_DELETE_CREDENTIAL_GUARD
+    SANDBOX_IDENTITY_SPEC[Implementation merged; rollout and acceptance pending]
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
     SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
@@ -3196,27 +3178,19 @@ flowchart LR
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
 
-**Decision pending a spike (operator, 2026-11-10).** The app's `agentplane-agent` bearer, used by
-system tests and scripts, is the one agent-side TokenReview path with no node. Both test boundaries
-stay valid: end-to-end flows through the app's API as a user would, and service-level scenarios
-that drive backend services in-cluster by SVID. Dex in the heavy k3s suites (another image and Pod)
-is not wanted; an auth-off mode in the shipped app is not either.
+**Open decision after the test-fixture conversion.** The app still accepts a TokenReview bearer
+for `agentplane-agent`; staging live suites and hand-run scripts are the remaining callers. PR
+[#15448](https://github.com/agentydragon/ducktape/pull/15448) moved k3s fixtures to short-lived,
+test-minted OIDC ID tokens while keeping end-to-end coverage through the app API. The app also
+accepts operator ID tokens from its configured issuer. This preserves both test boundaries: app API
+flows as an operator and service-level scenarios that drive backend services in-cluster by SVID.
 
-Candidate: **test-minted OIDC ID tokens.** The app's `caller()` (`app/go/auth/auth.go`) gains a
-bearer branch that verifies an ID token with go-oidc against the configured issuer and client ID and
-yields the same operator `Caller` as a cookie session. Production keys come from the discovered
-issuer; the system-test fixture configures a static key set for a test-only issuer, and the test
-process signs short-lived tokens for a fixed test operator, so no issuer Pod runs. The app refuses
-static keys combined with the production issuer. Staging live suites use a token from the real
-issuer. Once callers move, the `agentplane-agent` TokenReview path is deleted.
-
-**Next: spike, then decide.** Prototype the bearer branch and fixture on one app suite, and measure
-against today's TokenReview path: suite wall time, per-request auth latency, app and fixture memory,
-images and Pods added (expected none), and code size. Adopt only if the delta is acceptable to the
-operator; otherwise this node records the measured result. Backend services calling each other as
-themselves keep TokenReview (operator, 2026-11-10;
-[plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)). Alternatives
-are the [lifecycle plan's open question](workload_identity_lifecycle.md#open-questions) 1.
+The remaining question is whether staging live suites and scripts can use ID tokens from the real
+issuer or should retain the narrow TokenReview exception. The public route terminates TLS at the
+Gateway, so a client certificate cannot reach the app as mTLS. Keep the TokenReview configuration
+until every remaining caller has moved or the exception is explicitly accepted. Backend services
+calling each other as themselves keep TokenReview (operator, 2026-11-10;
+[identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)).
 
 ### `CENTRAL_SESSION_ACTING_DESIGN` — a central Session acting as its identity
 
@@ -3303,9 +3277,10 @@ where a Sandbox-hosted agent's would be.
 
 ### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
 
-**Landed: #15389 merged 2026-11-10 (`d0ec1fb8f3`); left: [#15442](https://github.com/agentydragon/ducktape/pull/15442),
-the manifest rendering its `delegation.identity_callers` for the Runner Gateway and History (in
-review, identity-delegation-manifests, 2026-11-10). This node closes when #15442 is applied.** The rest is on staging, including the proxy's half that was
+**Source merged: #15389 on 2026-11-10 (`d0ec1fb8f3`) and [#15442](https://github.com/agentydragon/ducktape/pull/15442)
+on 2026-11-10.** #15442 renders `delegation.identity_callers` for the Runner Gateway and History;
+this node closes when the settings are applied and the receivers accept Identity delegation. That
+apply is not verified here. The rest is on staging, including the proxy's half that was
 `EGRESS_IDENTITY_RULES`: the proxy decides an Identity caller by the bindings naming it,
 impersonates any account it holds a use rule for and records the decision by kind and name
 ([egress SPEC](../egress/SPEC.md) § Decision); the Rules API answers an Identity. The seam is
@@ -3332,8 +3307,9 @@ existing service tests pass with identity principals.
 
 ### `STANDING_WORKLOAD_IDENTITY` — standing workloads run as Identities
 
-**In review: [#15450](https://github.com/agentydragon/ducktape/pull/15450) (standing-workload-identity,
-2026-11-10; the operator chose it over waiting for the cutover; split out of `IDENTITY_CUTOVER`).
+**Source merged: [#15450](https://github.com/agentydragon/ducktape/pull/15450) on 2026-11-10
+(standing-workload-identity; the operator chose it over waiting for the cutover; split out of
+`IDENTITY_CUTOVER`).
 `WorkloadCredential.spec.subject.identity.uid` became optional there (operator, 2026-11-10): git
 cannot know the UID of an Identity applied beside the record; a record naming a `uid` pins that
 incarnation, one without follows the live Identity of that name; the Sandbox Controller and the
@@ -3341,14 +3317,14 @@ Action Service keep pinning. Nothing existed only to carry the ServiceAccount su
 Role rule and a caller label, which the PR drops. Exit evidence waits for the Flux apply.** Haku UI, Anki and
 Jupyter already present SVIDs whose `WorkloadCredential` subjects are the ServiceAccounts
 `haku-sandbox/haku-ui` and, for the `haku-ci` egress relay, `haku-ci/haku-ci-egress`, held for policy
-binding only (operator, 2026-11-10). Move them first: cdk8s renders two Flux-owned `Identity`s in
+binding only (operator, 2026-11-10). The merged configuration renders two Flux-owned `Identity`s in
 the policy namespace (one shared by Haku UI, Anki and Jupyter, one for the relay), the standing
 `WorkloadCredential`s name them, their `PolicyBinding`s move to `subject.identity`, and the
 ServiceAccount subjects and any Role or RoleBinding that existed only to carry them go. The Pods
-keep running as their ServiceAccounts, which the egress gateway's network policy selects. This is
-the first real Identity traffic on staging and exercises the proxy's Identity decision path before
-any Sandbox depends on it; `Environment.identity_catalog` stays off, so the move renders
-unconditionally rather than behind it. The resolver's ServiceAccount branch stays for Sandboxes and
+keep running as their ServiceAccounts, which the egress gateway's network policy selects. After Flux
+applies it, this will be the first real Identity traffic on staging and exercise the proxy's Identity
+decision path before any Sandbox depends on it; `Environment.identity_catalog` stays off, so the
+configuration renders unconditionally rather than behind it. The resolver's ServiceAccount branch stays for Sandboxes and
 boxes until `SESSION_SA_PRINCIPAL_REMOVAL` and `IDENTITY_CUTOVER`. The PR states the rollback
 (revert; the proxy decides the old subjects again) and what to check once Flux applies it: `haku-ci`
 runs reach their hosts and the proxy's decisions name the Identities. **Exit:** the proxy's
@@ -3388,88 +3364,60 @@ another Identity stops matching.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox acts as its identity and creates nothing else
 
-**Implementation merged and serving (2026-11-12):** switch #15742 and cleanup #15744 removed
-the Sandbox ServiceAccount path, `spec.policySets`, and the controller-created grant.
-[Live evidence and remaining acceptance](../debug/2026_11_12_sandbox_identity_cutover/README.md)
-cover Pod/VM credentials, in-Sandbox Kubernetes authorization, Codex and sampler tool turns, and
-suspend/resume. Operator-approved broker acceptance is still open because the frontend rejects
-Identity Action callers. The design notes below describe the original switch; do not redispatch
-the merged implementation. Direct and caller-delegated Identity Session creation remain denied
-until the separately tracked lifecycle grants.
+**Implementation merged:** [#15742](https://github.com/agentydragon/ducktape/pull/15742)
+switches Sandbox launches and workload credentials to Identities;
+[#15744](https://github.com/agentydragon/ducktape/pull/15744) removes the ServiceAccount credential
+fallback and legacy `Sandbox.spec.policySets` setting. The earlier field/admission change landed in
+[#15235](https://github.com/agentydragon/ducktape/pull/15235). The settled launch sequence is three
+operations: create the Identity, bind the selected launch PolicySets to it, then create the
+Environment with `spec.identity` naming it; no Environment operation creates or deletes an Identity
+([decision](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The earlier draft
+[#15239](https://github.com/agentydragon/ducktape/pull/15239) is superseded by the merged source
+changes and is not a rollout dependency.
 
-**Unblocked: question 11 is settled (operator, 2026-11-11)**: a launch is three separate
-operations, create the Identity, bind the launch's PolicySets to it, then `CreateEnvironment` naming it
-in `spec.identity`; no environment operation creates or deletes an Identity
-([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)). The launch paths (the
-app's launch form, `LaunchSandbox`, the system-test driver) switch to that sequence with the
-controller. The
-consumers-first hold is discharged: the services and proxy accept Identity subjects on staging since
-2026-11-10 (#15391 and the images before it). Draft #15239 holds the controller part and is rebuilt on
-that answer rather than rebased.
-`Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
-only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
-Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes
-its acting identity again, while the controller's credentials, which pin the UID, stop working
-(a `WorkloadCredential` pins an incarnation only when its requester names the `uid`; operator,
-2026-11-10). Acting in a workload is implied for
-its bound Identity, but lifecycle control (resume, wake, suspend, delete, rebind, create Sessions)
-needs an explicit grant, and deleting the Identity revokes the Sandbox's credentials without
-deleting it ([plan](identity_and_kubernetes_accounts.md#identity-lifetime); operator, 2026-11-10).
-Explicit environment rules do not exist yet, so Identity callers get no EnvironmentService resume
-or wake until `ENVIRONMENT_LIFECYCLE_RULES`. Sandboxes and Action boxes are to converge into one object type
-([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)). #15380
-derived them from acting-as and was closed unmerged: `resumePolicy.allowOwnIdentity` and its
-Dispatcher migration are rebuilt as `ENVIRONMENT_LIFECYCLE_RULES`
-(its code is kept on branch `identity-consumers-environment-self-read-deferred`). The switch is one
-change, not a mode behind a setting or behind `Environment.identity_catalog` (operator,
-2026-11-09); draft #15239 holds the controller part. The template part landed early (#15258,
-operator, 2026-11-10): Sandbox, Firecracker and VM-relay Pods render no projected ServiceAccount
-token, unconditionally (undoing #15244's catalog gate), so Sandbox `kubectl` on staging has no path
-until this switch gives it Identity impersonation at egress; command boxes keep theirs while
-`identity_catalog` is off and they run as their caller's ServiceAccount. What remains:
+**Serving and partially accepted (2026-11-12, rollout owner):**
+[Live evidence](../debug/2026_11_12_sandbox_identity_cutover/README.md) records the deployed
+artifact/image revisions, Pod/VM credentials, in-Sandbox Kubernetes authorization, Codex and
+sampler tool turns, and suspend/resume. The proposed declarative holds were never applied.
+Operator-approved broker acceptance remains open: the Identity caller UI repair #15860 is merged
+and its code/visual checks passed, but the serving frontend still predates that repair.
+The [rollout plan](sandbox_identity_rollout.md) retains rollback and remaining acceptance steps;
+do not repeat its already-completed cutover sequence. Keep this node and its dependents open
+until the remaining acceptance and source/configuration check below are recorded.
+`IDENTITY_SYSTEM_TESTS` remains a separate gate.
 
-- The Sandbox Controller always acts as `spec.identity`, read live with its UID, as the
-  `WorkloadCredential` subject. `ensureIdentity` and `ensureBinding` and `Sandbox.spec.policySets`
-  are deleted with every writer of the field. Pods run as `default` with
-  `automountServiceAccountToken: false`. No live Identity starts nothing and leaves no record
-  (`IdentityMissing`, reported with stop stage `Stopped` when no workload exists, so an unbound
-  environment can be bound). A running incarnation keeps its record's subject: deleting its
-  Identity does not stop it, the next start is refused and authentication fails closed on the UID.
-  An incarnation whose record names another identity than the spec, which admission lets through
-  only while a status report lags a start, is replaced; an unbound record naming another identity
-  is revoked first, so the next start has a fresh credential ID. A suspended Firecracker launcher
-  whose identity changed is held with its checkpoint (`RunnerCredentialMismatch`); discarding the
-  checkpoint and cold starting is a TODO. A deleted Sandbox that must run once more to seal waits
-  for a live Identity.
-- VMs: the namespace's Kyverno launcher policy (`cluster/cdk8s/agentplane/launcher_relay.py`)
-  authenticates a virt-launcher through the ServiceAccount the Sandbox controls and injects that
-  account. It authenticates through the VM's controller owner (`vmOwner`) instead and injects
-  `default`, so every runner kind switches.
-- `EnvironmentService` creation takes an identity and binds its launch sets with a `PolicyBinding`
-  naming that Identity and owned by it, because the policy reader fences only the Identity's UID.
-  It refuses an identity change while any non-terminal Session is placed on or attached to the
-  environment, a check on Dispatcher's store in the same process; it narrows to "a Session of
-  another identity" at `SERVICES_IDENTITY_PRINCIPAL`, when Sessions carry one.
-- `Environment.identity_catalog` splits: its Sandbox-only parts (the projected token above, and
-  launch sets binding an Identity) become unconditional here; the standing callers' binding subjects
-  and the Kubernetes-rule-to-role-set move stay behind it until `IDENTITY_CUTOVER` flips it.
-- The agent Kubernetes docs lose the kubeconfig and point at the rules endpoint.
+The merged contract is: the controller requests an Identity-subject `WorkloadCredential` pinned to
+the live Identity UID; a Sandbox with no live Identity starts no workload, while a running
+incarnation keeps its recorded subject. Pods use `default` with token automount disabled, and the VM
+launcher path authenticates through the VM's owner chain. Sandbox identity acts for workload
+operations, while lifecycle operations need explicit grants
+([identity lifetime](identity_and_kubernetes_accounts.md#identity-lifetime)). Explicit environment
+rules remain tracked by `ENVIRONMENT_RULE_TYPE_DESIGN` and `ENVIRONMENT_LIFECYCLE_RULES`. A suspended
+Firecracker launcher whose identity changes remains held with its checkpoint
+(`RunnerCredentialMismatch`); discarding the checkpoint for a cold start is not implemented yet
+([controller contract](../sandbox_controller/SPEC.md#vms)).
 
-Dispatcher and Notification already serve a Sandbox that names an Identity and has no managed
-ServiceAccount: its Sessions are Identity-run and its inboxes the Identity's (#15360), a precondition for deleting the per-Sandbox ServiceAccount here.
-In-Sandbox agents subscribe and message each other as Identities (#15374), a precondition for the
-switch: an agent's ServiceAccount stops existing. Before the switch, a privileged `CreateSession` on a
-Sandbox naming an Identity can race its ServiceAccount's creation; nothing sets `spec.identity`
-before the switch, so the switch design accepts that window and closes it by deleting the
-ServiceAccount path.
+**Remaining source/configuration compatibility cleanup.** The verifier inputs are still optional:
+make `policy_namespace` required in `agentplane/llm_ingress/settings.py` and `config.go`,
+`agentplane/history_service/settings.py` and `config.go`, and
+`agentplane/runner_gateway/settings.py` and `config.go`; make `Identities` required by
+`agentplane/workload_identity/resolver.New` (`resolver/resolver.go`). These are existing cleanup
+tombstones in those sources, not work completed by #15742 or #15744. Before rolling forward or
+reopening Identity launches, verify the deployed binaries and rendered configuration supply the
+Identity namespace and resolver wiring; do not treat an optional default as evidence that every
+verifier is ready. Keep this compatibility item open until the source cleanup and
+artifact/configuration check are complete.
 
-Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
-a Session whose recorded execution identity differs), so the switch needs a step that either
-rewrites those Sessions' execution identity or retires them. On staging no Sandboxes run during the
-switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity sender's queued work wakes the Sandbox acting as that Identity since #15438.
+The ServiceAccount principal remains in Session-facing storage and code until
+`SESSION_SA_PRINCIPAL_REMOVAL`. Existing Sessions whose recorded execution identity differs from a
+Sandbox's new identity cannot receive delivery; the rollout plan requires a fresh acceptance
+Session and preserves retained workspace data. The wider standing-workload, command-box and MCP
+cutover remains in `IDENTITY_CUTOVER`.
 
-**Exit:** controller tests for a Sandbox with and without a live identity; and a Sandbox with no
-Kubernetes use rule has nothing in the accounts namespace.
+**Exit:** complete the rollout plan's live acceptance and source/configuration compatibility check,
+and record the source and deployed artifact/image revisions and results. `IDENTITY_SYSTEM_TESTS`
+remains a separate gate before `IDENTITY_CUTOVER`; the Session-principal removal still depends on
+this node as shown in the graph.
 
 ### `SESSION_SA_PRINCIPAL_REMOVAL` — Sessions carry no ServiceAccount
 
@@ -3490,9 +3438,11 @@ its Identity; this node deletes the ServiceAccount side for Sessions:
 - Action Service: a ServiceAccount caller remains only for backends that are not Sessions; a
   Sandbox-originated caller is always an Identity.
 
-Sessions from before the switch are retired at the switch, not migrated: no Sandboxes run on staging
-then. **Exit:** no Session-facing code path, column or wire field names a ServiceAccount, and the
-services' tests pass without one.
+Sessions from before the switch are retired rather than migrated to a different execution
+Identity. Follow the rollout plan's current inventory and preservation gates when deciding which
+Sessions and continuation state may be retired; its sampler-thread approval does not authorize
+removing retained workspaces or other data. **Exit:** no Session-facing code path, column or wire
+field names a ServiceAccount, and the services' tests pass without one.
 
 ### `IDENTITY_CLEANUP_REFERENCE_DECISION` — decide cleanup reference guarantees
 
@@ -3514,11 +3464,11 @@ independently actionable follow-ups, without changing the existing rule by impli
 
 ### `IDENTITY_DELETE_CREDENTIAL_GUARD` — include name-only credentials in Identity deletion checks
 
-**Candidate alongside [#15450](https://github.com/agentydragon/ducktape/pull/15450); independent
-of the reference-race decision.** That PR proposes WorkloadCredentials without an Identity UID that
-resolve to the live Identity by name. `DeleteIdentity` currently counts a credential only when its
-subject name **and UID** match, so an existing name-only credential would be missed even though it
-can act as that Identity. Include it in the refusal once that subject form is supported, retaining
+**Follow-up to merged [#15450](https://github.com/agentydragon/ducktape/pull/15450); independent
+of the reference-race decision.** The merged change allows WorkloadCredentials without an Identity
+UID that resolve to the live Identity by name. `DeleteIdentity` currently counts a credential only when its
+subject name **and UID** match, so an existing name-only credential is missed even though it
+can act as that Identity. Include it in the refusal now, retaining
 the distinction from a UID-pinned credential for a different incarnation. Test name-only,
 matching-UID and mismatched-UID records and their removal; this point-in-time check does not resolve
 the concurrent-creation race in `IDENTITY_CLEANUP_REFERENCE_DECISION`.
@@ -3873,27 +3823,24 @@ phase (section 14): expand → switch → contract leaves each transitional piec
 
 #### By gate
 
-- **`STANDING_WORKLOAD_IDENTITY` (in flight):** the standing `WorkloadCredential`s' ServiceAccount
-  subjects in `haku-sandbox` and `haku-ci`, their `PolicyBinding`s' ServiceAccount subjects and any
-  Role or RoleBinding that existed only to carry them go in that PR; nothing to dispatch separately.
-- **`CENTRAL_SESSION_DELEGATED_ACTING` (in flight):** once the sampler reaches LLM ingress as a
-  delegating actor, the staging `llm-ingress` connection (`AuthConfig(type="bearer", …)` in
-  `cluster/cdk8s/agentplane/staging.py`) moves to `agentplane_ingress`; the `bearer` connection auth
-  type and its projected-token credential file (`central_sampler/settings.py`, `settings.go`) go
-  once no connection uses it. Review LLM ingress's `central_sampler_accounts` (trusted sampler
-  producers attributing public Session IDs) then: the delegated Identity carries that attribution.
-- **`SANDBOX_IDENTITY_SPEC` (blocked on question 11):**
-  - Seven settings become required, per their tombstones of 2026-11-10: `policy_namespace` in
-    `llm_ingress/{settings.py,config.go}`, `history_service/{settings.py,config.go}` and
-    `runner_gateway/{settings.py,config.go}`, and `identities` in `workload_identity/resolver/resolver.go`'s
-    `New` (a switched Sandbox must reach every verifier on day one).
-  - The Sandbox Controller's `ensureIdentity` and `ensureBinding` (`sandbox_controller/identity.go`),
-    the per-Sandbox ServiceAccount, `Sandbox.spec.policySets` with every writer of it, and the Kyverno
-    launcher policy's ServiceAccount injection (`cluster/cdk8s/agentplane/launcher_relay.py`);
-    `Environment.identity_catalog`'s Sandbox-only parts become unconditional; the agent Kubernetes
-    docs lose the kubeconfig. Source: the node.
-  - Draft [#15239](https://github.com/agentydragon/ducktape/pull/15239), the controller's identity
-    mode, is closed: the switch is rebuilt on question 11's answer, not rebased.
+- **`STANDING_WORKLOAD_IDENTITY` (source merged; rollout evidence pending):** #15450 moved the
+  standing credentials and PolicyBindings to Identities in source. After Flux applies it, verify
+  the relay and Haku proxy decisions name their Identities and that the expected workloads recover.
+- **`CENTRAL_SESSION_DELEGATED_ACTING` (source merged; manifest waits on `SANDBOX_IDENTITY_SPEC`):**
+  after the switch is applied and accepted, the staging `llm-ingress` connection
+  (`AuthConfig(type="bearer", …)` in `cluster/cdk8s/agentplane/staging.py`) moves to
+  `agentplane_ingress`; the `bearer` connection auth type and its projected-token credential file
+  (`central_sampler/settings.py`, `settings.go`) go once no connection uses it. Review LLM ingress's
+  `central_sampler_accounts` (trusted sampler producers attributing public Session IDs) then: the
+  delegated Identity carries that attribution.
+- **`SANDBOX_IDENTITY_SPEC` (implementation merged; rollout and acceptance pending):** use
+  [`sandbox_identity_rollout.md`](sandbox_identity_rollout.md) after its mandatory read-only state
+  audit. Preserve any existing holds, record already-deployed revisions and evidence, and run only
+  the acceptance or release steps still outstanding. Required cleanup remains for `policy_namespace`
+  in LLM Ingress, History and Runner Gateway settings/config and `Identities` in
+  `workload_identity/resolver.New`; verify effective configuration and resolver wiring before
+  rollout or reopening launches. The earlier #15239 draft is superseded; source implementation
+  landed in #15742 and #15744.
 - **`ENVIRONMENT_LIFECYCLE_RULES` (blocked on `ENVIRONMENT_RULE_TYPE_DESIGN`):** branch
   `identity-consumers-environment-self-read-deferred` (closed
   [#15380](https://github.com/agentydragon/ducktape/pull/15380)'s code) is deleted once its
@@ -4013,11 +3960,13 @@ The gate is a decision not yet made or a track not started; nothing here is disp
 
 #### Decisions and tracks
 
-- **`APP_AGENT_TOKEN_DECISION` (spike [#15448](https://github.com/agentydragon/ducktape/pull/15448)):**
-  if test-minted OIDC tokens are adopted, the app's `agentplane-agent` TokenReview path (`caller()` in
-  `app/go/auth/auth.go`), its `token_subjects` rendering (`cluster/cdk8s/agentplane/app_settings.py`,
+- **`APP_AGENT_TOKEN_DECISION` (test-fixture conversion merged in
+  [#15448](https://github.com/agentydragon/ducktape/pull/15448))**: staging live suites and hand-run
+  scripts still use the app's `agentplane-agent` TokenReview path (`caller()` in
+  `app/go/auth/auth.go`). Decide whether they move to real-issuer ID tokens; remove its
+  `token_subjects` rendering (`cluster/cdk8s/agentplane/app_settings.py`,
   `system_tests/deployment/fixture_chart.py`) and `AGENT_SERVICE_ACCOUNT` in
-  `system_tests/driver/cluster.py` go once callers move. The
+  `system_tests/driver/cluster.py` only after every remaining caller has moved. The
   [lifecycle plan](workload_identity_lifecycle.md) is deleted when its rows 1 to 4 are gone and its
   open questions, this one included, are settled.
 - **`CENTRAL_SESSION_CREATION_CONTRACT` ([#15436](https://github.com/agentydragon/ducktape/pull/15436),

@@ -1,14 +1,21 @@
 """Per-action runner certificate readiness and PKI diagnostics."""
 
+import base64
 import json
+import logging
+import subprocess
 from collections.abc import Callable, Sequence
 from typing import Any
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s.pki_infrastructure import NAMESPACE, READY_SECONDS
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 Kubectl = Callable[..., str]
+logger = logging.getLogger(__name__)
 
 
 def cleanup_fixture_certificates(
@@ -70,6 +77,54 @@ def report(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
     output.mkdir(exist_ok=True)
     resources = "pods,certificates,certificaterequests,issuers,clusterissuers,bundles,events"
     (output / "resources.yaml").write_text(kubectl("get", resources, "-A", "-o", "yaml", check=False))
+    # CertificateRequests do not establish which live Secret a service mounted.
+    # Request public fields only; no private key or other Secret data enters the output.
+    try:
+        issued = json.loads(kubectl("get", "certificates", "-A", "-o", "json", timeout=10))["items"]
+        for certificate in issued:
+            namespace = certificate["metadata"]["namespace"]
+            name = certificate["spec"]["secretName"]
+            public = kubectl(
+                "get",
+                "secret",
+                name,
+                "-n",
+                namespace,
+                "--ignore-not-found=true",
+                "-o",
+                r'jsonpath={.metadata.uid}{"\n"}{.metadata.resourceVersion}{"\n"}{.data.tls\.crt}',
+                stdout_only=True,
+                timeout=10,
+            )
+            if not public:
+                continue
+            uid, version, encoded = public.split("\n", 2)
+            chain = x509.load_pem_x509_certificates(base64.b64decode(encoded, validate=True)) if encoded else []
+            destination = output / "identities" / namespace / name
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / f"{uid}-{version}.json").write_text(
+                json.dumps(
+                    {
+                        "certificate_uid": certificate["metadata"]["uid"],
+                        "certificate_resource_version": certificate["metadata"]["resourceVersion"],
+                        "secret_uid": uid,
+                        "secret_resource_version": version,
+                        "chain": [
+                            {
+                                "serial_hex": format(cert.serial_number, "x"),
+                                "sha256": cert.fingerprint(hashes.SHA256()).hex(),
+                                "subject": cert.subject.rfc4514_string(),
+                                "issuer": cert.issuer.rfc4514_string(),
+                            }
+                            for cert in chain
+                        ],
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+    except RuntimeError, ValueError, OSError, subprocess.TimeoutExpired:
+        logger.warning("could not capture public certificate identities", exc_info=True)
     for doc in objects:
         if doc["kind"] == "Deployment":
             name = doc["metadata"]["name"]

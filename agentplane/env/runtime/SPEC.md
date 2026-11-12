@@ -198,3 +198,8 @@ VM service configuration is mounted at `/run/agentplane/config/environment-runti
 launch identity at `/run/agentplane/sandbox/launch.json`. `--vm-resource-properties` remains the
 systemd prestart interface for calculating the resource envelope. Native protocol probing and the
 live Execution owner determine readiness independently of a previously published observation.
+
+`codex.turn_diff_notifications` controls aggregate diff notifications on the shared Codex
+app-server connection. It defaults to disabled; explicit `true` enables capture for all
+Codex Sessions in the environment. This startup setting takes effect when Runtime initializes
+the connection. Disabled notifications never enter the Session journal or History.

@@ -1,27 +1,34 @@
 # Haku tooling delivery — constraints & open design space
 
-How does Haku's run-tooling CLI (`haku read` / `advance` / `bookmark` / … — currently in
+**Status:** The delivery design remains open. The `haku-state` details and web
+session observations below were recorded in July 2026; verify the private
+repository, current web environment and selected runtime before treating an
+implementation detail or access restriction as current. The checked-in web setup
+still installs `.#agent-haku` (see [its README](../runtime/claude_web_env/README.md)).
+
+How does Haku's run-tooling CLI (`haku read` / `advance` / `bookmark` / … — last observed in
 `haku-state/cli/`) become a **real command on PATH** in every runtime, without paying
 bazel-at-runtime and without weakening the egress fence? This note records the **constraints**
-(durable facts, worth not re-deriving) and the **forces** in the design; it deliberately does
+and **forces** considered in the design; it deliberately does
 **not** lock to a fixed option set — the space is open and the points explored so far (bottom)
 are examples, not an enumeration.
 
-Immediate symptom (F2 from the 2026-07-21 run-procedure walkthrough): every doc says
-`haku read --all`, but there is no `haku` command — it's shorthand for a ~100-char
+Symptom observed in the 2026-07-21 run-procedure walkthrough (F2): docs said
+`haku read --all`, but there was no `haku` command — it's shorthand for a ~100-char
 `PYTHONPATH="$(tools/agent_python.sh --pythonpath)" "$(tools/agent_python.sh)" -m cli.main …`
-incantation, and no doc defines the alias. Today the CLI runs by **borrowing** the fastmcp
+incantation, and no doc defined the alias. The CLI then ran by **borrowing** the fastmcp
 closure's interpreter (`tools/agent_python.sh` scrapes the `.#agent-haku` closure's `fastmcp`
-wrapper for its interpreter + `site-packages`). That works, but is the "which python, ugh".
+wrapper for its interpreter + `site-packages`). That worked, but left the "which python, ugh" concern.
 
-## Constraints (durable facts)
+## Constraints and observations from July 2026
 
 1. **Two independent egress fences, not one.**
    - **(a) Claude Code web-environment domain allowlist** (Anthropic-side, set at environment
      creation; the documented list is in [`../runtime/claude_web_env/README.md`](../runtime/claude_web_env/README.md)
      → _Allowed domains_ — `*.anthropic.com`, `*.allegedly.works`, `*.googleapis.com`,
      `*.buildbuddy.io`, `nixos.org`, `cache.nixos.org`). Fences the **web-home container** (Runtime
-     A). Currently loosened to "any domain"; the operator intends to re-tighten. Mechanism:
+     A). It was loosened to "any domain" during the investigation; verify the current
+     environment before relying on that setting. Mechanism at the time:
      `network.allowedDomains` + the `anthropic-egress-control` proxy (see
      `devinfra/claude/web_env/docs/environment_discovery.md`).
    - **(b) Agentplane egress policies** on `haku-sandbox` **and `haku-ci`** (the
@@ -149,8 +156,8 @@ These are positions considered as of 2026-07-21, not a closed menu. Better shape
 per-invocation env; something that reframes the reader as infra while keeping the schema in
 state; …) — treat this as scaffolding to extend.
 
-- **Thin `tools/haku` wrapper** (haku-state) + bootstrap symlink onto PATH. Ships now; fully
-  self-managed; one path; **adds no channel** (local execution under the borrowed closure python);
+- **Thin `tools/haku` wrapper** (haku-state) + bootstrap symlink onto PATH. Could ship without
+  a new delivery mechanism; fully self-managed; one path; **adds no channel** (local execution under the borrowed closure python);
   keeps the scrape hidden behind a clean command. Doesn't make the "which python" mechanism nicer,
   only invisible.
 - **All of `cli/` (⇒ `model/`, ⇒ `ui/` rewiring) → public, reviewed ducktape**, delivered through
@@ -185,12 +192,11 @@ state; …) — treat this as scaffolding to extend.
 - **Which runtime** (A web-routine / B managed-agents / C self-hosted loop):
   [`runtime_options.md`](runtime_options.md). The closure path lands on PATH identically in A's
   web home and C's worker, so CLI-delivery is largely runtime-independent.
-- **Subscription / ToS coverage** — see `runtime_options.md` → _The subscription paradox_ (now
-  extended with the non-programmatic-use risk). Orthogonal to CLI delivery but part of the same
+- **Subscription / ToS coverage** — see `runtime_options.md` → _Billing and credential decision_. Orthogonal to CLI delivery but part of the same
   "how does Haku run sustainably" question.
 
 ## Status
 
-Undecided by design (operator wants the space kept open). F2 is currently _worked around_ by the
-closure-borrow; the missing bare `haku` command is the live ergonomic gap. No egress fence needs
-to move for any of the surviving directions.
+Undecided by design (operator wants the space kept open). The July 2026 workaround borrowed the
+closure interpreter and left a bare `haku` command as an ergonomic gap. Recheck whether that gap still exists in `haku-state` before implementing a
+solution, and validate the selected runtime's current egress and delivery path.

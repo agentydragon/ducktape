@@ -120,8 +120,9 @@ func runService(ctx context.Context, args []string) error {
 		HistoryIngress: ingress, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,
 		ModelConfigTarget: settings.ModelConfigTarget,
 		Claude:            settings.Claude, Codex: settings.Codex,
-		CodexAppServerReadiness: settings.CodexAppServerReadiness,
-		WorkspaceRoot:           settings.WorkspaceRoot, DebugCheckpoint: settings.DebugCheckpoint,
+		CodexAppServerReadiness:    settings.CodexAppServerReadiness,
+		CodexTurnDiffNotifications: settings.CodexTurnDiffNotifications,
+		WorkspaceRoot:              settings.WorkspaceRoot, DebugCheckpoint: settings.DebugCheckpoint,
 	})
 	if err != nil {
 		return err

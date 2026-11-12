@@ -62,6 +62,7 @@ type Config struct {
 	SessionReconcileConcurrency int
 	Claude, Codex               *harness.LaunchConfig
 	CodexAppServerReadiness     codexappserver.Readiness
+	CodexTurnDiffNotifications  bool
 	WorkspaceRoot               string
 	DebugCheckpoint             *session.DebugCheckpointConfig
 	ModelConfigTarget           *string

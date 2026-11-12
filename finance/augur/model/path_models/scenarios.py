@@ -130,14 +130,6 @@ class DatedHistoricalSeries:
             series_names=self.series_names, levels=self.levels[: row_index + 1], months=self.months[: row_index + 1]
         )
 
-    def historical_segments(self) -> tuple[HistoricalSeries, ...]:
-        """Return only runs with at least one valid transition as guarded histories."""
-        return tuple(
-            HistoricalSeries(series_names=self.series_names, levels=segment.levels, months=segment.months)
-            for segment in self.segments
-            if segment.transition_count > 0
-        )
-
 
 def _calendar_month_from_index(index: int) -> str:
     year, month_zero_based = divmod(index - 1, 12)
