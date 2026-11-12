@@ -101,11 +101,6 @@ class ContainerExecServer(FastMCP):
     # Tool name constant (for test infrastructure only)
     EXEC_TOOL_NAME = "exec"
 
-    # Default mount prefixes for container exec servers in tests
-    # Different test contexts use different names for the same server type
-    DOCKER_MOUNT_PREFIX = "docker"
-    RUNTIME_MOUNT_PREFIX = "runtime"
-
     # Resource URI constants
     CONTAINER_INFO_URI = "resource://container.info"
 
