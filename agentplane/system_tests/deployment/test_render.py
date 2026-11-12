@@ -131,6 +131,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     app_container = app_pod["containers"][0]
     assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
+    actions_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    assert actions_settings["connection_delegation_actor"] == {"namespace": NAMESPACE, "name": "mcp-edge"}
     for workload in ("actions", "notifications", "history-service", "runner-gateway", "llm-ingress"):
         pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         container = pod["containers"][0]
