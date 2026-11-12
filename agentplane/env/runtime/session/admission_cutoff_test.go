@@ -16,6 +16,25 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Exercise the interval between the cutoff and settlement independently.
+func (s *Session) closeAdmission(generation uint64) {
+	s.admitMu.Lock()
+	defer s.admitMu.Unlock()
+	s.closeAdmissionLocked(generation)
+}
+
+func sealFixtureJournal(t *testing.T, s *Session) {
+	t.Helper()
+	uid := s.deps.environmentState().IncarnationUID
+	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Quiescing, IncarnationUID: uid, SealUID: uid, Generation: 1}
+	if err := lifecycle.PublishEnvironmentDesired(t.Context(), s.deps.state, desired); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.sealJournal(t.Context(), desired); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func cutoffInterrupt(id string) *commandpb.Command {
 	return &commandpb.Command{CommandId: id, Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}}}
 }
@@ -46,9 +65,7 @@ func TestFinalAdmissionCutoffPreservesReceiptsAndSettlesEarlierInterrupt(t *test
 	if _, err := s.Admit(ctx, ordinary, false); status.Code(err) != codes.Aborted {
 		t.Fatalf("new ordinary command after cutoff: %v", err)
 	}
-	if err := s.sealJournal(ctx); err != nil {
-		t.Fatal(err)
-	}
+	sealFixtureJournal(t, s)
 	sealed := s.journal.SealState()
 	if sealed == nil || sealed.Cursor != s.journal.LastCursor() {
 		t.Fatalf("seal and final cursor disagree: seal=%+v cursor=%d", sealed, s.journal.LastCursor())
@@ -89,9 +106,7 @@ func TestSuccessorReopenClearsCutoffOnlyAfterCurrentRevisionAndPublication(t *te
 	if err := s.stopProcess(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.sealJournal(ctx); err != nil {
-		t.Fatal(err)
-	}
+	sealFixtureJournal(t, s)
 	sealed := s.journal.SealState()
 	if err := m.Reopen(ctx, s); err == nil || s.journal.SealState() == nil || s.cutoff == nil {
 		t.Fatalf("same incarnation reopened a closed Session: err=%v seal=%+v", err, s.journal.SealState())
@@ -158,6 +173,52 @@ func TestSuccessorReopenClearsCutoffOnlyAfterCurrentRevisionAndPublication(t *te
 	}
 }
 
+func TestObsoleteSealCannotCloseSuccessorAdmission(t *testing.T) {
+	s, _, m := frameTestSession(t, []string{"/bin/cat"})
+	ctx := t.Context()
+	env := Environment{IncarnationUID: "test-incarnation", Quiesced: true}
+	m.environment = func() Environment { return env }
+	s.deps.environmentState = func() Environment { return env }
+	if err := s.stopProcess(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sealFixtureJournal(t, s)
+	obsolete, _, err := lifecycle.ReadEnvironmentDesired(ctx, m.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env = Environment{IncarnationUID: "successor"}
+	desired := lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: env.IncarnationUID, Generation: 2}
+	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, desired); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reopen(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	// The old controller's worker starts only after its successor has reopened.
+	if err := s.sealJournal(ctx, obsolete); err != nil {
+		t.Fatal(err)
+	}
+	if s.cutoff != nil || s.journal.SealState() != nil {
+		t.Fatalf("obsolete shutdown closed successor: cutoff=%+v seal=%+v", s.cutoff, s.journal.SealState())
+	}
+	command := &commandpb.Command{CommandId: "after-obsolete-seal", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "new"}}}
+	if _, err := s.Admit(ctx, command, false); err != nil {
+		t.Fatalf("successor admission after obsolete shutdown: %v", err)
+	}
+	// A later shutdown of the successor still closes and seals that revision.
+	desired.Mode, desired.SealUID, desired.Generation = lifecycle.Quiescing, env.IncarnationUID, 3
+	if err := lifecycle.PublishEnvironmentDesired(ctx, m.state, desired); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.sealJournal(ctx, desired); err != nil {
+		t.Fatal(err)
+	}
+	if seal := s.journal.SealState(); seal == nil || seal.IncarnationUID != "successor" {
+		t.Fatalf("current shutdown did not seal successor: %+v", seal)
+	}
+}
+
 func TestInterruptRacingFinalAdmissionCutoff(t *testing.T) {
 	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
@@ -176,9 +237,7 @@ func TestInterruptRacingFinalAdmissionCutoff(t *testing.T) {
 	if err != nil && status.Code(err) != codes.Aborted {
 		t.Fatalf("racing interrupt: %v", err)
 	}
-	if err := s.sealJournal(ctx); err != nil {
-		t.Fatal(err)
-	}
+	sealFixtureJournal(t, s)
 	record, lookupErr := s.journal.GetCommand(ctx, command.CommandId)
 	if lookupErr != nil {
 		t.Fatal(lookupErr)
