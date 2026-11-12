@@ -279,6 +279,9 @@ identity on the admitted sampler path; the executor account name is not used to 
 Native announcements cannot claim central metadata. The same cursor, exact-replay,
 writer fencing and commit-before-ack rules apply.
 
+When the Agentplane chart configures a central sampler, it also enables
+`ingress.sampler_identity_callers`. Direct History deployments must opt in explicitly.
+
 `ingress.sampler_identity_callers` (requires `policy_namespace`, sampler accounts and the SPIFFE
 listener, on which `Push` admits Identity writers) additionally lets those accounts push as
 delegating actors under the [delegated authorization contract](../docs/delegated_authorization.md),

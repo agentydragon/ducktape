@@ -10,7 +10,7 @@ from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
+from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
 from util.yaml_file_settings import YamlFileSettings
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
@@ -39,6 +39,10 @@ class IngressSettings(BaseModel):
     )
     sampler_accounts: frozenset[ServiceAccountRef] = Field(
         default=frozenset(), description="ServiceAccounts allowed to publish centrally hosted Sessions."
+    )
+    sampler_identity_callers: bool = Field(
+        default=False,
+        description="Whether configured sampler ServiceAccounts may push as a delegating actor for a Session Identity.",
     )
     settle_deltas: bool = Field(
         default=True,
@@ -100,4 +104,16 @@ class Settings(YamlFileSettings):
     def identity_callers_need_policy_namespace(self) -> Settings:
         if self.delegation is not None and self.delegation.identity_callers and self.policy_namespace is None:
             raise ValueError("delegation.identity_callers requires policy_namespace")
+        return self
+
+    @model_validator(mode="after")
+    def sampler_identity_callers_need_ingress_identity_trust(self) -> Settings:
+        if self.ingress.sampler_identity_callers and (
+            self.policy_namespace is None
+            or not self.ingress.sampler_accounts
+            or not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth)
+        ):
+            raise ValueError(
+                "ingress.sampler_identity_callers requires policy_namespace, ingress.sampler_accounts and a spiffe rpc listener"
+            )
         return self
