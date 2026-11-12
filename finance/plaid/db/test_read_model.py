@@ -9,7 +9,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage
-from finance.plaid.db.models import HoldingSnapshotRow, async_session_factory
+from finance.plaid.db.models import async_session_factory
 from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
 
 
@@ -213,6 +213,14 @@ async def test_read_current_holdings_uses_latest_capture_and_preserves_empty_cov
     await _capture_holdings(
         storage,
         item_id="item-investments",
+        securities=[securities[0]],
+        holdings=[{"account_id": "brokerage", "security_id": "security-a", "institution_value": Decimal("10.01")}],
+        current=Decimal("10.01"),
+        captured_at=datetime(2026, 5, 30, 12, 0, tzinfo=UTC),
+    )
+    await _capture_holdings(
+        storage,
+        item_id="item-investments",
         securities=securities,
         holdings=[
             {"account_id": "brokerage", "security_id": "security-a", "institution_value": Decimal("10.01")},
@@ -239,20 +247,6 @@ async def test_read_current_holdings_uses_latest_capture_and_preserves_empty_cov
         current=Decimal("9007199254740993.01"),
         captured_at=datetime(2026, 6, 2, 12, 0, tzinfo=UTC),
     )
-    async with session_factory() as session:
-        session.add(
-            HoldingSnapshotRow(
-                account_id="brokerage",
-                security_id="security-a",
-                item_id="item-investments",
-                captured_at=datetime(2026, 5, 30, 12, 0, tzinfo=UTC),
-                quantity=Decimal(1),
-                institution_value=Decimal("10.01"),
-                iso_currency_code="USD",
-                raw_json={},
-            )
-        )
-        await session.commit()
 
     holdings = await read_current_holdings(session_factory=session_factory, account_ids=("brokerage",))
 
@@ -269,47 +263,6 @@ async def test_read_current_holdings_uses_latest_capture_and_preserves_empty_cov
     )
 
     assert await read_current_holdings(session_factory=session_factory, account_ids=("brokerage",)) == ()
-
-
-async def test_read_current_holdings_fails_closed_on_unlinked_legacy_row(
-    storage: PlaidLinkStorage,
-    add_link: Callable[[str], Awaitable[None]],
-    session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    await add_link("item-investments")
-    await storage.apply_accounts(
-        item_id="item-investments",
-        accounts=[{"account_id": "brokerage", "name": "Brokerage", "type": "investment"}],
-        captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
-    )
-    captured_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
-    await _capture_holdings(
-        storage,
-        item_id="item-investments",
-        securities=[{"security_id": "security-a", "name": "Security A"}],
-        holdings=[{"account_id": "brokerage", "security_id": "security-a", "institution_value": Decimal("10.01")}],
-        current=Decimal("10.01"),
-        captured_at=captured_at,
-    )
-    async with session_factory() as session:
-        session.add(
-            HoldingSnapshotRow(
-                account_id="brokerage",
-                security_id="security-a",
-                item_id="item-investments",
-                captured_at=captured_at,
-                quantity=Decimal(1),
-                institution_value=Decimal("10.01"),
-                iso_currency_code="USD",
-                raw_json={},
-            )
-        )
-        await session.commit()
-
-    with pytest.raises(
-        RuntimeError, match="Unapplied holding observations make Item 'item-investments' unsafe to read"
-    ):
-        await read_current_holdings(session_factory=session_factory, account_ids=("brokerage",))
 
 
 async def test_read_current_holdings_fails_closed_on_unapplied_successful_api_event(

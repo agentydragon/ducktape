@@ -224,7 +224,7 @@ class HoldingSnapshotRow(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    capture_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    capture_id: Mapped[int] = mapped_column(Integer, nullable=False)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
     security_id: Mapped[str] = mapped_column(String, ForeignKey("securities.security_id"), nullable=False)
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)

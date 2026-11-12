@@ -268,11 +268,10 @@ complete capture has value zero. An uncovered or never-captured account remains 
 accounts usable with transaction-only freshness while requiring a coherent holding observation wherever policy
 adjustments depend on positions.
 
-During rollout, an unlinked holding row (`capture_id IS NULL`) whose timestamp is at or after the latest complete
-capture makes a required holding read unavailable. A newer successful `/investments/holdings/get` receipt without a
-linked capture also makes it unavailable, including the case where an older writer returned an empty response and
-appended no rows. A later complete capture supersedes older unlinked rows and receipts. The timestamp comparison
-only bounds ambiguous orphan rows; capture IDs remain the identity for selecting holdings.
+A successful `/investments/holdings/get` API event whose ID is greater than the selected capture's API event ID is
+treated as unapplied and makes a required holding read unavailable. This catches responses with no positions or whose
+application did not commit; a later complete capture moves the boundary past that event. Every holding row references
+a capture, and capture IDs identify batches.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are
