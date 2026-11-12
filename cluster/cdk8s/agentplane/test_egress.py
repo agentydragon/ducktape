@@ -26,6 +26,7 @@ from cluster.cdk8s.agentplane import (
     kubernetes_account_ref,
     llm_ingress,
     notifications,
+    platform_routes,
     runner_gateway,
     session_dispatcher,
     staging,
@@ -341,8 +342,8 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     )
 
 
-def test_managed_cli_service_origins_use_workload_svid_routes(catalog_manifests: list[dict[str, Any]]) -> None:
-    """Keep managed CLI origins credential-free while the sidecar presents each service SVID."""
+def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dict[str, Any]]) -> None:
+    """Keep managed CLI origins credential-free while the sidecar presents its Sandbox SVID."""
     namespace = staging.ENV.namespace
     service_url = (
         f"http://{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
@@ -350,7 +351,8 @@ def test_managed_cli_service_origins_use_workload_svid_routes(catalog_manifests:
     destination = runner_gateway.service(namespace)
     history = history_service.service(namespace)
     history_origin = f"{history.fqdn}:{history.port.number}"
-    history_url = f"http://{history_origin}"
+    history_route = platform_routes.history_grpc(namespace)
+    history_url = f"http://{history_route.local_target}"
     dispatcher_origin = (
         f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
     )
@@ -382,12 +384,15 @@ def test_managed_cli_service_origins_use_workload_svid_routes(catalog_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
-        if history_origin in routes:
-            history_configured.append(routes[history_origin])
+        assert history_origin not in routes, "Runtime's History ingress already sends opaque TLS"
+        platform = yaml.safe_load(item["data"]["settings.yaml"]).get("platform_routes", {}).get("routes", {})
+        if "history" in platform:
+            history_configured.append(platform["history"])
     assert history_configured
     for route in history_configured:
-        assert route["upstream"] == f"{history.fqdn}:{history.port.number}"
-        assert route["server_uri"] == HISTORY_SERVICE_URI
+        assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]
+        assert route["upstream"] == f"{history.fqdn}:{history.pod_port}"
+        assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI}
 
     pod_template = _by_name(catalog_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
@@ -413,7 +418,9 @@ def test_managed_cli_service_origins_use_workload_svid_routes(catalog_manifests:
     vm_runtime = json.loads(
         _by_name(catalog_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
     )
-    assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == history_url
+    assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
+        f"http://{environment_sandbox.launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
+    )
 
 
 def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manifests: list[dict[str, Any]]) -> None:

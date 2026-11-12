@@ -3,7 +3,7 @@
 - the sidecar's routes and the runner's endpoint flags in the runner SandboxTemplates;
 - the network rules on both ends.
 
-The sidecar presents its SVID to Rules, Notification and model configuration through the central
+The sidecar presents its SVID to Rules, Notification, History and model configuration through the central
 proxy. Telemetry remains a direct unauthenticated route.
 """
 
@@ -22,8 +22,13 @@ from agentplane.egress.platform_routes import (
     PlatformRouteTransport,
     TLSConnectRouteTransport,
 )
-from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI
-from cluster.cdk8s.agentplane import egress, llm_ingress, notifications, telemetry
+from agentplane.environment_runtime_transport.config import (
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    NOTIFICATIONS_URI,
+)
+from cluster.cdk8s.agentplane import egress, history_service, llm_ingress, notifications, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -72,6 +77,15 @@ def notifications_grpc(namespace: str) -> Route:
     )
 
 
+def history_grpc(namespace: str) -> Route:
+    return Route(
+        "history",
+        history_service.service(namespace),
+        TLSConnectRouteTransport(server_uri=HISTORY_SERVICE_URI),
+        ("/agentplane.history_service.HistoryService/",),
+    )
+
+
 def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy."""
     return Route(
@@ -87,7 +101,13 @@ def telemetry_route() -> Route:
 
 
 def routes(namespace: str) -> tuple[Route, ...]:
-    return telemetry_route(), egress_rules(namespace), notifications_grpc(namespace), model_config(namespace)
+    return (
+        telemetry_route(),
+        egress_rules(namespace),
+        notifications_grpc(namespace),
+        model_config(namespace),
+        history_grpc(namespace),
+    )
 
 
 def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> PlatformRoutes:

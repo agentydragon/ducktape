@@ -19,11 +19,11 @@ read scope even if the actor is also a configured backend reader; actor Pod proo
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.
 
-Managed Pod, VM and Firecracker CLI environments set `AGENTPLANE_HISTORY_URL` to
-`http://<History Service FQDN>:8080`. The CLI connects without a bearer token through the Sandbox's
-exact-origin sidecar route; the sidecar presents the workload SVID, and this service scopes the read
-to the Identity name and UID in that credential. No projected History token or `reader_accounts`
-grant is needed for this path.
+Managed Pod, VM and Firecracker CLI environments set `AGENTPLANE_HISTORY_URL` to the shared local
+platform gRPC listener, `http://<local gateway>:3130`. The listener routes History RPCs through an
+mTLS CONNECT to the History Service; the sidecar presents the Sandbox workload SVID, and this
+service scopes the read to the Identity name and UID in that credential. No projected History token
+or `reader_accounts` grant is needed for this path.
 
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same

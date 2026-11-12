@@ -378,6 +378,7 @@ py_library(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tls",
+        "//agentplane/testing:scripted_model",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
