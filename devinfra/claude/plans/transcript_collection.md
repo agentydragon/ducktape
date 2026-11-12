@@ -1,9 +1,12 @@
 # Claude session transcript collection
 
-**Open goal:** keep the operator's Claude Code session history and the metrics
-needed by Haku available automatically in an owner-controlled store. The former
-proposal to rsync every habitat's `~/.claude/projects/**/*.jsonl` into a custom
-`transcript-sink` is no longer the current design for Claude Code cloud sessions.
+**Open goal:** verify that the operator's Claude Code session history is
+preserved across cloud sessions and configured workstations, then identify which
+metrics Haku still needs. The former proposal to rsync every habitat's
+`~/.claude/projects/**/*.jsonl` into a custom `transcript-sink` is superseded:
+cloud events have a PostgreSQL mirror, and workstation transcript files already
+have an encrypted Restic backup path. These are distinct stores with different
+query and recovery properties.
 
 ## Current sources and status
 
@@ -22,11 +25,18 @@ proposal to rsync every habitat's `~/.claude/projects/**/*.jsonl` into a custom
 - The API path is private and undocumented, and may change without notice. Treat
   the session credential as sensitive and keep its single-writer refresh-token
   ownership as documented by `session_export`.
-- `session_export` reads the cloud API; it does not read local Claude Code CLI
-  transcript files from operator machines. Confirm whether local-only sessions
-  appear in the cloud API before claiming that history is covered. Keep the cloud
-  mirror and any local transcript archive distinct until their overlap and
-  identity are understood.
+- The workstation backup is enabled in the Home Manager configs for `wyrm2`,
+  `rugged`, and `iguana`. Its systemd user timer runs every 15 minutes and backs
+  up the Claude home tree, including `projects/` transcript files, to the
+  encrypted append-only Restic service. The backup excludes runtime/cache paths
+  such as `session-env/`, but not `projects/`. Its tests restore a sample
+  `projects/...jsonl` file. This establishes source-level intent and fixture
+  coverage, not that each live timer is running or has a restorable recent
+  snapshot.
+- The API mirror and Restic file archive cover different surfaces. The mirror
+  supports querying cloud events; workstation transcripts are preserved as files
+  for recovery. Confirm whether any local-only session source or operator host
+  falls outside the three configured backups before claiming complete coverage.
 
 ## Remaining work
 
@@ -34,12 +44,11 @@ proposal to rsync every habitat's `~/.claude/projects/**/*.jsonl` into a custom
    archived and routine-trigger sessions. Check sync lag and recovery behavior;
    add alerting and database backup coverage where still missing. Do not infer
    live health from the checked-in deployment or image pin.
-2. Decide which operator-machine CLI transcripts must be centrally retained,
-   which hosts may contribute them, and whether the source files are already
-   covered by another archive. If collection is needed, implement a narrow,
-   owner-managed client (the earlier home-manager timer is one candidate) with
-   explicit source identity, incremental/retry behavior, and retention. Avoid
-   building a hosted rsync loop for data already covered by the cloud API.
+2. Verify the workstation backup timer and recent successful snapshots on
+   `wyrm2`, `rugged`, and `iguana`; prove a representative Claude transcript can
+   be restored, and identify any operator machine not covered by these configs.
+   Keep the existing Restic client as the file-archive path unless a concrete
+   coverage or query requirement calls for another mechanism.
 3. Compare Haku's required run telemetry with the fields already available in
    the session mirror and existing OTel pipeline. Define only the missing
    derived metrics, their source of truth, and their retention before adding a
@@ -53,16 +62,16 @@ proposal to rsync every habitat's `~/.claude/projects/**/*.jsonl` into a custom
 
 The earlier design proposed a `transcript-sink`, Kubernetes-exec shippers from
 web sessions, and home-manager rsync timers. Those remain options only if
-measured gaps show that the API mirror and any approved local archive do not
-supply required data. In particular, add a hosted transcript shipper only for a
-specific missing source or event field; do not duplicate cloud sessions by
-default.
+measured gaps show that the cloud API mirror or the configured workstation
+Restic backups miss required data. Add another client only for a specific
+missing source or query requirement; do not duplicate cloud sessions by default.
 
 OpenTelemetry raw API-body capture is a separate data path from session event
-history. Inline capture is truncated; file mode can preserve full bodies but
-increases exposure of prompts and tool content. Consider it only if the metric
-or replay requirement needs those bodies and the consent, retention, and access
-policy is explicit.
+history. The current Home Manager setting is `OTEL_LOG_RAW_API_BODIES=1`; inline
+capture is truncated. File mode can preserve full bodies but increases exposure
+of prompts and tool content. Consider changing modes only if a metric or replay
+requirement needs those bodies and the consent, retention, and access policy is
+explicit.
 
 The current telemetry consumer is tracked in
 [Haku's run-telemetry work](https://github.com/agentydragon/ducktape/pull/2932).
