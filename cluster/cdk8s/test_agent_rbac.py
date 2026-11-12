@@ -36,7 +36,7 @@ _ACCOUNTS_NAMESPACE = kubernetes_accounts_namespace(_NAMESPACE)
 class Rendering:
     resources: list[dict[str, Any]]
     rbac: Rbac
-    # Preset -> the policy sets a launch of it holds, the environment defaults included.
+    # Preset -> the policy sets a launch of it holds.
     launches: dict[str, list[str]]
     # Flux PolicyBinding name -> its spec.
     bindings: dict[str, dict[str, Any]]
@@ -74,14 +74,13 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
             one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == name)["data"][key]
         )
 
-    defaults = config_map("runner-gateway-settings", "settings.yaml")["environment_default_policy_sets"]
     presets = config_map("app-config", "config.yaml")["sandbox_presets"]
     bindings = [doc for doc in docs if doc["kind"] == "PolicyBinding"]
     assert len({doc["metadata"]["name"] for doc in bindings}) == len(bindings)
     return Rendering(
         resources=docs,
         rbac=Rbac(docs),
-        launches={name: list(dict.fromkeys([*defaults, *spec["policy_sets"]])) for name, spec in presets.items()},
+        launches={name: list(dict.fromkeys(spec["policy_sets"])) for name, spec in presets.items()},
         bindings={doc["metadata"]["name"]: doc["spec"] for doc in bindings},
     )
 

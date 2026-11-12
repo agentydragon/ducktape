@@ -97,9 +97,6 @@ class Settings(YamlFileSettings):
     environment_launchers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="Direct Pod-bound Action brokers authorized to create Environments."
     )
-    environment_default_policy_sets: Set[str] = Field(
-        default_factory=frozenset, description="PolicySets applied to newly created Environments."
-    )
     delegation: DelegationSettings | None = Field(
         default=None,
         description="Independent Actions delegation trust; does not grant direct or privileged caller access.",

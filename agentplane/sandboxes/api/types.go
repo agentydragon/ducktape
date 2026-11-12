@@ -135,10 +135,6 @@ type SandboxSpec struct {
 	// nothing runs, so an incarnation never changes identity; the next start acts as the new one.
 	// "Nothing runs" is the controller's last status report: never reconciled, or stopStage Stopped.
 	Identity *IdentityRef `json:"identity,omitempty"`
-	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
-	// +listType=set
-	// +kubebuilder:validation:items:MinLength=1
-	PolicySets []string `json:"policySets,omitempty"`
 	// InboxTags are the groups the Sandbox's Session inboxes take messages as: a `session_inbox_access` rule
 	// targeting one of them covers the Sandbox while it holds the tag.
 	// +listType=set

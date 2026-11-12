@@ -234,7 +234,6 @@ def environment(
         # These scenarios check delivery and acknowledgement; worker integration tests cover
         # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
-        default_policy_sets=frozenset(egress.DEFAULT_POLICIES),
         app_config=Settings(
             models=catalog,
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),

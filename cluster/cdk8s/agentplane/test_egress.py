@@ -57,10 +57,11 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
 
 
 def _environment_default_policies(docs: list[dict[str, Any]]) -> list[str]:
-    """The PolicySets EnvironmentService applies to each new Sandbox."""
-    config = _by_name(docs, "ConfigMap", "runner-gateway-settings")
-    defaults: list[str] = yaml.safe_load(config["data"]["settings.yaml"])["environment_default_policy_sets"]
-    return defaults
+    """The PolicySets every launch preset grants: those all presets share."""
+    config = _by_name(docs, "ConfigMap", "app-config")
+    presets = yaml.safe_load(config["data"]["config.yaml"])["sandbox_presets"]
+    shared = set.intersection(*(set(spec["policy_sets"]) for spec in presets.values()))
+    return sorted(shared)
 
 
 def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: list[dict[str, Any]]) -> None:

@@ -216,8 +216,6 @@ class Environment:
     vm_sandboxes: bool
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
-    # PolicySets applied by EnvironmentService to every new Sandbox.
-    default_policy_sets: frozenset[str] = frozenset()
     # Whether the policy catalog renders in the identity shapes: every Flux `PolicyBinding` names an
     # `Identity`, Kubernetes rules are `KubernetesRoleSet`s, and agents reach the API server only as
     # accounts (kubernetes_account_ref.py), not as the Sandbox's own ServiceAccount through `basic`.

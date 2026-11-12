@@ -82,7 +82,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.database import DbProps
-from cluster.cdk8s.agentplane.egress import DEFAULT_POLICIES
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     STAGING_CREDENTIALS_NAMESPACE,
@@ -460,7 +459,6 @@ ENV = Environment(
     app_config=_app_config(identity_catalog=False),
     runtime_catalog=_RUNTIME_CATALOG,
     # Every launch also acts as the shared diagnostics account.
-    default_policy_sets=frozenset(DEFAULT_POLICIES) | {shared_diagnostics(STAGING_NAMESPACE).credential_name},
     # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
     #   removes the ServiceAccount-subject rendering and this switch.
     identity_catalog=False,
