@@ -510,14 +510,15 @@ func TestAnAPIErrorIsUnavailableNotRefused(t *testing.T) {
 	}
 }
 
-// A verifier not configured with the policy namespace resolves no Identity subject.
-func TestAVerifierWithoutThePolicyNamespaceRefusesIdentitySubjects(t *testing.T) {
-	ca := transporttesting.NewCA(t)
-	pod := types.UID("14141414-1414-4141-8141-141414141414")
-	record := issue(t, ca, servedNamespace, "test-identity-unconfigured", sandboxOwner("test-identity-unconfigured"), identityPodSpec(pod, identityUID(t, policyNamespace)), &workloadapi.Binding{PodUID: pod}, credentialIDs[0])
-	resolves, err := resolver.New(objects, []string{servedNamespace}, nil)
-	if err != nil {
-		t.Fatal(err)
+func TestNewRequiresIdentityConfiguration(t *testing.T) {
+	for name, identities := range map[string]*resolver.Identities{
+		"nil":   nil,
+		"empty": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := resolver.New(objects, []string{servedNamespace}, identities); err == nil {
+				t.Fatal("resolver accepted missing Identity configuration")
+			}
+		})
 	}
-	requireRefused(t, resolves, record.leaf)
 }

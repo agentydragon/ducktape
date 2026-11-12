@@ -28,7 +28,7 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
-	resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, nil)
+	resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
 			trustedClientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 			invalidClientCredentials := test.prepare(t, ca, workload)
-			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, nil)
+			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -69,13 +69,7 @@ class Settings(YamlFileSettings):
     log_levels: LogLevels
     rpc: Listener
     kubeconfig: Path | None = None
-    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
-    #   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
-    policy_namespace: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Namespace holding the Identities a Sandbox SVID may name; absent refuses Identity writers.",
-    )
+    policy_namespace: str = Field(min_length=1, description="Namespace holding the Identities a Sandbox SVID may name.")
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.
@@ -101,19 +95,11 @@ class Settings(YamlFileSettings):
         return self
 
     @model_validator(mode="after")
-    def identity_callers_need_policy_namespace(self) -> Settings:
-        if self.delegation is not None and self.delegation.identity_callers and self.policy_namespace is None:
-            raise ValueError("delegation.identity_callers requires policy_namespace")
-        return self
-
-    @model_validator(mode="after")
     def sampler_identity_callers_need_ingress_identity_trust(self) -> Settings:
         if self.ingress.sampler_identity_callers and (
-            self.policy_namespace is None
-            or not self.ingress.sampler_accounts
-            or not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth)
+            not self.ingress.sampler_accounts or not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth)
         ):
             raise ValueError(
-                "ingress.sampler_identity_callers requires policy_namespace, ingress.sampler_accounts and a spiffe rpc listener"
+                "ingress.sampler_identity_callers requires ingress.sampler_accounts and a spiffe rpc listener"
             )
         return self

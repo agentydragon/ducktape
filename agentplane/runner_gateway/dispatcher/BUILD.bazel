@@ -120,6 +120,7 @@ go_test(
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/listener",
         "//agentplane/workload_auth/testing",
+        "//agentplane/workload_identity/resolver",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@org_golang_google_grpc//:grpc",

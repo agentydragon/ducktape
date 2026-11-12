@@ -28,7 +28,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 	for _, kind := range []string{"valid", "forged", "expired", "server-only"} {
 		t.Run(kind, func(t *testing.T) {
 			objects, sandbox, leaf := svidFixture(t)
-			svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, nil)
+			svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -111,7 +111,7 @@ func (s *svidHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) 
 // Consolidating a listener must not widen the token writer policy to every Pod.
 func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 	objects, sandbox, leaf := svidFixture(t)
-	svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, nil)
+	svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

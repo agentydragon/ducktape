@@ -210,7 +210,7 @@ func TestAnOfflineBoxMountsNoCredential(t *testing.T) {
 // box's SVID and refuses the earlier box's.
 func TestARecreatedBoxsCredentialReplacesTheDisposedOnes(t *testing.T) {
 	f := newFixture(t, nil)
-	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, nil)
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: f.binding.Namespace})
 	if err != nil {
 		t.Fatal(err)
 	}

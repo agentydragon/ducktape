@@ -66,12 +66,11 @@ or harness container.
 The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
 with `spiffe` roots and `kubernetes_bearer.audiences`.
 
-An SVID whose `WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an
-`Identity` is served only when `policy_namespace` names the namespace holding Identities; the
-Identity is read live and must be the incarnation the credential names. Absent, such a caller is
-refused. Any Identity there may infer, as any ServiceAccount in the allowed namespaces may; it is
-attributed by `identity`, `identity_uid` and its Pod, so `policy_namespace` requires every
-attribution output to carry `identity`. Only a listed ServiceAccount may claim a central Session. TLS is required because inference HTTP and
+The required `policy_namespace` names the namespace holding Identities. An SVID whose
+`WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an `Identity` is
+served only while that live Identity is the incarnation the credential names. Any Identity there may
+infer, as any ServiceAccount in the allowed namespaces may; it is attributed by `identity`,
+`identity_uid` and its Pod, so every attribution output must carry `identity`. Only a listed ServiceAccount may claim a central Session. TLS is required because inference HTTP and
 native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
 health service.
 

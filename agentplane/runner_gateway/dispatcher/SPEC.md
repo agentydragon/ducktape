@@ -104,8 +104,8 @@ It scopes existing Sessions and existing environments; it does not create enviro
   all retained rows are references, including failed or historical rows.
   `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
   `Session.execution_identity`, the execution ServiceAccount.
-- An Identity caller (a workload SVID naming an Identity, admitted only once the Gateway's optional
-  `policy_namespace` is set) is never privileged and creates no Session (`PermissionDenied`), even on a
+- An Identity caller (a workload SVID naming an Identity, admitted under the Gateway's configured
+  `policy_namespace`) is never privileged and creates no Session (`PermissionDenied`), even on a
   Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit grant, not acting as the Identity. It reads, writes, cancels and watches only Sessions whose recorded execution
   Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
   require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor, in

@@ -82,11 +82,8 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	}
 	var svidResolver *auth.SVIDResolver
 	if c.RPC.Has(authlistener.SPIFFE) {
-		var identities *resolver.Identities
-		if c.PolicyNamespace != "" {
-			identities = &resolver.Identities{PolicyNamespace: c.PolicyNamespace}
-		}
-		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces, identities)
+		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {
 			return err
 		}

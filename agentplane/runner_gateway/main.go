@@ -262,11 +262,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	var identities *resolver.Identities
-	if c.PolicyNamespace != "" {
-		identities = &resolver.Identities{PolicyNamespace: c.PolicyNamespace}
-	}
-	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, identities)
+	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace},
+		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
@@ -368,11 +365,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		var identityReader auth.IdentityUIDReader
-		if c.PolicyNamespace != "" {
-			if identityReader, err = auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace); err != nil {
-				return err
-			}
+		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+		if err != nil {
+			return err
 		}
 		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader, identityReader)
 		if err != nil {

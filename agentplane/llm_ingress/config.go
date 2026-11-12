@@ -74,9 +74,7 @@ type config struct {
 	// claiming a Session never implies asserting an Identity.
 	CentralSamplerIdentityCallers   bool     `mapstructure:"central_sampler_identity_callers"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
-	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity callers.
-	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
-	//   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	// PolicyNamespace holds the Identities a Sandbox SVID may name.
 	PolicyNamespace       string            `mapstructure:"policy_namespace"`
 	TokenAudience         string            `mapstructure:"token_audience"`
 	LogLLMRequests        bool              `mapstructure:"log_llm_requests"`
@@ -132,6 +130,9 @@ func validateConfig(c *config) error {
 	if len(c.AllowedServiceAccountNamespaces) == 0 {
 		return errors.New("allowed_service_account_namespaces must be non-empty")
 	}
+	if c.PolicyNamespace == "" {
+		return errors.New("policy_namespace is required")
+	}
 	for _, namespace := range c.AllowedServiceAccountNamespaces {
 		if namespace == "" {
 			return errors.New("allowed_service_account_namespaces cannot contain an empty namespace")
@@ -151,11 +152,11 @@ func validateConfig(c *config) error {
 	if err := validateAttribution(c.Attribution); err != nil {
 		return err
 	}
-	if c.PolicyNamespace != "" && !attributesIdentity(c.Attribution) {
+	if !attributesIdentity(c.Attribution) {
 		return errors.New("policy_namespace requires every attribution output to carry the identity claim")
 	}
-	if c.CentralSamplerIdentityCallers && (c.PolicyNamespace == "" || len(c.CentralSamplerAccounts) == 0) {
-		return errors.New("central_sampler_identity_callers requires policy_namespace and central_sampler_accounts")
+	if c.CentralSamplerIdentityCallers && len(c.CentralSamplerAccounts) == 0 {
+		return errors.New("central_sampler_identity_callers requires central_sampler_accounts")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err

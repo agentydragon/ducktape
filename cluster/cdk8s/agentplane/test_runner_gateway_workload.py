@@ -175,6 +175,8 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
     history = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
+    assert gateway["policy_namespace"] == namespace
+    assert history["policy_namespace"] == namespace
     gateway_delegation = gateway["delegation"]
     assert gateway_delegation["actor"] == actions_account
     assert gateway_delegation["caller_namespaces"] == [namespace]

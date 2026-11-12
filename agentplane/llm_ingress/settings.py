@@ -23,13 +23,10 @@ class Settings(YamlFileSettings):
         min_length=1,
         description="Namespaces whose Sandbox SVIDs or backend ServiceAccount bearers may authenticate here.",
     )
-    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
-    #   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
-    policy_namespace: str | None = Field(
-        default=None,
+    policy_namespace: str = Field(
         min_length=1,
         description=(
-            "Namespace holding the Identities a Sandbox SVID may name; absent refuses Identity callers. "
+            "Namespace holding the Identities a Sandbox SVID may name. "
             "Every attribution output must then carry the `identity` claim."
         ),
     )
@@ -68,6 +65,6 @@ class Settings(YamlFileSettings):
 
     @model_validator(mode="after")
     def validate_identity_attribution(self) -> Settings:
-        if self.policy_namespace is not None and not self.attribution.names_identity():
+        if not self.attribution.names_identity():
             raise ValueError("policy_namespace requires every attribution output to carry the identity claim")
         return self

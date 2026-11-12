@@ -89,21 +89,17 @@ type Resolver struct {
 
 // New returns a Resolver. objects must read the API server directly: a certificate never
 // preserves the authority of a deleted record, a replaced credential ID or a deleted Identity.
-// identities nil refuses every Identity subject.
-// CLEANUP(added 2026-11-10): require identities once SANDBOX_IDENTITY_SPEC
-// (agentplane/plans/task_dag.md) lands: a switched Sandbox must reach every verifier on day one.
 func New(objects client.Reader, namespaces []string, identities *Identities) (*Resolver, error) {
 	if objects == nil || len(namespaces) == 0 || slices.Contains(namespaces, "") {
 		return nil, errors.New("a WorkloadCredential reader and non-empty allowed namespaces are required")
 	}
-	if identities != nil && identities.PolicyNamespace == "" {
-		return nil, errors.New("resolving Identity subjects requires the policy namespace")
+	if identities == nil || identities.PolicyNamespace == "" {
+		return nil, errors.New("a policy namespace is required to resolve Identity subjects")
 	}
-	r := &Resolver{objects: objects, namespaces: slices.Clone(namespaces)}
-	if identities != nil {
-		r.identities = &Identities{PolicyNamespace: identities.PolicyNamespace}
-	}
-	return r, nil
+	return &Resolver{
+		objects: objects, namespaces: slices.Clone(namespaces),
+		identities: &Identities{PolicyNamespace: identities.PolicyNamespace},
+	}, nil
 }
 
 // NewKubernetes returns a Resolver over an uncached client.
@@ -176,9 +172,6 @@ func (r *Resolver) Resolve(ctx context.Context, leaf *x509.Certificate) (Peer, e
 // subject reads the record's subject live and checks it is still the incarnation the record names.
 func (r *Resolver) subject(ctx context.Context, record *workloadapi.WorkloadCredential) (Subject, error) {
 	if named := record.Spec.Subject.Identity; named != nil {
-		if r.identities == nil {
-			return nil, fmt.Errorf("%w: WorkloadCredential %s names an Identity subject, which this verifier does not resolve", ErrRefused, client.ObjectKeyFromObject(record))
-		}
 		var identity policyapi.Identity
 		key := types.NamespacedName{Namespace: r.identities.PolicyNamespace, Name: named.Name}
 		if err := r.objects.Get(ctx, key, &identity); apierrors.IsNotFound(err) {

@@ -12,7 +12,7 @@ from agentplane.history_service.settings import Settings
 def _settings_source(
     *,
     sampler_identity_callers: bool = False,
-    policy_namespace: str | None = "test-policies",
+    policy_namespace: str = "test-policies",
     sampler_accounts: list[dict[str, str]] | None = None,
     spiffe_listener: bool = True,
 ) -> dict[str, Any]:
@@ -40,6 +40,17 @@ def _settings_source(
     }
 
 
+@pytest.mark.parametrize("value", ["missing", "empty"])
+def test_policy_namespace_is_required(value: str) -> None:
+    source = _settings_source()
+    if value == "missing":
+        del source["policy_namespace"]
+    else:
+        source["policy_namespace"] = ""
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+
 def test_sampler_identity_callers_default_off() -> None:
     source = _settings_source()
     del source["ingress"]["sampler_identity_callers"]
@@ -52,12 +63,10 @@ def test_sampler_identity_callers_accepts_all_go_prerequisites() -> None:
     assert settings.ingress.sampler_identity_callers
 
 
-@pytest.mark.parametrize("missing", ["policy_namespace", "sampler_accounts", "spiffe_listener"])
+@pytest.mark.parametrize("missing", ["sampler_accounts", "spiffe_listener"])
 def test_sampler_identity_callers_require_all_go_prerequisites(missing: str) -> None:
     source = _settings_source(sampler_identity_callers=True)
-    if missing == "policy_namespace":
-        source["policy_namespace"] = None
-    elif missing == "sampler_accounts":
+    if missing == "sampler_accounts":
         source["ingress"]["sampler_accounts"] = []
     else:
         source["rpc"]["auth"] = [method for method in source["rpc"]["auth"] if method["mode"] != "spiffe"]
