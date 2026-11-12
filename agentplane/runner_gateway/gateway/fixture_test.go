@@ -71,7 +71,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if f.objects, err = client.New(api.Config, client.Options{Scheme: scheme}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.ServiceAccount(ctx, auth.Account{Namespace: f.namespace, Name: testSandbox}); err != nil {
+	if _, err := api.ServiceAccount(ctx, auth.Account{Namespace: f.namespace, Name: "default"}); err != nil {
 		t.Fatal(err)
 	}
 	f.sandbox = &sandboxapi.Sandbox{
@@ -82,6 +82,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		t.Fatal(err)
 	}
 	controller := true
+	automount := false
 	pods := api.Clientset.CoreV1().Pods(f.namespace)
 	f.pod, err = pods.Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -93,8 +94,9 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 			}},
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName: testSandbox,
-			Containers:         []corev1.Container{{Name: "runner", Image: "registry.test/unused"}},
+			ServiceAccountName:           "default",
+			AutomountServiceAccountToken: &automount,
+			Containers:                   []corev1.Container{{Name: "runner", Image: "registry.test/unused"}},
 		},
 	}, metav1.CreateOptions{})
 	if err != nil {

@@ -68,7 +68,7 @@ func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.Secu
 					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(vmi, kubevirtv1.VirtualMachineInstanceGroupVersionKind)},
 					Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "untrusted-launcher-label"},
 				},
-				Spec:   corev1.PodSpec{ServiceAccountName: sandbox.Name},
+				Spec:   corev1.PodSpec{ServiceAccountName: "default"},
 				Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "192.0.2.90", Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 			}
 			change(sandbox, pod, vmi, vm)
