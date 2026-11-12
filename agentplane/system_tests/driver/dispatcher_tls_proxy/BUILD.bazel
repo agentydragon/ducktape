@@ -1,0 +1,42 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+package(default_testonly = True)
+
+go_library(
+    name = "runtime",
+    srcs = [
+        "main.go",
+        "proxy.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/system_tests/driver/dispatcher_tls_proxy",
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_binary(
+    name = "dispatcher_tls_proxy",
+    embed = [":runtime"],
+    pure = "on",
+    visibility = ["//agentplane/system_tests/suites/live:__pkg__"],
+)
+
+go_test(
+    name = "proxy_test",
+    srcs = ["proxy_test.go"],
+    embed = [":runtime"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environment_runtime_transport/testing",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)

@@ -44,6 +44,23 @@ py_library(
 )
 
 py_library(
+    name = "live_dispatcher_tls",
+    srcs = ["live_dispatcher_tls.py"],
+)
+
+py_test(
+    name = "test_live_dispatcher_tls",
+    srcs = ["test_live_dispatcher_tls.py"],
+    deps = [
+        ":live_dispatcher_tls",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "port_forward",
     testonly = True,
     srcs = ["port_forward.py"],
