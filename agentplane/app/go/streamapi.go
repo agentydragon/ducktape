@@ -701,11 +701,3 @@ func waitContext(ctx context.Context, duration time.Duration) bool {
 		return true
 	}
 }
-
-func compactDuration(duration time.Duration) string {
-	if duration <= 0 {
-		duration = 5 * time.Second
-	}
-	seconds := duration.Seconds()
-	return strconv.FormatFloat(seconds, 'f', -1, 64) + "s"
-}
