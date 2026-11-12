@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import enum
 import logging
+import os
+import re
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -192,6 +194,93 @@ async def _classify_branch(
     return ReviewBranch(name, ReviewBranchReason.UNMERGED, main)
 
 
+_OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
+
+
+async def _reflog_oids(repo: Path, ref: str, tip: str) -> list[str] | None:
+    """Inventory all available reflog commit IDs, failing closed on unreadable evidence."""
+    env = {**os.environ, "LC_ALL": "C"}
+    shown = await git_repo.git(repo, "reflog", "show", "--format=%H", ref, check=False, env=env)
+    if shown.returncode != 0:
+        return None
+    shown_oids = [line.strip() for line in shown.stdout.splitlines() if line.strip()]
+    if any(_OID.fullmatch(oid) is None for oid in shown_oids):
+        return None
+
+    path_result = await git_repo.git(
+        repo, "rev-parse", "--path-format=absolute", "--git-path", f"logs/{ref}", check=False
+    )
+    if path_result.returncode != 0:
+        return None
+    log_path = Path(path_result.stdout.strip())
+    try:
+        raw_log = await run_blocking(log_path.read_bytes)
+    except FileNotFoundError:
+        if shown_oids:
+            return None
+        entries: list[tuple[str, str]] = []
+    except OSError, UnicodeError:
+        return None
+    else:
+        entries = []
+        for line in raw_log.splitlines():
+            # Git creates a linked worktree's initial HEAD reflog row without a
+            # tab or message. Both forms still have OIDs, identity, time and zone.
+            metadata, _separator, _message = line.partition(b"\t")
+            fields = metadata.split()
+            if len(fields) < 5:
+                return None
+            try:
+                old_oid, new_oid = (field.decode("ascii") for field in fields[:2])
+            except UnicodeDecodeError:
+                return None
+            if _OID.fullmatch(old_oid) is None or _OID.fullmatch(new_oid) is None:
+                return None
+            entries.append((old_oid, new_oid))
+
+    if [new_oid for _, new_oid in reversed(entries)] != shown_oids:
+        return None
+
+    oids = {tip, *shown_oids}
+    # `reflog show` lists each entry's new OID, but not the predecessor before its oldest
+    # retained row. Reading the raw log above captures it; rev-parse independently verifies
+    # Git can resolve that boundary. A new branch's all-zero predecessor is the one normal
+    # case where @{N} has no resolvable object.
+    if entries:
+        oldest_old = entries[0][0]
+        boundary = await git_repo.git(repo, "rev-parse", "--verify", f"{ref}@{{{len(entries)}}}", check=False, env=env)
+        if boundary.returncode == 0:
+            boundary_oid = boundary.stdout.strip()
+            if _OID.fullmatch(boundary_oid) is None or boundary_oid != oldest_old:
+                return None
+            if int(boundary_oid, 16) != 0:
+                oids.add(boundary_oid)
+        elif int(oldest_old, 16) != 0 or f"only has {len(entries)} entries" not in boundary.stderr:
+            return None
+        if int(oldest_old, 16) != 0:
+            oids.add(oldest_old)
+        for old_oid, new_oid in entries:
+            if int(old_oid, 16) != 0:
+                oids.add(old_oid)
+            if int(new_oid, 16) != 0:
+                oids.add(new_oid)
+
+    candidates = sorted(oids)
+    checked = await git_repo.git(
+        repo,
+        "cat-file",
+        "--batch-check=%(objectname) %(objecttype)",
+        check=False,
+        input_text="".join(f"{oid}\n" for oid in candidates),
+    )
+    if checked.returncode != 0:
+        return None
+    rows = [line.split() for line in checked.stdout.splitlines()]
+    if len(rows) != len(candidates) or any(row != [oid, "commit"] for oid, row in zip(candidates, rows, strict=True)):
+        return None
+    return candidates
+
+
 async def _restore_branch(repo: Path, ref: str, tip: str) -> str | None:
     zeros = "0" * len(tip)
     restored = await git_repo.git(repo, "update-ref", "--no-deref", ref, tip, zeros, check=False, interruptible=False)
@@ -224,7 +313,7 @@ async def remove_prunable_branch(
             return BranchRemoval(Skipped(name, "branch no longer qualifies as a content candidate"))
         if current.tip != candidate.tip:
             return BranchRemoval(Skipped(name, "branch tip changed since classification"))
-        history = await git_repo.reflog_oids(repo, ref, candidate.tip)
+        history = await _reflog_oids(repo, ref, candidate.tip)
         if history is None:
             return BranchRemoval(Failed(name, "could not safely inventory branch reflog"))
         # Inventory can take time; repeat the holder check immediately before ref mutation.

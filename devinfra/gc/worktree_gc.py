@@ -9,8 +9,7 @@ active, and open-PR worktrees are kept; unique work is reported for review.
 Repo-level git plumbing lives in `git_repo`; the PR model in `pull_request`. PR state is an
 injected mapping so this module needs no network; the CLI (workspace_gc) fills it from
 GitHub. `git worktree remove` refuses tracked or untracked changes, but deletes ignored files.
-Detached HEAD and reflog commits are preserved under refs/workspace-gc/recovery/ before
-removal. The final HEAD check and removal are not atomic.
+The final detached HEAD check and removal are not atomic.
 """
 
 from __future__ import annotations
@@ -35,7 +34,6 @@ from devinfra.gc.git_repo import (
     list_worktrees,
     open_repo,
     patches_landed_in_main,
-    reflog_oids,
 )
 from devinfra.gc.pull_request import PrInfo, PrLookup, PrState, pr_phrase
 from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
@@ -158,8 +156,8 @@ def describe_reason(item: Classification) -> str:
             return "uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case RetainedWorktree(reason=RetainedWorktreeReason.OPEN_PR, pr=PrInfo() as pr):
             return pr_phrase(pr)
-        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD):
-            return "detached HEAD commit reachability is not proven safe for removal"
+        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD, main=main):
+            return f"detached HEAD with commits not proven landed in {main}"
         case ReviewWorktree(reason=ReviewWorktreeReason.UNMERGED, main=main):
             return f"commits not in {main} and no merged PR"
         case _:
@@ -333,9 +331,9 @@ async def remove_worktree(repo: Path, path: Path, *, expected_detached_head: str
     """Remove one worktree with `git worktree remove` (never `--force`).
 
     Git refuses tracked or untracked changes but deletes ignored data. This entry point checks
-    the current HEAD so direct callers cannot bypass that protection. An attached branch is
-    left intact — its work stays reachable through it (branch GC is a separate step). Use
-    `remove_if_still_prunable` unless the caller has just classified `path` itself. A file or
+    the detached HEAD when an expected commit is supplied. An attached branch is left intact
+    (branch GC is a separate step). Use `remove_if_still_prunable` unless the caller has just
+    classified `path` itself. A file or
     detached commit created after inspection but before Git removes the directory remains a
     race this interface cannot make atomic.
     """
@@ -345,34 +343,17 @@ async def remove_worktree(repo: Path, path: Path, *, expected_detached_head: str
         return Skipped(path, "worktree directory is missing; review and prune its stale Git metadata separately")
     except INSPECTION_ERRORS as error:
         return Failed(path, f"cannot inspect worktree directory before removal: {error}")
-    try:
-        head_is_detached = await run_blocking(lambda: open_repo(path).head_is_detached)
-        if head_is_detached:
-            if expected_detached_head is None:
-                return Skipped(path, "detached HEAD requires a fresh classification")
-            current_head = await run_blocking(lambda: str(open_repo(path).head.peel(pygit2.Commit).id))
-            if current_head != expected_detached_head:
-                return Skipped(path, "detached HEAD changed since classification")
-            history = await reflog_oids(path, "HEAD", current_head)
-            if history is None:
-                return Failed(path, "cannot safely inventory detached HEAD reflog")
-            for oid in history:
-                recovery_ref = f"refs/workspace-gc/recovery/{oid}"
-                logger.warning("Preserving detached reflog commit at %s before removing %s", recovery_ref, path)
-                await git(repo, "update-ref", "--no-deref", recovery_ref, oid, "", check=False, interruptible=False)
-                resolved = await git(repo, "rev-parse", "--verify", recovery_ref)
-                symbolic = await git(repo, "symbolic-ref", "-q", recovery_ref, check=False)
-                if symbolic.returncode != 1 or resolved.stdout.strip() != oid:
-                    return Failed(path, f"cannot preserve detached commit at {recovery_ref}")
-            current = await run_blocking(lambda: open_repo(path))
-            if not current.head_is_detached or str(current.head.peel(pygit2.Commit).id) != current_head:
-                return Skipped(path, "HEAD changed; captured commits remain under refs/workspace-gc/recovery/")
-            if await reflog_oids(path, "HEAD", current_head) != history:
-                return Skipped(path, "HEAD reflog changed; captured commits remain under refs/workspace-gc/recovery/")
-        elif expected_detached_head is not None:
-            return Skipped(path, "HEAD changed since classification")
-    except INSPECTION_ERRORS as error:
-        return Failed(path, f"cannot inspect worktree safety before removal: {error}")
+    if expected_detached_head is not None:
+        try:
+
+            def head_matches() -> bool:
+                current = open_repo(path)
+                return current.head_is_detached and str(current.head.peel(pygit2.Commit).id) == expected_detached_head
+
+            if not await run_blocking(head_matches):
+                return Skipped(path, "HEAD changed since classification")
+        except INSPECTION_ERRORS as error:
+            return Failed(path, f"cannot inspect worktree safety before removal: {error}")
     try:
         outcome = await git(repo, "worktree", "remove", path, check=False, interruptible=False)
     except (OSError, subprocess.SubprocessError) as error:
