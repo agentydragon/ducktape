@@ -65,11 +65,12 @@ service EnvironmentService {
 message CreateEnvironmentRequest {
   string name = 1;
   string template = 2;
-  reserved 3, 4, 5, 6;
-  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
+  reserved 3, 4, 5, 6, 8;
+  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults", "policy_sets";
   string bootstrap = 7;
-  // PolicySet names to bind, beside the EnvironmentService defaults.
-  repeated string policy_sets = 8;
+  // The Identity the Environment acts as, by name; it must exist. A launch creates the Identity and
+  // grants it PolicySets before this call (PolicyService CreateIdentity, GrantIdentityPolicyBinding).
+  string identity = 14;
   // The app's preset this Environment was made from, recorded as a label; the controller never resolves it.
   optional string preset = 9;
   // Whether an incoming message may resume this Environment after suspension.

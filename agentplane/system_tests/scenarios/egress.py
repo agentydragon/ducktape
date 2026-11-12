@@ -299,13 +299,7 @@ async def _kubectl_create_binding(
                 }
             ],
         },
-        "spec": {
-            "subject": {
-                "namespace": sandbox.execution_account.account.namespace,
-                "name": sandbox.execution_account.account.name,
-            },
-            "policySets": [policy_set],
-        },
+        "spec": {"subject": {"identity": {"name": sandbox.identity_name}}, "policySets": [policy_set]},
     }
     with tracer.start_as_current_span(
         "system_test.egress.policy_binding.apply", record_exception=False, set_status_on_exception=False

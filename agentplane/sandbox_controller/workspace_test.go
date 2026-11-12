@@ -310,12 +310,8 @@ func TestLaunchGateKeepsEndedWorkloadBeforeReplacement(t *testing.T) {
 	if err := c.Status().Update(context.Background(), pod); err != nil {
 		t.Fatal(err)
 	}
-	var account corev1.ServiceAccount
-	if err := c.Get(context.Background(), sandboxKey, &account); err != nil {
-		t.Fatal(err)
-	}
-	account.OwnerReferences[0].UID = "another-owner"
-	if err := c.Update(context.Background(), &account); err != nil {
+	// The Identity goes, so no replacement may start: the gate must keep the ended Pod.
+	if err := c.Delete(context.Background(), testIdentity(defaultTestIdentity, testIdentityUID)); err != nil {
 		t.Fatal(err)
 	}
 	template.Spec.WorkspaceVolume.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}

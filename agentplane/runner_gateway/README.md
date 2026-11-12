@@ -71,7 +71,8 @@ conversation and from Runner admission.
   requested-stop override. No deployment caller or delegated-method activation is part of this
   backend slice. `environment_managers` grants direct Pod-bound accounts full Sandbox management;
   `environment_launchers` grants Action brokers create-only authority with required caller origin.
-  The Gateway owns `environment_default_policy_sets` for both launch paths.
+  `CreateEnvironment` names the Identity the Sandbox acts as and binds no PolicySets: a launch
+  creates the Identity and grants it, including the default sets, before calling it.
 - `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.

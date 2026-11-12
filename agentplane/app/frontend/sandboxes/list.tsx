@@ -38,7 +38,7 @@ import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { TopbarTitle } from "../topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
-import { createEnvironment, listEnvironmentTemplates, resumeSandbox, suspendEnvironment } from "./client";
+import { launchEnvironment, listEnvironmentTemplates, resumeSandbox, suspendEnvironment } from "./client";
 
 type NewSandboxForm = {
   name: string;
@@ -175,7 +175,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     const request = createProto(CreateEnvironmentRequestSchema, {
       name: form.name || placeholderName,
       template: form.template,
-      policySets: form.policy_sets,
       inboxTags: form.inbox_tags,
       bootstrap: form.bootstrap,
       wakeOnSend: form.wake_on_send,
@@ -186,7 +185,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       preset: selectedPreset ?? undefined,
     });
     try {
-      const data = await createEnvironment(request);
+      const data = await launchEnvironment(request, form.policy_sets);
       setForm({ ...EMPTY_FORM, ...defaults });
       setSelectedPreset(null);
       const params = new URLSearchParams(searchParams);
