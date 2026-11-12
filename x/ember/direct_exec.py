@@ -49,4 +49,4 @@ class DirectExecServer(FastMCP):
                 raise ValueError(f"Not a file: {path}")
             return [validate_and_encode_image(p.read_bytes(), path)]
 
-        self.read_image_tool = self.tool(output_schema=None)(read_image)
+        self.tool(output_schema=None)(read_image)
