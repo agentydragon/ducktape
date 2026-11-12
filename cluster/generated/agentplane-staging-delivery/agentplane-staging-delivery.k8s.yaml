@@ -264,6 +264,7 @@ data:
     environment_default_policy_sets:
       - basic
       - inference-experiments
+      - k8s-account-shared-diagnostics
     gateway_callers:
       - agentplane-staging/app
       - agentplane-staging/notifications

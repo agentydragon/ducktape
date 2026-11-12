@@ -175,7 +175,15 @@ class Rbac:
         """The roles bound for a holder of the policy sets `sets` or for an account it acts as."""
         sets = tuple(sets)
         assert len(sets) == len(set(sets)), sets
-        roles = {role for name in sets if name not in self.role_sets for role in self.set_roles(name)}
+        # A set's PolicySet binds its own Kubernetes rules for the holder; a role set is reached only
+        # through an account (both catalog shapes render role sets, for launched Identities).
+        roles = {
+            role
+            for name in sets
+            for role in _bound_roles(
+                rule for rule in self.policy_sets.get(name, []) if rule["type"].startswith("kubernetes_")
+            )
+        }
         for namespace, name in self.accounts(sets):
             roles |= self.account_roles(namespace, name)
         return roles
