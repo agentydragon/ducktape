@@ -4416,6 +4416,16 @@ read, a field deletion or redefinition, or a read of an actual accessor keeps
 the ordinary conservative effects. An abstract instance shape alone does not
 prove that an own field still exists.
 
+The same private own-field check can discharge the classifier's member-read
+purity reason at the exact evaluated top-level read site. The completed owner
+must have no unknown call, precision loss, or uninitialized read, and every
+joined execution path must carry that read's proof. The discharge removes only
+one matching member-read reason at that span; other reads, calls, and writes
+retain their purity obligations. A conditional or short-circuited read without
+proof on every path keeps the conservative reason. A read nested under a
+conditional expression, short-circuit or logical assignment, or optional
+chain cannot mint this receipt even if one abstract execution visits it.
+
 An annotated local constructor-factory call kept on the conservative path records
 its first typed refusal in `synchronous_execution.local_record_factory_rejections`.
 The identity checks distinguish a non-binding callee, a missing hoisted

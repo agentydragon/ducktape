@@ -26,6 +26,7 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
+use swc_common::Span;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
@@ -266,6 +267,8 @@ impl RuntimeQueries<'_, '_> {
         &self,
         owner: SourceUnitOrdinal,
         certificate: Option<&LocalRecordFactoryPurityCertificate>,
+        private_own_field_reads: &[Span],
+        read_dependencies: &ProofDependencies,
     ) -> Option<crate::reports::schema::PurityCompletionDisagreement> {
         assert_eq!(owner, self.point.owner);
         let mut context = self.context.borrow_mut();
@@ -274,7 +277,8 @@ impl RuntimeQueries<'_, '_> {
         else {
             unreachable!("owner finalization consumes its prepared obligations once");
         };
-        let (completed, disagreement) = prepared.complete(certificate);
+        let (completed, disagreement) =
+            prepared.complete(certificate, private_own_field_reads, read_dependencies);
         context.assume(completed.proof_dependencies());
         context.propose(
             RuntimeKey::CompletedPurity(owner),

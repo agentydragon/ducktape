@@ -23,6 +23,143 @@ const PREFIX: &str = "const prefix = new globalThis.Date();\n";
 const LATER: &str = "const later = 42;\n";
 
 #[test]
+fn fresh_local_class_own_field_read_has_pure_value() {
+    let source = r#"class Box {
+  constructor(record) { this.record = record; }
+  value = () => this.record.callback();
+}
+
+function make(record) { return new Box(record); }
+console.log('early');
+const first = make({ callback: () => 1 });
+const readers = [first.value];
+const later = readers;
+console.log(later.length, later[0]());
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "factory",
+                &[
+                    Member::new("Box"),
+                    Member::new("make").with_retained_record_factory(),
+                ],
+            ),
+            logical_module("commands", &[Member::new("first")]),
+            logical_module("readers", &[Member::new("readers")]),
+            logical_module_with_anon(
+                "early_late",
+                &[Member::new("later")],
+                &["console.log('early');"],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "early\n1 1\n");
+    assert_eq!(fixture.translation_validation()["accepts"], true);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/readers.js",
+        &["readers"],
+        &[],
+    );
+    let graph = fixture.dependency_graph();
+    let readers = node_declaring(&graph, "readers");
+    assert!(readers.purity.is_pure(), "{:?}", readers.purity);
+}
+
+#[test]
+fn private_own_field_purity_refuses_mutation_getters_escape_and_skipped_reads() {
+    let cases = [
+        (
+            "const changed = first.value = () => 8;",
+            "[first.value]",
+            "8\n",
+        ),
+        (
+            "const changed = Object.defineProperty(first, 'value', { get() { return () => 9; } });",
+            "[first.value]",
+            "9\n",
+        ),
+        (
+            "const changed = delete first.value;",
+            "[first.value]",
+            "9\n",
+        ),
+        (
+            "const changed = (globalThis.saved = first, globalThis.saved.value = () => 8);",
+            "[first.value]",
+            "8\n",
+        ),
+        (
+            "const changed = (() => { const invoke = f => f(first); invoke(x => { delete x.value; }); return 1; })();",
+            "[first.value]",
+            "9\n",
+        ),
+        (
+            "const changed = Date.now() < 0;",
+            "changed ? [first.value] : []",
+            "0\n",
+        ),
+        (
+            "const changed = Date.now() < 0;",
+            "changed && [first.value]",
+            "0\n",
+        ),
+        (
+            "let changed = Date.now() < 0;",
+            "changed &&= [first.value]",
+            "0\n",
+        ),
+        ("const changed = null;", "changed?.[first.value]", "0\n"),
+        (
+            "let changed;",
+            "({ changed = first.value } = { changed: [] })",
+            "0\n",
+        ),
+    ];
+    for (prefix, read, expected) in cases {
+        let source = format!(
+            r#"class Box {{
+  constructor(record) {{ this.record = record; }}
+  get value() {{ return () => 9; }}
+  value = () => this.record.callback();
+}}
+function make(record) {{ return new Box(record); }}
+const first = make({{ callback: () => 1 }});
+{prefix}
+const readers = {read};
+console.log(typeof readers?.[0] === 'function' ? readers[0]() : 0);
+"#
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("Box"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("first"),
+                        Member::new("changed"),
+                        Member::new("readers"),
+                    ],
+                    &[],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let graph = fixture.dependency_graph();
+        let readers = node_declaring(&graph, "readers");
+        assert!(
+            !readers.purity.is_pure(),
+            "{prefix} / {read}: {:?}",
+            readers.purity
+        );
+    }
+}
+#[test]
 fn reading_a_constructed_own_field_does_not_publish_an_unrelated_getter_receiver() {
     let source = r#"class Holder {
   constructor(record) { this.record = record; }
