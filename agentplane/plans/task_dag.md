@@ -985,6 +985,8 @@ flowchart LR
     AGENT_PRINCIPAL_MODEL_DESIGN[Decision, unscheduled: Agentplane principals and external identities]
     AGENT_PRINCIPAL_MODEL_DESIGN -. related identity choices .-> SESSION_RUNTIME_MODEL_DESIGN
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
+    AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT[Unscheduled: authored conversation CLI experiment]
+    AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT -. informs .-> AGENT_AUTHORED_CONVERSATIONS_DESIGN
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
@@ -1162,6 +1164,19 @@ environment and a central sampler with zero, one or multiple attached environmen
 shared-host/multiple-Session operation, environment loss and host restart. Include a data-preserving
 transition proposal. Recording the broader model does not dispatch a worker or authorize a live migration.
 
+### `AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT` — try an authored conversation in a CLI
+
+**Unscheduled; experiment specified at the operator's request, 2026-11-12.** Implement and run the
+[bounded CLI experiment](authored_conversation_experiment.md): our own agent loop with Qwen through
+LiteLLM's OpenAI-compatible API, a retained thread read/written through tools, separate working
+context and diagnostic trace, and a same-model ordinary-chat comparison. No deployed Agentplane
+service is required. The broader conversation design is not a prerequisite.
+
+**Exit:** the spec's paired scenarios and win conditions evaluated, with artifacts and a findings
+note classifying the result as promising, unpromising on the tested model, or inconclusive. A useful
+negative result completes the experiment too. History replacement and existing thread-work
+priorities remain separate decisions.
+
 ### `AGENT_AUTHORED_CONVERSATIONS_DESIGN` — conversations agents act on through tools
 
 **Decision, unscheduled; operator requested for later, 2026-10-30 PDT.** Explore a conversation
@@ -1171,6 +1186,10 @@ could participate in such a thread alongside humans or other agents; a human par
 Expose conversation operations through MCP so third-party harnesses can participate without changes
 to their binaries. Treat publishing a message, notifying a participant and waking an agent as
 separate concerns; incoming-message delivery and harness-specific notification support need design.
+
+Start by evaluating the bounded CLI experiment above before committing to the broader model. Its
+local tool dispatch and storage choices are experimental, not decisions about service ownership,
+MCP exposure or migration. This decision and its full exit criteria do not gate that experiment.
 
 Recommendation for review: distinguish the authored conversation, harness continuation state and
 retained evidence of harness activity. Today's History conversation view is already a lossy
