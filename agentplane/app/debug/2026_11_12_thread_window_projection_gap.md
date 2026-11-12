@@ -38,3 +38,62 @@ at 334. The impossible expectation was restored before this change was committed
 The [bounded-artifact run](https://app.buildbuddy.io/invocation/38d07614-2f31-4904-b582-14e5aceee18e)
 then confirmed that the original Playwright assertion remained the failure and
 `thread-window-projection-gap.json` was published as an undeclared test output.
+
+The historical trace also separates the fast-loop warning from the entity shape. At
+browser monotonic time 19453.981 ms, the client warns; the next reset request, at
+19455.3 ms, is **`chunks/text`**, with `offset=-1`. Entity requests keep handle
+`108823093-1794085978036639` and offset `34595184_22`. After the held older-page
+POST, an entity GET at 20012.3 ms completes with 200 and an up-to-date control
+message, and its next live SSE request begins at 20065.0 ms. Thus this warning
+does not show that the entity stream reset or skipped its position. The pinned
+client's fast-loop guard and snapshot pause behavior explain why the warning was
+a plausible lead; only the payload shape's reset is visible here.
+
+The failed target's `conversation-http2-ingress/container.log` begins with a later
+scenario at 21:14:29 UTC, whereas this failure's gap begins around 21:13:01 UTC.
+The fixture reuses that output path, so the retained ingress file cannot establish
+what the failing scenario's proxy sent. The Electric log for the failing case
+records startup and shape creation without request bodies or per-update delivery;
+the Go app logs contain migration messages only. Neither supplies the missing
+live-response body.
+
+The controlled [resume-gap probe](https://app.buildbuddy.io/invocation/6f0b886f-b5a1-46c1-af6e-c15a76940769)
+on effective source `e5d9161610` held the entity live GET that resumes after the
+older-page subset, appended all 35 new items, waited until History folded through
+334, then released the request. It passed freshly on RBE in 67.393 seconds,
+including the original one-shape, reader-position and draft assertions. Its one
+`TestRunner` execution was uncached (`strategy=remote`, one run and zero cached
+runs). This rejects that reconnect/backlog gap alone under the tested schedule;
+it does not reproduce or repair the historical failure. The temporary routing
+change was removed.
+
+If a future failure's direct view and fresh Electric snapshot both reach the
+expected cursor, the remaining boundary needs the entity SSE contents received by
+Chromium. The failure diagnostic uses
+[`Network.streamResourceContent`](https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-streamResourceContent)
+to inspect the still-open response buffer and save only numeric view revision
+cursors, change count, byte count/digest, malformed-frame and incomplete trailing
+byte counts, and request/shape position in
+`thread-window-entity-stream.json`. Entity text/state stays in memory. Chromium's
+buffers are bounded to 1 MiB per response and 2 MiB total, within the existing
+ten-second diagnostic budget. The original assertion remains the test failure if
+capture fails.
+
+An entity view update at the expected cursor in this artifact would move the
+boundary into client filtering/application; its absence, with the fresh snapshot
+current, would leave the live-serving/relay path. A buffer eviction or unavailable
+response is missing evidence, not proof that no update arrived. Browser-login
+setup timeouts remain a separate failure.
+
+The [fresh baseline](https://app.buildbuddy.io/invocation/b9b4fba4-5d1c-4d80-9b43-b388d82fbaaa)
+on `e5d9161610` passed its one uncached remote test run in 61.534 seconds. A
+[forced diagnostic run](https://app.buildbuddy.io/invocation/ab7f3509-5208-492b-bd66-100ea1ab5096)
+then changed only the final expected DOM cursor to 335. That original assertion
+remained the failure; committed, folded, direct view, fresh Electric snapshot and
+browser cursors were all actually 334. The new metadata artifact was 244 bytes:
+Chromium retained 32,258 entity-stream bytes containing 40 changes and view
+revisions `[281, 281, 334, 334]`. This validates capture of the open response and
+its relevant revisions without saving its payload. The impossible assertion was
+restored. The forced run used effective source `e5d9161610` plus the diagnostic
+patch; the remote runner fetched newer base `d85ebfd828` and applied the inverse
+committed difference as part of mirroring the worktree.
