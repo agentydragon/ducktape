@@ -161,6 +161,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-openai.platform-sessions.svc
+    - openai.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -575,6 +576,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-anthropic.platform-sessions.svc
+    - anthropic.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -989,6 +991,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-chatgpt.platform-sessions.svc
+    - chatgpt.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -1403,6 +1406,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-blueshield.platform-sessions.svc
+    - blueshield.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -1815,6 +1819,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-quest.platform-sessions.svc
+    - quest.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -2107,7 +2112,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: quest-provider
+  name: quest
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2234,6 +2239,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-thrive.platform-sessions.svc
+    - thrive.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
@@ -2643,6 +2649,7 @@ metadata:
 spec:
   dnsNames:
     - platform-sessions-gateway.platform-sessions.svc
+    - gateway.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca

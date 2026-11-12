@@ -17,6 +17,10 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
 
     gateway = resource("Deployment", remote.GATEWAY)["spec"]
     assert gateway["strategy"]["type"] == "Recreate"
+    assert set(resource("Certificate", remote.GATEWAY)["spec"]["dnsNames"]) == {
+        f"{remote.GATEWAY}.{remote.NAMESPACE}.svc",
+        f"gateway.{remote.NAMESPACE}.svc",
+    }
     gateway_pod = gateway["template"]["spec"]
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
     public_objects = Cdk8sTesting.synth(app.chart(scratch_app))
@@ -66,9 +70,8 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         assert service["selector"] == provider["template"]["metadata"]["labels"]
         assert {p["name"]: p["port"] for p in service["ports"]} == {"https": 8443, "grpc": 8444}
         assert connection["control_target"] == f"{host}:8444"
-        assert host in resource("Certificate", name)["spec"]["dnsNames"]
-        monitor_name = f"{instance}-provider" if instance == "quest" else instance
-        monitor = resource("PodMonitor", monitor_name)["spec"]
+        assert set(resource("Certificate", name)["spec"]["dnsNames"]) == {host, f"{instance}.{remote.NAMESPACE}.svc"}
+        monitor = resource("PodMonitor", instance)["spec"]
         assert monitor["selector"]["matchLabels"] == service["selector"]
         assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
         if instance == "quest":
