@@ -19,6 +19,7 @@ use crate::facts::abstract_domain::builtins::IntrinsicOp;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::GlobalAccessKind;
 use crate::reports::schema::{CallbackFactoryUseKind, NativeIntegrityGuard};
+use std::collections::BTreeMap;
 use swc_common::Span;
 use swc_ecma_ast::*;
 
@@ -130,10 +131,39 @@ impl Executor<'_, '_> {
             }
             ValueExpr::ObjectLiteral(key, properties) => {
                 if self.inputs.index.exact_object_spread_copies.contains(key)
-                    && let [(None, source)] = properties.as_ref()
+                    && properties.iter().all(|(name, _)| name.is_none())
                 {
-                    let source = self.evaluate(source, env, captures);
-                    if let Some(properties) = self.ordinary_data_properties(&source) {
+                    let mut copied = BTreeMap::new();
+                    let mut supported = true;
+                    for (_, source) in properties.iter() {
+                        if properties.len() > 1
+                            && !matches!(source, ValueExpr::Binding(binding)
+                                if self.inputs.index.plain_string_record_bindings.contains(binding)
+                                    && self.inputs.single_writer_bindings.contains(binding)
+                                    && self.state.world.module.initialized_bindings.contains(binding)
+                                    && !self.inputs.index.reassigned_bindings.contains(binding)
+                                    && self.inputs.index.dynamic_scope_owners.is_empty())
+                        {
+                            supported = false;
+                            break;
+                        }
+                        let source = self.evaluate(source, env, captures);
+                        let Some(source_properties) = self.ordinary_data_properties(&source) else {
+                            supported = false;
+                            break;
+                        };
+                        if properties.len() > 1
+                            && source_properties.values().any(|values| {
+                                values.is_empty() || !values.iter().all(AbstractValue::is_primitive)
+                            })
+                        {
+                            supported = false;
+                            break;
+                        }
+                        copied.extend(source_properties);
+                    }
+                    if supported {
+                        let properties = copied;
                         let previously_evaluated = self
                             .state
                             .world

@@ -6276,6 +6276,9 @@ pub(super) struct ExecutionIndex {
     pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
     pub(super) null_proto_data_objects: BTreeSet<u32>,
     pub(super) exact_object_spread_copies: BTreeSet<u32>,
+    /// Direct top-level const literals whose own keys and values are fixed
+    /// string data. Used only for the bounded multiple-spread copy proof.
+    pub(super) plain_string_record_bindings: BTreeSet<Id>,
     pub(super) map_entry_arrays: BTreeSet<u32>,
     pub(super) dense_array_literals: BTreeMap<u32, usize>,
     pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
@@ -6535,6 +6538,7 @@ impl Default for ExecutionIndex {
             descriptor_copy_calls: BTreeMap::new(),
             null_proto_data_objects: BTreeSet::new(),
             exact_object_spread_copies: BTreeSet::new(),
+            plain_string_record_bindings: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
             dense_array_literals: BTreeMap::new(),
             array_elements: BTreeMap::new(),
@@ -11506,6 +11510,21 @@ impl ExecutionIndex {
         let Some(declaration) = var_decl_of_item(item) else {
             return;
         };
+        if declaration.kind == VarDeclKind::Const
+            && !declaration.declare
+            && let [declarator] = declaration.decls.as_slice()
+            && let Pat::Ident(binding) = &declarator.name
+            && let Some(Expr::Object(object)) = declarator.init.as_deref().map(Expr::unwrap_parens)
+            && !object.props.is_empty()
+            && object.props.iter().all(|property| {
+                matches!(property, PropOrSpread::Prop(property)
+                    if matches!(property.as_ref(), Prop::KeyValue(pair)
+                        if matches!(&pair.key, PropName::Ident(_) | PropName::Str(_))
+                            && matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Str(_)))))
+            })
+        {
+            self.plain_string_record_bindings.insert(binding.id.to_id());
+        }
         if matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
             && !declaration.declare
             && let [declarator] = declaration.decls.as_slice()
@@ -12356,7 +12375,13 @@ impl Visit for ExecutionIndex {
         }) {
             self.literal_prototypes.insert(object.span.lo.0, prototype);
         }
-        if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
+        if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)])
+            || (object.props.len() > 1
+                && object.props.iter().all(|property| {
+                    matches!(property, PropOrSpread::Spread(spread)
+                        if matches!(spread.expr.unwrap_parens(), Expr::Ident(_)))
+                }))
+        {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
         use super::value_model::LiteralPropertyKind;
