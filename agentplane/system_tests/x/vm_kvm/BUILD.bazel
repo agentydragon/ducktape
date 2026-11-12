@@ -12,12 +12,11 @@ k3s_suite(
     name = "test_vm_kvm",
     srcs = ["//agentplane/system_tests/suites:test_vm.py"],
     boot_evidence = True,
-    # Unmeasured: the size this suite had before sizes moved to the targets, 4 compute units (4 CPUs, 10 GB) and
-    # 50 GB of free disk.
+    # Fits the existing 4-CPU/8-GiB worker; measured in ../../debug/vm_kvm_existing_pool_2026_11_12.md.
     exec_properties = {
         "test.EstimatedCPU": "4",
         "test.EstimatedFreeDiskBytes": "50GB",
-        "test.EstimatedMemory": "10GB",
+        "test.EstimatedMemory": "7GiB",
     },
     main = "//agentplane/system_tests/suites:test_vm.py",
     require_kvm = True,
