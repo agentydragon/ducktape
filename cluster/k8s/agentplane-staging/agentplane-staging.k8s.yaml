@@ -5574,9 +5574,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5603,9 +5600,6 @@ spec:
               - key: "{{ vmOwner.uid }}"
                 operator: NotEquals
                 value: "{{vm.metadata.uid}}"
-              - key: "{{ sandbox.uid || '' }}"
-                operator: NotEquals
-                value: "{{account.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0].uid || 'none'}}"
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
@@ -5657,7 +5651,7 @@ spec:
               - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
                 operator: NotEquals
                 value: 0
-        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a Sandbox, which also controls the ServiceAccount of the same name.
+        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a live Sandbox whose WorkloadCredential accepted its VMI.
     - context:
         - name: vmiOwner
           variable:
@@ -5687,9 +5681,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5709,7 +5700,7 @@ spec:
             automountServiceAccountToken: false
             imagePullSecrets:
               - name: forgejo-images-creds
-            serviceAccountName: "{{account.metadata.name}}"
+            serviceAccountName: default
             volumes:
               - configMap:
                   name: launcher-relay-egress-sidecar
@@ -5834,9 +5825,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5897,9 +5885,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5976,9 +5961,6 @@ spec:
           variable:
             default: {}
             jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
-          name: account
       match:
         any:
           - resources:
@@ -5998,7 +5980,7 @@ spec:
             any:
               - key: "{{ request.object.spec.serviceAccountName }}"
                 operator: NotEquals
-                value: "{{account.metadata.name}}"
+                value: default
               - key: "{{ request.object.spec.automountServiceAccountToken }}"
                 operator: NotEquals
                 value: false
@@ -6630,16 +6612,6 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-  - apiGroups:
-      - ""
-    resources:
       - services
     verbs:
       - get
@@ -6660,14 +6632,11 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - policybindings
+      - identities
     verbs:
       - get
       - list
       - watch
-      - create
-      - patch
-      - delete
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -7823,6 +7792,14 @@ rules:
     verbs:
       - get
       - create
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
+      - create
+      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -7946,9 +7923,9 @@ spec:
           - policysets
           - policybindings
   validations:
-    - expression: (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher')
-      message: A launcher grant is owned by one Sandbox and named for it.
-    - expression: request.resource.resource != 'policybindings' || object.spec.policySets == [object.metadata.name]
+    - expression: (size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Sandbox' && object.metadata.name == variables.owners[0].name + '.launcher') || (request.resource.resource == 'policybindings' && size(variables.owners) == 1 && variables.owners[0].apiVersion.startsWith('agentplane.allegedly.works/') && variables.owners[0].kind == 'Identity' && object.metadata.name == variables.owners[0].name + '.identity' && has(object.spec.subject.identity) && object.spec.subject.identity.name == variables.owners[0].name)
+      message: A launcher grant is owned by one Sandbox and named for it; a launch's Identity grant is owned by that Identity, named for it and binds only it.
+    - expression: request.resource.resource != 'policybindings' || variables.owners[0].kind == 'Identity' || object.spec.policySets == [object.metadata.name]
       message: A launcher grant's PolicyBinding binds only its own PolicySet.
     - expression: request.resource.resource != 'policysets' || (size(variables.owners) == 1 && object.spec.rules.all(r, (r.type == 'session_inbox_access' && has(r.operations) && r.operations == ['send_message'] && has(r.targets) && !has(r.targets.inboxTags) && !has(r.targets.allSandboxes) && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has(r.targets.sandboxes[0].uid) && r.targets.sandboxes[0].name == variables.owners[0].name && r.targets.sandboxes[0].uid == variables.owners[0].uid) || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema' && r.policy.actions.all(group, group == 'orchestration_v1' && r.policy.actions[group].all(action, action in ['create_session', 'submit_input', 'interrupt_turn', 'change_model', 'change_reasoning_effort', 'get_session', 'list_sessions', 'read_turns', 'wait_for_turn'])) && has(r.policy.schema) && r.policy.schema.all(key, key in ['type', 'required', 'properties']) && has(r.policy.schema.type) && r.policy.schema.type == 'object' && has(r.policy.schema.required) && r.policy.schema.required == ['sandbox'] && has(r.policy.schema.properties) && r.policy.schema.properties.all(key, key == 'sandbox') && has(r.policy.schema.properties.sandbox) && r.policy.schema.properties.sandbox.all(key, key == 'const') && 'const' in r.policy.schema.properties.sandbox && r.policy.schema.properties.sandbox['const'].all(key, key in ['name', 'uid']) && 'name' in r.policy.schema.properties.sandbox['const'] && 'uid' in r.policy.schema.properties.sandbox['const'] && r.policy.schema.properties.sandbox['const'].name == variables.owners[0].name && r.policy.schema.properties.sandbox['const'].uid == variables.owners[0].uid)))
       message: A launcher grant's rules name only its Sandbox, by name and UID, and only orchestration_v1 Actions.
