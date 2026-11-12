@@ -2181,6 +2181,30 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
+  name: basic-identity
+  namespace: agentplane-staging
+spec:
+  rules:
+    - policy:
+        actions:
+          environments:
+            - get
+            - list
+            - resume
+          sessions:
+            - cancel_input
+            - create
+            - get
+            - interrupt_turn
+            - observe_input
+            - read_turns
+            - submit_input
+        type: exact_actions
+      type: action_auto_approve
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
   name: basic
   namespace: agentplane-staging
 spec:
@@ -4105,7 +4129,7 @@ data:
         title: Public coder
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - packages
@@ -4118,9 +4142,6 @@ data:
           - github-identity-reads
           - ssh-reads
           - sandbox-self
-          - shared-diagnostics
-          - public-inventory
-          - cluster-diagnostics
           - k8s-account-public-coder
           - ducktape-pr-failed-jobs
           - send-to-public-coder
@@ -4137,7 +4158,7 @@ data:
         title: Haku
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - forgejo-haku
@@ -4162,11 +4183,8 @@ data:
           - ssh-reads
           - kubernetes-inspection-reads
           - ducktape-pr-failed-jobs
-          - shared-diagnostics
-          - cluster-diagnostics
-          - haku-sandbox-write
-          - coinbase
-          - plaid-diagnostics
+          - coinbase-identity
+          - plaid-diagnostics-identity
           - k8s-account-haku
           - send-to-haku
         inbox_tags:
@@ -4177,7 +4195,7 @@ data:
         title: Finance agent
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - packages
@@ -4191,12 +4209,8 @@ data:
           - github-identity-reads
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
-          - shared-diagnostics
-          - public-inventory
-          - cluster-diagnostics
-          - coinbase
-          - spend-policy-config
-          - plaid-diagnostics
+          - coinbase-identity
+          - plaid-diagnostics-identity
           - k8s-account-finance-agent
           - ducktape-pr-failed-jobs
           - send-to-finance-agent
@@ -4208,7 +4222,7 @@ data:
         title: Public coder / ducktape
         template: environment-tools
         policy_sets:
-          - basic
+          - basic-identity
           - inference-experiments
           - k8s-account-shared-diagnostics
           - packages
@@ -4221,9 +4235,6 @@ data:
           - github-identity-reads
           - ssh-reads
           - sandbox-self
-          - shared-diagnostics
-          - public-inventory
-          - cluster-diagnostics
           - k8s-account-public-coder
           - ducktape-pr-failed-jobs
           - send-to-public-coder
@@ -7238,7 +7249,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - packages
@@ -7251,9 +7262,6 @@ data:
                   - github-identity-reads
                   - ssh-reads
                   - sandbox-self
-                  - shared-diagnostics
-                  - public-inventory
-                  - cluster-diagnostics
                   - k8s-account-public-coder
                   - ducktape-pr-failed-jobs
                   - send-to-public-coder
@@ -7298,7 +7306,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - forgejo-haku
@@ -7323,11 +7331,8 @@ data:
                   - ssh-reads
                   - kubernetes-inspection-reads
                   - ducktape-pr-failed-jobs
-                  - shared-diagnostics
-                  - cluster-diagnostics
-                  - haku-sandbox-write
-                  - coinbase
-                  - plaid-diagnostics
+                  - coinbase-identity
+                  - plaid-diagnostics-identity
                   - k8s-account-haku
                   - send-to-haku
                 inbox_tags:
@@ -7356,7 +7361,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - packages
@@ -7370,12 +7375,8 @@ data:
                   - github-identity-reads
                   - ssh-reads
                   - gaffer-private-branch-and-pr-creation
-                  - shared-diagnostics
-                  - public-inventory
-                  - cluster-diagnostics
-                  - coinbase
-                  - spend-policy-config
-                  - plaid-diagnostics
+                  - coinbase-identity
+                  - plaid-diagnostics-identity
                   - k8s-account-finance-agent
                   - ducktape-pr-failed-jobs
                   - send-to-finance-agent
@@ -7512,7 +7513,7 @@ data:
               launch:
                 template: environment-tools
                 policy_sets:
-                  - basic
+                  - basic-identity
                   - inference-experiments
                   - k8s-account-shared-diagnostics
                   - packages
@@ -7525,9 +7526,6 @@ data:
                   - github-identity-reads
                   - ssh-reads
                   - sandbox-self
-                  - shared-diagnostics
-                  - public-inventory
-                  - cluster-diagnostics
                   - k8s-account-public-coder
                   - ducktape-pr-failed-jobs
                   - send-to-public-coder
@@ -9960,6 +9958,19 @@ spec:
       type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: coinbase-identity
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.coinbase.com
+      methods:
+        - GET
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: KubernetesRoleSet
 metadata:
   name: haku-sandbox-write
@@ -10014,6 +10025,39 @@ spec:
         kind: Role
         name: plaid-finance-diagnostics-reader
       type: kubernetes_role_binding
+    - clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      type: egress
+    - clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: plaid-diagnostics-identity
+  namespace: agentplane-staging
+spec:
+  rules:
     - clusterInternal: true
       credentialRef:
         name: plaid-pgweb

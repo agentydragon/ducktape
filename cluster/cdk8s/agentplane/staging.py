@@ -783,6 +783,13 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())],
             )
+            if name in egress_rules:
+                PolicySet(
+                    chart,
+                    f"policy-set-{name}-identity",
+                    metadata=ApiObjectMetadata(name=f"{name}-identity", namespace=env.namespace),
+                    rules=egress_rules[name],
+                )
         elif name in egress_rules:
             PolicySet(
                 chart,
