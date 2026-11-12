@@ -98,6 +98,13 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
     proxy: Proxy = Field(description="The central egress proxy hop.")
+    # CLEANUP(added 2026-11-12): remove after staging sidecar ConfigMaps are observed without this key.
+    audience_token_files: dict[str, Path] = Field(
+        default_factory=dict,
+        exclude=True,
+        description="Compatibility with existing deployment ConfigMaps during rollout; projected workload tokens "
+        "are no longer forwarded, and newly rendered settings omit this field.",
+    )
     workload_routes: dict[str, WorkloadRoute] = Field(
         default_factory=dict,
         description="Exact HTTP origin to service-owned SVID TLS through an opaque central CONNECT.",

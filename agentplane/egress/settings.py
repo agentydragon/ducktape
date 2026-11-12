@@ -75,6 +75,13 @@ class Settings(BaseModel):
         "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
+    # CLEANUP(added 2026-11-12): remove after staging egress-go-settings is observed without this key.
+    projected_token_audiences: list[str] = Field(
+        default_factory=list,
+        exclude=True,
+        description="Compatibility with existing deployment ConfigMaps during rollout; authentication no longer "
+        "uses projected workload tokens, and newly rendered settings omit this field.",
+    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels
 

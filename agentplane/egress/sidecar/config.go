@@ -224,7 +224,9 @@ func decodeProxyTransport(node *yaml.Node) (tlsProxyTransportConfig, error) {
 }
 
 type config struct {
-	Proxy                  proxyConfig                    `yaml:"proxy"`
+	Proxy proxyConfig `yaml:"proxy"`
+	// CLEANUP(added 2026-11-12): remove after staging sidecar ConfigMaps are observed without this key.
+	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
 	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
 	PlatformRoutes         *platformRoutesConfig          `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`

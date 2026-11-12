@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.egress.sidecar_config import Proxy, WorkloadRoute
+from agentplane.egress.sidecar_config import Proxy, Settings, WorkloadRoute
 
 
 @pytest.mark.parametrize(
@@ -68,6 +68,24 @@ def test_workload_route_rejects_per_route_tls_credentials() -> None:
                 "tls": {"cert_file": "/cert", "key_file": "/key", "ca_file": "/ca"},
             }
         )
+
+
+def test_retired_audience_token_settings_are_omitted_from_rendered_settings() -> None:
+    settings = Settings(
+        proxy=Proxy.model_validate(
+            {
+                "address": "egress.example:8888",
+                "transport": {
+                    "mode": "tls",
+                    "ca_file": "/ca",
+                    "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"},
+                },
+            }
+        ),
+        audience_token_files={"kubernetes": "/var/run/agentplane-egress/kubernetes-token"},
+    )
+
+    assert "audience_token_files" not in settings.model_dump(mode="json", exclude_none=True)
 
 
 if __name__ == "__main__":

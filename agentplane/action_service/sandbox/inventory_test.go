@@ -95,7 +95,7 @@ func TestAnIdentitysBoxOutlivesTheIdentityWithItsCredentialRevoked(t *testing.T)
 		t.Errorf("the Identity lists %v, %v", boxes, err)
 	}
 
-	if err := objects.Delete(ctx, live); err != nil {
+	if err := objects.Delete(ctx, &live); err != nil {
 		t.Fatal(err)
 	}
 	successor := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: live.Name}, Spec: live.Spec}
@@ -394,17 +394,19 @@ func TestAnIdentityDoesNotAdoptALegacyServiceAccountBox(t *testing.T) {
 		Name: objectName(f.caller, "box"), UID: types.UID("legacy-record-uid"), Controller: new(true),
 	}
 	legacyLabels := map[string]string{
-		managedLabel: "true", callerLabel: f.caller.Name, callerNamespaceLabel: f.binding.Namespace,
-		templateLabel: testTemplate, nameLabel: "box", credentialLabel: "legacy-credential",
+		managedLabel: "true", labelPrefix + "caller": f.caller.Name,
+		labelPrefix + "caller-namespace": f.binding.Namespace,
+		templateLabel:                    testTemplate, nameLabel: "box", credentialLabel: "legacy-credential",
 	}
 	legacy := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-		Namespace: f.binding.Namespace, Name: objectName(f.caller, "box"), UID: types.UID("legacy-pod-uid"),
+		Namespace: f.binding.Namespace, Name: objectName(f.caller, "box"),
 		Labels: legacyLabels, OwnerReferences: []metav1.OwnerReference{legacyOwner},
 	}, Spec: corev1.PodSpec{
 		ServiceAccountName: f.caller.Name,
 		Containers:         []corev1.Container{{Name: "workspace", Image: "registry.test/legacy"}},
 	}}
-	if _, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Create(t.Context(), legacy, metav1.CreateOptions{}); err != nil {
+	created, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Create(t.Context(), legacy, metav1.CreateOptions{})
+	if err != nil {
 		t.Fatal(err)
 	}
 	inventory := f.inventory()
@@ -427,8 +429,8 @@ func TestAnIdentityDoesNotAdoptALegacyServiceAccountBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.UID != legacy.UID || got.Spec.ServiceAccountName != legacy.Spec.ServiceAccountName ||
-		!reflect.DeepEqual(got.Labels, legacyLabels) || !reflect.DeepEqual(got.OwnerReferences, []metav1.OwnerReference{legacyOwner}) {
+	if got.UID != created.UID || got.Spec.ServiceAccountName != created.Spec.ServiceAccountName ||
+		!reflect.DeepEqual(got.Labels, created.Labels) || !reflect.DeepEqual(got.OwnerReferences, created.OwnerReferences) {
 		t.Errorf("legacy box changed: UID=%s ServiceAccount=%s labels=%v owners=%v", got.UID, got.Spec.ServiceAccountName, got.Labels, got.OwnerReferences)
 	}
 }

@@ -57,6 +57,25 @@ admin_listen_address: 127.0.0.1:1111
 	}
 }
 
+func TestLoadConfigAcceptsTheRetiredProjectedTokenSettingDuringRollout(t *testing.T) {
+	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [file-namespace]
+projected_token_audiences: [kubernetes]
+forward:
+  listen_address: 127.0.0.1:5555
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+`)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.ProjectedTokenAudiences, []string{"kubernetes"}) {
+		t.Fatalf("projected_token_audiences = %v, want the deployed value to parse during rollout", c.ProjectedTokenAudiences)
+	}
+}
+
 func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 	for _, bad := range [][]string{
 		{settingPrefix + "DECISION_BATCH_SIZE=0"},

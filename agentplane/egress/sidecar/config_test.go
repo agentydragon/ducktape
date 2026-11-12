@@ -77,6 +77,21 @@ platform_routes: {routes: {}}
 	}
 }
 
+func TestLoadConfigAcceptsRetiredAudienceTokenSettingsDuringRollout(t *testing.T) {
+	content := `
+proxy: {address: p.example:8888, transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}}
+platform_routes: {routes: {}}
+audience_token_files: {kubernetes: /var/run/agentplane-egress/kubernetes-token}
+`
+	config, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AudienceTokenFiles["kubernetes"] != "/var/run/agentplane-egress/kubernetes-token" {
+		t.Fatalf("deployed audience_token_files did not parse: %v", config.AudienceTokenFiles)
+	}
+}
+
 func TestLoadConfigReadsSpiffeAuthAndTransport(t *testing.T) {
 	path := writeSettingsFile(t, `
 proxy:
@@ -153,7 +168,6 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 		"empty":                                    "",
 		"null platform routes":                     required + "platform_routes: null\n",
 		"routes not an object":                     required + "platform_routes: {routes: [rules]}\n",
-		"retired audience token configuration":     required + "audience_token_files: {a: /var/run/token}\n",
 		"removed Rules HTTP setting":               required + "rules_api: rules.test:80\n",
 		"legacy per-route listener":                required + "platform_routes: {rules: {listen_address: 127.0.0.1:3130}}\n",
 		"route unknown field":                      required + strings.Replace(validRoute, "upstream: 'rules.test:8081'", "upstream: 'rules.test:8081', extra: true", 1),

@@ -445,7 +445,6 @@ data:
           mode: spiffe
           cert_file: /var/run/agentplane-svid/tls.crt
           key_file: /var/run/agentplane-svid/tls.key
-    audience_token_files: {}
     workload_routes: {}
     platform_routes:
       listen_address: 127.0.0.1:3130

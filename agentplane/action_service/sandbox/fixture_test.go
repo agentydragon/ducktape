@@ -69,8 +69,10 @@ func newFixture(t *testing.T, edit func(*corev1.PodSpec)) fixture {
 	t.Helper()
 	namespace := fmt.Sprintf("sandbox-test-%d", namespaces.Add(1))
 	identityNamespace := namespace + "-policy"
-	if err := objects.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: identityNamespace}}); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{namespace, identityNamespace} {
+		if err := objects.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	f := fixture{
 		binding: catalog.PodBinding{
