@@ -33,7 +33,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	}
 	get := &environmentpb.GetEnvironmentRequest{Target: request.GetTarget()}
 	// Authorize the target before allocating watches or reading any collection.
-	if _, _, err := s.getEnvironment(ctx, get, identity); err != nil {
+	if _, _, err := s.getEnvironment(ctx, get, environmentCaller{serviceAccount: identity}); err != nil {
 		return err
 	}
 	sandboxes, err := s.watchObjects(ctx, &api.SandboxList{}, request.GetTarget())
@@ -62,7 +62,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	for {
 		// All watches precede this read, so a change concurrent with the snapshot
 		// is either in the snapshot or wakes another read. Events are never used as authority.
-		current, currentPodName, err := s.getEnvironment(ctx, get, identity)
+		current, currentPodName, err := s.getEnvironment(ctx, get, environmentCaller{serviceAccount: identity})
 		if err != nil {
 			return err
 		}
