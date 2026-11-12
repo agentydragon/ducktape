@@ -49,6 +49,24 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	}
 }
 
+func TestConnectionDelegationActorSettingIsOptionalAndAccepted(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ConnectionDelegationActor != nil {
+		t.Fatalf("unset connection_delegation_actor = %+v", c.ConnectionDelegationActor)
+	}
+
+	c, err = loadTestConfig(t, requiredFile+"connection_delegation_actor: {namespace: test-agentplane, name: mcp-edge}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := c.ConnectionDelegationActor, (&auth.Account{Namespace: "test-agentplane", Name: "mcp-edge"}); got == nil || *got != *want {
+		t.Fatalf("connection_delegation_actor = %+v, want %+v", got, want)
+	}
+}
+
 func TestAnEnvironmentVariableOverridesTheFile(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile, settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001")
 	if err != nil {

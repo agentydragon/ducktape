@@ -123,6 +123,17 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],

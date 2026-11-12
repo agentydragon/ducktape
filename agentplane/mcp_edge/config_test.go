@@ -55,6 +55,26 @@ func TestOAuthJSONNestedEnvironmentOverridesAndSingleDocument(t *testing.T) {
 	}
 }
 
+func TestIdentityCutoverSettingsAreOptionalAndAccepted(t *testing.T) {
+	settingsFile(t, testSettings)
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PolicyNamespace != "" || c.ActionsTokenFile != "" {
+		t.Fatalf("unset Identity cutover settings = policy namespace %q, token file %q", c.PolicyNamespace, c.ActionsTokenFile)
+	}
+
+	settingsFile(t, testSettings+"policy_namespace: test-policy\nactions_token_file: /var/run/actions\n")
+	c, err = loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PolicyNamespace != "test-policy" || c.ActionsTokenFile != "/var/run/actions" {
+		t.Fatalf("Identity cutover settings = policy namespace %q, token file %q", c.PolicyNamespace, c.ActionsTokenFile)
+	}
+}
+
 func TestConnectionIdentities(t *testing.T) {
 	settingsFile(t, testSettings)
 	c, err := loadConfig()
