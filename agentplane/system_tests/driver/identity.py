@@ -16,10 +16,9 @@ from agentplane.system_tests.driver.cluster import Cluster
 API_VERSION = f"{GROUP}/v1alpha1"
 
 
-# The baseline sets every preset grants, which these preset-less launches name themselves: the
-# deployment fixture's DEFAULT_POLICIES (cluster/cdk8s/agentplane/egress.py). Kept literal so the
-# driver does not import cdk8s.
-LAUNCH_DEFAULT_POLICY_SETS = ("basic", "inference-experiments")
+# These preset-less launches grant the Identity-compatible baseline. Standing ServiceAccount
+# callers retain the projected-token route in `basic`. Kept literal so the driver does not import cdk8s.
+LAUNCH_DEFAULT_POLICY_SETS = ("basic-identity", "inference-experiments")
 
 
 class ScenarioIdentity(TypedDict):

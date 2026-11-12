@@ -191,12 +191,12 @@ class PolicyObjects:
             binding["metadata"]["name"]
             for binding in inventory["items"]
             if binding.get("spec", {}).get("subject", {}).get("identity", {}).get("name") == sandbox.identity_name
-            and "basic" in binding.get("spec", {}).get("policySets", [])
+            and "basic-identity" in binding.get("spec", {}).get("policySets", [])
         ]
         if not names:
             names = [
                 await self.create_binding(
-                    f"{sandbox.target.name}-delegation-basic", sandbox=sandbox, policy_sets=["basic"]
+                    f"{sandbox.target.name}-delegation-basic", sandbox=sandbox, policy_sets=["basic-identity"]
                 )
             ]
         for name in names:
