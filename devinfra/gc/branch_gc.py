@@ -19,9 +19,8 @@ deleting its ref loses nothing, established by either
 A branch checked out in a worktree cannot be deleted while that worktree exists (git refuses
 even `-D`), so classification depends on the worktree scan: a branch held by a retained
 worktree is kept, one held by a prunable worktree is eligible but only deletable once that
-worktree is gone. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges) after
-re-proving the branch is still prunable — the same revalidate-then-act contract worktree and
-output-base removal use. The default branch is never a candidate.
+worktree is gone. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges).
+The default branch is never a candidate.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ import pygit2
 from devinfra.gc import git_repo
 from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
-from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.removal import Failed, RemovalResult, Removed
 from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
 
@@ -77,7 +76,6 @@ class PrunableBranch(Prunable):
     reason: PrunableBranchReason
     checkout: Path | None  # the prunable worktree holding it, removed before the branch
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
-    tip: str  # the commit the verdict was judged on; deletion requires the branch still be here
     pr: PrInfo | None  # set for PR_HEAD_REACHED; for CONTENT_IN_MAIN when the branch has a merged or closed PR
 
 
@@ -182,33 +180,22 @@ def _classify_branch(
     checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
     branch_oid = pg.branches.local[name].peel(pygit2.Commit).id
     if content_in_main(pg, branch_oid, main):
-        return PrunableBranch(name, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, str(branch_oid), pr)
+        return PrunableBranch(name, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, pr)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) and _tip_within_pr_head(pg, branch_oid, pr):
-        return PrunableBranch(name, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, str(branch_oid), pr)
+        return PrunableBranch(name, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, pr)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
     if patches_landed_in_main(Path(pg.path), name, main):
-        return PrunableBranch(name, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, str(branch_oid), None)
+        return PrunableBranch(name, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, None)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
         return ReviewBranch(name, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
     return ReviewBranch(name, ReviewBranchReason.UNMERGED, main)
 
 
-def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
-    """Force-delete one branch with `git branch -D` (git's safe `-d` rejects squash-merges),
-    unless it no longer points at `expected_tip`, the commit proven to be in main.
-
-    `git branch` refuses a branch still checked out in any worktree, so the caller must remove
-    a holding worktree first. The tip check and the delete are two git calls, so a commit
-    landing between them is still lost from the branch (it stays in the reflog).
-    """
+def delete_branch(repo: Path, name: str) -> RemovalResult[str]:
+    """Force-delete a branch; Git refuses branches still checked out in a worktree."""
     try:
-        tip = git_repo.git(repo, "rev-parse", "--verify", f"refs/heads/{name}", check=False)
-        if tip.returncode != 0:
-            return Skipped(name, "branch no longer exists")
-        if tip.stdout.strip() != expected_tip:
-            return Skipped(name, "branch moved since the scan")
         outcome = git_repo.git(repo, "branch", "-D", name, check=False)
     except (OSError, subprocess.SubprocessError) as error:
         return Failed(name, str(error))

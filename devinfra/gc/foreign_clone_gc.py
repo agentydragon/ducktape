@@ -189,9 +189,8 @@ def prune_foreign_clone(clone: ForeignClone) -> RemovalResult[Path]:
     """Remove every non-root worktree properly (`git worktree remove`), then the root's own
     directory — safe once its worktrees are gone, since nothing else depends on it.
 
-    The caller re-scans and passes only a still-prunable `ForeignClone` here, the same
-    revalidate-then-act contract `worktree_gc.remove_worktree` documents; `git worktree remove`
-    itself refuses a member that turned dirty since, surfacing as `Failed`.
+    The caller passes a classified prunable `ForeignClone`; `git worktree remove` refuses
+    a member with tracked or untracked changes, surfacing as `Failed`.
     """
     for member in clone.members:
         if member.path == clone.root:
