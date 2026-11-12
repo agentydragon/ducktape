@@ -937,7 +937,7 @@ pub(super) struct ExecutionInputs<'source> {
     /// prefix values of other bindings may miss a write the index does not
     /// model (a `for-of` head, an update), so coercions never resolve
     /// against them.
-    single_writer_bindings: BTreeSet<Id>,
+    pub(super) single_writer_bindings: BTreeSet<Id>,
     /// Source units whose own code may call a callee the source does not name.
     unknown_callee_owners: BTreeSet<SourceUnitOrdinal>,
     /// Per source unit: its synchronous read closure contains one of
