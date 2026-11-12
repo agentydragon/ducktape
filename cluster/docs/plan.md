@@ -34,8 +34,15 @@ editing a route.
       interfaces too; verify or add underlay anti-spoofing before trusting
       those identities. Cilium IPv6 is disabled while host IPv6 is enabled;
       verify IPv6 exposure and implement IPv6 ingress protection independently.
-      Investigate binding LINSTOR satellites to the Nebula interface as an
-      additional restriction.
+      Canary binding the LINSTOR satellite to its Nebula address (including
+      startup when Nebula is unavailable); verify controller connectivity and
+      storage health before rolling the change across nodes.
+- [ ] **Converge the retired Proxmox CSI role.** The bootstrap plan proposes
+      deleting `proxmox_virtual_environment_role.persistent["csi"]`, but
+      `prevent_destroy` blocks it. Check remaining Proxmox ACL references and
+      retain or retire the role through a reviewed state transition without
+      removing the protection from persistent auth. Then review a full plan,
+      including the obsolete Nebula certificate-generation state records.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
       `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
