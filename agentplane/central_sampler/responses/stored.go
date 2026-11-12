@@ -17,29 +17,16 @@ const (
 )
 
 type storedRequestProfile struct {
-	Envelope         map[string]json.RawMessage `json:"envelope,omitempty"`
-	Model            string                     `json:"model"`
-	Stream           bool                       `json:"stream"`
-	Store            bool                       `json:"store"`
-	Include          []string                   `json:"include,omitempty"`
-	PromptCacheKey   string                     `json:"prompt_cache_key"`
-	ClientMetadata   *ClientMetadata            `json:"client_metadata,omitempty"`
-	Reasoning        *ReasoningConfig           `json:"reasoning,omitempty"`
-	ParallelToolCall bool                       `json:"parallel_tool_calls"`
-	Instructions     storage.ContentID          `json:"instructions_ref"`
-	Tools            []storage.ContentID        `json:"tool_refs,omitempty"`
-}
-
-type requestProfileFields struct {
-	Model            string           `json:"model"`
-	Instructions     string           `json:"instructions"`
-	Stream           bool             `json:"stream"`
-	Store            bool             `json:"store"`
-	Include          []string         `json:"include,omitempty"`
-	PromptCacheKey   string           `json:"prompt_cache_key"`
-	ClientMetadata   *ClientMetadata  `json:"client_metadata,omitempty"`
-	Reasoning        *ReasoningConfig `json:"reasoning,omitempty"`
-	ParallelToolCall bool             `json:"parallel_tool_calls"`
+	Model            string              `json:"model"`
+	Stream           bool                `json:"stream"`
+	Store            bool                `json:"store"`
+	Include          []string            `json:"include,omitempty"`
+	PromptCacheKey   string              `json:"prompt_cache_key"`
+	ClientMetadata   *ClientMetadata     `json:"client_metadata,omitempty"`
+	Reasoning        *ReasoningConfig    `json:"reasoning,omitempty"`
+	ParallelToolCall bool                `json:"parallel_tool_calls"`
+	Instructions     storage.ContentID   `json:"instructions_ref"`
+	Tools            []storage.ContentID `json:"tool_refs,omitempty"`
 }
 
 // StoreRecord stores one complete native Responses item as the deduplication unit.
@@ -106,68 +93,7 @@ func StoreRequest(writer storage.ContentWriter, request Request) (profile storag
 		}
 		toolRecords = append(toolRecords, raw)
 	}
-	profile, err = storeRequestProfile(writer, request, toolRecords, nil)
-	if err != nil {
-		return "", nil, err
-	}
-	return profile, records, nil
-}
-
-// StoreRequestJSON is a migration-only path for pre-profile request JSON. It
-// splits raw input items before decoding the remaining request envelope so
-// provider-owned item fields and number tokens are retained.
-func StoreRequestJSON(writer storage.ContentWriter, raw json.RawMessage) (profile storage.ContentID, records []storage.ContentID, err error) {
-	if writer == nil {
-		return "", nil, errors.New("nil content writer")
-	}
-	fields, err := rawObject(raw)
-	if err != nil {
-		return "", nil, err
-	}
-	inputRaw, hasInput := fields["input"]
-	delete(fields, "input")
-	if hasInput {
-		parts, isArray := jsonArray(inputRaw)
-		if !isArray {
-			return "", nil, fmt.Errorf("historical Responses request input must be an array: %w", protocol.ErrInvalid)
-		}
-		records = make([]storage.ContentID, 0, len(parts))
-		for index, item := range parts {
-			id, storeErr := StoreRecord(writer, item)
-			if storeErr != nil {
-				return "", nil, fmt.Errorf("store historical request input %d: %w", index, storeErr)
-			}
-			records = append(records, id)
-		}
-	}
-	toolRecords := []json.RawMessage(nil)
-	profileEnvelope := make(map[string]json.RawMessage)
-	if toolsRaw, present := fields["tools"]; present {
-		if tools, isArray := jsonArray(toolsRaw); isArray && len(tools) != 0 {
-			toolRecords = tools
-		} else {
-			// Keep null, empty, or otherwise non-array historical fields verbatim.
-			profileEnvelope["tools"] = protocol.CloneJSON(toolsRaw)
-		}
-		delete(fields, "tools")
-	}
-	for name, value := range fields {
-		if !isRequestProfileField(name) {
-			profileEnvelope[name] = protocol.CloneJSON(value)
-		}
-	}
-	requestJSON, err := json.Marshal(fields)
-	if err != nil {
-		return "", nil, err
-	}
-	var request Request
-	if err := json.Unmarshal(requestJSON, &request); err != nil {
-		return "", nil, fmt.Errorf("decode historical Responses request profile: %w", err)
-	}
-	if len(profileEnvelope) == 0 {
-		profileEnvelope = nil
-	}
-	profile, err = storeRequestProfile(writer, request, toolRecords, profileEnvelope)
+	profile, err = storeRequestProfile(writer, request, toolRecords)
 	if err != nil {
 		return "", nil, err
 	}
@@ -208,7 +134,6 @@ func storeRequestProfile(
 	writer storage.ContentWriter,
 	request Request,
 	toolRecords []json.RawMessage,
-	envelope map[string]json.RawMessage,
 ) (storage.ContentID, error) {
 	instructionID, err := putString(writer, storage.ContentText, request.Instructions)
 	if err != nil {
@@ -226,7 +151,7 @@ func storeRequestProfile(
 		toolIDs = append(toolIDs, id)
 	}
 	stored := storedRequestProfile{
-		Envelope: envelope, Model: request.Model, Stream: request.Stream, Store: request.Store,
+		Model: request.Model, Stream: request.Stream, Store: request.Store,
 		Include: request.Include, PromptCacheKey: request.PromptCacheKey, ClientMetadata: request.ClientMetadata,
 		Reasoning: request.Reasoning, ParallelToolCall: request.ParallelToolCalls,
 		Instructions: instructionID, Tools: toolIDs,
@@ -276,47 +201,7 @@ func RestoreRequest(reader storage.ContentReader, profile storage.ContentID, rec
 		Include: stored.Include, PromptCacheKey: stored.PromptCacheKey, ClientMetadata: stored.ClientMetadata,
 		Reasoning: stored.Reasoning, ParallelToolCalls: stored.ParallelToolCall,
 	}
-	if len(stored.Envelope) == 0 {
-		return json.Marshal(requestWithTools{Request: request, Input: input, Tools: tools})
-	}
-
-	// Historical requests may have provider-owned top-level fields. Marshal only
-	// the small native profile, then add raw extension fields and input records.
-	profileFields := requestProfileFields{
-		Model: request.Model, Instructions: request.Instructions, Stream: request.Stream, Store: request.Store,
-		Include: request.Include, PromptCacheKey: request.PromptCacheKey, ClientMetadata: request.ClientMetadata,
-		Reasoning: request.Reasoning, ParallelToolCall: request.ParallelToolCalls,
-	}
-	profileJSON, err := json.Marshal(profileFields)
-	if err != nil {
-		return nil, err
-	}
-	envelope, err := rawObject(profileJSON)
-	if err != nil {
-		return nil, err
-	}
-	for name, value := range stored.Envelope {
-		if err := setRawField(envelope, name, value); err != nil {
-			return nil, err
-		}
-	}
-	if len(tools) != 0 {
-		toolJSON, err := json.Marshal(tools)
-		if err != nil {
-			return nil, err
-		}
-		if err := setRawField(envelope, "tools", toolJSON); err != nil {
-			return nil, err
-		}
-	}
-	inputJSON, err := json.Marshal(records)
-	if err != nil {
-		return nil, err
-	}
-	if err := setRawField(envelope, "input", inputJSON); err != nil {
-		return nil, err
-	}
-	return json.Marshal(envelope)
+	return json.Marshal(requestWithTools{Request: request, Input: input, Tools: tools})
 }
 
 type requestWithTools struct {
@@ -372,37 +257,6 @@ func rawObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 		return nil, fmt.Errorf("expected JSON object: %w", protocol.ErrInvalid)
 	}
 	return fields, nil
-}
-
-func jsonArray(raw json.RawMessage) ([]json.RawMessage, bool) {
-	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
-		return nil, false
-	}
-	var values []json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil, false
-	}
-	return values, true
-}
-
-func setRawField(fields map[string]json.RawMessage, name string, value json.RawMessage) error {
-	if _, exists := fields[name]; exists {
-		return fmt.Errorf("stored Responses envelope duplicates field %q: %w", name, protocol.ErrInvalid)
-	}
-	if !json.Valid(value) {
-		return fmt.Errorf("stored Responses envelope has invalid JSON for %q: %w", name, protocol.ErrInvalid)
-	}
-	fields[name] = protocol.CloneJSON(value)
-	return nil
-}
-
-func isRequestProfileField(name string) bool {
-	switch name {
-	case "model", "instructions", "stream", "store", "include", "prompt_cache_key", "client_metadata", "reasoning", "tools", "parallel_tool_calls":
-		return true
-	default:
-		return false
-	}
 }
 
 // ProjectRecords renders only newly appended records. Earlier outputs establish

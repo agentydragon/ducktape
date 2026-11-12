@@ -71,11 +71,9 @@ def _content_references(kind: str, payload: dict[str, Any]) -> list[str]:
             for value in payload.get("blocks", []):
                 add(value)
     elif kind == "anthropic_request":
-        if payload.get("system_mode") == "text":
-            add(payload.get("system_id"))
-        if payload.get("tools_mode") == "array":
-            for value in payload.get("tools", []):
-                add(value)
+        add(payload["system_id"])
+        for value in payload["tools"]:
+            add(value)
     return refs
 
 
@@ -178,7 +176,7 @@ class Store:
         profile = self._content(profile_id, profile_kind)
         records = [self._restore_record(api, record_id) for record_id in record_ids]
         if api == "responses":
-            body = dict(profile.get("envelope", {}))
+            body: dict[str, Any] = {}
             for field in (
                 "model",
                 "stream",
@@ -198,18 +196,9 @@ class Store:
             return body
 
         body = dict(profile.get("fields", {}))
-        if profile.get("system_mode") == "text":
-            body["system"] = self._content(profile["system_id"], "text")
-        tools_mode = profile.get("tools_mode")
-        if tools_mode == "array":
-            body["tools"] = [self._content(ref, "anthropic_tool") for ref in profile.get("tools", [])]
-        elif tools_mode == "null":
-            body["tools"] = None
-        messages_mode = profile.get("messages_mode")
-        if messages_mode == "array":
-            body["messages"] = records
-        elif messages_mode == "null":
-            body["messages"] = None
+        body["system"] = self._content(profile["system_id"], "text")
+        body["tools"] = [self._content(ref, "anthropic_tool") for ref in profile["tools"]]
+        body["messages"] = records
         return body
 
     async def get_session(self, session_id: str) -> SessionSnapshot:

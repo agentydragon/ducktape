@@ -156,27 +156,6 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 	}
 }
 
-func TestStoreRequestJSONPreservesHistoricalUnknownEnvelopes(t *testing.T) {
-	memory := newMemoryContent()
-	original := json.RawMessage(`{"model":"fixture-model","instructions":"legacy instructions","input":[{"type":"reasoning","encrypted_content":"opaque-legacy","summary":[{"type":"summary_text","text":"keep this"}],"provider_number":9007199254740993}],"tools":[{"type":"function","name":"exec","description":"Run","parameters":{"type":"object"},"provider_tool_extension":{"revision":9007199254740993}}],"stream":true,"store":false,"prompt_cache_key":"session","parallel_tool_calls":false,"provider_extension":{"sequence":9007199254740993}}`)
-	profile, refs, err := StoreRequestJSON(memory, original)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(refs) != 1 {
-		t.Fatalf("historical item count = %d, want 1", len(refs))
-	}
-	record, err := RestoreRecord(memory, refs[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	rendered, err := RestoreRequest(memory, profile, []json.RawMessage{record})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertResponsesJSONEqual(t, original, rendered)
-}
-
 func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
 	memory := newMemoryContent()
 	id, err := memory.PutContent(storage.ContentText, json.RawMessage(`"not an item"`))
@@ -204,7 +183,7 @@ func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 		{
 			name:    "request profile",
 			kind:    ContentOpenAIRequest,
-			payload: `{"model":"fixture","instructions_ref":"instructions-1","tool_refs":["tool-1","tool-2"],"envelope":{"provider_extension":{"ref":"ignored"}}}`,
+			payload: `{"model":"fixture","instructions_ref":"instructions-1","tool_refs":["tool-1","tool-2"]}`,
 			want:    []storage.ContentID{"instructions-1", "tool-1", "tool-2"},
 		},
 		{

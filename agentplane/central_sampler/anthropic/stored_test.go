@@ -192,36 +192,6 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	assertAnthropicJSONEqual(t, wantRequestA, restored)
 }
 
-func TestStoreRequestJSONPreservesHistoricalUnknownFields(t *testing.T) {
-	store := newMemoryContentStore()
-	historical := json.RawMessage(`{
-		"model":"claude-old",
-		"max_tokens":900719925474099312345,
-		"stream":true,
-		"system":"shared legacy prompt",
-		"tools":[{"name":"exec","vendor_tool_metadata":{"precision":900719925474099312345}}],
-		"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"signed","signature":"opaque"}]}],
-		"future_request_field":{"future_number":900719925474099312345}
-	}`)
-	profile, messageIDs, err := StoreRequestJSON(store, historical)
-	if err != nil {
-		t.Fatal(err)
-	}
-	messages := make([]json.RawMessage, 0, len(messageIDs))
-	for _, messageID := range messageIDs {
-		message, err := RestoreRecord(store, messageID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		messages = append(messages, message)
-	}
-	restored, err := RestoreRequest(store, profile, messages)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertAnthropicJSONEqual(t, historical, restored)
-}
-
 func TestRestoreRecordChecksReferencedContent(t *testing.T) {
 	store := newMemoryContentStore()
 	messageID, err := StoreRecord(store, json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"payload"}]}`))

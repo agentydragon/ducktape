@@ -53,26 +53,6 @@ func finishStoredRequest(store *contentStore, request ProviderRequest, profile s
 // New requests are packed from native provider structs, before serializing a full body.
 type requestPreparation func(*contentStore, *Conversation, ProviderRequest) (ProviderRequest, []byte, error)
 
-// Only the one-time historical migration disassembles an already-serialized request.
-func packLegacyRequest(ctx context.Context, tx *sql.Tx, request ProviderRequest, body json.RawMessage) (ProviderRequest, []byte, error) {
-	store := newContentStore(ctx, tx)
-	var profile storage.ContentID
-	var ids []storage.ContentID
-	var err error
-	switch request.API {
-	case protocol.APIStyleResponses:
-		profile, ids, err = responses.StoreRequestJSON(store, body)
-	case protocol.APIStyleAnthropicMessages:
-		profile, ids, err = anthropic.StoreRequestJSON(store, body)
-	default:
-		return ProviderRequest{}, nil, protocol.ErrInvalid
-	}
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	return finishStoredRequest(store, request, profile, ids)
-}
-
 func saveProviderRequest(ctx context.Context, tx *sql.Tx, id, conversationID string, request *ProviderRequest) error {
 	if request == nil {
 		return nil

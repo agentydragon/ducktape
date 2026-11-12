@@ -726,21 +726,20 @@ Compaction atomically verifies the expected active context and lease before repl
 settling its intent/command. It never rewrites the transcript. New responses append to both the
 transcript and active context using shared content records.
 
-Migration 13 creates, converts, verifies and retires the inline copies as one registered Go migration.
-Conversion commits bounded batches and resumes after interruption. Unsupported retained data stops
-the migration before retiring its source. Old journal entries retain their exact logical bytes for
-History duplicate/replay checks; physical compression reduces those retained copies. Their historical
-full-request payloads remain legacy evidence. History's database and existing copies are unchanged.
-A populated database requires stopped writers and the same binary's `--migrate-only` mode; ordinary
-rolling startup refuses this conversion. See [the maintenance procedure](plans/native_content_cutover.md).
+Migration 13 atomically clears the disposable staging sampler state and replaces inline
+transcript/context storage with content-addressed tables. It clears conversations, Sessions,
+intents, commands, events, export checkpoints, process/cell bookkeeping, interrupts and notifications.
+Existing sampler Sessions cannot resume after this cutover; create new Sessions. The History
+service's database and executor storage are unchanged. The runtime reads only the new format.
+Stop old sampler replicas before applying this migration. Afterward ordinary restarts retain
+new-format data; migration 13 never resets it again.
 
-Baseline 11 creates the native schema on a fresh empty database. An existing database is adopted
+Baseline 11 creates the initial schema on a fresh empty database. An existing database is adopted
 only with completed Goose version 10, including the earlier baseline and export checkpoint migration,
-and a validated native schema. Adoption preserves Goose history, Session identities, provider
-payloads, raw exchange evidence, commands, events, unresolved-effect state, and current export
-checkpoints without copying data. Older or partial histories fail startup and require the previous
-image to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
+and a validated native schema. Adoption preserves existing rows through version 12; migration 13
+intentionally clears them. Older or partial histories fail startup and require the previous image
+to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
 requires restoring the pre-migration database backup together with the old service image.
 
-The staging sampler Deployment uses two rolling replicas. New migrations must remain compatible
-with serving old replicas during a rollout. The host-instance marker is nullable.
+The staging sampler Deployment uses two rolling replicas. This schema cutover requires stopping
+old replicas; later compatible migrations can roll normally. The host-instance marker is nullable.

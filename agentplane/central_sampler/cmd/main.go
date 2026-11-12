@@ -125,9 +125,9 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", centralsampler.MigrateDuringMaintenance, migrate.WithMigrationTimeout(2*time.Hour)); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", centralsampler.Migrate); handled {
 		if err != nil {
-			slog.Error("central sampler migration stopped", "error", err)
+			slog.Error("central sampler migration stopped", "error_type", fmt.Sprintf("%T", err))
 			os.Exit(1)
 		}
 		return

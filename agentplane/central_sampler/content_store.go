@@ -269,6 +269,30 @@ func (s *contentStore) storeContext(api protocol.APIStyle, contents []storage.Co
 	return parent, nil
 }
 
+// appendContextIDs stores only newly appended records, sharing the immutable prefix.
+func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, prefixCount int, suffix []storage.ContentID) (string, error) {
+	if prefixCount > 0 && root == "" {
+		return "", errors.New("nonempty provider context prefix has no root")
+	}
+	if prefixCount == 0 && root != "" {
+		return "", errors.New("empty provider context prefix has a root")
+	}
+	if err := store.save(); err != nil {
+		return "", err
+	}
+	parent := root
+	for index, contentID := range suffix {
+		item := contextItem{API: api, Parent: parent, Content: contentID}
+		id := contextItemID(item)
+		if _, err := store.tx.ExecContext(store.ctx, `INSERT INTO sampler_context(id,api,parent_id,content_id,item_count)
+			VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING`, id, api, nullableContextID(parent), contentID, prefixCount+index+1); err != nil {
+			return "", err
+		}
+		parent = id
+	}
+	return parent, nil
+}
+
 func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
 	if id == "" {
 		return nil, nil
