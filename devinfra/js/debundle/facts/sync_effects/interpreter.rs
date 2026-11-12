@@ -2236,6 +2236,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.closed_enum_member_parts(receiver, property).is_some()
     }
 
+    pub(super) fn binding_has_whole_chunk_plain_data(&self, binding: &Id) -> bool {
+        self.inputs.graph.is_plain_data(binding.0.as_ref())
+    }
+
     /// The primitive values of `receiver.property` when `receiver` is a
     /// settled `PlainData` binding holding the key as own data. The read
     /// keeps its ordinary eager dependency, but cannot retrieve a getter or a
@@ -2260,6 +2264,104 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .record_inference_uses(uses.iter().cloned());
         }
         Some(values)
+    }
+
+    /// An enum IIFE's parameter writes can establish an own data slot before
+    /// a later escape removes the whole-chunk PlainData certificate. Consume
+    /// only its current settled singleton allocation and actual prefix value.
+    pub(super) fn current_prefix_primitive_member_read(
+        &self,
+        receiver: &ValueExpr,
+        property: &str,
+    ) -> Option<OwnDataRead> {
+        let ValueExpr::Binding(binding) = receiver else {
+            return None;
+        };
+        if !self.inputs.top_bindings.contains(binding)
+            || !self.inputs.needed_bindings.contains(binding)
+            || !self.inputs.single_writer_bindings.contains(binding)
+            || !self.inputs.index.ts_enum_iife_bindings.contains(binding)
+            || !self.inputs.index.dynamic_scope_owners.is_empty()
+            || self.inputs.index.reassigned_bindings.contains(binding)
+            || !self
+                .inputs
+                .index
+                .binding_declaration_writes
+                .get(binding)
+                .is_some_and(|writes| {
+                    matches!(writes.as_slice(), [write]
+                    if write.direct_top_level && write.simple_identifier)
+                })
+            || !self.inputs.binding_owner.get(binding).is_some_and(|owner| {
+                self.inputs.index.top_definite_initializers[owner.0].contains(binding)
+            })
+            || !self
+                .state
+                .world
+                .module
+                .initialized_bindings
+                .contains(binding)
+            || self
+                .state
+                .current_top_owner
+                .is_some_and(|owner| !self.inputs.index.top_property_writes[owner.0].is_empty())
+        {
+            return None;
+        }
+        let receivers = self.state.world.module.prefix_values.get(binding)?;
+        // The pre-initializer `var` value remains in the abstract union. It
+        // cannot reach a later read after this sole, checked initializer has
+        // completed; a read before it instead throws and has no getter effect.
+        let mut objects = receivers.iter().filter_map(|value| match value {
+            AbstractValue::Value(Value::Alloc(Kind::Object, object)) => Some(*object),
+            _ => None,
+        });
+        let object = objects.next()?;
+        if objects.next().is_some()
+            || receivers.iter().any(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, candidate)) => *candidate != object,
+                value if value == &AbstractValue::UNDEFINED => false,
+                _ => true,
+            })
+        {
+            return None;
+        }
+        if !self
+            .state
+            .world
+            .publication
+            .parameter_initialized_objects
+            .contains(&object)
+            || !self.state.world.object_properties_are_settled(object)
+            || self
+                .state
+                .world
+                .surface
+                .has_accessor_property(object, property)
+        {
+            return None;
+        }
+        let properties = self
+            .state
+            .world
+            .surface
+            .prefix_object_properties
+            .get(&object)?;
+        let mut values = properties.get(&Some(property.to_owned()))?.clone();
+        // A computed write might have named this property. Retain every
+        // possible payload before deciding that the read is primitive.
+        if let Some(dynamic) = properties.get(&None) {
+            values.extend(dynamic.iter().cloned());
+        }
+        (!values.is_empty() && values.iter().all(AbstractValue::is_primitive)).then_some(
+            OwnDataRead {
+                values,
+                cell: EffectCell::OwnProperty {
+                    origin: object,
+                    property: property.to_owned(),
+                },
+            },
+        )
     }
 
     pub(super) fn record_returned_record_use(
@@ -7776,6 +7878,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// An unknown direct mutation receiver can alias any tracked prefix
+    /// object. Invalidate each known own-property witness, rather than
+    /// treating the abstract `Top` value as if it named no object.
+    pub(super) fn taint_all_prefix_objects(&mut self) {
+        let tracked: Vec<_> = self
+            .state
+            .world
+            .surface
+            .prefix_object_properties
+            .keys()
+            .map(|object| AbstractValue::Value(Value::Alloc(Kind::Object, *object)))
+            .collect();
+        self.taint_objects(&tracked);
+    }
+
     fn eligible_local_constructor(
         &mut self,
         key: u32,
@@ -11620,6 +11737,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .extend(objects.iter().copied());
         }
         let mut certified_data_receivers = self.fresh_primitive_write_receivers(callable, &env);
+        let enum_data_receivers = if self.inputs.index.ts_enum_iife_callables.contains(&key) {
+            fresh_data_writes.clone().unwrap_or_default()
+        } else {
+            BTreeSet::new()
+        };
+        certified_data_receivers.extend(enum_data_receivers.iter().copied());
         let fresh_record_receiver = self.fresh_local_record_receiver(key, callable);
         if let Some(object) = fresh_record_receiver {
             certified_data_receivers.insert(object);
@@ -11680,19 +11803,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // The lane is flow-insensitive: iterate after the body's writes and
         // calls, so the published pool holds what they install.
         self.iterate_callable_sources(callable, &env, &mut outcome);
-        if !certified_data_receivers.is_empty()
-            && (self.state.array_iteration_unsupported
-                || !self.array_intrinsics_intact()
-                || certified_data_receivers
-                    .iter()
-                    .any(|object| !self.state.world.object_properties_are_settled(*object)))
-        {
+        let unsettled_receiver = certified_data_receivers
+            .iter()
+            .any(|object| !self.state.world.object_properties_are_settled(*object));
+        if unsettled_receiver {
             self.state
                 .world_mut()
                 .surface
                 .tainted_objects
                 .extend(certified_data_receivers.iter().copied());
             certified_data_receivers.clear();
+        } else if self.state.array_iteration_unsupported || !self.array_intrinsics_intact() {
+            // The enum recognizer accepts only literal writes to its fresh
+            // parameter and no calls or iteration. An unrelated failed array
+            // protocol cannot invalidate those own data properties.
+            let affected: Vec<_> = certified_data_receivers
+                .difference(&enum_data_receivers)
+                .copied()
+                .collect();
+            self.state
+                .world_mut()
+                .surface
+                .tainted_objects
+                .extend(affected.iter().copied());
+            certified_data_receivers.retain(|object| !affected.contains(object));
         }
         for expr in callable.body_facts.value_flow().returns() {
             let returned = self.evaluate(expr, &env, &env);
@@ -13553,6 +13687,14 @@ pub(crate) fn annotate_synchronous_calls(
     }
     // A destructuring member target may run a setter on its receiver.
     for receivers in &index.top_destructuring_member_receivers {
+        for receiver in receivers {
+            receiver.bindings(&mut needed);
+        }
+    }
+    // Deletes and other direct property operations use the dynamic-effect
+    // index rather than the member-value-write lane. Retain their receiver
+    // aliases so the prefix heap can invalidate the actual allocation.
+    for receivers in &index.top_dynamic_property_receivers {
         for receiver in receivers {
             receiver.bindings(&mut needed);
         }

@@ -1,7 +1,7 @@
 //! The record-factory assertion supplies only the prototype premises for the
 //! existing checked private-constructor proof.
 
-use analysis::execution_evidence::ExecutionPrecisionLossReason;
+use analysis::execution_evidence::{ExecutionOperation, ExecutionPrecisionLossReason};
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
@@ -539,6 +539,603 @@ fn nested_record_factory_wrapper_preserves_a_split_cycle() {
     assert!(!graph.edges.iter().any(|edge| {
         edge.source == command.id && edge.target == later.id && edge.constrains_init_order
     }));
+}
+
+#[test]
+fn literal_own_data_argument_preserves_a_nested_factory_split() {
+    let enum_writes = (0..1)
+        .map(|index| format!("(n[(n.feature{index} = {index})] = \"feature{index}\")"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute, marker) { return make({ name: `Create ${label}`, execute, weight: 0, marker }); }",
+    )
+    .replace(
+        "const warmup =",
+        &format!("var $ = ((n) => ({enum_writes}, n))($ || {{}});\nconst ids = {{ day: \"SYS_T124\" }};\nconst warmup ="),
+    )
+    .replace(
+        "const command = wrapper(\"x\", () => later);",
+        "const flags = [{ id: ids.day, feature: $.feature0 }];\nconst command = wrapper(\"x\", () => later, ids.day);",
+    )
+    .replace(
+        "console.log(command.run());",
+        "console.log(command.run());\nglobalThis.consume?.($);",
+    )
+    .replace("export { command, later };", "export { command, later, ids };");
+    let split = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "command",
+                    &[
+                        Member::new("warmup"),
+                        Member::new("prefix"),
+                        Member::new("maybe"),
+                        Member::new("Policy"),
+                        Member::new("Command"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("wrapper"),
+                        Member::new("ids"),
+                        Member::new("$"),
+                        Member::new("flags"),
+                        Member::new("command"),
+                    ],
+                    &["maybe.record = 1;"],
+                ),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_eq!(split.translation_validation()["accepts"], true);
+    assert_preserved_entry_output(&split, "7\n");
+    let command_module = format!("{}/modules/command.js", split.chunk_id);
+    let later_module = format!("{}/modules/later.js", split.chunk_id);
+    assert_module_source(
+        &split.out_root,
+        &command_module,
+        &["feature0", "SYS_T124", "const flags", "const command"],
+        &["const later"],
+    );
+    assert_module_source(
+        &split.out_root,
+        &later_module,
+        &["const later"],
+        &["const command"],
+    );
+    let graph = split.dependency_graph();
+    let command = node_declaring(&graph, "command");
+    let later = node_declaring(&graph, "later");
+    let ids = node_declaring(&graph, "ids");
+    let flags = node_declaring(&graph, "flags");
+    let flags_execution = flags
+        .synchronous_execution
+        .as_ref()
+        .expect("flags execution");
+    assert!(flags_execution.complete, "{flags_execution:#?}");
+    assert!(
+        flags_execution.precision_losses.is_empty(),
+        "{flags_execution:#?}"
+    );
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(execution.complete, "{execution:#?}");
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == command.id && edge.target == ids.id && edge.constrains_init_order
+    }));
+    assert!(!graph.edges.iter().any(|edge| {
+        edge.source == command.id && edge.target == later.id && edge.constrains_init_order
+    }));
+}
+
+#[test]
+fn earlier_alias_changes_do_not_gain_a_current_prefix_own_data_receipt() {
+    for (case, change, expected_type) in [
+        ("direct_delete", "delete $.feature1;", "undefined"),
+        ("alias_delete", "delete alias.feature1;", "undefined"),
+        (
+            "unknown_receiver_delete",
+            "delete (globalThis.unknownReceiver || $).feature1;",
+            "undefined",
+        ),
+        (
+            "unknown_alias_delete",
+            "delete (globalThis.unknownReceiver || alias).feature1;",
+            "undefined",
+        ),
+        (
+            "multiple_alias_delete",
+            "delete (globalThis.choose ? $ : alias).feature1;",
+            "undefined",
+        ),
+        (
+            "reflect_delete",
+            "Reflect.deleteProperty(alias, 'feature1');",
+            "undefined",
+        ),
+        (
+            "getter",
+            "Object.defineProperty(alias, 'feature1', { get() { return 1; } });",
+            "number",
+        ),
+        (
+            "setter",
+            "Object.defineProperty(alias, 'feature1', { get() { return 1; }, set(value) { globalThis.seen = value; } });",
+            "number",
+        ),
+        (
+            "direct_getter",
+            "Object.defineProperty($, 'feature1', { get() { return 1; } });",
+            "number",
+        ),
+        (
+            "direct_prototype",
+            "Object.setPrototypeOf($, { get feature1() { return 9; } });",
+            "number",
+        ),
+        (
+            "alias_prototype",
+            "Object.setPrototypeOf(alias, { get feature1() { return 9; } });",
+            "number",
+        ),
+        (
+            "function_value",
+            "alias.feature1 = () => later;",
+            "function",
+        ),
+        (
+            "dynamic_key",
+            "alias[globalThis.unknownKey] = () => later;",
+            "number",
+        ),
+        (
+            "direct_dynamic_key",
+            "$[globalThis.unknownKey] = () => later;",
+            "number",
+        ),
+        ("early_escape", "globalThis.consume?.(alias);", "number"),
+        (
+            "reentrant_callback",
+            "globalThis.consume?.(() => { Object.defineProperty(alias, 'feature1', { get() { return 1; } }); });",
+            "number",
+        ),
+        (
+            "unknown_identity",
+            "$ = new Proxy($, { get(target, key) { return target[key]; } });",
+            "number",
+        ),
+    ] {
+        let source = nested_wrapper_source(
+            "",
+            NESTED_FACTORY,
+            "function wrapper(label, execute, marker) { return make({ name: `Create ${label}`, execute, weight: 0, marker }); }",
+        )
+        .replace(
+            "const warmup =",
+            "var $ = ((n) => ((n[(n.feature1 = 1)] = \"feature1\"), n))($ || {});\nconst ids = { day: \"SYS_T124\" };\nconst warmup =",
+        )
+        .replace(
+            "const command = wrapper(\"x\", () => later);",
+            &format!("const alias = $;\n{change}\nconst flags = [{{ id: ids.day, feature: $.feature1 }}];\nconst command = wrapper(\"x\", () => later, ids.day);"),
+        )
+        .replace(
+            "console.log(command.run());",
+            "console.log(command.run(), typeof flags[0].feature);",
+        )
+        .replace("export { command, later };", "export { command, later, ids };");
+        if case == "alias_delete" {
+            expect_atomic_conflict_rejection(
+                FixtureOpts::new(
+                    &source,
+                    vec![
+                        logical_module_with_anon(
+                            "early",
+                            &[
+                                Member::new("warmup"),
+                                Member::new("prefix"),
+                                Member::new("maybe"),
+                                Member::new("Policy"),
+                                Member::new("Command"),
+                                Member::new("make").with_retained_record_factory(),
+                                Member::new("wrapper"),
+                                Member::new("ids"),
+                                Member::new("$"),
+                                Member::new("alias"),
+                                Member::new("flags"),
+                                Member::new("command"),
+                            ],
+                            &["maybe.record = 1;", change],
+                        ),
+                        logical_module("later", &[Member::new("later")]),
+                    ],
+                )
+                .with_unassigned_mode(unassigned_mode_inline()),
+                &["early", "later"],
+                &[],
+            );
+        }
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("warmup"),
+                        Member::new("prefix"),
+                        Member::new("maybe"),
+                        Member::new("Policy"),
+                        Member::new("Command"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("wrapper"),
+                        Member::new("ids"),
+                        Member::new("$"),
+                        Member::new("alias"),
+                        Member::new("flags"),
+                        Member::new("command"),
+                        Member::new("later"),
+                    ],
+                    &["maybe.record = 1;", change],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, &format!("7 {expected_type}\n"));
+        let graph = fixture.dependency_graph();
+        let flags = node_declaring(&graph, "flags");
+        let execution = flags
+            .synchronous_execution
+            .as_ref()
+            .expect("flags execution");
+        assert!(!execution.complete, "{case}: {execution:#?}");
+        assert!(
+            execution.precision_losses.iter().any(|loss| matches!(
+                &loss.reason,
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::MemberRead,
+                    ..
+                }
+            )),
+            "{case}: {execution:#?}"
+        );
+    }
+}
+
+#[test]
+fn same_owner_delete_before_enum_member_read_refuses_the_receipt() {
+    let source = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute, marker) { return make({ name: `Create ${label}`, execute, weight: 0, marker }); }",
+    )
+    .replace(
+        "const warmup =",
+        "var $ = ((n) => ((n[(n.feature1 = 1)] = 'feature1'), n))($ || {});\nconst ids = { day: 'SYS_T124' };\nconst warmup =",
+    )
+    .replace(
+        "const command = wrapper(\"x\", () => later);",
+        "const flags = [(delete $.feature1, { id: ids.day, feature: $.feature1 })];\nconst command = wrapper(\"x\", () => later, ids.day);",
+    )
+    .replace(
+        "console.log(command.run());",
+        "console.log(command.run(), typeof flags[0].feature);",
+    )
+    .replace("export { command, later };", "export { command, later, ids };");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("warmup"),
+                    Member::new("prefix"),
+                    Member::new("maybe"),
+                    Member::new("Policy"),
+                    Member::new("Command"),
+                    Member::new("make").with_retained_record_factory(),
+                    Member::new("wrapper"),
+                    Member::new("ids"),
+                    Member::new("$"),
+                    Member::new("flags"),
+                    Member::new("command"),
+                    Member::new("later"),
+                ],
+                &["maybe.record = 1;"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 undefined\n");
+    let graph = fixture.dependency_graph();
+    let execution = node_declaring(&graph, "flags")
+        .synchronous_execution
+        .as_ref()
+        .expect("flags execution");
+    assert!(!execution.complete, "{execution:#?}");
+    assert!(execution.inference_uses.is_empty(), "{execution:#?}");
+    assert!(
+        execution.precision_losses.iter().any(|loss| matches!(
+            &loss.reason,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::PropertyWrite,
+                ..
+            }
+        )),
+        "{execution:#?}"
+    );
+}
+
+#[test]
+fn unknown_computed_enum_key_cannot_gain_a_current_prefix_own_data_receipt() {
+    // The unknown key could be "__proto__" or an inherited setter name.
+    // The TS enum recognizer excludes this initializer, even when execution
+    // currently sees only primitive payloads and a concrete member slot.
+    let source = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute, marker) { return make({ name: `Create ${label}`, execute, weight: 0, marker }); }",
+    )
+    .replace(
+        "const warmup =",
+        "var $ = ((n) => ((n[(n.feature1 = 1)] = \"feature1\"), (n[globalThis.unknownKey || \"__proto__\"] = 2), n))($ || {});\nconst ids = { day: \"SYS_T124\" };\nconst warmup =",
+    )
+    .replace(
+        "const command = wrapper(\"x\", () => later);",
+        "const flags = [{ id: ids.day, feature: $.feature1 }];\nconst command = wrapper(\"x\", () => later, ids.day);",
+    )
+    .replace("export { command, later };", "export { command, later, ids };");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("warmup"),
+                    Member::new("prefix"),
+                    Member::new("maybe"),
+                    Member::new("Policy"),
+                    Member::new("Command"),
+                    Member::new("make").with_retained_record_factory(),
+                    Member::new("wrapper"),
+                    Member::new("ids"),
+                    Member::new("$"),
+                    Member::new("flags"),
+                    Member::new("command"),
+                    Member::new("later"),
+                ],
+                &["maybe.record = 1;"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let graph = fixture.dependency_graph();
+    let flags = node_declaring(&graph, "flags");
+    let execution = flags
+        .synchronous_execution
+        .as_ref()
+        .expect("flags execution");
+    assert!(!execution.complete, "{execution:#?}");
+    assert!(
+        execution.precision_losses.iter().any(|loss| matches!(
+            &loss.reason,
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::MemberRead,
+                ..
+            }
+        )),
+        "{execution:#?}"
+    );
+}
+
+#[test]
+fn conditional_rebound_or_reentrant_enum_initializers_keep_the_member_read_fallback() {
+    for (case, initializer) in [
+        (
+            "conditional",
+            "if (true) { var $ = ((n) => ((n[(n.feature1 = 1)] = 'feature1'), n))($ || {}); }",
+        ),
+        (
+            "same_owner_rebind",
+            "var $ = ((n) => ((n[(n.feature1 = 1)] = 'feature1'), n))($ || {}), $ = new Proxy($, { get(target, key) { return target[key]; } });",
+        ),
+        (
+            "initializer_reentry",
+            "var $ = ((n) => (globalThis.maybeCall?.(n), (n[(n.feature1 = 1)] = 'feature1'), n))($ || {});",
+        ),
+    ] {
+        let source = nested_wrapper_source(
+            "",
+            NESTED_FACTORY,
+            "function wrapper(label, execute, marker) { return make({ name: `Create ${label}`, execute, weight: 0, marker }); }",
+        )
+        .replace(
+            "const warmup =",
+            &format!("{initializer}\nconst ids = {{ day: 'SYS_T124' }};\nconst warmup ="),
+        )
+        .replace(
+            "const command = wrapper(\"x\", () => later);",
+            "const flags = [{ id: ids.day, feature: $.feature1 }];\nconst command = wrapper(\"x\", () => later, ids.day);",
+        )
+        .replace("export { command, later };", "export { command, later, ids };");
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &[
+                        Member::new("warmup"),
+                        Member::new("prefix"),
+                        Member::new("maybe"),
+                        Member::new("Policy"),
+                        Member::new("Command"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("wrapper"),
+                        Member::new("ids"),
+                        Member::new("$"),
+                        Member::new("flags"),
+                        Member::new("command"),
+                        Member::new("later"),
+                    ],
+                    &["maybe.record = 1;"],
+                )],
+            )
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, "7\n");
+        let graph = fixture.dependency_graph();
+        let execution = node_declaring(&graph, "flags")
+            .synchronous_execution
+            .as_ref()
+            .expect("flags execution");
+        assert!(!execution.complete, "{case}: {execution:#?}");
+        assert!(
+            execution.precision_losses.iter().any(|loss| matches!(
+                &loss.reason,
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::MemberRead,
+                    ..
+                }
+            )),
+            "{case}: {execution:#?}"
+        );
+    }
+}
+
+#[test]
+fn checked_enum_member_read_before_its_var_initializer_keeps_the_throw() {
+    let source = r#"const flags = [$.feature1];
+var $ = ((n) => ((n[(n.feature1 = 1)] = "feature1"), n))($ || {});
+console.log(flags[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let graph = fixture.dependency_graph();
+    let execution = node_declaring(&graph, "flags")
+        .synchronous_execution
+        .as_ref()
+        .expect("flags execution");
+    assert!(
+        execution
+            .heap_frontier
+            .as_ref()
+            .is_none_or(|frontier| frontier.non_assumed_heap_accesses.reads.count == 0),
+        "a pre-initializer throw cannot consume an own-slot receipt: {execution:#?}"
+    );
+}
+
+#[test]
+fn inherited_setter_before_enum_initialization_cannot_certify_an_own_slot() {
+    let setter = "Object.defineProperty(Object.prototype, 'feature1', { set(value) { globalThis.setterSaw = later; }, get() { globalThis.getterSaw = later; return -1; } });";
+    let source = nested_wrapper_source(
+        "",
+        NESTED_FACTORY,
+        "function wrapper(label, execute, marker) { return make({ name: `Create ${label}`, execute, weight: 0, marker }); }",
+    )
+    .replace(
+        "const warmup =",
+        &format!("{setter}\nvar $ = ((n) => ((n[(n.feature1 = 1)] = 'feature1'), n))($ || {{}});\nconst ids = {{ day: 'SYS_T124' }};\nconst warmup ="),
+    )
+    .replace(
+        "const command = wrapper(\"x\", () => later);",
+        "const flags = [{ id: ids.day, feature: $.feature1 }];\nconst command = wrapper(\"x\", () => later, ids.day);",
+    )
+    .replace(
+        "console.log(command.run());",
+        "console.log(command.run(), flags[0].feature, globalThis.setterSaw, globalThis.getterSaw);",
+    )
+    .replace("const later = command ? 7 : 0;", "var later = command ? 7 : 0;")
+    .replace("export { command, later };", "export { command, later, ids };");
+    let early_members = || {
+        vec![
+            Member::new("warmup"),
+            Member::new("prefix"),
+            Member::new("maybe"),
+            Member::new("Policy"),
+            Member::new("Command"),
+            Member::new("make").with_retained_record_factory(),
+            Member::new("wrapper"),
+            Member::new("ids"),
+            Member::new("$"),
+            Member::new("flags"),
+            Member::new("command"),
+        ]
+    };
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon("early", &early_members(), &["maybe.record = 1;", setter]),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["early", "later"],
+        &[],
+    );
+    let mut all_members = early_members();
+    all_members.push(Member::new("later"));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module_with_anon(
+                "all",
+                &all_members,
+                &["maybe.record = 1;", setter],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 -1 undefined undefined\n");
+    let graph = fixture.dependency_graph();
+    let execution = node_declaring(&graph, "flags")
+        .synchronous_execution
+        .as_ref()
+        .expect("flags execution");
+    assert!(
+        execution
+            .heap_frontier
+            .as_ref()
+            .is_none_or(|frontier| frontier.non_assumed_heap_accesses.reads.count == 0),
+        "an inherited getter cannot use an own-slot receipt: {execution:#?}"
+    );
+    let later = node_declaring(&graph, "later");
+    let accessor = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 0)
+        .expect("prototype accessor definition");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == accessor.id
+                && edge.target == later.id
+                && edge.binding.as_deref() == Some("later")
+                && edge.constrains_init_order
+        }),
+        "the accessor bodies' lexical reads must constrain initialization order: {:#?}",
+        graph.edges
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            matches!(
+                edge.sequenced_cause.as_ref(),
+                Some(analysis::graph::SequencedCause::BindingTimeline {
+                    binding,
+                    target: analysis::graph::EffectProvenance::Fallback {
+                        reason: analysis::execution_evidence::AssumedEffectReason::PossibleSetter,
+                    },
+                    ..
+                }) if binding == "later"
+            ) && edge.constrains_init_order
+        }),
+        "the inherited setter path must preserve its read-before-write timeline: {:#?}",
+        graph.edges
+    );
 }
 
 fn assert_nested_wrapper_falls_back(source: &str, extra_anon: &[&str]) {

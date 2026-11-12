@@ -56,6 +56,7 @@ use crate::facts::{
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use crate::purity::is_ts_enum_iife_init_for_binding;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
@@ -6197,6 +6198,10 @@ fn stored_global_alias(
 pub(super) struct ExecutionIndex {
     pub(super) member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
     pub(super) retained_record_factories: BTreeSet<String>,
+    /// Direct top-level enum IIFE bindings whose computed keys are restricted
+    /// by the source recognizer to literal keys or numeric reverse mappings.
+    pub(super) ts_enum_iife_bindings: BTreeSet<Id>,
+    pub(super) ts_enum_iife_callables: BTreeSet<u32>,
     owner: SourceUnitOrdinal,
     current: Option<u32>,
     /// Lexical var scope, distinct from the effect owner inherited by
@@ -6380,7 +6385,7 @@ pub(super) struct ExecutionIndex {
     pub(super) literal_true_second_arguments: BTreeSet<CallSite>,
     pub(super) top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     pub(super) fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
-    top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
+    pub(super) top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     pub(super) top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     pub(super) ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Top-level `receiver.property = value` and `binding = value` statements
@@ -6485,6 +6490,8 @@ impl Default for ExecutionIndex {
         Self {
             member_owners: BTreeMap::new(),
             retained_record_factories: BTreeSet::new(),
+            ts_enum_iife_bindings: BTreeSet::new(),
+            ts_enum_iife_callables: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
             current: None,
             variable_scope: None,
@@ -11772,10 +11779,8 @@ impl ExecutionIndex {
                 .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
         } else {
             self.top_property_writes[self.owner.0].push((None, None));
-            if let Some(receiver) = receiver {
-                self.top_dynamic_property_receivers[self.owner.0]
-                    .push(ValueExpr::from_expr(receiver));
-            }
+            self.top_dynamic_property_receivers[self.owner.0]
+                .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
         }
     }
 
@@ -13416,6 +13421,19 @@ impl Visit for ExecutionIndex {
             .map(|value| ValueExpr::from_expr(value));
         let direct_top_level = self.direct_top_level_var_declaration && self.current.is_none();
         if let Pat::Ident(binding) = &declarator.name {
+            if direct_top_level
+                && self.variable_kind == Some(VarDeclKind::Var)
+                && let Some(init) = declarator.init.as_deref()
+                && is_ts_enum_iife_init_for_binding(init, binding.id.sym.as_ref())
+            {
+                self.ts_enum_iife_bindings.insert(binding.id.to_id());
+                if let Expr::Call(call) = init.unwrap_parens()
+                    && let Callee::Expr(callee) = &call.callee
+                {
+                    self.ts_enum_iife_callables
+                        .insert(callee.unwrap_parens().span().lo.0);
+                }
+            }
             if self.direct_top_level_const_declaration && direct_top_level {
                 self.top_const_declarations.insert(binding.id.to_id());
             }

@@ -204,6 +204,27 @@ impl Executor<'_, '_> {
             if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
                 return CallTransfer::EffectsOnly;
             }
+            if let ValueExpr::Member(receiver, _, _, _) = &call.callee
+                && let ValueExpr::Binding(binding) = receiver.as_ref()
+                && self.binding_has_whole_chunk_plain_data(binding)
+                && self.closed_enum_member_read(&call.callee)
+            {
+                return CallTransfer::EffectsOnly;
+            }
+            if let ValueExpr::Member(receiver, Some(property), _, _) = &call.callee
+                && let Some(read) = self.current_prefix_primitive_member_read(receiver, property)
+            {
+                if let crate::facts::EffectCell::OwnProperty { origin, .. } = &read.cell {
+                    outcome.effects.record_heap_read(
+                        crate::facts::EffectCell::ObjectShape(*origin),
+                        self.state.assumption.is_none(),
+                    );
+                }
+                outcome
+                    .effects
+                    .record_heap_read(read.cell, self.state.assumption.is_none());
+                return CallTransfer::EffectsOnly;
+            }
             if self.closed_enum_member_read(&call.callee) {
                 return CallTransfer::EffectsOnly;
             }

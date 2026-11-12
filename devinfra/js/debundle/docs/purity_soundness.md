@@ -1555,6 +1555,23 @@ coercions do not resolve this way. Computed enum member names, member
 mutation, opaque escape, reflective writes, accessors, and unknown receiver
 forms continue through conservative handling.
 
+A separate current-prefix member-read receipt does not need whole-chunk
+`PlainData` when a checked enum object escapes only later. It applies to one
+direct top-level `var` initializer with the audited inline enum-IIFE syntax,
+one declaration write, no later binding reassignments or dynamic scope, and
+a definitely completed initializer. The IIFE returns its fresh object after
+only primitive-literal own-property writes and cannot call back during
+initialization. The abstract hoisted `undefined` is therefore a pre-init
+alternative, not a possible value of a subsequent read. The read still
+requires one parameter-initialized ordinary allocation, a present primitive
+own slot, and an untainted, settled object with no accessor at that key. It
+records the eager binding read plus `ObjectShape` and exact `OwnProperty`
+heap reads, so preceding alias writes, deletion, descriptor changes, and
+publication invalidate the receipt. This value is not promoted into the
+whole-chunk closed-enum constructor or coercion shortcuts. A failed array
+protocol elsewhere cannot taint this IIFE's literal writes, because its body
+performs no array operation; any actual unsettled receiver still rejects.
+
 Why member reads on PlainData are pure:
 
 - **No accessor channels at any program point.** The initial init is a

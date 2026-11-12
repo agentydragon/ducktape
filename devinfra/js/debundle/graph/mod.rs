@@ -40,7 +40,8 @@ pub use dependency_graph::{
 };
 pub use edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
-    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause,
+    SequencedCause,
 };
 pub use input::DependencyGraphInput;
 pub use linker_order::{

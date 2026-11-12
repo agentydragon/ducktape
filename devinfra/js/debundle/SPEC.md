@@ -2097,6 +2097,22 @@ opaque escape, reflective writes, accessors, unknown keys, and reads before the
 initializer keep the conservative member-read path. Purity of the initializer
 alone does not establish the receiver's property identity.
 
+A narrower current-prefix path admits the same getter-free read after a
+later escape disqualifies whole-chunk `PlainData`. It requires a direct
+module-level `var` with exactly one declaration write, no rebind or dynamic
+scope, the checked inline TS enum IIFE, and its definite completed
+initializer. At the read, the binding must identify one parameter-initialized
+ordinary allocation whose own named slot is present, primitive, settled, and
+accessor-free. The hoisted `undefined` alternative is ignored only after that
+sole initializer has completed: the IIFE has no call or reentry point and
+returns its fresh object; a read before completion remains conservative. The
+read still records its eager binding edge and both the object's shape and
+exact own-property heap cells. A mutation, deletion, descriptor change,
+alias escape, unknown computed key, conditional initializer, or rebind before
+the read defeats this path. An unrelated failed array iteration does not
+invalidate the checked enum IIFE's literal writes; unsettled or escaped
+receivers still do.
+
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered source units
@@ -4522,8 +4538,10 @@ ordering does not certify that later read. Descriptor, native-array and ordinary
 object proofs also reject those unsettled objects. Intrinsic-integrity premises
 do not exempt ordinary objects from these checks. The existing closed-enum
 certificate retains its stronger whole-lifetime `PlainData` guarantee; later
-mutation or publication disqualifies it (<docs/purity_soundness.md> § Settled
-heap taint).
+mutation or publication disqualifies it. The current-prefix enum member-read
+path above has a separate settled-object check at the read, so an actual
+earlier mutation or publication still rejects it (<docs/purity_soundness.md>
+§ Settled heap taint).
 
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the

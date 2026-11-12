@@ -9,9 +9,10 @@ use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::super::kernel::frame::SelectedValue;
 use super::super::local_operations::LocalBody;
-use super::super::value_model::{Context, ValueExpr, Values};
+use super::super::value_model::{AbstractValue, Context, ValueExpr, Values};
 use super::operands::RootOperands;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionOperation};
+use crate::facts::abstract_domain::value::Value;
 use crate::facts::{OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -300,6 +301,25 @@ fn settle(
         ref mut global_object_aliases,
         ..
     } = *root;
+    // Delete and other direct property operations bypass the member-value
+    // heap transfer. Revoke the receiver's prefix own-slot proof before the
+    // next owner. A read in this owner refuses the receipt independently.
+    for receiver in &index.top_dynamic_property_receivers[fact.ordinal.0] {
+        let values = executor.evaluate(receiver, &root.top_env, &root.top_captures);
+        let before = executor.state.world.surface.tainted_objects.len();
+        if values.is_empty()
+            || values
+                .iter()
+                .any(|value| *value == AbstractValue::Value(Value::Top))
+        {
+            executor.taint_all_prefix_objects();
+        } else {
+            executor.taint_objects(&values);
+        }
+        if executor.state.world.surface.tainted_objects.len() != before {
+            executor.state.world_mut().revision.bump_prefix();
+        }
+    }
     // Keep the selected result in this owner until publication.
     let ordered_initializer_result = ordered_initializer.map(|_| SelectedValue {
         values: std::mem::take(&mut outcome.returns),
