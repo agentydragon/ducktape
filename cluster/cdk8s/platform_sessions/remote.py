@@ -218,7 +218,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         secret_name=f"{name}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        dns_names=[_provider_dns(instance)],
+        dns_names=[_provider_dns(instance), f"{instance}.{NAMESPACE}.svc"],
     )
 
     k8s.KubePersistentVolumeClaim(
@@ -460,9 +460,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
     PodMonitor(
         chart,
         f"{name}-monitor",
-        metadata=ApiObjectMetadata(
-            name=f"{instance}-provider" if instance == "quest" else instance, namespace=NAMESPACE
-        ),
+        metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels={"app": name}),
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
         + (
@@ -495,7 +493,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         metadata=ApiObjectMetadata(name=GATEWAY, namespace=NAMESPACE),
         secret_name=f"{GATEWAY}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
-        dns_names=[_GATEWAY_DNS],
+        dns_names=[_GATEWAY_DNS, f"gateway.{NAMESPACE}.svc"],
     )
     provider_credentials = k8s.Volume(
         name="provider-credentials",
