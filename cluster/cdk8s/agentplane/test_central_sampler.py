@@ -11,7 +11,7 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,

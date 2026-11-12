@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
+	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/identity/credentials/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
 	_ "github.com/lib/pq"
 )
 

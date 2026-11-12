@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 )
 
 // ResolveSVID rechecks the live WorkloadCredential the peer certificate names on every request. Only

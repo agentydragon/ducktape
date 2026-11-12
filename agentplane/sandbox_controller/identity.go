@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"

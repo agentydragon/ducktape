@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 

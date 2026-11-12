@@ -57,9 +57,9 @@ py_binary(
     name = "generate_bin",
     data = [
         "//agentplane/egress/api/v1alpha1:generated_crds",
+        "//agentplane/identity/credentials/api/v1alpha1:generated_crds",
         "//agentplane/policy/api/v1alpha1:generated_crds",
         "//agentplane/sandboxes/api:generated_crds",
-        "//agentplane/workload_identity/api/v1alpha1:generated_crds",
     ],
     main_module = "agentplane.crds.generate",
     deps = [":generate"],
@@ -71,9 +71,9 @@ py_test(
     data = [
         ":crds",
         "//agentplane/egress/api/v1alpha1:generated_crds",
+        "//agentplane/identity/credentials/api/v1alpha1:generated_crds",
         "//agentplane/policy/api/v1alpha1:generated_crds",
         "//agentplane/sandboxes/api:generated_crds",
-        "//agentplane/workload_identity/api/v1alpha1:generated_crds",
     ],
     deps = [
         ":generate",

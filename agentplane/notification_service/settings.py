@@ -8,8 +8,8 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.environment_runtime_transport.config import ClientTLS
+from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener
 from agentplane.log_levels import LogLevels
-from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 

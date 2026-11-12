@@ -37,7 +37,7 @@ EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egressc
 SANDBOX_GENERATED_CRDS = "ducktape/agentplane/sandboxes/api/generated_crds"
 EGRESS_GENERATED_CRDS = "ducktape/agentplane/egress/api/v1alpha1/generated_crds"
 POLICY_GENERATED_CRDS = "ducktape/agentplane/policy/api/v1alpha1/generated_crds"
-WORKLOAD_IDENTITY_GENERATED_CRDS = "ducktape/agentplane/workload_identity/api/v1alpha1/generated_crds"
+WORKLOAD_IDENTITY_GENERATED_CRDS = "ducktape/agentplane/identity/credentials/api/v1alpha1/generated_crds"
 WORKLOAD_IDENTITY_CRDS = {"crd-workloadcredentials.yaml": "agentplane.allegedly.works_workloadcredentials.yaml"}
 POLICY_CRDS = {
     "crd-policysets.yaml": "agentplane.allegedly.works_policysets.yaml",

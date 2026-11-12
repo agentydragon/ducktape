@@ -8,9 +8,9 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
 from util.yaml_file_settings import YamlFileSettings
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"

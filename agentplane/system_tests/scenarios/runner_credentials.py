@@ -19,7 +19,7 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
-# agentplane/workload_identity/issuer: the labels it stamps on a record's Certificate and Secret.
+# agentplane/identity/credentials/issuer: the labels it stamps on a record's Certificate and Secret.
 _RECORD_UID_LABEL = "agentplane.allegedly.works/workload-credential-uid"
 _CREDENTIAL_ID_LABEL = "agentplane.allegedly.works/workload-credential-id"
 

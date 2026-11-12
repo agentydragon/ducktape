@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/validation"
 )

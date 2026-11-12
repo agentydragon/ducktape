@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints,
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.environment_runtime_transport.config import ClientTLS, Security
+from agentplane.identity.auth.listener import Listener
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]

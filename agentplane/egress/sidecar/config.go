@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"gopkg.in/yaml.v3"
 )

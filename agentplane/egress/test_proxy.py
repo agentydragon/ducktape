@@ -45,6 +45,7 @@ from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.identity.auth import listener
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
@@ -59,7 +60,6 @@ from agentplane.testing.tls import (
     workload_uri,
     write_ca,
 )
-from agentplane.workload_auth import listener
 from util.net import Listener
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.

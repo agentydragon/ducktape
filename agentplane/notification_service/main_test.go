@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 

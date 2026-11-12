@@ -53,7 +53,7 @@ rollback. The one-time migration was already completed and its script removed; d
 ## WorkloadCredentials
 
 A workload's SVID is requested by its owner as a `WorkloadCredential`
-(`agentplane/workload_identity`), named after the owner and controlled by it; an Identity's Action
+(`agentplane/identity/credentials`), named after the owner and controlled by it; an Identity's Action
 box's record has no owner and lives until the box is disposed of. The owner writes
 `spec`; only the issuer, hosted in the Policy Controller, writes `status` and creates the
 Certificate. The Sandbox Controller requests one per Sandbox, and the Action Service one per command
@@ -126,7 +126,7 @@ egress only on a rollout restart. Routine renewals keep the URI.
 
 ### How a verifier resolves a peer
 
-`agentplane/workload_identity/resolver` makes the same checks for every verifier, on every request,
+`agentplane/identity/credentials/resolver` makes the same checks for every verifier, on every request,
 including one inherited through a tunnel:
 
 1. The TLS listener verifies the chain against the workload CA bundle and the client-auth usage.
@@ -242,7 +242,7 @@ caller Pod and a matching credential rule. Sandbox Runtime templates continue to
 Kubernetes destination-audience token; they do not project first-party-service audiences.
 
 The proxy's `forward` and services' `rpc` settings use the shared
-[authentication allowlist](../workload_auth/README.md); `forward` names `spiffe` alone. Each
+[authentication allowlist](../identity/auth/README.md); `forward` names `spiffe` alone. Each
 first-party service uses one TLS RPC listener for workload SVIDs and existing backend bearers. Protected calls reject both a certificate
 and an application credential presented together. Admission stays method-specific: enabling both
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,

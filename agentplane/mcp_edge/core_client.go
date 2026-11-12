@@ -10,8 +10,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	uniqueauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

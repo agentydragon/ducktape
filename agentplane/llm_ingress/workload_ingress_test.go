@@ -16,10 +16,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
-	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

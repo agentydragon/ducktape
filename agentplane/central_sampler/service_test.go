@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"

@@ -41,9 +41,9 @@ from agentplane.action_service.session_delegation.binding import SessionDelegati
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import ACTIONS_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.identity.auth import listener
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth import listener
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps

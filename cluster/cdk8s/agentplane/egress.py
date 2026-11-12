@@ -53,8 +53,8 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import Settings
 from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
+from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.listener import TLS, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET

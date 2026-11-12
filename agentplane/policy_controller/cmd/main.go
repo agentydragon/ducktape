@@ -23,15 +23,15 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/service"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/issuer"
 )
 
 func main() {

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	resourcepb "github.com/agentydragon/ducktape/agentplane/policy/api/resourcev1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
@@ -20,8 +22,6 @@ import (
 	kubernetespb "github.com/agentydragon/ducktape/agentplane/proto/kubernetes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

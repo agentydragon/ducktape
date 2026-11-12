@@ -475,7 +475,7 @@ through an authorized CONNECT, removes caller Authorization, and presents the cu
 certificate to the service. The service resolves that SVID against live Sandbox state before
 authorization. External callers are not admitted by this Sandbox-only route.
 
-At the destination, the [workload resolver](../workload_auth/auth/) performs the TokenReview. Actions
+At the destination, the [workload resolver](../identity/auth/auth/) performs the TokenReview. Actions
 uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and
 ServiceAccount UID are required; a Pod binding is optional, and partial or duplicate Pod claims are
 rejected. This admits account tokens for the planned MCP edge while ordinary Sandbox tokens retain

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"

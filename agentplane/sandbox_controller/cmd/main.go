@@ -20,12 +20,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 )
 
 func main() {

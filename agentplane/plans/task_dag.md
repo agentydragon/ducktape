@@ -3316,7 +3316,7 @@ apply is not verified here. The rest is on staging, including the proxy's half t
 `EGRESS_IDENTITY_RULES`: the proxy decides an Identity caller by the bindings naming it,
 impersonates any account it holds a use rule for and records the decision by kind and name
 ([egress SPEC](../egress/SPEC.md) § Decision); the Rules API answers an Identity. The seam is
-`workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`), and each service's
+`identity/auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`), and each service's
 workload-facing methods admit the union and record an identity reference plus the workload
 incarnation as provenance. Dispatcher is the authority for a Session's Identity, recorded from its
 Sandbox's `spec.identity`; its delivery and wake path refuses a Session whose identity differs from
@@ -3429,7 +3429,7 @@ Firecracker launcher whose identity changes remains held with its checkpoint
 make `policy_namespace` required in `agentplane/llm_ingress/settings.py` and `config.go`,
 `agentplane/history_service/settings.py` and `config.go`, and
 `agentplane/runner_gateway/settings.py` and `config.go`; make `Identities` required by
-`agentplane/workload_identity/resolver.New` (`resolver/resolver.go`). These are existing cleanup
+`agentplane/identity/credentials/resolver.New` (`resolver/resolver.go`). These are existing cleanup
 tombstones in those sources, not work completed by #15742 or #15744. The accepted live checks and
 recorded serving configuration verify the Identity namespace and resolver paths; optional defaults
 are not that evidence. Keep this source cleanup open, and verify its required settings against the
@@ -3659,7 +3659,7 @@ app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their
 prerequisite: the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
 ServiceAccount-or-Identity union or is rewritten to an Identity.
 The standing workloads have moved by then (`STANDING_WORKLOAD_IDENTITY`), so the resolver's
-ServiceAccount branch (`workload_identity/resolver`, `resolver.ServiceAccount`) goes here with the
+ServiceAccount branch (`identity/credentials/resolver`, `resolver.ServiceAccount`) goes here with the
 last ServiceAccount-subject records, the command boxes'. The ServiceAccount variant goes for
 Sessions (`SESSION_SA_PRINCIPAL_REMOVAL`), standing workloads and boxes only. ServiceAccount-authenticated callers that remain are privileged Agentplane platform components,
 kept on ServiceAccounts permanently (operator, 2026-11-10): the app (History `reader_accounts`,
@@ -3782,7 +3782,7 @@ Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside test
 - **Stale doc sentences.** `docs/workload_authentication.md` § TokenReview and projected credentials
   says Sandbox Runtime templates "continue to project" the Kubernetes token (none since #15258; only
   command boxes do) and § Service authorization says authentication yields "only the verified Sandbox
-  ServiceAccount" (an Identity subject resolves since the expand phase). `workload_auth/README.md`
+  ServiceAccount" (an Identity subject resolves since the expand phase). `identity/auth/README.md`
   says a record naming an Identity "is refused until `Principal` has an Identity form" and "there is no
   identity reference" (`IdentityPrincipal`, `AnySubject` and the Identity delegation exist, and the
   same README describes them further down), and that the proxy's hop "still accepts" the
@@ -3827,7 +3827,7 @@ the renamed Runtime API.
 is a long name at the top of `agentplane/`, and it no longer describes its job: it holds the shared
 SPIFFE mTLS trust, URI and EKU checks, and the TLS client and server configuration that every
 first-party service and the egress proxy use, not only Environment Runtime's transport. Choose a
-short name and home that matches that job, and coordinate with the `agentplane/workload_identity`
+short name and home that matches that job, and coordinate with the `agentplane/identity/credentials`
 packages ([workload authentication](../docs/workload_authentication.md#workloadcredentials)), which
 may absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
 and doc link. Exit: no import of the old path remains.
@@ -3852,7 +3852,7 @@ phase (section 14): expand → switch → contract leaves each transitional piec
 - **`SANDBOX_IDENTITY_SPEC` (live rollout accepted; required verifier inputs remain):**
   [Live evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md) records accepted checks and
   serving configuration. Required cleanup remains for `policy_namespace` in LLM Ingress, History
-  and Runner Gateway settings/config and `Identities` in `workload_identity/resolver.New`.
+  and Runner Gateway settings/config and `Identities` in `identity/credentials/resolver.New`.
   The superseded #15239 draft is closed; #15742 and #15744 are serving. Do not repeat the retired
   cutover procedure or one-time migration.
 - **`ENVIRONMENT_LIFECYCLE_RULES` (blocked on `ENVIRONMENT_RULE_TYPE_DESIGN`):** branch
@@ -3866,9 +3866,9 @@ phase (section 14): expand → switch → contract leaves each transitional piec
   `STANDING_WORKLOAD_IDENTITY`):** the cutover PR takes these with it. The node has the full list;
   the pieces with a tombstone or a `TODO` are named here so a sweep finds them.
   - Tombstones (2026-11-08 to 10): the ServiceAccount variant of `WorkloadCredential.spec.subject`
-    (`workload_identity/api/v1alpha1/types.go`, `crds/manifests/crd-workloadcredentials.yaml`) and of
+    (`identity/credentials/api/v1alpha1/types.go`, `crds/manifests/crd-workloadcredentials.yaml`) and of
     `PolicyBinding.spec.subject` (`policy/api/v1alpha1/types.go`); `resolver.ServiceAccount`
-    (`workload_identity/resolver/resolver.go`); the `Account` box path in
+    (`identity/credentials/resolver/resolver.go`); the `Account` box path in
     `action_service/sandbox/inventory.go` (a box running as its caller's ServiceAccount with the
     Kubernetes-audience token); and `identity_catalog=False` with `_app_config(identity_catalog=…)`
     in `cluster/cdk8s/agentplane/staging.py`. `Environment.identity_catalog` itself and its readers
@@ -3893,8 +3893,8 @@ phase (section 14): expand → switch → contract leaves each transitional piec
     [plan § MCP edge](identity_and_kubernetes_accounts.md#mcp-edge), lifecycle rows 1 and 2.
   - The delegation envelope's ServiceAccount effective caller: `Delegation.caller`
     (`ServiceAccountIdentity`), `caller_namespaces` and `auth.DelegatedAdmission`'s ServiceAccount UID
-    reader (`workload_auth/auth/delegation.go`, `proto/delegation.proto`). Source: the node.
-  - `auth.Principal` (`workload_auth/auth/auth.go`) takes a name meaning "platform component caller"
+    reader (`identity/auth/auth/delegation.go`, `proto/delegation.proto`). Source: the node.
+  - `auth.Principal` (`identity/auth/auth/auth.go`) takes a name meaning "platform component caller"
     (`ComponentPrincipal` or `PlatformCaller`, to be decided) once every service admits workloads
     through `AnySubject`. Source: `TODO` at the type.
   - The Kubernetes rule types leave `PolicySet`; the caller ServiceAccounts and the static Flux
@@ -3935,7 +3935,7 @@ bearer or a ServiceAccount subject stands in for a workload.
   History's `SVIDOrAccounts` push rule stays: runners by SVID, the sampler by bearer.
 - **At `IDENTITY_CUTOVER`** (the pieces above under that gate, seen as one collapse):
   - A workload SVID always names an Identity, so the SVID resolver's ServiceAccount subject
-    (`workload_auth/auth/svid.go`, `resolver.ServiceAccount`) and `SVIDResolver.IdentitySubjectsOnly`
+    (`identity/auth/auth/svid.go`, `resolver.ServiceAccount`) and `SVIDResolver.IdentitySubjectsOnly`
     (History's read API is the one user, `history_service/main.go`) go: Identity-only is the only mode.
     `AnySubject`, `ReviewedServiceAccountOrIdentity` and `SVIDOrAccounts` then each admit "a platform
     bearer, or an Identity SVID", and the three names and their `Admitted` branches fold into one rule

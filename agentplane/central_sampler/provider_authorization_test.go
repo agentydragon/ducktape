@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/protobuf/proto"
 )
 

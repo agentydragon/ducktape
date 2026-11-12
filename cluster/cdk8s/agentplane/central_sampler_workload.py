@@ -11,8 +11,8 @@ from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.session_instructions.platform_instructions import SessionRuntime
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     central_sampler,

@@ -18,6 +18,7 @@ from python.runfiles import Runfiles
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
@@ -28,7 +29,6 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.vm import infrastructure as vm_infrastructure, sandboxes as vm_sandboxes
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     central_sampler,
     environment_firecracker,

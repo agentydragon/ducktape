@@ -28,11 +28,11 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth/auth" // its name, auth, is go-sdk's
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
 
 var integrationDatabase *postgres.Database

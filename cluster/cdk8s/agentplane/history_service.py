@@ -22,8 +22,8 @@ from constructs import Construct
 
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, IngressSettings, Settings
+from agentplane.identity.auth import listener
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth import listener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, egress, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment

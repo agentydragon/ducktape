@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"

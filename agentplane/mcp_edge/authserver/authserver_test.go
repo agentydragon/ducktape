@@ -11,8 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
+	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth/auth" // its name, auth, is go-sdk's
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
 
 // connect connects go-sdk's MCP client to /mcp, which authorizes it through the handler.
