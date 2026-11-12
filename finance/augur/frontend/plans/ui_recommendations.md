@@ -13,8 +13,9 @@ Open UX follow-ups for the current scenario editor and results views.
 
 5. **Richer stat cards.** Show delta vs starting net worth and a compact
    distribution hint alongside each headline statistic.
-6. **Actionable failed rollouts.** When `failedCount > 0`, make the card jump to
-   a failing seed and show the failure mode.
+6. **Explain failed rollouts.** The failed-rollouts card already lets the user select a
+   stopped seed and inspect its details. Make the causal failure or shortfall clear from
+   that entry point.
 7. **Implied carrying cost while editing.** The property panel collects enough
    inputs to show estimated monthly PITI plus HOA and maintenance.
 
