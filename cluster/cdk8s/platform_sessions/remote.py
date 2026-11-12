@@ -163,7 +163,7 @@ def _deployment(
         f"{name}-deployment",
         metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
-            replicas=1,
+            replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels={"app": name}),
             template=k8s.PodTemplateSpec(
