@@ -49,6 +49,7 @@ func executionCmd() *cobra.Command {
 	}
 	cmd.AddCommand(executionSearchCmd())
 	cmd.AddCommand(executionFilesCmd())
+	cmd.AddCommand(executionWaitCmd())
 	return cmd
 }
 
