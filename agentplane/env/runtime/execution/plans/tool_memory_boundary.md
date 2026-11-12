@@ -37,15 +37,18 @@ reimplement `arg0`, shell snapshots, sandbox wrappers and signal behavior.
 The shared Codex app-server also connects to exec-server directly, bypassing
 Agentplane's typed adapter. An adapter-only wrapper would miss those commands.
 
-A pinned Codex patch needs a trusted, server-startup command-cgroup setting,
-not a client-supplied cgroup path. For each accepted `process/start`, the
-server should reserve a bounded cgroup beneath that root and pass a cgroup FD
-through `SpawnRequest` to both PTY and pipe helper launches. The helper must
-move itself before target `exec` and fail the start if that move fails. It must
-not fall back to an uncontained launch. The server must retain the cgroup until
-all descendants are gone; an exited direct child alone does not prove that.
-Session expiry, explicit termination and backend fencing keep their current
-no-replay ownership and must also remove the cgroup after proving it empty.
+A pinned Codex patch needs a trusted, server-startup connection to a cgroup
+owner, not a client-supplied cgroup path. For each accepted `process/start`,
+the server should spawn its existing helper, then ask the owner to move that
+helper into a bounded command cgroup while the helper is blocked before target
+`exec`. The owner acknowledges only after verifying the exact server and
+helper processes and completing the move. Only then may the server release
+the helper to `exec`; failure must reject the start without an uncontained
+fallback. The same handshake must cover PTY and both pipe modes. The owner
+must retain the cgroup until all descendants are gone; an exited direct child
+alone does not prove that. Session expiry, explicit termination and backend
+fencing keep their current no-replay ownership and must also remove the cgroup
+after proving it empty.
 Tests against the patched native binary should cover all three spawn paths
 (PTY, pipe with stdin, pipe without stdin), `arg0`, signals, startup failure,
 detached descendants, and native Session continuity after real memcg OOM.
@@ -54,12 +57,24 @@ detached descendants, and native Session continuity after real memcg OOM.
 
 The VM currently starts exec-server and commands in one systemd transient
 service under `agentplane-executors.slice`. Its launcher does not delegate a
-subtree. A VM implementation would delegate that service's cgroup to the agent
-UID, move the server into a `server` leaf, enable `memory` on the now-empty
-parent, and create a capped `commands` subtree with a child per command. The
-server and commands caps plus a measured margin must fit under the existing
-executor slice and guest budgets. The root service still owns shutdown and
-must prove its entire subtree empty before replacement.
+subtree. `Delegate=yes` by itself is insufficient: systemd makes a delegated
+service cgroup accessible to the configured user, and the agent's commands
+run under the same UID as exec-server. A command could write `cgroup.procs`
+to move itself into the server leaf and escape its memory cap.
+
+A VM implementation needs a root-owned cgroup manager in the existing Runtime
+ownership domain. It would prepare capped `server` and `commands` subtrees
+inside the native service, retain write ownership of their control files, and
+verify the exec-server's exact PID and service invocation before accepting a
+placement request. The manager must verify the blocked spawn helper's PID
+identity and parentage, move it into a fresh capped command leaf, and reply
+only after reading back its membership. A command cannot authenticate as the
+server PID or write the root-owned control files. If systemd delegation is
+used to allow nested cgroups, the manager must reclaim ownership before
+native admission; this requires a real guest permission test. The server and
+commands caps plus a measured margin must fit under the existing executor
+slice and guest budgets. The root service still owns shutdown and must prove
+its entire subtree empty before replacement.
 
 The Pod executor companion is PID 1 and launches Codex in its own container.
 The template runs as UID 1000 with all capabilities dropped and privilege
@@ -79,13 +94,13 @@ budget would misreport the requested isolation.
 
 ## Deployment choices and sequence
 
-The VM can proceed independently: its existing systemd manager owns the
-executor service and can delegate a subtree within that service without
-changing Pod privileges. Ship the native hook and VM cgroup layout behind
-explicit VM configuration, with VM tests proving the server's cgroup and
-native Session survive a real command OOM. This is useful on its own, but it
-must not be described as Pod coverage. The current Pod contract and tests stay
-unchanged until a Pod mechanism is selected.
+The VM can proceed independently: Runtime already runs as root and owns the
+systemd executor service. It can add an authenticated cgroup manager in that
+ownership domain without changing Pod privileges. Ship the native hook and
+VM cgroup layout behind explicit VM configuration, with VM tests proving the
+server's cgroup and native Session survive a real command OOM. This is useful
+on its own, but it must not be described as Pod coverage. The current Pod
+contract and tests stay unchanged until a Pod mechanism is selected.
 
 For Pod execution, the preferred direction is a runtime that delegates a
 writable cgroup subtree to the unprivileged companion while preserving its
@@ -101,7 +116,7 @@ acceptable default.
 
 1. Patch and pin Codex with a trusted command-cgroup launch hook, preserving
    native process and Session semantics. Validate the patched binary directly.
-2. Add VM subtree ownership, exact limits, startup validation and cleanup.
+2. Add root-owned VM subtree ownership, exact limits, startup validation and cleanup.
    Turn the existing VM OOM scenario into a per-command test. The VM change
    may merge once its own system tests pass, independent of the Pod choice.
 3. Select and validate a Pod cgroup delegation mechanism without expanding
@@ -119,3 +134,4 @@ acceptable default.
 - [VM launcher](../../supervision/systemd_launcher.go)
 - [Pod template](../../../../../cluster/cdk8s/agentplane/environment_sandbox.py)
 - [Current isolation and Pod constraints](../ISOLATION.md)
+- [systemd delegation ownership](https://www.freedesktop.org/software/systemd/man/257/systemd.resource-control.html#Delegate=)
