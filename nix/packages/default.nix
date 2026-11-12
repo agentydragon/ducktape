@@ -609,11 +609,8 @@ rec {
     importsCheck = [ "gmail_archiver.main" ];
     entrypointChecks = [ "gmail-archiver" ];
     # SYNC: Requires-Dist in the currently pinned Gmail wheel.
-    # CLEANUP(added 2026-11-11): Remove ducktape-util once artifact-pins.json
-    # points to a Gmail wheel without `Requires-Dist: ducktape-util`.
     propagatedBuildInputs = with python314Packages; [
       beautifulsoup4
-      ducktape-util
       google-api-python-client
       google-auth
       openai
