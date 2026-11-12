@@ -183,13 +183,6 @@ runs once, `push_image` runs per image, and what they share is already in
 `testSummary` gate below lands, which deletes the per-image `bb remote test` and
 so most of what the fan-out buys.
 
-**Shell out to `bbapi`.** `bbapi` reads the same stream and grew the same
-capability for humans. The planners must not call it: `bbapi` is itself one of
-the artifacts in `artifact_targets.json`, so a release planner depending on the
-_released_ `bbapi` would be circular, and a stale pin in `nix/artifact-pins.json`
-would fail the plan on an unrecognised flag. `bes.py` is stdlib-only for the same
-reason the RBE worker image does not live in the registry it publishes to.
-
 **Fetch the runner's own uploaded artifacts.** The hosted-runner action is
 created with `DoNotCache: true`, and its blobs become unreachable within about a
 second. That is the "Exhausted all peers" bug; the inner Bazel invocation's

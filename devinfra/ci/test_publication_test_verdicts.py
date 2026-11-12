@@ -3,6 +3,7 @@ import json
 import os
 import threading
 from collections.abc import Callable
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -11,7 +12,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary, read
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci import publication_evidence
 from devinfra.ci.publication_test_verdicts import TestEvidence, verify
@@ -408,7 +409,9 @@ def test_publication_reads_retry_evidence_through_the_real_go_exporter(
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
         try:
-            monkeypatch.setenv("BUILDBUDDY_URL", f"http://127.0.0.1:{server.server_port}")
+            monkeypatch.setattr(
+                publication_evidence, "read", partial(read, base_url=f"http://127.0.0.1:{server.server_port}")
+            )
             evidence = publication_evidence.load(
                 ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
             ).tests
