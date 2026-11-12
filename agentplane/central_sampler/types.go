@@ -330,15 +330,6 @@ type ExecutionState struct {
 	Processes []RemoteProcess
 }
 
-// InterruptRequest is scoped to one lease generation and, for session commands, one turn.
-type InterruptRequest struct {
-	ID             string
-	ConversationID string
-	Generation     int
-	TargetTurn     *string
-	Result         map[string]any
-}
-
 type LostOwnershipError struct{ Reason string }
 
 func (e *LostOwnershipError) Error() string {
