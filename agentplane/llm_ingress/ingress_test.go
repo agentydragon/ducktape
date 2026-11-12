@@ -938,6 +938,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	}
 	settings := filepath.Join(directory, "settings.yaml")
 	settingsYAML := "allowed_service_account_namespaces: [" + testNamespace + "]\n" +
+		"policy_namespace: " + testPolicyNamespace + "\n" +
 		"token_audience: test-yaml-audience\n" +
 		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n" +
 		"log_levels:\n  root: INFO\n"

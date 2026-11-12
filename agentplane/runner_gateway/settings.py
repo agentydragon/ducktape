@@ -48,12 +48,8 @@ class Settings(YamlFileSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
-    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
-    # (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
-    policy_namespace: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Namespace holding the Identities a workload SVID may name; absent refuses Identity callers.",
+    policy_namespace: str = Field(
+        min_length=1, description="Namespace holding the Identities a workload SVID may name."
     )
     dispatcher_database_url: SecretStr = Field(description="The Dispatcher queue's PostgreSQL URL.")
     pod_name: str | None = Field(
@@ -141,12 +137,6 @@ class Settings(YamlFileSettings):
     def validate_operator_callers(self) -> Settings:
         if self.operator_callers and not self.operator_callers <= self.dispatcher_callers:
             raise ValueError("operator_callers must be a subset of dispatcher_callers")
-        return self
-
-    @model_validator(mode="after")
-    def identity_callers_need_policy_namespace(self) -> Settings:
-        if self.delegation is not None and self.delegation.identity_callers and self.policy_namespace is None:
-            raise ValueError("delegation.identity_callers requires policy_namespace")
         return self
 
     @model_validator(mode="after")

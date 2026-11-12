@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -436,7 +438,7 @@ func TestDelegationUsesTheConfiguredListenerModeAndMethodGrant(t *testing.T) {
 
 	t.Run("SPIFFE-only listener refuses delegated bearer before review", func(t *testing.T) {
 		objects, sandbox, _ := svidFixture(t)
-		svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, nil)
+		svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, &resolver.Identities{PolicyNamespace: sandbox.Namespace})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -82,7 +84,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 		}
 	})
 	workload := workloadauthtesting.NewWorkload(t, api, workloadTestNamespace, "sandbox-a")
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, nil)
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +215,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 		}
 	})
 	workload := workloadauthtesting.NewWorkload(t, api, workloadTestNamespace, "sandbox-a")
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, nil)
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

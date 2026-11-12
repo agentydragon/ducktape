@@ -10,6 +10,7 @@ import (
 
 func TestLoadConfigPrecedence(t *testing.T) {
 	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [yaml-namespace]
+policy_namespace: test-policy
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
 litellm_key: yaml-secret
@@ -37,8 +38,30 @@ models:
 	}
 }
 
+func TestPolicyNamespaceIsRequired(t *testing.T) {
+	base := `allowed_service_account_namespaces: [test-namespace]
+policy_namespace: test-policy
+token_audience: test-audience
+rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
+litellm_url: http://127.0.0.1:8100
+litellm_key: test-secret
+`
+	for name, contents := range map[string]string{
+		"missing": strings.Replace(base, "policy_namespace: test-policy\n", "", 1),
+		"empty":   strings.Replace(base, "policy_namespace: test-policy", `policy_namespace: ""`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, contents)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path}); err == nil {
+				t.Fatal("accepted a missing policy_namespace")
+			}
+		})
+	}
+}
+
 func TestAttributionConfig(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
+policy_namespace: test-policy
 token_audience: test-audience
 rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
 litellm_url: http://127.0.0.1:8100
@@ -50,8 +73,8 @@ litellm_key: test-secret
 		fails bool
 	}{
 		{name: "default"},
-		{name: "baggage only", yaml: "attribution:\n  baggage:\n    - key: Custom.PodUid\n      source: pod_uid\n"},
-		{name: "mixed-case custom key", yaml: "attribution:\n  json_headers:\n    - name: X-Custom-Verified\n      fields:\n        - key: Agentplane.PodName\n          source: pod_name\n"},
+		{name: "baggage only", yaml: "attribution:\n  baggage:\n    - key: Custom.PodUid\n      source: pod_uid\n    - key: Custom.Identity\n      source: identity\n"},
+		{name: "mixed-case custom key", yaml: "attribution:\n  json_headers:\n    - name: X-Custom-Verified\n      fields:\n        - key: Agentplane.PodName\n          source: pod_name\n        - key: Agentplane.Identity\n          source: identity\n"},
 		{name: "empty", yaml: "attribution: {}\n", fails: true},
 		{name: "empty JSON fields", yaml: "attribution:\n  json_headers:\n    - name: x-custom-verified\n      fields: []\n", fails: true},
 		{name: "duplicate key", yaml: "attribution:\n  baggage:\n    - key: same\n      source: pod_uid\n    - key: same\n      source: namespace\n", fails: true},
@@ -77,7 +100,7 @@ litellm_key: test-secret
 					t.Fatalf("default attribution = %+v", c.Attribution)
 				}
 			case "baggage only":
-				if len(c.Attribution.JSONHeaders) != 0 || len(c.Attribution.Baggage) != 1 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
+				if len(c.Attribution.JSONHeaders) != 0 || len(c.Attribution.Baggage) != 2 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
 					t.Fatalf("baggage-only attribution = %+v", c.Attribution)
 				}
 			case "mixed-case custom key":
@@ -124,7 +147,7 @@ litellm_key: test-secret
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
-			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
+			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [test-namespace]\npolicy_namespace: test-policy\n"+
 				"token_audience: test-audience\n"+`rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}`+"\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
 				"litellm_key: never-include-this-secret\n"+
@@ -139,6 +162,7 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 
 func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
+policy_namespace: test-policy
 token_audience: test-audience
 rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
 litellm_url: http://127.0.0.1:8100
@@ -156,6 +180,7 @@ models: []
 func TestSharedListenerRequiresTLS(t *testing.T) {
 	c := config{
 		AllowedServiceAccountNamespaces: []string{"test-namespace"},
+		PolicyNamespace:                 "test-policy",
 		TokenAudience:                   testAudience,
 		LiteLLMURL:                      "http://127.0.0.1:8100",
 		LiteLLMKey:                      testBackendKey,

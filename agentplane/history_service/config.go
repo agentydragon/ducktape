@@ -37,9 +37,7 @@ type config struct {
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
 	Kubeconfig            string          `mapstructure:"kubeconfig"`
-	// PolicyNamespace holds the Identities a Sandbox SVID may name; empty refuses Identity writers.
-	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
-	//   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	// PolicyNamespace holds the Identities a Sandbox SVID may name.
 	PolicyNamespace string        `mapstructure:"policy_namespace"`
 	Ingress         ingressConfig `mapstructure:"ingress"`
 	FoldConcurrency int           `mapstructure:"fold_concurrency"`
@@ -114,6 +112,7 @@ func loadConfig() (config, error) {
 func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
+		{"policy_namespace", c.PolicyNamespace},
 		{"token_audience", c.TokenAudience},
 		{"ingress.token_audience", c.Ingress.TokenAudience},
 	} {
@@ -128,14 +127,11 @@ func (c *config) validate() error {
 		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
 	}
-	if c.Delegation != nil && c.Delegation.IdentityCallers && c.PolicyNamespace == "" {
-		return errors.New("delegation.identity_callers requires policy_namespace")
-	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
 	}
-	if c.Ingress.SamplerIdentityCallers && (c.PolicyNamespace == "" || len(c.Ingress.SamplerAccounts) == 0 || !c.RPC.Has(listener.SPIFFE)) {
-		return errors.New("ingress.sampler_identity_callers requires policy_namespace, ingress.sampler_accounts and a spiffe rpc listener")
+	if c.Ingress.SamplerIdentityCallers && (len(c.Ingress.SamplerAccounts) == 0 || !c.RPC.Has(listener.SPIFFE)) {
+		return errors.New("ingress.sampler_identity_callers requires ingress.sampler_accounts and a spiffe rpc listener")
 	}
 	for _, audience := range []string{c.TokenAudience, c.Ingress.TokenAudience} {
 		if !c.RPC.AllowsBearerAudience(audience) {

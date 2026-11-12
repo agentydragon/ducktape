@@ -29,7 +29,7 @@ func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
-	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews, nil)
+	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 
 	request, err := http.NewRequest(http.MethodPost, serverURL+"/v1/responses", strings.NewReader(`{"model":"test"}`))
 	if err != nil {
@@ -112,7 +112,7 @@ func TestWorkloadListenerDoesNotFallBackToValidBearerForStaleSVID(t *testing.T) 
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
-	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews, nil)
+	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 
 	workload.Issue(t, "ffffffffffffffffffffffffffffffff")
 	validBearer := workloadToken(t, "llm-bearer-fallback")

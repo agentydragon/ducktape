@@ -68,7 +68,7 @@ audience, never with an SVID. Presenting a certificate together with bearer or d
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`.
 
-With the optional `policy_namespace` set, `Push` also admits a Sandbox SVID whose WorkloadCredential
+The required `policy_namespace` lets `Push` admit a Sandbox SVID whose WorkloadCredential
 names an Identity in that namespace (absent, such a writer is refused). The record must be in
 `ingress.writer_namespaces` and controlled by a Sandbox: the Session binds to the Identity
 incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity of the same name, the
@@ -289,8 +289,8 @@ writer fencing and commit-before-ack rules apply.
 When the Agentplane chart configures a central sampler, it also enables
 `ingress.sampler_identity_callers`. Direct History deployments must opt in explicitly.
 
-`ingress.sampler_identity_callers` (requires `policy_namespace`, sampler accounts and the SPIFFE
-listener, on which `Push` admits Identity writers) additionally lets those accounts push as
+`ingress.sampler_identity_callers` (requires sampler accounts and the SPIFFE listener, on which `Push`
+admits Identity writers) additionally lets those accounts push as
 delegating actors under the [delegated authorization contract](../docs/delegated_authorization.md),
 naming the Identity a Session executes as and the Session itself. The middleware verifies the
 sampler's token and grant and reads the Identity live, so a stale or missing incarnation is refused

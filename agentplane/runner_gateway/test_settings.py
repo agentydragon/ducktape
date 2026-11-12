@@ -15,6 +15,7 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
         Settings.model_validate(
             {
                 "sandbox_namespace": "test-sandboxes",
+                "policy_namespace": "test-policies",
                 "dispatcher_database_url": "postgresql://test:test@db.invalid/dispatcher",
                 "pod_ip": "192.0.2.10",
                 "runner_token_file": "/run/test/token",

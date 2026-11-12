@@ -87,6 +87,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert pod["serviceAccountName"] == runner_gateway.NAME
     listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
     settings = _gateway_settings(docs, container)
+    assert settings["policy_namespace"] == staging.ENV.namespace
     assert settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert int(settings["rpc"]["listen_address"].rsplit(":", 1)[1]) == listener_ports["grpc"]
     assert settings["rpc"]["tls"] == {
@@ -175,6 +176,7 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
     history = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
+    assert history["policy_namespace"] == namespace
     gateway_delegation = gateway["delegation"]
     assert gateway_delegation["actor"] == actions_account
     assert gateway_delegation["caller_namespaces"] == [namespace]

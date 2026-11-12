@@ -39,7 +39,7 @@ func TestSVIDResolvesTheRecordsSubjectAndPod(t *testing.T) {
 				leaf.URIs[0] = mustURL(t, workload.Issue(t, "cccccccccccccccccccccccccccccccc"))
 				want.PodName, want.PodUID = record.Spec.Pod.Name, string(record.Spec.Pod.UID)
 			}
-			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, nil)
+			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,7 +64,7 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf.URIs[0] = mustURL(t, workload.Issue(t, "dddddddddddddddddddddddddddddddd"))
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, nil)
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestSVIDRefusesRevokedOrIncompleteWorkloads(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			workload, leaf := svidWorkload(t)
 			test.change(t, workload, leaf)
-			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, nil)
+			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 			if err != nil {
 				t.Fatal(err)
 			}

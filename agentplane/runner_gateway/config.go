@@ -29,9 +29,7 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 type config struct {
 	RunnerSecurity environment_runtime_transport.Security `mapstructure:"runner_security"`
 	Namespace      string                                 `mapstructure:"sandbox_namespace"`
-	// PolicyNamespace holds the Identities a workload SVID may name; empty refuses Identity callers.
-	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
-	// (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	// PolicyNamespace holds the Identities a workload SVID may name.
 	PolicyNamespace             string                                   `mapstructure:"policy_namespace"`
 	DispatcherDatabaseURL       string                                   `mapstructure:"dispatcher_database_url"`
 	PodName                     string                                   `mapstructure:"pod_name"`
@@ -118,6 +116,7 @@ func loadConfig() (config, error) {
 func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{
 		{"sandbox_namespace", c.Namespace},
+		{"policy_namespace", c.PolicyNamespace},
 		{"dispatcher_database_url", c.DispatcherDatabaseURL},
 		{"pod_ip", c.PodIP},
 		{"runner_token_file", c.RunnerTokenFile},
@@ -159,9 +158,6 @@ func (c *config) validate() error {
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
 		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
-	}
-	if c.Delegation != nil && c.Delegation.IdentityCallers && c.PolicyNamespace == "" {
-		return errors.New("delegation.identity_callers requires policy_namespace")
 	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return errors.New("proxy_port must be between 1 and 65535")

@@ -171,11 +171,8 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		if err != nil {
 			return err
 		}
-		var identities *resolver.Identities
-		if c.PolicyNamespace != "" {
-			identities = &resolver.Identities{PolicyNamespace: c.PolicyNamespace}
-		}
-		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, identities)
+		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {
 			return err
 		}
@@ -232,7 +229,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
 	historyMethods := api.Methods(readerAuth)
 	var identityReader auth.IdentityUIDReader
-	if c.PolicyNamespace != "" && (c.Delegation != nil || c.Ingress.SamplerIdentityCallers) {
+	if c.Delegation != nil || c.Ingress.SamplerIdentityCallers {
 		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
 			return err
 		}

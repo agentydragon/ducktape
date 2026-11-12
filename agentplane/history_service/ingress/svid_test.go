@@ -31,7 +31,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	first := workloadauthtesting.NewWorkload(t, kube, namespace, "first-writer")
 	other := workloadauthtesting.NewWorkload(t, kube, namespace, "other-writer")
 	ca := transporttesting.NewCA(t)
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, nil)
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}

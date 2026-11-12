@@ -31,7 +31,8 @@ import (
 
 const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:never-print-this@queue/dispatcher"
 
-const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notifications]
+const requiredFile = `policy_namespace: agentplane
+dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
@@ -75,6 +76,20 @@ func required(t *testing.T, extra ...string) []string {
 		settingPrefix + "POD_IP=10.0.0.5",
 		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile), databaseURLEnv,
 	}, extra...)
+}
+
+func TestPolicyNamespaceIsRequired(t *testing.T) {
+	for name, contents := range map[string]string{
+		"missing": strings.Replace(requiredFile, "policy_namespace: agentplane\n", "", 1),
+		"empty":   strings.Replace(requiredFile, "policy_namespace: agentplane", `policy_namespace: ""`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, contents)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("accepted a missing policy_namespace")
+			}
+		})
+	}
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
@@ -318,8 +333,6 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n")},
 		{settingPrefix + "SANDBOX_CONTROLLER_ACCOUNT=not-an-account"},
 		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"delegation: {actor: agentplane/actions}\n")},
-		// Asserting Identities needs the policy namespace they are read in.
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"delegation: {actor: agentplane/actions, identity_callers: true, methods: [x]}\n")},
 	} {
 		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, bad...))
 		if err == nil {

@@ -22,6 +22,7 @@ reader_accounts:
   - {namespace: test-agentplane, name: test-app}
   - test-agentplane/test-notifications
 token_audience: test-history-service
+policy_namespace: test-policies
 ingress:
   token_audience: test-runner-ingress
   writer_namespaces: [test-agentplane]
@@ -68,14 +69,12 @@ func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 		requiredFile + "delegation: {actor: test-agentplane/actions}\n",
 		requiredFile + "delegation: {actor: test-agentplane/actions, caller_namespaces: [], methods: [x]}\n",
 		requiredFile + "delegation: {actor: malformed, caller_namespaces: [test-agentplane], methods: [x]}\n",
-		// Asserting Identities needs the policy namespace they are read in.
-		requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n",
 	} {
 		if _, err := loadTestConfig(t, incomplete); err == nil {
 			t.Fatalf("accepted incomplete or malformed delegation setting: %s", incomplete)
 		}
 	}
-	identityOnly, err := loadTestConfig(t, requiredFile+"policy_namespace: test-policies\ndelegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n")
+	identityOnly, err := loadTestConfig(t, requiredFile+"delegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n")
 	if err != nil || !identityOnly.Delegation.IdentityCallers || len(identityOnly.Delegation.CallerNamespaces) != 0 {
 		t.Fatalf("an Identity-only delegation grant: %+v %v", identityOnly.Delegation, err)
 	}
@@ -121,7 +120,7 @@ ingress:
 }
 
 func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
-	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\npolicy_namespace: test-policies\n", settingPrefix+"FOLD_CONCURRENCY=7")
+	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
 	if err != nil {
 		t.Fatal(err)
 	}
