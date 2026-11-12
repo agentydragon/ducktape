@@ -39,11 +39,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":simple_servers",
-        "//devinfra/bazel:subprocess",
         "//mcp_infra/exec/docker:types",
-        "//mcp_infra/testing:stdio_app",
         "@pypi//aiodocker",
-        "@pypi//fastmcp_slim",
         "@pypi//pytest",
     ],
 )
@@ -68,17 +65,6 @@ py_library(
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "stdio_app",
-    testonly = True,
-    srcs = ["stdio_app.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":simple_servers",
-        "@pypi//anyio",
     ],
 )
 
