@@ -162,8 +162,10 @@ three-segment workload URIs:
 - The first binding the controller sees for an ID becomes `status.acceptedBinding`. When
   `spec.binding` later differs from it, cleared or replaced, a fresh ID is minted; nothing else
   rotates an ID.
-- A record with a controller owner or a binding gets one Secret per ID, `svid-<name>-<id>`. A
-  standing record, with neither, keeps `svid-<name>`.
+- A new record with a controller owner or a binding gets `svid-<name>-<id>`. An initially
+  ownerless, unbound record gets `svid-<name>` so a standing Deployment can name it. The Secret name
+  stays fixed for that credential ID, including its first Pod binding. A later ID rotation always
+  gets `svid-<name>-<id>`, including when an accepted binding is cleared.
 - `Ready` turns True once the Certificate for the current ID is Ready and its Secret holds the key
   pair. Superseded generations' Certificates are then deleted, and their Secrets once those
   Certificates are gone. A deleted record's Secrets go once the garbage collector removes its

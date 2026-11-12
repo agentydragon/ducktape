@@ -143,11 +143,14 @@ func condition(record *workloadapi.WorkloadCredential, result outcome) metav1.Co
 	}
 }
 
-// secretName is per credential ID for an owned incarnation, so a later incarnation can never mount
-// an earlier one's key. A standing workload's ID never changes, and a Flux-applied Deployment must
-// name its Secret, so its name is stable.
+// The Secret belongs to the credential ID, including while its first Pod binding is accepted.
+// An initially ownerless, unbound record gets the stable name a standing Deployment needs;
+// rotating its ID later always selects a fresh name, even when the binding was cleared.
 func secretName(record *workloadapi.WorkloadCredential, id string) string {
-	if metav1.GetControllerOfNoCopy(record) == nil && record.Spec.Binding == nil {
+	if id == record.Status.CredentialID && record.Status.SecretName != "" {
+		return record.Status.SecretName
+	}
+	if record.Status.CredentialID == "" && metav1.GetControllerOfNoCopy(record) == nil && record.Spec.Binding == nil {
 		return "svid-" + record.Name
 	}
 	return "svid-" + record.Name + "-" + id
