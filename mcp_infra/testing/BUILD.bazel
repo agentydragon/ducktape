@@ -38,7 +38,6 @@ py_library(
     srcs = ["fixtures.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":simple_servers",
         "//mcp_infra/exec/docker:types",
         "@pypi//aiodocker",
         "@pypi//pytest",
@@ -53,18 +52,6 @@ py_library(
     deps = [
         "//util/testing:asgi",
         "@pypi//fastmcp_slim",
-    ],
-)
-
-py_library(
-    name = "simple_servers",
-    testonly = True,
-    srcs = ["simple_servers.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
     ],
 )
 
