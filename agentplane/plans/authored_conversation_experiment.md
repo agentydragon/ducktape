@@ -1,8 +1,9 @@
 # Authored conversation CLI experiment
 
 Specification for a bounded experiment. Prototype source is under
-[`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md); live paired evaluation
-remains open. The
+[`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md). The first bounded Qwen
+paired pass and failed-case repeats are recorded in the
+[findings](../debug/2026_11_12_authored_conversation_cli.md). The
 [task DAG](task_dag.md#agent_authored_conversations_experiment--try-an-authored-conversation-in-a-cli)
 owns its scheduling. The experiment informs the broader conversation decision without choosing
 Agentplane's eventual history architecture.
@@ -33,7 +34,7 @@ thread is a separate object; using the word does not change that existing contra
 
 One Python CLI process under `agentplane/x/authored_conversation/`, owning sampling, context and
 tool execution. Use Qwen on the operator's Ollama through LiteLLM's OpenAI-compatible
-`/v1/responses` endpoint (also reported working with Codex for Qwen). Configure the base URL, model route and credential source; discover
+`/v1/responses` endpoint. Configure the base URL, model route and credential source; discover
 the available route rather than pinning an assumed model tag. A direct Ollama connection is optional,
 not a second required adapter. Reuse existing client/tool helpers where they fit this wire contract.
 
