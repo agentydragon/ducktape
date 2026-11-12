@@ -38,6 +38,7 @@ _ROUTES = {
     # proxmox-proxy nginx -> atlas:8006.
     "proxmox": "atlas.allegedly.works",
     "goldilocks-dashboard": "goldilocks.allegedly.works",
+    "alertmanager": "alertmanager.allegedly.works",
     # OpenWebRX+.
     "sdr": "sdr.allegedly.works",
     # The ADS-B ultrafeeder.
