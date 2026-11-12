@@ -50,6 +50,15 @@ neighbor.push('later');\n\
 const second = wrap(function () { return neighbor[1]; }), after = 2;\n\
 console.log(first.invoke(), second.invoke(), neighbor.length);\n\
 export { first, second, neighbor };\n";
+const SOURCE_THREE_WRAPPERS: &str = "import { wrap } from './peer.js';\n\
+const neighbor = ['initial'];\n\
+const first = wrap(function () { return neighbor?.length; });\n\
+neighbor.push('later');\n\
+const second = wrap(function () { return neighbor?.length; });\n\
+neighbor.push('latest');\n\
+const third = wrap(function () { return neighbor?.length; });\n\
+console.log(first.invoke(), second.invoke(), third.invoke(), neighbor.length);\n\
+export { first, second, third, neighbor };\n";
 const SOURCE_INLINE_FACTORY: &str = "import { wrap } from './peer.js';\n\
 const neighbor = ['initial'];\n\
 const first = wrap(function () { return neighbor[0]; });\n\
@@ -150,6 +159,53 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
             {"defining_chunk": "static/app", "input_index": 1},
         ]),
         "prepared split owners must retain both exact author inputs: {report:#}"
+    );
+}
+
+#[test]
+fn separate_wrappers_with_deferred_callbacks_are_emitted() {
+    let modules = vec![
+        logical_module(
+            "callbacks/first",
+            &[Member::new("first").with_initializer_purity()],
+        ),
+        logical_module(
+            "callbacks/second",
+            &[Member::new("second").with_initializer_purity()],
+        ),
+        logical_module(
+            "callbacks/third",
+            &[Member::new("third").with_initializer_purity()],
+        ),
+    ];
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["wrap"])
+        .with_retained_callback_factory("wrap", 1, &[0])
+        .build()];
+    let opts = || {
+        FixtureOpts::new(SOURCE_THREE_WRAPPERS, modules.clone())
+            .with_extra_chunks(EXTRA_CHUNKS)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&purity)
+    };
+    let inputs = ["first", "second", "third"]
+        .map(|binding| input(SOURCE_THREE_WRAPPERS, binding))
+        .to_vec();
+    let fixture = run_fixture(opts().with_initializer_call_effect_inputs("static/app", inputs));
+    for binding in ["first", "second", "third"] {
+        assert!(
+            fixture
+                .out_root
+                .join(format!("static/app/modules/callbacks/{binding}.js"))
+                .exists(),
+            "each selected wrapper must emit into its own logical module"
+        );
+    }
+    assert_preserved_entry_output(&fixture, "3 3 3 3\n");
+    assert_eq!(
+        fixture.translation_validation()["accepts"],
+        true,
+        "the emitted split must pass translation validation"
     );
 }
 
