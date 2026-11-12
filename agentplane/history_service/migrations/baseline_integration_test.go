@@ -2,8 +2,12 @@ package migrations
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
+	"testing/fstest"
+
+	"github.com/pressly/goose/v3"
 )
 
 func baselineDB(t *testing.T) *sql.DB {
@@ -24,6 +28,27 @@ func upBaseline(t *testing.T, db *sql.DB) error {
 	}
 	_, err = provider.Up(t.Context())
 	return err
+}
+
+func assertV14GooseCanReadV15Ledger(t *testing.T, db *sql.DB, firstVersion, lastVersion int) {
+	t.Helper()
+	migrations := make(fstest.MapFS, lastVersion-firstVersion+1)
+	for version := firstVersion; version <= lastVersion; version++ {
+		name := fmt.Sprintf("%05d_previous.sql", version)
+		migrations[name] = &fstest.MapFile{Data: []byte("-- +goose Up\nSELECT 1;\n-- +goose Down\nSELECT 1;\n")}
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations,
+		goose.WithTableName("history_service_goose_version"), goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := provider.HasPending(t.Context())
+	if err != nil {
+		t.Fatalf("v14 Goose provider reading v15 ledger: %v", err)
+	}
+	if pending {
+		t.Fatal("v14 Goose provider found pending migrations on v15 ledger")
+	}
 }
 
 func versionCount(t *testing.T, db *sql.DB, version int) int {
@@ -196,6 +221,7 @@ func TestBaselineAdoptsVersion14AndPreservesHistory(t *testing.T) {
 			t.Errorf("applied Goose version %d records = %d, want 1", version, got)
 		}
 	}
+	assertV14GooseCanReadV15Ledger(t, db, 1, 14)
 	if got := commandBridgeCount(t, db); got != 0 {
 		t.Errorf("temporary command bridge objects = %d", got)
 	}
@@ -257,6 +283,7 @@ func TestBaselineAdoptsPriorV11FreshSchemaHistory(t *testing.T) {
 			t.Errorf("unexpected legacy Goose version %d records = %d", version, got)
 		}
 	}
+	assertV14GooseCanReadV15Ledger(t, db, 11, 14)
 }
 
 func TestBaselineRejectsOlderDeployedVersionBeforeChangingData(t *testing.T) {
