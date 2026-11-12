@@ -36,10 +36,6 @@ threshold-tolerated assets.
 - Bound BuildBuddy queries, downloads, image decoding, rendering, uploads, and
   GitHub comment size.
 - Add per-pull-request workflow concurrency and cancel older runs.
-- Recheck the pull request head immediately before replacing its sticky
-  comment.
-- Preserve leaf-first upload ordering as asset pages are added, keeping the
-  commit index last.
 - Add bounded retries for BuildBuddy, S3, and GitHub operations while retaining
   the existing sticky-comment and failing-check reporting.
 - Emit enough structured workflow diagnostics to distinguish missing producer
