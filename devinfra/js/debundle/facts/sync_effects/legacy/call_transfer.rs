@@ -233,7 +233,7 @@ impl Executor<'_, '_> {
                 unreachable!()
             };
             let values = self.evaluate(receiver, env, captures);
-            if !self.private_own_field_read(receiver, property.as_deref(), call.span, &values) {
+            if !self.private_own_field_read(receiver, property.as_deref(), call, &values) {
                 self.publish_accessor_receivers(&values, call.span);
             }
             if values.iter().any(|value| {

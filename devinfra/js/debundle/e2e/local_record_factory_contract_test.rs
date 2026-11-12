@@ -202,6 +202,62 @@ console.log(searches[0](), second.search());
     );
 }
 
+#[test]
+fn a_single_lexical_read_inside_a_function_can_run_after_its_field_exposes_this() {
+    let source = r#"class Holder {
+  constructor(record) { this.record = record; }
+  get search() { globalThis.retained = this; return () => this; }
+  search = () => this;
+}
+function create(record) { return new Holder(record); }
+const first = create({ callback: () => 1 });
+function read() { return first.search; }
+const alias = read()();
+delete alias.search;
+const searches = [read()];
+const second = create({ callback: () => 2 });
+console.log(searches[0]() === alias, globalThis.retained === alias);
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("Holder"),
+                    Member::new("create").with_retained_record_factory(),
+                    Member::new("first"),
+                    Member::new("read"),
+                    Member::new("alias"),
+                    Member::new("searches"),
+                    Member::new("second"),
+                ],
+                &["delete alias.search"],
+            )],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "true true\n");
+    let graph = fixture.dependency_graph();
+    let second = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "second")
+        })
+        .expect("second source unit");
+    let execution = second
+        .synchronous_execution
+        .as_ref()
+        .expect("execution report");
+    assert!(
+        !execution.local_record_factory_rejections.is_empty(),
+        "{execution:#?}"
+    );
+}
+
 const FRESH_RECORD: &str = r#"{
   execute: () => later,
   nested: { callback: function () { return later; }, enabled: true },

@@ -11182,6 +11182,29 @@ impl ExecutionIndex {
             })
     }
 
+    /// This member operation belongs to a direct module-level initializer,
+    /// whose expression is evaluated at most once. A lexical use inside a
+    /// callable can execute again after its first result exposes the instance.
+    pub(super) fn single_eager_initializer_read(&self, call: &Call) -> bool {
+        call.caller.is_none()
+            && self.top_calls[call.owner.0].iter().any(|indexed| {
+                indexed.kind == CallKind::LocalMemberRead
+                    && indexed.span == call.span
+                    && indexed.caller.is_none()
+            })
+            && self
+                .binding_declaration_writes
+                .values()
+                .flatten()
+                .any(|write| {
+                    write.owner == call.owner
+                        && write.direct_top_level
+                        && write
+                            .initializer_span
+                            .is_some_and(|span| span.lo <= call.span.lo && call.span.hi <= span.hi)
+                })
+    }
+
     pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
         self.original_statement_spans[owner.0]
     }

@@ -3699,7 +3699,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &self,
         receiver: &ValueExpr,
         property: Option<&str>,
-        span: Span,
+        call: &Call,
         values: &Values,
     ) -> bool {
         let (ValueExpr::Binding(binding), Some(property)) = (receiver, property) else {
@@ -3711,7 +3711,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .classes
             .private_fresh_instance_bindings
             .contains(binding)
-            || !self.inputs.index.sole_binding_reference_at(binding, span)
+            || !self
+                .inputs
+                .index
+                .sole_binding_reference_at(binding, call.span)
+            || !self.inputs.index.single_eager_initializer_read(call)
             || !self.initialized_local_binding(binding)
         {
             return false;
