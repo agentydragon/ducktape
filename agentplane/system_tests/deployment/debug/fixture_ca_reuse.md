@@ -118,3 +118,52 @@ on source `9189044f28c05244ce64daabaa5ab9d8ff05ec95`. That is one selected
 post-fix comparison, not a recurrence-rate estimate. If a later readiness
 failure appears, compare its captured current and previous Runtime logs and
 Pod UID with the public certificate identities before assigning it this cause.
+
+## Dispatcher failure on November 7
+
+The [devel dispatcher failure `cfecc04e`](https://app.buildbuddy.io/invocation/cfecc04e-ac6f-571c-8421-660fdce441ec)
+at `b6031267` preceded #15193. Its failed `test_dispatcher` action retained
+`test.outputs/certificates/resources.yaml` and `cert-manager.log`. These establish
+a certificate-generation mismatch more precisely than the later reliability
+report could from the gateway startup log alone:
+
+| CertificateRequest status                     | Public certificate SHA256                                          | Serial                                     |
+| --------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------ |
+| `cert-manager/test-runner-root-2` certificate | `371f4150113101ff2d45f09c3a22aec81bdbdc674054e085431870a691374ab9` | `209CA1ABC9D5BB4A6C76F12E2A00A6725A36CD08` |
+| `systest/agentplane-runner-ca-1` signing CA   | `e8baa3931a442f212da172e4ca0c571c1461b1b7a057db01ae6fb9722da29b8b` | `1840A0ECF9E4FB28E181B4FF9B1E2F9795F2AD53` |
+| `systest/agentplane-runner-ca-1` intermediate | `be3a01010ac57345c72d80d396d19a33f30272ac07ccf92628e09d9ffc3e50e6` | `24592E90538F6F02B39DF4D1EF2B7CEB9D87EBF8` |
+| `systest/agentplane-runner-gateway-1` leaf    | `f3442bd44f6aa9cb12bfacce8bae1df17f5aeb3393b574a8f6b9e76ce220a3d3` | `1152D3B984F1AC57A9E6B4DEA702AAA23678D1EC` |
+
+At the gateway crash time, `openssl verify -attime 1794039179` on that retained
+leaf and intermediate fails with the current root (`error 20 at 1 depth lookup`)
+and succeeds with the intermediate request's earlier signing root. The gateway
+logged `verify local certificate chain` with unknown authority and ECDSA
+verification failure; its Deployment never became Available. The request's
+gateway certificate includes the same intermediate fingerprint. This proves
+that the _recorded issuance chain_ could not verify against the recorded current
+root. The live mounted Secret and trust ConfigMap bytes were not retained, so
+their exact contents remain unproven.
+
+The cert-manager log puts `test-runner-root-1` Ready at 08:07:25.829 UTC,
+`agentplane-runner-ca-1` Ready at 08:07:25.861, then requests root revision 2
+at 08:07:25.981 and marks it Ready at 08:07:26.273. The final root Certificate
+reports revision 2, while its first request was garbage-collected. An event
+also records a prior root issuance at 07:38, and cert-manager reports a UID
+precondition conflict while processing `test-runner-root-2`. The immediate
+failure mechanism is that the root changed after the intermediate was signed.
+The retained artifacts do not establish why the root was issued twice or
+whether the intermediate used that run's revision 1 or an older cached root.
+
+#15193 now deletes every retained fixture CA Certificate, its owned requests and
+declared Secret before certifying a reusable baseline. Its uncached two-cycle
+control failed on a mismatched chain and the repaired two-cycle test passed;
+that is a controlled repair of fixture-generation reuse, not a direct replay
+of this dispatcher action's root-reissue ordering. A later physical
+`test_pki_lifecycle` execution in [invocation `f7eb60f9`](https://app.buildbuddy.io/invocation/f7eb60f9-84ca-4da2-8f49-826aa2f9f305)
+passed with distinct public Secret identities across two cycles. A November
+9–12 target-history query for `test_dispatcher` returned nine
+`FAILED_TO_BUILD` entries and no failed test result; inspected recent pass
+rows were remote cache hits, including `c9dfa4d6`. Those rows cannot measure
+fresh dispatcher exposure or establish that this failure cannot recur. A new
+failure should compare the captured live Secret chain and trust bundle with
+these request identities before changing issuance or readiness behavior.
