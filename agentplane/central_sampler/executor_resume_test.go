@@ -102,7 +102,7 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				wire, err := json.Marshal(conversation.Archive)
+				wire, err := json.Marshal(conversation.Transcript)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -172,7 +172,7 @@ func TestExecutorDoesNotRebindWithoutMatchingSandboxEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wire, err := json.Marshal(conversation.Archive)
+			wire, err := json.Marshal(conversation.Transcript)
 			if err != nil {
 				t.Fatal(err)
 			}

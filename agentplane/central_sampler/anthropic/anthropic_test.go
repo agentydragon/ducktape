@@ -276,7 +276,7 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 	thinking := json.RawMessage(`{"type":"thinking","thinking":"keep this signed prefix","signature":"sig_fixture","unknown_block_field":{"keep":true}}`)
 	message := json.RawMessage(`{"id":"msg_signed","type":"message","role":"assistant","content":[` + string(thinking) + `],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":5,"unknown_usage":17},"provider_unknown":{"keep":"yes"}}`)
 	effort := "high"
-	context := &Context{Messages: []json.RawMessage{message}, PendingEffort: &effort}
+	context := &Context{messages: []json.RawMessage{message}, PendingEffort: &effort}
 	wire, err := json.Marshal(context)
 	if err != nil {
 		t.Fatal(err)
@@ -291,18 +291,18 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "new turn"}}); err != nil {
 		t.Fatal(err)
 	}
-	if restored.PendingEffort != nil || len(restored.Messages) != 3 {
+	if restored.PendingEffort != nil || len(restored.messages) != 3 {
 		t.Fatalf("restoration did not activate after the user message: %+v", restored)
 	}
 	var prefix map[string]json.RawMessage
-	if err := json.Unmarshal(restored.Messages[0], &prefix); err != nil {
+	if err := json.Unmarshal(restored.messages[0], &prefix); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(prefix["content"], []byte(`"signature":"sig_fixture"`)) ||
 		!bytes.Contains(prefix["content"], []byte(`"unknown_block_field":{"keep":true}`)) ||
-		!bytes.Contains(restored.Messages[0], []byte(`"unknown_usage":17`)) ||
-		!bytes.Contains(restored.Messages[0], []byte(`"provider_unknown":{"keep":"yes"}`)) {
-		t.Fatalf("signed prefix or provider metadata changed: %s", restored.Messages[0])
+		!bytes.Contains(restored.messages[0], []byte(`"unknown_usage":17`)) ||
+		!bytes.Contains(restored.messages[0], []byte(`"provider_unknown":{"keep":"yes"}`)) {
+		t.Fatalf("signed prefix or provider metadata changed: %s", restored.messages[0])
 	}
 	var control struct {
 		Role         string `json:"role"`
@@ -311,7 +311,7 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 			Effort string `json:"effort"`
 		} `json:"output_config"`
 	}
-	if err := json.Unmarshal(restored.Messages[2], &control); err != nil {
+	if err := json.Unmarshal(restored.messages[2], &control); err != nil {
 		t.Fatal(err)
 	}
 	if control.Role != "system" || len(control.Content) != 0 || control.OutputConfig.Effort != "high" {
@@ -340,30 +340,6 @@ func TestAnthropicContextRejectsUnsupportedAndDuplicateNativeCalls(t *testing.T)
 	}
 	if err := json.Unmarshal([]byte(`{"messages":[],"unknown_context_field":true}`), &Context{}); err == nil {
 		t.Fatal("unknown Anthropic context state was accepted")
-	}
-}
-
-func TestAnthropicExecutionStateAppendsOnlyChangedSnapshots(t *testing.T) {
-	context := &Context{}
-	state := &protocol.ExecutionState{Cells: []protocol.ActiveCell{{ID: "cell-1", Status: protocol.CellLive}}}
-	for range 2 {
-		if err := context.AppendExecutionState(state); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(context.Messages) != 1 {
-		t.Fatalf("identical execution snapshots appended %d messages", len(context.Messages))
-	}
-	state.Cells[0].Status = protocol.CellCompleted
-	if err := context.AppendExecutionState(state); err != nil {
-		t.Fatal(err)
-	}
-	state.Cells = nil
-	if err := context.AppendExecutionState(state); err != nil {
-		t.Fatal(err)
-	}
-	if len(context.Messages) != 3 {
-		t.Fatalf("changed and cleared execution snapshots produced %d messages, want 3", len(context.Messages))
 	}
 }
 

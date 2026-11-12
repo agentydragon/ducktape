@@ -108,7 +108,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 			}
 			continue
 		}
-		call, err := conversation.Archive.FindCall(notification.callID)
+		call, err := conversation.Transcript.FindCall(notification.callID)
 		if err != nil {
 			return false, err
 		}

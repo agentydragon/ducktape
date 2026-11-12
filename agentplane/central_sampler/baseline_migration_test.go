@@ -51,22 +51,30 @@ func TestFreshSamplerMigrationsRemoveRedundantEventIndex(t *testing.T) {
 }
 
 func TestSamplerVersion10AdoptionRemovesRedundantEventIndex(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	store := newInlineTestStore(t)
+	const conversationID = "00000000-0000-0000-0000-000000000001"
+	const sessionID = "baseline-session"
+	migrationExec(t, store.DB(), `INSERT INTO sampler_conversation(id,api) VALUES($1,'responses')`, conversationID)
+	migrationExec(t, store.DB(), `INSERT INTO sampler_session(id,conversation_id,account_uid,configuration,model,effort,source_id)
+		VALUES($1,$2,'account','','model','high','source')`, sessionID, conversationID)
 	wantEntry := []byte("version-10 event retained by adoption")
 	const sequence = 1000000
 	migrationExec(t, store.DB(), `INSERT INTO sampler_event(session_id, sequence, entry) VALUES($1, $2, $3)`,
-		session.ID, sequence, wantEntry)
+		sessionID, sequence, wantEntry)
 	migrationExec(t, store.DB(), `INSERT INTO sampler_export_checkpoint(session_id, destination, cursor)
-		VALUES($1, 'retained-destination', 73)`, session.ID)
+		VALUES($1, 'retained-destination', 73)`, sessionID)
 
-	// Reconstruct the validated version-10 history on this clone. The native tables and rows remain
-	// in place, so Migrate must take baseline 11's adoption path before applying migration 12.
+	// Exercise the landed version-10 adoption and index cleanup independently
+	// of version 13's intentional staging reset.
 	migrationExec(t, store.DB(), `CREATE INDEX sampler_event_sequence_idx ON sampler_event(session_id, sequence)`)
 	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id >= 11`)
 	migrationExec(t, store.DB(), `INSERT INTO central_sampler_goose_version(version_id, is_applied)
 		VALUES (8, true), (9, true), (10, true)`)
-	if err := Migrate(t.Context(), store.DB()); err != nil {
+	provider, err := schema.Provider(store.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 12); err != nil {
 		t.Fatalf("Migrate version-10 database: %v", err)
 	}
 
@@ -84,14 +92,14 @@ func TestSamplerVersion10AdoptionRemovesRedundantEventIndex(t *testing.T) {
 
 	var gotEntry []byte
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT entry FROM sampler_event
-		WHERE session_id=$1 AND sequence=$2`, session.ID, sequence).Scan(&gotEntry); err != nil {
+		WHERE session_id=$1 AND sequence=$2`, sessionID, sequence).Scan(&gotEntry); err != nil {
 		t.Fatal("read retained version-10 event:", err)
 	}
 	if !bytes.Equal(gotEntry, wantEntry) {
 		t.Fatalf("adopted event entry = %q, want %q", gotEntry, wantEntry)
 	}
 	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_export_checkpoint
-		WHERE session_id=$1 AND destination='retained-destination' AND cursor=73`, session.ID); got != 1 {
+		WHERE session_id=$1 AND destination='retained-destination' AND cursor=73`, sessionID); got != 1 {
 		t.Fatalf("retained export checkpoint rows = %d, want 1", got)
 	}
 }

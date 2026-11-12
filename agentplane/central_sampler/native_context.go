@@ -42,9 +42,5 @@ func decodeNativeRecords(api protocol.APIStyle, records []json.RawMessage) (prot
 }
 
 func cloneNativeContext(state protocol.Context) (protocol.Context, error) {
-	wire, err := json.Marshal(state)
-	if err != nil {
-		return nil, err
-	}
-	return decodeNativeContext(state.API(), wire)
+	return state.Clone(), nil
 }

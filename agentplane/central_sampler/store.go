@@ -102,23 +102,28 @@ func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 }
 
 func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	rows, err := tx.QueryContext(ctx, `SELECT record FROM sampler_conversation_item WHERE conversation_id=$1 ORDER BY ordinal`, conversation.ID)
+	store := newContentStore(ctx, tx)
+	var err error
+	conversation.Transcript, err = store.loadNativeContext(conversation.API, conversation.transcriptContextID, conversation.transcriptControl)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	var records []json.RawMessage
-	for rows.Next() {
-		var record json.RawMessage
-		if err := rows.Scan(&record); err != nil {
+	if len(conversation.activeControl) > 0 {
+		conversation.ActiveContext, err = store.loadNativeContext(conversation.API, conversation.activeContextID, conversation.activeControl)
+	}
+	if err == nil {
+		conversation.storedContexts = map[protocol.Context]contextCheckpoint{conversation.Transcript: {Head: conversation.transcriptContextID, Count: conversation.Transcript.RecordCount()}}
+		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
+		if err := conversation.restoreExecutionSnapshot(conversation.Transcript, conversation.transcriptControl); err != nil {
 			return err
 		}
-		records = append(records, record)
+		if conversation.ActiveContext != nil {
+			conversation.storedContexts[conversation.ActiveContext] = contextCheckpoint{Head: conversation.activeContextID, Count: conversation.ActiveContext.RecordCount()}
+			if err := conversation.restoreExecutionSnapshot(conversation.ActiveContext, conversation.activeControl); err != nil {
+				return err
+			}
+		}
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	conversation.Archive, err = decodeNativeRecords(conversation.API, records)
 	return err
 }
 
@@ -158,19 +163,22 @@ func fenceOwner(ctx context.Context, tx *sql.Tx, owner Owner) error {
 
 func scanConversation(row rowScanner) (*Conversation, error) {
 	var (
-		conversation  Conversation
-		owner         sql.NullString
-		lease         sql.NullTime
-		pending       []byte
-		executor      sql.NullString
-		contextItems  []byte
-		instructions  sql.NullString
-		contextTokens sql.NullInt64
-		shell         sql.NullString
-		environment   []byte
+		conversation      Conversation
+		owner             sql.NullString
+		lease             sql.NullTime
+		pending           []byte
+		executor          sql.NullString
+		transcriptID      sql.NullString
+		activeID          sql.NullString
+		transcriptControl []byte
+		activeControl     []byte
+		instructions      sql.NullString
+		contextTokens     sql.NullInt64
+		shell             sql.NullString
+		environment       []byte
 	)
 	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
-		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
+		&conversation.Stopped, &executor, &transcriptID, &activeID, &transcriptControl, &activeControl, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
 		return nil, err
 	}
 	if shell.Valid {
@@ -202,17 +210,15 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	if conversation.Pending, err = decodePendingIntent(pending); err != nil {
 		return nil, err
 	}
-	if len(contextItems) != 0 && !bytes.Equal(contextItems, []byte("null")) {
-		conversation.ActiveContext, err = decodeNativeContext(conversation.API, contextItems)
-		if err != nil {
-			return nil, err
-		}
-	}
+	conversation.transcriptContextID = transcriptID.String
+	conversation.activeContextID = activeID.String
+	conversation.transcriptControl = transcriptControl
+	conversation.activeControl = activeControl
 	return &conversation, nil
 }
 
 const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
-	executor_session, context, instructions, context_tokens, executor_shell, environment_context, api`
+	executor_session, transcript_context_id, active_context_id, transcript_control, active_control, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	row, err := scanConversation(tx.QueryRowContext(ctx,
@@ -329,6 +335,10 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	if err != nil {
 		return nil, err
 	}
+	wire, err = encodeStoredEvent(wire)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_event(session_id,sequence,entry) VALUES($1,$2,$3)`, session.ID, session.Cursor, wire); err != nil {
 		return nil, err
 	}
@@ -436,7 +446,7 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			instructions = sessioninstructions.Compose(*platformInstructions, request.GetSessionId(), instructions)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
-			executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`,
+			executor_session,transcript_control,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,'{}',$2,NULL,$3)`,
 			conversationID, instructions, api); err != nil {
 			return err
 		}
@@ -723,7 +733,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		settled := len(intents) > 0 || len(abandonedCells) > 0 || len(abandonedProcesses) > 0
 		conversation.Pending = nil
 
-		calls, err := conversation.Archive.PendingCalls()
+		calls, err := conversation.Transcript.PendingCalls()
 		if err != nil {
 			return err
 		}
@@ -752,7 +762,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			}
 			changed = true
 		}
-		remaining, err := conversation.Archive.PendingCalls()
+		remaining, err := conversation.Transcript.PendingCalls()
 		if err != nil {
 			return err
 		}
@@ -969,7 +979,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			if len(unresolved) != 1 || unresolved[0].kind != IntentSampling || liveCell || liveProcess {
 				return protocol.ErrPrecondition
 			}
-			calls, err := conversation.Archive.PendingCalls()
+			calls, err := conversation.Transcript.PendingCalls()
 			if err != nil {
 				return err
 			}
@@ -990,7 +1000,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
 		}
 
-		calls, err := conversation.Archive.PendingCalls()
+		calls, err := conversation.Transcript.PendingCalls()
 		if err != nil {
 			return err
 		}
@@ -1200,7 +1210,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			admission = &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(entryBytes, admission); err != nil {
+			if err := decodeStoredEvent(entryBytes, admission); err != nil {
 				return err
 			}
 			return notifyWork(ctx, tx)
@@ -1286,7 +1296,7 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		return nil, err
 	}
 	entry := &eventlogpb.EventEntry{}
-	if err := proto.Unmarshal(wire, entry); err != nil {
+	if err := decodeStoredEvent(wire, entry); err != nil {
 		return nil, err
 	}
 	response := &samplerpb.GetCommandResponse{Admission: entry, Outcome: samplerpb.CommandOutcome(outcome)}
@@ -1312,7 +1322,7 @@ func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) 
 			return nil, err
 		}
 		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
+		if err := decodeStoredEvent(wire, entry); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -1503,19 +1513,19 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 		return "", protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	archive, err := newNativeContext(api)
+	transcript, err := newNativeContext(api)
 	if err != nil {
 		return "", err
 	}
-	if err := archive.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
+	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
 		return "", err
 	}
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
-   executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
+   executor_session,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err
 		}
-		return appendConversationItems(ctx, tx, &Conversation{ID: id, API: api, Archive: archive})
+		return updateConversation(ctx, tx, &Conversation{ID: id, API: api, Transcript: transcript})
 	})
 	return id, err
 }
@@ -1560,16 +1570,27 @@ func (s *Store) pgError(err error) error {
 }
 
 func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	if err := appendConversationItems(ctx, tx, conversation); err != nil {
+	store := newContentStore(ctx, tx)
+	transcriptID, err := store.storeConversationContext(conversation, conversation.Transcript)
+	if err != nil {
 		return err
 	}
-	var contextItems any
-	var err error
+	transcriptControl, err := conversation.contextControl(conversation.Transcript)
+	if err != nil {
+		return err
+	}
+	var activeControl any
+	var activeID string
 	if conversation.ActiveContext != nil {
-		contextItems, err = json.Marshal(conversation.ActiveContext)
+		activeID, err = store.storeConversationContext(conversation, conversation.ActiveContext)
 		if err != nil {
 			return err
 		}
+		control, err := conversation.contextControl(conversation.ActiveContext)
+		if err != nil {
+			return err
+		}
+		activeControl = []byte(control)
 	}
 	pending, err := marshal(conversation.Pending)
 	if err != nil {
@@ -1584,30 +1605,11 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
-		context=$5,context_tokens=$6,executor_shell=$7,environment_context=$8 WHERE id=$1`, conversation.ID,
-		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), contextItems, contextTokens,
+		transcript_context_id=$5,active_context_id=$6,transcript_control=$7,active_control=$8,
+		context_tokens=$9,executor_shell=$10,environment_context=$11 WHERE id=$1`, conversation.ID,
+		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), nullableContextID(transcriptID), nullableContextID(activeID), []byte(transcriptControl), activeControl, contextTokens,
 		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
-}
-
-func appendConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	records, err := conversation.Archive.Records()
-	if err != nil {
-		return err
-	}
-	var stored int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(ordinal),0) FROM sampler_conversation_item WHERE conversation_id=$1`, conversation.ID).Scan(&stored); err != nil {
-		return err
-	}
-	if stored > len(records) {
-		return fmt.Errorf("conversation record store has %d records, memory has %d", stored, len(records))
-	}
-	for index := stored; index < len(records); index++ {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record) VALUES($1,$2,$3)`, conversation.ID, index+1, []byte(records[index])); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func nullableJSON(value string) any {
@@ -1617,18 +1619,15 @@ func nullableJSON(value string) any {
 	return value
 }
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (string, error) {
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, prepare requestPreparation) (string, []byte, error) {
 	kind := request.Kind
 	if !kind.valid() {
-		return "", protocol.ErrInvalid
+		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	requestWire, err := marshal(request)
-	if err != nil {
-		return "", err
-	}
+	var wire []byte
 	var conversation *Conversation
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		var err error
 		conversation, err = lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -1640,8 +1639,26 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (
 		if conversation.Pending != nil {
 			return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
 		}
+		if request.ProviderRequest != nil {
+			if prepare == nil || request.API != conversation.API {
+				return protocol.ErrInvalid
+			}
+			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+			if err != nil {
+				return err
+			}
+			request.ProviderRequest = &prepared
+			wire = rendered
+		}
+		requestWire, err := marshal(request)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
 			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+			return err
+		}
+		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
 			return err
 		}
 		conversation.Pending = &PendingIntent{ID: id, Kind: kind}
@@ -1652,9 +1669,12 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 	})
-	return id, err
+	if err != nil {
+		return "", nil, err
+	}
+	return id, wire, nil
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
@@ -1791,16 +1811,13 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context) (string, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, prepare requestPreparation) (string, []byte, error) {
 	if request.Kind != PendingIntentCompaction {
-		return "", protocol.ErrInvalid
+		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	requestWire, err := marshal(request)
-	if err != nil {
-		return "", err
-	}
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	var wire []byte
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -1828,7 +1845,25 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		if unresolved {
 			return &protocol.UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
 		}
+		if request.ProviderRequest != nil {
+			if prepare == nil || request.API != conversation.API {
+				return protocol.ErrInvalid
+			}
+			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+			if err != nil {
+				return err
+			}
+			request.ProviderRequest = &prepared
+			wire = rendered
+		}
+		requestWire, err := marshal(request)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+			return err
+		}
+		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
 			return err
 		}
 		conversation.Pending = &PendingIntent{ID: id, Kind: PendingIntentCompaction}
@@ -1839,9 +1874,12 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 	})
-	return id, err
+	if err != nil {
+		return "", nil, err
+	}
+	return id, wire, nil
 }
 
 func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context) error {
@@ -1887,6 +1925,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		}
 		conversation.EnvironmentContext = &environment
 		conversation.ActiveContext = replacement
+		conversation.activeContextID = ""
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
@@ -2190,7 +2229,7 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 	// Queue the notice against that call so it is appended after its tool result. This
 	// preserves Anthropic's tool_result ordering while keeping the notice durable in the
 	// same transaction as session retirement. With no pending call, append it directly.
-	pendingCalls, err := conversation.Archive.PendingCalls()
+	pendingCalls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return err
 	}
@@ -3705,7 +3744,7 @@ func setCommandOutcome(ctx context.Context, tx *sql.Tx, sessionID, commandID str
 }
 
 func settlePendingCalls(conversation *Conversation, message func(protocol.ToolInvocation) string) ([]map[string]any, error) {
-	calls, err := conversation.Archive.PendingCalls()
+	calls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return nil, err
 	}

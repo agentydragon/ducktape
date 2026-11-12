@@ -37,8 +37,8 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	if cut == 0 {
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "no settled prefix remains after keeping recent turns"}}
 	}
-	originalContext := &Context{Messages: cloneRecords(records), PendingEffort: cloneString(params.Context.PendingEffort)}
-	prefix := &Context{Messages: records[:cut]}
+	originalContext := &Context{messages: cloneRecords(records), PendingEffort: cloneString(params.Context.PendingEffort)}
+	prefix := &Context{messages: records[:cut]}
 	if err := prefix.CheckSettled(); err != nil {
 		return nil, err
 	}
@@ -81,8 +81,8 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit) (*Contex
 	if err := json.Unmarshal(blocks[0], &block); err != nil || blockTypeOf(block) != BlockCompaction || rawString(block, "content") == "" || rawString(block, "signature") == "" {
 		return reject("compaction must produce exactly one signed compaction block")
 	}
-	replacement := &Context{Messages: []json.RawMessage{protocol.CloneJSON(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
-	replacement.Messages = append(replacement.Messages, cloneRecords(p.suffix)...)
+	replacement := &Context{messages: []json.RawMessage{protocol.CloneJSON(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
+	replacement.messages = append(replacement.messages, cloneRecords(p.suffix)...)
 	if p.restoreEffort != nil {
 		replacement.PendingEffort = cloneString(p.restoreEffort)
 	}

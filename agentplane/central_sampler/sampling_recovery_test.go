@@ -49,7 +49,7 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 				if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 					t.Fatal(err)
 				}
-				priorIntent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+				priorIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -65,12 +65,12 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				calls, err := conversation.Archive.PendingCalls()
+				calls, err := conversation.Transcript.PendingCalls()
 				if err != nil || len(calls) != 1 {
 					t.Fatalf("prior calls=%v err=%v", calls, err)
 				}
 				call := calls[0]
-				cellIntent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &call})
+				cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &call}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -83,11 +83,11 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				beforeRecords, err := conversation.Archive.Records()
+				beforeRecords, err := conversation.Transcript.Records()
 				if err != nil {
 					t.Fatal(err)
 				}
-				intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+				intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -208,7 +208,7 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				afterRecords, err := conversation.Archive.Records()
+				afterRecords, err := conversation.Transcript.Records()
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -293,5 +293,5 @@ func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, 
 		t.Fatal(err)
 	}
 	connection := ConnectionConfig{BaseURL: server.URL, Auth: AuthConfig{Credential: "fixture-key"}}
-	return adapter.Sample(t.Context(), server.Client(), connection, responses.Request{}, []byte(`{}`), evidence, providerAttribution{}, false)
+	return adapter.Sample(t.Context(), server.Client(), connection, []byte(`{}`), evidence, providerAttribution{}, false)
 }

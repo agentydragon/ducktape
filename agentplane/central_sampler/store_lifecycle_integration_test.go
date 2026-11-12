@@ -19,7 +19,7 @@ func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `DROP TABLE sampler_conversation_item`); err != nil {
+	if _, err := store.DB().ExecContext(t.Context(), `ALTER TABLE sampler_content RENAME TO unavailable_content`); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ProtocolEvent(t.Context(), owner, "operation", eventpb.ExecutionProgress_KIND_EXECUTOR,
@@ -41,8 +41,10 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		}
 	}
 	readTranscript := func() ([][]byte, error) {
-		rows, err := store.DB().QueryContext(t.Context(), `SELECT record FROM sampler_conversation_item
-			WHERE conversation_id=$1 ORDER BY ordinal`, session.ConversationID)
+		rows, err := store.DB().QueryContext(t.Context(), `WITH RECURSIVE transcript AS (
+			SELECT c.* FROM sampler_context c JOIN sampler_conversation s ON s.transcript_context_id=c.id WHERE s.id=$1
+			UNION ALL SELECT p.* FROM sampler_context p JOIN transcript c ON p.id=c.parent_id
+		) SELECT content_id FROM transcript ORDER BY item_count`, session.ConversationID)
 		if err != nil {
 			return nil, err
 		}
@@ -68,8 +70,8 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}}}
-	intentID, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context())
+	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}})
+	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +116,7 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

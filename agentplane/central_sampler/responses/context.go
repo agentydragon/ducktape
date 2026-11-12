@@ -12,7 +12,7 @@ import (
 // Context retains only native Responses records. Request-only items and adapter markers are not
 // replayed from this context.
 type Context struct {
-	Items []Item `json:"items"`
+	items []Item
 }
 
 func (*Context) API() protocol.APIStyle { return protocol.APIStyleResponses }
@@ -53,15 +53,28 @@ func (state Context) MarshalJSON() ([]byte, error) {
 	type wire struct {
 		Items []Item `json:"items"`
 	}
-	return json.Marshal(wire{Items: state.Items})
+	return json.Marshal(wire{Items: state.items})
+}
+
+func (state *Context) RecordCount() int { return len(state.items) }
+
+func (state *Context) Clone() protocol.Context {
+	return &Context{items: append([]Item(nil), state.items...)}
 }
 
 func (state *Context) Records() ([]json.RawMessage, error) {
-	if err := validateItems(state.Items); err != nil {
+	if err := validateItems(state.items); err != nil {
 		return nil, err
 	}
-	records := make([]json.RawMessage, 0, len(state.Items))
-	for _, item := range state.Items {
+	return state.RecordsFrom(0)
+}
+
+func (state *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
+	if start < 0 || start > len(state.items) {
+		return nil, protocol.ErrInvalid
+	}
+	records := make([]json.RawMessage, 0, len(state.items)-start)
+	for _, item := range state.items[start:] {
 		encoded, err := json.Marshal(item)
 		if err != nil {
 			return nil, err
@@ -86,13 +99,13 @@ func (state *Context) AppendRecords(records []json.RawMessage) error {
 		}
 		appended = append(appended, item)
 	}
-	candidate := make([]Item, 0, len(state.Items)+len(appended))
-	candidate = append(candidate, state.Items...)
+	candidate := make([]Item, 0, len(state.items)+len(appended))
+	candidate = append(candidate, state.items...)
 	candidate = append(candidate, appended...)
 	if err := validateItems(candidate); err != nil {
 		return err
 	}
-	state.Items = candidate
+	state.items = candidate
 	return nil
 }
 
@@ -130,8 +143,6 @@ func (state *Context) appendMessage(role string, parts []protocol.ContentPart) e
 
 func (*Context) ChangeEffort(string) error { return nil }
 
-func (*Context) AppendExecutionState(*protocol.ExecutionState) error { return nil }
-
 func (state *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
 	if !call.HasValidShape() {
 		return fmt.Errorf("invalid tool invocation: %w", protocol.ErrInvalid)
@@ -159,10 +170,10 @@ func (state *Context) AppendToolResult(call protocol.ToolInvocation, parts []pro
 // FindCall returns a call by ID even after its first output. Responses allows asynchronous
 // notifications to append further output records for the same call.
 func (state *Context) FindCall(callID string) (protocol.ToolInvocation, error) {
-	if err := validateItems(state.Items); err != nil {
+	if err := validateItems(state.items); err != nil {
 		return protocol.ToolInvocation{}, err
 	}
-	for index, item := range state.Items {
+	for index, item := range state.items {
 		call, ok := item.ToolCall()
 		if !ok || call.CallID != callID {
 			continue
@@ -174,12 +185,12 @@ func (state *Context) FindCall(callID string) (protocol.ToolInvocation, error) {
 }
 
 func (state *Context) PendingCalls() ([]protocol.ToolInvocation, error) {
-	for index, item := range state.Items {
+	for index, item := range state.items {
 		if err := validateItem(item); err != nil {
 			return nil, fmt.Errorf("Responses record %d: %w", index+1, err)
 		}
 	}
-	return pendingCalls(state.Items)
+	return pendingCalls(state.items)
 }
 
 func (state *Context) CheckSettled() error {
@@ -199,10 +210,10 @@ func (state *Context) CheckSettled() error {
 }
 
 func (state *Context) TurnComplete() bool {
-	if len(state.Items) == 0 || state.CheckSettled() != nil {
+	if len(state.items) == 0 || state.CheckSettled() != nil {
 		return false
 	}
-	last := state.Items[len(state.Items)-1]
+	last := state.items[len(state.items)-1]
 	return last.Type == ItemMessage && last.Role == "assistant"
 }
 

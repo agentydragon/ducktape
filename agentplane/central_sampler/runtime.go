@@ -2,7 +2,6 @@ package centralsampler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -676,7 +675,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 						err = stateErr
 						break
 					}
-					calls, callErr := conversation.Archive.PendingCalls()
+					calls, callErr := conversation.Transcript.PendingCalls()
 					if callErr != nil {
 						err = callErr
 						break
@@ -1003,7 +1002,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return "", err
 		}
 	}
-	calls, err := conversation.Archive.PendingCalls()
+	calls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return "", err
 	}
@@ -1018,7 +1017,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			notDispatched := false
-			intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched})
+			intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil)
 			if err != nil {
 				return "", err
 			}
@@ -1034,7 +1033,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if live == nil {
 			return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
-		intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call})
+		intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call}, nil)
 		if err != nil {
 			return "", err
 		}
@@ -1085,7 +1084,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if steered {
 		return TurnSteer, nil
 	}
-	if conversation.Archive.TurnComplete() {
+	if conversation.Transcript.TurnComplete() {
 		return TurnDone, nil
 	}
 	adapter, err := adapterFor(config)
@@ -1123,16 +1122,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
-	body, err := adapter.Prepare(conversation, session, state, metadata)
-	if err != nil {
-		return "", err
-	}
-	wire, err := json.Marshal(body)
-	if err != nil {
-		return "", err
-	}
-	// Persist the exact outgoing content before dispatch; credentials never enter this record.
-	intentID, err := r.store.Begin(ctx, owner, providerRequestIntent(PendingIntentSampling, connection, config, wire))
+	preparation := adapter.Prepare(session, metadata)
+	request := providerRequestIntent(PendingIntentSampling, connection, config)
+	intentID, wire, err := r.store.Begin(ctx, owner, request, preparation)
 	if err != nil {
 		return "", err
 	}
@@ -1141,7 +1133,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
+	response, err := adapter.Sample(ctx, client, connection, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
 	if err != nil {
 		var known *protocol.KnownFailureError
 		if errors.As(err, &known) {
@@ -1151,7 +1143,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "", err
 	}
-	candidate, err := cloneNativeContext(conversation.Archive)
+	candidate, err := cloneNativeContext(conversation.Transcript)
 	if err == nil {
 		err = candidate.AppendRecords(response.Records)
 	}
@@ -1190,7 +1182,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	if err := conversation.Archive.CheckSettled(); err != nil {
+	if err := conversation.Transcript.CheckSettled(); err != nil {
 		return err
 	}
 	if err := conversation.Context().CheckSettled(); err != nil {
@@ -1219,16 +1211,13 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	wire, err := json.Marshal(plan.Body)
-	if err != nil {
-		return err
-	}
 	connection, err := r.settings.Connection(model)
 	if err != nil {
 		return err
 	}
 	original := conversation.Context()
-	intentID, err := r.store.BeginCompaction(ctx, owner, providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model], wire), original)
+	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model])
+	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare)
 	if err != nil {
 		return err
 	}
@@ -1241,7 +1230,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return err
 	}
 	defer client.CloseIdleConnections()
-	result, err := adapter.Sample(ctx, client, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
+	result, err := adapter.Sample(ctx, client, connection, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
 	if err != nil {
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}

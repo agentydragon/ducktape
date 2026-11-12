@@ -48,6 +48,14 @@ For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
 
+Migration 13 resets **all sampler-owned staging data**: Sessions/conversations, contexts, intents,
+commands, events, History export checkpoints, process/cell bookkeeping, interrupts and notifications.
+Stop old sampler replicas before upgrading, then create new Sessions. History's database and executor
+storage are unchanged. This is one transactional SQL migration; subsequent starts preserve new data.
+To roll back, stop the sampler and restore its pre-cutover database backup with the previous image,
+or recreate its database using that image and start fresh. An image-only rollback cannot read the
+new schema.
+
 `//agentplane/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its
 own Pod, migrate before serving, and use projected service-account tokens for
