@@ -12,9 +12,15 @@
     "nix/flake/packages.nix"
   ],
   "images": {
+    "agentplane-codex-image": {
+      "repository": "git.allegedly.works/ducktape-ci/agentplane-codex",
+      "paths": ["agentplane/env/images/codex/**"],
+      "smoke": "agentplane/env/images/codex/smoke.sh"
+    },
     "agentplane-environment-firecracker-image": {
       "repository": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker",
       "paths": [
+        "agentplane/env/images/codex/**",
         "agentplane/env/images/firecracker-image.nix",
         "agentplane/env/images/firecracker.nix",
         "agentplane/env/images/firecracker_guest_contract.json",
@@ -35,6 +41,7 @@
     "agentplane-environment-vm-container-disk": {
       "repository": "git.allegedly.works/ducktape-ci/agentplane-environment-vm",
       "paths": [
+        "agentplane/env/images/codex/**",
         "agentplane/env/images/container-disk.nix",
         "agentplane/env/images/home_prepare",
         "agentplane/env/images/systemd/**",

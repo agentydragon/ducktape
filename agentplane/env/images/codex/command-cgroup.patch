@@ -1,0 +1,158 @@
+--- a/utils/pty/src/spawn_helper.rs
++++ b/utils/pty/src/spawn_helper.rs
+@@ -31,6 +31,7 @@
+ pub(super) const HELPER_ARG: &str = "--codex-run-as-process-setup";
+ pub(super) const MAX_ENV_BYTES: usize = 8 * 1024 * 1024;
+ pub(super) const REPORT_PREFIX: u8 = 0;
++pub(super) const CGROUP_SOCKET_ENV: &str = "CODEX_COMMAND_CGROUP_SOCKET";
+ static HELPER_READY: AtomicBool = AtomicBool::new(false);
+ const HELPER_EXE: &str = "/proc/self/exe";
+ 
+@@ -59,6 +60,12 @@
+     if args.next().as_deref() == Some(std::ffi::OsStr::new(HELPER_ARG)) {
+         crate::spawn_helper_main::dispatch(args);
+     }
++    if let Some(socket) = std::env::var_os(CGROUP_SOCKET_ENV) {
++        if crate::spawn_helper_main::enter_cgroup(&socket, b'S').is_err() {
++            // Startup policy is mandatory; do not start an uncontained server.
++            std::process::exit(127);
++        }
++    }
+     if std::fs::metadata(HELPER_EXE).is_ok() {
+         HELPER_READY.store(true, Ordering::Relaxed);
+     }
+@@ -76,8 +83,16 @@
+     setup: Setup,
+ ) -> io::Result<Option<crate::Child>> {
+     target.validate()?;
++    let cgroup_socket = std::env::var_os(CGROUP_SOCKET_ENV);
++    let fallback = || {
++        if cgroup_socket.is_some() {
++            Err(io::Error::other("required command cgroup setup unavailable"))
++        } else {
++            Ok(None)
++        }
++    };
+     if !is_available() {
+-        return Ok(None);
++        return fallback();
+     }
+     let settings = target.inner.as_std();
+     let mut environment = Vec::new();
+@@ -115,6 +130,7 @@
+                     .collect::<Vec<_>>()
+                     .join(","),
+             )
++            .arg(cgroup_socket.as_deref().unwrap_or_default())
+             .arg(settings.get_current_dir().unwrap_or_else(|| Path::new(".")))
+             .arg(settings.get_program())
+             .arg(target.arg0.as_deref().unwrap_or(settings.get_program()))
+@@ -141,13 +157,13 @@
+     })();
+     let (mut control, helper, helper_control) = match prepared {
+         Ok(prepared) => prepared,
+-        Err(_) => return Ok(None),
++        Err(_) => return fallback(),
+     };
+     // Call the shared native backend directly: the helper needs no child callbacks.
+     // Unsupported libc/platform setup falls back at the original target boundary.
+     let child = match crate::child::posix::NativeChild::spawn(&helper) {
+         Ok(Some(child)) => child,
+-        Ok(None) | Err(_) => return Ok(None),
++        Ok(None) | Err(_) => return fallback(),
+     };
+     drop(helper);
+     drop(helper_control);
+@@ -167,7 +183,7 @@
+         // Bootstrap can fail before dispatch (for example in the dynamic loader).
+         // No prefix means the target never ran. Kill and reap the incomplete
+         // helper before falling back, including when its socket was reset.
+-        return Ok(None);
++        return fallback();
+     }
+     if (report.len() != 1 && report.len() != 5) || report.first() != Some(&REPORT_PREFIX) {
+         sent?;
+--- a/utils/pty/src/spawn_helper_main.rs
++++ b/utils/pty/src/spawn_helper_main.rs
+@@ -51,6 +51,9 @@
+             .map(str::parse::<i32>)
+             .collect::<Result<Vec<_>, _>>()
+             .map_err(|_| io::Error::from_raw_os_error(libc::EINVAL))?;
++        let cgroup_socket = args
++            .next()
++            .ok_or_else(|| io::Error::from_raw_os_error(libc::EINVAL))?;
+         let cwd = args
+             .next()
+             .ok_or_else(|| io::Error::from_raw_os_error(libc::EINVAL))?;
+@@ -77,6 +80,9 @@
+         crate::pty::close_inherited_fds_except(&inherited_fds);
+         #[cfg(test)]
+         crate::spawn_helper_tests::pause_handshake("environment")?;
++        if !cgroup_socket.is_empty() {
++            enter_cgroup(&cgroup_socket, b'C')?;
++        }
+         let mut size = [0; 4];
+         control.read_exact(&mut size)?;
+         let size = u32::from_le_bytes(size) as usize;
+@@ -98,6 +104,8 @@
+                 std::ffi::OsStr::from_bytes(&entry[separator + 1..]),
+             );
+         }
++        // Reserved bootstrap state must not make nested Codex join as a new server.
++        command.env_remove(crate::spawn_helper::CGROUP_SOCKET_ENV);
+         #[cfg(test)]
+         crate::spawn_helper_tests::pause_handshake("report")?;
+         control.write_all(&[REPORT_PREFIX])?;
+@@ -117,3 +125,52 @@
+     // No diagnostics: program arguments and environment may contain secrets.
+     std::process::exit(127);
+ }
++
++// The root owner grants one destination, never a path or writable hierarchy.
++// Writing zero moves this process atomically, avoiding numeric-PID reuse races.
++// The descriptor is closed before the target can run or inspect inherited FDs.
++pub(super) fn enter_cgroup(socket: &std::ffi::OsStr, kind: u8) -> io::Result<()> {
++    use std::os::fd::AsRawFd;
++    use std::os::unix::net::UnixStream;
++    if unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0) } == -1 {
++        return Err(io::Error::last_os_error());
++    }
++    let mut owner = UnixStream::connect(socket)?;
++    owner.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
++    owner.set_write_timeout(Some(std::time::Duration::from_secs(30)))?;
++    owner.write_all(&[kind])?;
++    let mut byte = [0u8];
++    let mut data = libc::iovec {
++        iov_base: byte.as_mut_ptr().cast(),
++        iov_len: 1,
++    };
++    // cmsghdr alignment is required even on architectures tolerating unaligned ints.
++    let mut ancillary = [0usize; 8];
++    let mut message: libc::msghdr = unsafe { std::mem::zeroed() };
++    message.msg_iov = &mut data;
++    message.msg_iovlen = 1;
++    message.msg_control = ancillary.as_mut_ptr().cast();
++    message.msg_controllen = std::mem::size_of_val(&ancillary);
++    if unsafe { libc::recvmsg(owner.as_raw_fd(), &mut message, libc::MSG_CMSG_CLOEXEC) } != 1 {
++        return Err(io::Error::last_os_error());
++    }
++    let header = unsafe { libc::CMSG_FIRSTHDR(&message) };
++    if header.is_null()
++        || message.msg_flags & libc::MSG_CTRUNC != 0
++        || unsafe { (*header).cmsg_level != libc::SOL_SOCKET
++            || (*header).cmsg_type != libc::SCM_RIGHTS
++            || (*header).cmsg_len != libc::CMSG_LEN(std::mem::size_of::<i32>() as u32) as usize }
++    {
++        return Err(io::Error::from_raw_os_error(libc::EPROTO));
++    }
++    let fd = unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(header).cast::<i32>()) };
++    let mut destination = unsafe { File::from_raw_fd(fd) };
++    destination.write_all(b"0")?;
++    drop(destination);
++    owner.write_all(b"M")?;
++    owner.read_exact(&mut byte)?;
++    if byte != [b'A'] {
++        return Err(io::Error::from_raw_os_error(libc::EPERM));
++    }
++    Ok(())
++}

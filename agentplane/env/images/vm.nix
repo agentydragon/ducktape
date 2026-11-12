@@ -105,32 +105,7 @@ let
   agentUser = "agent";
   agentId = 107;
 
-  # nixpkgs' codex bundles a GStreamer voice host that no harness here starts. Its build paths
-  # reference gcc and glibc's headers and its plugins reference a media stack, all of which would
-  # ship in the image. The binaries also carry full symbol tables.
-  codexVoiceRuntime = with pkgsUnstable.gst_all_1; [
-    gstreamer
-    gst-plugins-base
-    gst-plugins-good
-  ];
-  codexWithoutVoice =
-    pkgs.runCommand "codex-${pkgsUnstable.codex.version}-without-voice"
-      {
-        nativeBuildInputs = [
-          pkgs.binutils
-          pkgs.removeReferencesTo
-        ];
-      }
-      ''
-        cp -a ${pkgsUnstable.codex} $out
-        chmod -R u+w $out
-        rm -r $out/codex-resources/voice
-        strip --strip-all $out/bin/*
-        # The voice loader's package roots are embedded in bin/codex.
-        remove-references-to \
-          ${lib.concatMapStringsSep " " (package: "-t ${lib.getLib package}") codexVoiceRuntime} \
-          $out/bin/codex
-      '';
+  codexWithoutVoice = import ./codex/package.nix { inherit pkgs pkgsUnstable; };
 
   # An ExecCondition that passes where the environment config's `environment.console_autologin` (unset is false)
   # equals `autologin`. jq exits 1 otherwise, which skips the unit without failing it; an unreadable

@@ -131,6 +131,10 @@ ducktapePkgs
     name = "environment-tools";
     extraPaths = [ self.packages.${system}.environment-tools ];
   };
+  # Patched native executable and runtime closure for the Debian VM fixture.
+  agentplane-codex-image = import ../../agentplane/env/images/codex/image.nix {
+    inherit pkgs pkgsUnstable;
+  };
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
   agentplane-environment-vm-container-disk = import ../../agentplane/env/images/container-disk.nix {
     inherit pkgs self;
