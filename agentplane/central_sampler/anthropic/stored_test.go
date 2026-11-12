@@ -1,4 +1,4 @@
-package storage
+package anthropic
 
 import (
 	"bytes"
@@ -7,19 +7,19 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 )
 
 type memoryContentStore struct {
-	contents map[ContentID]StoredContent
+	contents map[storage.ContentID]storage.StoredContent
 }
 
 func newMemoryContentStore() *memoryContentStore {
-	return &memoryContentStore{contents: make(map[ContentID]StoredContent)}
+	return &memoryContentStore{contents: make(map[storage.ContentID]storage.StoredContent)}
 }
 
-func (store *memoryContentStore) PutContent(kind ContentKind, payload json.RawMessage) (ContentID, error) {
-	content, err := CanonicalContent(kind, payload)
+func (store *memoryContentStore) PutContent(kind storage.ContentKind, payload json.RawMessage) (storage.ContentID, error) {
+	content, err := storage.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
@@ -30,10 +30,10 @@ func (store *memoryContentStore) PutContent(kind ContentKind, payload json.RawMe
 	return content.ID, nil
 }
 
-func (store *memoryContentStore) GetContent(id ContentID) (StoredContent, error) {
+func (store *memoryContentStore) GetContent(id storage.ContentID) (storage.StoredContent, error) {
 	content, ok := store.contents[id]
 	if !ok {
-		return StoredContent{}, fmt.Errorf("missing content %s", id)
+		return storage.StoredContent{}, fmt.Errorf("missing content %s", id)
 	}
 	content.Payload = append(json.RawMessage(nil), content.Payload...)
 	return content, nil
@@ -59,7 +59,7 @@ func TestStoreRecordRoundTripsAnthropicNativeBlocksAndDeduplicatesPayloads(t *te
 		"unknown_envelope":{"keep":"metadata"}
 	}`)
 	store := newMemoryContentStore()
-	id, err := StoreAnthropicRecord(store, record)
+	id, err := StoreRecord(store, record)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestStoreRecordRoundTripsAnthropicNativeBlocksAndDeduplicatesPayloads(t *te
 	if len(storedMessage.Blocks) != 7 {
 		t.Fatalf("stored %d blocks, want 7", len(storedMessage.Blocks))
 	}
-	var textID, thinkingID ContentID
+	var textID, thinkingID storage.ContentID
 	for _, blockID := range storedMessage.Blocks {
 		block, err := store.GetContent(blockID)
 		if err != nil {
@@ -85,21 +85,21 @@ func TestStoreRecordRoundTripsAnthropicNativeBlocksAndDeduplicatesPayloads(t *te
 			t.Fatal(err)
 		}
 		switch content.Type {
-		case anthropic.BlockText:
+		case BlockText:
 			textID = content.ScalarID
-		case anthropic.BlockThinking:
+		case BlockThinking:
 			thinkingID = content.ScalarID
 		}
 	}
 	if textID == "" || textID != thinkingID {
-		t.Fatalf("text/thinking payloads did not share ContentText row: text=%s thinking=%s", textID, thinkingID)
+		t.Fatalf("text/thinking payloads did not share storage.ContentText row: text=%s thinking=%s", textID, thinkingID)
 	}
 	imageDataCount, opaqueCount := 0, 0
 	for _, content := range store.contents {
 		switch content.Kind {
-		case ContentImageData:
+		case storage.ContentImageData:
 			imageDataCount++
-		case ContentOpaque:
+		case storage.ContentOpaque:
 			opaqueCount++
 		}
 	}
@@ -110,7 +110,7 @@ func TestStoreRecordRoundTripsAnthropicNativeBlocksAndDeduplicatesPayloads(t *te
 		t.Fatalf("stored %d opaque continuation rows, want one", opaqueCount)
 	}
 
-	restored, err := RestoreAnthropicRecord(store, id)
+	restored, err := RestoreRecord(store, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,22 +121,22 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	store := newMemoryContentStore()
 	messageA := json.RawMessage(`{"role":"user","content":[{"type":"text","text":"first"}]}`)
 	messageB := json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"signed prefix","signature":"opaque-sig"},{"type":"text","text":"answer"}]}`)
-	var tool anthropic.Tool
+	var tool Tool
 	if err := json.Unmarshal([]byte(`{"name":"exec","description":"Execute code.","strict":true,"eager_input_streaming":true,"input_schema":{"type":"object","properties":{"code":{"type":"string"}}}}`), &tool); err != nil {
 		t.Fatal(err)
 	}
-	request := anthropic.Request{
-		CacheControl: &anthropic.CacheControl{Type: "ephemeral", TTL: "1h"},
-		Diagnostics:  &anthropic.Diagnostics{PreviousMessageID: stringPointer("msg_previous")},
+	request := Request{
+		CacheControl: &CacheControl{Type: "ephemeral", TTL: "1h"},
+		Diagnostics:  &Diagnostics{PreviousMessageID: stringPointer("msg_previous")},
 		MaxTokens:    1024,
 		Messages:     []json.RawMessage{messageA, messageB},
 		Model:        "claude-test",
-		OutputConfig: &anthropic.OutputConfig{Effort: "high"},
+		OutputConfig: &OutputConfig{Effort: "high"},
 		Stream:       true,
 		System:       "shared system prompt",
-		Tools:        []anthropic.Tool{tool},
+		Tools:        []Tool{tool},
 	}
-	profileA, recordsA, err := StoreAnthropicRequest(store, request)
+	profileA, recordsA, err := StoreRequest(store, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,8 +144,8 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Diagnostics = &anthropic.Diagnostics{PreviousMessageID: stringPointer("msg_newer")}
-	profileB, recordsB, err := StoreAnthropicRequest(store, request)
+	request.Diagnostics = &Diagnostics{PreviousMessageID: stringPointer("msg_newer")}
+	profileB, recordsB, err := StoreRequest(store, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,13 +179,13 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	}
 	messageJSON := make([]json.RawMessage, 0, len(recordsA))
 	for _, recordID := range recordsA {
-		restored, err := RestoreAnthropicRecord(store, recordID)
+		restored, err := RestoreRecord(store, recordID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		messageJSON = append(messageJSON, restored)
 	}
-	restored, err := RestoreAnthropicRequest(store, profileA, messageJSON)
+	restored, err := RestoreRequest(store, profileA, messageJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,19 +203,19 @@ func TestStoreRequestJSONPreservesHistoricalUnknownFields(t *testing.T) {
 		"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"signed","signature":"opaque"}]}],
 		"future_request_field":{"future_number":900719925474099312345}
 	}`)
-	profile, messageIDs, err := StoreAnthropicRequestJSON(store, historical)
+	profile, messageIDs, err := StoreRequestJSON(store, historical)
 	if err != nil {
 		t.Fatal(err)
 	}
 	messages := make([]json.RawMessage, 0, len(messageIDs))
 	for _, messageID := range messageIDs {
-		message, err := RestoreAnthropicRecord(store, messageID)
+		message, err := RestoreRecord(store, messageID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		messages = append(messages, message)
 	}
-	restored, err := RestoreAnthropicRequest(store, profile, messages)
+	restored, err := RestoreRequest(store, profile, messages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestStoreRequestJSONPreservesHistoricalUnknownFields(t *testing.T) {
 
 func TestRestoreRecordChecksReferencedContent(t *testing.T) {
 	store := newMemoryContentStore()
-	messageID, err := StoreAnthropicRecord(store, json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"payload"}]}`))
+	messageID, err := StoreRecord(store, json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"payload"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,13 +249,13 @@ func TestRestoreRecordChecksReferencedContent(t *testing.T) {
 		t.Fatalf("missing text payload %s", blockData.ScalarID)
 	}
 	delete(store.contents, blockData.ScalarID)
-	if _, err := RestoreAnthropicRecord(store, messageID); err == nil {
+	if _, err := RestoreRecord(store, messageID); err == nil {
 		t.Fatal("RestoreRecord accepted a missing text dependency")
 	}
 	store.contents[blockData.ScalarID] = textContent
 	textContent.Payload = json.RawMessage(`"tampered"`)
 	store.contents[blockData.ScalarID] = textContent
-	if _, err := RestoreAnthropicRecord(store, messageID); err == nil {
+	if _, err := RestoreRecord(store, messageID); err == nil {
 		t.Fatal("RestoreRecord accepted a content hash mismatch")
 	}
 }

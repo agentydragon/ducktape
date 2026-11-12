@@ -70,7 +70,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}}}
+	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}})
 	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
 	if err != nil {
 		t.Fatal(err)

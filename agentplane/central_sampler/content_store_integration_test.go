@@ -48,8 +48,16 @@ func responsesRequestForTranscript(t *testing.T, store *Store, owner Owner, inst
 	if !ok {
 		t.Fatalf("transcript is %T, want *responses.Context", conversation.Transcript)
 	}
-	input := make([]responses.RequestInput, len(transcript.Items))
-	for index, item := range transcript.Items {
+	records, err := transcript.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := make([]responses.RequestInput, len(records))
+	for index, raw := range records {
+		var item responses.Item
+		if err := json.Unmarshal(raw, &item); err != nil {
+			t.Fatal(err)
+		}
 		input[index] = item
 	}
 	return responses.Request{
@@ -72,7 +80,7 @@ func dispatchStoredResponsesRequest(t *testing.T, store *Store, owner Owner, req
 		Responses:     responses.Config{Dialect: responses.DialectLite},
 	}
 	intent := providerRequestIntent(PendingIntentSampling, connection, config)
-	requestID, wire, err := store.Begin(t.Context(), owner, intent, request)
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,14 +152,12 @@ func assertDispatchBoundaryUsesContentReferences(t *testing.T, store *Store, ses
 		if err := json.Unmarshal(boundary.GetPayload(), &payload); err != nil {
 			t.Fatalf("decode sampling dispatch boundary: %v", err)
 		}
-		for _, key := range []string{"context_id", "profile_id"} {
-			if len(payload[key]) == 0 {
-				t.Fatalf("sampling dispatch journal omitted %q: %s", key, boundary.GetPayload())
-			}
+		if string(payload["request_id"]) != string(protocol.MustJSON(requestID)) {
+			t.Fatalf("dispatch omitted request ID: %s", boundary.GetPayload())
 		}
-		for _, key := range []string{"body", "wire_request"} {
+		for _, key := range []string{"context_id", "profile_id", "source_context_id", "prefix_ids", "suffix_ids", "body", "wire_request"} {
 			if _, present := payload[key]; present {
-				t.Fatalf("sampling dispatch journal stored %q instead of content references", key)
+				t.Fatalf("dispatch exposed private storage field %q", key)
 			}
 		}
 		if strings.Contains(string(boundary.GetPayload()), prompt) {
@@ -235,7 +241,7 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 	if got := contentRowCount(t, store, storage.ContentText); got != turns+1 {
 		t.Fatalf("text content rows=%d, want %d unique prompts plus one shared instruction", got, turns+1)
 	}
-	if got := contentRowCount(t, store, storage.ContentOpenAITool); got != 1 {
+	if got := contentRowCount(t, store, responses.ContentOpenAITool); got != 1 {
 		t.Fatalf("OpenAI tool content rows=%d, want one frozen shared definition", got)
 	}
 	assertDispatchBoundaryUsesContentReferences(t, store, session.ID, firstID, "Unique persistent-context prompt 00.")
@@ -271,7 +277,7 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 	if got := tableRowCount(t, store, "sampler_context"); got != firstContextRows {
 		t.Fatalf("identical cross-account input added context rows: before=%d after=%d", firstContextRows, got)
 	}
-	if got := contentRowCount(t, store, storage.ContentOpenAITool); got != 1 {
+	if got := contentRowCount(t, store, responses.ContentOpenAITool); got != 1 {
 		t.Fatalf("shared tool content rows=%d, want one", got)
 	}
 
@@ -294,4 +300,37 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 	if _, err := store.LoadProviderRequest(t.Context(), secondSession.ID, secondSession.AccountUID, firstID); !errors.Is(err, protocol.ErrMissing) {
 		t.Fatalf("foreign session request read error=%v, want ErrMissing", err)
 	}
+}
+
+func fixtureResponsesPreparation(body responses.Request) requestPreparation {
+	return func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		previous, err := store.previousRequest(conversation.ID)
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		if previous.ProfileID != "" {
+			body, err = responses.FreezeRequest(store, previous.ProfileID, body)
+			if err != nil {
+				return ProviderRequest{}, nil, err
+			}
+		}
+		profile, ids, err := responses.StoreRequest(store, body)
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		return finishStoredRequest(store, metadata, profile, ids)
+	}
+}
+
+func responseContextForTest(t *testing.T, items []responses.Item) *responses.Context {
+	t.Helper()
+	state := &responses.Context{}
+	records := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
+		records = append(records, protocol.MustJSON(item))
+	}
+	if err := state.AppendRecords(records); err != nil {
+		t.Fatal(err)
+	}
+	return state
 }

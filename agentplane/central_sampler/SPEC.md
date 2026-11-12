@@ -603,7 +603,8 @@ sampler DB. Each provider intent commits immutable context/profile references be
 Preparation returns the rendered bytes directly to the dispatcher; provider objects and rendered
 bytes are absent from the persisted intent. The retained contract is equivalent provider JSON.
 `ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
-content hashes alone grant no read access. New provider dispatch boundaries contain these references.
+content hashes alone grant no read access. The public read metadata and new dispatch boundaries expose
+the request ID and route, not private content, context or profile IDs.
 Transport
 bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
 usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
@@ -678,23 +679,42 @@ Content IDs hash the kind and standard-JSON payload with a versioned domain sepa
 bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
 general JSON node format or serializer.
 
-Persistence formats and provider-specific packing/reconstruction codecs live in
-`internal/storage`, private to the sampler. Native `anthropic`/`responses` packages own API
-types, request construction, streaming and conversation semantics; they do not save/load content
-or depend on storage IDs. The shared `protocol` package defines semantic contracts, not stored
-records. The sampler implements the private content reader/writer against PostgreSQL and owns
-transactions, context roots, authorization and request history. The shared content table contains
-provider-specific JSON payloads, rather than a universal message schema.
+Native `anthropic`/`responses` packages own their private stored types, packing/reconstruction
+codecs, API types, request construction, streaming and continuation semantics. They use the
+sampler-private `internal/storage` content reader/writer: typed IDs/kinds, standard JSON encoding,
+content hashing and integrity checks. Shared storage imports neither provider nor semantic protocol
+packages and does not interpret provider payloads. The shared `protocol` package defines semantic
+contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
+authorization and execution history. The shared table holds provider-specific JSON envelopes, not
+a universal message schema.
 
 `sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
 shares the entire prior prefix. The conversation transcript retains the full native conversation
 across compaction. Transcript and optional active roots reference these contexts; small controls
 retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
-`sampler_model_request` links each distinct intent execution to its frozen
-request profile and context. Profiles share instructions/system text and individual tool definitions;
-per-call attribution does not duplicate them. The first request's system/instructions and tool
-definitions remain fixed across sampler rolls. Requests use the provider's native request fields
-and Go's standard JSON encoder; input/messages follows from the pinned API.
+`sampler_model_request` links each distinct execution to a frozen profile, ordered request-only
+prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
+encoding projection key permit projecting only newly appended native records. A changed prefix
+never becomes the parent of the stable history chain. Loaded contexts retain append checkpoints;
+normal persistence packs and hashes only new records. Native context arrays are private and retained
+entries are immutable. Compaction starts a replacement view while retaining shared content.
+
+Profiles share instructions/system text and individual tool definitions; per-call attribution does
+not duplicate them. The first request's authored system/instructions and tool definitions remain
+fixed across sampler rolls. Preparation runs against the authoritative conversation in the intent
+transaction and constructs a reference-based request recipe before rendering. Reconstruction uses
+these concrete native fields and Go's standard JSON encoder, rather than rerunning current prompt
+policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
+commit. Identical requests retain distinct execution IDs.
+
+Before sampling, the first snapshot of model-visible execution handles and subsequent changes
+append as native notices, after the
+applicable input/tool results. Unchanged snapshots do not append; disappearance emits an empty
+snapshot. Snapshot comparison uses sampler-owned context controls and deterministic handle ordering,
+not matching visible message text. Compaction requires a fresh snapshot in its replacement active
+context before the next request. This retains prior request prefixes instead of replacing an early
+execution-state message.
+
 Compaction atomically verifies the expected active context and lease before replacing it and
 settling its intent/command. It never rewrites the transcript. New responses append to both the
 transcript and active context using shared content records.

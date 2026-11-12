@@ -43,6 +43,8 @@ type Conversation struct {
 	activeContextID     string
 	transcriptControl   json.RawMessage
 	activeControl       json.RawMessage
+	storedContexts      map[protocol.Context]contextCheckpoint
+	executionSnapshots  map[protocol.Context]*modelExecutionSnapshot
 }
 
 func (c *Conversation) Context() protocol.Context {
@@ -197,14 +199,18 @@ type IntentRequest struct {
 // ProviderRequest records a provider call before dispatch. Authentication is deliberately absent:
 // it is committed in the same transaction as the pending intent, before any upstream request.
 type ProviderRequest struct {
-	API           protocol.APIStyle `json:"api"`
-	Connection    string            `json:"connection"`
-	ProviderModel string            `json:"provider_model"`
-	Method        string            `json:"method"`
-	URL           string            `json:"url"`
-	Headers       map[string]string `json:"headers"`
-	ContextID     string            `json:"context_id,omitempty"`
-	ProfileID     storage.ContentID `json:"profile_id"`
+	API             protocol.APIStyle    `json:"api"`
+	Connection      string               `json:"connection"`
+	ProviderModel   string               `json:"provider_model"`
+	Method          string               `json:"method"`
+	URL             string               `json:"url"`
+	Headers         map[string]string    `json:"headers"`
+	ContextID       string               `json:"context_id,omitempty"`
+	ProfileID       storage.ContentID    `json:"profile_id"`
+	SourceContextID string               `json:"source_context_id,omitempty"`
+	ProjectionKey   requestProjectionKey `json:"projection_key,omitempty"`
+	PrefixIDs       []storage.ContentID  `json:"prefix_ids,omitempty"`
+	SuffixIDs       []storage.ContentID  `json:"suffix_ids,omitempty"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested
@@ -366,3 +372,12 @@ var (
 	ErrConflict  = errors.New("resource conflicts with an existing request")
 	ErrForbidden = errors.New("resource belongs to another account")
 )
+
+// Dispatch evidence exposes the authorized execution handle, not private content IDs.
+func (request IntentRequest) dispatchEvidence(id string) any {
+	if request.ProviderRequest == nil {
+		return request
+	}
+	body := request.ProviderRequest
+	return map[string]any{"kind": request.Kind, "request_id": id, "api": body.API, "connection": body.Connection, "provider_model": body.ProviderModel, "method": body.Method, "url": body.URL, "headers": nonAuthProviderRequestHeaders(body.Headers)}
+}

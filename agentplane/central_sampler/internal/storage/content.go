@@ -1,12 +1,13 @@
 package storage
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"io"
 )
 
 type (
@@ -15,35 +16,13 @@ type (
 )
 
 const (
-	ContentText                      ContentKind = "text"
-	ContentImageData                 ContentKind = "image_data"
-	ContentOpaque                    ContentKind = "opaque_continuation"
-	ContentOpenAIItem                ContentKind = "openai_item"
-	ContentOpenAIContent             ContentKind = "openai_content"
-	ContentOpenAIRequest             ContentKind = "openai_request"
-	ContentOpenAITool                ContentKind = "openai_tool"
-	ContentAnthropicMessage          ContentKind = "anthropic_message"
-	ContentAnthropicText             ContentKind = "anthropic_text"
-	ContentAnthropicThinking         ContentKind = "anthropic_thinking"
-	ContentAnthropicRedactedThinking ContentKind = "anthropic_redacted_thinking"
-	ContentAnthropicToolUse          ContentKind = "anthropic_tool_use"
-	ContentAnthropicToolResult       ContentKind = "anthropic_tool_result"
-	ContentAnthropicImage            ContentKind = "anthropic_image"
-	ContentAnthropicCompaction       ContentKind = "anthropic_compaction"
-	ContentAnthropicRequest          ContentKind = "anthropic_request"
-	ContentAnthropicTool             ContentKind = "anthropic_tool"
+	ContentText      ContentKind = "text"
+	ContentImageData ContentKind = "image_data"
+	ContentOpaque    ContentKind = "opaque_continuation"
 )
 
-func (kind ContentKind) Valid() bool {
-	switch kind {
-	case ContentText, ContentImageData, ContentOpaque, ContentOpenAIItem, ContentOpenAIContent, ContentOpenAIRequest, ContentOpenAITool, ContentAnthropicMessage,
-		ContentAnthropicText, ContentAnthropicThinking, ContentAnthropicRedactedThinking, ContentAnthropicToolUse,
-		ContentAnthropicToolResult, ContentAnthropicImage, ContentAnthropicCompaction, ContentAnthropicRequest, ContentAnthropicTool:
-		return true
-	default:
-		return false
-	}
-}
+// Kinds are defined and validated by the codecs that own their payloads.
+func (kind ContentKind) Valid() bool { return kind != "" }
 
 type StoredContent struct {
 	ID      ContentID       `json:"id"`
@@ -64,9 +43,15 @@ func CanonicalContent(kind ContentKind, payload json.RawMessage) (StoredContent,
 	if !kind.Valid() {
 		return StoredContent{}, fmt.Errorf("unknown content kind %q", kind)
 	}
-	value, err := protocol.DecodeJSONValue(payload)
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var value any
+	err := decoder.Decode(&value)
 	if err != nil {
 		return StoredContent{}, err
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return StoredContent{}, fmt.Errorf("content contains trailing JSON")
 	}
 	canonical, err := json.Marshal(value)
 	if err != nil {

@@ -20,13 +20,12 @@ const maxProviderErrorBytes = 1024 * 1024
 const codexReasoningSummary = "auto"
 
 type RequestParams struct {
-	Model          string
-	Effort         string
-	Instructions   *string
-	Attribution    protocol.SessionAttribution
-	Items          []Item
-	ExecutionState *protocol.ExecutionState
-	Tools          protocol.ToolSurface
+	Model        string
+	Effort       string
+	Instructions *string
+	Attribution  protocol.SessionAttribution
+	Items        []Item
+	Tools        protocol.ToolSurface
 }
 
 func BuildRequest(params RequestParams, config Config, encoding protocol.ExecEncoding) (Request, error) {
@@ -46,30 +45,6 @@ func BuildRequest(params RequestParams, config Config, encoding protocol.ExecEnc
 	}
 	if params.Instructions != nil && *params.Instructions != "" {
 		item, err := Message("developer", *params.Instructions)
-		if err != nil {
-			return Request{}, err
-		}
-		input = append(input, item)
-	}
-	if params.ExecutionState != nil && (len(params.ExecutionState.Processes) > 0 || len(params.ExecutionState.Cells) > 0) {
-		cells := make([]activeCell, 0, len(params.ExecutionState.Cells))
-		for _, cell := range params.ExecutionState.Cells {
-			cells = append(cells, activeCell{CellID: cell.ID, Status: cell.Status})
-		}
-		processes := make([]activeProcess, 0, len(params.ExecutionState.Processes))
-		for _, process := range params.ExecutionState.Processes {
-			if process.ModelSessionID == nil {
-				continue
-			}
-			processes = append(processes, activeProcess{
-				SessionID: *process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode,
-			})
-		}
-		state, err := json.Marshal(executionState{Cells: cells, Processes: processes})
-		if err != nil {
-			return Request{}, err
-		}
-		item, err := Message("developer", "Active execution handles: "+string(state))
 		if err != nil {
 			return Request{}, err
 		}
@@ -132,8 +107,11 @@ func BuildCompactionRequest(params RequestParams, config Config, encoding protoc
 }
 
 func buildInput(items []Item, config Config, encoding protocol.ExecEncoding) ([]RequestInput, error) {
+	return buildInputFrom(items, config, encoding, map[string]bool{})
+}
+
+func buildInputFrom(items []Item, config Config, encoding protocol.ExecEncoding, answered map[string]bool) ([]RequestInput, error) {
 	input := make([]RequestInput, 0, len(items))
-	answered := map[string]bool{}
 	adaptNotifications := config.Dialect == DialectStandard || encoding == protocol.ExecEncodingJSON
 	for _, item := range items {
 		if adaptNotifications && item.IsToolOutput() {
@@ -167,23 +145,6 @@ func buildInput(items []Item, config Config, encoding protocol.ExecEncoding) ([]
 		input = append(input, item)
 	}
 	return input, nil
-}
-
-type executionState struct {
-	Cells     []activeCell    `json:"cells"`
-	Processes []activeProcess `json:"processes"`
-}
-
-type activeCell struct {
-	CellID string              `json:"cell_id"`
-	Status protocol.CellStatus `json:"status"`
-}
-
-type activeProcess struct {
-	SessionID int                    `json:"session_id"`
-	Status    protocol.ProcessStatus `json:"status"`
-	TTY       bool                   `json:"tty"`
-	ExitCode  *int                   `json:"exit_code"`
 }
 
 // Headers returns the exact non-authentication headers sent for this wire request.

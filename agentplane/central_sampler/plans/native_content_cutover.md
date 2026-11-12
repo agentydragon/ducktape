@@ -31,7 +31,9 @@ investigate the reported record before retrying. Goose version 13 is recorded on
 
 Verify version 13, retained Session/intent identities, context/request counts and unchanged export
 checkpoints. Compare selected reconstructed OpenAI and Anthropic requests with the rehearsal copy,
-including signed thinking, images, tool results, compacted contexts and unresolved intents.
+including signed thinking, images, tool results, compacted contexts and unresolved intents. Legacy
+requests without a provable native-source mapping remain self-contained recipes and do not seed the
+incremental projection cache.
 
 Reclaim dead tuple/TOAST space while writers remain stopped. Inspect sizes first: `VACUUM FULL`
 requires an exclusive lock, temporary space for the rewritten relation and WAL headroom. Rewrite
@@ -40,7 +42,9 @@ only tables whose measured dead space warrants it, one at a time (`sampler_inten
 
 Deploy the candidate image, restore the desired replica count and resume GitOps ownership. Verify
 readiness, ordinary input/tool/compaction turns, reconstructed request reads, History checkpoint
-advancement, and database growth over several appending turns. Restarts preserve pending effects;
+advancement, and database growth over appending turns with changing execution handles and request prefixes.
+Verify that handles appear as appended updates, unchanged snapshots do not repeat, and cleared
+handles produce an empty snapshot. Restarts preserve pending effects;
 they do not establish that uncertain external operations completed.
 
 ## Rollback

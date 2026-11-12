@@ -60,8 +60,8 @@ message ReadProviderRequestRequest {
 }
 message ReadProviderRequestMetadata {
   string request_id = 1;
-  string context_id = 2;
-  string profile_id = 3;
+  reserved 2, 3;
+  reserved "context_id", "profile_id";
   string method = 4;
   string url = 5;
   map<string, string> headers = 6;

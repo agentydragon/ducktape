@@ -1122,12 +1122,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
-	body, err := adapter.Prepare(conversation, session, state, metadata)
-	if err != nil {
-		return "", err
-	}
+	preparation := adapter.Prepare(session, metadata)
 	request := providerRequestIntent(PendingIntentSampling, connection, config)
-	intentID, wire, err := r.store.Begin(ctx, owner, request, body)
+	intentID, wire, err := r.store.Begin(ctx, owner, request, preparation)
 	if err != nil {
 		return "", err
 	}
@@ -1220,7 +1217,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	}
 	original := conversation.Context()
 	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model])
-	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Body)
+	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare)
 	if err != nil {
 		return err
 	}

@@ -236,8 +236,8 @@ func (s *Sampler) ReadProviderRequest(r *samplerpb.ReadProviderRequestRequest, s
 		return samplerError(ctx, err)
 	}
 	metadata := &samplerpb.ReadProviderRequestMetadata{
-		RequestId: request.RequestID, ContextId: request.ContextID, ProfileId: string(request.ProfileID),
-		Method: request.Method, Url: request.URL, Headers: nonAuthProviderRequestHeaders(request.Headers),
+		RequestId: request.RequestID,
+		Method:    request.Method, Url: request.URL, Headers: nonAuthProviderRequestHeaders(request.Headers),
 	}
 	if err := stream.Send(&samplerpb.ReadProviderRequestResponse{Item: &samplerpb.ReadProviderRequestResponse_Metadata{Metadata: metadata}}); err != nil {
 		return err

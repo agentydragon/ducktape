@@ -1331,7 +1331,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}}}
+	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}})
 	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}

@@ -1,34 +1,17 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/central_sampler:__pkg__"])
+package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
 
 go_library(
     name = "storage",
-    srcs = [
-        "anthropic.go",
-        "content.go",
-        "responses.go",
-    ],
+    srcs = ["content.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage",
-    deps = [
-        "//agentplane/central_sampler/anthropic",
-        "//agentplane/central_sampler/protocol",
-        "//agentplane/central_sampler/responses",
-    ],
 )
 
 go_test(
     name = "storage_test",
     size = "small",
-    srcs = [
-        "anthropic_test.go",
-        "content_test.go",
-        "responses_test.go",
-    ],
+    srcs = ["content_test.go"],
     embed = [":storage"],
     race = "on",
-    deps = [
-        "//agentplane/central_sampler/anthropic",
-        "//agentplane/central_sampler/responses",
-    ],
 )

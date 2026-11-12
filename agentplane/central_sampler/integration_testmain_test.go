@@ -104,12 +104,20 @@ func nativeResponsesRecords(t testing.TB, items ...responses.Item) []json.RawMes
 
 func responsesItems(t testing.TB, state protocol.Context) []responses.Item {
 	t.Helper()
-	responses, ok := state.(*responses.Context)
-	if !ok {
-		if state == nil {
-			t.Fatal("native context is nil, want responses.Context")
-		}
-		t.Fatalf("native context is %T, want responses.Context", state)
+	if state == nil || state.API() != protocol.APIStyleResponses {
+		t.Fatalf("native context is %T, want Responses", state)
 	}
-	return responses.Items
+	records, err := state.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := make([]responses.Item, 0, len(records))
+	for _, raw := range records {
+		var item responses.Item
+		if err := json.Unmarshal(raw, &item); err != nil {
+			t.Fatal(err)
+		}
+		items = append(items, item)
+	}
+	return items
 }

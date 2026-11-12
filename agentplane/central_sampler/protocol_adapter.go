@@ -64,16 +64,16 @@ type sampleResult struct {
 }
 
 type compactionPlan struct {
-	// Body is the adapter's request: responses.Request or anthropic.Request.
-	Body  any
-	Apply func(*sampleResult) (protocol.Context, error)
+	// Prepare builds the persisted recipe within the intent transaction.
+	Prepare requestPreparation
+	Apply   func(*sampleResult) (protocol.Context, error)
 }
 
 // These adapters compose native packages with sampler-owned session and route policy.
 // Native packages consume snapshots and an evidence sink, never a Store or Runtime.
 type protocolAdapter interface {
 	API() protocol.APIStyle
-	Prepare(*Conversation, *Session, *ExecutionState, protocol.SessionAttribution) (any, error)
+	Prepare(*Session, protocol.SessionAttribution) requestPreparation
 	Sample(context.Context, *http.Client, ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool) (*sampleResult, error)
 	AutoCompactTokens(*int) *int
 	PrepareCompaction(*Conversation, *Session, *ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
@@ -97,17 +97,32 @@ func adapterFor(config ModelConfig) (protocolAdapter, error) {
 func (a responsesAdapter) API() protocol.APIStyle { return protocol.APIStyleResponses }
 func (a anthropicAdapter) API() protocol.APIStyle { return protocol.APIStyleAnthropicMessages }
 
-func (a responsesAdapter) params(c *Conversation, s *Session, state *ExecutionState, attribution protocol.SessionAttribution) (responses.RequestParams, error) {
+func (a responsesAdapter) params(c *Conversation, s *Session, attribution protocol.SessionAttribution) (responses.RequestParams, error) {
 	tools, err := modelToolSurface(a.config.ExecEncoding)
-	return responses.RequestParams{Model: a.config.ProviderModel, Effort: s.Effort, Attribution: attribution, Items: c.Context().(*responses.Context).Items, Instructions: c.Instructions, ExecutionState: state.protocolState(), Tools: tools}, err
+	return responses.RequestParams{Model: a.config.ProviderModel, Effort: s.Effort, Attribution: attribution, Instructions: c.Instructions, Tools: tools}, err
 }
 
-func (a responsesAdapter) Prepare(c *Conversation, s *Session, state *ExecutionState, attribution protocol.SessionAttribution) (any, error) {
-	params, err := a.params(c, s, state, attribution)
-	if err != nil {
-		return nil, err
+func (a responsesAdapter) Prepare(session *Session, attribution protocol.SessionAttribution) requestPreparation {
+	return a.preparation(session, attribution, false)
+}
+
+func (a responsesAdapter) preparation(session *Session, attribution protocol.SessionAttribution, compact bool) requestPreparation {
+	return func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		params, err := a.params(conversation, session, attribution)
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		var body responses.Request
+		if compact {
+			body, err = responses.BuildCompactionRequest(params, a.config.Responses, a.config.ExecEncoding)
+		} else {
+			body, err = responses.BuildRequest(params, a.config.Responses, a.config.ExecEncoding)
+		}
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		return prepareResponsesRequest(store, conversation, metadata, body, a.config.Responses, a.config.ExecEncoding, compact)
 	}
-	return responses.BuildRequest(params, a.config.Responses, a.config.ExecEncoding)
 }
 
 func (a anthropicAdapter) params(c *Conversation, s *Session) (anthropic.RequestParams, error) {
@@ -123,12 +138,19 @@ func (a anthropicAdapter) params(c *Conversation, s *Session) (anthropic.Request
 	return anthropic.RequestParams{Context: c.Context().(*anthropic.Context), Model: a.config.ProviderModel, Effort: effort, Instructions: c.Instructions, Tools: tools}, err
 }
 
-func (a anthropicAdapter) Prepare(c *Conversation, s *Session, _ *ExecutionState, _ protocol.SessionAttribution) (any, error) {
-	params, err := a.params(c, s)
-	if err != nil {
-		return nil, err
+func (a anthropicAdapter) Prepare(session *Session, _ protocol.SessionAttribution) requestPreparation {
+	return func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		params, err := a.params(conversation, session)
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		params.Context = nil // Metadata only; the codec projects the stable history incrementally.
+		body, err := anthropic.BuildRequest(params, *a.config.AnthropicMessages, anthropic.PreviousMessageID(conversation.Transcript.(*anthropic.Context)))
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		return prepareAnthropicRequest(store, conversation, metadata, body)
 	}
-	return anthropic.BuildRequest(params, *a.config.AnthropicMessages, anthropic.PreviousMessageID(c.Transcript.(*anthropic.Context)))
 }
 
 func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
@@ -180,15 +202,7 @@ func (a anthropicAdapter) AutoCompactTokens(_ *int) *int {
 }
 
 func (a responsesAdapter) PrepareCompaction(c *Conversation, s *Session, state *ExecutionState, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
-	params, err := a.params(c, s, state, attribution)
-	if err != nil {
-		return nil, err
-	}
-	body, err := responses.BuildCompactionRequest(params, a.config.Responses, a.config.ExecEncoding)
-	if err != nil {
-		return nil, err
-	}
-	return &compactionPlan{Body: body, Apply: func(result *sampleResult) (protocol.Context, error) {
+	return &compactionPlan{Prepare: a.preparation(s, attribution, true), Apply: func(result *sampleResult) (protocol.Context, error) {
 		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), environment)
 	}}, nil
 }
@@ -202,7 +216,24 @@ func (a anthropicAdapter) PrepareCompaction(c *Conversation, s *Session, _ *Exec
 	if err != nil {
 		return nil, err
 	}
-	return &compactionPlan{Body: plan.Body, Apply: func(result *sampleResult) (protocol.Context, error) {
+	return &compactionPlan{Prepare: func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		previous, err := store.previousRequest(conversation.ID)
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		body := plan.Body
+		if previous.ProfileID != "" {
+			body, err = anthropic.FreezeRequest(store, previous.ProfileID, body)
+			if err != nil {
+				return ProviderRequest{}, nil, err
+			}
+		}
+		profile, ids, err := anthropic.StoreRequest(store, body)
+		if err != nil {
+			return ProviderRequest{}, nil, err
+		}
+		return finishStoredRequest(store, metadata, profile, ids)
+	}, Apply: func(result *sampleResult) (protocol.Context, error) {
 		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit))
 	}}, nil
 }

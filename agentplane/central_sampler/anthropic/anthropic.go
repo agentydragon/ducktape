@@ -31,8 +31,8 @@ func PreviousMessageID(context *Context) string {
 	if context == nil {
 		return ""
 	}
-	for i := len(context.Messages) - 1; i >= 0; i-- {
-		fields := messageFields(context.Messages[i])
+	for i := len(context.messages) - 1; i >= 0; i-- {
+		fields := messageFields(context.messages[i])
 		if roleOf(fields) == RoleAssistant && stopReasonOf(fields) != StopCompaction {
 			return rawString(fields, "id")
 		}

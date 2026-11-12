@@ -409,7 +409,7 @@ func convertActiveContextBatch(ctx context.Context, db *sql.DB, conversationID s
 		}
 	}
 	if end == len(records) {
-		control, err := nativeContextControl(native)
+		control, err := (&Conversation{}).contextControl(native)
 		if err != nil {
 			return fmt.Errorf("store active context control for conversation %s: %w", conversationID, err)
 		}

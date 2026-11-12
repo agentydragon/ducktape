@@ -1,4 +1,4 @@
-package storage
+package responses
 
 import (
 	"bytes"
@@ -7,19 +7,20 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 type memoryContent struct {
-	byID map[ContentID]StoredContent
+	byID map[storage.ContentID]storage.StoredContent
 }
 
 func newMemoryContent() *memoryContent {
-	return &memoryContent{byID: make(map[ContentID]StoredContent)}
+	return &memoryContent{byID: make(map[storage.ContentID]storage.StoredContent)}
 }
 
-func (memory *memoryContent) PutContent(kind ContentKind, payload json.RawMessage) (ContentID, error) {
-	content, err := CanonicalContent(kind, payload)
+func (memory *memoryContent) PutContent(kind storage.ContentKind, payload json.RawMessage) (storage.ContentID, error) {
+	content, err := storage.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
@@ -30,10 +31,10 @@ func (memory *memoryContent) PutContent(kind ContentKind, payload json.RawMessag
 	return content.ID, nil
 }
 
-func (memory *memoryContent) GetContent(id ContentID) (StoredContent, error) {
+func (memory *memoryContent) GetContent(id storage.ContentID) (storage.StoredContent, error) {
 	content, ok := memory.byID[id]
 	if !ok {
-		return StoredContent{}, fmt.Errorf("content %s not found", id)
+		return storage.StoredContent{}, fmt.Errorf("content %s not found", id)
 	}
 	return content, nil
 }
@@ -48,33 +49,33 @@ func TestStoreRecordDeduplicatesPartsAndPreservesProviderFields(t *testing.T) {
 		[]byte(`{"type":"message","role":"assistant","output":[{"type":"output_text","text":"shared payload"}]}`),
 		[]byte(`{"type":"message","role":"user","content":"shared payload"}`),
 	}
-	ids := make([]ContentID, 0, len(originals))
+	ids := make([]storage.ContentID, 0, len(originals))
 	for _, original := range originals {
-		id, err := StoreResponsesRecord(memory, original)
+		id, err := StoreRecord(memory, original)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, id)
-		roundTripped, err := RestoreResponsesRecord(memory, id)
+		roundTripped, err := RestoreRecord(memory, id)
 		if err != nil {
 			t.Fatal(err)
 		}
 		assertResponsesJSONEqual(t, original, roundTripped)
 	}
 
-	sharedID := findStringContent(t, memory, ContentText, "shared payload")
+	sharedID := findStringContent(t, memory, storage.ContentText, "shared payload")
 	var scalarMessage storedItem
 	mustUnmarshal(t, memory.byID[ids[len(ids)-1]].Payload, &scalarMessage)
 	if scalarMessage.ContentText == nil || *scalarMessage.ContentText != sharedID {
 		t.Fatal("scalar message content did not share text payload")
 	}
-	if got := countStringContent(memory, ContentText, "shared payload"); got != 1 {
+	if got := countStringContent(memory, storage.ContentText, "shared payload"); got != 1 {
 		t.Fatalf("shared text content rows = %d, want one", got)
 	}
-	if got := countStringContent(memory, ContentOpaque, "opaque-reasoning"); got != 1 {
+	if got := countStringContent(memory, storage.ContentOpaque, "opaque-reasoning"); got != 1 {
 		t.Fatalf("opaque continuation rows = %d, want one", got)
 	}
-	if got := countStringContent(memory, ContentImageData, "QUJDRA=="); got != 1 {
+	if got := countStringContent(memory, storage.ContentImageData, "QUJDRA=="); got != 1 {
 		t.Fatalf("image data rows = %d, want one", got)
 	}
 
@@ -130,25 +131,25 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 		json.RawMessage(`{"type":"function_call","call_id":"call_function","name":"exec","arguments":"shared payload"}`),
 		json.RawMessage(`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"shared payload"},{"type":"input_image","image_url":"data:image/jpeg;base64,QUJDRA==","detail":"auto"}]}`),
 	}
-	requestInputs := make([]responses.RequestInput, 0, len(items)+1)
+	requestInputs := make([]RequestInput, 0, len(items)+1)
 	for _, raw := range items {
-		var item responses.Item
+		var item Item
 		if err := json.Unmarshal(raw, &item); err != nil {
 			t.Fatal(err)
 		}
 		requestInputs = append(requestInputs, item)
 	}
-	requestInputs = append(requestInputs, responses.TextToolOutput{Type: responses.ItemFunctionOutput, CallID: "call_result", Output: "shared payload"})
+	requestInputs = append(requestInputs, TextToolOutput{Type: ItemFunctionOutput, CallID: "call_result", Output: "shared payload"})
 	parameters := json.RawMessage(`{"type":"object","properties":{"code":{"type":"string"}},"required":["code"],"additionalProperties":false}`)
-	request := responses.Request{
+	request := Request{
 		Model: "fixture-model", Instructions: "shared payload", Input: requestInputs, Stream: true, Store: false,
 		Include: []string{"reasoning.encrypted_content"}, PromptCacheKey: "session-1",
-		ClientMetadata:    &responses.ClientMetadata{SessionID: "session-1", ThreadID: "thread-1", TurnID: "turn-1"},
-		Reasoning:         &responses.ReasoningConfig{Effort: "high", Summary: "auto", Context: "all_turns"},
-		Tools:             []responses.AdditionalTool{{Type: "function", Name: "exec", Description: "Run code", Parameters: parameters}},
+		ClientMetadata:    &ClientMetadata{SessionID: "session-1", ThreadID: "thread-1", TurnID: "turn-1"},
+		Reasoning:         &ReasoningConfig{Effort: "high", Summary: "auto", Context: "all_turns"},
+		Tools:             []AdditionalTool{{Type: "function", Name: "exec", Description: "Run code", Parameters: parameters}},
 		ParallelToolCalls: false,
 	}
-	profileID, recordIDs, err := StoreResponsesRequest(memory, request)
+	profileID, recordIDs, err := StoreRequest(memory, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,13 +158,13 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 	}
 	restoredRecords := make([]json.RawMessage, 0, len(recordIDs))
 	for _, id := range recordIDs {
-		record, err := RestoreResponsesRecord(memory, id)
+		record, err := RestoreRecord(memory, id)
 		if err != nil {
 			t.Fatal(err)
 		}
 		restoredRecords = append(restoredRecords, record)
 	}
-	rendered, err := RestoreResponsesRequest(memory, profileID, restoredRecords)
+	rendered, err := RestoreRequest(memory, profileID, restoredRecords)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,13 +176,13 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 
 	var firstProfile storedRequestProfile
 	mustUnmarshal(t, memory.byID[profileID].Payload, &firstProfile)
-	if firstProfile.Instructions != findStringContent(t, memory, ContentText, "shared payload") {
+	if firstProfile.Instructions != findStringContent(t, memory, storage.ContentText, "shared payload") {
 		t.Fatalf("request instructions did not share the existing text content ID: %+v", firstProfile)
 	}
 	if len(firstProfile.Tools) != 1 {
 		t.Fatalf("stored tool refs = %d, want one", len(firstProfile.Tools))
 	}
-	var tool responses.AdditionalTool
+	var tool AdditionalTool
 	mustUnmarshal(t, memory.byID[firstProfile.Tools[0]].Payload, &tool)
 	if tool.Name != "exec" {
 		t.Fatalf("restored tool name = %q, want exec", tool.Name)
@@ -191,7 +192,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 	metadata := *request.ClientMetadata
 	metadata.TurnID = "turn-2"
 	second.ClientMetadata = &metadata
-	secondID, secondRecords, err := StoreResponsesRequest(memory, second)
+	secondID, secondRecords, err := StoreRequest(memory, second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,18 +212,18 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 func TestStoreRequestJSONPreservesHistoricalUnknownEnvelopes(t *testing.T) {
 	memory := newMemoryContent()
 	original := json.RawMessage(`{"model":"fixture-model","instructions":"legacy instructions","input":[{"type":"reasoning","encrypted_content":"opaque-legacy","summary":[{"type":"summary_text","text":"keep this"}],"provider_number":9007199254740993}],"tools":[{"type":"function","name":"exec","description":"Run","parameters":{"type":"object"},"provider_tool_extension":{"revision":9007199254740993}}],"stream":true,"store":false,"prompt_cache_key":"session","parallel_tool_calls":false,"provider_extension":{"sequence":9007199254740993}}`)
-	profile, refs, err := StoreResponsesRequestJSON(memory, original)
+	profile, refs, err := StoreRequestJSON(memory, original)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(refs) != 1 {
 		t.Fatalf("historical item count = %d, want 1", len(refs))
 	}
-	record, err := RestoreResponsesRecord(memory, refs[0])
+	record, err := RestoreRecord(memory, refs[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := RestoreResponsesRequest(memory, profile, []json.RawMessage{record})
+	rendered, err := RestoreRequest(memory, profile, []json.RawMessage{record})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +232,11 @@ func TestStoreRequestJSONPreservesHistoricalUnknownEnvelopes(t *testing.T) {
 
 func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
 	memory := newMemoryContent()
-	id, err := memory.PutContent(ContentText, json.RawMessage(`"not an item"`))
+	id, err := memory.PutContent(storage.ContentText, json.RawMessage(`"not an item"`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RestoreResponsesRecord(memory, id); err == nil {
+	if _, err := RestoreRecord(memory, id); err == nil {
 		t.Fatal("RestoreRecord accepted a text row as an OpenAI item")
 	}
 }
@@ -243,38 +244,38 @@ func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
 func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 	tests := []struct {
 		name    string
-		kind    ContentKind
+		kind    storage.ContentKind
 		payload string
-		want    []ContentID
+		want    []storage.ContentID
 	}{
 		{
 			name:    "item",
 			kind:    ContentOpenAIItem,
 			payload: `{"type":"message","envelope":{"provider_extension":{"ref":"ignored"}},"content_refs":["part-1","part-2"],"summary_refs":["summary-1"],"input_text_ref":"input-1","arguments_text_ref":"args-1","output_text_ref":"output-1","encrypted_content_ref":"opaque-1"}`,
-			want:    []ContentID{"part-1", "part-2", "summary-1", "input-1", "args-1", "output-1", "opaque-1"},
+			want:    []storage.ContentID{"part-1", "part-2", "summary-1", "input-1", "args-1", "output-1", "opaque-1"},
 		},
 		{
 			name:    "content part",
 			kind:    ContentOpenAIContent,
 			payload: `{"type":"input_image","envelope":{"provider_extension":{"ref":"ignored"}},"text_ref":"text-1","image_data":{"field":"image_url","prefix":"data:image/png;base64,","ref":"image-1"}}`,
-			want:    []ContentID{"text-1", "image-1"},
+			want:    []storage.ContentID{"text-1", "image-1"},
 		},
 		{
 			name:    "request profile",
 			kind:    ContentOpenAIRequest,
 			payload: `{"model":"fixture","instructions_ref":"instructions-1","tool_refs":["tool-1","tool-2"],"envelope":{"provider_extension":{"ref":"ignored"}}}`,
-			want:    []ContentID{"instructions-1", "tool-1", "tool-2"},
+			want:    []storage.ContentID{"instructions-1", "tool-1", "tool-2"},
 		},
 		{
 			name:    "opaque kinds have no traversed refs",
-			kind:    ContentOpaque,
+			kind:    storage.ContentOpaque,
 			payload: `{"ref":"not-a-graph-edge"}`,
 			want:    nil,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := ResponsesContentReferences(test.kind, json.RawMessage(test.payload))
+			got, err := ContentReferences(test.kind, json.RawMessage(test.payload))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -286,7 +287,7 @@ func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 }
 
 func TestContentReferencesRejectsEmptyReference(t *testing.T) {
-	_, err := ResponsesContentReferences(ContentOpenAIRequest, json.RawMessage(`{"instructions_ref":""}`))
+	_, err := ContentReferences(ContentOpenAIRequest, json.RawMessage(`{"instructions_ref":""}`))
 	if err == nil {
 		t.Fatal("ContentReferences accepted an empty instructions ID")
 	}
@@ -312,7 +313,7 @@ func decodeJSON(t *testing.T, raw []byte) any {
 	return value
 }
 
-func findStringContent(t *testing.T, memory *memoryContent, kind ContentKind, expected string) ContentID {
+func findStringContent(t *testing.T, memory *memoryContent, kind storage.ContentKind, expected string) storage.ContentID {
 	t.Helper()
 	for id, content := range memory.byID {
 		if content.Kind != kind {
@@ -327,7 +328,7 @@ func findStringContent(t *testing.T, memory *memoryContent, kind ContentKind, ex
 	return ""
 }
 
-func countStringContent(memory *memoryContent, kind ContentKind, expected string) int {
+func countStringContent(memory *memoryContent, kind storage.ContentKind, expected string) int {
 	count := 0
 	for _, content := range memory.byID {
 		if content.Kind != kind {
@@ -345,5 +346,41 @@ func mustUnmarshal(t *testing.T, raw []byte, target any) {
 	t.Helper()
 	if err := json.Unmarshal(raw, target); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIncrementalProjectionRecognizesOutputsInRetainedPrefix(t *testing.T) {
+	for _, dialect := range []Dialect{DialectLite, DialectStandard} {
+		for _, encoding := range []protocol.ExecEncoding{protocol.ExecEncodingJSON, protocol.ExecEncodingFreeform} {
+			t.Run(string(dialect)+"/"+string(encoding), func(t *testing.T) {
+				state := &Context{}
+				if err := state.AppendRecords([]json.RawMessage{
+					json.RawMessage(`{"type":"function_call","call_id":"call_1","name":"exec","arguments":"{}"}`),
+					json.RawMessage(`{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_text","text":"first"}]}`),
+					json.RawMessage(`{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_text","text":"later"}]}`),
+				}); err != nil {
+					t.Fatal(err)
+				}
+				all, err := state.ProjectRecords(0, Config{Dialect: dialect}, encoding)
+				if err != nil {
+					t.Fatal(err)
+				}
+				suffix, err := state.ProjectRecords(2, Config{Dialect: dialect}, encoding)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(suffix) != 1 {
+					t.Fatalf("suffix has %d records", len(suffix))
+				}
+				assertResponsesJSONEqual(t, all[2], suffix[0])
+				var item Item
+				if err := json.Unmarshal(suffix[0], &item); err != nil {
+					t.Fatal(err)
+				}
+				if (dialect == DialectStandard || encoding == protocol.ExecEncodingJSON) && (item.Type != ItemMessage || item.Role != "developer") {
+					t.Fatal("later output did not become a developer notice")
+				}
+			})
+		}
 	}
 }

@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,23 +11,32 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-const executionStatePrefix = "Active execution handles: "
-
 // Context stores one native Messages API message per record. Messages are kept as raw
 // JSON so provider-owned fields, content block boundaries, signatures, and usage survive replay.
 type Context struct {
-	Messages      []json.RawMessage `json:"messages"`
-	PendingEffort *string           `json:"pending_effort,omitempty"`
+	messages      []json.RawMessage
+	PendingEffort *string `json:"pending_effort,omitempty"`
 }
 
 func (*Context) API() protocol.APIStyle { return protocol.APIStyleAnthropicMessages }
 
-func (c *Context) Records() ([]json.RawMessage, error) {
+func (c *Context) RecordCount() int { return len(c.messages) }
+
+func (c *Context) Clone() protocol.Context {
+	return &Context{messages: append([]json.RawMessage(nil), c.messages...), PendingEffort: cloneString(c.PendingEffort)}
+}
+
+func (c *Context) Records() ([]json.RawMessage, error) { return c.RecordsFrom(0) }
+
+func (c *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
 	if c == nil {
 		return nil, errors.New("nil Anthropic context")
 	}
-	result := make([]json.RawMessage, len(c.Messages))
-	for i, record := range c.Messages {
+	if start < 0 || start > len(c.messages) {
+		return nil, protocol.ErrInvalid
+	}
+	result := make([]json.RawMessage, len(c.messages)-start)
+	for i, record := range c.messages[start:] {
 		if err := validateAnthropicMessage(record); err != nil {
 			return nil, fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
@@ -40,7 +48,11 @@ func (c *Context) Records() ([]json.RawMessage, error) {
 // WireMessages removes response-envelope metadata that belongs only in storage while preserving
 // the native role, content block sequence, and per-message effort control sent to Anthropic.
 func (c *Context) WireMessages() ([]json.RawMessage, error) {
-	records, err := c.Records()
+	return c.ProjectRecords(0)
+}
+
+func (c *Context) ProjectRecords(start int) ([]json.RawMessage, error) {
+	records, err := c.RecordsFrom(start)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +82,7 @@ func (c *Context) AppendRecords(records []json.RawMessage) error {
 		}
 	}
 	for _, record := range records {
-		c.Messages = append(c.Messages, protocol.CloneJSON(record))
+		c.messages = append(c.messages, protocol.CloneJSON(record))
 	}
 	return nil
 }
@@ -176,84 +188,6 @@ func (c *Context) appendEffortControl(effort string) error {
 	return c.AppendRecords([]json.RawMessage{record})
 }
 
-func (c *Context) AppendExecutionState(state *protocol.ExecutionState) error {
-	if c == nil {
-		return errors.New("nil Anthropic context")
-	}
-	if state == nil {
-		return nil
-	}
-	snapshot := anthropicExecutionState{Cells: []anthropicActiveCell{}, Processes: []anthropicActiveProcess{}}
-	for _, cell := range state.Cells {
-		snapshot.Cells = append(snapshot.Cells, anthropicActiveCell{CellID: cell.ID, Status: cell.Status})
-	}
-	for _, process := range state.Processes {
-		if process.ModelSessionID == nil {
-			continue
-		}
-		snapshot.Processes = append(snapshot.Processes, anthropicActiveProcess{
-			SessionID: *process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode,
-		})
-	}
-	slices.SortFunc(snapshot.Cells, func(a, b anthropicActiveCell) int { return strings.Compare(a.CellID, b.CellID) })
-	slices.SortFunc(snapshot.Processes, func(a, b anthropicActiveProcess) int { return cmp.Compare(a.SessionID, b.SessionID) })
-	wire, err := json.Marshal(snapshot)
-	if err != nil {
-		return err
-	}
-	previous, exists, err := c.lastExecutionState()
-	if err != nil {
-		return err
-	}
-	if !exists && len(snapshot.Cells) == 0 && len(snapshot.Processes) == 0 {
-		return nil
-	}
-	if exists && bytes.Equal(previous, wire) {
-		return nil
-	}
-	text := executionStatePrefix + string(wire)
-	return c.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: text}})
-}
-
-type anthropicExecutionState struct {
-	Cells     []anthropicActiveCell    `json:"cells"`
-	Processes []anthropicActiveProcess `json:"processes"`
-}
-
-type anthropicActiveCell struct {
-	CellID string              `json:"cell_id"`
-	Status protocol.CellStatus `json:"status"`
-}
-
-type anthropicActiveProcess struct {
-	SessionID int                    `json:"session_id"`
-	Status    protocol.ProcessStatus `json:"status"`
-	TTY       bool                   `json:"tty"`
-	ExitCode  *int                   `json:"exit_code"`
-}
-
-func (c *Context) lastExecutionState() (json.RawMessage, bool, error) {
-	for i := len(c.Messages) - 1; i >= 0; i-- {
-		fields := messageFields(c.Messages[i])
-		if roleOf(fields) != RoleUser {
-			continue
-		}
-		content, err := anthropicContentBlocks(fields["content"])
-		if err != nil {
-			return nil, false, err
-		}
-		if len(content) != 1 {
-			continue
-		}
-		var text textBlock
-		if err := json.Unmarshal(content[0], &text); err != nil || text.Type != BlockText || !strings.HasPrefix(text.Text, executionStatePrefix) {
-			continue
-		}
-		return json.RawMessage(strings.TrimPrefix(text.Text, executionStatePrefix)), true, nil
-	}
-	return nil, false, nil
-}
-
 func anthropicContentBlocks(raw json.RawMessage) ([]json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -309,7 +243,7 @@ func (c *Context) PendingCalls() ([]protocol.ToolInvocation, error) {
 func (c *Context) toolCalls() ([]protocol.ToolInvocation, error) {
 	calls := []protocol.ToolInvocation{}
 	seen := map[string]bool{}
-	for recordIndex, record := range c.Messages {
+	for recordIndex, record := range c.messages {
 		fields := messageFields(record)
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
@@ -357,7 +291,7 @@ func (c *Context) answeredCalls() (map[string]bool, error) {
 		known[call.CallID] = true
 	}
 	answered := map[string]bool{}
-	for recordIndex, record := range c.Messages {
+	for recordIndex, record := range c.messages {
 		fields := messageFields(record)
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
@@ -404,14 +338,14 @@ func (c *Context) CheckSettled() error {
 }
 
 func (c *Context) TurnComplete() bool {
-	if c == nil || len(c.Messages) == 0 {
+	if c == nil || len(c.messages) == 0 {
 		return false
 	}
 	var message struct {
 		Role       Role       `json:"role"`
 		StopReason StopReason `json:"stop_reason"`
 	}
-	if json.Unmarshal(c.Messages[len(c.Messages)-1], &message) != nil {
+	if json.Unmarshal(c.messages[len(c.messages)-1], &message) != nil {
 		return false
 	}
 	return message.Role == RoleAssistant && message.StopReason == StopEndTurn
@@ -427,7 +361,7 @@ func (c *Context) MarshalJSON() ([]byte, error) {
 	if c.PendingEffort != nil && strings.TrimSpace(*c.PendingEffort) == "" {
 		return nil, errors.New("Anthropic pending effort must be non-empty")
 	}
-	messages := c.Messages
+	messages := c.messages
 	if messages == nil {
 		messages = []json.RawMessage{}
 	}
@@ -477,7 +411,7 @@ func (c *Context) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
 	}
-	c.Messages, c.PendingEffort = messages, pending
+	c.messages, c.PendingEffort = messages, pending
 	return nil
 }
 

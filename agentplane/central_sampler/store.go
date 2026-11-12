@@ -111,6 +111,19 @@ func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conver
 	if len(conversation.activeControl) > 0 {
 		conversation.ActiveContext, err = store.loadNativeContext(conversation.API, conversation.activeContextID, conversation.activeControl)
 	}
+	if err == nil {
+		conversation.storedContexts = map[protocol.Context]contextCheckpoint{conversation.Transcript: {Head: conversation.transcriptContextID, Count: conversation.Transcript.RecordCount()}}
+		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
+		if err := conversation.restoreExecutionSnapshot(conversation.Transcript, conversation.transcriptControl); err != nil {
+			return err
+		}
+		if conversation.ActiveContext != nil {
+			conversation.storedContexts[conversation.ActiveContext] = contextCheckpoint{Head: conversation.activeContextID, Count: conversation.ActiveContext.RecordCount()}
+			if err := conversation.restoreExecutionSnapshot(conversation.ActiveContext, conversation.activeControl); err != nil {
+				return err
+			}
+		}
+	}
 	return err
 }
 
@@ -1558,25 +1571,22 @@ func (s *Store) pgError(err error) error {
 
 func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
 	store := newContentStore(ctx, tx)
-	transcriptID, err := store.storeNativeContext(conversation.Transcript)
+	transcriptID, err := store.storeConversationContext(conversation, conversation.Transcript)
 	if err != nil {
 		return err
 	}
-	if err := store.checkTranscriptPrefix(conversation.transcriptContextID, transcriptID); err != nil {
-		return err
-	}
-	transcriptControl, err := nativeContextControl(conversation.Transcript)
+	transcriptControl, err := conversation.contextControl(conversation.Transcript)
 	if err != nil {
 		return err
 	}
 	var activeControl any
 	var activeID string
 	if conversation.ActiveContext != nil {
-		activeID, err = store.storeNativeContext(conversation.ActiveContext)
+		activeID, err = store.storeConversationContext(conversation, conversation.ActiveContext)
 		if err != nil {
 			return err
 		}
-		control, err := nativeContextControl(conversation.ActiveContext)
+		control, err := conversation.contextControl(conversation.ActiveContext)
 		if err != nil {
 			return err
 		}
@@ -1609,7 +1619,7 @@ func nullableJSON(value string) any {
 	return value
 }
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, native any) (string, []byte, error) {
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, prepare requestPreparation) (string, []byte, error) {
 	kind := request.Kind
 	if !kind.valid() {
 		return "", nil, protocol.ErrInvalid
@@ -1630,7 +1640,10 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, n
 			return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
 		}
 		if request.ProviderRequest != nil {
-			prepared, rendered, err := prepareProviderRequest(ctx, tx, conversation.ID, *request.ProviderRequest, native)
+			if prepare == nil || request.API != conversation.API {
+				return protocol.ErrInvalid
+			}
+			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
 			if err != nil {
 				return err
 			}
@@ -1656,7 +1669,7 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, n
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 	})
 	if err != nil {
 		return "", nil, err
@@ -1798,7 +1811,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, native any) (string, []byte, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, prepare requestPreparation) (string, []byte, error) {
 	if request.Kind != PendingIntentCompaction {
 		return "", nil, protocol.ErrInvalid
 	}
@@ -1833,7 +1846,10 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 			return &protocol.UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
 		}
 		if request.ProviderRequest != nil {
-			prepared, rendered, err := prepareProviderRequest(ctx, tx, conversation.ID, *request.ProviderRequest, native)
+			if prepare == nil || request.API != conversation.API {
+				return protocol.ErrInvalid
+			}
+			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
 			if err != nil {
 				return err
 			}
@@ -1858,7 +1874,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 	})
 	if err != nil {
 		return "", nil, err
@@ -1909,6 +1925,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		}
 		conversation.EnvironmentContext = &environment
 		conversation.ActiveContext = replacement
+		conversation.activeContextID = ""
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil

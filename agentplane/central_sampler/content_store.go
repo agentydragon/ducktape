@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -104,12 +106,12 @@ func (s *contentStore) prefetch(ids []storage.ContentID) error {
 			var refs []storage.ContentID
 			var err error
 			switch content.Kind {
-			case storage.ContentOpenAIItem, storage.ContentOpenAIContent, storage.ContentOpenAIRequest:
-				refs, err = storage.ResponsesContentReferences(content.Kind, content.Payload)
-			case storage.ContentAnthropicMessage, storage.ContentAnthropicText, storage.ContentAnthropicThinking,
-				storage.ContentAnthropicRedactedThinking, storage.ContentAnthropicToolUse, storage.ContentAnthropicToolResult,
-				storage.ContentAnthropicImage, storage.ContentAnthropicCompaction, storage.ContentAnthropicRequest:
-				refs, err = storage.AnthropicContentReferences(content.Kind, content.Payload)
+			case responses.ContentOpenAIItem, responses.ContentOpenAIContent, responses.ContentOpenAIRequest:
+				refs, err = responses.ContentReferences(content.Kind, content.Payload)
+			case anthropic.ContentAnthropicMessage, anthropic.ContentAnthropicText, anthropic.ContentAnthropicThinking,
+				anthropic.ContentAnthropicRedactedThinking, anthropic.ContentAnthropicToolUse, anthropic.ContentAnthropicToolResult,
+				anthropic.ContentAnthropicImage, anthropic.ContentAnthropicCompaction, anthropic.ContentAnthropicRequest:
+				refs, err = anthropic.ContentReferences(content.Kind, content.Payload)
 			}
 			if err != nil {
 				return err
@@ -269,23 +271,6 @@ func (s *contentStore) storeContext(api protocol.APIStyle, contents []storage.Co
 	return parent, nil
 }
 
-func (s *contentStore) checkTranscriptPrefix(previous, current string) error {
-	if previous == "" || previous == current {
-		return nil
-	}
-	var retained bool
-	if err := s.tx.QueryRowContext(s.ctx, `WITH RECURSIVE prefix AS (
-        SELECT id,parent_id,item_count FROM sampler_context WHERE id=$1
-        UNION ALL SELECT c.id,c.parent_id,c.item_count FROM sampler_context c JOIN prefix p ON c.id=p.parent_id AND c.item_count=p.item_count-1
-    ) SELECT EXISTS(SELECT 1 FROM prefix WHERE id=$2)`, current, previous).Scan(&retained); err != nil {
-		return err
-	}
-	if !retained {
-		return fmt.Errorf("retained conversation transcript is not an append-only prefix")
-	}
-	return nil
-}
-
 func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
 	if id == "" {
 		return nil, nil
@@ -325,9 +310,9 @@ func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
 func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage) (storage.ContentID, error) {
 	switch api {
 	case protocol.APIStyleResponses:
-		return storage.StoreResponsesRecord(s, record)
+		return responses.StoreRecord(s, record)
 	case protocol.APIStyleAnthropicMessages:
-		return storage.StoreAnthropicRecord(s, record)
+		return anthropic.StoreRecord(s, record)
 	default:
 		return "", protocol.ErrInvalid
 	}
@@ -343,9 +328,9 @@ func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []storage.Conte
 		var err error
 		switch api {
 		case protocol.APIStyleResponses:
-			record, err = storage.RestoreResponsesRecord(s, id)
+			record, err = responses.RestoreRecord(s, id)
 		case protocol.APIStyleAnthropicMessages:
-			record, err = storage.RestoreAnthropicRecord(s, id)
+			record, err = anthropic.RestoreRecord(s, id)
 		default:
 			return nil, protocol.ErrInvalid
 		}
@@ -357,8 +342,17 @@ func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []storage.Conte
 	return records, nil
 }
 
-func (s *contentStore) storeNativeContext(native protocol.Context) (string, error) {
-	records, err := native.Records()
+type contextCheckpoint struct {
+	Head  string
+	Count int
+}
+
+func (s *contentStore) storeConversationContext(conversation *Conversation, native protocol.Context) (string, error) {
+	if conversation.storedContexts == nil {
+		conversation.storedContexts = map[protocol.Context]contextCheckpoint{}
+	}
+	base := conversation.storedContexts[native]
+	records, err := native.RecordsFrom(base.Count)
 	if err != nil {
 		return "", err
 	}
@@ -370,15 +364,21 @@ func (s *contentStore) storeNativeContext(native protocol.Context) (string, erro
 		}
 		ids = append(ids, id)
 	}
-	return s.storeContext(native.API(), ids)
+	head, err := appendContextIDs(s, native.API(), base.Head, base.Count, ids)
+	if err != nil {
+		return "", err
+	}
+	conversation.storedContexts[native] = contextCheckpoint{Head: head, Count: native.RecordCount()}
+	return head, nil
 }
 
 type nativeControl struct {
-	PendingEffort *string `json:"pending_effort,omitempty"`
+	PendingEffort     *string                 `json:"pending_effort,omitempty"`
+	ExecutionSnapshot *modelExecutionSnapshot `json:"execution_snapshot,omitempty"`
 }
 
-func nativeContextControl(native protocol.Context) (json.RawMessage, error) {
-	control := nativeControl{}
+func (conversation *Conversation) contextControl(native protocol.Context) (json.RawMessage, error) {
+	control := nativeControl{ExecutionSnapshot: conversation.executionSnapshots[native]}
 	if c, ok := native.(*anthropic.Context); ok {
 		control.PendingEffort = c.PendingEffort
 	}
@@ -406,4 +406,16 @@ func (s *contentStore) loadNativeContext(api protocol.APIStyle, id string, contr
 		c.PendingEffort = state.PendingEffort
 	}
 	return native, nil
+}
+
+func (conversation *Conversation) restoreExecutionSnapshot(native protocol.Context, raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var control nativeControl
+	if err := json.Unmarshal(raw, &control); err != nil {
+		return err
+	}
+	conversation.executionSnapshots[native] = control.ExecutionSnapshot
+	return nil
 }

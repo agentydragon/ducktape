@@ -2,7 +2,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = [
     "//agentplane/central_sampler:__pkg__",
-    "//agentplane/central_sampler/internal/storage:__pkg__",
 ])
 
 go_library(
@@ -14,9 +13,11 @@ go_library(
         "observations.go",
         "provider.go",
         "responses.go",
+        "stored.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/responses",
     deps = [
+        "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
         "//agentplane/proto:event_go_proto",
     ],
@@ -27,8 +28,12 @@ go_test(
     size = "small",
     srcs = [
         "responses_test.go",
+        "stored_test.go",
     ],
     embed = [":responses"],
     race = "on",
-    deps = ["//agentplane/central_sampler/protocol"],
+    deps = [
+        "//agentplane/central_sampler/internal/storage",
+        "//agentplane/central_sampler/protocol",
+    ],
 )

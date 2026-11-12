@@ -124,8 +124,15 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	items = responsesItems(t, conversation.Context())
-	if got := messageText(t, items[len(items)-1]); !strings.Contains(got, "<shell>bash</shell>") {
-		t.Fatalf("learned shell was not rendered before sampling: %q", got)
+	var latestEnvironment string
+	for _, item := range items {
+		text := messageText(t, item)
+		if strings.Contains(text, "<environment_context>") {
+			latestEnvironment = text
+		}
+	}
+	if !strings.Contains(latestEnvironment, "<shell>bash</shell>") {
+		t.Fatalf("learned shell was not rendered before sampling: %q", latestEnvironment)
 	}
 	unchanged, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
 	if err != nil {
@@ -165,10 +172,10 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 		t.Fatal(err)
 	}
 	originalItems := responsesItems(t, conversation.Context())
-	replacement := &responses.Context{Items: []responses.Item{
-		originalItems[len(originalItems)-1],
+	replacement := responseContextForTest(t, []responses.Item{
+		originalItems[0],
 		{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque"},
-	}}
+	})
 	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}

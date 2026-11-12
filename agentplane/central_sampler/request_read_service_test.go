@@ -53,7 +53,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	// or malformed retained records that still contain credential headers.
 	intent.ProviderRequest.Headers["Authorization"] = "Bearer do-not-return"
 	intent.ProviderRequest.Headers["X-API-Key"] = "do-not-return"
-	requestID, wire, err := store.Begin(t.Context(), owner, intent, body)
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +90,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 		t.Fatalf("first response item is %T, want metadata", stream.responses[0].GetItem())
 	}
 	gotMetadata := metadataResponse.Metadata
-	if gotMetadata.GetRequestId() != stored.RequestID || gotMetadata.GetContextId() != stored.ContextID ||
-		gotMetadata.GetProfileId() != string(stored.ProfileID) || gotMetadata.GetMethod() != stored.Method ||
+	if gotMetadata.GetRequestId() != stored.RequestID || gotMetadata.GetMethod() != stored.Method ||
 		gotMetadata.GetUrl() != stored.URL {
 		t.Fatalf("metadata=%v, stored request=%+v", gotMetadata, stored)
 	}
