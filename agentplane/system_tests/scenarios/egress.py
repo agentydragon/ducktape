@@ -638,7 +638,8 @@ if [ "$status" -eq 56 ] && printf '%s\\n' "$response" | grep -Eiq '^[[:space:]]*
   exit 0
 fi
 printf '%s\\n' "$response"
-exit "$status""",
+exit "$status"
+""",
         "curl",
         "--silent",
         # The destination's TLS is the proxy's interception, which this test does not check.
