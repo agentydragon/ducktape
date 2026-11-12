@@ -155,6 +155,7 @@ agentplane_vitest_test(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -211,6 +212,7 @@ agentplane_vitest_test(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
+        "//agentplane/proto:identity_pb",
         "//util/frontend:deferred_test_utils",
     ],
 )
