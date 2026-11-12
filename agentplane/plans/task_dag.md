@@ -1178,6 +1178,15 @@ evidence accessible through a debug view. Keep the ability to retain harness evi
 OTel/Langfuse as a possible destination, including fidelity and retention; do not assume ordinary
 telemetry replaces durable evidence or continuation state.
 
+**TODO (operator, 2026-11-12):** Consider deduplicating representations between central sampler's
+request/response and stream logs and History's retained events
+([measured duplication](../central_sampler/debug/2026_11_12_native_storage_cutover.md#remaining-duplication)).
+Co-sequence this storage work with the authored-conversation design: keep divergent harness activity
+as less user-visible diagnostic logs rather than forcing it into one conversation representation,
+and consider an explicit thread with the user that the agent communicates through. Decide content
+ownership/references, authorization, retention and replay/continuation requirements together before
+removing copies; this TODO selects neither a shared storage schema nor a trace destination.
+
 Exit: reviewed conversation/participant/message semantics, send/edit authorization and attribution,
 edit history and delivery/retry behavior, and an incremental migration/UX proposal. Decide whether
 History owns the new entities and whether its name still fits, in coordination with

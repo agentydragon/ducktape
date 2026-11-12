@@ -35,8 +35,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecSourceRefKind,
     TerraformV1Alpha2SpecStoreReadablePlan,
     TerraformV1Alpha2SpecVars,
-    TerraformV1Alpha2SpecVarsValueFrom,
-    TerraformV1Alpha2SpecVarsValueFromSecretKeyRef,
 )
 
 from cluster.cdk8s import ducktape_flux, flux
@@ -80,16 +78,6 @@ def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTempl
             secret_key_ref=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef(
                 name=key.secret.name, key=key.key
             )
-        ),
-    )
-
-
-def secret_var(name: str, key: SecretKey) -> TerraformV1Alpha2SpecVars:
-    """A Terraform input whose value comes from a Secret in the runner's namespace."""
-    return TerraformV1Alpha2SpecVars(
-        name=name,
-        value_from=TerraformV1Alpha2SpecVarsValueFrom(
-            secret_key_ref=TerraformV1Alpha2SpecVarsValueFromSecretKeyRef(name=key.secret.name, key=key.key)
         ),
     )
 
