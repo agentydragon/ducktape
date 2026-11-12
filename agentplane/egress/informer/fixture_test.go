@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
@@ -16,11 +15,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -104,11 +103,7 @@ func (f *fixture) startThrough(base *rest.Config) {
 
 func (f *fixture) eventually(what string, condition func() bool) {
 	f.t.Helper()
-	err := wait.PollUntilContextTimeout(context.Background(), 20*time.Millisecond, time.Minute, true,
-		func(context.Context) (bool, error) { return condition(), nil })
-	if err != nil {
-		f.t.Fatalf("gave up waiting for %s", what)
-	}
+	eventually.Eventually(f.t, what, condition)
 }
 
 func (f *fixture) create(object client.Object) {
