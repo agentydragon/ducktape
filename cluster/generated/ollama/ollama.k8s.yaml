@@ -189,7 +189,7 @@ immutable: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ollama-auth-proxy
+  name: auth-proxy
   namespace: ollama
 data:
   default.conf.template: |
@@ -385,10 +385,10 @@ spec:
           persistentVolumeClaim:
             claimName: models
         - configMap:
-            name: ollama-auth-proxy
+            name: auth-proxy
           name: nginx-templates
         - configMap:
-            name: ollama-auth-proxy
+            name: auth-proxy
           name: nginx-config
 ---
 apiVersion: v1

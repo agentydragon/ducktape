@@ -5,7 +5,7 @@
 Those declarations also feed LiteLLM routing; provisioning does not depend on
 LiteLLM's route roster. Other ConfigMap inputs beside `app.py` are
 `link-ssd-models.sh` and the two shard manifests (`gpt-oss-scripts`), and the nginx
-bearer proxy's configuration (`ollama-auth-proxy`). `qwen38-chat-template.jinja` is
+bearer proxy's configuration (`auth-proxy`). `qwen38-chat-template.jinja` is
 not deployed; it is the derivation input below.
 
 ## Deferred provisioning cleanup

@@ -2,7 +2,7 @@
 ConfigMap, the public HTTPRoute, the server's ingress policy and its PodMonitor.
 
 Also its `kustomization.yaml`, listing this file beside the hand-written SOPS Secrets and
-rendering every hand-written `blueprints/*.yaml` into the `authentik-sso-blueprints` ConfigMap.
+rendering every hand-written `blueprints/*.yaml` into the `sso-blueprints` ConfigMap.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 HOSTNAME = "auth.allegedly.works"
 _HOST_CONFIG_MAP = "host"
-_BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
+_BLUEPRINTS_CONFIG_MAP = "sso-blueprints"
 _SOPS_SECRETS = (
     "admin-password",
     "secret-key",
