@@ -4,7 +4,9 @@ Issues and resolves the SVIDs Agentplane workloads present
 ([workload authentication](../../docs/workload_authentication.md#workloadcredentials)).
 
 - `api/v1alpha1`: the `WorkloadCredential` kind. Its owner writes `spec`; only the issuer writes
-  `status`. A record's subject changes only together with a new binding (a CRD transition rule).
+  `status`. Its required subject is an Identity in the verifier's policy namespace; a record's
+  subject changes only together with a new binding (a CRD transition rule). A retained legacy record
+  without an Identity is not issued or resolved.
 - `issuer`: the reconciler the Policy Controller hosts
   ([its contract](../../policy_controller/SPEC.md#workload-credentials)).
 - `requester`: how a Go owner asks for a credential (`Requester.Ensure`, `Requester.Revoke`). It

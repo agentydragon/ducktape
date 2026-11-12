@@ -16,9 +16,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Authenticated is the subject a caller's SVID proved: a ServiceAccount or an Identity.
+// Authenticated is the Identity subject a caller's SVID proved through its WorkloadCredential.
 type Authenticated struct {
-	Subject auth.Subject
+	Subject auth.IdentityPrincipal
 }
 
 // Authenticator is shared by the forward listener and the Rules API, both of which authenticate

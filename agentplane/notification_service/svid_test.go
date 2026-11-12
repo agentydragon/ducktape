@@ -32,9 +32,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestSVIDListenerKeepsInboxOwnershipAndRejectsDeletedSandbox(t *testing.T) {
-	workload := workloadauthtesting.NewWorkload(t, kube, testNamespace, "svid-"+uuid.NewString())
-	other := workloadauthtesting.NewWorkload(t, kube, testNamespace, "svid-"+uuid.NewString())
+func TestIdentitySVIDCannotClaimSameNamedAccountInbox(t *testing.T) {
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-"+uuid.NewString(), testNamespace).Workload
+	other := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-"+uuid.NewString(), testNamespace).Workload
 	ca := environmentruntimetransporttesting.NewCA(t)
 	serving := ca.IssueWithUsage(t, environment_runtime_transport.NotificationsURI, x509.ExtKeyUsageServerAuth)
 	service := start(t, func(c *config) {
@@ -46,7 +46,7 @@ func TestSVIDListenerKeepsInboxOwnershipAndRejectsDeletedSandbox(t *testing.T) {
 	if err := inboxes.OpenInbox(t.Context(), store.AccountOwner{Account: model.ServiceAccount{Namespace: testNamespace, Name: workload.Sandbox.Name}, AccountUID: workload.Principal.ServiceAccountUID, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
 		t.Fatal(err)
 	}
-	for i, caller := range []workloadauthtesting.Workload{workload, other} {
+	for _, caller := range []workloadauthtesting.Workload{workload, other} {
 		config := ca.Issue(t, caller.URI)
 		credentials, err := config.ClientCredentials(environment_runtime_transport.NotificationsURI)
 		if err != nil {
@@ -69,11 +69,10 @@ func TestSVIDListenerKeepsInboxOwnershipAndRejectsDeletedSandbox(t *testing.T) {
 		if status.Code(mixedErr) != codes.Unauthenticated {
 			t.Fatalf("SVID plus bearer authenticated: %v", mixedErr)
 		}
-		want := 1 - i
-		if len(response.GetInboxes()) != want {
-			t.Fatalf("caller %s sees %d inboxes, want %d", caller.Sandbox.Name, len(response.GetInboxes()), want)
+		if len(response.GetInboxes()) != 0 {
+			t.Fatalf("Identity %s claimed a same-named ServiceAccount inbox: %v", caller.Identity.Name, response.GetInboxes())
 		}
-		if i == 0 {
+		if caller.Identity.UID == workload.Identity.UID {
 			caller.Delete(t)
 			denied, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			_, err = notificationspb.NewNotificationsClient(conn).ListInboxes(denied, &notificationspb.ListInboxesRequest{})

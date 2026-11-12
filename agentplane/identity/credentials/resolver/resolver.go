@@ -14,7 +14,6 @@ import (
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,18 +29,6 @@ var (
 	ErrUnavailable = errors.New("workload credential lookup unavailable")
 )
 
-// Subject is who a resolved workload acts as: a ServiceAccount or an Identity, each read live with
-// its UID.
-type Subject interface{ subject() }
-
-// ServiceAccount is a ServiceAccount in the record's namespace.
-// CLEANUP(added 2026-11-10): remove in IDENTITY_CUTOVER (agentplane/plans/task_dag.md), with the
-// WorkloadCredential's ServiceAccount subject.
-type ServiceAccount struct {
-	Namespace, Name string
-	UID             types.UID
-}
-
 // Identity is an Identity in the policy namespace. A record naming the Identity's UID resolves only
 // to that incarnation, so its credential gains nothing from a same-named successor; a record naming
 // no UID (a standing record rendered from git) resolves to the live Identity of that name.
@@ -50,13 +37,10 @@ type Identity struct {
 	UID  types.UID
 }
 
-func (ServiceAccount) subject() {}
-func (Identity) subject()       {}
-
 // Peer is a resolved workload.
 type Peer struct {
 	Workload transport.WorkloadID
-	Subject  Subject
+	Subject  Identity
 	// Owner is the record's controller owner reference; nil for a standing workload.
 	Owner *metav1.OwnerReference
 	// Binding is the accepted incarnation; nil for a standing workload.
@@ -105,7 +89,7 @@ func New(objects client.Reader, namespaces []string, identities *Identities) (*R
 // NewKubernetes returns a Resolver over an uncached client.
 func NewKubernetes(config *rest.Config, namespaces []string, identities *Identities) (*Resolver, error) {
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{workloadapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			return nil, err
 		}
@@ -170,33 +154,27 @@ func (r *Resolver) Resolve(ctx context.Context, leaf *x509.Certificate) (Peer, e
 }
 
 // subject reads the record's subject live and checks it is still the incarnation the record names.
-func (r *Resolver) subject(ctx context.Context, record *workloadapi.WorkloadCredential) (Subject, error) {
-	if named := record.Spec.Subject.Identity; named != nil {
-		var identity policyapi.Identity
-		key := types.NamespacedName{Namespace: r.identities.PolicyNamespace, Name: named.Name}
-		if err := r.objects.Get(ctx, key, &identity); apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: subject Identity %s is gone", ErrRefused, key)
-		} else if err != nil {
-			return nil, fmt.Errorf("%w: read Identity %s: %w", ErrUnavailable, key, err)
-		}
-		if !identity.DeletionTimestamp.IsZero() {
-			return nil, fmt.Errorf("%w: subject Identity %s is being deleted", ErrRefused, key)
-		}
-		// Pinning the incarnation is the requester's choice (workloadapi.IdentitySubject).
-		if named.UID != "" && identity.UID != named.UID {
-			return nil, fmt.Errorf("%w: subject Identity %s is not the incarnation the record names", ErrRefused, key)
-		}
-		return Identity{Name: identity.Name, UID: identity.UID}, nil
+func (r *Resolver) subject(ctx context.Context, record *workloadapi.WorkloadCredential) (Identity, error) {
+	// An old ServiceAccount-subject record decodes without identity. Keep the record, but do not
+	// derive authority from any other field.
+	named := record.Spec.Subject.Identity
+	if named == nil || named.Name == "" {
+		return Identity{}, fmt.Errorf("%w: WorkloadCredential %s has no Identity subject", ErrRefused,
+			types.NamespacedName{Namespace: record.Namespace, Name: record.Name})
 	}
-	var account corev1.ServiceAccount
-	key := types.NamespacedName{Namespace: record.Namespace, Name: record.Spec.Subject.ServiceAccount}
-	if err := r.objects.Get(ctx, key, &account); apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("%w: subject ServiceAccount %s is gone", ErrRefused, key)
+	var identity policyapi.Identity
+	key := types.NamespacedName{Namespace: r.identities.PolicyNamespace, Name: named.Name}
+	if err := r.objects.Get(ctx, key, &identity); apierrors.IsNotFound(err) {
+		return Identity{}, fmt.Errorf("%w: subject Identity %s is gone", ErrRefused, key)
 	} else if err != nil {
-		return nil, fmt.Errorf("%w: read ServiceAccount %s: %w", ErrUnavailable, key, err)
+		return Identity{}, fmt.Errorf("%w: read Identity %s: %w", ErrUnavailable, key, err)
 	}
-	if account.UID == "" || !account.DeletionTimestamp.IsZero() {
-		return nil, fmt.Errorf("%w: subject ServiceAccount %s is being deleted", ErrRefused, key)
+	if !identity.DeletionTimestamp.IsZero() {
+		return Identity{}, fmt.Errorf("%w: subject Identity %s is being deleted", ErrRefused, key)
 	}
-	return ServiceAccount{Namespace: account.Namespace, Name: account.Name, UID: account.UID}, nil
+	// Pinning the incarnation is the requester's choice (workloadapi.IdentitySubject).
+	if named.UID != "" && identity.UID != named.UID {
+		return Identity{}, fmt.Errorf("%w: subject Identity %s is not the incarnation the record names", ErrRefused, key)
+	}
+	return Identity{Name: identity.Name, UID: identity.UID}, nil
 }

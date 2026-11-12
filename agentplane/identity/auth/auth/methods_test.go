@@ -437,8 +437,8 @@ func TestDelegationUsesTheConfiguredListenerModeAndMethodGrant(t *testing.T) {
 	delegated := delegationContext(t, actorToken, caller, string(callerAccount.UID))
 
 	t.Run("SPIFFE-only listener refuses delegated bearer before review", func(t *testing.T) {
-		objects, sandbox, _ := svidFixture(t)
-		svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, &resolver.Identities{PolicyNamespace: sandbox.Namespace})
+		workload, _ := svidFixture(t)
+		svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: workload.Sandbox.Namespace})
 		if err != nil {
 			t.Fatal(err)
 		}

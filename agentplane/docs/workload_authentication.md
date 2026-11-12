@@ -137,31 +137,31 @@ including one inherited through a tunnel:
    with a controller owner or a binding also needs `spec.binding` to equal `status.acceptedBinding`,
    so clearing or replacing the binding revokes before the ID rotates. A stale certificate is
    refused after a name is reused, because the new record has a new ID.
-5. `spec.subject` is the subject, read live: a ServiceAccount in the record's namespace, for its
-   UID; or an Identity in the policy namespace, whose live UID must be the one the record names, so
-   deleting an Identity revokes every credential naming it and a same-named successor inherits
-   none. Naming the UID is the requester's choice (the Sandbox Controller and the Action Service
-   name it); a record naming none follows the live Identity of its name, as a standing record from
-   git does, since git cannot know a UID. A verifier constructed without the policy namespace
-   refuses Identity subjects; the egress
-   proxy and the Action Service ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority))
-   pass their own, and LLM ingress, History, Notification and the Runner Gateway theirs from
-   `policy_namespace`, which staging sets for each.
+5. `spec.subject.identity` names an Identity in the verifier's policy namespace. When the record
+   names a UID, the live UID must match, so deleting an Identity revokes every pinned credential and
+   a same-named successor inherits none. Naming the UID is the requester's choice (the Sandbox
+   Controller and the Action Service name it); a record naming none follows the live Identity of its
+   name, as a standing record from git does, since git cannot know a UID. Each verifier receives its
+   policy namespace explicitly: the egress proxy and Action Service
+   ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority)) pass
+   their own, and LLM ingress, History, Notification and the Runner Gateway receive theirs from
+   `policy_namespace`, which staging sets for each. A legacy record without an Identity is retained
+   but refused; it is not resolved through a ServiceAccount of the same name.
 6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
    TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
    binds to it.
 
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
-Services see the record's subject and `spec.pod` as an `auth.Subject`: a ServiceAccount
-`Principal`, or an `IdentityPrincipal` naming the Identity and its UID, each with the Pod as the
-provenance Pod. An `IdentityPrincipal` also carries its record (`auth.Workload`: namespace, name and
-its controller owner, or `NoController` for an ownerless record), so a service can pin state to
-the Sandbox that owns the workload. Only a method whose rule is `AnySubject` or
+Services see every workload SVID as an `IdentityPrincipal` naming the Identity and its UID, with
+`spec.pod` as provenance when the record binds one. It also carries the record (`auth.Workload`:
+namespace, name and its controller owner, or `NoController` for an ownerless record), so a service
+can pin state to the Sandbox that owns the workload. ServiceAccount `Principal` values continue to
+come from TokenReview. Only a method whose rule is `AnySubject` or
 `ReviewedServiceAccountOrIdentity` admits an Identity caller, as an `IdentityAdmission`; every other
 rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only
-and refuse one. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A standing workload's `Principal`, like a bound
-one whose owner has not named its Pod yet, is its subject with no Pod: an operation that needs Pod
-proof refuses it. The egress proxy refuses a bound record with no Pod outright.
+and refuse one. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A standing
+workload's Identity subject, like a bound one whose owner has not named its Pod yet, has no Pod:
+an operation that needs Pod proof refuses it. The egress proxy refuses a bound record with no Pod outright.
 
 TLS proves possession of the key, nothing more. Three things defend it: the Secret mounts only into
 Runtime and the sidecar (for a VM, the launcher relay), replacing an incarnation revokes its key
@@ -257,8 +257,9 @@ Notification's signed external webhook endpoint remains a separate HTTP protocol
 
 ## Service authorization and attribution
 
-Authentication yields only the verified Sandbox ServiceAccount and, when proven, Pod identity.
-Each destination service retains its own authorization checks, policy, and resource ownership.
+Workload SVID authentication yields the record's Identity and, when proven, Pod provenance.
+Separately authorized TokenReview methods continue to yield ServiceAccount principals for
+platform callers. Each destination service retains its own authorization checks, policy, and resource ownership.
 Neither a Sandbox certificate nor a successful authentication grants Action, Thread, operator, or
 cross-service permissions by itself. The egress proxy's allow decision and the destination's
 authorization answer separate questions.

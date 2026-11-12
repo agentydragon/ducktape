@@ -23,8 +23,6 @@ import (
 // of a deleted record or a replaced credential ID.
 type SVIDResolver struct {
 	records *resolver.Resolver
-	// identitySubjectsOnly refuses a record naming a ServiceAccount.
-	identitySubjectsOnly bool
 }
 
 func NewSVIDResolver(objects client.Reader, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
@@ -33,13 +31,6 @@ func NewSVIDResolver(objects client.Reader, namespaces []string, identities *res
 		return nil, err
 	}
 	return &SVIDResolver{records: records}, nil
-}
-
-// IdentitySubjectsOnly is this resolver refusing every record that names a ServiceAccount, for a
-// listener whose ServiceAccount callers present only bearers: certificates there admit Identity
-// subjects and nothing else.
-func (r *SVIDResolver) IdentitySubjectsOnly() *SVIDResolver {
-	return &SVIDResolver{records: r.records, identitySubjectsOnly: true}
 }
 
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
@@ -82,24 +73,10 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 	if resolved.Pod != nil {
 		podName, podUID = resolved.Pod.Name, string(resolved.Pod.UID)
 	}
-	switch subject := resolved.Subject.(type) {
-	case resolver.ServiceAccount:
-		if r.identitySubjectsOnly {
-			return nil, ErrInvalidBearer
-		}
-		return Principal{
-			Account:           Account{Namespace: subject.Namespace, Name: subject.Name},
-			ServiceAccountUID: string(subject.UID),
-			PodName:           podName, PodUID: podUID,
-		}, nil
-	case resolver.Identity:
-		return IdentityPrincipal{
-			Identity: Identity{Name: subject.Name, UID: string(subject.UID)}, Workload: WorkloadOf(resolved),
-			PodName: podName, PodUID: podUID,
-		}, nil
-	default:
-		panic(fmt.Sprintf("unknown subject %T", resolved.Subject))
-	}
+	return IdentityPrincipal{
+		Identity: Identity{Name: resolved.Subject.Name, UID: string(resolved.Subject.UID)}, Workload: WorkloadOf(resolved),
+		PodName: podName, PodUID: podUID,
+	}, nil
 }
 
 // WorkloadOf is the provenance a resolved workload's record carries.
@@ -177,8 +154,8 @@ func (r *Resolver) requireBearerSelection(ctx context.Context) error {
 	return nil
 }
 
-// resolveSVID is the ServiceAccount-only path: a method that has not opted into AnySubject refuses
-// an Identity subject.
+// resolveSVID is the ServiceAccount-only path for Rules that still admit TokenReview principals.
+// An SVID subject is an Identity and requires an Identity-admitting Rule.
 func (r *Resolver) resolveSVID(ctx context.Context) (Principal, bool, error) {
 	subject, secured, err := r.resolveSVIDSubject(ctx)
 	if !secured || err != nil {

@@ -1,5 +1,5 @@
-"""Exercise the WorkloadCredential schema through Kubernetes admission and CEL: the subject and
-binding unions, and the transition rule that re-points a subject only together with a new binding."""
+"""Exercise the WorkloadCredential schema through Kubernetes admission and CEL: the required
+Identity subject, binding union, and transition rule that changes a subject only with a new binding."""
 
 from typing import Any, cast
 
@@ -16,8 +16,8 @@ PLURAL = "workloadcredentials"
 NAMESPACE = "workload-credential-admission"
 FIRST_POD = "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"
 SECOND_POD = "5d0e6c7a-1b2f-4c3d-8e9f-0a1b2c3d4e5f"
-SUBJECT = {"serviceAccount": "test-agent"}
-OTHER_SUBJECT = {"serviceAccount": "test-other-agent"}
+SUBJECT = {"identity": {"name": "test-agent"}}
+OTHER_SUBJECT = {"identity": {"name": "test-other-agent"}}
 
 
 class Records:
@@ -68,25 +68,28 @@ async def _unions(records: Records) -> None:
     unpinned_identity = {"identity": {"name": "test-agent"}}
     for name, spec in (
         ("test-standing", {"subject": SUBJECT}),
-        ("test-identity", {"subject": identity}),
+        ("test-pinned-identity", {"subject": identity}),
         ("test-standing-identity", {"subject": unpinned_identity}),
-        ("test-bound-unpinned-identity", {"subject": unpinned_identity, "binding": {"podUID": FIRST_POD}}),
+        ("test-bound-identity", {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}}),
         (
             "test-pod",
-            {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}, "pod": {"name": "test-pod", "uid": FIRST_POD}},
+            {"subject": identity, "binding": {"podUID": FIRST_POD}, "pod": {"name": "test-pod", "uid": FIRST_POD}},
         ),
-        ("test-vmi", {"subject": SUBJECT, "binding": {"vmiUID": FIRST_POD}}),
+        ("test-vmi", {"subject": identity, "binding": {"vmiUID": FIRST_POD}}),
         (
             "test-vmi-launched",
-            {"subject": SUBJECT, "binding": {"vmiUID": FIRST_POD}, "pod": {"name": "test-launcher", "uid": SECOND_POD}},
+            {
+                "subject": identity,
+                "binding": {"vmiUID": FIRST_POD},
+                "pod": {"name": "test-launcher", "uid": SECOND_POD},
+            },
         ),
     ):
         assert (await records.create(name, spec))["spec"] == spec
     invalid: tuple[dict[str, Any], ...] = (
         {},
         {"subject": {}},
-        {"subject": {**SUBJECT, **identity}},
-        {"subject": {"serviceAccount": ""}},
+        {"subject": {"serviceAccount": "test-agent"}},
         {"subject": {"identity": {"name": ""}}},
         {"subject": {"identity": {"name": "test-agent", "uid": "not-a-uid"}}},
         {"subject": SUBJECT, "binding": {}},

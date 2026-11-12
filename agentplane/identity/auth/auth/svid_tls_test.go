@@ -22,13 +22,14 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 	for _, kind := range []string{"valid", "forged", "expired", "server-only"} {
 		t.Run(kind, func(t *testing.T) {
-			objects, sandbox, leaf := svidFixture(t)
-			svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+			workload, leaf := svidFixture(t)
+			svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -44,7 +45,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			}
 			methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.AnySubject(svids)}
 			server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-			handler := &svidHealth{expected: auth.Principal{Account: auth.Account{Namespace: sandbox.Namespace, Name: sandbox.Name}, ServiceAccountUID: accountUID(t, objects, sandbox), PodName: sandbox.Status.Incarnation.Name, PodUID: sandbox.Status.Incarnation.UID}}
+			handler := &svidHealth{expected: auth.IdentityAdmission{Caller: workload.Subject}}
 			healthpb.RegisterHealthServer(server, handler)
 			go func() { _ = server.Serve(listener) }()
 			t.Cleanup(server.Stop)
@@ -93,15 +94,15 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 type svidHealth struct {
 	healthpb.UnimplementedHealthServer
 	calls    atomic.Int32
-	expected auth.Principal
+	expected auth.Admission
 }
 
 func (s *svidHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
-	principal, err := auth.Caller(ctx)
+	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if principal != s.expected {
+	if admission != s.expected {
 		return nil, status.Error(codes.PermissionDenied, "unexpected subject")
 	}
 	s.calls.Add(1)
@@ -110,12 +111,12 @@ func (s *svidHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) 
 
 // Consolidating a listener must not widen the token writer policy to every Pod.
 func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
-	objects, sandbox, leaf := svidFixture(t)
-	svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	fixture, leaf := svidFixture(t)
+	svids, err := auth.NewSVIDResolver(fixture.Objects, []string{fixture.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{testNamespace, sandbox.Namespace})
+	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{testNamespace, fixture.Sandbox.Namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,8 +140,8 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 	}
 	methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.SVIDOrAccounts(resolver, []auth.Account{app})}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
-	callers := make(chan auth.Principal, 8)
-	healthpb.RegisterHealthServer(server, callerHealth{callers: callers})
+	callers := make(chan auth.Admission, 8)
+	healthpb.RegisterHealthServer(server, admissionHealth{admissions: callers})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	_, allowedToken := workload(t, app)
@@ -181,7 +182,10 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 				t.Fatalf("admitted=%v, error=%v", test.admitted, err)
 			}
 			if test.admitted {
-				<-callers
+				admission := <-callers
+				if test.name == "SVID" && admission != (auth.IdentityAdmission{Caller: fixture.Subject}) {
+					t.Fatalf("SVID admission = %#v, want Identity subject %#v", admission, fixture.Subject)
+				}
 			} else if len(callers) != 0 {
 				t.Fatal("refused caller reached handler")
 			}
@@ -232,6 +236,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 	serverFiles := ca.Issue(t, environment_runtime_transport.HistoryIngressURI)
 	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
 		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
+		&authlistener.KubernetesBearerAuth{Audiences: []string{testAudience}},
 	}}
 	resolves, err := newResolver(t, api.TokenReviews()).WithListenerAuthentication(config, svids)
 	if err != nil {
@@ -279,7 +284,25 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 		t.Fatalf("ServiceAccount-only method admitted an Identity caller: %v", err)
 	}
 
-	if _, err := client(t, accountWorkload.URI).Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil {
+	pod, err := api.Clientset.CoreV1().Pods(accountWorkload.Sandbox.Namespace).Get(t.Context(), accountWorkload.Principal.PodName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := api.PodToken(t.Context(), pod, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenTLS, err := (&environment_runtime_transport.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: environment_runtime_transport.HistoryIngressURI}).TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tokenTLS)), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	serviceAccountContext := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+token))
+	if _, err := healthpb.NewHealthClient(connection).Check(serviceAccountContext, &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	direct, ok := (<-admissions).(auth.DirectAdmission)

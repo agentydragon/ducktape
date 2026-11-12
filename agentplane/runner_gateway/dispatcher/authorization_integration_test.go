@@ -273,7 +273,7 @@ func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDisp
 	}
 }
 
-func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
+func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testing.T) {
 	api, err := kubeapiserver.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -283,12 +283,16 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
-	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
+	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, caller.Name, caller.Namespace).Workload
+	foreign := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "test-foreign-caller", caller.Namespace).Workload
 	ownerAccount := owner.Principal.Account
-	ownerIdentity := serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID)
+	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerIdentity, accountFound: true}
+	inventory := &authorityInventory{
+		sandbox: ownerSandbox,
+		account: serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID), accountFound: true,
+		identity: ownerIdentity,
+	}
 	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
 	if err != nil {
 		t.Fatal(err)
@@ -337,7 +341,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 
 	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
 	sessionID := uuid.NewString()
-	opened, err := ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.CreateSessionRequest{
+	_, err = ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
 		Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
@@ -346,19 +350,12 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 			},
 		}}},
 	})
-	if err != nil {
-		t.Fatalf("Sandbox SVID owner CreateSession with a foreign bearer: %v", err)
-	}
-	if !proto.Equal(opened.GetSession().GetExecutionIdentity(), ownerIdentity) {
-		t.Fatalf("SVID-owned Session execution identity = %v, want %v", opened.GetSession().GetExecutionIdentity(), ownerIdentity)
-	}
-	owned, err := ownerClient.GetSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID})
-	if err != nil || !proto.Equal(owned.GetSession().GetExecutionIdentity(), ownerIdentity) {
-		t.Fatalf("Sandbox SVID owner GetSession = %v, %v; want owner identity %v", owned, err, ownerIdentity)
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Identity SVID inherited its same-named ServiceAccount's CreateSession authority: %v", err)
 	}
 	listed, err := ownerClient.ListSessions(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.ListSessionsRequest{})
-	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != sessionID {
-		t.Fatalf("Sandbox SVID owner ListSessions = %v, %v; want its Session", listed, err)
+	if err != nil || len(listed.GetSessions()) != 0 {
+		t.Fatalf("Identity SVID listed a Session through its same-named ServiceAccount: %v, %v", listed, err)
 	}
 	if calls := counted.listCalls.Load(); calls != 1 {
 		t.Fatalf("valid owner ListSessions handler calls = %d, want 1", calls)

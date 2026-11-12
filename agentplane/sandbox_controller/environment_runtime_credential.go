@@ -89,7 +89,7 @@ func (r *Reconciler) requestIncarnationCredential(ctx context.Context, sandbox *
 
 // requestCredential asks for the credential the Sandbox's incarnation runs with: binding is the one
 // it accepts, or nil before one exists.
-func (r *Reconciler) requestCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, subject requester.Subject, binding requester.Binding) (requester.Issued, *unready, error) {
+func (r *Reconciler) requestCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, subject requester.Identity, binding requester.Binding) (requester.Issued, *unready, error) {
 	credential, err := r.Credentials.Ensure(ctx, requester.Request{
 		Owner: credentialOwner(sandbox), Subject: subject, Binding: binding,
 	})

@@ -47,8 +47,9 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   request, incarnation binding and credential mounts.
 - [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
-- [`identity.go`](identity.go): the live `Identity` gate and the credential subject each workload
-  incarnation keeps. Legacy ServiceAccount subjects require replacement.
+- [`identity.go`](identity.go): the live `Identity` gate and the required credential subject each
+  workload incarnation keeps. A retained legacy credential without an Identity is revoked before
+  the next start; a running incarnation with one is replaced.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
   Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the

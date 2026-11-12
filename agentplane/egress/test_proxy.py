@@ -74,8 +74,9 @@ WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
 ROTATED_RUNNER_CREDENTIAL_ID = "b" * 32
 BINDING_B = f"{SANDBOX_B}-private-policy"
 EGRESS_PROXY_URI = "spiffe://agentplane/egress-proxy"
-# Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
-SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
+# Workload Identities have distinct names from the Pod ServiceAccounts they run beside.
+SUBJECT_A = f"{SANDBOX_A}-identity"
+SUBJECT_B = f"{SANDBOX_B}-identity"
 
 
 @dataclass
@@ -122,6 +123,7 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 class SeededSandbox:
     sandbox_uid: str
     pod_uid: str
+    identity_uid: str
 
 
 def replica_settings(
@@ -188,6 +190,20 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         ),
     )
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
+    identities = {}
+    for name in (SUBJECT_A, SUBJECT_B):
+        identities[name] = await custom.create_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            NAMESPACE,
+            "identities",
+            {
+                "apiVersion": _API_VERSION,
+                "kind": "Identity",
+                "metadata": {"name": name},
+                "spec": {"description": f"Sandbox {name} test Identity"},
+            },
+        )
     bodies: dict[str, dict[str, Any]] = {
         CREDENTIALS_PLURAL: {
             "apiVersion": _API_VERSION,
@@ -219,7 +235,7 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
             "apiVersion": _API_VERSION,
             "kind": "PolicyBinding",
             "metadata": {"name": BINDING},
-            "spec": {"subject": SUBJECT_A.model_dump(), "policySets": [_CONTRACT_CREDENTIAL]},
+            "spec": {"subject": {"identity": {"name": SUBJECT_A}}, "policySets": [_CONTRACT_CREDENTIAL]},
         },
     }
     for plural, body in bodies.items():
@@ -240,10 +256,7 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
                 "apiVersion": _API_VERSION,
                 "kind": "PolicyBinding",
                 "metadata": {"name": BINDING_B},
-                "spec": {
-                    "subject": ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B).model_dump(),
-                    "policySets": ["sandbox-b-private-policy"],
-                },
+                "spec": {"subject": {"identity": {"name": SUBJECT_B}}, "policySets": ["sandbox-b-private-policy"]},
             },
         ),
     ):
@@ -287,8 +300,11 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         {"status": {"incarnation": {"name": SANDBOX_A, "uid": pod.metadata.uid}}},
         _content_type="application/merge-patch+json",
     )
-    await issue_record(custom, sandbox["metadata"]["uid"], pod.metadata.name, pod.metadata.uid, RUNNER_CREDENTIAL_ID)
-    return SeededSandbox(sandbox_uid=sandbox["metadata"]["uid"], pod_uid=pod.metadata.uid)
+    identity_uid = identities[SUBJECT_A]["metadata"]["uid"]
+    await issue_record(
+        custom, sandbox["metadata"]["uid"], pod.metadata.name, pod.metadata.uid, identity_uid, RUNNER_CREDENTIAL_ID
+    )
+    return SeededSandbox(sandbox_uid=sandbox["metadata"]["uid"], pod_uid=pod.metadata.uid, identity_uid=identity_uid)
 
 
 def _record_status(credential_id: str, pod_uid: str) -> dict[str, Any]:
@@ -302,7 +318,7 @@ def _record_status(credential_id: str, pod_uid: str) -> dict[str, Any]:
 
 
 async def issue_record(
-    custom: CustomObjectsClient, sandbox_uid: str, pod_name: str, pod_uid: str, credential_id: str
+    custom: CustomObjectsClient, sandbox_uid: str, pod_name: str, pod_uid: str, identity_uid: str, credential_id: str
 ) -> None:
     """Write sandbox A's WorkloadCredential as the Sandbox Controller requests it and the issuer accepts it."""
     await custom.create_namespaced_custom_object(
@@ -326,7 +342,7 @@ async def issue_record(
                 ],
             },
             "spec": {
-                "subject": {"serviceAccount": SANDBOX_A},
+                "subject": {"identity": {"name": SUBJECT_A, "uid": identity_uid}},
                 "binding": {"podUID": pod_uid},
                 "pod": {"name": pod_name, "uid": pod_uid},
             },
@@ -376,6 +392,7 @@ class Egress:
     upstream: RecordingUpstream
     sandbox_uid: str
     pod_uid: str
+    identity_uid: str
     tmp_path: Path
     database_url: str
 
@@ -431,6 +448,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
                 upstream=upstream,
                 sandbox_uid=seeded.sandbox_uid,
                 pod_uid=seeded.pod_uid,
+                identity_uid=seeded.identity_uid,
                 tmp_path=tmp_path,
                 database_url=history_db_url,
             )
@@ -492,8 +510,8 @@ async def test_rules_grpc_resolves_its_own_svid_and_returns_the_credential_descr
         response = await client.GetRules(
             request, metadata=(("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),), timeout=5
         )
-        assert response.subject.namespace == SUBJECT_A.namespace
-        assert response.subject.name == SUBJECT_A.name
+        assert response.identity.name == SUBJECT_A
+        assert not response.HasField("subject")
         credentials = [
             rule.credential for policy in response.policies for rule in policy.rules if rule.HasField("credential")
         ]
@@ -543,8 +561,8 @@ async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credenti
                 ),
                 timeout=5,
             )
-            assert response.subject.namespace == SANDBOX_NAMESPACE
-            assert response.subject.name == SANDBOX_A
+            assert response.identity.name == SUBJECT_A
+            assert not response.HasField("subject")
     assert not egress.upstream.requests
 
 
@@ -660,7 +678,14 @@ async def test_svid_listener_keeps_a_deleting_sandboxs_credential_until_its_reco
         },
     )
     assert replacement["metadata"]["uid"] != egress.sandbox_uid
-    await issue_record(custom, replacement["metadata"]["uid"], SANDBOX_A, egress.pod_uid, ROTATED_RUNNER_CREDENTIAL_ID)
+    await issue_record(
+        custom,
+        replacement["metadata"]["uid"],
+        SANDBOX_A,
+        egress.pod_uid,
+        egress.identity_uid,
+        ROTATED_RUNNER_CREDENTIAL_ID,
+    )
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/replaced")
     assert status == 403, headers
@@ -730,7 +755,7 @@ async def test_a_standing_record_authenticates_its_subject_without_a_pod(egress:
     """A record with no owner and no binding proves its subject alone: it reaches that subject's rules,
     no forwarded Pod token binds to it, and deleting the record revokes it."""
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
-    uri, _ = await _write_record(custom, STANDING_RECORD, {"subject": {"serviceAccount": SANDBOX_A}})
+    uri, _ = await _write_record(custom, STANDING_RECORD, {"subject": {"identity": {"name": SUBJECT_A}}})
     directory = egress.tmp_path / "standing-client"
     directory.mkdir()
     proxy_tls = proxy_svid_client_context(
@@ -777,7 +802,7 @@ async def test_a_bound_record_still_needs_its_pod(egress: Egress) -> None:
     uri, _ = await _write_record(
         custom,
         "bound-without-pod",
-        {"subject": {"serviceAccount": SANDBOX_A}, "binding": binding},
+        {"subject": {"identity": {"name": SUBJECT_A}}, "binding": binding},
         owner_uid=egress.sandbox_uid,
         accepted_binding=binding,
     )
@@ -867,26 +892,26 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(egress: Egress)
 # gazelle:include_dep @pypi//psycopg
 _SUBJECT_DECISIONS = text("""
 SELECT producer_id, connection_id, reason FROM egress_decision
-WHERE subject_namespace = :namespace AND subject_name = :name
+WHERE subject_identity = :name
 """)
 
 
 _SUBJECT_SOURCE_PODS = text("""
 SELECT source_pod_uid FROM egress_decision
-WHERE subject_namespace = :namespace AND subject_name = :name
+WHERE subject_identity = :name
 """)
 
 
-def _source_pod_uids(database_url: str, subject: ServiceAccountRef) -> list[str | None]:
+def _source_pod_uids(database_url: str, subject: str) -> list[str | None]:
     """The source Pod UIDs the subject's decisions recorded in the shared history."""
     with ExitStack() as stack:
         engine = create_engine(database_url)
         stack.callback(engine.dispose)
         with engine.connect() as connection:
-            return [row.source_pod_uid for row in connection.execute(_SUBJECT_SOURCE_PODS, subject.model_dump())]
+            return [row.source_pod_uid for row in connection.execute(_SUBJECT_SOURCE_PODS, {"name": subject})]
 
 
-def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[UUID, str, str | None]]:
+def _decisions_of(database_url: str, subject: str) -> list[tuple[UUID, str, str | None]]:
     """The producer, connection and refusal reason of every decision the subject has in the shared history."""
     with ExitStack() as stack:
         engine = create_engine(database_url)
@@ -894,7 +919,7 @@ def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[U
         with engine.connect() as connection:
             return [
                 (row.producer_id, row.connection_id, row.reason)
-                for row in connection.execute(_SUBJECT_DECISIONS, subject.model_dump())
+                for row in connection.execute(_SUBJECT_DECISIONS, {"name": subject})
             ]
 
 

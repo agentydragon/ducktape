@@ -683,7 +683,7 @@ func TestDeleteIdentityIgnoresCredentialsActingAsAnotherIdentity(t *testing.T) {
 		identityCredential("fake-workloads", "previous-agent", previous),
 		&workloadapi.WorkloadCredential{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: "account-agent"},
-			Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: "unreferenced-identity"}},
+			Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{}},
 		},
 	)
 	if _, err := api.DeleteIdentity(tokenContext(t, "app"), &policypb.DeleteIdentityRequest{Namespace: "policies", Name: "unreferenced-identity", Uid: "uid-unreferenced-identity"}); err != nil {

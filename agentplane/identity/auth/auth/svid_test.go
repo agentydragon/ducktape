@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -27,7 +26,7 @@ func TestSVIDResolvesTheRecordsSubjectAndPod(t *testing.T) {
 	for _, binding := range []string{"Pod", "VMI"} {
 		t.Run(binding, func(t *testing.T) {
 			workload, leaf := svidWorkload(t)
-			want := workload.Principal
+			want := workload.Subject
 			if binding == "VMI" {
 				// A VMI's caller Pod is its virt-launcher Pod, which the owner names in spec.pod.
 				record := workload.Record
@@ -68,8 +67,9 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := workload.Principal
+	want := workload.Subject
 	want.PodName, want.PodUID = "", ""
+	want.Workload.Owner = auth.NoController{}
 	if got, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); err != nil || got != want {
 		t.Fatalf("principal = %#v, %v; want %#v", got, err, want)
 	}
@@ -85,20 +85,19 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{
 		State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}},
 	}})
-	caller, err := resolver.ResolveReviewedCaller(ctx)
+	caller, err := resolver.ResolveSubject(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if caller.Pod != nil || caller.ServiceAccount.GetUid() != want.ServiceAccountUID ||
-		caller.ServiceAccount.GetAccount().GetName() != want.Account.Name {
-		t.Fatalf("reviewed caller = %#v, want the subject and no Pod", caller)
+	if caller != want {
+		t.Fatalf("reviewed caller = %#v, want standing Identity subject %#v", caller, want)
 	}
 }
 
 // An Identity subject resolves only for a verifier given the policy namespace, and only while the
 // Identity is the incarnation the record names.
 func TestSVIDResolvesAnIdentitySubject(t *testing.T) {
-	workload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox", testPolicyNamespace)
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox-"+uuid.NewString(), testPolicyNamespace)
 	leaf := &x509.Certificate{URIs: []*url.URL{mustURL(t, workload.URI)}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
@@ -161,8 +160,7 @@ func TestSVIDRefusesRevokedOrIncompleteWorkloads(t *testing.T) {
 			c.URIs[0].Host = "another-domain"
 		}},
 		{"deleted subject", func(t *testing.T, w workloadauthtesting.Workload, _ *x509.Certificate) {
-			account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: w.Record.Namespace, Name: w.Record.Spec.Subject.ServiceAccount}}
-			if err := w.Objects.Delete(t.Context(), account); err != nil {
+			if err := w.Objects.Delete(t.Context(), w.Identity); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -201,13 +199,13 @@ func accountUID(t *testing.T, objects client.Client, sandbox *sandboxapi.Sandbox
 
 func svidWorkload(t *testing.T) (workloadauthtesting.Workload, *x509.Certificate) {
 	t.Helper()
-	workload := workloadauthtesting.NewWorkload(t, api, "svid-"+uuid.NewString(), "sandbox")
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox-"+uuid.NewString(), testPolicyNamespace).Workload
 	leaf := &x509.Certificate{URIs: []*url.URL{mustURL(t, workload.URI)}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	return workload, leaf
 }
 
-func svidFixture(t *testing.T) (client.Client, *sandboxapi.Sandbox, *x509.Certificate) {
+func svidFixture(t *testing.T) (workloadauthtesting.Workload, *x509.Certificate) {
 	t.Helper()
 	workload, leaf := svidWorkload(t)
-	return workload.Objects, workload.Sandbox, leaf
+	return workload, leaf
 }

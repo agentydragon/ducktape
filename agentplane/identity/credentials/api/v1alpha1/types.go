@@ -26,15 +26,9 @@ type IdentitySubject struct {
 	UID types.UID `json:"uid,omitempty"`
 }
 
-// Subject is who the workload acts as.
-// CLEANUP(added 2026-11-09): remove the ServiceAccount variant in IDENTITY_CUTOVER
-// (agentplane/plans/task_dag.md), which switches every requester to an Identity subject.
-// +kubebuilder:validation:XValidation:rule="has(self.serviceAccount) != has(self.identity)",message="Name exactly one of serviceAccount or identity."
+// Subject is the Identity a workload acts as.
 type Subject struct {
-	// ServiceAccount names a ServiceAccount in the record's namespace.
-	// +kubebuilder:validation:MinLength=1
-	ServiceAccount string           `json:"serviceAccount,omitempty"`
-	Identity       *IdentitySubject `json:"identity,omitempty"`
+	Identity *IdentitySubject `json:"identity"`
 }
 
 // Binding is the incarnation an owner accepts: one Pod, or one KubeVirt VMI.

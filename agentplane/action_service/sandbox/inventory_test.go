@@ -38,7 +38,7 @@ func TestADelegatedIdentityBoxRunsAsDefaultAndItsRecordIsUnowned(t *testing.T) {
 	if len(record.OwnerReferences) != 0 {
 		t.Errorf("the box's credential is owned by %+v, want no owner", record.OwnerReferences)
 	}
-	if subject := record.Spec.Subject; subject.ServiceAccount != "" || subject.Identity == nil ||
+	if subject := record.Spec.Subject; subject.Identity == nil ||
 		*subject.Identity != (workloadapi.IdentitySubject{Name: f.caller.Name, UID: types.UID(f.caller.UID)}) {
 		t.Errorf("the box's credential names %+v, want its delegated Identity", subject)
 	}
@@ -78,7 +78,7 @@ func TestAnIdentitysBoxOutlivesTheIdentityWithItsCredentialRevoked(t *testing.T)
 	if len(record.OwnerReferences) != 0 {
 		t.Errorf("the box's record is owned by %+v, want no owner", record.OwnerReferences)
 	}
-	if subject := record.Spec.Subject; subject.ServiceAccount != "" || subject.Identity == nil ||
+	if subject := record.Spec.Subject; subject.Identity == nil ||
 		*subject.Identity != (workloadapi.IdentitySubject{Name: agent.Name, UID: types.UID(agent.UID)}) {
 		t.Errorf("the box's record names %+v, want the Identity", subject)
 	}
@@ -145,7 +145,7 @@ func TestABoxPresentsACredentialOfItsOwnFromItsSidecarAlone(t *testing.T) {
 	pod := f.pod(t, f.caller, "box")
 	record := f.record(t, f.caller, "box")
 	bound := workloadapi.Binding{PodUID: pod.UID}
-	if record.Spec.Subject.ServiceAccount != "" || record.Spec.Subject.Identity == nil ||
+	if record.Spec.Subject.Identity == nil ||
 		*record.Spec.Subject.Identity != (workloadapi.IdentitySubject{Name: f.caller.Name, UID: types.UID(f.caller.UID)}) ||
 		record.Spec.Binding == nil || *record.Spec.Binding != bound ||
 		record.Spec.Pod == nil || *record.Spec.Pod != (workloadapi.PodRef{Name: pod.Name, UID: pod.UID}) {
@@ -196,7 +196,7 @@ func TestARecreatedBoxsCredentialReplacesTheDisposedOnes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if subject, ok := peer.Subject.(resolver.Identity); !ok || subject.Name != f.caller.Name || subject.UID != types.UID(f.caller.UID) || peer.Pod == nil || peer.Pod.UID != first.UID {
+	if subject := peer.Subject; subject.Name != f.caller.Name || subject.UID != types.UID(f.caller.UID) || peer.Pod == nil || peer.Pod.UID != first.UID {
 		t.Errorf("the box's SVID resolves to %+v, want its caller and Pod %s", peer, first.UID)
 	}
 

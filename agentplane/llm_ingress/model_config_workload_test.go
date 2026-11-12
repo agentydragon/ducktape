@@ -24,7 +24,7 @@ import (
 )
 
 func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
-	workload := workloadauthtesting.NewWorkload(t, api, testNamespace, "llm-model-config-grpc")
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-model-config-grpc", testPolicyNamespace).Workload
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
@@ -118,7 +118,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			workload := workloadauthtesting.NewWorkload(t, api, testNamespace, test.workloadName)
+			workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, test.workloadName, testPolicyNamespace).Workload
 			ca := transporttesting.NewCA(t)
 			serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
 			trustedClientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)

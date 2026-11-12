@@ -177,7 +177,7 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 	record := l.records.all()[0]
 	if response.StatusCode != 200 || record.Outcome != decision.Allow || !record.Substituted ||
 		*record.Address != "127.0.0.1" || *record.Binding != "runner" || *record.Policy != "egress" || *record.Rule != 0 ||
-		*record.SourcePodUID != string(runnerPod.UID) || record.Subject != (decision.ServiceAccount{Namespace: runner.Namespace, Name: runner.Name}) || record.Host != fixtureHost {
+		*record.SourcePodUID != string(runnerPod.UID) || record.Subject != (decision.Identity{Name: l.workload.Identity.Name}) || record.Host != fixtureHost {
 		t.Errorf("status %d, record %+v", response.StatusCode, record)
 	}
 }
@@ -414,7 +414,7 @@ func TestAConnectTheRulesAdmitIsAcknowledgedWithoutDialingAndRecorded(t *testing
 		t.Errorf("status %d, %d upstream TCP connections", response.StatusCode, counted.accepts.Load())
 	}
 	if admitted.Outcome != decision.Allow || admitted.Phase != decision.Connect || admitted.Method != http.MethodConnect ||
-		admitted.Reason != nil || admitted.Subject != (decision.ServiceAccount{Namespace: runner.Namespace, Name: runner.Name}) ||
+		admitted.Reason != nil || admitted.Subject != (decision.Identity{Name: l.workload.Identity.Name}) ||
 		valueOf(admitted.Binding) != "runner" || valueOf(admitted.Address) != "127.0.0.1" || admitted.Host != fixtureHost {
 		t.Errorf("record %+v", admitted)
 	}
@@ -515,7 +515,7 @@ func TestSVIDAuthenticatesProxyRequestsWithoutHopBearerHeaders(t *testing.T) {
 	connections := map[string]bool{}
 	for _, record := range records {
 		connections[record.ConnectionID] = true
-		if record.Outcome != decision.Allow || record.Subject != (decision.ServiceAccount{Namespace: runner.Namespace, Name: runner.Name}) {
+		if record.Outcome != decision.Allow || record.Subject != (decision.Identity{Name: l.workload.Identity.Name}) {
 			t.Errorf("record %+v", record)
 		}
 	}

@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -28,7 +27,7 @@ const deniedHeader = "x-agentplane-egress"
 
 // authenticated is the SVID a connection proved.
 type authenticated struct {
-	subject auth.Subject
+	subject auth.IdentityPrincipal
 }
 
 func (authenticated) String() string   { return "authenticated{redacted}" }
@@ -135,41 +134,18 @@ func (p *Proxy) authenticate(ctx context.Context, client *connection, supplied b
 
 // policySubject is whose bindings decide: an Identity's only while the live Identity of its name
 // still has the UID its credential named.
-func policySubject(subject auth.Subject) reader.Subject {
-	switch subject := subject.(type) {
-	case auth.Principal:
-		return reader.ServiceAccount{Namespace: subject.Account.Namespace, Name: subject.Account.Name}
-	case auth.IdentityPrincipal:
-		return reader.Identity{Name: subject.Identity.Name, UID: types.UID(subject.Identity.UID)}
-	default:
-		panic(fmt.Sprintf("unknown subject %T", subject))
-	}
+func policySubject(subject auth.IdentityPrincipal) reader.Subject {
+	return reader.Identity{Name: subject.Identity.Name, UID: types.UID(subject.Identity.UID)}
 }
 
 // decisionSubject is the caller as history records it: by name, without an Identity's UID.
-func decisionSubject(subject auth.Subject) decision.Subject {
-	switch subject := subject.(type) {
-	case auth.Principal:
-		return decision.ServiceAccount{Namespace: subject.Account.Namespace, Name: subject.Account.Name}
-	case auth.IdentityPrincipal:
-		return decision.Identity{Name: subject.Identity.Name}
-	default:
-		panic(fmt.Sprintf("unknown subject %T", subject))
-	}
+func decisionSubject(subject auth.IdentityPrincipal) decision.Subject {
+	return decision.Identity{Name: subject.Identity.Name}
 }
 
 // podUID is the Pod the caller's credential was accepted for; empty for a standing workload, which
 // proves none.
-func podUID(subject auth.Subject) string {
-	switch subject := subject.(type) {
-	case auth.Principal:
-		return subject.PodUID
-	case auth.IdentityPrincipal:
-		return subject.PodUID
-	default:
-		panic(fmt.Sprintf("unknown subject %T", subject))
-	}
-}
+func podUID(subject auth.IdentityPrincipal) string { return subject.PodUID }
 
 func (p *Proxy) record(req *http.Request, client *connection, host string, port int, result outcome) {
 	record := decision.Record{

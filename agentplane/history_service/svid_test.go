@@ -65,7 +65,7 @@ func svidConnection(t *testing.T, ca *environmentruntimetransporttesting.CA, ser
 }
 
 func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
-	workload := workloadauthtesting.NewWorkload(t, kube, "test-sandbox-namespace", "svid-"+uuid.NewString())
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "svid-"+uuid.NewString(), testPolicyNamespace).Workload
 	ca := environmentruntimetransporttesting.NewCA(t)
 	sampler := auth.Account{Namespace: "test-sandbox-namespace", Name: "test-sampler"}
 	samplerToken, err := kube.WorkloadToken(t.Context(), sampler, "test-runner-ingress")
@@ -85,8 +85,8 @@ func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 	_, err = historypb.NewHistoryServiceClient(conn).GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
-	if status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("a ServiceAccount SVID gained History reads: %v", err)
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("an Identity SVID read outside its retained Sessions: %v", err)
 	}
 	journal := session_ingresspb.NewSessionJournalIngressClient(conn)
 	push, err := journal.Push(ctx)

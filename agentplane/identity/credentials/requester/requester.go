@@ -32,20 +32,11 @@ type Requester interface {
 	Revoke(ctx context.Context, owner Owner) error
 }
 
-// Subject is who the workload acts as: a ServiceAccount until IDENTITY_CUTOVER, then an Identity.
-type Subject interface{ isSubject() }
-
-// ServiceAccount names a ServiceAccount in the owner's namespace.
-type ServiceAccount struct{ Name string }
-
 // Identity names an Identity in the policy namespace by name and UID.
 type Identity struct {
 	Name string
 	UID  types.UID
 }
-
-func (ServiceAccount) isSubject() {}
-func (Identity) isSubject()       {}
 
 // Binding is the incarnation an owner accepts. A nil Binding is none.
 type Binding interface{ isBinding() }
@@ -103,7 +94,7 @@ func OwnedBy(owner metav1.Object, gvk schema.GroupVersionKind) Owner {
 // Request is what an owner asks for.
 type Request struct {
 	Owner   Owner
-	Subject Subject
+	Subject Identity
 	Binding Binding
 }
 
@@ -237,15 +228,11 @@ func specFor(request Request) (workloadapi.WorkloadCredentialSpec, error) {
 	if err := checkOwner(request.Owner); err != nil {
 		return workloadapi.WorkloadCredentialSpec{}, err
 	}
-	var spec workloadapi.WorkloadCredentialSpec
-	switch subject := request.Subject.(type) {
-	case ServiceAccount:
-		spec.Subject.ServiceAccount = subject.Name
-	case Identity:
-		spec.Subject.Identity = &workloadapi.IdentitySubject{Name: subject.Name, UID: subject.UID}
-	default:
-		return workloadapi.WorkloadCredentialSpec{}, fmt.Errorf("unknown subject %T", request.Subject)
+	if request.Subject.Name == "" {
+		return workloadapi.WorkloadCredentialSpec{}, errors.New("a WorkloadCredential needs an Identity subject")
 	}
+	var spec workloadapi.WorkloadCredentialSpec
+	spec.Subject.Identity = &workloadapi.IdentitySubject{Name: request.Subject.Name, UID: request.Subject.UID}
 	switch binding := request.Binding.(type) {
 	case nil:
 	case Pod:

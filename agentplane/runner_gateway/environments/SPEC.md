@@ -88,8 +88,8 @@ substitute for mutation-time checks.
 `GetEnvironment` returns the current descriptor without waiting for a condition.
 `GetEnvironmentIdentityRecord` reads the current Sandbox-owned WorkloadCredential on demand. It
 returns an Identity subject only when the credential has a matching controlling owner reference
-for the exact Sandbox UID. A missing credential, ServiceAccount subject, or unrelated owner gives
-an empty record; read failures are reported as unavailable. Credentials are revoked as workloads
+for the exact Sandbox UID. A missing credential, a retained legacy record without an Identity, or
+an unrelated owner gives an empty record; read failures are reported as unavailable. Credentials are revoked as workloads
 stop, and no retained series is available, so this endpoint is not historical proof. The
 Environment watches do not subscribe to WorkloadCredential changes; clients refresh this read
 explicitly to see a later credential.

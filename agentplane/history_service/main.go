@@ -176,7 +176,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		if err != nil {
 			return err
 		}
-		readerSVIDs = svids.IdentitySubjectsOnly()
+		readerSVIDs = svids
 		for _, method := range c.RPC.Auth {
 			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
 				readerListener.Auth = append(readerListener.Auth, spiffe)
