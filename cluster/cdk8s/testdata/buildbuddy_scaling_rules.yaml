@@ -2,6 +2,37 @@ rule_files:
   - buildbuddy.yaml
 evaluation_interval: 1m
 tests:
+  - name: executor scrape alone does not mean registered capacity
+    interval: 1m
+    input_series:
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1+0x5
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1+0x5
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 0+0x5
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BuildBuddyKvmPoolEmpty
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: No KVM worker is registered
+              description: No BuildBuddy KVM worker has been registered and scrapable for 2 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
+  - name: registered executor does not alert
+    interval: 1m
+    input_series:
+      - series: kube_pod_info{namespace="buildbuddy-executor",pod="worker-a",created_by_kind="VirtualMachineInstance",created_by_name="buildbuddy-kvm-worker-0"}
+        values: 1+0x5
+      - series: up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a"}
+        values: 1+0x5
+      - series: buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",pod="worker-a",health_check_name="registered_to_scheduler"}
+        values: 1+0x5
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BuildBuddyKvmPoolEmpty
+        exp_alerts: []
   - name: idle worker has no queue series before its first task
     interval: 1m
     input_series:

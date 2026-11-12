@@ -406,7 +406,6 @@ def chart(app: App) -> Chart:
         selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
         endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME), Endpoint.plain(port=_NODE_METRICS_PORT_NAME)],
     )
-    target = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS_PORT_NAME}"'
     PrometheusRule(
         chart,
         "prometheus-rule",
@@ -417,12 +416,12 @@ def chart(app: App) -> Chart:
                 [
                     Rule.alert(
                         "BuildBuddyKvmPoolEmpty",
-                        f"absent(up{{{target}}} == 1)",
+                        f"absent({_HEALTHY_WORKERS})",
                         for_="2m",
                         labels={"severity": "critical"},
-                        summary="No KVM worker is ready",
+                        summary="No KVM worker is registered",
                         description=(
-                            "No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting "
+                            "No BuildBuddy KVM worker has been registered and scrapable for 2 minutes, so tests targeting "
                             "pool kvm-vm fail immediately instead of queueing."
                         ),
                     ),
