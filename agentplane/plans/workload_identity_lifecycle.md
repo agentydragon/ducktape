@@ -1,9 +1,9 @@
 # Workload identity lifecycle
 
-Status: **inventory open; the Sandbox Identity source switch is merged.** This is a 2026-11-10
+Status: **inventory open; the Sandbox Identity rollout is accepted.** This is a 2026-11-10
 inventory with the Sandbox rows updated for #15742 and #15744; revalidate the other rows before
-dispatch. Source status does not establish live rollout or acceptance; see
-[the rollout plan](sandbox_identity_rollout.md). Decision node
+dispatch. Sandbox live acceptance and owned cleanup passed on 2026-11-12; see the
+[rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md). Decision node
 [`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target).
 The issuer, the `WorkloadCredential` kind, the resolver and every workload requester have landed:
 Sandboxes, Action command/build boxes, and the standing records for Haku (`haku-ui`, `haku-anki`,

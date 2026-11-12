@@ -88,8 +88,6 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Runner delivery and harness identity](../docs/runner_delivery_and_harness_design.md) — approved
   Session addressing and lifecycle direction, current delivery boundaries, and open send-authority,
   store and harness-identity decisions
-- [Sandbox Identity rollout](sandbox_identity_rollout.md) — source is merged; perform the read-only
-  state audit and only the rollout and acceptance steps that remain
 - [Session and Environment model](session_environment_model.md) — selected placement baseline and
   open zero-environment Session, attachment, authority and lifetime decisions
 - [Session command authority](session_send_authority.md) — implemented native Session addressing;

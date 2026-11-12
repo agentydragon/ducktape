@@ -1,7 +1,7 @@
 # Identities, workload authentication and Kubernetes accounts
 
-Status: **Sandbox Identity source switch merged; rollout and acceptance are not established here.**
-Question 11 is settled. See [the rollout plan](sandbox_identity_rollout.md) for live-state checks
+Status: **Sandbox Identity switch serving and live acceptance complete (2026-11-12).**
+Question 11 is settled. See [the rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md) for deployed evidence
 and [the DAG](task_dag.md#14-identity-and-kubernetes-accounts-cutover) for remaining work.
 Directions selected by the operator on
 2026-11-05 ([`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)):

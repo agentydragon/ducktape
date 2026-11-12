@@ -2,10 +2,10 @@
 
 The switch [#15742](https://github.com/agentydragon/ducktape/pull/15742) and cleanup
 [#15744](https://github.com/agentydragon/ducktape/pull/15744) are merged and serving on staging.
-Pod and VM acceptance passed the checks below. **Operator approval acceptance remains open:**
-the web app throws `The Action Service omitted ActionRequest.caller.` for an Identity caller's
-pending Action. The backend receipt correctly contains `callerIdentity` and no ServiceAccount
-`caller`. Do not describe the entire rollout as accepted until that path is repaired and exercised.
+Live acceptance is complete, including the repaired web approval path: the operator reviewed and
+approved the original Identity caller's broker request, its execution succeeded, and the caller's
+exact-UID launcher read grant succeeded. All three owned test Sandboxes and their related resources
+were cleaned up; retained History for the Pod's Codex and sampler Sessions remains readable.
 
 [Machine-readable evidence](evidence.json) records source commits, serving image tags/digests,
 applied Flux artifact revisions, exact test resource UIDs, turn IDs and completed tool outputs.
@@ -80,19 +80,37 @@ per-Sandbox ServiceAccount.
   its separate Identity remained. After checking references, that exact owned Identity was
   deleted with UID/resourceVersion preconditions; its binding and both owned PVCs disappeared.
 
-## Remaining acceptance and test transport
+## Operator approval, cleanup and test transport
 
 [Broker request ca00e722-ec5b-46a1-a6a5-2e103f2f82d8](https://agentplane-staging.allegedly.works/#/actions/ca00e722-ec5b-46a1-a6a5-2e103f2f82d8)
 requests one disposable `environment-tools` Sandbox, `identity-cutover-broker-5064d58b`, with only
 `basic-identity` and shared diagnostics, plus `list_sessions` for the caller on that exact Sandbox
-UID. It remains pending. The operator tried to review it and reported the frontend caller error. The caller display repair [#15860](https://github.com/agentydragon/ducktape/pull/15860) merged
-as `abdc5a3d8aacb8390265dccadb6aea6a0b566271`. Its final-head code and visual-publication checks passed;
-the desktop/mobile Identity audit captures were inspected. The serving frontend still predates the
-repair while its post-merge release runs. Verify the new frontend is serving, then obtain a real
-operator decision and verify the broker-created Identity/grants/Sandbox. Kubernetes admin credentials are
-not an operator OIDC decision. The parent acceptance Sandbox is stopped with no live Pod or credential while this review is
-blocked; its Identity, grants, retained state and pending request remain. Keep that Identity until
-the request is settled, then remove only the recorded owned acceptance resources and preserve their retained evidence.
+UID. The original caller error was repaired by
+[#15860](https://github.com/agentydragon/ducktape/pull/15860), merged as
+`abdc5a3d8aacb8390265dccadb6aea6a0b566271`. Its final-head checks and published visual review passed;
+all changed captures were inspected, including desktop/mobile Identity name, UID and approval controls.
+The successful post-merge release [43207589343](https://github.com/agentydragon/ducktape/actions/runs/43207589343)
+contains that merge. Flux selected `devel-20261112112908-7f78327`; both frontend replicas became Ready,
+and the public `main.js` contained the new Identity validation and no longer contained the old caller error.
+Flux's first image-pin push failed with `object not found`; its normal retry succeeded. No manual image
+pin or direct Deployment patch was used.
+
+At 11:35:17 UTC the operator approved the preserved request using the web app. Its recorded operator
+Decision and successful execution created Sandbox UID `32694684-d4e2-4462-aa35-2291d278eb5f` and
+Identity UID `5b347d02-185b-480c-9224-a92afbb0fbd4`, with exactly the requested PolicySets.
+The Sandbox reached Ready using default/no token automount and an exact Identity/Pod-bound credential.
+Its Identity-owned selected-grants binding and dual-owned launcher binding were verified; the launcher
+PolicySet allowed only `orchestration_v1/list_sessions` with this exact Sandbox name and UID.
+The parent Identity's request `b52cd6b7-88c9-49c8-8d0d-5d474e69b4b2` was then auto-approved by that
+specific launcher rule and returned the empty Session list. This approved platform-authority broker path
+is separate from the correctly denied direct and caller-delegated Identity Session-creation attempts.
+
+The broker and resumed parent were suspended and deleted through the app with exact Sandbox UIDs.
+Each separate Identity survived Sandbox deletion, then was explicitly deleted only after reference checks,
+with UID/resourceVersion preconditions. A final inventory verified no owned Sandbox, Identity,
+WorkloadCredential, PolicyBinding, PolicySet, Pod, VM/VMI, ServiceAccount or disposable PVC remained,
+including the dual-owned launcher binding. Both test Sessions' retained History remained readable.
+The earlier VM cleanup is recorded above. No unrelated resources or History were deleted.
 
 The first manual live Ollama test stopped before submitting a model turn: Python gRPC expected a
 Dispatcher DNS SAN while the serving certificate intentionally has only
@@ -116,3 +134,11 @@ merged as `012f1dccc1051bff8595fdf281b48f2751e1b046` after its generated-manifes
 checks passed. It describes bound Identity credentials and complete explicit launch grants, and
 distinguishes denied Identity lifecycle calls from operator provisioning and approved broker Actions.
 It changes no authorization rule. Serving the updated guidance remains a separate rollout observation.
+
+Live LLM Ingress and History mount `policy_namespace: agentplane-staging`; the Runner Gateway receives
+that namespace through its existing `AGENTPLANE_RUNNER_GATEWAY_POLICY_NAMESPACE` environment setting.
+Their serving images, observed generations and configuration sources are recorded in the evidence.
+The source-level removal of optional verifier inputs remains separately open in `SANDBOX_IDENTITY_SPEC`;
+this record accepts the live cutover and does not claim that cleanup has landed. The unused rollout hold
+plan and patch were retired. Lasting recovery guidance is in
+[workload authentication](../workload_authentication.md#sandbox-rollout-and-recovery).
