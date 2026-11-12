@@ -16,7 +16,7 @@ func (s *sidecar) dialRouteTunnel(ctx context.Context, target string) (net.Conn,
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	request := &http.Request{Method: http.MethodConnect, URL: &url.URL{Host: target}, Host: target, Header: make(http.Header)}
-	rewriteRequest(request, nil)
+	rewriteRequest(request)
 	connection, err := s.proxyHop.transport.dial(ctx, s.proxyHop.address)
 	if err != nil {
 		return nil, err

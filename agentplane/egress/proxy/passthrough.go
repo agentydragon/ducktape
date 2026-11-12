@@ -21,12 +21,12 @@ import (
 func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request, client *connection, host string, port int) {
 	_, supplied := request.Header[proxyAuthorization]
 	request.Header.Del(proxyAuthorization)
-	request.Header.Del(identity.ProjectedTokenHeader)
+	request.Header.Del(identity.UntrustedWorkloadTokenHeader)
 	refuse := func(reason decision.Reason, caller *authenticated) {
 		p.record(request, client, host, port, outcome{decision: policy.Denied{Reason: reason}, caller: caller})
 		deny(w, reason)
 	}
-	caller, err := p.authenticate(request.Context(), client, supplied, nil)
+	caller, err := p.authenticate(request.Context(), client, supplied)
 	if err != nil {
 		refuse(decision.TokenRejected, nil)
 		return
@@ -57,7 +57,7 @@ func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request,
 		refuse(decision.Unavailable, caller)
 		return
 	}
-	securedCaller, err := p.authenticate(request.Context(), client, false, nil)
+	securedCaller, err := p.authenticate(request.Context(), client, false)
 	if err != nil || securedCaller.subject != caller.subject {
 		refuse(decision.TokenRejected, caller)
 		return

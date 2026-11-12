@@ -1,6 +1,6 @@
 """The egress relay of a VM Sandbox. KubeVirt builds a VM's virt-launcher Pod from the VirtualMachine,
 not from our SandboxTemplate's Pod, so this Kyverno policy adds the relay when the Pod is created: the
-same egress sidecar, routes and projected tokens as a runner Pod's (environment_sandbox.py), copied from the
+same egress sidecar, routes and workload trust files as a runner Pod's (environment_sandbox.py), copied from the
 rendered runner template, with settings rendered from the template's own so the two cannot drift.
 
 The guest reaches the relay at its masquerade gateway, `10.0.2.1`, on the ports a runner Pod's
@@ -169,8 +169,8 @@ def _protected_mounts(containers: str, volume_names: tuple[str, ...]) -> list[di
 
 
 class LauncherRelayPolicy(ClusterPolicy):
-    """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar, token
-    volume and pull secrets the relay copies. `settings_config_map` holds the relay's own sidecar
+    """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar
+    and pull secrets the relay copies. `settings_config_map` holds the relay's own sidecar
     settings, which listen where the guest can reach; the runner fence keeps every other peer off
     those ports."""
 
@@ -179,7 +179,6 @@ class LauncherRelayPolicy(ClusterPolicy):
     ) -> None:
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME))
-        token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
         # A deployment that pulls without credentials (the k3s fixture) has none to copy.
         pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}
         runner_tls_checks = [
@@ -211,7 +210,7 @@ class LauncherRelayPolicy(ClusterPolicy):
             "runAsGroup": 1000,
             "runAsNonRoot": True,
         }
-        protected_volumes = [token_volume]
+        protected_volumes = []
         relay["volumeMounts"].append(
             {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": sidecar_config.RUNNER_TLS_MOUNT_PATH, "readOnly": True}
         )
@@ -301,7 +300,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                     name="protect-relay-credentials-on-update",
                     match=updates,
                     validate=Validate.deny(
-                        message="Only the launcher relay may mount projected tokens or runner credentials.",
+                        message="Only the launcher relay may mount the runner credential and trust files.",
                         conditions={"any": [*relay_only]},
                     ),
                 ),
@@ -340,7 +339,6 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 # The subsequent daemon move appends without disturbing existing init order.
                                 "+(initContainers)": [],
                                 "volumes": [
-                                    *(v for v in pod_spec["volumes"] if v["name"] == token_volume),
                                     {
                                         "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
                                         "configMap": {"name": settings_config_map},

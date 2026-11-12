@@ -24,7 +24,7 @@ type attempted struct {
 
 // attempt runs one attempt at action as caller. Execute is attempt under worker.Hold, whose lease only the worker
 // makes, once the caller is one a box can be given.
-func (f fixture) attempt(t *testing.T, caller Caller, action, arguments string) attempted {
+func (f fixture) attempt(t *testing.T, caller Identity, action, arguments string) attempted {
 	t.Helper()
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
@@ -62,15 +62,15 @@ func (a attempted) failure() action_servicepb.ExecutionErrorKind {
 	return a.outcome.Error.GetKind()
 }
 
-// The identity comes from the authenticated request and never from an argument, so a caller cannot reach another
-// account's boxes by asking for them.
+// The effective Identity comes from reviewed request delegation and never from an argument, so a platform
+// ServiceAccount actor cannot silently become the workload subject.
 func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 	f := newFixture(t, nil)
-	other := account(t, f.binding.Namespace, "test-other")
-	for _, caller := range []Account{f.caller, other} {
+	other := workloadIdentity(t, f.identityNamespace, "test-other")
+	for _, caller := range []Identity{f.caller, other} {
 		resultOf[Info](f.attempt(t, caller, string(contract.Create), `{"name": "box", "template": "test-template"}`))
-		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != caller.Name {
-			t.Errorf("%s's box runs as %q", caller.Name, pod.Spec.ServiceAccountName)
+		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != defaultServiceAccount {
+			t.Errorf("%s's box runs as %q, want %q", caller.Name, pod.Spec.ServiceAccountName, defaultServiceAccount)
 		}
 	}
 	if listed := resultOf[SandboxList](f.attempt(t, f.caller, string(contract.List), `{}`)); len(listed.Sandboxes) != 1 {
@@ -85,23 +85,22 @@ func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 // No argument names an account: one that tries is refused rather than quietly ignored.
 func TestAnAccountNamedInArgumentsIsNotRead(t *testing.T) {
 	f := newFixture(t, nil)
-	other := account(t, f.binding.Namespace, "test-other")
+	other := workloadIdentity(t, f.identityNamespace, "test-other")
 	arguments := `{"name": "box", "template": "test-template", "caller": "test-other", "namespace": "` + f.binding.Namespace + `"}`
 	if kind := f.attempt(t, f.caller, string(contract.Create), arguments).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS {
 		t.Errorf("kind = %q, want invalid_arguments", kind)
 	}
-	for _, caller := range []Account{f.caller, other} {
+	for _, caller := range []Identity{f.caller, other} {
 		if boxes, err := f.inventory().List(t.Context(), caller); err != nil || len(boxes) != 0 {
 			t.Errorf("%s has boxes %v, %v", caller.Name, boxes, err)
 		}
 	}
 }
 
-// A Pod runs as an account of its own namespace or not at all, so a caller from elsewhere cannot be given a box that
-// is it, and must not be given one that is somebody else.
-func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
+// An authenticated platform component account is not an implicit workload subject. It must name an effective
+// Identity through reviewed delegation before this executor can create a box.
+func TestServiceAccountActorMustDelegateAnIdentity(t *testing.T) {
 	f := newFixture(t, nil)
-	elsewhere := account(t, f.binding.Namespace+"-elsewhere", f.caller.Name)
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
 		t.Fatal(err)
@@ -109,10 +108,11 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	// The refusal comes before any lease is held, so it needs none.
 	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
-		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: store.ServiceAccountCaller{Account: store.ServiceAccount(elsewhere)},
+		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`),
+		Caller:    store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: "agentplane", Name: "action-service"}},
 	}, nil)
-	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL {
-		t.Errorf("kind = %q, want caller_not_local", kind)
+	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
+		t.Errorf("kind = %q, want caller_unknown", kind)
 	}
 	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 0 {
@@ -187,7 +187,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 		resultOf[Info](f.attempt(t, f.caller, string(contract.Create), `{"name": "`+name+`", "template": "test-template"}`))
 	}
 	f.report(t, f.caller, "box", ready)
-	other := account(t, f.binding.Namespace, "test-other")
+	other := workloadIdentity(t, f.identityNamespace, "test-other")
 	if _, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Create(t.Context(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: objectName(other, "taken"), Labels: map[string]string{nameLabel: "taken"}},
 		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "workspace", Image: "registry.test/unused"}}},
@@ -199,7 +199,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name      string
-		caller    Caller
+		caller    Identity
 		action    string
 		arguments string
 		kind      action_servicepb.ExecutionErrorKind

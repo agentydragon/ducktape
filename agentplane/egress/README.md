@@ -22,8 +22,7 @@ One Go package per concern:
   Every request passes identity, policy, credential and address checks before anything is dialed.
   One forward listener on port 8888 authenticates workload SVIDs.
 - `identity`: resolves each request's SVID to its live `WorkloadCredential`, whose subject -- a
-  ServiceAccount or an Identity -- is the policy subject, and reviews the projected tokens offered
-  for substitution.
+  ServiceAccount or an Identity -- is the policy subject.
 - `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
   placeholder directs it to, and substitution. The bindings and their egress rules are a
   `../policy/reader` index. No I/O.
@@ -48,8 +47,8 @@ Also here:
 - `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It presents the
   sidecar-held SVID in the TLS handshake to the proxy, whose certificate trust and fixed SPIFFE
   identity, `spiffe://agentplane/egress-proxy`, it verifies; `proxy.transport` keeps its tagged
-  `mode: tls` and `auth.mode: spiffe`, their only values. Its projected Kubernetes-audience tokens in `audience_token_files` remain separate destination
-  credentials for central egress-rule substitution; they never authenticate the proxy hop.
+  `mode: tls` and `auth.mode: spiffe`, their only values. The sidecar sends no workload bearer to
+  the central proxy.
   It also hosts local generic gRPC routes to Agentplane services, each with an explicit transport:
   `plaintext`, or `tls_connect` with the sidecar SVID. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
@@ -97,13 +96,13 @@ or replacing acceptance, changing the binding, or removing the Sandbox revokes a
 keeps the accepted credential available for final History sealing. Caller headers cannot select a
 subject, and bearer credentials cannot authenticate the hop.
 
-The Kubernetes-audience projected token remains a destination credential. It is independently
-reviewed against the Sandbox's account and bound Pod UID. History, Notification, Dispatcher,
+The retired `X-Agentplane-Workload-Token` header is discarded by both forwarding hops and never
+participates in authentication or credential substitution. History, Notification, Dispatcher,
 Action, LLM and Rules verify workload SVIDs themselves; central carries their TLS opaquely and
 never asserts the caller.
 
-The real-binary `test_proxy.py` harness checks accepted SVIDs, revocation, wrong-Pod destination
-tokens, forged subjects, expired and forged leaves, and refusal of bearer hop authentication.
+The real-binary `test_proxy.py` harness checks accepted SVIDs, revocation, forged subjects, expired
+and forged leaves, untrusted workload-token header stripping, and refusal of bearer hop authentication.
 
 ## BuildBuddy clients
 
@@ -145,13 +144,6 @@ BuildBuddy's hosted runner. That nested Bazel process is outside Agentplane egre
 would remain inert there. Do not configure credentialless `bb remote` until BuildBuddy offers a
 runner-side credential reference or Agentplane owns an equivalent broker at that boundary; the
 boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
-
-## Projected workload credentials
-
-Kubernetes uses `projectedWorkloadToken` with its explicit API-server audience. The sidecar
-projects that token and sends it under `X-Agentplane-Workload-Token`. Central reviews it against
-the SVID's live Sandbox binding and substitutes it only at a matching rule's declared target and
-placeholder. Missing, stale or mismatched projected context fails closed.
 
 ## Kubernetes accounts
 
@@ -224,7 +216,7 @@ request including cache hits, stops a token copied out of its Pod from being rep
 the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, the grant
 the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
 in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
-borrowing becomes a real concern — a compromised sidecar reading another Pod's projected token, or
+borrowing becomes a real concern — for example, where workloads can obtain another subject's SVID or
 a namespace whose Pod specs are not ours — with a pod IP on the principal, the check in `identity`,
 the peer-address read in `proxy`, and that `pods` read.
 

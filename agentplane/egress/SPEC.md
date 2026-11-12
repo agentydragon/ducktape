@@ -46,14 +46,10 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   Identity's Pod is provenance, never its subject. A subject no binding names reaches no rule.
 - A standing record, with no owner and no binding, authenticates its subject and proves no Pod:
   every replica presenting its SVID is the same caller, and decisions record no source Pod. No
-  forwarded projected token can be bound to it, so the proxy drops every one unreviewed and a rule
-  needing one refuses with `credential-unavailable`. Deleting the record revokes it.
-- A sidecar's separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
-  `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same
-  ServiceAccount and Pod UID as the live Sandbox binding and the credential names its configured
-  audience; a mismatched token is dropped and a rule needing it refuses with
-  `credential-unavailable`. A Pod token proves a ServiceAccount, never an Identity, so an Identity
-  caller's are all dropped unreviewed.
+  projected Pod token participates in authentication or credential substitution. Deleting the
+  record revokes it.
+- The retired `X-Agentplane-Workload-Token` header is discarded by both the sidecar and central
+  proxy. It cannot select the authenticated subject or supply a destination credential.
 - A copied SVID proves only the live record named by that SVID and, for a bound record, its current binding.
   Each request, including one inherited through a tunnel, repeats validity and live-state checks.
 
@@ -91,10 +87,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; `projectedWorkloadToken`, naming the
-  audience of a token the sidecar presented on the hop; or `kubernetesServiceAccount`, naming an
-  account the proxy acts as on its own API server. Absent, stale or mismatched context refuses
-  with `credential-unavailable`.
+  `secretRef`, preserving the central-held Secret behavior, or `kubernetesServiceAccount`, naming
+  an account the proxy acts as on its own API server.
 - **A Kubernetes account is acted as by impersonation.** A `kubernetesServiceAccount` credential
   names a namespace and a ServiceAccount on the API server the proxy's own credential reaches. A
   named API server is the intended extension for remote clusters, not modelled for lack of a use
@@ -119,13 +113,6 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   established tunnel, and leaving every other holder acting as the account; the account's own roles
   are revoked only when their RoleBindings go. The decision records the impersonated account beside
   the subject, and the API server's audit log names the proxy as the original user.
-- **Kubernetes keeps its projected workload credential.** The sidecar sends it as
-  `X-Agentplane-Workload-Token: <audience> <token>`, and central consumes this header rather than
-  forwarding it. TokenReview must resolve it to the record's subject and the Pod UID of its
-  `spec.pod`; a standing record has none, so none is kept. It requires a configured audience. A failed review drops that token;
-  a rule requiring it refuses with `credential-unavailable`. The sidecar replaces caller-supplied
-  copies of the header, and the workload cannot read the projection. A tunnel's inner requests
-  inherit the reviewed token from CONNECT. Other platform services verify SVIDs themselves.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),

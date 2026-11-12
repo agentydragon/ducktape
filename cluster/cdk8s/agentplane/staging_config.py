@@ -32,7 +32,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runtime_catalog, settings
 from cluster.cdk8s.agentplane.egress import (
-    BASIC_IDENTITY_POLICY,
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
     DEFAULT_POLICIES,
@@ -134,7 +133,7 @@ def config(
     electric_url: HttpEndpointUrl,
     identity_catalog: bool,
 ) -> Settings:
-    basic_policy_set = BASIC_POLICY if identity_catalog else BASIC_IDENTITY_POLICY
+    basic_policy_set = BASIC_POLICY
     if runtime is None:
         runtime = runtime_catalog(
             models, templates=(sandbox_template,), central_sampler_enabled=central_sampler_enabled
@@ -217,7 +216,7 @@ def config(
         title="Haku",
         template=sandbox_template,
         # These policies are what a *launch* is granted, independent of which
-        # caller/ServiceAccount stamps it.
+        # Identity launches it.
         policy_sets=[
             basic_policy_set,
             *HAKU_SHARED_CORE_POLICIES,

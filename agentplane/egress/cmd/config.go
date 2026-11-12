@@ -26,27 +26,28 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // local_api_server is where kubernetesServiceAccount credentials naming the `local` API server act,
 // and the token file holding the proxy's own bearer for it; unset, those credentials are unavailable.
 type config struct {
-	RulesNamespace                  string            `mapstructure:"rules_namespace"`
-	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
-	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	Forward                         listener.Config   `mapstructure:"forward"`
-	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
-	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
-	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
-	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
-	CACert                          string            `mapstructure:"ca_cert"`
-	CAKey                           string            `mapstructure:"ca_key"`
-	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
-	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
-	Kubeconfig                      string            `mapstructure:"kubeconfig"`
-	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	DatabaseURL                     string            `mapstructure:"database_url"`
-	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
-	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
-	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
-	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
-	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
-	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
+	RulesNamespace                  string          `mapstructure:"rules_namespace"`
+	CredentialsNamespace            string          `mapstructure:"credentials_namespace"`
+	AllowedServiceAccountNamespaces []string        `mapstructure:"allowed_service_account_namespaces"`
+	Forward                         listener.Config `mapstructure:"forward"`
+	TLSPassthroughTargets           []string        `mapstructure:"tls_passthrough_targets"`
+	AdminListenAddress              string          `mapstructure:"admin_listen_address"`
+	AdminGRPCAudience               string          `mapstructure:"admin_grpc_audience"`
+	AdminGRPCCallers                []string        `mapstructure:"admin_grpc_callers"`
+	CACert                          string          `mapstructure:"ca_cert"`
+	CAKey                           string          `mapstructure:"ca_key"`
+	UpstreamCAFile                  string          `mapstructure:"upstream_ca_file"`
+	// CLEANUP(added 2026-11-12): remove after staging egress-go-settings is observed without this key.
+	ProjectedTokenAudiences []string          `mapstructure:"projected_token_audiences"`
+	Kubeconfig              string            `mapstructure:"kubeconfig"`
+	LogLevels               map[string]string `mapstructure:"log_levels"`
+	DatabaseURL             string            `mapstructure:"database_url"`
+	DecisionHistorySize     int               `mapstructure:"decision_history_size"`
+	DecisionRetentionDays   int               `mapstructure:"decision_retention_days"`
+	DecisionQueueSize       int               `mapstructure:"decision_queue_size"`
+	DecisionBatchSize       int               `mapstructure:"decision_batch_size"`
+	ExemptNetworks          []netip.Prefix    `mapstructure:"exempt_networks"`
+	LocalAPIServer          *apiServerConfig  `mapstructure:"local_api_server"`
 }
 
 // apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
@@ -121,9 +122,6 @@ func (c *config) validate() error {
 	}
 	if len(c.AllowedServiceAccountNamespaces) == 0 || slices.Contains(c.AllowedServiceAccountNamespaces, "") {
 		return errors.New("allowed_service_account_namespaces must list at least one namespace, none of them empty")
-	}
-	if slices.Contains(c.ProjectedTokenAudiences, "") {
-		return errors.New("projected_token_audiences must not contain an empty audience")
 	}
 	if err := c.Forward.Validate(); err != nil {
 		return fmt.Errorf("forward listener: %w", err)

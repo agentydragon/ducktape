@@ -1575,8 +1575,6 @@ data:
     admin_grpc_audience: agentplane-egress-admin
     admin_grpc_callers:
       - agentplane-staging/app
-    projected_token_audiences:
-      - https://localhost:7445
     local_api_server:
       host: kubernetes.default.svc.cluster.local
       port: 443
@@ -2086,21 +2084,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: kubernetes-workload
-  namespace: agentplane-staging
-spec:
-  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local. This credential acts as the caller's own ServiceAccount, which only an Action command box running as its caller has; a Sandbox has none. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-kubernetes-workload for Kubernetes commands; the proxy substitutes the box's projected Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
-  source:
-    projectedWorkloadToken:
-      audience: https://localhost:7445
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: inference-experiments
@@ -2201,36 +2184,6 @@ spec:
             - submit_input
         type: exact_actions
       type: action_auto_approve
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: basic
-  namespace: agentplane-staging
-spec:
-  rules:
-    - policy:
-        actions:
-          environments:
-            - get
-            - list
-            - resume
-          sessions:
-            - cancel_input
-            - create
-            - get
-            - interrupt_turn
-            - observe_input
-            - read_turns
-            - submit_input
-        type: exact_actions
-      type: action_auto_approve
-    - clusterInternal: true
-      credentialRef:
-        name: kubernetes-workload
-      hosts:
-        - kubernetes.default.svc.cluster.local
-      type: egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -5064,7 +5017,6 @@ data:
           mode: spiffe
           cert_file: /run/agentplane/environment-runtime-tls/tls.crt
           key_file: /run/agentplane/environment-runtime-tls/tls.key
-    audience_token_files: {}
     workload_routes:
       actions.agentplane-staging.svc.cluster.local:8080:
         upstream: actions.agentplane-staging.svc.cluster.local:8080
@@ -5475,7 +5427,6 @@ data:
           mode: spiffe
           cert_file: /run/agentplane/environment-runtime-tls/tls.crt
           key_file: /run/agentplane/environment-runtime-tls/tls.key
-    audience_token_files: {}
     workload_routes:
       actions.agentplane-staging.svc.cluster.local:8080:
         upstream: actions.agentplane-staging.svc.cluster.local:8080
@@ -5554,25 +5505,16 @@ spec:
         deny:
           conditions:
             any:
-              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
-                operator: NotEquals
-                value: 0
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
-              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
-                operator: NotEquals
-                value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
-        message: Only the launcher relay may mount projected tokens or runner credentials.
+        message: Only the launcher relay may mount the runner credential and trust files.
     - context:
         - name: vmiOwner
           variable:
@@ -5628,19 +5570,10 @@ spec:
               - key: "{{ vmOwner.uid }}"
                 operator: NotEquals
                 value: "{{vm.metadata.uid}}"
-              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
-                operator: NotEquals
-                value: 0
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
-              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
-                operator: NotEquals
-                value: 0
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
@@ -6021,19 +5954,10 @@ spec:
               - key: "{{ length(request.object.spec.initContainers[?name=='egress-sidecar' && restartPolicy=='Always']) }}"
                 operator: NotEquals
                 value: 1
-              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
-                operator: NotEquals
-                value: 0
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
-              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
-                operator: NotEquals
-                value: 0
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
@@ -6043,7 +5967,7 @@ spec:
   validationFailureAction: enforce
   webhookConfiguration:
     matchConditions:
-      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'egress-token') || object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))))"
+      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))))"
         name: launcher-or-relay-credential-volume
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -7202,7 +7126,7 @@ data:
           description: Created and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-staging
           templates:
-            sandbox: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+            sandbox: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (Kubernetes access follows the caller Identity's reviewed egress rules) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
             sandbox-build: "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
           max_timeout_seconds: 1800
           max_output_bytes: 200000
@@ -9333,7 +9257,6 @@ data:
           mode: spiffe
           cert_file: /var/run/agentplane-svid/tls.crt
           key_file: /var/run/agentplane-svid/tls.key
-    audience_token_files: {}
     workload_routes: {}
     platform_routes:
       listen_address: 127.0.0.1:3130
@@ -9603,8 +9526,6 @@ data:
           mode: spiffe
           cert_file: /run/agentplane/workload-svid/tls.crt
           key_file: /run/agentplane/workload-svid/tls.key
-    audience_token_files:
-      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
     workload_routes: {}
     platform_routes:
       listen_address: 127.0.0.1:3130
@@ -9722,9 +9643,6 @@ template:
           runAsNonRoot: true
           runAsUser: 1000
         volumeMounts:
-          - mountPath: /var/run/agentplane-egress
-            name: egress-token
-            readOnly: true
           - mountPath: /etc/agentplane-egress-sidecar
             name: egress-sidecar-settings
             readOnly: true
@@ -9752,13 +9670,6 @@ template:
       - configMap:
           name: sandbox-tool-config
         name: tool-config
-      - name: egress-token
-        projected:
-          sources:
-            - serviceAccountToken:
-                audience: https://localhost:7445
-                expirationSeconds: 600
-                path: kubernetes-token
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings
@@ -9870,9 +9781,6 @@ template:
           runAsNonRoot: true
           runAsUser: 1000
         volumeMounts:
-          - mountPath: /var/run/agentplane-egress
-            name: egress-token
-            readOnly: true
           - mountPath: /etc/agentplane-egress-sidecar
             name: egress-sidecar-settings
             readOnly: true
@@ -9900,13 +9808,6 @@ template:
       - configMap:
           name: sandbox-tool-config
         name: tool-config
-      - name: egress-token
-        projected:
-          sources:
-            - serviceAccountToken:
-                audience: https://localhost:7445
-                expirationSeconds: 600
-                path: kubernetes-token
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings
@@ -12418,7 +12319,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   policySets:
-    - basic
+    - basic-identity
     - inference-experiments
     - forgejo-haku
     - packages
@@ -12552,7 +12453,7 @@ metadata:
   namespace: agentplane-staging
 spec:
   policySets:
-    - basic
+    - basic-identity
     - inference-experiments
     - forgejo-haku
     - packages

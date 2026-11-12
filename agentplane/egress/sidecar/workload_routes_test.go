@@ -46,7 +46,7 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 			http.Error(w, "bad peer", 400)
 			return
 		}
-		if r.Header.Get("Authorization") != "" || r.Header.Get("Proxy-Authorization") != "" || r.Header.Get(projectedTokenHeader) != "" {
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Proxy-Authorization") != "" || r.Header.Get(untrustedWorkloadTokenHeader) != "" {
 			t.Error("caller credential header reached destination")
 		}
 		calls.Add(1)
@@ -73,7 +73,7 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 	}
 	request.Header.Set("Authorization", "Bearer forged")
 	request.Header.Set("Proxy-Authorization", "Bearer forged-hop")
-	request.Header.Set(projectedTokenHeader, "audience forged-projection")
+	request.Header.Set(untrustedWorkloadTokenHeader, "audience forged-projection")
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 
 	select {
 	case hop := <-observed:
-		if hop.Method != http.MethodConnect || hop.Host != strings.TrimPrefix(destination.URL, "https://") || hop.Header.Get("Proxy-Authorization") != "" || hop.Header.Get(projectedTokenHeader) != "" {
+		if hop.Method != http.MethodConnect || hop.Host != strings.TrimPrefix(destination.URL, "https://") || hop.Header.Get("Proxy-Authorization") != "" || hop.Header.Get(untrustedWorkloadTokenHeader) != "" {
 			t.Fatalf("central CONNECT=%+v", hop)
 		}
 	case <-time.After(3 * time.Second):
@@ -376,7 +376,7 @@ func TestWorkloadGRPCConnectRoutePresentsRunnerSVIDAndCarriesNativeMetadata(t *t
 	}
 	select {
 	case hop := <-observed:
-		if hop.Method != http.MethodConnect || hop.Host != destination || hop.Header.Get("Proxy-Authorization") != "" || hop.Header.Get(projectedTokenHeader) != "" {
+		if hop.Method != http.MethodConnect || hop.Host != destination || hop.Header.Get("Proxy-Authorization") != "" || hop.Header.Get(untrustedWorkloadTokenHeader) != "" {
 			t.Fatalf("central CONNECT = %+v", hop)
 		}
 	case <-time.After(3 * time.Second):

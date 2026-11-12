@@ -125,22 +125,6 @@ Target = Annotated[
 ]
 
 
-class ProjectedWorkloadTokenSource(_Wire):
-    """A destination-audience token projected into the sidecar and presented on the hop.
-
-    The proxy uses only the token explicitly presented for this audience and reviewed as the same
-    Pod that authenticated the hop; it never implicitly reuses the hop credential.
-    """
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
-
-    audience: str = Field(
-        min_length=1,
-        description="Audience of the projected token to substitute, as the destination validates it "
-        "and as the sidecar's projection requests it.",
-    )
-
-
 class KubernetesServiceAccountSource(_Wire):
     """A ServiceAccount the proxy acts as by impersonation on its own in-cluster API server.
 
@@ -160,16 +144,13 @@ class CredentialSource(_Wire):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     secret_ref: SecretKeyRef | None = None
-    projected_workload_token: ProjectedWorkloadTokenSource | None = None
     kubernetes_service_account: KubernetesServiceAccountSource | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
-        sources = (self.secret_ref, self.projected_workload_token, self.kubernetes_service_account)
+        sources = (self.secret_ref, self.kubernetes_service_account)
         if sum(source is not None for source in sources) != 1:
-            raise ValueError(
-                "source must set exactly one of secretRef, projectedWorkloadToken or kubernetesServiceAccount"
-            )
+            raise ValueError("source must set exactly one of secretRef or kubernetesServiceAccount")
         return self
 
 

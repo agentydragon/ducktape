@@ -32,9 +32,6 @@ func TestLoadConfigReadsNestedProxySettings(t *testing.T) {
 proxy:
   address: egress.example:9001
   transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}
-audience_token_files:
-  https://kubernetes.test/Audience: /var/run/api/upper-token
-  https://kubernetes.test/audience: /var/run/api/lower-token
 platform_routes:
   listen_address: 127.0.0.1:3130
   routes:
@@ -56,11 +53,6 @@ listen_address: 127.0.0.1:0
 	}
 	if config.ReadinessListenAddress != "0.0.0.0:3129" {
 		t.Fatalf("keys the file omits must keep their defaults: %+v", config)
-	}
-	if len(config.AudienceTokenFiles) != 2 ||
-		config.AudienceTokenFiles["https://kubernetes.test/Audience"] != "/var/run/api/upper-token" ||
-		config.AudienceTokenFiles["https://kubernetes.test/audience"] != "/var/run/api/lower-token" {
-		t.Fatalf("audience token files = %#v", config.AudienceTokenFiles)
 	}
 	route := config.PlatformRoutes.Routes["Control.Route"]
 	routeTransport, routeOkay := route.Transport.(plaintextRouteTransportConfig)
@@ -85,6 +77,21 @@ platform_routes: {routes: {}}
 	}
 }
 
+func TestLoadConfigAcceptsRetiredAudienceTokenSettingsDuringRollout(t *testing.T) {
+	content := `
+proxy: {address: p.example:8888, transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}}
+platform_routes: {routes: {}}
+audience_token_files: {kubernetes: /var/run/agentplane-egress/kubernetes-token}
+`
+	config, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AudienceTokenFiles["kubernetes"] != "/var/run/agentplane-egress/kubernetes-token" {
+		t.Fatalf("deployed audience_token_files did not parse: %v", config.AudienceTokenFiles)
+	}
+}
+
 func TestLoadConfigReadsSpiffeAuthAndTransport(t *testing.T) {
 	path := writeSettingsFile(t, `
 proxy:
@@ -96,9 +103,6 @@ proxy:
       mode: spiffe
       cert_file: /run/runner/tls.crt
       key_file: /run/runner/tls.key
-audience_token_files:
-  agentplane-workload: /var/run/agentplane-egress/token
-  https://kubernetes.test: /var/run/egress/kubernetes-token
 platform_routes:
   listen_address: 127.0.0.1:3130
   routes:
@@ -118,9 +122,6 @@ workload_routes:
 	transport := config.Proxy.Transport
 	if transport.CAFile != "/run/runner/ca.crt" || transport.Auth.CertFile != "/run/runner/tls.crt" || transport.Auth.KeyFile != "/run/runner/tls.key" {
 		t.Fatalf("proxy transport = %#v, want TLS with the CA and SPIFFE files", transport)
-	}
-	if config.AudienceTokenFiles["agentplane-workload"] != "/var/run/agentplane-egress/token" {
-		t.Fatalf("destination audience token file = %#v", config.AudienceTokenFiles)
 	}
 	route := config.PlatformRoutes.Routes["egress-rules"]
 	if config.PlatformRoutes.ListenAddress != "127.0.0.1:3130" ||
@@ -167,7 +168,6 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 		"empty":                                    "",
 		"null platform routes":                     required + "platform_routes: null\n",
 		"routes not an object":                     required + "platform_routes: {routes: [rules]}\n",
-		"audience value object":                    required + "audience_token_files: {a: {nested: 1}}\n",
 		"removed Rules HTTP setting":               required + "rules_api: rules.test:80\n",
 		"legacy per-route listener":                required + "platform_routes: {rules: {listen_address: 127.0.0.1:3130}}\n",
 		"route unknown field":                      required + strings.Replace(validRoute, "upstream: 'rules.test:8081'", "upstream: 'rules.test:8081', extra: true", 1),

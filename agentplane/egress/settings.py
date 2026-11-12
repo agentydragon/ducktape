@@ -75,11 +75,12 @@ class Settings(BaseModel):
         "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
-    projected_token_audiences: frozenset[str] = Field(
-        default=frozenset(),
-        description="Every audience a rule may substitute a sidecar's projected token for. Reviewing "
-        "the list here is what decides which destinations this proxy will spend a "
-        "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
+    # CLEANUP(added 2026-11-12): remove after staging egress-go-settings is observed without this key.
+    projected_token_audiences: list[str] = Field(
+        default_factory=list,
+        exclude=True,
+        description="Compatibility with existing deployment ConfigMaps during rollout; authentication no longer "
+        "uses projected workload tokens, and newly rendered settings omit this field.",
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels

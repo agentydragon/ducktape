@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -26,21 +25,20 @@ type Authenticated struct {
 // workload SVIDs alone. Its policy and live identity sources are bound once at startup.
 type Authenticator struct {
 	policy  listener.Config
-	tokens  *Verifier
 	records *resolver.Resolver
 }
 
-func NewAuthenticator(policy listener.Config, tokens *Verifier, records *resolver.Resolver) (*Authenticator, error) {
+func NewAuthenticator(policy listener.Config, records *resolver.Resolver) (*Authenticator, error) {
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
 	if !policy.Has(listener.SPIFFE) || policy.Has(listener.KubernetesBearer) {
 		return nil, errors.New("workload authentication accepts SPIFFE alone")
 	}
-	if tokens == nil || records == nil {
-		return nil, errors.New("SPIFFE authentication requires a token verifier and a live WorkloadCredential resolver")
+	if records == nil {
+		return nil, errors.New("SPIFFE authentication requires a live WorkloadCredential resolver")
 	}
-	return &Authenticator{policy: policy, tokens: tokens, records: records}, nil
+	return &Authenticator{policy: policy, records: records}, nil
 }
 
 // Authenticate uses the actual TLS peer. A bearer beside it is refused rather than ignored, so a
@@ -92,26 +90,4 @@ func (a *Authenticator) ResolveSubject(ctx context.Context) (auth.Subject, error
 		return nil, status.Error(codes.Unavailable, "workload authentication unavailable")
 	}
 	return nil, status.Error(codes.Unauthenticated, "workload authentication refused")
-}
-
-// VerifyProjected keeps the presented destination tokens bound to the caller's Pod. A standing
-// workload's SVID proves no Pod, so it has nothing to bind a token to: every token it presents is
-// dropped unreviewed, and a rule needing one refuses with `credential-unavailable`. An Identity's
-// Pod is provenance, not its subject: a Pod token proves a ServiceAccount, never an Identity, so an
-// Identity caller's tokens are dropped unreviewed too.
-func (a *Authenticator) VerifyProjected(ctx context.Context, caller Authenticated, presented map[string]string) map[string]string {
-	principal, ok := caller.Subject.(auth.Principal)
-	if !ok {
-		if len(presented) > 0 {
-			slog.Warn("dropping projected tokens an Identity presented: a Pod token cannot prove one")
-		}
-		return map[string]string{}
-	}
-	if principal.PodUID == "" {
-		if len(presented) > 0 {
-			slog.Warn("dropping projected tokens a standing workload presented: its credential proves no Pod")
-		}
-		return map[string]string{}
-	}
-	return a.tokens.VerifyProjectedForSandbox(ctx, presented, principal.Account, principal.PodUID)
 }

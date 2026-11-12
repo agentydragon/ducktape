@@ -30,7 +30,6 @@ import (
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -103,23 +102,11 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 		return nil, fmt.Errorf("load Kubernetes client configuration: %w", err)
 	}
 	base.ContentType, base.AcceptContentTypes = "application/json", "application/json"
-	// Every proxied request is a TokenReview; client-go's default of 5 requests per second (burst 10)
-	// would queue admissions client-side. API Priority and Fairness bounds the load on the server.
+	// Request admission can read live WorkloadCredentials and Identities; client-go's default of 5
+	// requests per second (burst 10) would queue those checks client-side. API Priority and Fairness
+	// bounds the load on the server.
 	base.QPS = -1
 	return base, nil
-}
-
-// workloadIdentity reviews projected destination tokens.
-func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
-	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
-	for _, audience := range c.ProjectedTokenAudiences {
-		resolver, err := auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces)
-		if err != nil {
-			return nil, err
-		}
-		projected[audience] = resolver
-	}
-	return identity.NewVerifier(projected), nil
 }
 
 // tokenFile reads a kubelet-rotated token file each time it is called.
@@ -200,10 +187,6 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	verifier, err := workloadIdentity(reviews.TokenReviews(), c)
-	if err != nil {
-		return err
-	}
 	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, &resolver.Identities{PolicyNamespace: c.RulesNamespace})
 	if err != nil {
 		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
@@ -249,7 +232,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 
-	authentication, err := identity.NewAuthenticator(c.Forward, verifier, records)
+	authentication, err := identity.NewAuthenticator(c.Forward, records)
 	if err != nil {
 		return err
 	}

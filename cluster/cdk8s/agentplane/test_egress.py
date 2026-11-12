@@ -14,7 +14,6 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
@@ -34,12 +33,10 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.egress import (
     ADMIN_GRPC_AUDIENCE,
-    BASIC_IDENTITY_POLICY,
     BASIC_POLICY,
     DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     INFERENCE_EXPERIMENTS_POLICY,
-    KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
     PROXY_PORT,
     PUBLIC_INTERNET_POLICY,
@@ -212,15 +209,15 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
         }
     ]
 
-    # `basic` stays on the standing ServiceAccount bindings. New Identity launches get the sibling
-    # without its projected-token Kubernetes route while retaining the same Action approval.
+    # Both direct ServiceAccount callers and Identity effective callers use the same reviewed
+    # Action approval policy.
     for account in ("claude-ai", "haku-agent"):
         binding = _by_name(catalog_manifests, "PolicyBinding", account)
         assert BASIC_POLICY in binding["spec"]["policySets"]
     presets = _sandbox_preset_policy_sets(catalog_manifests)
     assert presets
     for policy_sets in presets.values():
-        assert (BASIC_IDENTITY_POLICY in policy_sets) != (BASIC_POLICY in policy_sets)
+        assert BASIC_POLICY in policy_sets
 
 
 def test_public_internet_is_available_but_never_implicitly_granted(catalog_manifests: list[dict[str, Any]]) -> None:
@@ -248,35 +245,23 @@ def test_public_internet_is_available_but_never_implicitly_granted(catalog_manif
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
-def test_legacy_basic_keeps_projected_token_route_out_of_identity_defaults(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
-    """Standing ServiceAccount callers retain `basic`; Sandbox Identity launches use account policies."""
+def test_basic_has_no_projected_workload_token_route(staging_manifests: list[dict[str, Any]]) -> None:
+    """Command boxes use reviewed Identity delegation; API credentials use explicit account impersonation."""
     basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    api_server = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule.get("hosts", []))
-    assert api_server.get("credentialRef") == {"name": KUBERNETES_CREDENTIAL}, api_server
-    # Narrowing by verb or path would be a second, weaker copy of RBAC; RBAC decides.
-    assert "methods" not in api_server, api_server
-    assert "paths" not in api_server, api_server
-
-    credential = _by_name(staging_manifests, "EgressCredential", KUBERNETES_CREDENTIAL)
-    description = credential["spec"]["description"]
-    placeholder = f"agentplane-credential-{KUBERNETES_CREDENTIAL}"
-    assert f"https://{KUBERNETES_HOST}" in description
-    assert "caller's own ServiceAccount" in description
-    assert f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder}" in description
-    source = credential["spec"]["source"]
-    assert "secretRef" not in source, "a default may substitute a sandbox's own credential, never an operator's"
-    assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source
+    assert not any(KUBERNETES_HOST in rule.get("hosts", []) for rule in basic["spec"]["rules"])
+    assert not any(
+        doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "kubernetes-workload"
+        for doc in staging_manifests
+    )
 
     app_config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert BASIC_POLICY in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    assert all(BASIC_IDENTITY_POLICY in spec["policy_sets"] for spec in app_config["sandbox_presets"].values())
-    assert all(BASIC_POLICY not in spec["policy_sets"] for spec in app_config["sandbox_presets"].values())
-    identity_basic = _by_name(staging_manifests, "PolicySet", BASIC_IDENTITY_POLICY)
-    assert identity_basic["spec"]["rules"] == [
-        rule for rule in basic["spec"]["rules"] if rule["type"] == "action_auto_approve"
-    ]
+    assert all(BASIC_POLICY in spec["policy_sets"] for spec in app_config["sandbox_presets"].values())
+    egress_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    assert "projected_token_audiences" not in egress_settings
+    assert egress_settings["local_api_server"]["token_file"], "proxy impersonation keeps its own API token"
 
 
 def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: list[dict[str, Any]]) -> None:
@@ -292,7 +277,7 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: l
     proxy_settings = yaml.safe_load(
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert notifications.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    assert "projected_token_audiences" not in proxy_settings
     endpoint = notifications.service(staging.ENV.namespace)
     assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
     notification_settings = yaml.safe_load(
@@ -363,8 +348,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     proxy_settings = yaml.safe_load(
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert session_dispatcher.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
-    assert history_service.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    assert "projected_token_audiences" not in proxy_settings
     assert f"{destination.fqdn}:{destination.pod_port}" in proxy_settings["tls_passthrough_targets"]
     assert f"{history.fqdn}:{history.pod_port}" in proxy_settings["tls_passthrough_targets"]
 
@@ -515,14 +499,13 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
 
     for preset, spec in config["sandbox_presets"].items():
         launch_policies = set(spec["policy_sets"])
-        assert BASIC_IDENTITY_POLICY in launch_policies, preset
-        assert BASIC_POLICY not in launch_policies, preset
+        assert BASIC_POLICY in launch_policies, preset
         assert shared_diagnostics(staging.ENV.namespace).credential_name in launch_policies, preset
         assert all(not rule["type"].startswith("kubernetes_") for name in launch_policies for rule in policies[name]), (
             preset
         )
         assert all(
-            rule.get("credentialRef", {}).get("name") != KUBERNETES_CREDENTIAL
+            rule.get("credentialRef", {}).get("name") != "kubernetes-workload"
             for name in launch_policies
             for rule in policies[name]
         ), preset

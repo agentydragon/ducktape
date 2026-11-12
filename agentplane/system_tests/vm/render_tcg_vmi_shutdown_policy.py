@@ -21,13 +21,9 @@ def main() -> None:
             ],
             "volumes": [
                 {
-                    "name": launcher_relay.sandbox_pod.EGRESS_TOKEN_VOLUME_NAME,
-                    "projected": {"sources": [{"serviceAccountToken": {"audience": "unused", "path": "token"}}]},
-                },
-                {
                     "name": launcher_relay.sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
                     "configMap": {"name": "unused-by-virtiofs-only-policy"},
-                },
+                }
             ],
         }
     }

@@ -10,8 +10,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +22,6 @@ import (
 )
 
 const (
-	testAudience        = "https://kubernetes.test.invalid"
 	testUpgradeProtocol = "echo.test"
 )
 
@@ -35,10 +32,6 @@ type testProxyRequest struct {
 	body    string
 	// peer is the SPIFFE URI the hop's client certificate named.
 	peer string
-}
-
-func (r testProxyRequest) projectedTokens() []string {
-	return r.headers.Values(projectedTokenHeader)
 }
 
 // testCentralProxy terminates the hop's mTLS as the egress proxy and answers each request with the
@@ -218,13 +211,13 @@ func readTestHead(reader *bufio.Reader) ([]byte, error) {
 	}
 }
 
-func startTestSidecar(t *testing.T, central *testCentralProxy, audiences map[string]string) string {
-	_, address := startTestSidecarWithState(t, central, central.listener.Addr().String(), audiences)
+func startTestSidecar(t *testing.T, central *testCentralProxy) string {
+	_, address := startTestSidecarWithState(t, central, central.listener.Addr().String())
 	return address
 }
 
 // startTestSidecarWithState presents central's client SVID to proxyAddress.
-func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAddress string, audiences map[string]string) (*sidecar, string) {
+func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAddress string) (*sidecar, string) {
 	t.Helper()
 	s, err := newSidecar(config{
 		Proxy: proxyConfig{
@@ -234,7 +227,6 @@ func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAdd
 				Auth:   spiffeProxyAuth{CertFile: central.client.CertFile, KeyFile: central.client.KeyFile},
 			},
 		},
-		AudienceTokenFiles:     audiences,
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
@@ -274,15 +266,6 @@ func serveTestSidecar(t *testing.T, s *sidecar) string {
 func dialConfiguredSidecar(t *testing.T, s *sidecar) net.Conn {
 	t.Helper()
 	return dialSidecar(t, serveTestSidecar(t, s))
-}
-
-func writeTestToken(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 type testHTTPResponse struct {
@@ -391,7 +374,7 @@ func connectThroughSidecar(t *testing.T, address, host string) ([]byte, net.Conn
 
 func TestSidecarPlainRequestStripsProxyAuthorization(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, nil)
+	address := startTestSidecar(t, central)
 	got := getThroughSidecar(t, address, "/path?q=1", map[string]string{"Proxy-Authorization": "Bearer forged"})
 	if got.status != http.StatusOK || got.body != "seen-peer="+central.peer {
 		t.Fatalf("response = %+v", got)
@@ -405,20 +388,20 @@ func TestSidecarPlainRequestStripsProxyAuthorization(t *testing.T) {
 	}
 }
 
-func TestMTLSHopRemovesCallerHeaderAndProjectsDestinationBearer(t *testing.T) {
+func TestMTLSHopRemovesCallerCredentials(t *testing.T) {
 	request, err := http.ReadRequest(bufio.NewReader(strings.NewReader(
-		"GET http://upstream.test/path HTTP/1.1\r\nProxy-Authorization: Bearer workload-forgery\r\n\r\n",
+		"GET http://upstream.test/path HTTP/1.1\r\nProxy-Authorization: Bearer workload-forgery\r\n" +
+			"X-Agentplane-Workload-Token: forged-workload-token\r\n\r\n",
 	)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewriteRequest(request, map[string]string{testAudience: "audience-token", "agentplane-workload": "destination-context-token"})
+	rewriteRequest(request)
 	if got := request.Header.Values("Proxy-Authorization"); len(got) != 0 {
 		t.Fatalf("mTLS forwarded hop bearer = %q", got)
 	}
-	if got := request.Header.Values(projectedTokenHeader); len(got) != 2 ||
-		got[0] != "agentplane-workload destination-context-token" || got[1] != testAudience+" audience-token" {
-		t.Fatalf("mTLS request lost destination audience identity: %q", got)
+	if got := request.Header.Values(untrustedWorkloadTokenHeader); len(got) != 0 {
+		t.Fatalf("mTLS forwarded caller-supplied workload token = %q", got)
 	}
 }
 
@@ -546,7 +529,7 @@ func TestSidecarUnreachableCentralProxyRefuses(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	_, address := startTestSidecarWithState(t, startTestCentralProxy(t), net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), nil)
+	_, address := startTestSidecarWithState(t, startTestCentralProxy(t), net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	got := getThroughSidecar(t, address, "/path", nil)
 	if got.status != http.StatusBadGateway || got.refusal != "reason=proxy-unreachable" {
 		t.Fatalf("response = %+v", got)
@@ -555,7 +538,7 @@ func TestSidecarUnreachableCentralProxyRefuses(t *testing.T) {
 
 func TestSidecarForwardsInterimResponsesAndExpectContinue(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	conn := dialSidecar(t, address)
 	reader := bufio.NewReader(conn)
 	if _, err := io.WriteString(conn,
@@ -609,7 +592,7 @@ func TestSidecarForwardsInterimResponsesAndExpectContinue(t *testing.T) {
 
 func TestSidecarConnectIsAuthenticatedAndPipedBothWays(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, nil)
+	address := startTestSidecar(t, central)
 	head, conn, reader := connectThroughSidecar(t, address, "tunnel.test")
 	defer conn.Close()
 	if string(head) != "HTTP/1.1 200 Connection established\r\n\r\n" {
@@ -638,7 +621,7 @@ func TestSidecarConnectIsAuthenticatedAndPipedBothWays(t *testing.T) {
 
 func TestSidecarConnectPropagatesHalfClose(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, nil)
+	address := startTestSidecar(t, central)
 	_, conn, reader := connectThroughSidecar(t, address, "half-close.test")
 	defer conn.Close()
 	central.nextRequest(t)
@@ -663,7 +646,7 @@ func TestSidecarConnectPropagatesHalfClose(t *testing.T) {
 
 func TestSidecarShutdownClosesActiveTunnel(t *testing.T) {
 	central := startTestCentralProxy(t)
-	s, address := startTestSidecarWithState(t, central, central.listener.Addr().String(), nil)
+	s, address := startTestSidecarWithState(t, central, central.listener.Addr().String())
 	_, conn, reader := connectThroughSidecar(t, address, "tunnel.test")
 	defer conn.Close()
 	central.nextRequest(t)
@@ -675,7 +658,7 @@ func TestSidecarShutdownClosesActiveTunnel(t *testing.T) {
 
 func TestSidecarConnectRefusalIsRelayedAndEndsTheConnection(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, nil)
+	address := startTestSidecar(t, central)
 	head, conn, reader := connectThroughSidecar(t, address, "refused.test")
 	defer conn.Close()
 	response, err := http.ReadResponse(bufio.NewReader(strings.NewReader(string(head))), &http.Request{Method: http.MethodConnect})
@@ -692,7 +675,7 @@ func TestSidecarConnectRefusalIsRelayedAndEndsTheConnection(t *testing.T) {
 
 func TestSidecarMalformedRequestIsRefused(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, nil)
+	address := startTestSidecar(t, central)
 	responses := exchangeRaw(t, address, "not http at all\r\n\r\n")
 	if len(responses) != 1 || responses[0].status != http.StatusBadRequest || responses[0].refusal != "" {
 		t.Fatalf("malformed request responses = %+v", responses)
@@ -704,7 +687,7 @@ func TestSidecarMalformedRequestIsRefused(t *testing.T) {
 
 func TestSidecarOversizedHeadIsRefused(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, nil)
+	address := startTestSidecar(t, central)
 	// net/http may return 431 or close a connection whose oversized write is still in flight.
 	responses := exchangeRaw(t, address, "GET http://upstream.test/ HTTP/1.1\r\nHost: upstream.test\r\nX-Padding: "+strings.Repeat("a", 2*maxHeadBytes)+"\r\n\r\n")
 	if len(responses) > 1 || (len(responses) == 1 && (responses[0].status != http.StatusRequestHeaderFieldsTooLarge || responses[0].refusal != "")) {
@@ -715,80 +698,13 @@ func TestSidecarOversizedHeadIsRefused(t *testing.T) {
 	}
 }
 
-// audienceSidecar starts a sidecar with one projected audience and returns its address and
-// audience token file.
-func audienceSidecar(t *testing.T, central *testCentralProxy) (string, string) {
-	t.Helper()
-	audienceFile := writeTestToken(t, "api-server-token-1\n")
-	return startTestSidecar(t, central, map[string]string{testAudience: audienceFile}), audienceFile
-}
-
-func TestSidecarOffersConfiguredAudienceOverTheSVIDHop(t *testing.T) {
-	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
-	getThroughSidecar(t, address, "/path", nil)
-	seen := central.nextRequest(t)
-	if seen.peer != central.peer || strings.Join(seen.projectedTokens(), ",") != testAudience+" api-server-token-1" {
-		t.Fatalf("central saw peer %q, projected %#v", seen.peer, seen.projectedTokens())
-	}
-}
-
-func TestSidecarNeverForwardsClientProjectedHeader(t *testing.T) {
-	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
-	getThroughSidecar(t, address, "/path", map[string]string{projectedTokenHeader: testAudience + " stolen-token-of-another-pod"})
-	seen := central.nextRequest(t)
-	if got := strings.Join(seen.projectedTokens(), ","); got != testAudience+" api-server-token-1" {
-		t.Fatalf("projected tokens = %q", got)
-	}
-}
-
-func TestSidecarRereadsProjectedTokenBetweenRequests(t *testing.T) {
-	central := startTestCentralProxy(t)
-	address, audienceFile := audienceSidecar(t, central)
-	getThroughSidecar(t, address, "/one", nil)
-	if err := os.WriteFile(audienceFile, []byte("api-server-token-2"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	getThroughSidecar(t, address, "/two", nil)
-	first := central.nextRequest(t).projectedTokens()
-	second := central.nextRequest(t).projectedTokens()
-	if strings.Join(first, ",") != testAudience+" api-server-token-1" || strings.Join(second, ",") != testAudience+" api-server-token-2" {
-		t.Fatalf("projected tokens = %#v then %#v", first, second)
-	}
-}
-
-func TestSidecarOmitsUnavailableAudienceToken(t *testing.T) {
-	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central, map[string]string{
-		testAudience: filepath.Join(t.TempDir(), "absent"),
-	})
-	got := getThroughSidecar(t, address, "/path", nil)
-	if got.status != http.StatusOK {
-		t.Fatalf("response = %+v", got)
-	}
-	if tokens := central.nextRequest(t).projectedTokens(); len(tokens) != 0 {
-		t.Fatalf("unavailable audience was forwarded: %#v", tokens)
-	}
-}
-
-func TestSidecarConnectForwardsProjectedToken(t *testing.T) {
-	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
-	_, conn, _ := connectThroughSidecar(t, address, "tunnel.test")
-	defer conn.Close()
-	if tokens := central.nextRequest(t).projectedTokens(); strings.Join(tokens, ",") != testAudience+" api-server-token-1" {
-		t.Fatalf("CONNECT projected tokens = %#v", tokens)
-	}
-}
-
 func assertOnlySidecarCredentials(t *testing.T, seen testProxyRequest) {
 	t.Helper()
 	if got := seen.headers.Values("Proxy-Authorization"); len(got) != 0 {
 		t.Errorf("%s %s Proxy-Authorization = %q, want none", seen.method, seen.target, got)
 	}
-	if got := seen.projectedTokens(); len(got) != 1 || got[0] != testAudience+" api-server-token-1" {
-		t.Errorf("%s %s projected tokens = %q, want only the sidecar's", seen.method, seen.target, got)
+	if got := seen.headers.Values(untrustedWorkloadTokenHeader); len(got) != 0 {
+		t.Errorf("%s %s untrusted workload token = %q, want none", seen.method, seen.target, got)
 	}
 }
 
@@ -796,12 +712,12 @@ func assertOnlySidecarCredentials(t *testing.T, seen testProxyRequest) {
 const forgedCredentials = "Proxy-Authorization: Bearer forged-1\r\n" +
 	"proxy-authorization: Bearer forged-2\r\n" +
 	"PROXY-AUTHORIZATION: Basic Zm9yZ2VkOg==\r\n" +
-	"x-agentplane-workload-token: " + testAudience + " forged-3\r\n" +
-	"X-AGENTPLANE-WORKLOAD-TOKEN: " + testAudience + " forged-4\r\n"
+	"x-agentplane-workload-token: forged-workload-3\r\n" +
+	"X-AGENTPLANE-WORKLOAD-TOKEN: forged-workload-4\r\n"
 
 func TestSidecarRewritesEveryRequestOnAKeepAliveConnection(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	conn := dialSidecar(t, address)
 	reader := bufio.NewReader(conn)
 	for i := range 2 {
@@ -828,7 +744,7 @@ func TestSidecarRewritesEveryRequestOnAKeepAliveConnection(t *testing.T) {
 
 func TestSidecarRewritesPipelinedRequests(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	smuggled := "GET http://upstream.test/smuggled HTTP/1.1\r\nHost: upstream.test\r\n" + forgedCredentials + "\r\n"
 	responses := exchangeRaw(t, address,
 		fmt.Sprintf("POST http://upstream.test/one HTTP/1.1\r\nHost: upstream.test\r\nContent-Length: %d\r\n%s\r\n%s", len(smuggled), forgedCredentials, smuggled)+
@@ -853,7 +769,7 @@ func TestSidecarRewritesPipelinedRequests(t *testing.T) {
 
 func TestSidecarRewritesRequestsBehindConflictingFraming(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	smuggled := "GET http://upstream.test/smuggled HTTP/1.1\r\nHost: upstream.test\r\nConnection: close\r\n" + forgedCredentials + "\r\n"
 	const lastChunk = "0\r\n\r\n"
 	exchangeRaw(t, address, fmt.Sprintf(
@@ -873,11 +789,11 @@ func TestSidecarRewritesRequestsBehindConflictingFraming(t *testing.T) {
 
 func TestSidecarStripsObsFoldedCredentials(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	responses := exchangeRaw(t, address, "GET http://upstream.test/folded HTTP/1.1\r\nHost: upstream.test\r\n"+
 		"X-Folded: one\r\n Proxy-Authorization: Bearer forged-1\r\n"+
 		"Proxy-Authorization: Bearer forged-2\r\n continued\r\n"+
-		"X-Agentplane-Workload-Token:\r\n "+testAudience+" forged-3\r\n"+
+		"X-Agentplane-Workload-Token:\r\n forged-workload-3\r\n"+
 		"Connection: close\r\n\r\n")
 	if len(responses) != 1 || responses[0].status != http.StatusOK {
 		t.Fatalf("responses = %+v", responses)
@@ -892,7 +808,7 @@ func TestSidecarStripsObsFoldedCredentials(t *testing.T) {
 
 func TestSidecarConnectStripsClientCredentials(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	conn := dialSidecar(t, address)
 	if _, err := io.WriteString(conn, "CONNECT tunnel.test:443 HTTP/1.1\r\nHost: tunnel.test:443\r\n"+forgedCredentials+"\r\n"); err != nil {
 		t.Fatal(err)
@@ -909,7 +825,7 @@ func TestSidecarConnectStripsClientCredentials(t *testing.T) {
 
 func TestSidecarUpgradeIsRewrittenThenPiped(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address, _ := audienceSidecar(t, central)
+	address := startTestSidecar(t, central)
 	conn := dialSidecar(t, address)
 	if _, err := io.WriteString(conn, "GET http://upstream.test/socket HTTP/1.1\r\nHost: upstream.test\r\nConnection: Upgrade\r\nUpgrade: "+testUpgradeProtocol+"\r\n"+forgedCredentials+"\r\n"); err != nil {
 		t.Fatal(err)

@@ -51,8 +51,6 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from agentplane.crd_group import GROUP
-from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
-from agentplane.egress.resources import placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
 from agentplane.subjects import ServiceAccountRef
@@ -100,8 +98,6 @@ ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # admission policy refuses that controller's use sets naming any other host, which the controller's
 # TestManagedAccountUseIsAdmitted envtest checks.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
-# The credential substituted there; agents discover its usage through the rules endpoint.
-KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # The in-cluster Forgejo, plain HTTP, so the proxy reads the request without bumping TLS.
 # It is the name to prefer: the public name below would hairpin out through the Gateway and back
 # for a Service one hop away.
@@ -127,8 +123,7 @@ _API_SERVER_TOKEN_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
 # construct that creates it, so renaming or dropping a policy is a change in one file.
-BASIC_POLICY = "basic"
-BASIC_IDENTITY_POLICY = "basic-identity"
+BASIC_POLICY = "basic-identity"
 PACKAGES_POLICY = "packages"
 INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
@@ -188,8 +183,7 @@ def kubernetes_account_rule(account: KubernetesAccountRef) -> PolicySetSpecRules
     )
 
 
-def _egress_credentials(scope: Construct, *, namespace: str, projected_kubernetes_token: bool) -> None:
-    """`projected_kubernetes_token` renders the credential `basic` presents to the API server."""
+def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     EgressCredential(
         scope,
         "egresscredential-github-pat",
@@ -257,36 +251,8 @@ def _egress_credentials(scope: Construct, *, namespace: str, projected_kubernete
             ],
         )
 
-    if projected_kubernetes_token:
-        EgressCredential(
-            scope,
-            "egresscredential-kubernetes-workload",
-            metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
-            description=(
-                f"Kubernetes API server: https://{KUBERNETES_HOST}. This credential acts as the caller's "
-                "own ServiceAccount, which only an Action command box running as its caller has; a Sandbox "
-                "has none. Use "
-                f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder_of(KUBERNETES_CREDENTIAL)} "
-                "for Kubernetes commands; the proxy substitutes the box's projected "
-                "Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
-            ),
-            source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        )
 
-
-def _egress_policies(
-    scope: Construct,
-    *,
-    namespace: str,
-    litellm_host: str,
-    litellm_cluster_internal: bool,
-    projected_kubernetes_token: bool,
-) -> None:
+def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, litellm_cluster_internal: bool) -> None:
     add_egress_policy(
         scope,
         "egresspolicy-inference-experiments",
@@ -366,43 +332,11 @@ def _egress_policies(
             }
         )
     ]
-    # In the mixed staging catalog, standing ServiceAccount callers keep the projected-token route
-    # on `basic`. New Sandbox Identities use this action-only sibling and the account-specific use
-    # sets below instead.
-    if projected_kubernetes_token:
-        add_egress_policy(
-            scope,
-            "egresspolicy-basic-identity",
-            metadata=ApiObjectMetadata(name=BASIC_IDENTITY_POLICY, namespace=namespace),
-            rules=basic_action_rules,
-        )
     add_egress_policy(
         scope,
         "egresspolicy-basic",
         metadata=ApiObjectMetadata(name=BASIC_POLICY, namespace=namespace),
-        rules=[
-            *basic_action_rules,
-            # Standing ServiceAccount callers may send their own token with the placeholder. A
-            # Sandbox Identity has no projected token and uses an account-specific use set instead;
-            # its preset selects `basic-identity`, not this legacy route.
-            #
-            # No method or path list: what a box may read or write is the API server's answer
-            # for its caller's ServiceAccount, and narrowing verbs here would be a second, weaker copy
-            # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
-            # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
-            # requests and watches are what this admits in practice.
-            *(
-                [
-                    Rule.egress(
-                        hosts=[KUBERNETES_HOST],
-                        cluster_internal=True,
-                        credential_ref=PolicySetSpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
-                    )
-                ]
-                if projected_kubernetes_token
-                else []
-            ),
-        ],
+        rules=basic_action_rules,
     )
     add_egress_policy(
         scope,
@@ -621,7 +555,6 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [KUBERNETES_AUDIENCE],
             # Where kubernetesServiceAccount credentials impersonate, with the proxy's own bearer. What
             # it may impersonate there is kubernetes_accounts.py's Role, not this.
             "local_api_server": {"host": KUBERNETES_HOST, "port": 443, "token_file": _API_SERVER_TOKEN_FILE},
@@ -655,16 +588,13 @@ class Egress(Construct):
             selector=workload.deployment,
             ports=[self.admin.port.service_port()],
         )
-        # The identity catalog reaches the API server only as accounts.
-        projected_kubernetes_token = not env.identity_catalog
-        _egress_credentials(self, namespace=env.namespace, projected_kubernetes_token=projected_kubernetes_token)
+        _egress_credentials(self, namespace=env.namespace)
         (litellm_spec,) = litellm_proxy.proxy_specs()
         _egress_policies(
             self,
             namespace=env.namespace,
             litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
-            projected_kubernetes_token=projected_kubernetes_token,
         )
 
     def add_platform_resources(self) -> None:
@@ -674,9 +604,8 @@ class Egress(Construct):
         self._add_network_policy(self.runners)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # TokenReview proves the sidecar's projected, audience-scoped ServiceAccount
-        # token and names the Pod it is bound to. Creating a review grants nothing of
-        # the reviewed identity's authority.
+        # TokenReview authenticates configured admin gRPC ServiceAccount callers. It grants no
+        # authority by itself; the admin service also checks the exact allowed caller.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",

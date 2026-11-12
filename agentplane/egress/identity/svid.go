@@ -13,9 +13,8 @@ import (
 
 // ResolveSVID rechecks the live WorkloadCredential the peer certificate names on every request. Only
 // the record supplies the policy subject -- a ServiceAccount, or an Identity read live with its UID
-// -- and the Pod its owner accepted, which a forwarded projected token must come from. A standing
-// record, with no owner and no binding, proves no Pod: its subject has none, and no projected token
-// can be bound to it.
+// -- and the Pod its owner accepted as provenance. A standing record, with no owner and no binding,
+// proves no Pod, so decisions record no source Pod.
 func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resolver.Resolver) (auth.Subject, error) {
 	if state == nil || len(state.PeerCertificates) == 0 {
 		return nil, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}

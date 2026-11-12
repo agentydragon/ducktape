@@ -14,7 +14,6 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
@@ -55,27 +54,35 @@ func TestMain(m *testing.M) {
 	}, certificates))
 }
 
-// fixture is a namespace holding the test template, and a caller of its own.
+// fixture is a namespace holding the test template and its delegated workload Identity.
 type fixture struct {
-	binding  catalog.PodBinding
-	caller   Account
-	exec     *recordingExec
-	issuance workloadidentitytesting.Issuance
+	binding           catalog.PodBinding
+	identityNamespace string
+	caller            Identity
+	exec              *recordingExec
+	issuance          workloadidentitytesting.Issuance
 }
 
-// newFixture makes the namespace, the caller's ServiceAccount and the test template. edit changes the template's
+// newFixture makes the box namespace, policy namespace, workload Identity, and test template. edit changes the template's
 // Pod before it is stored.
 func newFixture(t *testing.T, edit func(*corev1.PodSpec)) fixture {
 	t.Helper()
 	namespace := fmt.Sprintf("sandbox-test-%d", namespaces.Add(1))
+	identityNamespace := namespace + "-policy"
+	for _, name := range []string{namespace, identityNamespace} {
+		if err := objects.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	f := fixture{
 		binding: catalog.PodBinding{
 			Description: "test sandboxes", Namespace: namespace, Templates: map[string]string{testTemplate: "the test box"},
 			MaxTimeoutSeconds: 60, MaxOutputBytes: 1000,
 		},
-		caller:   account(t, namespace, "test-caller"),
-		exec:     &recordingExec{run: localExec},
-		issuance: workloadidentitytesting.Issuance{Objects: objects, CA: transporttesting.NewCA(t), Namespace: namespace},
+		identityNamespace: identityNamespace,
+		caller:            workloadIdentity(t, identityNamespace, "test-agent"),
+		exec:              &recordingExec{run: localExec},
+		issuance:          workloadidentitytesting.Issuance{Objects: objects, CA: transporttesting.NewCA(t), Namespace: namespace},
 	}
 	spec := corev1.PodSpec{
 		AutomountServiceAccountToken: new(false),
@@ -100,13 +107,17 @@ func newFixture(t *testing.T, edit func(*corev1.PodSpec)) fixture {
 	return f
 }
 
-// account is a ServiceAccount of that name, created with its namespace.
-func account(t *testing.T, namespace, name string) Account {
+// workloadIdentity creates an Identity in a separate policy namespace and returns its pinned incarnation.
+func workloadIdentity(t *testing.T, namespace, name string) Identity {
 	t.Helper()
-	if _, err := server.ServiceAccount(t.Context(), auth.Account{Namespace: namespace, Name: name}); err != nil {
+	live := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Spec:       policyapi.IdentitySpec{Description: "test agent"},
+	}
+	if err := objects.Create(t.Context(), live); err != nil {
 		t.Fatal(err)
 	}
-	return Account{Namespace: namespace, Name: name}
+	return Identity{Name: live.Name, UID: string(live.UID)}
 }
 
 func (f fixture) inventory() *Inventory {
@@ -124,7 +135,7 @@ type created struct {
 }
 
 // create is Create, with the box's credential issued as it waits.
-func (f fixture) create(t *testing.T, inventory *Inventory, caller Caller, name, template string) (Info, error) {
+func (f fixture) create(t *testing.T, inventory *Inventory, caller Identity, name, template string) (Info, error) {
 	t.Helper()
 	result := workloadidentitytesting.While(t, f.issuance, func() created {
 		info, err := inventory.Create(t.Context(), caller, name, template)
@@ -167,7 +178,7 @@ func one[T any](t *testing.T, items []T, matches func(T) bool) T {
 }
 
 // record is the box's WorkloadCredential.
-func (f fixture) record(t *testing.T, caller Caller, name string) *workloadapi.WorkloadCredential {
+func (f fixture) record(t *testing.T, caller Identity, name string) *workloadapi.WorkloadCredential {
 	t.Helper()
 	var record workloadapi.WorkloadCredential
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: f.binding.Namespace, Name: objectName(caller, name)}, &record); err != nil {
@@ -176,7 +187,7 @@ func (f fixture) record(t *testing.T, caller Caller, name string) *workloadapi.W
 	return &record
 }
 
-func (f fixture) pod(t *testing.T, caller Caller, name string) *corev1.Pod {
+func (f fixture) pod(t *testing.T, caller Identity, name string) *corev1.Pod {
 	t.Helper()
 	pod, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Get(t.Context(), objectName(caller, name), metav1.GetOptions{})
 	if err != nil {
@@ -186,7 +197,7 @@ func (f fixture) pod(t *testing.T, caller Caller, name string) *corev1.Pod {
 }
 
 // report writes the status Kubernetes would to the caller's box of that name.
-func (f fixture) report(t *testing.T, caller Caller, name string, status corev1.PodStatus) {
+func (f fixture) report(t *testing.T, caller Identity, name string, status corev1.PodStatus) {
 	t.Helper()
 	pod := f.pod(t, caller, name)
 	pod.Status = status

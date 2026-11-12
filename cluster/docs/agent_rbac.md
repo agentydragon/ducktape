@@ -248,11 +248,12 @@ of `KubernetesRoleSet`s, or it is a temporary `ManagedServiceAccount`
 The new Sandbox Identity launch config explicitly selects the shared diagnostics use set and the
 preset's own `k8s-account-<preset>` use set; that preset account's `ServiceAccountGrant` holds the
 Kubernetes roles that launch grants used to carry directly. Its PolicySets include only
-Identity-supported rules. In this mixed catalog, the original `basic` and mixed Coinbase/Plaid
-PolicySets remain available to standing ServiceAccount callers, while presets use `basic-identity`
-and pure-egress `*-identity` variants. That keeps the projected ServiceAccount token route and
-native Kubernetes rules out of Identity launch selections without changing standing callers'
-authority. The rendered contract does not by itself prove that the launch change has rolled out.
+Identity-supported rules. The single baseline keeps its existing `basic-identity` name so retained
+Identity grants continue to resolve; the older mixed `basic` policy and projected workload-token
+route are retired. Mixed Coinbase/Plaid PolicySets remain available to standing ServiceAccount
+callers pending the catalog cutover, while presets select pure-egress `*-identity` variants.
+Kubernetes API access uses the explicit account use sets above. The rendered contract does not by
+itself prove that the launch change has rolled out.
 
 With the catalog switch on (`staging.environment(identity_catalog=True)`, which manifest and RBAC
 tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`, `haku-agent`,

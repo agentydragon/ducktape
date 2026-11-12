@@ -20,7 +20,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
 )
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
-from cluster.cdk8s.agentplane.egress import BASIC_IDENTITY_POLICY, BASIC_POLICY
+from cluster.cdk8s.agentplane.egress import BASIC_POLICY
 from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS
 
 
@@ -67,12 +67,11 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
         if doc["kind"] == "PolicySet" and any(rule["type"] == "action_auto_approve" for rule in doc["spec"]["rules"])
     }
     bound = set(binding["spec"]["policySets"]) & action_sets
-    # Static ServiceAccount bindings keep `basic`; launch presets use its Identity-safe sibling.
-    bound -= {BASIC_POLICY, BASIC_IDENTITY_POLICY}
+    bound -= {BASIC_POLICY}
     assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    # The Identity-safe basic sibling owns the same-principal Session-delegation approval rule,
-    # so include it in the rendered action-set view without duplicating it in HAKU_ACTION_POLICY_SETS.
-    expected_action_sets = set(HAKU_ACTION_POLICY_SETS) | {BASIC_IDENTITY_POLICY}
+    # `basic` owns the same-principal Session-delegation approval rule, while also serving direct
+    # platform ServiceAccount callers.
+    expected_action_sets = set(HAKU_ACTION_POLICY_SETS) | {BASIC_POLICY}
     assert set(preset) & action_sets == expected_action_sets, "preset and its named bundle drifted"
     assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
 
