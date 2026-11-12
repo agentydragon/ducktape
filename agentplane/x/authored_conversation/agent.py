@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from enum import StrEnum
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID, uuid4
 
 from openai import AsyncOpenAI
@@ -26,13 +26,30 @@ COMMON_INSTRUCTIONS = (
     "Tool errors can leave effects: do not blindly repeat commands after a timeout or failure. "
 )
 AUTHORED_INSTRUCTIONS = COMMON_INSTRUCTIONS + (
-    "The shared thread is your communication with the human. Read it with read_thread, following "
-    "pagination when necessary. Publish answers, questions and useful progress with post_message. "
-    "Your ordinary assistant output is private diagnostic text, not a message to the human. "
-    "Your working context and the execution trace are separate from the shared conversation. "
+    "You participate in a conversation stored outside your working context. Think of the shared "
+    "thread as a chat application: the human sees messages in that application. They do not see "
+    "your model responses, reasoning, work-tool calls or tool results. Your ordinary assistant "
+    "output, including a final answer, is recorded only in a private diagnostic trace. Ending "
+    "your turn does not send anything to the human.\n\n"
+    "A thread-change notice names new human message IDs; it does not contain their messages. "
+    "Use read_thread to retrieve the conversation, following pagination when necessary. "
+    "Use post_message to send anything the human should see: answers, clarification questions "
+    "and useful progress. Its body becomes an assistant message in the shared thread, and the "
+    "tool result confirms that it was sent. For example, to ask which file to inspect, call "
+    'post_message with {"body": "Which file should I inspect?"}, then end your turn and wait for '
+    "their answer. Do not merely write that question as ordinary assistant output.\n\n"
+    "You may publish progress and continue working in the same turn. When you have a final "
+    "answer, send it with post_message before ending your turn; no duplicate ordinary reply is "
+    "needed afterward. Choose when to read, work, ask and publish according to the task. "
     "After a context reset, reread the thread; do not replay old work just because it appears there."
 )
 CHAT_INSTRUCTIONS = COMMON_INSTRUCTIONS + "Communicate directly through your ordinary assistant replies."
+YIELD_INSTRUCTIONS = (
+    "\n\nEvery response in this mode must use a tool. When you have finished working or need "
+    "to wait for the human, call yield_turn with {} to end the run. Publishing a message does "
+    "not end the run; you can keep working or publish more messages before yielding. Ordinary "
+    "assistant text does not yield. Publish any answer or question before calling yield_turn."
+)
 
 
 class Status(StrEnum):
@@ -93,6 +110,10 @@ class Agent:
     def has_pending_input(self) -> bool:
         return bool(self.store.messages(after_position=self.announced_through, author=Author.HUMAN))
 
+    def has_publication_after_input(self) -> bool:
+        publications = self.store.messages(author=Author.AGENT)
+        return bool(publications and publications[-1].position > self.announced_through)
+
     def announce_input(self) -> bool:
         messages = self.store.messages(after_position=self.announced_through, author=Author.HUMAN)
         if not messages:
@@ -129,13 +150,19 @@ class Agent:
             for step in range(1, self.settings.max_steps + 1):
                 self.step = step
                 self.announce_input()
-                self.trace.record("sample_started", run_id=self.run_id, step=self.step)
+                tool_choice: Literal["auto", "required"] = (
+                    "required" if self.settings.turn_control == "yield_tool" else "auto"
+                )
+                self.trace.record(
+                    "sample_started", run_id=self.run_id, step=self.step, data={"tool_choice": tool_choice}
+                )
                 response = await self.client.responses.create(
                     model=self.settings.model,
-                    instructions=AUTHORED_INSTRUCTIONS if self.settings.mode is Mode.AUTHORED else CHAT_INSTRUCTIONS,
+                    instructions=(AUTHORED_INSTRUCTIONS if self.settings.mode is Mode.AUTHORED else CHAT_INSTRUCTIONS)
+                    + (YIELD_INSTRUCTIONS if self.settings.turn_control == "yield_tool" else ""),
                     input=self.context,
                     tools=self.tools.schemas(),
-                    tool_choice="auto",
+                    tool_choice=tool_choice,
                     parallel_tool_calls=False,
                     max_output_tokens=self.settings.max_output_tokens,
                     temperature=self.settings.temperature,
@@ -155,6 +182,10 @@ class Agent:
                     for call in calls
                 ) or len({call.call_id for call in calls}) != len(calls):
                     return self.finish(Status.INCOMPLETE_RESPONSE)
+                if self.settings.turn_control == "yield_tool" and (
+                    not calls or any(call.name == "yield_turn" for call in calls[:-1])
+                ):
+                    return self.finish(Status.INCOMPLETE_RESPONSE)
                 for item in response.output:
                     if not isinstance(item, ResponseOutputMessage | ResponseFunctionToolCall | ResponseReasoningItem):
                         raise ValueError(f"unsupported provider output item: {item.type}")
@@ -167,25 +198,28 @@ class Agent:
                         text = "\n".join(part.text for part in item.content if isinstance(part, ResponseOutputText))
                         if text.strip():
                             self.publish(self.store.append(Author.AGENT, text))
+                yielded = False
                 for call in calls:
                     self.trace.record(
                         "tool_call", run_id=self.run_id, step=self.step, data=call.model_dump(mode="json")
                     )
                     result = await self.tools.execute(call.name, call.arguments)
-                    self.context.append({"type": "function_call_output", "call_id": call.call_id, "output": result})
+                    self.context.append(
+                        {"type": "function_call_output", "call_id": call.call_id, "output": result.output}
+                    )
+                    yielded = result.end_turn
                     self.completed_call_ids.add(call.call_id)
                     self.trace.record(
                         "tool_result",
                         run_id=self.run_id,
                         step=self.step,
-                        data={"call_id": call.call_id, "output": result},
+                        data={"call_id": call.call_id, "output": result.output},
                     )
-                if not calls:
+                if yielded or not calls:
                     # Input can arrive while the last sample is in flight. Announce it before stopping.
                     if self.announce_input():
                         continue
-                    publications = self.store.messages(author=Author.AGENT)
-                    if not publications or publications[-1].position < self.announced_through:
+                    if not self.has_publication_after_input():
                         return self.finish(Status.MISSING_PUBLICATION)
                     return self.finish(Status.COMPLETED)
             return self.finish(Status.STEP_LIMIT)

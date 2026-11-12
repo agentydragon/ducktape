@@ -88,6 +88,149 @@ async def test_missing_publication_is_a_failure_without_promoting_text(make_agen
     assert store.messages(author=Author.AGENT) == []
 
 
+async def test_explicit_yield_requires_tools_after_publication_too(make_agent, settings: Settings, published):
+    settings.turn_control = "yield_tool"
+    choices = []
+    replies = iter(
+        [
+            [call("read_thread", {})],
+            [call("post_message", {"body": "Published answer"}, call_id="post")],
+            [call("yield_turn", {}, call_id="yield")],
+        ]
+    )
+
+    def handler(request):
+        body = json.loads(request.content)
+        choices.append(body["tool_choice"])
+        assert "yield_turn" in {tool["name"] for tool in body["tools"]}
+        return response(next(replies))
+
+    agent = await make_agent(handler)
+    agent.submit("Answer me")
+    assert (await agent.run()).status is Status.COMPLETED
+    assert choices == ["required"] * 3
+    assert [message.body for message in published] == ["Published answer"]
+    assert agent.context[-1]["output"] == '{"status":"yielded"}'
+
+
+async def test_plain_text_cannot_end_explicit_yield_run(make_agent, settings: Settings, published):
+    settings.turn_control = "yield_tool"
+    agent = await make_agent(lambda request: response([text("Not a yield call")]))
+    agent.submit("Answer me")
+    assert (await agent.run()).status is Status.INCOMPLETE_RESPONSE
+    assert published == []
+
+
+async def test_yield_without_publication_reports_missing_reply(make_agent, settings: Settings, published):
+    settings.turn_control = "yield_tool"
+    agent = await make_agent(lambda request: response([call("yield_turn", {})]))
+    agent.submit("Answer me")
+    assert (await agent.run()).status is Status.MISSING_PUBLICATION
+    assert published == []
+
+
+async def test_invalid_yield_arguments_do_not_end_run(make_agent, settings: Settings):
+    settings.turn_control = "yield_tool"
+    requests = []
+    replies = iter(
+        [
+            [call("post_message", {"body": "Answer"}, call_id="post")],
+            [call("yield_turn", {"unexpected": True}, call_id="invalid")],
+            [call("yield_turn", {}, call_id="valid")],
+        ]
+    )
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return response(next(replies))
+
+    agent = await make_agent(handler)
+    agent.submit("Answer me")
+    assert (await agent.run()).status is Status.COMPLETED
+    assert len(requests) == 3
+    assert "error" in json.loads(requests[2]["input"][-1]["output"])
+
+
+async def test_work_after_yield_never_executes_effects(make_agent, settings: Settings):
+    settings.turn_control = "yield_tool"
+    agent = await make_agent(
+        lambda request: response(
+            [call("yield_turn", {}, call_id="yield"), call("run_command", {"command": "touch executed"})]
+        )
+    )
+    agent.submit("Work")
+    assert (await agent.run()).status is Status.INCOMPLETE_RESPONSE
+    assert not (settings.workspace / "executed").exists()
+
+
+async def test_publication_then_yield_in_one_batch_is_ordered(make_agent, settings: Settings, published):
+    settings.turn_control = "yield_tool"
+    agent = await make_agent(
+        lambda request: response(
+            [call("post_message", {"body": "Answer"}, call_id="post"), call("yield_turn", {}, call_id="yield")]
+        )
+    )
+    agent.submit("Answer me")
+    assert (await agent.run()).status is Status.COMPLETED
+    assert [message.body for message in published] == ["Answer"]
+    assert [item["call_id"] for item in agent.context if item.get("type") == "function_call_output"] == [
+        "post",
+        "yield",
+    ]
+
+
+async def test_required_tools_without_yield_still_hit_step_limit(make_agent, settings: Settings, published):
+    settings.turn_control = "yield_tool"
+    settings.max_steps = 2
+    choices = []
+
+    def handler(request):
+        choices.append(json.loads(request.content)["tool_choice"])
+        return response([call("read_thread", {}, call_id=f"read-{len(choices)}")])
+
+    agent = await make_agent(handler)
+    agent.submit("Answer me")
+    assert (await agent.run()).status is Status.STEP_LIMIT
+    assert choices == ["required", "required"]
+    assert published == []
+
+
+async def test_input_arriving_during_yield_is_not_stranded(make_agent, settings: Settings, published):
+    settings.turn_control = "yield_tool"
+    sampling = asyncio.Event()
+    release = asyncio.Event()
+    choices = []
+
+    async def handler(request):
+        choices.append(json.loads(request.content)["tool_choice"])
+        match len(choices):
+            case 1:
+                return response([call("post_message", {"body": "First answer"}, call_id="first")])
+            case 2:
+                sampling.set()
+                await release.wait()
+                return response([call("yield_turn", {}, call_id="first-yield")])
+            case 3:
+                return response([call("post_message", {"body": "Correction applied"}, call_id="second")])
+            case _:
+                return response([call("yield_turn", {}, call_id="second-yield")])
+
+    agent = await make_agent(handler)
+    agent.submit("Original request")
+    running = asyncio.create_task(agent.run())
+    await sampling.wait()
+    agent.submit("A correction")
+    release.set()
+    assert (await running).status is Status.COMPLETED
+    assert choices == ["required"] * 4
+    assert [message.body for message in published] == ["First answer", "Correction applied"]
+
+
+def test_explicit_yield_rejects_chat_mode(settings: Settings):
+    with pytest.raises(ValueError, match="requires authored mode"):
+        Settings.model_validate(settings.model_dump() | {"mode": "chat", "turn_control": "yield_tool"})
+
+
 async def test_input_arriving_during_final_response_is_not_stranded(make_agent, published):
     sampling = asyncio.Event()
     release = asyncio.Event()

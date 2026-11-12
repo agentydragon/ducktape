@@ -1,10 +1,11 @@
-"""Four direct tools for the prototype, with bounded workspace reads and commands."""
+"""Conversation, workspace and explicit turn-control tools for the prototype."""
 
 import asyncio
 import os
 import signal
 from collections.abc import Callable
 from contextlib import AsyncExitStack, suppress
+from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
@@ -27,6 +28,18 @@ class PostMessage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     body: str = Field(min_length=1)
+
+
+class YieldTurn(BaseModel):
+    """End this run and wait for human input. Publish any answer or question before yielding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    output: str
+    end_turn: bool = False
 
 
 class ReadFile(BaseModel):
@@ -97,6 +110,8 @@ class Tools:
         parameters: dict[str, type[BaseModel]] = {"read_file": ReadFile, "run_command": RunCommand}
         if self.settings.mode is Mode.AUTHORED:
             parameters |= {"read_thread": ReadThread, "post_message": PostMessage}
+        if self.settings.turn_control == "yield_tool":
+            parameters["yield_turn"] = YieldTurn
         return [
             FunctionToolParam(
                 type="function",
@@ -108,19 +123,24 @@ class Tools:
             for name, model in parameters.items()
         ]
 
-    async def execute(self, name: str, arguments: str) -> str:
+    async def execute(self, name: str, arguments: str) -> ToolResult:
         try:
             match name:
                 case "read_thread" if self.settings.mode is Mode.AUTHORED:
                     cursor = ReadThread.model_validate_json(arguments)
-                    return self.store.read(
-                        after_message_id=cursor.after_message_id, limit=self.settings.thread_page_size
-                    ).model_dump_json()
+                    return ToolResult(
+                        output=self.store.read(
+                            after_message_id=cursor.after_message_id, limit=self.settings.thread_page_size
+                        ).model_dump_json()
+                    )
                 case "post_message" if self.settings.mode is Mode.AUTHORED:
                     post = PostMessage.model_validate_json(arguments)
                     message = self.store.append(Author.AGENT, post.body)
                     self.publish(message)
-                    return message.model_dump_json()
+                    return ToolResult(output=message.model_dump_json())
+                case "yield_turn" if self.settings.turn_control == "yield_tool":
+                    YieldTurn.model_validate_json(arguments)
+                    return ToolResult(output='{"status":"yielded"}', end_turn=True)
                 case "read_file":
                     read = ReadFile.model_validate_json(arguments)
                     path = (self.settings.workspace / read.path).resolve()
@@ -128,17 +148,19 @@ class Tools:
                         raise ValueError("file must be inside the workspace")
                     with path.open("rb") as stream:
                         body = stream.read(self.settings.max_tool_output_bytes + 1)
-                    return FileResult(
-                        text=body[: self.settings.max_tool_output_bytes].decode(errors="replace"),
-                        truncated=len(body) > self.settings.max_tool_output_bytes,
-                    ).model_dump_json()
+                    return ToolResult(
+                        output=FileResult(
+                            text=body[: self.settings.max_tool_output_bytes].decode(errors="replace"),
+                            truncated=len(body) > self.settings.max_tool_output_bytes,
+                        ).model_dump_json()
+                    )
                 case "run_command":
                     command = RunCommand.model_validate_json(arguments)
-                    return (await run_command(command.command, self.settings)).model_dump_json()
+                    return ToolResult(output=(await run_command(command.command, self.settings)).model_dump_json())
                 case _:
                     raise ValueError(f"unknown tool: {name}")
         except (ValidationError, ValueError, OSError) as exc:
-            return ToolError(error=str(exc)).model_dump_json()
+            return ToolResult(output=ToolError(error=str(exc)).model_dump_json())
 
 
 class FileResult(BaseModel):

@@ -3,7 +3,10 @@
 Specification for a bounded experiment. Prototype source is under
 [`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md). The first bounded Qwen
 paired pass and failed-case repeats are recorded in the
-[findings](../debug/2026_11_12_authored_conversation_cli.md). The
+[findings](../debug/2026_11_12_authored_conversation_cli.md). A follow-up
+[prompting and Luna comparison](../debug/2026_11_12_authored_conversation_prompting.md) fixed the
+observed missing publications using a clearer interface explanation on both models, and tests an
+always-required protocol with an explicit yield tool. Preliminary progress remains inconsistent. The
 [task DAG](task_dag.md#agent_authored_conversations_experiment--try-an-authored-conversation-in-a-cli)
 owns its scheduling. The experiment informs the broader conversation decision without choosing
 Agentplane's eventual history architecture.
@@ -122,6 +125,13 @@ Focused deterministic Bazel tests should establish the mechanism: read paginatio
 authorship, separation of thread/trace/context, delivery of input arriving during a run or at its
 end, reset persistence, and reporting a missing published answer. Live Qwen runs establish whether
 participation is natural; scripted model responses alone cannot establish that.
+
+An optional explicit-turn comparison, requested after the first runs, sets
+`turn_control=yield_tool` in authored mode. Every request requires a tool, including after publication;
+the agent ends work and waits for human input by calling `yield_turn({})`. Publishing and yielding
+are separate actions. Keep finite step limits, handle input arriving during a yield, and reject
+ordinary text as a turn-ending response in this variant. Record these results separately from the
+implicit-turn protocol; enforcement does not establish the original natural-publication gate.
 
 ## Follow-on interaction experiments
 

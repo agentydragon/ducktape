@@ -1,6 +1,6 @@
 # Authored conversation CLI
 
-Local experiment with our own non-streaming Responses API loop, Qwen through LiteLLM, a SQLite
+Local experiment with our own non-streaming Responses API loop, Qwen or Luna through LiteLLM, a SQLite
 conversation, and separate JSONL diagnostics. No deployed Agentplane services are required beyond
 the model endpoint. [SPEC.md](SPEC.md) defines interaction and failure behavior.
 
@@ -48,6 +48,12 @@ For the ordinary-chat comparison, use `"mode": "chat"` and separate state/worksp
 It exposes the same work tools and renders ordinary assistant replies directly. Keep model and
 generation settings equal between paired runs. Reopening state does not automatically run anything.
 
+To try explicit turn control, set `"turn_control": "yield_tool"` in authored mode. Every request
+uses `tool_choice=required`, including after publication. The model calls `yield_turn` with `{}`
+to end work and wait for input; ordinary text cannot end the run. Publishing and yielding are
+separate actions. The default `"turn_control": "implicit"` uses automatic tool choice and ends on
+a response without calls. Both variants retain finite step limits and report missing publication.
+
 Defaults: 24 model calls per run, 4096 output tokens per call, temperature 0, 120-second request
 timeout, 15-second command timeout, 16 KiB per command/file output, 8000 characters per authored
 message, and 20 messages per thread page. These bounds are configurable in [Settings](settings.py).
@@ -62,3 +68,6 @@ bbr test //agentplane/x/authored_conversation:all
 Tests exercise the real SDK against a scripted HTTP boundary and local SQLite/files/processes.
 They establish delivery, persistence and separation of representations; they do not establish
 natural participation by a live model.
+
+[Live prompting comparison](../../debug/2026_11_12_authored_conversation_prompting.md) records the
+original publication failures and the clearer interface explanation tested on Qwen and Luna.

@@ -35,12 +35,24 @@ errors do not imply that a command had no effects.
 ## Completion and limits
 
 Only completed provider responses and completed function calls can execute tools. Native reasoning
-and call/result items are retained in working context across requests. A response without calls
-ends a run only after newly arrived human input has been considered for announcement. A missing
+and call/result items are retained in working context across requests. With default implicit turn
+control, a response without calls ends a run only after newly arrived human input has been considered
+for announcement. A missing
 published reply after the latest announced input is reported as `missing_publication`; the CLI
 does not repair it with reminders or publish the model's private text.
 `completed` reports loop completion with a publication, not whether that publication answered the
 question well. The experiment's conversation review assesses that semantic condition.
+
+By default, `turn_control=implicit` uses automatic tool choice. The authored-mode
+`turn_control=yield_tool` variant requests `tool_choice=required` on every sample, including after
+publication, and exposes `yield_turn({})` to end work and wait for human input. A valid yield
+records a tool result; if human input arrived while it was in flight, announce that input and
+continue instead of stopping. Yielding does not publish a message. A plain response without calls
+is an incomplete protocol response. A yield must be the last call in its batch; work after a yield
+is rejected before executing effects. Earlier calls, including publication, execute in order.
+Invalid yield arguments return a tool error without stopping. Work-tool loops
+still hit the step limit, and a yield without a needed publication reports `missing_publication`.
+Chat mode rejects explicit-yield control. The two protocols are separate comparisons.
 
 Step limits and incomplete provider responses produce explicit incomplete outcomes. API failures
 are recorded by category and surfaced to the operator. The loop does not retry failed requests or
