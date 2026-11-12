@@ -163,7 +163,6 @@ py_library(
     srcs = ["conftest.py"],
     data = ["//:MODULE.bazel"],
     deps = [
-        "//cluster/cdk8s:manifest_roots",
         "@pypi//pytest",
         "@rules_python//python/runfiles",
     ],
