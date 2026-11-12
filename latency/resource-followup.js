@@ -131,7 +131,7 @@ function ResourceContent({ snapshot, readiness }) {
           { name: "KVM", color: "orange.6" },
         ]}
         valueFormatter=${(value) => `${fixed(value, 1)} s`}
-        xAxisProps=${{ interval: 0, tickMargin: 8 }}
+        xAxisProps=${{ interval: 0, tickMargin: 8, height: 48 }}
         yAxisProps=${{ width: 56, tickFormatter: (value) => `${fixed(value, 0)} s` }}
       />
     <//>
@@ -448,7 +448,7 @@ function ResourceContent({ snapshot, readiness }) {
               withLegend
               curveType="linear"
               connectNulls=${false}
-              xAxisProps=${{ interval: "preserveStartEnd", minTickGap: 40, tickMargin: 8 }}
+              xAxisProps=${{ interval: "preserveStartEnd", minTickGap: 40, tickMargin: 8, height: 48 }}
               yAxisProps=${{ domain: chart.domain, width: 42 }}
               valueFormatter=${(value) => fixed(value, 1)}
             />
@@ -530,7 +530,7 @@ function ResourceContent({ snapshot, readiness }) {
           { name: "Warm control", color: "orange.6" },
         ]}
         valueFormatter=${(value) => `${fixed(value, 1)} s`}
-        xAxisProps=${{ interval: 0, tickMargin: 8 }}
+        xAxisProps=${{ interval: 0, tickMargin: 8, height: 48 }}
         yAxisProps=${{ width: 56, tickFormatter: (value) => `${fixed(value, 0)} s` }}
       />
     <//>
@@ -617,7 +617,7 @@ function ResourceContent({ snapshot, readiness }) {
           { name: "8 CPUs", color: "orange.6" },
         ]}
         valueFormatter=${(value) => `${fixed(value, 1)} s`}
-        xAxisProps=${{ interval: 0, tickMargin: 8 }}
+        xAxisProps=${{ interval: 0, tickMargin: 8, height: 48 }}
         yAxisProps=${{ width: 56, tickFormatter: (value) => `${fixed(value, 0)} s` }}
       />
     <//>
@@ -716,7 +716,7 @@ function ResourceContent({ snapshot, readiness }) {
       >Full UTC samples, PromQL, sources, physical clocks, experiment commands
       and limitations are in
       <${Anchor} href="evidence.json"
-        >evidence.json → resource_telemetry_followup<//
+        >evidence.json → historical.snapshot.resource_telemetry_followup<//
       >. The historical telemetry window was not refreshed by the CPU follow-up.
       Process IDs, private addresses, command lines, workspace names, raw logs
       and worker identities remain outside publication.<//
@@ -734,7 +734,8 @@ export function ResourceFollowup() {
         if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
         return response.json();
       })
-      .then((evidence) => {
+      .then((publication) => {
+        const evidence = publication.historical.snapshot;
         if (!evidence.resource_telemetry_followup)
           throw new Error("Resource evidence missing");
         if (
@@ -756,7 +757,9 @@ export function ResourceFollowup() {
     my="xl"
     gap="md"
   >
-    <${Title} order=${2}>Current interventions and measured resources<//>
+    <${Title} order=${2}
+      >Historical Nov8–9 interventions and measured resources<//
+    >
     ${error ? html`<${Text} c="red">Resource evidence could not load: ${error}<//>` : snapshot ? html`<${ResourceContent} snapshot=${snapshot.resource_telemetry_followup} readiness=${snapshot.vm_readiness_followup} />` : html`<${Text}>Loading resource evidence…<//>`}
   <//>`;
 }
