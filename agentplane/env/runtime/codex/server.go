@@ -79,10 +79,14 @@ func ServerEnvironment(launch harness.LaunchConfig, store string) map[string]str
 
 // InitializeFrames are the shared app-server's handshake: the `initialize` request, named
 // InitializeRequestID, and the `initialized` notification that follows its response.
-func InitializeFrames() (request, notification json.RawMessage, err error) {
+func InitializeFrames(turnDiffNotifications bool) (request, notification json.RawMessage, err error) {
+	params := protocol.InitializeParams{ClientInfo: protocol.ClientInfo{Name: codexClientName, Version: "0.1"}}
+	if !turnDiffNotifications {
+		params.Capabilities = &protocol.InitializeCapabilities{OptOutNotificationMethods: []string{"turn/diff/updated"}}
+	}
 	request, err = json.Marshal(jsonrpc.Request[protocol.InitializeParams]{
 		ID: InitializeRequestID, Method: "initialize",
-		Params: protocol.InitializeParams{ClientInfo: protocol.ClientInfo{Name: codexClientName, Version: "0.1"}},
+		Params: params,
 	})
 	if err != nil {
 		return nil, nil, err

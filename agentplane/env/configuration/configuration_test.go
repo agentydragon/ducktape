@@ -255,6 +255,36 @@ func TestConfigurationUsesExplicitSessionReconcileConcurrency(t *testing.T) {
 	}
 }
 
+func TestConfigurationResolvesCodexTurnDiffNotifications(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	for _, test := range []struct {
+		name  string
+		value any
+		want  bool
+	}{
+		{name: "omitted"},
+		{name: "disabled", value: false},
+		{name: "enabled", value: true, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value, path, launch := configurationFixture(t)
+			codex := map[string]any{"binary": "/opt/tools/codex", "base_url": "http://models.test/v1", "token_env": "RUNNER_TEST_PROVIDER_TOKEN"}
+			if test.value != nil {
+				codex["turn_diff_notifications"] = test.value
+			}
+			value["codex"] = codex
+			writeJSONFixture(t, path, value)
+			resolved, _, _, err := load(path, launch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.CodexTurnDiffNotifications != test.want {
+				t.Fatalf("turn diff notifications = %t, want %t", resolved.CodexTurnDiffNotifications, test.want)
+			}
+		})
+	}
+}
+
 func TestConfigurationResolvesIndependentCodexReadinessWindows(t *testing.T) {
 	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
 	for _, test := range []struct {

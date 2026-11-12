@@ -8,6 +8,7 @@ from agentplane.env import config as configuration
 from agentplane.env.config import (
     CA_BUNDLE,
     JAVA_TRUST_STORE,
+    Codex,
     CodexReadiness,
     Configuration,
     Endpoint,
@@ -102,7 +103,7 @@ def guest_config_data(
             }
         ),
         claude=Harness(binary="/run/current-system/sw/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
-        codex=Harness(binary="/run/current-system/sw/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
+        codex=Codex(binary="/run/current-system/sw/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
         environment=VMEnvironment(
             resources=resources,
             console_autologin=env.vm_console_autologin,
