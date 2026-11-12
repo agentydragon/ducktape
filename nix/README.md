@@ -111,3 +111,8 @@ home-manager generations
 # Roll back a standalone home-manager config
 home-manager rollback
 ```
+
+## Host operations
+
+- [Wyrm2 display and remote access](docs/wyrm2_display.md)
+- [Wyrm2 login recovery](docs/wyrm2_login_recovery.md)
