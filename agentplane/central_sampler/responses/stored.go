@@ -19,6 +19,7 @@ type storedItem struct {
 	Summary          *[]protocol.ContentID      `json:"summary_refs,omitempty"`
 	Output           *[]protocol.ContentID      `json:"output_refs,omitempty"`
 	Input            *protocol.ContentID        `json:"input_text_ref,omitempty"`
+	ContentText      *protocol.ContentID        `json:"content_text_ref,omitempty"`
 	Arguments        *protocol.ContentID        `json:"arguments_text_ref,omitempty"`
 	OutputText       *protocol.ContentID        `json:"output_text_ref,omitempty"`
 	EncryptedContent *protocol.ContentID        `json:"encrypted_content_ref,omitempty"`
@@ -88,7 +89,7 @@ func StoreRecord(writer protocol.ContentWriter, record json.RawMessage) (protoco
 	for _, field := range []struct {
 		name string
 		dst  **protocol.ContentID
-	}{{"input", &stored.Input}, {"arguments", &stored.Arguments}} {
+	}{{"input", &stored.Input}, {"arguments", &stored.Arguments}, {"content", &stored.ContentText}} {
 		if raw, present := fields[field.name]; present {
 			if value, isString := jsonString(raw); isString {
 				id, err := putString(writer, protocol.ContentText, value)
@@ -177,7 +178,7 @@ func restoreRecordPayload(reader protocol.ContentReader, id protocol.ContentID, 
 	for _, value := range []struct {
 		name string
 		ref  *protocol.ContentID
-	}{{"input", stored.Input}, {"arguments", stored.Arguments}, {"output", stored.OutputText}} {
+	}{{"input", stored.Input}, {"arguments", stored.Arguments}, {"output", stored.OutputText}, {"content", stored.ContentText}} {
 		if value.ref != nil {
 			text, err := restoreString(reader, *value.ref, protocol.ContentText)
 			if err != nil {
@@ -346,7 +347,7 @@ func ContentReferences(kind protocol.ContentKind, payload json.RawMessage) ([]pr
 				}
 			}
 		}
-		for _, id := range []*protocol.ContentID{stored.Input, stored.Arguments, stored.OutputText, stored.EncryptedContent} {
+		for _, id := range []*protocol.ContentID{stored.Input, stored.Arguments, stored.OutputText, stored.ContentText, stored.EncryptedContent} {
 			if id != nil {
 				if err := add(*id); err != nil {
 					return nil, err

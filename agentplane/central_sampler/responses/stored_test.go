@@ -46,6 +46,7 @@ func TestStoreRecordDeduplicatesPartsAndPreservesProviderFields(t *testing.T) {
 		[]byte(`{"type":"function_call","call_id":"call_function","name":"exec","arguments":"shared payload"}`),
 		[]byte(`{"type":"function_call_output","call_id":"call_result","output":"shared payload"}`),
 		[]byte(`{"type":"message","role":"assistant","output":[{"type":"output_text","text":"shared payload"}]}`),
+		[]byte(`{"type":"message","role":"user","content":"shared payload"}`),
 	}
 	ids := make([]protocol.ContentID, 0, len(originals))
 	for _, original := range originals {
@@ -62,6 +63,11 @@ func TestStoreRecordDeduplicatesPartsAndPreservesProviderFields(t *testing.T) {
 	}
 
 	sharedID := findStringContent(t, memory, protocol.ContentText, "shared payload")
+	var scalarMessage storedItem
+	mustUnmarshal(t, memory.byID[ids[len(ids)-1]].Payload, &scalarMessage)
+	if scalarMessage.ContentText == nil || *scalarMessage.ContentText != sharedID {
+		t.Fatal("scalar message content did not share text payload")
+	}
 	if got := countStringContent(memory, protocol.ContentText, "shared payload"); got != 1 {
 		t.Fatalf("shared text content rows = %d, want one", got)
 	}
