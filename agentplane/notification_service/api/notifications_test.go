@@ -91,7 +91,7 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	identity := model.Identity{Name: s.identity.GetName(), UID: s.identity.GetUid()}
-	previous, err := s.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, model.Subscribe{
+	previous, err := s.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: sandboxUID}, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
 		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
 	}, nil)
