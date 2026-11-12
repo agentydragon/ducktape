@@ -238,7 +238,11 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
 		&authlistener.KubernetesBearerAuth{Audiences: []string{testAudience}},
 	}}
-	resolves, err := newResolver(t, api.TokenReviews()).WithListenerAuthentication(config, svids)
+	resolves, err := auth.NewResolver(api.TokenReviews(), testAudience, namespaces)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolves, err = resolves.WithListenerAuthentication(config, svids)
 	if err != nil {
 		t.Fatal(err)
 	}
