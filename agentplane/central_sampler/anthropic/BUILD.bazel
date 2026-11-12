@@ -10,6 +10,7 @@ go_library(
         "config.go",
         "context.go",
         "observations.go",
+        "stored.go",
         "wire.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic",
@@ -22,7 +23,10 @@ go_library(
 go_test(
     name = "anthropic_test",
     size = "small",
-    srcs = ["anthropic_test.go"],
+    srcs = [
+        "anthropic_test.go",
+        "stored_test.go",
+    ],
     embed = [":anthropic"],
     race = "on",
     deps = [

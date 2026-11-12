@@ -11,6 +11,7 @@ go_library(
         "observations.go",
         "provider.go",
         "responses.go",
+        "stored.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/responses",
     deps = [
@@ -22,7 +23,10 @@ go_library(
 go_test(
     name = "responses_test",
     size = "small",
-    srcs = ["responses_test.go"],
+    srcs = [
+        "responses_test.go",
+        "stored_test.go",
+    ],
     embed = [":responses"],
     race = "on",
     deps = ["//agentplane/central_sampler/protocol"],
