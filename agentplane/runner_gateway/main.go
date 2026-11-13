@@ -30,7 +30,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"

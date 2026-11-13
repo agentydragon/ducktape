@@ -14,7 +14,7 @@ merge is left for later. The operator's 2026-10-20 preference for holder-owned d
 the combined-service shape; revisit it with the topology. Existing dispatch ownership and fencing
 stay until a reviewed change replaces them. The current queue contract is the
 [Dispatcher README](../runner_gateway/dispatcher/README.md); the Gateway's Runtime proxy restriction is
-its [authorization contract](../runner_gateway/gateway/SPEC.md).
+its [authorization contract](../runner_gateway/internal/gateway/SPEC.md).
 
 ## Today
 

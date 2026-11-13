@@ -94,7 +94,7 @@ Relevant source owners:
 - `vm/host_qemu.py` and `vm/boot_rcu.py` already provide bounded host collectors.
 - Runtime's first state and Gateway observation occur after guest userspace
   startup, in `env/runtime/control/server.go` and
-  `runner_gateway/gateway/runner_observer.go`.
+  `runner_gateway/internal/gateway/runner_observer.go`.
 
 Earlier [guest-vCPU trials](vm_cpu_budgets.md) and
 [boot/shutdown investigations](vm_shutdown_stalls/README.md) recorded TCG RCU/timer

@@ -196,7 +196,7 @@ marker names the incarnation it was entered in:
   new incarnation continues it after that cursor with an entry recording that it resumed;
   [Reopening a sealed journal](#reopening-a-sealed-journal) decides how.
 - **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
-  the Gateway's observation claim (`runner_gateway/gateway/records.go`) rebuilds the Lease with only `pod-uid` and `environment-runtime-boot-id` on every
+  the Gateway's observation claim (`runner_gateway/internal/gateway/records.go`) rebuilds the Lease with only `pod-uid` and `environment-runtime-boot-id` on every
   accepted connection, and the controller's shared Lease facts decoder (`sandboxes/lease/facts.go`) accepts facts only while `pod-uid`
   equals the incarnation, so a stale `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
   the current `status.incarnation`; after a resume they differ, which is what makes the new

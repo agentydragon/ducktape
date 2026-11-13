@@ -113,8 +113,8 @@ owner metadata, then resolves and checks the live Sandbox and ready Pod.
 The control Service routes by the holder of that UID. This is a sequence of checks across separate
 requests, so the reviewed contract should say where identity is bound and where it is revalidated,
 including replacement between the Dispatcher check and proxy resolution. See
-[`proxy.go`](../runner_gateway/gateway/proxy.go),
-[`sandboxes.go`](../runner_gateway/gateway/sandboxes.go) with the UID fence in
+[`proxy.go`](../runner_gateway/internal/gateway/proxy.go),
+[`sandboxes.go`](../runner_gateway/internal/gateway/sandboxes.go) with the UID fence in
 [`reader.go`](../sandboxes/sandboxreader/reader.go), and
 [`runner_client.go`](../runner_gateway/dispatcher/runner_client.go).
 
