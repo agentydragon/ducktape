@@ -28,7 +28,7 @@ go_library(
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/postgres",
@@ -92,7 +92,7 @@ go_test(
     srcs = ["methods_test.go"],
     embed = [":dispatcher"],
     deps = [
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/testing/grpcmethods",
         "//agentplane/testing/kubeapiserver",
@@ -108,7 +108,7 @@ go_test(
     srcs = ["svid_auth_test.go"],
     embed = [":dispatcher"],
     deps = [
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",
         "//agentplane/identity/credentials/resolver",
@@ -143,7 +143,7 @@ go_test(
     embed = [":dispatcher"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/grpc",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",

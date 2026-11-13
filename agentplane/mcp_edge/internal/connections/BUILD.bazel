@@ -14,7 +14,7 @@ go_library(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/streaming",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
         "//agentplane/postgres",
         "//agentplane/postgres/wakeups",
@@ -44,7 +44,7 @@ go_test(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/facade",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
         "//agentplane/mcp_edge/migrations",
         "//agentplane/postgres/wakeups",

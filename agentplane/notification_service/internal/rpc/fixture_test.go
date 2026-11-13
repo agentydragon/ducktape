@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadresolver "github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"

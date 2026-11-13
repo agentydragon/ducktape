@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"

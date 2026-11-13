@@ -23,7 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"

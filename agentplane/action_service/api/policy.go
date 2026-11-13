@@ -7,7 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"

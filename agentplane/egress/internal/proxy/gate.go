@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/upstream"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/types"

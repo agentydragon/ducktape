@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"

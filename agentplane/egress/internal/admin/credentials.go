@@ -8,7 +8,7 @@ import (
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

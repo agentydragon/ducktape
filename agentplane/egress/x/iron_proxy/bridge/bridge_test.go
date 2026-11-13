@@ -23,7 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"

@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver"

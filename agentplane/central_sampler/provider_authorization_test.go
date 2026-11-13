@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/proto"

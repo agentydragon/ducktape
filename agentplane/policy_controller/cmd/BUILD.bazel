@@ -10,7 +10,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/egress/api/v1alpha1",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/issuer",
         "//agentplane/observability",

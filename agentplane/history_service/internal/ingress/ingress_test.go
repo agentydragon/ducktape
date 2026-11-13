@@ -14,7 +14,7 @@ import (
 
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

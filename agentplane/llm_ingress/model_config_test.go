@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"

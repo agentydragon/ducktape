@@ -9,7 +9,7 @@ both or neither are refused, and selection never falls back based on list order.
 may still admit unauthenticated public health methods. Listener authentication does not grant method
 authorization. The egress proxy and first-party service RPC listeners consume this contract.
 
-[`auth`](auth/auth.go) provides the TokenReview resolver used by Agentplane services. Each
+[`auth`](auth.go) provides the TokenReview resolver used by Agentplane services. Each
 service constructs a `Resolver` with its accepted audience and allowed namespaces. Its namespace
 allowlist is checked for every request.
 
@@ -52,7 +52,7 @@ belongs to the account alone. It requires a ServiceAccount UID and accepts eithe
 claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action
 Service uses this path. Other callers use Pod-bound `Principal` values.
 
-[`methods.go`](auth/methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
+[`methods.go`](methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../../docs/grpc_services.md#authentication)).
 

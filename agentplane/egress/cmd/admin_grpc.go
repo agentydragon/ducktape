@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"

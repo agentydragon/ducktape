@@ -28,7 +28,7 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"

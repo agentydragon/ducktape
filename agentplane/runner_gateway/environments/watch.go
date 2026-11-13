@@ -10,7 +10,7 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

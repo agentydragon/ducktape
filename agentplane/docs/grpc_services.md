@@ -61,7 +61,7 @@ follows it; code that differs converges on it.
   Sandbox's own ServiceAccount. The sidecar or launcher relay holds the certificate and establishes
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
-  (`agentplane/identity/auth/auth`): `auth.Methods` maps every served method's full name to a
+  (`agentplane/identity/auth`): `auth.Methods` maps every served method's full name to a
   `Rule` (`Accounts` for an allowlist, `AnySubject` for any workload subject a resolver authenticates,
   `SVIDOrAccounts` for workload SVIDs plus a bearer account allowlist, `ReviewedServiceAccount` when a
   handler needs a verified ServiceAccount UID with an optional Pod proof, `ReviewedServiceAccountOrIdentity`

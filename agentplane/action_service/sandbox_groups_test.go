@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"

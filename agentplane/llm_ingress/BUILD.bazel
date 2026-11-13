@@ -66,7 +66,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/llm_ingress",
     deps = [
         "//agentplane/grpc/graceful",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
@@ -111,7 +111,7 @@ go_test(
     embed = [":server_lib"],
     x_defs = {"github.com/agentydragon/ducktape/agentplane/llm_ingress.ingressServerRlocation": "$(rlocationpath :server)"},
     deps = [
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",
         "//agentplane/identity/credentials/resolver",

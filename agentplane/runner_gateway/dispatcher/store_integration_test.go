@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"

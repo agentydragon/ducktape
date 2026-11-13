@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"

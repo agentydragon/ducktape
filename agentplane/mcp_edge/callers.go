@@ -8,7 +8,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policyclient "github.com/agentydragon/ducktape/agentplane/policy/client/clientset/versioned"
 	policyinformers "github.com/agentydragon/ducktape/agentplane/policy/client/informers/api/v1alpha1"

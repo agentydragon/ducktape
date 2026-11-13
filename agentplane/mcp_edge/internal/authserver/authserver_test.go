@@ -11,7 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
-	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth/auth" // its name, auth, is go-sdk's
+	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth" // its name, auth, is go-sdk's
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 )
 

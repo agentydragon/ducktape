@@ -7,7 +7,7 @@ go_library(
     srcs = ["client.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc",
     deps = [
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/proto:delegation_go_proto",
@@ -24,7 +24,7 @@ go_test(
     srcs = ["client_test.go"],
     embed = [":grpc"],
     deps = [
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:identity_go_proto",
         "@org_golang_google_grpc//:grpc",

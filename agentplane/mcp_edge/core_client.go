@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"

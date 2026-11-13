@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
