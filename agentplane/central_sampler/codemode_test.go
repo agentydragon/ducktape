@@ -862,9 +862,13 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			call := protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "exec-call", Input: `{"code":"text(1)"}`}
 			store, owner, runtime, live, _, peer := newCodeModeAdvanceFixture(t, call)
+			session, err := store.GetSessionForConversation(t.Context(), owner)
+			if err != nil {
+				t.Fatal(err)
+			}
 			advanceDone := make(chan error, 1)
 			go func() {
-				_, err := runtime.advance(t.Context(), owner, live, nil, &Session{Model: "fixture-model"})
+				_, err := runtime.advance(t.Context(), owner, live, nil, session)
 				advanceDone <- err
 			}()
 			request := receiveCodeOperationRequest(t, peer, live.code.ID(), "session/execute")
@@ -997,8 +1001,12 @@ func advanceWithFakeOperation(
 		result TurnResult
 		err    error
 	}, 1)
+	session, err := runtime.store.GetSessionForConversation(t.Context(), code.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
 	go func() {
-		result, err := runtime.advance(t.Context(), code.owner, live, nil, &Session{Model: "fixture-model"})
+		result, err := runtime.advance(t.Context(), code.owner, live, nil, session)
 		done <- struct {
 			result TurnResult
 			err    error

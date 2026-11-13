@@ -104,6 +104,15 @@ func (s Settings) Validate() error {
 	if s.MaxLiveSessions <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
+	for name, seconds := range map[string]int{
+		"turn_timeout_seconds": s.TurnTimeoutSeconds,
+		"rpc_timeout_seconds":  s.RPCTimeoutSeconds,
+		"lease_seconds":        s.LeaseSeconds,
+	} {
+		if int64(seconds) > maxExecutorInitializeTimeoutSeconds {
+			return fmt.Errorf("%s must fit in time.Duration", name)
+		}
+	}
 	observationSeconds := defaultCodeModeObservationTimeoutSeconds
 	if s.CodeModeObservationTimeoutSeconds != nil {
 		observationSeconds = *s.CodeModeObservationTimeoutSeconds
@@ -130,6 +139,14 @@ func (s Settings) Validate() error {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
 			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
 		}
+	}
+	headerSeconds := int64(s.ProviderResponseHeaderTimeout() / time.Second)
+	idleSeconds := int64(s.ProviderIdleTimeout() / time.Second)
+	rpcSlack := int64(s.RPCTimeoutSeconds)
+	if rpcSlack > maxExecutorInitializeTimeoutSeconds/3 ||
+		headerSeconds > maxExecutorInitializeTimeoutSeconds-idleSeconds ||
+		headerSeconds+idleSeconds > maxExecutorInitializeTimeoutSeconds-3*rpcSlack {
+		return errors.New("provider response-header timeout, idle timeout, and three RPC journal slack intervals must fit together in time.Duration")
 	}
 	for name, seconds := range map[string]*int{"shutdown_drain_seconds": s.ShutdownDrainSeconds, "shutdown_budget_seconds": s.ShutdownBudgetSeconds} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
@@ -195,6 +212,24 @@ func (s Settings) ProviderIdleTimeout() time.Duration {
 		seconds = *s.ProviderIdleTimeoutSeconds
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// ProviderAttemptLease covers response-header setup, one full semantic-idle interval, and three
+// bounded RPC operations for durable head/event/renewal writes. Each semantic event renews
+// the idle interval with two RPC operations reserved for evidence and the renewal.
+func (s Settings) ProviderAttemptLease() time.Duration {
+	phaseSeconds := int64(s.ProviderResponseHeaderTimeout()/time.Second) + int64(s.ProviderIdleTimeout()/time.Second) + 3*int64(s.RPCTimeoutSeconds)
+	turnSeconds := int64(s.TurnTimeoutSeconds)
+	if turnSeconds > phaseSeconds {
+		phaseSeconds = turnSeconds
+	}
+	return time.Duration(phaseSeconds) * time.Second
+}
+
+// ProviderProgressLease covers one semantic-idle interval and the bounded database operation
+// that follows it. The header phase has already completed when this renewal runs.
+func (s Settings) ProviderProgressLease() time.Duration {
+	return s.ProviderIdleTimeout() + 2*time.Duration(s.RPCTimeoutSeconds)*time.Second
 }
 
 func (s Settings) ShutdownDrainTimeout() time.Duration {

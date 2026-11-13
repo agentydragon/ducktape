@@ -747,7 +747,12 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 
 func (s *Store) checkRecovery(ctx context.Context, tx *sql.Tx, owner Owner) error {
 	var id string
-	err := tx.QueryRowContext(ctx, `SELECT id::text FROM sampler_intent WHERE conversation_id=$1 AND generation<>$2 AND result IS NULL LIMIT 1`, owner.ConversationID, owner.Generation).Scan(&id)
+	// Provider requests have no executor mutation to replay. The current owner separately
+	// abandons their fenced intent before creating a budgeted successor; native effects
+	// must still be reconciled before any command can continue.
+	err := tx.QueryRowContext(ctx, `SELECT id::text FROM sampler_intent
+		WHERE conversation_id=$1 AND generation<>$2 AND result IS NULL
+		AND COALESCE(request->>'kind','') NOT IN ('sampling','compaction') LIMIT 1`, owner.ConversationID, owner.Generation).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

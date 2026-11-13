@@ -427,9 +427,9 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"text(1)\""}}`,
 	)
 	response, err := ReadStream(context.Background(), strings.NewReader(partial), nil, false, protocol.ProviderHooks{})
-	var unknown *protocol.UnknownEffectError
-	if response != nil || !errors.As(err, &unknown) {
-		t.Fatalf("partial eager input became executable or lost its uncertain outcome: response=%+v err=%v", response, err)
+	var transient *protocol.ProviderTransientError
+	if response != nil || !errors.As(err, &transient) {
+		t.Fatalf("partial eager input became executable or lost its retryable provider outcome: response=%+v err=%v", response, err)
 	}
 
 	complete := anthropicEventStream(
@@ -455,12 +455,37 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 	}
 }
 
-func TestAnthropicTruncatedStreamHasUnknownEffect(t *testing.T) {
+func TestAnthropicTruncatedStreamIsProviderTransient(t *testing.T) {
 	stream := anthropicEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
 	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false, protocol.ProviderHooks{})
-	var unknown *protocol.UnknownEffectError
-	if response != nil || !errors.As(err, &unknown) {
-		t.Fatalf("truncated response outcome=%+v err=%v; want unknown effect", response, err)
+	var transient *protocol.ProviderTransientError
+	if response != nil || !errors.As(err, &transient) {
+		t.Fatalf("truncated response outcome=%+v err=%v; want provider-transient failure", response, err)
+	}
+}
+
+func TestAnthropicRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Retry-After", "9")
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, `{"error":"fixture"}`)
+			}))
+			defer server.Close()
+			_, err := Sample(t.Context(), server.Client(), server.URL, "fixture-key", testConfig(), []byte(`{}`), nil, false, protocol.ProviderHooks{})
+			var transient *protocol.ProviderTransientError
+			if !errors.As(err, &transient) || transient.RetryAfter != 9*time.Second {
+				t.Fatalf("HTTP %d error=%v, want transient with Retry-After 9s", status, err)
+			}
+		})
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadRequest) }))
+	defer server.Close()
+	_, err := Sample(t.Context(), server.Client(), server.URL, "fixture-key", testConfig(), []byte(`{}`), nil, false, protocol.ProviderHooks{})
+	var known *protocol.KnownFailureError
+	if !errors.As(err, &known) {
+		t.Fatalf("HTTP 400 error=%v, want a permanent provider rejection", err)
 	}
 }
 

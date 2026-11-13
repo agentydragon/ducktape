@@ -65,6 +65,9 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 		reason = releaseOwnershipLost
 	case runtimeCtx.Err() != nil:
 		reason = releaseShutdownDeadline
+	case errors.As(executionErr, new(*deferredProviderError)):
+		reason = releaseFailed
+		slog.Warn("central sampler retained provider recovery state", "session_id", sessionID, "error", executionErr)
 	case executionErr != nil:
 		var known *protocol.KnownFailureError
 		if errors.As(executionErr, &known) {
@@ -413,8 +416,15 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 		var result TurnResult
 		if payload.GetCompact() != nil {
-			err = r.compact(turnCtx, owner, session.Model)
-			result = TurnCompact
+			conversation, readErr := r.store.Read(turnCtx, owner)
+			if readErr != nil {
+				err = readErr
+			} else if conversation.Stopped && conversation.Pending == nil {
+				result = TurnInterrupted
+			} else {
+				err = r.compact(turnCtx, owner, session.Model)
+				result = TurnCompact
+			}
 		} else {
 			for {
 				if live != nil && live.code.Err() != nil {
@@ -476,6 +486,28 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			}
 		}
 		cancel()
+		if errors.Is(err, errProviderCommandFailed) {
+			activeCommand = nil
+			continue
+		}
+		if errors.Is(err, errProviderRecovery) {
+			r.mu.Lock()
+			task.waitingProvider = true
+			r.mu.Unlock()
+			r.releaseExecution(task)
+			held = false
+			if waitErr := r.waitProviderRecovery(ctx, owner, sessionID, task, live); waitErr != nil {
+				return activeCommand, waitErr
+			}
+			r.mu.Lock()
+			task.waitingProvider = false
+			r.mu.Unlock()
+			if !r.acquireExecution(ctx, task) {
+				return activeCommand, nil
+			}
+			held = true
+			continue
+		}
 		if err != nil {
 			return activeCommand, err
 		}

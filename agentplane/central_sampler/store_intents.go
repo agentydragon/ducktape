@@ -126,6 +126,9 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
 		}
 		if intent.Kind == IntentSampling || intent.Kind == IntentCompaction {
+			if err := checkInterrupt(ctx, tx, owner); err != nil {
+				return err
+			}
 			if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
 				return err
 			}
@@ -337,6 +340,9 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		}
 		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
+		}
+		if err := checkInterrupt(ctx, tx, owner); err != nil {
+			return err
 		}
 		if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
 			return err

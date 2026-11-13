@@ -237,6 +237,48 @@ func TestProviderProgressCallbackFailureHasDistinctType(t *testing.T) {
 	}
 }
 
+func TestProviderTransportClassificationAndRetryAfter(t *testing.T) {
+	want := errors.New("fixture connection reset")
+	classified := ProviderTransportError(context.Background(), want)
+	var transient *ProviderTransientError
+	if !errors.As(classified, &transient) || !errors.Is(classified, want) {
+		t.Fatalf("transport error=%v, want typed transient wrapping the cause", classified)
+	}
+	if got := ParseProviderRetryAfter("17"); got != 17*time.Second {
+		t.Fatalf("delta Retry-After=%s, want 17s", got)
+	}
+	for _, value := range []string{"", "invalid", "0", "-2"} {
+		if got := ParseProviderRetryAfter(value); got != 0 {
+			t.Fatalf("Retry-After %q parsed as %s, want no hint", value, got)
+		}
+	}
+	if got := ParseProviderRetryAfter("999999999999999999999999"); got != time.Duration(1<<63-1) {
+		t.Fatalf("overflow Retry-After=%s, want saturated duration", got)
+	}
+	date := time.Now().Add(3 * time.Second).UTC().Format(http.TimeFormat)
+	if got := ParseProviderRetryAfter(date); got <= 0 || got > 3*time.Second {
+		t.Fatalf("HTTP-date Retry-After=%s, want positive delay up to 3s", got)
+	}
+}
+
+func TestProviderEvidenceAndCallerCancellationAreNotTransient(t *testing.T) {
+	persistence := &ProviderEvidencePersistenceError{Cause: errors.New("database unavailable")}
+	if got := ProviderTransportError(context.Background(), persistence); got != persistence {
+		t.Fatalf("evidence persistence failure was classified as transport: %v", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cause := context.Canceled
+	if got := ProviderTransportError(ctx, cause); !errors.Is(got, context.Canceled) {
+		t.Fatalf("caller cancellation changed classification: %v", got)
+	} else {
+		var transient *ProviderTransientError
+		if errors.As(got, &transient) {
+			t.Fatalf("caller cancellation became provider-transient: %v", got)
+		}
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {

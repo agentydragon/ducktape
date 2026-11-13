@@ -11,6 +11,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
 )
@@ -21,14 +22,14 @@ const (
 )
 
 func (policy ProviderAttemptPolicy) validate() error {
-	if policy.Budget <= 0 || policy.Budget > maxProviderAttemptBudget || policy.Lease <= 0 || policy.Lease > 24*time.Hour {
+	if policy.Budget <= 0 || policy.Budget > maxProviderAttemptBudget || policy.Lease <= 0 {
 		return protocol.ErrInvalid
 	}
 	return nil
 }
 
-func runtimeProviderAttemptPolicy(turnTimeoutSeconds int) ProviderAttemptPolicy {
-	return ProviderAttemptPolicy{Budget: 3, Lease: time.Duration(turnTimeoutSeconds) * time.Second}
+func runtimeProviderAttemptPolicy(settings samplersettings.Settings) ProviderAttemptPolicy {
+	return ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease()}
 }
 
 func validateProviderFailure(failure ProviderAttemptFailure) error {
@@ -236,7 +237,7 @@ func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessi
 // RenewProviderAttempt extends only a still-live unresolved attempt under its original owner
 // generation. The conversation fence is acquired before touching the attempt row.
 func (s *Store) RenewProviderAttempt(ctx context.Context, owner Owner, intentID string, lease time.Duration) error {
-	if lease <= 0 || lease > 24*time.Hour {
+	if lease <= 0 {
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {

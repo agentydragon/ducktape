@@ -179,7 +179,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, protocol.ProviderContextError(ctx, err)
+		return nil, protocol.ProviderTransportError(ctx, err)
 	}
 	defer response.Body.Close()
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
@@ -197,12 +197,16 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 	if response.StatusCode >= http.StatusBadRequest {
 		body, readErr := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
 		if readErr != nil {
-			return nil, protocol.ProviderContextError(ctx, readErr)
+			return nil, protocol.ProviderTransportError(ctx, readErr)
 		}
 		if len(body) > maxProviderErrorBytes {
 			body = append(body[:maxProviderErrorBytes], []byte("[truncated]")...)
 		}
-		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"http_status": response.StatusCode, "body": string(body)}}
+		evidence := map[string]any{"http_status": response.StatusCode, "body": string(body)}
+		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
+			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("provider returned HTTP %d", response.StatusCode), RetryAfter: protocol.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
+		}
+		return nil, &protocol.KnownFailureError{Evidence: evidence}
 	}
 	result, err := readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, hooks)
 	if err != nil {
@@ -310,10 +314,10 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, protocol.ProviderContextError(ctx, err)
+			return nil, protocol.ProviderTransportError(ctx, err)
 		}
 	}
-	return nil, errors.New("provider stream ended without response.completed; sampling outcome unknown")
+	return nil, &protocol.ProviderTransientError{Cause: errors.New("provider stream ended without response.completed")}
 }
 
 func providerItemIdentity(item Item) string {
