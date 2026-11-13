@@ -1,0 +1,51 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        cachedCjkRegex,
+        cachedLineBreakRegex,
+        cachedEmojiRegex,
+        containsCJK = ANYTHING,
+        getLineBreakRegex = ANYTHING,
+        getEmojiRegex = ANYTHING,
+        COMMON = { WHITESPACE: /\s/u, HYPHEN: /-/u, ANYTHING },
+        CJK = { CHAR: ANYTHING, OPENING: ANYTHING, CLOSING: ANYTHING, CURRENCY: ANYTHING },
+        EMOJI = { FLAG: ANYTHING, JOINER: ANYTHING, ZWJ: ANYTHING, ANY: ANYTHING, MOST: ANYTHING },
+        getLineBreakRegexSimple = ANYTHING,
+        getLineBreakRegexAdvanced = ANYTHING,
+        getEmojiRegexUnicode = ANYTHING,
+        Regex = { build: ANYTHING, join: ANYTHING, and: ANYTHING, or: ANYTHING, group: ANYTHING, class: ANYTHING },
+        Break = { On: ANYTHING, Before: ANYTHING, After: ANYTHING, BeforeMany: ANYTHING, AfterMany: ANYTHING, NotBefore: ANYTHING, NotAfter: ANYTHING, Chain: ANYTHING },
+        parseTokens = AST_CONTAINS_STRING("NFC"),
+        wrapText = (text, font, maxWidth) => {
+          if (!Number.isFinite(maxWidth) || maxWidth < 0) return text;
+          STMT_LIST;
+        },
+        wrapLine = ANYTHING,
+        wrapWord = ANYTHING,
+        trimLine = ANYTHING,
+        isSingleCharacter = (char) =>
+          char.codePointAt(0) !== void 0 && char.codePointAt(1) === void 0,
+        satisfiesWordInvariant = AST_CONTAINS_STRING("Word should not contain any whitespaces!"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - cachedCjkRegex
+      - cachedLineBreakRegex
+      - cachedEmojiRegex
+      - containsCJK
+      - getLineBreakRegex
+      - getEmojiRegex
+      - COMMON
+      - CJK
+      - EMOJI
+      - getLineBreakRegexSimple
+      - getLineBreakRegexAdvanced
+      - getEmojiRegexUnicode
+      - Regex
+      - Break
+      - parseTokens
+      - wrapText
+      - wrapLine
+      - wrapWord
+      - trimLine
+      - isSingleCharacter
+      - satisfiesWordInvariant

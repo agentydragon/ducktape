@@ -17,19 +17,29 @@ fn out_root() -> PathBuf {
 }
 
 #[test]
-fn claimed_modules_export_their_readable_names() {
+fn claimed_modules_export_their_entry_points() {
     let app = out_root().join("app");
     for (module, names) in [
-        ("editor/app_state/defaults.js", &["getDefaultAppState"][..]),
-        ("editor/data/blob.js", &["blobToArrayBuffer"]),
         (
-            "editor/element/text_wrapping.js",
-            &["isSingleCharacter", "satisfiesWordInvariant"],
+            "editor/packages/excalidraw/appState.js",
+            &["getDefaultAppState"][..],
         ),
-        ("main/components/card.js", &["Card"]),
         (
-            "main/components/color_picker/labels.js",
-            &["HotkeyLabel", "PickerHeading"],
+            "editor/packages/excalidraw/data/blob.js",
+            &["blobToArrayBuffer"],
+        ),
+        (
+            "editor/packages/excalidraw/element/textWrapping.js",
+            &["containsCJK", "wrapText"],
+        ),
+        ("main/packages/excalidraw/components/Card.js", &["Card"]),
+        (
+            "main/packages/excalidraw/components/ColorPicker/HotkeyLabel.js",
+            &["HotkeyLabel"],
+        ),
+        (
+            "main/packages/excalidraw/components/ColorPicker/PickerHeading.js",
+            &["PickerHeading"],
         ),
     ] {
         let source = fs::read_to_string(app.join(module)).expect(module);
@@ -37,6 +47,12 @@ fn claimed_modules_export_their_readable_names() {
             assert_export_named_specifiers(&source, name, &[None]);
         }
     }
+    assert_module_source(
+        &app,
+        "editor/packages/excalidraw/element/textWrapping.js",
+        &["var parseTokens =", "var Regex =", "var Break ="],
+        &[],
+    );
 }
 
 /// The only claimed module with no imports: the rest import their chunk
@@ -45,7 +61,7 @@ fn claimed_modules_export_their_readable_names() {
 fn blob_to_array_buffer_reads_a_blob_under_node() {
     let probe_dir = tempfile::tempdir().expect("tempdir");
     let probe = probe_dir.path().join("probe.mjs");
-    let module = out_root().join("app/editor/data/blob.js");
+    let module = out_root().join("app/editor/packages/excalidraw/data/blob.js");
     fs::write(
         &probe,
         format!(
