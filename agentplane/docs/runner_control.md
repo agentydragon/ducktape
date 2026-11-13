@@ -74,7 +74,7 @@ unary calls over the runner gRPC connection and returns the runner's status and 
 
 The runner pushes to the `ingress` endpoint in its configuration (`env/configuration/configuration.go`) and
 reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/ingress/ingress.go`) on a listener of its own, and follows no
+Service serves the ingress (`history_service/internal/ingress/ingress.go`) on a listener of its own, and follows no
 runner.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and

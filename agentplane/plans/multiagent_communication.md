@@ -377,7 +377,7 @@ History admits reviewed ServiceAccounts and scopes ordinary direct and delegated
 Session's retained execution principal (namespace, name and UID). Configured, Pod-bound backend
 readers can read all Sessions. Broader cross-principal archive grants remain a separate decision.
 Writes are fenced independently: ingress retains and checks the writer and execution principal
-(`api/service.go`, `ingress/ingress.go`). The archive therefore already holds identities of its own
+(`api/service.go`, `internal/ingress/ingress.go`). The archive therefore already holds identities of its own
 which a broader archive policy could use.
 
 **What it would mean.**
