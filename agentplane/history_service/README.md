@@ -232,6 +232,23 @@ command. Preview one Session, apply it, then expand to all Sessions. Monitor Pos
 WAL archiving and replication lag during the apply. Ordinary vacuum makes freed space reusable;
 packing does not itself shrink relation files. Disabling ingress packing keeps all blocks readable.
 
+### Live ingress packing probe
+
+`bb run //agentplane/history_service/ops:probe_ingress -- --target HOST:PORT --ca-file PATH
+--writer-token-file PATH --reader-token-file PATH --session-id UUID` writes a dedicated synthetic
+162-event journal through the deployed ingress, seals it, and checks exact protobuf readback of the
+whole journal and a page starting at cursor 18. It starts no harness and calls no provider.
+Supply an explicit new Session UUID and short-lived, Pod-bound tokens for a configured sampler writer
+(ingress audience) and backend reader (History audience). The CA and server URI use the ordinary
+verified History transport; a localhost port-forward can supply the target. Keep token files private
+and delete them after use. Retrying the same UUID resumes from the acknowledged cursor or reads the
+already sealed journal. The synthetic Session remains in History with `history-compaction-probe`
+executor metadata.
+
+Readback alone does not prove packing is enabled: inspect `session_event_block` for the probe's
+Session UUID, require at least one block, and check that the sum of block cursor-array lengths plus
+ordinary row count equals 162. This also separates live packing from a historical maintenance pass.
+
 ## Delta settlement
 
 Each `Store.Append` batch that completes an item drops that
