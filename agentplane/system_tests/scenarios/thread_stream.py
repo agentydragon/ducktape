@@ -35,7 +35,7 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import Text
 
-# What History's settlement may drop once a field completes (`history_service/storage/settlement.go`):
+# What History's settlement may drop once a field completes (`history_service/internal/storage/settlement.go`):
 # its streamed deltas, each a native frame paired with the delta derived from it.
 _SETTLEABLE = frozenset({"native", "textDelta", "toolArgumentsDelta", "toolOutputDelta"})
 
