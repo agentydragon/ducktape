@@ -293,9 +293,10 @@ async def operator_links_oauth_mcp_server(
     offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: PolicyObjects,
+    *,
+    server_id: str,
 ) -> None:
     """Links the OAuth-protected MCP server through Dex and executes its protected tool."""
-    server_id = mcp_servers.OAUTH
     start_response = await operator_bff.post(
         f"/upstream/actions/v1/operator/mcp-servers/{server_id}/linkage/start", json={"scopes": []}
     )
@@ -319,13 +320,13 @@ async def operator_links_oauth_mcp_server(
 
     view = await sandbox(f"systest-oauth-mcp-{harness}")
     await policy_objects.bind(
-        view, "oauth-echo", [{"type": "exact_actions", "actions": {mcp_servers.OAUTH: [mcp_servers.ECHO]}}]
+        view, "oauth-echo", [{"type": "exact_actions", "actions": {server_id: [mcp_servers.ECHO]}}]
     )
     agent = await ScriptedAgent.create(
         client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted
     )
     marker = f"MCP-OAUTH-{uuid4()}"
-    receipt = await agent.submit_echo(mcp_servers.OAUTH, marker, wait=True)
+    receipt = await agent.submit_echo(server_id, marker, wait=True)
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.HasField("execution")
     _assert_echoed(receipt.execution.result, marker)
