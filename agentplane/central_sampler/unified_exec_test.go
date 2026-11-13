@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 )
 
 var testBash = &execShell{Name: "bash", Path: "/bin/bash"}
@@ -100,34 +102,9 @@ func TestPlanWriteStdinYieldBounds(t *testing.T) {
 	}
 }
 
-func TestHeadTailBufferKeepsBothEndsAndRestores(t *testing.T) {
-	buffer := newHeadTailBuffer(8)
-	buffer.push([]byte("abc"))
-	buffer.push([]byte("defghij"))
-	buffer.push([]byte("klm"))
-	if got := string(buffer.retained()); got != "abcdjklm" || buffer.omitted != 5 || buffer.totalBytes() != 13 {
-		t.Fatalf("retained=%q omitted=%d total=%d", got, buffer.omitted, buffer.totalBytes())
-	}
-	if got := string(buffer.withOmissionMarker()); got != "abcd\n... 5 bytes omitted ...\njklm" {
-		t.Fatalf("model view=%q", got)
-	}
-	restored, err := restoreHeadTailBuffer(8, buffer.retained(), buffer.omitted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restored.push([]byte("n"))
-	buffer.push([]byte("n"))
-	if !bytes.Equal(restored.retained(), buffer.retained()) || restored.omitted != buffer.omitted {
-		t.Fatalf("restored buffer diverged: %q/%d vs %q/%d", restored.retained(), restored.omitted, buffer.retained(), buffer.omitted)
-	}
-	if _, err := restoreHeadTailBuffer(8, []byte("short"), 3); err == nil {
-		t.Fatal("accepted an omission count with partial halves")
-	}
-}
-
 func TestUnifiedExecResultShape(t *testing.T) {
-	output := newHeadTailBuffer(unifiedExecOutputMaxBytes)
-	output.push([]byte("hello\n"))
+	output := outputbuffer.New(outputbuffer.MaxBytes)
+	output.Append([]byte("hello\n"))
 	sessionID, budget := 4242, 1
 	running := processObservation{output: output, wallTime: 0.5}.unifiedExecResult(&sessionID, nil, "abc123")
 	if running.SessionID == nil || *running.SessionID != 4242 || running.ExitCode != nil || running.Output != "hello\n" ||
@@ -157,13 +134,13 @@ func TestUnifiedExecResultShape(t *testing.T) {
 }
 
 func TestTruncateExecOutputKeepsOmissionNotice(t *testing.T) {
-	output := newHeadTailBuffer(16)
-	output.push(bytes.Repeat([]byte("x"), 40))
-	text := truncateExecOutput(output.withOmissionMarker(), output.omitted, 10, 2)
+	output := outputbuffer.New(16)
+	output.Append(bytes.Repeat([]byte("x"), 40))
+	text := truncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 2)
 	if !strings.HasPrefix(text, "Warning: truncated output (original token count: 10)\n... 24 bytes omitted ...\n\n") {
 		t.Fatalf("truncated=%q", text)
 	}
-	if fits := truncateExecOutput(output.withOmissionMarker(), output.omitted, 10, 1000); fits != string(output.withOmissionMarker()) {
+	if fits := truncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 1000); fits != string(output.WithOmissionMarker()) {
 		t.Fatalf("output within budget changed: %q", fits)
 	}
 }

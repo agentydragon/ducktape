@@ -471,8 +471,10 @@ notifications wake foreground and idle cursor reads, and an initial read catches
 or reconnect. Unchanged exit observations do not count as reconciliation progress. Once the output
 is drained, the idle owner releases driver/host capacity without a model poll. An exited process with
 open output retains capacity until it closes. Unread output per handle remains in PostgreSQL as
-upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
-including after the old executor session expires. The sampler never advances a read cursor until
+upstream's 1 MiB head and tail with an omission count: `buffered_output` stores head bytes followed
+by tail bytes, `omitted_bytes` stores the dropped count, and model-facing output inserts
+`... N bytes omitted ...` between the halves. It can be consumed by an empty `write_stdin`, including
+after the old executor session expires. The sampler never advances a read cursor until
 the corresponding page is durably recorded. Once an uncertain process operation is settled as abandoned,
 that operation does not by itself block continuation. An abandoned process keeps its last observed
 cursor and buffered output for inspection, but retains no runtime slot. Truly running processes and

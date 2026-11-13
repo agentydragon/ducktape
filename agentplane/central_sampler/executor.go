@@ -148,7 +148,7 @@ func (e *Executor) prepareWorkspace(ctx context.Context) error {
 		return err
 	}
 	if observation.exitCode == nil || *observation.exitCode != 0 {
-		return &toolError{fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, lossyUTF8(observation.output.withOmissionMarker()))}
+		return &toolError{fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, lossyUTF8(observation.output.WithOmissionMarker()))}
 	}
 	if err := e.store.PreparedWorkspace(ctx, e.owner, e.scopeSnapshot().GetSessionId()); err != nil {
 		return err
@@ -382,7 +382,7 @@ func (e *Executor) applyPatch(ctx context.Context, arguments json.RawMessage) (*
 	if err != nil {
 		return nil, err
 	}
-	result := &applyPatchResult{Output: lossyUTF8(observation.output.withOmissionMarker()), ExitCode: observation.exitCode}
+	result := &applyPatchResult{Output: lossyUTF8(observation.output.WithOmissionMarker()), ExitCode: observation.exitCode}
 	if !observation.exited {
 		result.SessionID = &sessionID
 	}

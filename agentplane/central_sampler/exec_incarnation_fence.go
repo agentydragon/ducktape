@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -91,7 +92,7 @@ type executorIncarnationFenceError struct {
 	processID             string
 	executionSessionID    string
 	afterSequence         *uint64
-	output                *headTailBuffer
+	output                *outputbuffer.Buffer
 	recorded              bool
 	cause                 error
 }
@@ -119,7 +120,7 @@ func (e *executorIncarnationFenceError) intentEvidence() executionFailureEvidenc
 	return e.executionFailureRecord().intentEvidence()
 }
 
-func (e *Executor) incarnationFenceError(err error, scope *executorpb.ExecutionScope, method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome NestedOutcome) *executorIncarnationFenceError {
+func (e *Executor) incarnationFenceError(err error, scope *executorpb.ExecutionScope, method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *outputbuffer.Buffer, remoteOutcome NestedOutcome) *executorIncarnationFenceError {
 	changed, ok := sandboxIncarnationChanged(err, scope)
 	if !ok {
 		return nil

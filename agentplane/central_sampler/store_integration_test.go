@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -1234,7 +1235,7 @@ func TestStoreUnreadProcessOutputKeepsHeadAndTail(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "process-output", false); err != nil {
 		t.Fatal(err)
 	}
-	head := bytes.Repeat([]byte("h"), unifiedExecOutputMaxBytes)
+	head := bytes.Repeat([]byte("h"), outputbuffer.MaxBytes)
 	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 7, head, false, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -1245,7 +1246,7 @@ func TestStoreUnreadProcessOutputKeepsHeadAndTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.AfterSequence == nil || *process.AfterSequence != 8 || len(process.BufferedOutput) != unifiedExecOutputMaxBytes ||
+	if process.AfterSequence == nil || *process.AfterSequence != 8 || len(process.BufferedOutput) != outputbuffer.MaxBytes ||
 		process.OmittedBytes != 4 || !bytes.HasSuffix(process.BufferedOutput, []byte("tail")) || process.BufferedOutput[0] != 'h' {
 		t.Fatalf("unread output: cursor=%v bytes=%d omitted=%d", process.AfterSequence, len(process.BufferedOutput), process.OmittedBytes)
 	}

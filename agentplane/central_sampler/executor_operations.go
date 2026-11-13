@@ -8,6 +8,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc/codes"
@@ -40,11 +41,11 @@ type executorStart struct {
 	Arg0      *string            `json:"arg0,omitempty"`
 }
 type executorRead struct {
-	ProcessID      string          `json:"processId"`
-	AfterSeq       *uint64         `json:"afterSeq"`
-	MaxBytes       int             `json:"maxBytes"`
-	WaitMS         int             `json:"waitMs"`
-	ObservedOutput *headTailBuffer `json:"-"`
+	ProcessID      string               `json:"processId"`
+	AfterSeq       *uint64              `json:"afterSeq"`
+	MaxBytes       int                  `json:"maxBytes"`
+	WaitMS         int                  `json:"waitMs"`
+	ObservedOutput *outputbuffer.Buffer `json:"-"`
 }
 type executorChunk struct {
 	Seq    uint64 `json:"seq"`
@@ -367,7 +368,7 @@ type executorTransportError struct {
 	method                                      executionMethod
 	phase, intentID, processID, retainedSession string
 	afterSequence                               *uint64
-	output                                      *headTailBuffer
+	output                                      *outputbuffer.Buffer
 	cause                                       error
 }
 
@@ -379,7 +380,7 @@ type executorEnvironmentFailureError struct {
 	state              executorpb.ExecutionEnvironmentFailure_State
 	remoteOutcome      NestedOutcome
 	afterSequence      *uint64
-	output             *headTailBuffer
+	output             *outputbuffer.Buffer
 	cause              error
 }
 
@@ -410,7 +411,7 @@ func (e *executorEnvironmentFailureError) intentEvidence() executionFailureEvide
 	return evidence
 }
 
-func (e *Executor) newEnvironmentFailure(method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *headTailBuffer, cause error) *executorEnvironmentFailureError {
+func (e *Executor) newEnvironmentFailure(method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *outputbuffer.Buffer, cause error) *executorEnvironmentFailureError {
 	detail, ok := executionEnvironmentFailureDetail(cause)
 	if !ok {
 		return nil
@@ -464,7 +465,7 @@ type executorNotDispatchedError struct {
 	method                     executionMethod
 	processID, retainedSession string
 	afterSequence              *uint64
-	output                     *headTailBuffer
+	output                     *outputbuffer.Buffer
 	cause                      error
 }
 
@@ -481,7 +482,7 @@ type executorRejectedError struct {
 	processID          string
 	executionSessionID string
 	afterSequence      *uint64
-	output             *headTailBuffer
+	output             *outputbuffer.Buffer
 	recorded           bool // The semantic result and all native response frames are durably recorded.
 }
 

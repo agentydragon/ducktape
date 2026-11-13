@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/google/uuid"
 )
@@ -109,7 +110,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 		return 0, err
 	}
 	var after *uint64
-	observed := newHeadTailBuffer(unifiedExecOutputMaxBytes)
+	observed := outputbuffer.New(outputbuffer.MaxBytes)
 	for {
 		changed := e.processChanges()
 		pageCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -120,7 +121,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 		}
 		chunks := result.Chunks
 		for _, chunk := range chunks {
-			observed.push(chunk.Chunk)
+			observed.Append(chunk.Chunk)
 			if err := output(chunk.Stream, chunk.Chunk); err != nil {
 				return 0, err
 			}
@@ -245,7 +246,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 	if err != nil {
 		return nil, err
 	}
-	output, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, process.BufferedOutput, process.OmittedBytes)
+	output, err := outputbuffer.Restore(outputbuffer.MaxBytes, process.BufferedOutput, process.OmittedBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +298,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			return nil, rpcErr
 		}
 		for _, chunk := range result.Chunks {
-			output.push(chunk.Chunk)
+			output.Append(chunk.Chunk)
 		}
 		if result.NextSeq > 0 {
 			seq := result.NextSeq - 1
@@ -366,7 +367,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, fmt.Errorf("cannot reconcile remote process in state %s", row.Status)
 		}
-		readOutput, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, row.BufferedOutput, row.OmittedBytes)
+		readOutput, err := outputbuffer.Restore(outputbuffer.MaxBytes, row.BufferedOutput, row.OmittedBytes)
 		if err != nil {
 			lock.Unlock()
 			return progressed, err
@@ -430,13 +431,13 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			return progressed, rpcErr
 		}
 		if result.uncertain() {
-			output, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, row.BufferedOutput, row.OmittedBytes)
+			output, err := outputbuffer.Restore(outputbuffer.MaxBytes, row.BufferedOutput, row.OmittedBytes)
 			if err != nil {
 				lock.Unlock()
 				return progressed, err
 			}
 			for _, chunk := range result.Chunks {
-				output.push(chunk.Chunk)
+				output.Append(chunk.Chunk)
 			}
 			after := row.AfterSequence
 			if result.NextSeq > 0 {
@@ -509,7 +510,7 @@ func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 			lock.Unlock()
 			if readErr == nil && result.exited {
 				outcomes[process.ID] = map[string]any{"exit_observed": true, "result": map[string]any{
-					"output": lossyUTF8(result.output.withOmissionMarker()), "exit_code": result.exitCode,
+					"output": lossyUTF8(result.output.WithOmissionMarker()), "exit_code": result.exitCode,
 				}}
 				if err := e.store.FinishNested(ctx, e.owner, intent, outcomes[process.ID].(map[string]any)); err != nil {
 					return outcomes, err

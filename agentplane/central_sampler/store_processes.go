@@ -6,6 +6,7 @@ import (
 	"errors"
 	"maps"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -158,7 +159,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 
 // AbandonProcess stops scheduling a remote handle whose remote outcome is unknown while
 // retaining every observed byte and exit code for inspection. It never records a remote exit.
-func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome NestedOutcome, executorSessionID string) error {
+func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *outputbuffer.Buffer, remoteOutcome NestedOutcome, executorSessionID string) error {
 	if remoteOutcome != NestedUnknown && remoteOutcome != NestedNotDispatched {
 		return protocol.ErrInvalid
 	}
@@ -194,7 +195,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		}
 		buffered, omitted := process.BufferedOutput, process.OmittedBytes
 		if output != nil {
-			buffered, omitted = output.retained(), output.omitted
+			buffered, omitted = output.RetainedBytes(), output.OmittedBytes()
 		}
 		var sequence any
 		if afterSequence != nil {
@@ -234,12 +235,12 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
 		// Unread output keeps its head and tail, as upstream's pending buffer does.
-		buffer, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, process.BufferedOutput, process.OmittedBytes)
+		buffer, err := outputbuffer.Restore(outputbuffer.MaxBytes, process.BufferedOutput, process.OmittedBytes)
 		if err != nil {
 			return err
 		}
-		buffer.push(output)
-		buffered := buffer.retained()
+		buffer.Append(output)
+		buffered := buffer.RetainedBytes()
 		status := process.Status
 		var code any
 		if exitCode != nil {
@@ -249,14 +250,14 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			status = protocol.ProcessExitedUnread
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.omitted); err != nil {
+			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.OmittedBytes()); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.totalBytes()}
+		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.TotalBytes()}
 		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
 	})
 }
