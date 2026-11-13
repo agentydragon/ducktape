@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler"
+	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
@@ -56,11 +56,11 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 					t.Fatal(err)
 				}
-				priorIntent, _, err := store.Begin(t.Context(), owner, central_sampler.IntentRequest{Kind: central_sampler.PendingIntentSampling}, nil)
+				priorIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{Kind: centralsampler.PendingIntentSampling}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				priorEvidence := &central_sampler.ResponseEvidence{Store: store, Owner: owner, IntentID: priorIntent}
+				priorEvidence := &centralsampler.ResponseEvidence{Store: store, Owner: owner, IntentID: priorIntent}
 				prior, err := sampleRecoveryFixture(t, api, "prior", "complete", priorEvidence)
 				if err != nil {
 					t.Fatal(err)
@@ -77,8 +77,8 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 					t.Fatalf("prior calls=%v err=%v", calls, err)
 				}
 				call := calls[0]
-				cellIntent, _, err := store.Begin(t.Context(), owner, central_sampler.IntentRequest{
-					Kind: central_sampler.PendingIntentCell, Call: &call,
+				cellIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{
+					Kind: centralsampler.PendingIntentCell, Call: &call,
 				}, nil)
 				if err != nil {
 					t.Fatal(err)
@@ -96,11 +96,11 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
-				intentID, _, err := store.Begin(t.Context(), owner, central_sampler.IntentRequest{Kind: central_sampler.PendingIntentSampling}, nil)
+				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{Kind: centralsampler.PendingIntentSampling}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				evidence := &central_sampler.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}
+				evidence := &centralsampler.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}
 				if _, err := sampleRecoveryFixture(t, api, "pending", cut, evidence); err == nil {
 					t.Fatal("truncated stream completed")
 				}
@@ -182,12 +182,12 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				projected := projectSamplerHistory(t, fixture, session.ID)
 				for id := range wantAbsent {
 					item := projected.items[id]
-					if item == nil || item.GetRecovery() == nil || *item.GetRecovery() != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT {
+					if item == nil || item.GetRecovery() != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT {
 						t.Fatalf("History lost absence annotation for %q: %v", id, item)
 					}
 				}
 				for id, item := range projected.items {
-					if !wantAbsent[id] && item.GetRecovery() != nil {
+					if !wantAbsent[id] && item.GetRecovery() != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_UNSPECIFIED {
 						t.Fatalf("unrelated History item %q was reconciled: %v", id, item)
 					}
 				}
@@ -221,7 +221,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 						t.Fatalf("recovery changed earlier context record %d", index)
 					}
 				}
-				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}); !errors.As(err, new(*central_sampler.LostOwnershipError)) {
+				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}); !errors.As(err, new(*centralsampler.LostOwnershipError)) {
 					t.Fatalf("late provider evidence was not fenced: %v", err)
 				}
 				if err := store.Release(t.Context(), newOwner); err != nil {
@@ -238,7 +238,7 @@ type samplerRecoveryResult struct {
 	ContextTokens *int
 }
 
-func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, evidence *central_sampler.ResponseEvidence) (*samplerRecoveryResult, error) {
+func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, evidence *centralsampler.ResponseEvidence) (*samplerRecoveryResult, error) {
 	t.Helper()
 	var events []any
 	if api == protocol.APIStyleResponses {
