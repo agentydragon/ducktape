@@ -11,7 +11,7 @@ go_library(
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/internal/decision",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/resolver",
         "@org_golang_google_grpc//codes",

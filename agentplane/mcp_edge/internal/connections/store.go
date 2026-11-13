@@ -16,7 +16,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"

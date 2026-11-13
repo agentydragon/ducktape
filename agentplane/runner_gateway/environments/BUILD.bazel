@@ -14,7 +14,7 @@ go_library(
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/streaming",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/policy",
         "//agentplane/proto:environment_lifecycle_go_proto",
@@ -52,7 +52,7 @@ go_test(
     embed = [":environments"],
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:delegation_go_proto",

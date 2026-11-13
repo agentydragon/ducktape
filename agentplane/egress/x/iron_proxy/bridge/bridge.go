@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 

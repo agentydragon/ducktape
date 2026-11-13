@@ -22,7 +22,7 @@ go_library(
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/grpc/streaming",
         "//agentplane/history_service/api/history:history_service_go_proto",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/notification_service/api/notifications:notifications_go_proto",
         "//agentplane/notification_service/internal/inboxaccess",
@@ -105,7 +105,7 @@ go_test(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/history_service/api/history:history_service_go_proto",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",
         "//agentplane/identity/credentials/resolver",

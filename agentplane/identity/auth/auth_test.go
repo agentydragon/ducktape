@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

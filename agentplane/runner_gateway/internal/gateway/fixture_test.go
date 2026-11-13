@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	tlstest "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"

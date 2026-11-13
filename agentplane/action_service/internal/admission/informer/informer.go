@@ -23,7 +23,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 )

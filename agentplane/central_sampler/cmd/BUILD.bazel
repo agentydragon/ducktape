@@ -17,7 +17,7 @@ go_library(
         "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/settings",
         "//agentplane/grpc/graceful",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/net/listener",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",

@@ -156,7 +156,7 @@ go_library(
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/graceful",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/resolver",
@@ -216,7 +216,7 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/environments",

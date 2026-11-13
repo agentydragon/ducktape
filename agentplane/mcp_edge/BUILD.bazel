@@ -52,7 +52,7 @@ go_library(
         "//agentplane/action_service/callers",
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/identity/auth/grpc",
         "//agentplane/kubeclient",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
@@ -107,7 +107,7 @@ go_test(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
-        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth",
         "//agentplane/mcp_edge/internal/connections",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/watchhealth",

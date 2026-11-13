@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	resourcepb "github.com/agentydragon/ducktape/agentplane/policy/api/resourcev1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"

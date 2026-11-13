@@ -3,7 +3,7 @@ package ingress
 import (
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
