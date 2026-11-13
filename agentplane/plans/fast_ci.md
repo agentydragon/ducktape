@@ -78,6 +78,13 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   guest uses that narrow plugin and an explicitly unused ingress endpoint; it
   creates no Session and starts no History service. Packaged guest Runtime and
   harness inputs remain required.
+  Apply the same ownership rule to App integration support: tests that author
+  History retain the real App, Gateway, History and Kubernetes API fixtures,
+  without inheriting an unused Runtime executable and harness closure. The
+  bridge and history-gateway targets explicitly opt into the production Runtime
+  composition and keep their restart, recovery and next-input assertions. Prove
+  both removed and retained graph edges; removing an unused input is not evidence
+  of a complete-feedback saving.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
