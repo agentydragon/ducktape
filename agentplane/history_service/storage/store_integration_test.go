@@ -805,7 +805,7 @@ func TestAnIdentityRunSessionReadsByItsExecutionIdentityIncarnation(t *testing.T
 
 func TestLegacyHistoryCannotAcquireAnIdentityFromALaterWriter(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entries(1, 1)...)
 	if _, err := db.ExecContext(t.Context(), `UPDATE session_history SET execution_principal_namespace=$2,
