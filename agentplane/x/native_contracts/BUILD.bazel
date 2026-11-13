@@ -32,7 +32,10 @@ py_test(
     name = "test_recovery",
     size = "medium",
     srcs = ["test_recovery.py"],
-    data = ["//agentplane/env/runtime/cmd:agentplane-environment-runtime"],  # keep: production Runtime subprocess
+    data = [
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: production Runtime subprocess
+        "@claude_code_cli_linux_x64//:claude",  # keep: this contract launches the pinned Claude CLI
+    ],
     env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
