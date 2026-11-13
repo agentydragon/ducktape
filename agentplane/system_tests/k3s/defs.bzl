@@ -71,6 +71,7 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
+_POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
@@ -83,14 +84,13 @@ _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_instal
 # Keep suite selection here so its fixture, PKI, VM and guest import groups stay explicit.
 # Fixture and guest references stay under baseline.FIXTURE_IMAGE_REPOSITORY: a stack removes
 # such images that its manifest does not declare.
-_SERVICE_IMAGES = {
+_COMMON_SERVICE_IMAGES = {
     "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
     "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
     "//agentplane/egress/cmd:image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
     "//agentplane/egress:sidecar_image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
     "//agentplane/history_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
     "//agentplane/llm_ingress:image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
-    "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
     "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
     "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
     "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
@@ -154,15 +154,21 @@ def _merge_image_maps(*groups):
             images[image] = reference
     return images
 
+_MCP_EDGE_IMAGES = {
+    "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
+}
+_SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
+
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "deletion": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
-    "vm": struct(fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
-    "firecracker": struct(fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
-    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
+    "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "deletion": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
+    "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
+    "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "real_model": struct(service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
 }
 
 def _image_manifest_impl(ctx):
@@ -214,7 +220,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     if config.firecracker and not require_kvm:
         fail("the Firecracker stack requires require_kvm = True")
     runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
-    fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, runner_disk_image)
+    fixture_images = _merge_image_maps(config.service_images, config.images, runner_disk_image)
     images = {"fixture": fixture_images, "pki": _PKI_IMAGES, "vm": {}, "guest": {}}
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL, "//agentplane/crds"]
     env = {

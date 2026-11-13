@@ -18,8 +18,9 @@ delete an image before a later Sandbox uses it; these fixture-local tags cannot 
 At import-group boundaries, the stack removes untagged, unpinned CRI images
 that no container uses. Named caches stay warm, including k3s's own images. Before importing, it also
 removes unused fixture-local images (`git.allegedly.works/ducktape-ci/…`) the target's manifest does
-not declare: Pod and MCP suites share a recycling key, and pinned MCP layers would otherwise stay in a
-Pod stack's tmpfs. An MCP suite after a Pod suite reimports them. Cleanup also runs with
+not declare: Pod and MCP suites share a recycling key, while their stack profiles can select
+different service images. A later MCP suite imports any edge or fixture-server images it needs.
+Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
 while a fresh kubelet waits for its image-GC minimum age. See the
 [storage-pressure reproduction](../k3s/debug/2026_11_02_image_store_pressure.md).
@@ -136,10 +137,12 @@ Actions and Notifications apply Goose migrations from their serving processes be
 listeners or starting workers. Their startup probes wait for initialization; the fixture renders no
 separate migration containers for either service.
 The fixture selects that runtime explicitly; staging selects its own independently.
-The standalone MCP edge runs in every stack because the app's Connection Service endpoint targets it;
-its own PostgreSQL database, embedded Goose migrations, caller-token RBAC and startup/readiness
-probes are rendered through the shared construct. The serving binary migrates before opening its
-gRPC listener. MCP fixture stacks add the edge OAuth Secret and Dex trust.
+The full `pod`, `deletion`, `real_model` and `mcp` stack profiles include the standalone MCP edge
+because the app's Connection Service endpoint targets it. Its PostgreSQL database, embedded Goose
+migrations, caller-token RBAC and startup/readiness probes are rendered through the shared
+construct. The `pod_scenarios`, VM and Firecracker profiles omit the edge because their scenarios do not exercise
+external Connections; the app retains its unused Connection routes and reports the service
+unavailable. MCP fixture stacks still include the edge and add its OAuth Secret and Dex trust.
 One PostgreSQL 18 Deployment uses the
 pinned published CNPG minimal image, an emptyDir data volume and
 [`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create

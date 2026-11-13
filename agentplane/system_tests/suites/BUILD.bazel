@@ -93,7 +93,7 @@ _POD_DEPS = [
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
-    stack = "pod",
+    stack = "pod_scenarios",
     deps = [
         ":pod_cases",
         ":pod_runners",
@@ -129,7 +129,7 @@ k3s_suite(
         "'" + _POD_BALANCED_A + "'",
     ],
     main = "test_pod.py",
-    stack = "pod",
+    stack = "pod_scenarios",
     tags = ["manual"],
     deps = _POD_DEPS,
 )
@@ -142,7 +142,7 @@ k3s_suite(
         "'not (" + _POD_BALANCED_A + ")'",
     ],
     main = "test_pod.py",
-    stack = "pod",
+    stack = "pod_scenarios",
     tags = ["manual"],
     deps = _POD_DEPS,
 )

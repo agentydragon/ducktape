@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -159,12 +160,19 @@ def add_secret(
     )
 
 
+class FixtureProfile(StrEnum):
+    FULL = "full"
+    # These scenarios do not exercise external MCP Connections. The app retains unused
+    # Connection routes and reports Connection Service unavailable in system status.
+    NO_MCP_EDGE = "no-mcp-edge"
+
+
 @dataclass(frozen=True)
 class FixtureChart:
     chart: Chart
     app: Construct
     actions: Construct
-    mcp_edge: Construct
+    mcp_edge: Construct | None
     app_login: dex.StaticClient
     mcp_linkage: dex.StaticClient
 
@@ -386,6 +394,7 @@ def objects(
     vm_sandboxes: bool,
     firecracker_sandboxes: bool = False,
     central_sampler: bool = False,
+    profile: FixtureProfile = FixtureProfile.FULL,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture with optional VM or production Firecracker Sandboxes."""
     if vm_sandboxes and firecracker_sandboxes:
@@ -398,7 +407,13 @@ def objects(
         central_sampler=central_sampler,
     )
     fixture = build_chart(
-        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
+        ca_cert=ca_cert,
+        ca_key=ca_key,
+        system_roots=system_roots,
+        cluster_ca=cluster_ca,
+        models=models,
+        env=env,
+        profile=profile,
     )
     return synthesize(fixture.chart, vm_sandboxes=vm_sandboxes)
 
@@ -433,7 +448,14 @@ def _add_fixture_server_dns_names(documents: list[dict[str, Any]]) -> None:
 
 
 def build_chart(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, env: Environment
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    models: Models,
+    env: Environment,
+    profile: FixtureProfile = FixtureProfile.FULL,
 ) -> FixtureChart:
     """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
     app_origin = str(env.app.origin)
@@ -482,9 +504,6 @@ def build_chart(
         SecretRef(namespace=NAMESPACE, name="postgres-session-dispatcher")
         .key("uri")
         .env_value(chart, "session-dispatcher-database-url")
-    )
-    mcp_edge_database_url = (
-        SecretRef(namespace=NAMESPACE, name="postgres-mcp-edge").key("uri").env_value(chart, "mcp-edge-database-url")
     )
     # Control-plane `memory_request`s below are the measured peak working set (`memory/peaks.json`
     # in a suite's undeclared outputs) plus about half again, so the node keeps room for Sandboxes.
@@ -599,16 +618,20 @@ def build_chart(
         memory_request=Size.mebibytes(48),
         memory_limit=None,
     )
-    mcp_edge_service = mcp_edge.McpEdge(
-        chart,
-        "mcp-edge",
-        env,
-        database_url=mcp_edge_database_url,
-        placement=None,
-        registry_secret_name=None,
-        image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        memory_request=Size.mebibytes(32),
-    )
+    mcp_edge_service: Construct | None = None
+    if profile == FixtureProfile.FULL:
+        mcp_edge_service = mcp_edge.McpEdge(
+            chart,
+            "mcp-edge",
+            env,
+            database_url=SecretRef(namespace=NAMESPACE, name="postgres-mcp-edge")
+            .key("uri")
+            .env_value(chart, "mcp-edge-database-url"),
+            placement=None,
+            registry_secret_name=None,
+            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+            memory_request=Size.mebibytes(32),
+        )
     environment_sandbox.EnvironmentSandbox(
         chart,
         "environment-sandbox",
