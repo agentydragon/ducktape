@@ -67,6 +67,7 @@ def haku_console(
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
     seaweedfs_operator: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
     return flux_kustomization(
@@ -90,5 +91,6 @@ def haku_console(
             # The ServiceMonitor CRD.
             monitoring_crds,
             seaweedfs_operator,
+            cert_manager_environment,
         ),
     )

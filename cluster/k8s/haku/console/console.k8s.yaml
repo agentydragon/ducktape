@@ -339,7 +339,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    configmap.reloader.stakater.com/reload: config
+    configmap.reloader.stakater.com/reload: config,public-web-pki
     secret.reloader.stakater.com/reload: haku-console-oidc,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
@@ -367,6 +367,8 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: HAKU_CONSOLE__IMAGE_TAG
               valueFrom:
                 configMapKeyRef:
@@ -463,6 +465,9 @@ spec:
           volumeMounts:
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/public-web-pki
+              name: configmap-public-web-pki
+              readOnly: true
             - mountPath: /etc/haku-console/config
               name: configmap-config
               readOnly: true
@@ -491,6 +496,9 @@ spec:
       volumes:
         - emptyDir: {}
           name: tmp
+        - configMap:
+            name: public-web-pki
+          name: configmap-public-web-pki
         - configMap:
             name: config
           name: configmap-config
