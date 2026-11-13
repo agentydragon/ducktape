@@ -8,7 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 )
 
 // DispatcherConfig controls one fresh, non-retrying connection per unary

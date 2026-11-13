@@ -7,7 +7,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
-import { DeliveryState, DispatchSchema, type Dispatch } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import {
+  DeliveryState,
+  DispatchSchema,
+  type Dispatch,
+} from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 
 const COMMAND = create(CommandSchema, {
   commandId: "input-1",

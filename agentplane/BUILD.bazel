@@ -23,8 +23,8 @@ load("//devinfra/python:defs.bzl", "py_library")
 # gazelle:resolve py agentplane.history_service.api.ingress.session_ingress_pb2_grpc //agentplane/history_service/api/ingress:session_ingress_pb2_grpc
 # gazelle:resolve py agentplane.env.runtime.control.environment_runtime_pb2 //agentplane/env/runtime/control:environment_runtime_pb2
 # gazelle:resolve py agentplane.env.runtime.control.environment_runtime_pb2_grpc //agentplane/env/runtime/control:environment_runtime_pb2_grpc
-# gazelle:resolve py agentplane.runner_gateway.dispatcher.session_dispatcher_pb2 //agentplane/runner_gateway/dispatcher:session_dispatcher_pb2
-# gazelle:resolve py agentplane.runner_gateway.dispatcher.session_dispatcher_pb2_grpc //agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc
+# gazelle:resolve py agentplane.runner_gateway.dispatcher.api.session.session_dispatcher_pb2 //agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2
+# gazelle:resolve py agentplane.runner_gateway.dispatcher.api.session.session_dispatcher_pb2_grpc //agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
 # gazelle:resolve py agentplane.action_service.action_service_pb2_grpc //agentplane/action_service:action_service_pb2_grpc
 # gazelle:resolve py agentplane.action_service.operator_action_service_pb2 //agentplane/action_service:operator_action_service_pb2

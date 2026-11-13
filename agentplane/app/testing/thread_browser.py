@@ -43,7 +43,7 @@ from agentplane.history_service.testing.electric_service import (
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.runner_gateway.testing.runner_server import runner_server

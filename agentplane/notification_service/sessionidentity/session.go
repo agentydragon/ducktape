@@ -3,7 +3,7 @@ package sessionidentity
 import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 )
 
 // Target selects the exact environment used by a native Session or the

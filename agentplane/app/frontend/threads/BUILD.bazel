@@ -89,7 +89,7 @@ ts_library(
         ":local_commands",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:watch_stream",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -103,7 +103,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/proto:command_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -117,7 +117,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -132,7 +132,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -440,7 +440,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/history_service/api/history:history_service_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -480,7 +480,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:command_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -960,7 +960,7 @@ ts_library(
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:session_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -975,7 +975,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:session_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 

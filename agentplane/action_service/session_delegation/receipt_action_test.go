@@ -7,7 +7,7 @@ import (
 	store "github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

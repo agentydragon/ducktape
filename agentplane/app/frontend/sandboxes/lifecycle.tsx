@@ -9,7 +9,7 @@ import { ActionIcon, Alert, Button, Checkbox, Group, List, Modal, Stack, Text, T
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import type { Identity } from "../../../policy/v1/policy_service_pb";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
-import type { Session } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import type { Session } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError } from "../client";
 import { deleteIdentity, listIdentitySessions, type DeleteOutcome } from "../identities/client";
 import { identityOrigin } from "../identities/origin";

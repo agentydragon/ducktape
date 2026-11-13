@@ -22,7 +22,7 @@ from agentplane.grpc.calls import dial
 from agentplane.history_service.api.history import history_service_pb2, history_service_pb2_grpc
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway import api
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.driver.cluster import Cluster

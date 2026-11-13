@@ -1,7 +1,7 @@
 import type { Identity, PolicyBinding } from "../../../policy/v1/policy_service_pb";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
-import type { Session } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import type { Session } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 
 /**
  * The bindings naming an identity, split by what a delete does to them. An identity's own bindings

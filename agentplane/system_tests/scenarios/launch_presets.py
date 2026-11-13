@@ -12,7 +12,7 @@ from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import environment_lifecycle_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import launch_preset
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, Agent

@@ -10,7 +10,7 @@ import pytest_bazel
 from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
 from agentplane.proto import session_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.testing.tls import issue_leaf, make_ca
 

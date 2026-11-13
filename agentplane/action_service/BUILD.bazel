@@ -317,7 +317,7 @@ go_library(
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/watchhealth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",

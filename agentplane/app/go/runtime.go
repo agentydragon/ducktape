@@ -44,7 +44,7 @@ import (
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"

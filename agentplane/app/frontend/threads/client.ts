@@ -56,7 +56,7 @@ import {
   SubmitInputRequestSchema,
   SubmitInputResponseSchema,
   type Dispatch,
-} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+} from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 
 export type CommandTarget = { sandbox: string; sandboxUid: string };
 

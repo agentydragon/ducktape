@@ -190,7 +190,7 @@ environments, is a purpose of this migration (operator, 2026-11-10). With
 `SERVICES_IDENTITY_PRINCIPAL`, a central-sampler Session names its `Identity` at `CreateSession`;
 Dispatcher either creates a Session-managed identity or checks the caller may use an existing one.
 Today a Session records a ServiceAccount `execution_identity` instead
-(`runner_gateway/dispatcher/session_dispatcher.proto`).
+(`runner_gateway/dispatcher/api/session/session_dispatcher.proto`).
 
 Nothing acts as that identity without an environment
 ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)):

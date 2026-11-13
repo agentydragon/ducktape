@@ -4,7 +4,10 @@ import {
   GrantIdentityPolicyBindingResponseSchema,
   type Identity,
 } from "../../../policy/v1/policy_service_pb";
-import { ListSessionsResponseSchema, type Session } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import {
+  ListSessionsResponseSchema,
+  type Session,
+} from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import { displayableError, fetchJson, fetchText, HttpError } from "../client";
 
 const PRECONDITION_FAILURE = "type.googleapis.com/google.rpc.PreconditionFailure";
