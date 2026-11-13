@@ -135,6 +135,17 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   No Session or supervised executor is created. This adds a
   packaged Runtime transport witness; controller-issued credentials, KubeVirt,
   PVC, executor operations and App acceptance remain separate.
+  A separate manual `test_runtime_session` now drives the packaged Claude CLI
+  through two real Shell turns, retaining a workspace nonce, original command IDs,
+  contiguous sourced History and one Runtime boot. Both healthy Runtime targets
+  pass after separating guest boot from authenticated-RPC readiness. The wrong-URI
+  History control first proves a healthy service through a real mTLS Health.Check,
+  then reaches the ordinary History assertion after Runtime rejects the SPIFFE URI.
+  The fixture disables executor resource enforcement and does not establish Codex,
+  controller-issued credentials, KubeVirt, storage or App acceptance. Physical
+  attempts, startup failures and the invalid first control are preserved in
+  `system_tests/debug/test_architecture_guest_session.md`; this is feasibility,
+  not an end-to-end CI saving or gate promotion.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
