@@ -93,7 +93,7 @@ separately configured, and Action Service adapter integration remains separate.
 ## Errors
 
 - **Server:** a service maps each RPC's error to a status code in one place (`failure` in
-  `history_service/api/service.go`). Messages are fixed strings: no error text, Kubernetes
+  `history_service/internal/rpc/service.go`). Messages are fixed strings: no error text, Kubernetes
   response, SQL or bearer data reaches a client. A failure whose fixed message names no cause logs
   the error behind it.
 - **Client:** `agentplane.grpc.calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
