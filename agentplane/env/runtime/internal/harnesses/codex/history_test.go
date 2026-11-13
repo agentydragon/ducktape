@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 

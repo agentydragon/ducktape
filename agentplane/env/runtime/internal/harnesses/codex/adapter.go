@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

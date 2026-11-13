@@ -7,11 +7,8 @@ go_library(
         "history.go",
         "protocol.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/claude",
-    visibility = [
-        "//agentplane/env:__subpackages__",
-        "//agentplane/env/runtime:__pkg__",
-    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/claude",
+    visibility = ["//agentplane/env/runtime/session:__pkg__"],
     deps = [
         "//agentplane/env/runtime/harness",
         "//agentplane/proto:event_go_proto",

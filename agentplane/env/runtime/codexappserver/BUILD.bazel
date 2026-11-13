@@ -18,8 +18,8 @@ go_library(
     ],
     deps = [
         "//agentplane/env/oneoff",
-        "//agentplane/env/runtime/codex",
         "//agentplane/env/runtime/harness",
+        "//agentplane/env/runtime/internal/harnesses/codex",
         "//agentplane/env/runtime/internal/lifecycle",
         "//agentplane/env/runtime/supervision",
         "//agentplane/observability",

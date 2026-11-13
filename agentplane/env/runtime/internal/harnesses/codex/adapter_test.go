@@ -10,8 +10,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/testing/adaptertest"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

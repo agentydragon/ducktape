@@ -23,11 +23,9 @@ js_run_binary(
 go_library(
     name = "protocol",
     srcs = [":generate_types"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/codex/protocol",
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex/protocol",
     tags = ["no-nogo"],
-    visibility = [
-        "//agentplane/env:__subpackages__",
-    ],
+    visibility = ["//agentplane/env/runtime/internal/harnesses/codex:__pkg__"],
 )
 
 genrule(
@@ -39,7 +37,5 @@ genrule(
         cp "$$schema_dir/codex_app_server_protocol.v2.schemas.json" "$(@D)/"
     """,
     tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
-    visibility = [
-        "//agentplane/env:__subpackages__",
-    ],
+    visibility = ["//agentplane/env/runtime/internal/harnesses/codex/protocol:__pkg__"],
 )
