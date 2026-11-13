@@ -83,11 +83,14 @@ it is independent of the later Cilium regression on Linux 7.2.
 
 ### A/B runbook and acceptance criteria
 
-After rebuilding/switching and rebooting, confirm the test kernel:
+Before capturing, record the booted kernel:
 
 ```bash
-uname -r  # expected: 7.2-rc2
+uname -r
 ```
+
+If the kernel has changed since the later follow-up below, verify its source
+contains the Xe repair; the version string alone does not establish that.
 
 During ordinary Chrome + GNOME use, leave this diagnostic-only watcher running:
 
