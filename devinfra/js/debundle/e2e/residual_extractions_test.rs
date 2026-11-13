@@ -127,6 +127,44 @@ fn extracting_middle_of_residual_order_is_rejected_with_both_directions() {
 }
 
 #[test]
+fn rejected_candidate_with_authored_commuting_premise_serializes_typed_evidence() {
+    const SOURCE_WITH_PREMISE: &str = "const a = console.log('a');\nconst b = console.log('b');\nconst c = console.log('c');\nconst bar = console.log('bar');\nconst foo = 1;\nconsole.log('tail', foo);\nexport { a, b, c, bar, foo };\n";
+    let fixture = run_fixture_without_graphs_with_args(
+        FixtureOpts::new(SOURCE_WITH_PREMISE, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_commuting_statements(
+                "static/app",
+                vec![commuting_pair(
+                    declared_source_unit("const c = console.log('c');", "c"),
+                    declared_source_unit("const bar = console.log('bar');", "bar"),
+                )],
+            ),
+        &["--full-report", "residual_extractions"],
+    );
+    assert_entry_output(&fixture, "a\nb\nc\nbar\ntail 1\n");
+    let evidence = report(&fixture.report_root, &fixture.chunk_id);
+    assert_eq!(evidence["baseline"]["gate_accepts"], true);
+    let b = group_for_binding(&evidence, "b");
+    assert_eq!(b["candidate"]["gate_accepts"], false);
+    let cycles = b["candidate"]["cycles"].as_array().unwrap();
+    let cycle = cycles
+        .iter()
+        .find(|cycle| cycle["rejection"] == "mutual_constraining_cycle")
+        .expect("actual Pass-1 blocker");
+    assert!(cycle["pass_one_witness"]["steps"].is_array());
+    let locations = cycle["commuting_premise_locations"].as_array().unwrap();
+    assert_eq!(locations.len(), 1);
+    assert_eq!(locations[0]["premise"]["defining_chunk"], "static/app");
+    assert_eq!(locations[0]["premise"]["input_index"], 0);
+    assert!(
+        locations[0]["spec_location"]
+            .as_str()
+            .unwrap()
+            .contains("commuting_statements[0]")
+    );
+}
+
+#[test]
 fn preexisting_structural_conflict_remains_a_candidate_blocker() {
     let rejected = run_rejection_fixture_without_graphs_with_args(
         FixtureOpts::new(
