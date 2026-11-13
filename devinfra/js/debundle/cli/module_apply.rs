@@ -119,7 +119,7 @@ struct ApplyOutcome {
 
 pub fn run_modules_apply(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModulesApplyArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,

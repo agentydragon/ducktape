@@ -471,7 +471,7 @@ pub struct RenameBatchOutcome {
 /// Preflight the complete final map before replacing any file. Persistence is
 /// atomic per file, rather than a crash-atomic transaction across the tree.
 pub fn rename_bindings(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     requests: Vec<Rename>,
     dry_run: bool,
@@ -840,7 +840,7 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///     skips validation. The CLI dispatcher requires `--graph` unless
 ///     `--no-verify` is set ([`Gate::from_cli`]).
 pub fn run_bindings_assign(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     moves: Vec<Move>,
     dry_run: bool,
@@ -1400,7 +1400,7 @@ pub struct UnassignOutcome {
 ///   * [`Gate::Run`] gates the in-memory post-batch spec; cycle or
 ///     atom-split rejections bail before any file is written.
 pub fn run_bindings_unassign(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     syms: Vec<String>,
     dry_run: bool,

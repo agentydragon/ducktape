@@ -95,7 +95,7 @@ struct PlannedSourceUnitMove {
 /// come from the canonical joint resolver; names, selector text, annotations,
 /// and anonymous-statement metadata are preserved from the original YAML.
 pub fn run_source_unit_refine(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     dependency_graph_path: &Path,
     source_root: &Path,

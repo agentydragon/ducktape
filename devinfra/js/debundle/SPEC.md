@@ -72,8 +72,19 @@ Parallel chunk work is reported in chunk order. `analyze` and the standalone
 analyzer emit the same hint and admission diagnostics as `run`, including
 `run --analysis`; each occurrence is rendered once per analysis operation.
 Project-analysis performs selector resolution and reports its selector warnings,
-but does not compute purity-hint facts. Progress and analysis telemetry have
-independent instrumentation owners.
+but does not compute purity-hint facts.
+
+Live phase markers use typed chunk, phase and state events in the same explicit
+invocation context. Observers run synchronously at each marker, including during
+parallel chunk work; events are not buffered until the operation finishes.
+Libraries default to no progress observer and never read progress configuration
+or select a process stream. Command adapters own marker formatting, output and
+`DUCKTAPE_DEBUNDLE_PROGRESS`: absent, empty, `0`, `false`, `off`, and `no` disable
+all phase markers (case insensitive); other values enable them. Enabled markers
+retain the `[debundle progress] chunk=… phase=… state=…` profiler format and flush
+at each event. The first marker write or flush failure is retained as a native
+stderr error, further writes stop, and the operation result retains both causes
+if analysis also fails. Analysis telemetry has an independent instrumentation owner.
 
 Command output is fallible through text rendering, JSON serialization, stdout
 and stderr writes, and each stream's explicit final flush. Text reports are

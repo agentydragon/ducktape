@@ -40,9 +40,13 @@ impl AnalyzeArgs {
         })
     }
 
-    pub fn run(self, stderr: &mut dyn std::io::Write, analysis_engine_sha256: &str) -> Result<()> {
-        let diagnostics = analysis::diagnostics::Diagnostics::default();
-        let result = analyze_from_projection(self.resolve()?, analysis_engine_sha256, &diagnostics);
-        command_diagnostics::finish(result, command_diagnostics::report(stderr, &diagnostics))
+    pub fn run(
+        self,
+        stderr: &mut (dyn std::io::Write + Send),
+        analysis_engine_sha256: &str,
+    ) -> Result<()> {
+        command_diagnostics::run(stderr, |diagnostics| {
+            analyze_from_projection(self.resolve()?, analysis_engine_sha256, diagnostics)
+        })
     }
 }

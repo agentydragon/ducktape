@@ -30,7 +30,7 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
-use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
+use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
 use analysis_model::PrimKinds;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -777,7 +777,6 @@ pub fn resolve_imported_purities(
     // Authoritative source/native/captured-input facts are fixed before this
     // one effects closure starts. Declared chunk-local purity hints remain
     // absent from export mode, as before.
-    let progress = std::env::var_os("DUCKTAPE_DEBUNDLE_PROGRESS").is_some();
     let jobs: Vec<_> = modules
         .iter()
         .filter(|(key, _)| {
@@ -841,11 +840,11 @@ pub fn resolve_imported_purities(
     let prepared: BTreeMap<_, _> = crate::swc_parallel::map_with_swc_globals(
         jobs,
         |(key, facts, inputs, flow, collect_write_sites)| {
-            if progress {
-                eprintln!(
-                    "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
-                );
-            }
+            diagnostics.progress(
+                key,
+                progress::Phase::PrepareCrossModulePurity,
+                progress::State::Start,
+            );
             let facts_prepared = facts.prepare(
                 &inputs,
                 flow,
@@ -853,11 +852,11 @@ pub fn resolve_imported_purities(
                     collect_imported_array_write_sites: collect_write_sites,
                 },
             );
-            if progress {
-                eprintln!(
-                    "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=end"
-                );
-            }
+            diagnostics.progress(
+                key,
+                progress::Phase::PrepareCrossModulePurity,
+                progress::State::End,
+            );
             (key.clone(), facts_prepared)
         },
     )
@@ -2314,6 +2313,68 @@ mod tests {
             &trusted_dependencies,
             "typed proof dependencies flow through the import; report references are projection-only"
         );
+    }
+
+    #[test]
+    fn progress_observes_preparation_live_before_the_operation_completes() {
+        use progress::{Event, Phase, State};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let app = parse("import { build } from 'provider'; build();");
+        let provider = parse("export function build() { return {}; }");
+        let modules = BTreeMap::from([
+            (
+                "app".to_string(),
+                facts(&app, &[("build", "provider", "build")], &[]),
+            ),
+            (
+                "provider".to_string(),
+                facts(&provider, &[], &[("build", "build")]),
+            ),
+        ]);
+        let (events, observed) = mpsc::channel();
+        let (resume, paused) = mpsc::channel();
+        let paused = std::sync::Mutex::new(paused);
+        let complete = AtomicBool::new(false);
+        let observer = |event: Event<'_>| {
+            assert_eq!(event.phase, Phase::PrepareCrossModulePurity);
+            assert_eq!(event.chunk, "provider");
+            assert!(!complete.load(Ordering::SeqCst));
+            events.send(event.state).unwrap();
+            if event.state == State::Start {
+                paused.lock().unwrap().recv().unwrap();
+            }
+        };
+        let diagnostics = Diagnostics::with_progress(&observer);
+        std::thread::scope(|scope| {
+            let operation = scope.spawn(|| {
+                let result = resolve_imported_purities(
+                    &modules,
+                    &BTreeMap::new(),
+                    &mut ResolvedCallableSummaries::default(),
+                    &diagnostics,
+                );
+                complete.store(true, Ordering::SeqCst);
+                result
+            });
+            let start = observed.recv_timeout(Duration::from_secs(10));
+            // Always release the worker, including on a failed assertion.
+            let still_running = !operation.is_finished();
+            let _ = resume.send(());
+            assert_eq!(start.unwrap(), State::Start);
+            assert!(
+                still_running,
+                "observer must run before preparation finishes"
+            );
+            assert_eq!(
+                observed.recv_timeout(Duration::from_secs(10)).unwrap(),
+                State::End
+            );
+            assert!(operation.join().unwrap().unwrap()["app"]["build"].is_pure());
+        });
+        assert!(complete.load(Ordering::SeqCst));
     }
 
     #[test]
