@@ -476,7 +476,7 @@ pub(super) fn finish_logical_chunk(
                         report_out_dir,
                         chunk_id,
                         COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-                        &[CommutingStatementsChunkDiagnostic::Contradicted(
+                        &[CommutingStatementsDiagnostic::Contradicted(
                             contradiction.clone(),
                         )],
                     )?;
@@ -503,7 +503,7 @@ pub(super) fn finish_logical_chunk(
             &precomputed
                 .unused_commuting_statements
                 .iter()
-                .map(|unused| CommutingStatementsChunkDiagnostic::Unused(Box::new(unused.clone())))
+                .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
                 .collect::<Vec<_>>(),
         )?;
     }
