@@ -69,5 +69,7 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_base_gh_pages_commit": "58719ab4f4"
+  "publication_base_gh_pages_commit": "58719ab4f4",
+  "visual_validation_status": "Four desktop/mobile light/dark cases passed in4b05be9c; reviewed report head1318317f31. Final proof/publication metadata was added after the browser run.",
+  "visual_validation_observed_at_utc": "2026-11-13T23:07:24.285273+00:00"
 }

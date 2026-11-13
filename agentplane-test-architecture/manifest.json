@@ -20,7 +20,7 @@
   "implementation_head_commit": "194810646c5122f5574ae7d6ad9fe02044cc7113",
   "previous_published_at_utc": null,
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_status": "Review snapshot; exact source194 required checks SUCCESS. Browser validation and publication review pending.",
+  "publication_status": "Reviewed for publication; deployment is recorded by gh-pages commit history.",
   "reproduction_artifact_sha256": {
     "selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2"
   },
@@ -64,7 +64,7 @@
     "required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
-  "visual_validation_status": "Pending final integrated-byte browser review; prior visual-validation.json belongs to iteration9.",
+  "visual_validation_status": "Four desktop/mobile light/dark cases passed in4b05be9c; reviewed report head1318317f31. Final proof/publication metadata was added after the browser run.",
   "previous_snapshot_source": {
     "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
     "pilot_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
@@ -124,5 +124,6 @@
   },
   "source_devel_commit_scope": "The devel base integrated into snapshot source194; this is distinct from its tested synthetic-merge base and the separately recorded fetched origin/devel.",
   "publication_base_gh_pages_commit": "58719ab4f4",
-  "root_navigation_sha256": "9e6429dfb8691e0d08fb67c0aa6c757d538f13b593555382357349dd4f831fff"
+  "root_navigation_sha256": "9e6429dfb8691e0d08fb67c0aa6c757d538f13b593555382357349dd4f831fff",
+  "visual_validation_observed_at_utc": "2026-11-13T23:07:24.285273+00:00"
 }
