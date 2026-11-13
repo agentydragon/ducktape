@@ -3877,7 +3877,7 @@ bearer or a ServiceAccount subject stands in for a workload.
   (`runner_gateway/environments/service.go`) becomes `ReviewedServiceAccountOrIdentity`, since an
   Identity caller gains resume, wake and read there; its eight `ServiceAccountPrincipal` sites keep
   serving the app and the Action Service's launch executor. `ReviewedServiceAccount` then has one
-  caller left, the Policy Service's reads (`policy_controller/service/service.go`), a platform path.
+  caller left, the Policy Service's reads (`policy_controller/internal/rpc/service.go`), a platform path.
 - **At `CENTRAL_SESSION_DELEGATED_ACTING`:** the sampler keeps its `llm`, `gateway` and `history`
   projected tokens (`central_sampler_workload.py`) as a delegating actor; the `bearer` connection auth
   type and LLM ingress's `central_sampler_accounts` are reviewed as listed under that gate above.

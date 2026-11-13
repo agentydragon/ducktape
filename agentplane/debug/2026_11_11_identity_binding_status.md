@@ -7,7 +7,7 @@ only egress and Action rules. Both report `EgressReady=True`, but also
 `KubernetesReady=False`, reason `SubjectNotServiceAccount`. The frontend's
 `bindings/state.ts` treats any false condition as a refusal.
 
-`policy_controller/controller.go:expand` returns this refusal for every Identity subject,
+`policy_controller/internal/controller/controller.go:expand` returns this refusal for every Identity subject,
 before inspecting the selected rules. That branch landed in #15076. Moving Haku's standing
 credentials and bindings to Identities in #15450 exposed it. The correction reports zero
 native bindings applied when no Kubernetes rules are selected; actual Kubernetes rules

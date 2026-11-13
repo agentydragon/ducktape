@@ -29,8 +29,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
-	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
-	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/service"
+	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/controller"
+	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/rpc"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 

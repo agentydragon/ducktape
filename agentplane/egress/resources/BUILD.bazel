@@ -7,7 +7,7 @@ go_library(
     visibility = [
         "//agentplane/egress:__subpackages__",
         # Managed accounts' credential descriptions name the placeholder.
-        "//agentplane/policy_controller:__pkg__",
+        "//agentplane/policy_controller/internal/controller:__pkg__",
     ],
     deps = [
         "//agentplane/egress/api/v1alpha1",
