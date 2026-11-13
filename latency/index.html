@@ -120,6 +120,114 @@
           busy: r.busy,
           reservations: r.local_reservations,
         }));
+
+      function ReliabilityWork() {
+        const review = evidence.backend_retry_review;
+        return html`<${Stack}
+          component="section"
+          id="reliability-dispatch"
+          gap="md"
+        >
+          <${Title} order=${2}>Priority 1: VM and browser reliability<//>
+          <${Text}
+            >22 of 102 green production-backend heads needed multiple Bazel
+            attempts. Those heads account for 47.5% of summed feedback time:
+            31m14s mean to green, compared with 9m30s for the 80 single-attempt
+            heads.<//
+          >
+          <${Text} size="sm" c="dimmed">${review.interpretation}<//>
+          <${SimpleGrid} cols=${{ base: 1, sm: 2 }}>
+            ${review.lanes.map(
+              (lane) =>
+                html`<${Paper} withBorder p="md">
+                  <${Stack} gap="sm">
+                    <${Title} order=${3}>${lane.name}<//>
+                    <${Badge} variant="light"
+                      >${lane.pr_state === "MERGED" ? "Merged" : lane.url ? "PR opened" : "Dispatched"}<//
+                    >
+                    <${Text} fw=${600}>${lane.status}<//>
+                    ${lane.url ? html`<${Anchor} href=${lane.url}>${lane.url}<//>` : null}
+                    <${Text}>${lane.summary}<//>
+                    <${Text} size="sm">${lane.validation}<//>
+                    <${Anchor} size="sm" href=${lane.focused_invocation_url}
+                      >Focused RBE validation<//
+                    >
+                    <${Anchor} size="sm" href=${lane.debug_note_url}
+                      >Investigation and remaining evidence boundaries<//
+                    >
+                  <//>
+                <//>`,
+            )}
+          <//>
+          <${Text}
+            >The 25 preceding failed checks include seven VM test failures and
+            four thread-browser failures. Two additional attempts include remote
+            execution failures while building the VM target. Targets can
+            co-fail; these counts are discovery leads, not per-target failure
+            rates.<//
+          >
+          <${Accordion} variant="contained" multiple=${true}>
+            <${Accordion.Item} value="reliability-cases">
+              <${Accordion.Control}
+                >Selected failed attempts and what remains unknown<//
+              >
+              <${Accordion.Panel}>
+                <${Stack} gap="md"
+                  >${review.selected_cases.map(
+                    (c) =>
+                      html`<${Paper} withBorder p="sm">
+                        <${Anchor}
+                          href=${`https://app.buildbuddy.io/invocation/${c.invocation}`}
+                          >PR #${c.pr} · ${c.target}<//
+                        >
+                        <${Text} size="sm" my="xs">${c.observation}<//>
+                        <${Text} size="sm" c="dimmed">${c.diagnosis}<//>
+                      <//>`,
+                  )}<//
+                >
+              <//>
+            <//>
+            <${Accordion.Item} value="reliability-landed">
+              <${Accordion.Control}
+                >Already landed: preserve the distinction between a fix and
+                measured recurrence<//
+              >
+              <${Accordion.Panel}>
+                <${Stack} gap="md"
+                  >${review.landed.map(
+                    (c) =>
+                      html`<${Paper} withBorder p="sm">
+                        <${Anchor}
+                          href=${`https://github.com/agentydragon/ducktape/pull/${c.pr}`}
+                          >#${c.pr} · ${c.status}<//
+                        >
+                        <${Text} size="sm" mt="xs">${c.summary}<//>
+                      <//>`,
+                  )}<//
+                >
+              <//>
+            <//>
+          <//>
+          <${Text} size="sm">${review.deferred}<//>
+          <${Text} size="sm"
+            ><${Anchor} href=${review.pod_split_disposition.source_url}
+              >TLS-only Pod split: keep disabled in required CI<//
+            >. ${review.pod_split_disposition.summary}<//
+          >
+          <${Text} size="sm" c="dimmed"
+            >Backend cohort window: 10 November 00:00–12 November 23:59:19 UTC;
+            results sampled ${review.population_observed_at_utc}. This
+            supplemental review uses current source
+            <${Anchor}
+              href=${`https://github.com/agentydragon/ducktape/commit/${review.inspected_devel_commit}`}
+              >${review.inspected_devel_commit}<//
+            >, reviewed ${review.reviewed_at_utc}. Earlier report populations
+            retain their original windows and source revisions.
+            <${Anchor} href="./evidence.json">Reviewed attempt inventory<//>.<//
+          >
+        <//>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
@@ -150,6 +258,7 @@
                 delivery are outside this clock.<//
               >
             </header>
+            <${ReliabilityWork} />
             <section id="backend-current">
               <${Title} order=${2}
                 >Current backend PRs: scope and distribution<//
@@ -323,8 +432,8 @@
                   estimate for current scheduling.
                 <//>
                 <${Text} size="sm">
-                  Prioritize narrower real image inputs and matched full-graph
-                  measurements in${" "}
+                  After the selected reliability work, revisit narrower real
+                  image inputs and matched full-graph measurements in${" "}
                   <${Anchor} href=${`${gh}/pull/15214`}>#15214<//>, which
                   remains open. Byte reductions have no established CI saving
                   yet. Keep the existing scenario coverage and resource

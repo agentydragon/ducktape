@@ -1,64 +1,440 @@
 {
+  "schema_version": 2,
+  "invocation_id": "4c6b0c69-be45-49f1-8ca3-6bb7a3e97e2d",
+  "invocation_url": "https://app.buildbuddy.io/invocation/4c6b0c69-be45-49f1-8ca3-6bb7a3e97e2d",
+  "target": "//x/ci_reports_preview:visual_test",
   "status": "PASSED",
-  "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/e22307b8-35d6-4a70-97f5-7c7f421f5d01",
-  "case_count": 4,
-  "scope": "Agentplane backend report; desktop1280x900/mobile390x844, initial light/dark and live color preference change",
-  "reviewed_at_utc": "2026-11-13T00:16:12.564941+00:00",
-  "source_worktree_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
-  "source_scope": "Temporary preview target and report assets over source worktree; report content identity is verified by browser response and asset SHA256, not inferred from remote source metadata.",
-  "tested_assets": [
+  "validated_at_utc": "2026-11-13T01:26:03.614937+00:00",
+  "scope": "Final merged-PR report snapshot; four report cases and four shared navigation cases. The complete target ran twelve cases across both reports and navigation.",
+  "rendered_asset_hash_method": "Hash every loaded same-origin resource URL from the immutable packaged static server and compare with local publication bytes.",
+  "rendered_asset_sha256": {
+    "latency/evidence.json": "48e63691e63d246b1f56638391466b7d73dc2e6fc71246c01153106a36b5311d",
+    "latency/index.html": "10edbd6e7487e8357e144afb7b65a44b934cb57f373c8dd4184884c56cf86f36",
+    "latency/manifest.json": "24141396663fde1c0be1ab443cc1fb5b0841b590e0ffabe3b10212e1c4ce4889",
+    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+  },
+  "cases": [
     {
-      "path": "latency/index.html",
-      "sha256": "bf81e2c4a1f74cabd1c7c4031ba2da558faeaadab3e262fb479cb5b25a9a24f1"
+      "report": "latency/index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-4f9u06z9l-panel-reliability-cases",
+        "mantine-4f9u06z9l-panel-reliability-landed"
+      ],
+      "backend_chart": "backend-feedback",
+      "expanded_table_row_count": 137
     },
     {
-      "path": "latency/evidence.json",
-      "sha256": "c79ea9f519cab2dc7e865e4e7186bd7d2baede93096a0e29e23003add0cef4aa"
+      "report": "latency/index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-yls6t2zxr-panel-reliability-cases",
+        "mantine-yls6t2zxr-panel-reliability-landed"
+      ],
+      "backend_chart": "backend-feedback",
+      "expanded_table_row_count": 137
     },
     {
-      "path": "latency/manifest.json",
-      "sha256": "ba4962dbdf491650016872b37b64434bb859c5cdc1c71daac3cab47dc007e721"
+      "report": "latency/index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-uwx71c9tv-panel-reliability-cases",
+        "mantine-uwx71c9tv-panel-reliability-landed"
+      ],
+      "backend_chart": "backend-feedback",
+      "expanded_table_row_count": 137
+    },
+    {
+      "report": "latency/index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-hlxj45svm-panel-reliability-cases",
+        "mantine-hlxj45svm-panel-reliability-landed"
+      ],
+      "backend_chart": "backend-feedback",
+      "expanded_table_row_count": 137
     }
   ],
-  "shared_assets": [
-    {
-      "path": "report.js",
-      "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+  "root_navigation": {
+    "rendered_asset_sha256": {
+      "index.html": "cce7c1d57ad357162876c5d32175923c8b72d52d807851f00315e0fed6f3c6b2",
+      "latency/manifest.json": "24141396663fde1c0be1ab443cc1fb5b0841b590e0ffabe3b10212e1c4ce4889",
+      "reliability/manifest.json": "609af65d99823bc66d931b295d58487981d255fb6e00ed53434bf3ff1c408061",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+      "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
     },
-    {
-      "path": "report.css",
-      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
-    }
-  ],
-  "manifest_note": "Published manifest adds only the visual_validation reference after render verification; report and evidence bytes match the tested assets.",
+    "cases": [
+      {
+        "report": "index.html",
+        "theme": "dark",
+        "viewport": {
+          "height": 900,
+          "width": 1280
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      },
+      {
+        "report": "index.html",
+        "theme": "light",
+        "viewport": {
+          "height": 900,
+          "width": 1280
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      },
+      {
+        "report": "index.html",
+        "theme": "dark",
+        "viewport": {
+          "height": 844,
+          "width": 390
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      },
+      {
+        "report": "index.html",
+        "theme": "light",
+        "viewport": {
+          "height": 844,
+          "width": 390
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      }
+    ]
+  },
   "checks": [
-    "Actual pinned Mantine CDN CSS and React/Mantine modules loaded successfully",
-    "Desktop/mobile; light/dark; live browser preference transition",
-    "Populated median/p90 chart and expanded exact-head table",
-    "No page errors, console errors, failed requests or horizontal document overflow",
-    "Manual screenshot review completed after correcting inline whitespace"
+    "Real pinned CDN stylesheets and ESM modules",
+    "Initial light/dark themes and live preference changes",
+    "Both work cards and expanded dispatch accordions",
+    "Retained populated charts",
+    "Latency exact-head table expansion",
+    "No document overflow or browser errors"
   ],
-  "manually_reviewed_screenshots": [
+  "manual_review": "Representative desktop/mobile light/dark screenshots of both reports and navigation reviewed; cards, text, expanded controls and charts are readable.",
+  "screenshots": [
     {
-      "case": "light-mobile",
+      "case": "test_ci_report_refresh[dark-desktop-latency]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "bd7f4bf4819056f91e47fa8e10605b04eeb8f2632ff955f70ed9acee0b5e7ef4",
+      "test_output_relative_path": "files/0389faf82751b1a502a14bbf344e663b7be3aab151637e059d174076a77cc243.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[dark-mobile]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "843aaef36331726da96c0a5a51acd3f7a2585d5c47f2c919fae1561e5a8a3dcf",
+      "test_output_relative_path": "files/0aca017b5365703123b323a45c85615a29d7c9a7efc6f56b641ba9dd679214e9.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-latency]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "7467751f973bfab711c053f9af2e810c1b8db099596210ed57f3b44bf26d3306",
+      "test_output_relative_path": "files/1a204d9c1dafd430043e637cbc40ddc3ec46009b6739b6438765e2a6f1746f9e.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-latency]",
+      "checkpoint": "backend-current",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "7a94065daa00ba020fc6289e836e0d4963a2d6b4f57dc5cab6ef0a5a48c514d9",
+      "test_output_relative_path": "files/1ad7549361897ff1d5e418d978c7909cd124c67f34bdb6cbd097b47f250adf71.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-latency]",
       "checkpoint": "overview",
-      "sha256": "a4d76080e6df0e749e5c45de7f13cbe33501c2abb22d4904fb628a621422a112"
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "0f1a63aefb63a484380ea45443f9ba9c01e431a1104147e110f6ff1067d29943",
+      "test_output_relative_path": "files/25667ff11e50c1541faeff317150d69bdcd27780d51271106b95cfe15179a815.png"
     },
     {
-      "case": "light-desktop",
-      "checkpoint": "backend-current",
-      "sha256": "11eba69b2caac7aa73b206ddcb5b453d3883b84017d003b7c5a105f41f6fc9e0"
+      "case": "test_ci_report_refresh[light-mobile-latency]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "6df08b7d158f9f3826978aee80c27cf100cbffd6ae88aef6012be88501e8960e",
+      "test_output_relative_path": "files/2f702ddd1d444ee35baca485f3dc2501d540a4736a825ac5f13aa78383b99dad.png"
     },
     {
-      "case": "dark-desktop",
-      "checkpoint": "backend-current",
-      "sha256": "79b489e8f5b3bfeef46403f0947cf4b9d05b360e6d771048347e850a20bc4302"
+      "case": "test_ci_report_refresh[dark-mobile-latency]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "a442f5da0552d47ba70a5dd48f510781770cb7bf68b117f450faafc503bf608e",
+      "test_output_relative_path": "files/3a711392b0baa780aff8d2cd468b88fbff368fbedd4afb52a1d6a5669157ce42.png"
     },
     {
-      "case": "dark-mobile",
+      "case": "test_ci_report_refresh[light-mobile-latency]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "209ee2781f31bb1201375a05105e9a8dbe7c46616079f41590e33263af88929b",
+      "test_output_relative_path": "files/3fd22774e21cc9ae6ac4a299d6d8dd88490d4d714f39a1c2429fb88cb03a2b16.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[dark-desktop]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "93131c57d7937040bea1bbd771a2abba78bacce37c0c517f652bfbbd2aacf53e",
+      "test_output_relative_path": "files/4048f06e5616443ac8dc93d573036bbf2b1410e6e0a49d2d83872f452fe8ed25.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-latency]",
       "checkpoint": "backend-current",
-      "sha256": "fc23dba0bf50764f0664a804a799c7198d1e08ed5da4f6d0bfe3f534428e81de"
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "f1a24a6464d4674a8e42c897d0fc82ea069b6d26f89afba7bb15e549705b0bec",
+      "test_output_relative_path": "files/406cd3003901359f40e308892240e922d17f4668e346cffddb0256bc6fa1e1f2.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-latency]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "c03f925b3a24fef2aed5414dd4e06eeaefc043ab4b155424a1ffb69447f2a404",
+      "test_output_relative_path": "files/571c55ded67b579c9e1eb4678947409556ce697541ba8169cd55f11742df6b4e.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-latency]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "1589ad17f62c79792174590d388957f03e7044e96e32c98f2a70d7871840080d",
+      "test_output_relative_path": "files/5a272200edcc1fa0e9180ff0c69559b79cfe9fd3b4b41f5f12225fc90430951c.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-latency]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "38bdb99627970f565f7ef56013b33a3691089020695729719cb1ac3977039073",
+      "test_output_relative_path": "files/605947eebf834310dab77cad5cac58ed7566f48cc5056a59872d11fbbcb612ea.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-latency]",
+      "checkpoint": "backend-current",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "6e2a6cb639b4356a442f211810e5fc69b0e17b0fca8a5b4e1761c51e42eaaf94",
+      "test_output_relative_path": "files/6fb9fa968efd1729a1f67fef216c4425d6fcd303afc5b81077160ca96cf9f0ac.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-latency]",
+      "checkpoint": "backend-current",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "a755dfe97e56de4a39d1b323cb6f88a9f2d3c5bbef1ebb7d2b68c8c5588b6071",
+      "test_output_relative_path": "files/7330f55f49ec9e7f2f6830ad1c251ea7b43605d1176cb87d5219728c1582bfb1.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[dark-mobile]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "93272d0bd601d5e3e2a26be2529a19cc367a1d9637abc32a86ff4ac073024025",
+      "test_output_relative_path": "files/742bba3db296dc76ca99e065ac93f02848e67f5d4126f51a99e2d2e0c3e201e1.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-mobile]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "93272d0bd601d5e3e2a26be2529a19cc367a1d9637abc32a86ff4ac073024025",
+      "test_output_relative_path": "files/8bb0be6ca07528786bf1de112d6665a76d8bf27b8ad02b8a2d0c031f9cc26d1d.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-latency]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "bc31dda75a29889820a84671d27b0e194064b7da40d33069940e946bffb2cf1e",
+      "test_output_relative_path": "files/93f80f371fdcd7e949e1a016641c12d0847bffea042019bd01e3ca04b0e3b20b.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-latency]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "347ff0c65947bd6f6909b85f68bbffcead752eccad4f088f6ef4b40e44cebde3",
+      "test_output_relative_path": "files/9c8c0b9d08bca0c474d420519252c29b5002a1d9d20431d8c8f30d00aec9807e.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-latency]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "b231e6f49ae387fab1e1af77a818f1e85cae6e33fc46c372a62a4efaafa0abf2",
+      "test_output_relative_path": "files/9e6dfa1563e1d273283823fc8fdbe11aa97d92733eb96cc958d5453e5a2ea465.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-latency]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "afff18ba52c50dfd02eb7bf955cf0309e9b351ea1ae89e7ecc2e4dbedabc7fc4",
+      "test_output_relative_path": "files/adee847d61735e4116400329fac68fdf4ec687982d929a5f67a341ac9c875b9b.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-mobile]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "843aaef36331726da96c0a5a51acd3f7a2585d5c47f2c919fae1561e5a8a3dcf",
+      "test_output_relative_path": "files/b1c716ad9ba5e21ff8c10886c1a055afac13e592fe5f27973394c0e1aff60f61.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-latency]",
+      "checkpoint": "backend-current-expanded-first-rows",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "347ff0c65947bd6f6909b85f68bbffcead752eccad4f088f6ef4b40e44cebde3",
+      "test_output_relative_path": "files/b6d347b81438a787cd1e268efb6545ef9439c99203ed157ede9d1d4e23270ef5.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-latency]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "3cc49c8dc81b73078661c052fd10a74c87b5da773a8fd444f7ca85f848cd11ef",
+      "test_output_relative_path": "files/bb6228d9c34f2fbb09f0c275f09412bd21e0ab8ee2d4405455f160ce71e62684.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[dark-desktop]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "6b56249ed4eb080595977899406af2c07723935a1373a2b8557442a6fd8ae950",
+      "test_output_relative_path": "files/d8656b16fb902a3da2b4164ec7340e65f822e894e11b12cc4393fcd4f9035879.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-latency]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "6103a3672b0f38b606cc1d4ba900c0018355585435d5ee404913ed9b1ec86f53",
+      "test_output_relative_path": "files/dc9a7a34603edc48d2a324d02e5158d8196e5674d9c17ad92e985577f4da9cbc.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-latency]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "c810c8747df91915c61ca171c9f7debd751610075de353b26edc3d4cd1d917a3",
+      "test_output_relative_path": "files/e1e4e721ba6638e6a18ecd4c81feddef3f3bfb4522c6498217f1910b92b24835.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-desktop]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "93131c57d7937040bea1bbd771a2abba78bacce37c0c517f652bfbbd2aacf53e",
+      "test_output_relative_path": "files/e2421d7da2fb83f44d494cc32a17b94aaaf8ed0ec922c493c2a24caae910a01e.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-latency]",
+      "checkpoint": "backend-current-expanded-first-rows",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "21aaf8237224f25ee40c24e8c966cba4944d88339a6a8e2166048b81a28470bc",
+      "test_output_relative_path": "files/ed90dc7be4035fb48782715257051e40f06cf2df7514fe0d66b0c5f6339e9510.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-latency]",
+      "checkpoint": "backend-current-expanded-first-rows",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "b231e6f49ae387fab1e1af77a818f1e85cae6e33fc46c372a62a4efaafa0abf2",
+      "test_output_relative_path": "files/f9bbcdbd16505f8ac7f3049c9f554a99f00933ce39f5097c6256f6793306afc2.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-desktop]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "6b56249ed4eb080595977899406af2c07723935a1373a2b8557442a6fd8ae950",
+      "test_output_relative_path": "files/fbcdbf1da0c10f37cf7809d245812479849a2b6b136316266d09b46a3824f37c.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-latency]",
+      "checkpoint": "backend-current-expanded-first-rows",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "c3bf8b4e93caac2c80d40261466530f589cb8d3149eecd9980dfe262408b73d6",
+      "test_output_relative_path": "files/ffc90bdaceaa180537c1a7b5e6338fde781f49bac701c9aaa2d2b5b4cda5cb9b.png"
     }
   ]
 }

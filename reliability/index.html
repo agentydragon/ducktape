@@ -50,6 +50,7 @@
     >
     <script type="module">
       import {
+        Accordion,
         Anchor,
         Badge,
         Box,
@@ -69,7 +70,8 @@
       const evidenceResponse = await fetch("./evidence.json");
       if (!evidenceResponse.ok)
         throw new Error(`Evidence HTTP ${evidenceResponse.status}`);
-      const followup = (await evidenceResponse.json()).followup_refresh;
+      const evidence = await evidenceResponse.json();
+      const followup = evidence.followup_refresh;
 
       const pr = "https://github.com/agentydragon/ducktape/pull/15493";
       const run =
@@ -382,6 +384,113 @@
         <//>`;
       };
 
+      function ReliabilityWork() {
+        const review = evidence.backend_retry_review;
+        return html`<${Stack}
+          component="section"
+          id="reliability-dispatch"
+          gap="md"
+        >
+          <${Title} order=${2}>Priority 1: VM and browser reliability<//>
+          <${Text}
+            >22 of 102 green production-backend heads needed multiple Bazel
+            attempts. Those heads account for 47.5% of summed feedback time:
+            31m14s mean to green, compared with 9m30s for the 80 single-attempt
+            heads.<//
+          >
+          <${Text} size="sm" c="dimmed">${review.interpretation}<//>
+          <${SimpleGrid} cols=${{ base: 1, sm: 2 }}>
+            ${review.lanes.map(
+              (lane) =>
+                html`<${Paper} withBorder p="md">
+                  <${Stack} gap="sm">
+                    <${Title} order=${3}>${lane.name}<//>
+                    <${Badge} variant="light"
+                      >${lane.pr_state === "MERGED" ? "Merged" : lane.url ? "PR opened" : "Dispatched"}<//
+                    >
+                    <${Text} fw=${600}>${lane.status}<//>
+                    ${lane.url ? html`<${Anchor} href=${lane.url}>${lane.url}<//>` : null}
+                    <${Text}>${lane.summary}<//>
+                    <${Text} size="sm">${lane.validation}<//>
+                    <${Anchor} size="sm" href=${lane.focused_invocation_url}
+                      >Focused RBE validation<//
+                    >
+                    <${Anchor} size="sm" href=${lane.debug_note_url}
+                      >Investigation and remaining evidence boundaries<//
+                    >
+                  <//>
+                <//>`,
+            )}
+          <//>
+          <${Text}
+            >The 25 preceding failed checks include seven VM test failures and
+            four thread-browser failures. Two additional attempts include remote
+            execution failures while building the VM target. Targets can
+            co-fail; these counts are discovery leads, not per-target failure
+            rates.<//
+          >
+          <${Accordion} variant="contained" multiple=${true}>
+            <${Accordion.Item} value="reliability-cases">
+              <${Accordion.Control}
+                >Selected failed attempts and what remains unknown<//
+              >
+              <${Accordion.Panel}>
+                <${Stack} gap="md"
+                  >${review.selected_cases.map(
+                    (c) =>
+                      html`<${Paper} withBorder p="sm">
+                        <${Anchor}
+                          href=${`https://app.buildbuddy.io/invocation/${c.invocation}`}
+                          >PR #${c.pr} · ${c.target}<//
+                        >
+                        <${Text} size="sm" my="xs">${c.observation}<//>
+                        <${Text} size="sm" c="dimmed">${c.diagnosis}<//>
+                      <//>`,
+                  )}<//
+                >
+              <//>
+            <//>
+            <${Accordion.Item} value="reliability-landed">
+              <${Accordion.Control}
+                >Already landed: preserve the distinction between a fix and
+                measured recurrence<//
+              >
+              <${Accordion.Panel}>
+                <${Stack} gap="md"
+                  >${review.landed.map(
+                    (c) =>
+                      html`<${Paper} withBorder p="sm">
+                        <${Anchor}
+                          href=${`https://github.com/agentydragon/ducktape/pull/${c.pr}`}
+                          >#${c.pr} · ${c.status}<//
+                        >
+                        <${Text} size="sm" mt="xs">${c.summary}<//>
+                      <//>`,
+                  )}<//
+                >
+              <//>
+            <//>
+          <//>
+          <${Text} size="sm">${review.deferred}<//>
+          <${Text} size="sm"
+            ><${Anchor} href=${review.pod_split_disposition.source_url}
+              >TLS-only Pod split: keep disabled in required CI<//
+            >. ${review.pod_split_disposition.summary}<//
+          >
+          <${Text} size="sm" c="dimmed"
+            >Backend cohort window: 10 November 00:00–12 November 23:59:19 UTC;
+            results sampled ${review.population_observed_at_utc}. This
+            supplemental review uses current source
+            <${Anchor}
+              href=${`https://github.com/agentydragon/ducktape/commit/${review.inspected_devel_commit}`}
+              >${review.inspected_devel_commit}<//
+            >, reviewed ${review.reviewed_at_utc}. Earlier report populations
+            retain their original windows and source revisions.
+            <${Anchor} href="./evidence.json">Reviewed attempt inventory<//>.<//
+          >
+        <//>`;
+      }
+
       function Report() {
         return html`<${Container}
           component=${"main"}
@@ -389,11 +498,13 @@
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
         >
+          <${Title} order=${1}>Backend reruns: VM and browser repairs merged<//>
+          <${ReliabilityWork} />
           <${Stack} component="section" id="current" gap="sm" my="xl">
             <${Text} component="p" c="dimmed" my="sm">
-              ${"Current reliability snapshot · exact observation window 5 November 2026 07:20–12 November 07:20 UTC"}
+              ${"Retained mainline reliability snapshot · exact observation window 5 November 2026 07:20–12 November 07:20 UTC"}
             <//>
-            <${Title} order=${1} mb="sm">
+            <${Title} order=${2} mb="sm">
               ${"13 devel VM test failures; a PR head exposes confirmed shared-cgroup OOM loss"}
             <//>
             <${Text} component="p" my="sm">
@@ -1195,7 +1306,7 @@
                     <${Table.Tr}>
                       <${Table.Td}>${"3 · Systemd proof"}<//>
                       <${Table.Td}
-                        >${"Report whether the shared context has already ended immediately before the final proof read, without timing code or a longer budget."}<//
+                        >${"#15571 added the context-expiry diagnostic. Merged candidate #15957 gives the final proof read its own bounded deadline; historical budget exhaustion versus a slow D-Bus read remains unresolved."}<//
                       >
                       <${Table.Td}
                         >${"Only then choose between a scoped deadline repair and investigating the D-Bus read path. Keep the final empty-proof assertion."}<//
@@ -1230,7 +1341,7 @@
               <${Paper} withBorder p="md">
                 <${Text} fw=${700}>${"3 · Systemd proof"}<//>
                 <${Text} component="p" size="sm" my="sm"
-                  >${"Report whether the shared context has already ended before the final proof read. Then choose a scoped deadline repair or investigate the D-Bus read while keeping the final empty-proof assertion."}<//
+                  >${"#15571 added the context-expiry diagnostic. Merged candidate #15957 gives the final proof read its own bounded deadline while retaining the empty-proof assertion. Recurrence reduction remains unmeasured."}<//
                 >
               <//>
               <${Paper} withBorder p="md">

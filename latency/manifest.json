@@ -2,11 +2,11 @@
   "source_devel_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-12T23:59:19Z",
-  "published_at_utc": "2026-11-13T00:04:46.633034+00:00",
+  "published_at_utc": "2026-11-13T01:18:14.604118+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "667aa05f84c3f1177dfc9e458347715e89f3a9cc",
-  "report_sha256": "bf81e2c4a1f74cabd1c7c4031ba2da558faeaadab3e262fb479cb5b25a9a24f1",
-  "evidence_sha256": "c79ea9f519cab2dc7e865e4e7186bd7d2baede93096a0e29e23003add0cef4aa",
+  "previous_report_commit": "c3dd12dd637d1a8d25abc95303ae519f8a1b2e9e",
+  "report_sha256": "10edbd6e7487e8357e144afb7b65a44b934cb57f373c8dd4184884c56cf86f36",
+  "evidence_sha256": "48e63691e63d246b1f56638391466b7d73dc2e6fc71246c01153106a36b5311d",
   "evidence_schema_version": 3,
   "population": "137 latest observed backend PR heads:110 production (102green/4failed/4pending),22 backend tests/helpers,5 backend BUILD-only;635PR search frame",
   "feedback_clock": "First PR workflow creation to latest visible successful required-gate completion; not push-to-auto-merge eligibility",
@@ -19,5 +19,12 @@
   "earlier_all_pr_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "backend_collection_started_at_utc": "2026-11-13T00:01:14Z",
   "backend_observed_at_utc": "2026-11-13T00:03:05.170318+00:00",
-  "visual_validation": "visual-validation.json"
+  "visual_validation": "visual-validation.json",
+  "backend_retry_reviewed_at_utc": "2026-11-13T01:18:12.076914+00:00",
+  "backend_retry_source_devel_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+  "backend_retry_scope": "Supplement to existing reports: selected failed-attempt audit of the 22 recovered production-backend heads. The existing mainline, merged-PR and all-PR populations were not recollected.",
+  "backend_retry_population_window_utc": [
+    "2026-11-10T00:00:00Z",
+    "2026-11-12T23:59:19Z"
+  ]
 }
