@@ -201,6 +201,13 @@ pre-dispatch environment failure. That structured error includes `environment_st
 `request_outcome`; a process/read error also retains the observed cursor and output. Large result records use the normal `record_id` and
 `fragment_index` reassembly contract.
 
+Code-mode request sends and execution-start acknowledgements use `rpc_timeout_seconds`.
+`code_mode_observation_timeout_seconds` caps each requested JavaScript yield wait (default 300
+seconds); an observation reply has that capped wait plus the RPC budget. The cap applies to both
+execute and wait hints, before duration conversion. A timeout sends a best-effort cancellation
+signal, but proves neither that the cell stopped nor that an external effect was absent. Recovery
+retains the existing uncertainty and no-replay rules.
+
 The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as primitive strings:
 the delegate response has a `message` field but no structured error or cause field. Catching code
 must parse the JSON string for these fields; native `Error` properties require a host protocol change.

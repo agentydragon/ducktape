@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -244,19 +245,26 @@ func (r *Session) Request(ctx context.Context, request Operation, execute bool) 
 		return nil, err
 	}
 	defer r.manager.removeRequest(id, r)
-	if err := r.send(ctx, id, codeOperationFrame{Type: "operation/request", ID: id, Request: request}); err != nil {
+	request, observationWait := r.boundObservation(request)
+	sendCtx, cancelSend := context.WithTimeout(ctx, r.manager.rpcTimeout)
+	err = r.send(sendCtx, id, codeOperationFrame{Type: "operation/request", ID: id, Request: request})
+	cancelSend()
+	if err != nil {
+		r.cancelRequest(id, err)
 		return nil, err
 	}
 	if request.method() == "session/wait" {
 		defer r.setForeground(id)()
 	}
-	resultFrame, err := waitFrame(ctx, response)
+	responseTimeout := r.manager.rpcTimeout
+	if request.method() == "session/wait" {
+		responseTimeout += observationWait
+	}
+	responseCtx, cancelResponse := context.WithTimeout(ctx, responseTimeout)
+	resultFrame, err := waitFrame(responseCtx, response)
+	cancelResponse()
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			cancelCtx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
-			_ = r.send(cancelCtx, id, codeRequestSignal{Type: "operation/cancel", ID: id})
-			cancel()
-		}
+		r.cancelRequest(id, err)
 		return nil, err
 	}
 	value, err := validateCodeModeResult(resultFrame, request.method(), OperationResponsePhase)
@@ -274,20 +282,46 @@ func (r *Session) Request(ctx context.Context, request Operation, execute bool) 
 	if started.Type != "execution/started" || cellID == "" {
 		return nil, errors.New("code-mode execute response has no cellId")
 	}
-	if err := r.journalSink.CellStarted(ctx, r.CellHandle(cellID)); err != nil {
+	journalCtx, cancelJournal := context.WithTimeout(ctx, r.manager.rpcTimeout)
+	err = r.journalSink.CellStarted(journalCtx, r.CellHandle(cellID))
+	cancelJournal()
+	if err != nil {
+		r.cancelRequest(id, err)
 		return nil, err
 	}
 	defer r.setForeground(id)()
-	initialFrame, err := waitFrame(ctx, initial)
+	observationCtx, cancelObservation := context.WithTimeout(ctx, observationWait+r.manager.rpcTimeout)
+	initialFrame, err := waitFrame(observationCtx, initial)
+	cancelObservation()
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			cancelCtx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
-			_ = r.send(cancelCtx, id, codeRequestSignal{Type: "operation/cancel", ID: id})
-			cancel()
-		}
+		r.cancelRequest(id, err)
 		return nil, err
 	}
 	return validateCodeModeResult(initialFrame, request.method(), InitialResponsePhase)
+}
+
+// The host yields an observation at this hint; the cell's execution has no matching deadline.
+func (r *Session) boundObservation(request Operation) (Operation, time.Duration) {
+	limitMS := int(r.manager.observationTimeout / time.Millisecond)
+	switch operation := request.(type) {
+	case ExecuteOperation:
+		operation.Request.YieldTimeMS = min(operation.Request.YieldTimeMS, limitMS)
+		return operation, time.Duration(operation.Request.YieldTimeMS) * time.Millisecond
+	case WaitOperation:
+		operation.Request.YieldTimeMS = min(operation.Request.YieldTimeMS, limitMS)
+		return operation, time.Duration(operation.Request.YieldTimeMS) * time.Millisecond
+	default:
+		return request, 0
+	}
+}
+
+func (r *Session) cancelRequest(id int64, cause error) {
+	if !errors.Is(cause, context.Canceled) && !errors.Is(cause, context.DeadlineExceeded) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
+	defer cancel()
+	_ = r.send(ctx, id, codeRequestSignal{Type: "operation/cancel", ID: id})
 }
 
 // setForeground marks request id as the observation the model waits on and returns its reset.

@@ -21,7 +21,7 @@ type CodeModeHost struct {
 }
 
 func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *Store) *CodeModeHost {
-	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second), store: store}
+	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store: store}
 }
 
 func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner Owner, executor *Executor) (*CodeMode, error) {

@@ -502,3 +502,20 @@ func TestGatewayTemplateCannotInjectAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestCodeModeObservationBudgetMustFitWithRPCSlack(t *testing.T) {
+	s := fixtureSettings()
+	maximum := int(maxExecutorInitializeTimeoutSeconds) - s.RPCTimeoutSeconds
+	for _, seconds := range []int{1, maximum} {
+		s.CodeModeObservationTimeoutSeconds = &seconds
+		if err := s.Validate(); err != nil {
+			t.Fatalf("rejected observation budget %d: %v", seconds, err)
+		}
+	}
+	for _, seconds := range []int{0, -1, maximum + 1} {
+		s.CodeModeObservationTimeoutSeconds = &seconds
+		if err := s.Validate(); err == nil {
+			t.Fatalf("accepted invalid observation budget %d", seconds)
+		}
+	}
+}
