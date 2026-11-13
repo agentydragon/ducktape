@@ -1,0 +1,14 @@
+diff --git a/agentplane/app/testing/replication_process.py b/agentplane/app/testing/replication_process.py
+index 73744b1f23..37a48e5789 100644
+--- a/agentplane/app/testing/replication_process.py
++++ b/agentplane/app/testing/replication_process.py
+@@ -394,6 +394,9 @@ async def oidc_provider(
+                     + "\n"
+                 )
+             try:
++                # Temporary controlled provider stall; restored after the RBE experiment.
++                if path.endswith("/.well-known/openid-configuration"):
++                    await asyncio.sleep(5.25)
+                 response = await call_next(request)
+                 with provider_trace.open("a") as output:
+                     output.write(
