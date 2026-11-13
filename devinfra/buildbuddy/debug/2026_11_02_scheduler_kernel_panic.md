@@ -127,3 +127,50 @@ upstream message or issue was sent.
 Raw execution responses, kernel tails, the successful identity probe, ELF,
 extracted configuration and disassembly remain in task scratch. Investigation
 notes here contain the reviewed conclusions and durable invocation/source links.
+
+## 13 November architecture validation recurrence
+
+Native invocation [`a90059e6`](https://app.buildbuddy.io/invocation/a90059e6-cddf-459f-9928-fbd2d3c65ed1)
+validates the readonly guest-mount/shared-supervision candidate over source
+`8a555b21141fded2166fcc17cd14096187e22842`. Its first physical `test_vm`
+action starts at 18:52:45.089992 UTC and ends at 18:55:20.433288 UTC: 155.343s,
+530.514 CPU seconds and 3,033,096,192 bytes peak action-cgroup memory.
+It ends REAPI 14 / exit -2 because the Firecracker socket refuses the pause
+request. The retained `vm_log_tail.txt` shows Firecracker 1.16.2 loading and
+resuming a snapshot, then Linux `5.15.0 #1` faulting at
+`update_blocked_averages+0x273/0x740`, panicking in interrupt context and rebooting.
+The pause/socket failure follows the kernel death. Case exposure before that
+failure is unknown; final target results must retain the automatic retry.
+
+The same accepted invocation finishes successfully: its replacement VM process
+runs 525.032s and passes the full scenario. All three selected targets pass in
+722.499s Bazel elapsed. There are four NEW physical TestRunner records: two
+healthy direct guest contracts, one failed managed VM execution and one passing
+replacement. The 155.343s failure remains part of feedback and reliability cost.
+
+The log digest is `a4c52f83ee7ae97157b19ba1bec2e18ff77f75e6eb7c8ad3721d0743a45fac50`,
+24,191 bytes. The failed execution ID begins
+`/uploads/51d06d77-90de-4676-b257-ea68ebb1656e/`; its cached response provides the
+server-log digest. Track recurrence and recovery in #16222 and #16034 separately
+from application failures, outer log-observer loss and cached successes.
+
+Rechecking pinned provider source
+[`f3508d33`](https://github.com/buildbuddy-io/buildbuddy/tree/f3508d33d1fbe0482d05ef9b0f0b9bbd7dac4962)
+finds the same ownership boundary. Its Firecracker implementation selects the
+6.18 kernel through an internal default or a task experiment; the scheduler adds
+`upgrade-fc-guest-kernel` through its server-side feature decision. This is source
+capability, not deployed acceptance or a client-selectable kernel property.
+`recycle-runner=false` can force a cold action VM in that source, but remote
+snapshot permission and `local-only` do not prevent local snapshot restores.
+The earlier fresh-boot scheduler panic above already prevents treating restore
+as a necessary trigger. Do not discard useful fixture reuse based on one
+successful cold run.
+
+The next useful comparison is provider-controlled: identical full VM contracts,
+resources and snapshot policy on current and maintained-kernel cohorts. Verify
+the kernel digest and cold/restored path for each physical attempt. Stop on an
+unverified cohort identity or any same-signature panic in the repaired cohort;
+retain enough matched attempts to assess recurrence rather than counting a few
+passes as a fix. A kernel change should segregate snapshot configuration hashes,
+but actual loads must be checked. No provider contact, setting change or kernel
+rollout is performed here.
