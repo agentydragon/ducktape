@@ -757,7 +757,11 @@ class Egress(Construct):
             serves=[self.proxy],
             container="proxy",
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
-            env_variables={Settings.database_url_env: self.database_url, **self.container_env},
+            env_variables={
+                Settings.database_url_env: self.database_url,
+                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                **self.container_env,
+            },
             extra_ports=extra_ports,
             readiness=tls_grpc_probe(
                 port=self.admin.pod_port,
@@ -812,6 +816,12 @@ class Egress(Construct):
             )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
+        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
+        workload.container.mount(
+            "/var/run/public-web-pki",
+            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
+            read_only=True,
+        )
         workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
         workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)

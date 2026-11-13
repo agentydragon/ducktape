@@ -1670,6 +1670,8 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-egress
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: OTEL_SERVICE_NAME
               value: egress
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -1761,6 +1763,9 @@ spec:
             - mountPath: /etc/agentplane-egress/upstream-ca
               name: upstream-ca
               readOnly: true
+            - mountPath: /var/run/public-web-pki
+              name: configmap-public-web-pki
+              readOnly: true
             - mountPath: /etc/agentplane-egress/svid
               name: svid
               readOnly: true
@@ -1808,6 +1813,9 @@ spec:
         - configMap:
             name: agentplane-staging-egress-upstream-ca
           name: upstream-ca
+        - configMap:
+            name: public-web-pki
+          name: configmap-public-web-pki
         - name: svid
           secret:
             secretName: agentplane-egress-proxy-tls
