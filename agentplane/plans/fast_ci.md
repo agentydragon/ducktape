@@ -85,6 +85,15 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   composition and keep their restart, recovery and next-input assertions. Prove
   both removed and retained graph edges; removing an unused input is not evidence
   of a complete-feedback saving.
+  Generic ASGI serving also no longer imports MCP support: the MCP-specific
+  helper and existing endpoint case move to their owning test module. All 14
+  focused ASGI/MCP cases pass, including a real client cancellation/retry. One
+  CPython profile collects the same 24 Bridge cases with no MCP imports;
+  collection-only runs are not contract exposures or complete-feedback timings.
+  A source-pinned 4/8/8/4 Bridge probe passes the same 24 cases in all four runs.
+  Eight shards lower mean selected-target elapsed by 24.9% while using 62.8% more
+  measured worker CPU. The branch uses eight as a scheduling candidate; assess
+  its mixed workload and busy-window cost before a devel backport.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -135,8 +144,8 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   the same existing composition without MCP Edge; App, Actions, notification,
   controller and storage services remain. Deletion keeps its dedicated runner
   disk. Configured closure checks retain all 11 common service images and both
-  required runner disks. Required real-deployment CI must validate this extension;
-  the input cut is not a latency measurement. Probe and default/MCP profiles
+  required runner disks. Required CI at a69 passes both fresh deployment actions
+  and all five unchanged cases; the input cut is not a latency measurement. Probe and default/MCP profiles
   retain their previous image ownership.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
