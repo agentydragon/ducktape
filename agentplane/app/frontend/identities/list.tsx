@@ -2,7 +2,7 @@ import { Alert, Button, Group, Stack, Switch, Table, Text, Title } from "@mantin
 import type { JSX } from "react";
 import { useSearchParams } from "react-router";
 
-import type { Credential } from "../../../egress/egress_rules_pb";
+import type { Credential } from "../../../egress/api/rules/egress_rules_pb";
 import type { Identity, PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 import { useCredentialMetadata } from "../bindings/credential_watch";
 import { useIdentities, usePolicyResources } from "../policy/watch";

@@ -1,11 +1,6 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -63,8 +58,8 @@ py_test(
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
-        "//agentplane/egress:egress_rules_pb2",
-        "//agentplane/egress:egress_rules_pb2_grpc",
+        "//agentplane/egress/api/rules:egress_rules_pb2",
+        "//agentplane/egress/api/rules:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/identity/auth:listener",
@@ -193,105 +188,5 @@ py_test(
         "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-proto_library(
-    name = "egress_admin_proto",
-    srcs = ["egress_admin.proto"],
-    deps = [
-        ":egress_rules_proto",
-        "//agentplane/proto:identity_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "egress_admin_pb2",
-    deps = [
-        ":egress_admin_proto",
-        "@googleapis//google/api:annotations_proto",
-    ],
-)
-
-py_grpc_service_library(
-    name = "egress_admin_pb2_grpc",
-    proto = ":egress_admin_proto",
-    py_proto = ":egress_admin_pb2",
-)
-
-proto_library(
-    name = "egress_rules_proto",
-    srcs = ["egress_rules.proto"],
-    deps = [
-        "//agentplane/proto:identity_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "egress_rules_pb2",
-    deps = [":egress_rules_proto"],
-)
-
-py_grpc_service_library(
-    name = "egress_rules_pb2_grpc",
-    async_only = True,
-    proto = ":egress_rules_proto",
-    py_proto = ":egress_rules_pb2",
-)
-
-go_proto_library(
-    name = "egress_admin_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb",
-    proto = ":egress_admin_proto",
-    deps = [
-        ":egress_rules_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-        "@org_golang_google_protobuf//types/known/emptypb",
-    ],
-)
-
-go_proto_library(
-    name = "egress_rules_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb",
-    proto = ":egress_rules_proto",
-    deps = [
-        "//agentplane/proto:identity_go_proto",
-    ],
-)
-
-ts_proto_library(
-    name = "egress_rules_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":egress_rules_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:identity_pb",
-    ],
-)
-
-ts_proto_library(
-    name = "egress_admin_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":egress_admin_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":egress_rules_pb",
-        "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
     ],
 )

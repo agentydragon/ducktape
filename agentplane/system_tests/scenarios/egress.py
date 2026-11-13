@@ -38,7 +38,7 @@ from agentplane.action_service import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
-from agentplane.egress.egress_admin_pb2 import Decision
+from agentplane.egress.api.admin.egress_admin_pb2 import Decision
 from agentplane.egress.resources import placeholder_of
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2

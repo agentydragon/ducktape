@@ -53,7 +53,7 @@ import {
   WatchCredentialsResponseSchema,
   WatchDecisionsResponseSchema,
   type Decision,
-} from "../../../egress/egress_admin_pb";
+} from "../../../egress/api/admin/egress_admin_pb";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import { DurationSchema, TimestampSchema, ValueSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { SubjectSchema } from "../../../policy/api/v1alpha1/policy_types_pb";

@@ -11,8 +11,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/admin",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
-        "//agentplane/egress:egress_admin_go_proto",
-        "//agentplane/egress:egress_rules_go_proto",
+        "//agentplane/egress/api/admin:egress_admin_go_proto",
+        "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/decision",
         "//agentplane/egress/history",
         "//agentplane/egress/policy",
@@ -44,7 +44,7 @@ go_test(
     ],
     embed = [":admin"],
     deps = [
-        "//agentplane/egress:egress_admin_go_proto",
+        "//agentplane/egress/api/admin:egress_admin_go_proto",
         "//agentplane/egress/decision",
         "//agentplane/egress/history",
         "//agentplane/egress/policy",

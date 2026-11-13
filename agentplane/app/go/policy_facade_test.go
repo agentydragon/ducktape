@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
-	egresspb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	rulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
+	egresspb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
+	rulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

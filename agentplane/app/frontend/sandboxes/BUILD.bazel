@@ -171,7 +171,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/egress/api/admin:egress_admin_pb",
     ],
 )
 
@@ -182,7 +182,7 @@ agentplane_vitest_test(
         ":decision_fixture",
         ":decision_groups",
         "//:node_modules/vitest",
-        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/egress/api/admin:egress_admin_pb",
     ],
 )
 
@@ -193,7 +193,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/egress/api/admin:egress_admin_pb",
     ],
 )
 
@@ -212,7 +212,7 @@ ts_library(
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:watch_stream",
-        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/egress/api/admin:egress_admin_pb",
         "//agentplane/proto:identity_pb",
     ],
 )

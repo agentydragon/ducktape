@@ -2,7 +2,7 @@
 import { create, fromJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
-import { Decision_Outcome, DecisionSchema, type Decision } from "../../../egress/egress_admin_pb";
+import { Decision_Outcome, DecisionSchema, type Decision } from "../../../egress/api/admin/egress_admin_pb";
 
 export type DecisionFixture = Omit<Partial<Decision>, "at" | "host"> & { at: string; host: string };
 

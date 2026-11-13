@@ -11,8 +11,8 @@ import (
 	"slices"
 	"time"
 
+	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"

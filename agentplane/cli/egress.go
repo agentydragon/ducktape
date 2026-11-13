@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 )

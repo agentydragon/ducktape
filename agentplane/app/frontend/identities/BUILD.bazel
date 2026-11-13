@@ -67,7 +67,7 @@ ts_library(
     srcs = ["accounts.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/egress:egress_rules_pb",
+        "//agentplane/egress/api/rules:egress_rules_pb",
         "//agentplane/policy/v1:policy_service_pb",
     ],
 )
@@ -79,7 +79,7 @@ agentplane_vitest_test(
         ":accounts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/egress:egress_rules_pb",
+        "//agentplane/egress/api/rules:egress_rules_pb",
         "//agentplane/policy/v1:policy_service_pb",
     ],
 )
@@ -140,7 +140,7 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/bindings:credential_watch",
         "//agentplane/app/frontend/policy:watch",
-        "//agentplane/egress:egress_rules_pb",
+        "//agentplane/egress/api/rules:egress_rules_pb",
         "//agentplane/policy/v1:policy_service_pb",
     ],
 )

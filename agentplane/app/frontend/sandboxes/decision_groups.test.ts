@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/egress_admin_pb";
+import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/api/admin/egress_admin_pb";
 import { decisionFixture } from "./decision_fixture";
 import { decisionAt, decisionOutcome, decisionReason, groupDecisions } from "./decision_groups";
 

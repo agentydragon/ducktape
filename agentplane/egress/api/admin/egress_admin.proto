@@ -6,7 +6,7 @@ package agentplane.egress;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 import "google/api/annotations.proto";
-import "agentplane/egress/egress_rules.proto";
+import "agentplane/egress/api/rules/egress_rules.proto";
 import "agentplane/proto/identity.proto";
 
 service EgressAdmin {

@@ -24,7 +24,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/docs",
-        "//agentplane/egress:egress_rules_go_proto",
+        "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/docs",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service/api/history:history_service_go_proto",
@@ -83,7 +83,7 @@ go_test(
     embed = [":cli"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/egress:egress_rules_go_proto",
+        "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/notification_service/api/notifications:notifications_go_proto",

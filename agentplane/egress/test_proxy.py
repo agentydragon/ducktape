@@ -33,7 +33,7 @@ from sqlalchemy import create_engine, text
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress import egress_rules_pb2, egress_rules_pb2_grpc
+from agentplane.egress.api.rules import egress_rules_pb2, egress_rules_pb2_grpc
 from agentplane.egress.platform_routes import (
     PLATFORM_ROUTES_LISTEN_ADDRESS,
     PlatformRoute,
