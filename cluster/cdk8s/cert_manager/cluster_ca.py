@@ -31,8 +31,6 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTarget,
     BundleSpecTargetConfigMap,
     BundleSpecTargetConfigMapMetadata,
-    BundleSpecTargetNamespaceSelector,
-    BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -146,16 +144,7 @@ def chart(app: App) -> Chart:
         "public-web-pki",
         metadata=ApiObjectMetadata(name=PUBLIC_BUNDLE),
         sources=[BundleSpecSources(use_default_c_as=True)],
-        target=BundleSpecTarget(
-            config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY),
-            namespace_selector=BundleSpecTargetNamespaceSelector(
-                match_expressions=[
-                    BundleSpecTargetNamespaceSelectorMatchExpressions(
-                        key="kubernetes.io/metadata.name", operator="In", values=["airlock"]
-                    )
-                ]
-            ),
-        ),
+        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
     )
     add_workload_ca(chart)
     return chart
