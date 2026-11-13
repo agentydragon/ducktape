@@ -1,0 +1,108 @@
+diff --git a/agentplane/system_tests/k3s/defs.bzl b/agentplane/system_tests/k3s/defs.bzl
+index 639126a795..99d100ef18 100644
+--- a/agentplane/system_tests/k3s/defs.bzl
++++ b/agentplane/system_tests/k3s/defs.bzl
+@@ -190,7 +190,7 @@ image_manifest = rule(
+     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
+ )
+ 
+-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
++def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+     """Run one suite with fresh fixture state and the selected executor lifecycle.
+ 
+     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
+@@ -278,6 +278,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
+     py_test(
+         name = name,
+         size = "enormous",
++        args = args,
+         srcs = srcs,
+         main = main,
+         data = data,
+diff --git a/agentplane/system_tests/suites/BUILD.bazel b/agentplane/system_tests/suites/BUILD.bazel
+index 6c3c24b8b1..93f7bd3012 100644
+--- a/agentplane/system_tests/suites/BUILD.bazel
++++ b/agentplane/system_tests/suites/BUILD.bazel
+@@ -53,25 +53,68 @@ k3s_suite(
+     ],
+ )
+ 
+-# Each target starts exactly one stack. Per-test clients and Sandbox cleanup remain isolated.
++_POD_DEPS = [
++    ":pod_cases",
++    ":pod_runners",
++    "//:conftest",
++    "//agentplane/system_tests:conftest",
++    "//agentplane/system_tests/driver:case_batch",
++    "//agentplane/system_tests/driver:cluster",
++    "//agentplane/system_tests/driver:dispatcher_transport",
++    "//agentplane/system_tests/driver:scripted_upstream",
++    "//util:net",
++    "@pypi//pytest",
++    "@pypi//pytest_asyncio",
++    "@pypi//pytest_bazel",
++]
++
++# The unchanged default suite owns one stack. The manual partitions each own their own fresh stack.
+ k3s_suite(
+     name = "test_pod",
+     srcs = ["test_pod.py"],
+     stack = "pod",
+-    deps = [
+-        ":pod_cases",
+-        ":pod_runners",
+-        "//:conftest",
+-        "//agentplane/system_tests:conftest",
+-        "//agentplane/system_tests/driver:case_batch",
+-        "//agentplane/system_tests/driver:cluster",
+-        "//agentplane/system_tests/driver:dispatcher_transport",
+-        "//agentplane/system_tests/driver:scripted_upstream",
+-        "//util:net",
+-        "@pypi//pytest",
+-        "@pypi//pytest_asyncio",
+-        "@pypi//pytest_bazel",
++    deps = _POD_DEPS,
++)
++
++# Prior case spans balanced these two groups. Storage runs exclusively before the other selected cases.
++k3s_suite(
++    name = "test_pod_open_a_spike",
++    srcs = ["test_pod.py"],
++    main = "test_pod.py",
++    stack = "pod",
++    tags = ["manual"],
++    args = [
++        "-k",
++        "'operator_resumes_an_idle_pod or pod_mtls_session_survives_replacement or fresh_workspace_storage_survives_replacement or a_command_box_presents_its_own_svid or cert_manager_reissues_a_deleted_tls_secret'",
++    ],
++    deps = _POD_DEPS,
++)
++
++k3s_suite(
++    name = "test_pod_open_b_spike",
++    srcs = ["test_pod.py"],
++    main = "test_pod.py",
++    stack = "pod",
++    tags = ["manual"],
++    args = [
++        "-k",
++        "'a_standing_workload_authenticates or two_sandboxes_act_as_one or an_agent_messages_another or a_policy_granted_after_the_sandbox or sandbox_cli_reaches_the_dispatcher or a_preset_launches_an_initialized or codex_standing_instructions_after_suspend or two_harness_threads_keep_their_context or an_unknown_thread_is_not_found'",
++    ],
++    deps = _POD_DEPS,
++)
++
++# Two retained pairs occupy four Sandboxes; the TLS case's temporary impostor makes five.
++k3s_suite(
++    name = "test_pod_shared_spike",
++    srcs = ["test_pod.py"],
++    main = "test_pod.py",
++    stack = "pod",
++    tags = ["manual"],
++    args = [
++        "-k",
++        "'the_model_call_itself_goes_through_the_proxy or the_standing_instruction_reaches_the_model or a_cluster_ca_leaf or every_tab_follows_one_log or turns_nobody_watches_are_archived'",
+     ],
++    deps = _POD_DEPS,
+ )
+ 
+ # This suite scales the Dispatcher and deletes controller Pods; it needs its own stack.
