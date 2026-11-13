@@ -579,7 +579,8 @@ The per-chunk `residual_atomic_groups.json` lists every group containing a
 residual source unit. Each source unit has its source location, statement kind,
 bindings (empty for anonymous statements), and actual destination. Groups also
 include incoming and outgoing edge counts by kind and up to four examples per
-kind and direction; `truncated` marks incomplete examples. Edge totals count
+kind and direction, chosen from distinct neighboring groups; `truncated` marks
+incomplete examples. Edge totals count
 graph edges, not distinct dependencies. `fully_residual: false` means a group
 spans residual and selected destinations; the gate verdict remains authoritative.
 This report works with `--ownership-subset` without `--graphs`; it is a planning

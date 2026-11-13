@@ -214,7 +214,7 @@ fn rejected_split_atom_reports_both_destinations() {
 
 #[test]
 fn boundary_examples_are_bounded_and_marked_when_truncated() {
-    let source = "const a = 1, b = 2, c = 3, d = 4, e = 5, f = 6;\nconst sum = a + b + c + d + e + f;\nconsole.log(sum);\n";
+    let source = "const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\nconst f = 6;\nconst sum = a + b + c + d + e + f;\nconsole.log(sum);\n";
     let subset = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(subset.path(), r#"{"modules":[]}"#).unwrap();
     let fixture = run_fixture_without_graphs_with_args(
@@ -237,5 +237,12 @@ fn boundary_examples_are_bounded_and_marked_when_truncated() {
     let edges = &group["outgoing"]["eager_use"];
     assert!(edges["total"].as_u64().unwrap() > 4);
     assert_eq!(edges["examples"].as_array().unwrap().len(), 4);
+    let neighbors: std::collections::BTreeSet<_> = edges["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|example| example["other_atomic_group"].as_str().unwrap())
+        .collect();
+    assert_eq!(neighbors.len(), 4);
     assert_eq!(edges["truncated"], true);
 }

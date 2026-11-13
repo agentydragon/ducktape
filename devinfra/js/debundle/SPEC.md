@@ -174,7 +174,7 @@ have at least one residual-assigned source unit, using the exact assignment
 being validated. It identifies each source unit, including non-binding
 statements, its destination and source location. Incoming and outgoing edge
 counts are exact graph-edge counts; each kind and direction has at most four
-examples and a truncation flag. Groups spanning selected and residual
+examples from distinct neighboring groups and a truncation flag. Groups spanning selected and residual
 destinations remain visible. The report is diagnostic and does not assert that
 moving any group is realizable; full-report chunk selection applies normally.
 Each chunk's graph summary and module report records its retained module paths

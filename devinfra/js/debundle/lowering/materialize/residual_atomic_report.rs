@@ -94,14 +94,21 @@ fn add_edge(
     let summary = summaries.entry(edge.reason.kind()).or_default();
     summary.total += 1;
     if summary.examples.len() < EDGE_EXAMPLES_PER_KIND {
-        summary.examples.push(EdgeExample {
-            source_unit: source_unit_key(edge.from),
-            target_unit: source_unit_key(edge.to),
-            other_atomic_group: atomic_group_key(other_group),
-            other_destination: destination(assignment, assignment.assignment().of(other_unit)),
-            binding: edge.reason.binding.as_ref().map(|id| id.0.to_string()),
-            constrains_init_order: edge.reason.constrains_init_order(),
-        });
+        let other_atomic_group = atomic_group_key(other_group);
+        if !summary
+            .examples
+            .iter()
+            .any(|example| example.other_atomic_group == other_atomic_group)
+        {
+            summary.examples.push(EdgeExample {
+                source_unit: source_unit_key(edge.from),
+                target_unit: source_unit_key(edge.to),
+                other_atomic_group,
+                other_destination: destination(assignment, assignment.assignment().of(other_unit)),
+                binding: edge.reason.binding.as_ref().map(|id| id.0.to_string()),
+                constrains_init_order: edge.reason.constrains_init_order(),
+            });
+        }
     }
     summary.truncated = summary.total > summary.examples.len();
 }

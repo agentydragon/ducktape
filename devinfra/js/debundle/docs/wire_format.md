@@ -105,7 +105,8 @@ The opt-in `residual_atomic_groups.json` reports the actual run assignment,
 including ownership subsets, without exporting a full graph. Each group has
 source-unit rows (including anonymous statements with empty `bindings`), current
 destinations and `fully_residual`. `incoming` and `outgoing` are keyed by edge
-kind and contain exact edge totals, up to four examples, and `truncated`.
+kind and contain exact edge totals, up to four examples from distinct neighboring
+groups, and `truncated`.
 Each example identifies both endpoint units, the other atomic group and endpoint
 destination, the binding when present, and whether it constrains initialization.
 Examples are bounded evidence, not an exhaustive dependency closure.
