@@ -3919,7 +3919,7 @@ fallback. This design does not block the active identity cutover.
 - **`APP_AGENT_TOKEN_DECISION` (test-fixture conversion merged in
   [#15448](https://github.com/agentydragon/ducktape/pull/15448))**: staging live suites and hand-run
   scripts still use the app's `agentplane-agent` TokenReview path (`caller()` in
-  `app/go/auth/auth.go`). Decide whether they move to real-issuer ID tokens; remove its
+  `app/internal/auth/auth.go`). Decide whether they move to real-issuer ID tokens; remove its
   `token_subjects` rendering (`cluster/cdk8s/agentplane/app_settings.py`,
   `system_tests/deployment/fixture_chart.py`) and `AGENT_SERVICE_ACCOUNT` in
   `system_tests/driver/cluster.py` only after every remaining caller has moved. The
@@ -3958,7 +3958,7 @@ fallback. This design does not block the active identity cutover.
 - **The app's `agentplane-agent` bearer** (`APP_AGENT_TOKEN_DECISION`, above): the last agent-side
   TokenReview path. Its callers are the system-test driver (`system_tests/driver/cluster.py`),
   the shared-cluster allocation probe (`system_tests/x/shared_cluster/allocation.py`) and hand-run
-  scripts; `caller()` in `app/go/auth/auth.go` and the `token_subjects` renderings go with the decision.
+  scripts; `caller()` in `app/internal/auth/auth.go` and the `token_subjects` renderings go with the decision.
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
   `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
   (`history_service/internal/rpc/service.go`), EnvironmentService management and the lifecycle manager

@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"google.golang.org/grpc"

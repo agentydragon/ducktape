@@ -17,7 +17,7 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	webpushpb "github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"

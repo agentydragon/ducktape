@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"gopkg.in/yaml.v3"
 )

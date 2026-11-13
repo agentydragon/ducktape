@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
 	egresspb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	rulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"

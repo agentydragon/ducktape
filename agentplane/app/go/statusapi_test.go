@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/status"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

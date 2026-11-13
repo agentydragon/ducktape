@@ -308,8 +308,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//agentplane/app:test_action_api`, `//agentplane/action_service/api:unit_test`, and
   `//agentplane/action_service/api:integration_test`: signed app-federation flows, Go operator-token
   claim verification, and operator-only Action Service admission.
-- `//util:test_oidc_principal`, `//agentplane/app/go/federation:unit_test`, and
-  `//agentplane/app/go/auth:session_integration_test`: strict shared verification, independently
+- `//util:test_oidc_principal`, `//agentplane/app/internal/federation:unit_test`, and
+  `//agentplane/app/internal/auth:session_integration_test`: strict shared verification, independently
   selected login/target profiles, serialized login-token renewal, and the signed OIDC login/session
   lifecycle across replicas.
 

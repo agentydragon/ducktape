@@ -8,8 +8,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/danielgtaylor/huma/v2"
 )
 

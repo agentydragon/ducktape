@@ -88,13 +88,13 @@ get their Threads once it does.
 
 - `go/`: configuration, Huma REST routes, raw HTTP streams and the service lifecycle. The generated
   frontend API comes from `//agentplane/app/go:export_schema_bin`.
-- `go/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
-  History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
-- `go/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
+- `internal/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
+  History owns event storage, folding and evidence; `internal/historydata/` reads it through gRPC.
+- `internal/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
-- `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
+- `internal/auth/` and `internal/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
   exchange. Logout, expiry and replica notifications end browser streams.
-- `go/migrations/` and `runtime.go`: embedded Goose schema and service startup. `runtime.go` uses
+- `internal/migrations/` and `runtime.go`: embedded Goose schema and service startup. `runtime.go` uses
   the shared `agentplane/postgres/migrate` lifecycle before opening the API.
 - `settings.py`, `presets.py`, `action_federation_settings.py`, `oidc.py` and
   `sandbox_models.py`: deployment configuration schema used by cdk8s.

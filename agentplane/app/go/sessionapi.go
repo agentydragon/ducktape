@@ -9,14 +9,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"google.golang.org/grpc"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
+	appbridge "github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

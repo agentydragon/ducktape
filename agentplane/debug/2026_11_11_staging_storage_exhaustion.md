@@ -7,7 +7,7 @@ Follow-up: [sampler cutover and live storage measurements, 2026-11-12](../centra
 At 09:53 UTC, History Service logged failed event pushes and stalled thread folds: PostgreSQL
 could not extend relation files (`No space left on device`). By 09:58, Electric's logical
 replication repeatedly failed because PostgreSQL could not write a `pg_logical/snapshots` file.
-Electric exited, its Service had no ready endpoint, and the app's [Electric proxy](../app/go/proxy/electric.go)
+Electric exited, its Service had no ready endpoint, and the app's [Electric proxy](../app/internal/proxy/electric.go)
 returned `thread sync is unavailable`. At 10:02, CNPG reported `Not enough disk space` and
 `Ready=False`; the primary container restarted with `no free disk space for WALs`. This is an
 incident snapshot, not a claim about current status or recovery.
