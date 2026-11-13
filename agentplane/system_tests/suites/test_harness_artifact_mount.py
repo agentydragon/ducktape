@@ -29,8 +29,10 @@ def deployment() -> None:
 
 
 def _mount_artifacts(inputs: StackInputs, runfiles: Runfiles) -> None:
-    claude = runfiles.root() / os.environ["HARNESS_CLAUDE_RLOCATION"]
-    codex = runfiles.root() / os.environ["HARNESS_CODEX_RLOCATION"]
+    # Runfiles.Path re-roots relative path operations; derive mount destinations
+    # with ordinary filesystem Paths.
+    claude = Path(str(runfiles.root() / os.environ["HARNESS_CLAUDE_RLOCATION"]))
+    codex = Path(str(runfiles.root() / os.environ["HARNESS_CODEX_RLOCATION"]))
     sources = [(claude.resolve(), "/opt/harnesses/claude", "File")]
     codex_root = codex.parent.parent
     # Each declared file is mounted directly. Resolving a whole runfiles directory
@@ -40,6 +42,7 @@ def _mount_artifacts(inputs: StackInputs, runfiles: Runfiles) -> None:
         for path in sorted(codex_root.rglob("*"))
         if path.is_file()
     )
+    assert any(destination == "/opt/harnesses/codex/bin/codex" for _, destination, _ in sources)
     evidence = []
     for document in inputs.fixture.objects:
         if document["kind"] != "SandboxTemplate" or "pod" not in document["spec"]:
