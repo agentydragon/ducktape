@@ -183,7 +183,7 @@ The standalone [MCP edge](../mcp_edge/README.md) serves `/mcp` and OAuth protoco
 authenticates external bearers, resolves each Connection to its currently bound, labeled
 ServiceAccount, and calls this service with that workload identity. The Action Service does not
 serve `/mcp`, ConnectionService, or the external OAuth protocol. See the edge's
-[MCP handler](../mcp_edge/mcpserver/server.go) and [bearer verifier](../mcp_edge/authserver/tokens.go).
+[MCP handler](../mcp_edge/internal/mcpserver/server.go) and [bearer verifier](../mcp_edge/authserver/tokens.go).
 The `basic` `PolicySet` controls Sandbox egress; it does not grant MCP edge authority.
 
 ### External OAuth
@@ -245,7 +245,7 @@ executor. The cancelled receipt stays readable by request ID or submission key. 
 of cancelling or disconnecting a wait.
 
 `get_action_result` presents an outcome as an MCP tool result (see the
-[implementation](../mcp_edge/mcpserver/results.go)): an MCP group's stored `CallToolResult` is
+[implementation](../mcp_edge/internal/mcpserver/results.go)): an MCP group's stored `CallToolResult` is
 relayed with all content blocks, and a Sandbox group's
 stored JSON object is returned as structured content with the same JSON in one text block. A request
 still waiting on its decision or execution says so as an ordinary result; a denied, cancelled, failed
@@ -281,7 +281,7 @@ group descriptions, or hidden schemas through nested payloads.
 ### Direct tools
 
 A group's `direct_tools` names Actions an external Connection also gets as MCP tools of their own
-([implementation](../mcp_edge/mcpserver/direct.go)), named `<group>__<action>` with the Action's
+([implementation](../mcp_edge/internal/mcpserver/direct.go)), named `<group>__<action>` with the Action's
 schema, description, title and annotations (mirrored from an MCP backend's `tools/list`, declared by
 the Sandbox roster). `/mcp` lists only those currently offered Actions that the caller's policy
 marks auto-approvable. A group offering them must not have `__` in its key, and a Sandbox group's
@@ -291,7 +291,7 @@ A call is submitted as decided-only with a server-minted idempotency key and the
 `Direct tool call`. If no policy approves it, nothing is persisted; the MCP error gives the policy
 reasons and points at `request_action`. A decided call waits up to the MCP edge's
 `direct_wait_seconds` setting, capped by `max_wait_seconds`, and answers through the same MCP result
-formatter (see the [implementation](../mcp_edge/mcpserver/results.go)) as `get_action_result`, so an
+formatter (see the [implementation](../mcp_edge/internal/mcpserver/results.go)) as `get_action_result`, so an
 unfinished one names its request to keep waiting on. A configured name the caller's
 policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
 is per request with no `tools/list_changed`: a client holding an older list only meets refusals,

@@ -8,6 +8,6 @@ go_library(
     visibility = [
         "//agentplane/action_service:__pkg__",
         "//agentplane/cli:__pkg__",
-        "//agentplane/mcp_edge/mcpserver:__pkg__",
+        "//agentplane/mcp_edge/internal/mcpserver:__pkg__",
     ],
 )

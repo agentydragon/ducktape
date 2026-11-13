@@ -3944,7 +3944,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   `ReadSessionObservations` and `ReadNativeFrames`, the debug UI): squash to "Event" if the operator
   agrees it is not a deliberate distinction. Source: [frontend TODO](../app/frontend/TODO.md#thread-view-ux).
 - **One result shape for executors:** the MCP edge's per-executor result rendering
-  (`mcp_edge/mcpserver/results.go`) goes if the Sandbox executor answers as an MCP tool. Source:
+  (`mcp_edge/internal/mcpserver/results.go`) goes if the Sandbox executor answers as an MCP tool. Source:
   [Action Service TODO](../action_service/TODO.md#executors-that-answer-as-mcp-tools).
 - **Frozen:** [`WORKLOAD_AUDIENCE_RENAME`](task_freezer.md#workload_audience_rename--rename-the-agentplane-egress-audience)
   (the `agentplane-egress` audience name; backend callers keep the tokens) and

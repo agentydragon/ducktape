@@ -13,7 +13,7 @@ import (
 	"golang.org/x/oauth2"
 
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver"
 )
 
 func TestACodeExchangeActivatesTheGrantItIssuesTokensFor(t *testing.T) {
