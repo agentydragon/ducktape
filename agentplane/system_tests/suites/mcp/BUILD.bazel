@@ -71,6 +71,83 @@ k3s_suite(
     ],
 )
 
+# Manual slices retain the required combined gate while allowing the two deployment profiles to
+# be exercised independently. Both targets select from the same seven collected cases.
+k3s_suite(
+    name = "test_services_mcp_candidate",
+    srcs = ["test_services.py"],
+    args = [
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_dispatcher_central_setup_tool_and_retained_answer",
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume",
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_gateway_roll_keeps_live_central_read_and_turn",
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_gateway_exec_server_loss_notifies_active_central_turn",
+    ],
+    main = "test_services.py",
+    stack = "mcp",
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/mcp_edge/api/connection:connection_service_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:mcp_connection",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:mcp",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+k3s_suite(
+    name = "test_services_central_candidate",
+    srcs = ["test_services.py"],
+    args = [
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_deployed_discovery_and_registration",
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_external_mcp_connection_uses_its_consented_identity",
+        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_policy_binding_auto_approves_the_bound_sandbox",
+    ],
+    main = "test_services.py",
+    stack = "central_services",
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/mcp_edge/api/connection:connection_service_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:mcp_connection",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:mcp",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Each disruptive Gateway case owns a stack so an aborted central turn cannot send an
 # unanswered model request into the following case's scripted upstream.
 k3s_suite(
