@@ -1,4 +1,4 @@
-// Package historydata reads the generated History Service API and validates its cursor windows.
+// Package historydata reads and validates Session metadata from the generated History Service API.
 package historydata
 
 import (
@@ -20,7 +20,6 @@ var (
 // Reader is the generated History Service read boundary. The concrete client is
 // historyclient.Client; tests can provide the same generated-message contract.
 type Reader interface {
-	ReadSessionObservations(context.Context, *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error)
 	GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error)
 	BatchGetSessionSummaries(context.Context, *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error)
 	FindSessions(context.Context, *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error)
@@ -127,17 +126,6 @@ func validateSummary(message *historypb.SessionSummary) error {
 		}
 	}
 	return nil
-}
-
-func (s *Store) ReadWatermark(ctx context.Context, id uuid.UUID) (uint64, error) {
-	page, err := s.reader.ReadSessionObservations(ctx, &historypb.ReadSessionObservationsRequest{SessionId: id.String(), Limit: 1})
-	if status.Code(err) == codes.NotFound {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	return page.GetLastCursor(), nil
 }
 
 // CurrentEpoch reports the fold epoch when History has materialized the Session.

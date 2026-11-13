@@ -22,16 +22,19 @@ serves the SPA and service worker on the same public origin through Gateway path
 authentication and streaming requests reach this service directly.
 
 The mounted `app-config` YAML's optional `electric_url` enables the authenticated thread-sync API
-and Electric health probe. Omitting it leaves REST and SSE available without Electric; backend
+and Electric health probe. Omitting it leaves the other APIs available without Electric; backend
 lifecycle and model-smoke fixtures use this composition. Electric configuration does not control
 static-file serving. `AGENTPLANE_CONFIG_FILE` is the only environment setting that selects the
 static configuration file; database and OIDC credentials are separate Secret inputs. Deploy the image
 and `app-config` together; during a brief image/config mismatch the new binary fails startup until
 both converge.
 
-The retained-event SSE API follows History's `FollowSession` RPC, resuming upstream renewals from
-its covered cursor. The app adds attachment and terminal feed frames from History summaries;
-protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decimal strings.
+Direct archive readers use the generated History facade's `ReadSessionEvents` pages. Responses
+use standard ProtoJSON, with 64-bit integers encoded as decimal strings. Readers advance only
+through the returned entries and reported settlement/removal ranges; the page's global watermark
+can be ahead of a full page. Completion predicates belong to the reader: waiting for a successful
+turn requires its exact input command's admission and durable terminal event in a covered prefix. Native backend
+clients can use History's `FollowSession` gRPC stream.
 
 ## Sandbox lifecycle ownership
 
@@ -244,10 +247,10 @@ the execution outcome stays separate (a failure is badged, a success is not). To
 their badges even while collapsed, and interrupted items do not become streaming again when
 a later turn starts.
 
-The retained-event SSE API reads archived events through the History Service on whichever replica
-receives its request. The History Service's fold-commit notices and the app's
-transactional `NOTIFY` wake Thread and inventory readers; both are hints, and the History Service's
-cursor remains authoritative.
+The History facade reads archived events through the History Service on whichever app replica
+receives its request. Archive readers capture History's `committed_cursor`, independently of the
+lagging folded Thread view. The History Service's fold-commit notices and the app's transactional
+`NOTIFY` wake Thread and inventory readers; both are hints, and durable reads remain authoritative.
 
 `/#/threads/{id}` combines app-owned Thread metadata from `/upstream/app/v1/threads/{id}` with the
 History Service's generated `/upstream/history/v1/sessions/{id}/summary`, using generated protobuf
@@ -623,7 +626,7 @@ the requested outcome.
 
 Thread defaults may also include a one-time setup script. The app includes the resolved cwd and
 setup source in `CreateSession`; the placement owner records setup stdout, stderr and completion in
-the Thread event stream, then starts the harness only after setup succeeds. A setup failure is
+Session History, then starts the harness only after setup succeeds. A setup failure is
 recorded against the Session and setup cannot be replayed under the same Session ID. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 

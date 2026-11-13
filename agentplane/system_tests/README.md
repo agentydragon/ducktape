@@ -61,9 +61,9 @@ for VM image layout and lifecycle.
 
 ## Behavior-specific anchors
 
-- [`thread_stream.py`](scenarios/thread_stream.py) checks archived event IDs, reconnect from
-  `Last-Event-ID`, command identity, and turns that complete without a watching tab. History can
-  settle streamed deltas, so reads need not contain every cursor another tab observed.
+- [`thread_history.py`](scenarios/thread_history.py) checks concurrent typed History readers,
+  cursor resume, command identity, and turns that complete without a reader. History can settle
+  streamed deltas, so readers apply reported corrections and compare the retained archive.
 - [`suspend_resume.py`](scenarios/suspend_resume.py) checks that a new Sandbox incarnation keeps
   the same storage and archived event prefix while native Sessions continue. Restart and attach
   failure boundaries belong to `//agentplane/env/e2e:test_restart` and `//agentplane/env/e2e:test_attach`.

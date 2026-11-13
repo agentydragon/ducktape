@@ -201,6 +201,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = [
+        "//agentplane/app:__subpackages__",
         "//agentplane/system_tests:__subpackages__",
     ],
     deps = [
@@ -225,7 +226,10 @@ py_library(
 py_library(
     name = "history_reads",
     srcs = ["history_reads.py"],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
+    visibility = [
+        "//agentplane/app:__subpackages__",
+        "//agentplane/system_tests:__subpackages__",
+    ],
     deps = [
         ":client",
         "//agentplane/history_service/api/history:history_service_pb2",

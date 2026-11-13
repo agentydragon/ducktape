@@ -205,7 +205,9 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:client",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:history_reads",
         "//agentplane/app/testing:pytest_logfile",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:runtime_fixtures",
@@ -216,6 +218,7 @@ py_test(
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/testing:history",
         "//agentplane/history_service/testing:protojson",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:client",

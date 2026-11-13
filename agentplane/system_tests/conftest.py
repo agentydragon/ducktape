@@ -88,7 +88,7 @@ def pytest_runtest_makereport(
 async def client(
     base_url: str, token: str, request: pytest.FixtureRequest, phase_tracer: trace.Tracer
 ) -> AsyncIterator[Client]:
-    async with Client(base_url=base_url, token=token) as opened:
+    async with Client.connect(base_url=base_url, token=token) as opened:
         try:
             yield opened
         finally:

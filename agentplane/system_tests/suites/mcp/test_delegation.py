@@ -96,7 +96,7 @@ async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: str) ->
     )
     async with (
         async_port_forward(forward) as endpoint,
-        Client(base_url=f"http://{endpoint}", token=token) as cleanup_client,
+        Client.connect(base_url=f"http://{endpoint}", token=token) as cleanup_client,
     ):
         await suspend_and_delete(cluster, cleanup_client, name, uid)
 
@@ -124,7 +124,7 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     try:
         # Close this setup transport before deliberately removing its app Pod. Cleanup opens
         # a fresh port-forward; a failed scenario must not capture diagnostics through a dead one.
-        async with Client(base_url=base_url, token=deployment.token) as setup_client:
+        async with Client.connect(base_url=base_url, token=deployment.token) as setup_client:
             request = environment_service_pb2.CreateEnvironmentRequest(
                 name=name, template=POD_TEMPLATE, identity=identity["name"]
             )

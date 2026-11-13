@@ -9,9 +9,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from http import HTTPStatus
-from types import TracebackType
 from typing import Any, Self
 from urllib.parse import quote
 from uuid import UUID
@@ -60,29 +60,28 @@ def _thread_not_found(error: BaseException) -> bool:
 
 
 class Client:
-    """Async context manager over one deployment of the app."""
+    """App API methods over an existing authenticated HTTP client."""
 
-    def __init__(self, *, base_url: str, token: str) -> None:
+    def __init__(self, http: httpx.AsyncClient) -> None:
         self.opened_sandbox_uids: set[str] = set()
-        self._http = httpx.AsyncClient(
+        self._http = http
+
+    @classmethod
+    @asynccontextmanager
+    async def connect(cls, *, base_url: str, token: str) -> AsyncIterator[Self]:
+        """Own a bearer-authenticated transport for the lifetime of the context."""
+        async with httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {token}"},
             timeout=httpx.Timeout(REQUEST_SECONDS),
             follow_redirects=False,
-            event_hooks={"request": [self._inject_trace_context]},
-        )
+            event_hooks={"request": [cls._inject_trace_context]},
+        ) as http:
+            yield cls(http)
 
     @staticmethod
     async def _inject_trace_context(request: httpx.Request) -> None:
         TraceContextTextMapPropagator().inject(request.headers)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
-    ) -> None:
-        await self._http.aclose()
 
     async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
         """The decoded body, or None for a successful empty lifecycle response."""
@@ -205,7 +204,9 @@ class Client:
         request = environment_service_pb2.EnvironmentMutationRequest(target=target)
         await self._json("POST", f"{self._environment_path(target)}:suspend", json=MessageToDict(request))
 
-    async def resume_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
+    async def resume_sandbox(
+        self, target: identity_pb2.EnvironmentTarget
+    ) -> environment_service_pb2.ResumeEnvironmentResponse:
         request = environment_service_pb2.ResumeEnvironmentRequest(target=target)
         data = await self._json("POST", f"{self._environment_path(target)}:resume", json=MessageToDict(request))
         response = ParseDict(data, environment_service_pb2.ResumeEnvironmentResponse())
@@ -214,6 +215,7 @@ class Client:
             environment_service_pb2.RESUME_OUTCOME_ALREADY_RUNNING,
         ):
             raise RuntimeError(f"Environment resume was not accepted: {response}")
+        return response
 
     async def delete_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
         await self._json("DELETE", self._environment_path(target), params={"target.uid": target.uid})

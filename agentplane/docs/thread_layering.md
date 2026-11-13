@@ -283,8 +283,10 @@ E(41, command_admitted { command: M }) = EventEntry {
 have the same value; they do not advance independently. The app submits the command through the
 Session Dispatcher and receives a durable `Dispatch`; the Dispatcher delivers to the runner through
 the Gateway proxy, and the runner later pushes `CommandAdmitted` and other entries to History with
-`SessionJournalIngress.Push`. HTTP/SSE carry generated payloads in protobuf JSON. Native sketches omit
-unrelated request fields.
+`SessionJournalIngress.Push`. Generated HTTP facades carry protobuf JSON. The browser follows
+History's materialized Thread projection through Electric; direct archive readers use History's
+cursor-based reads or native `FollowSession` gRPC stream. Native sketches omit unrelated request
+fields.
 
 ### Dispatcher admission, runner result
 
@@ -310,6 +312,7 @@ sequenceDiagram
     participant G as Runner Gateway proxy
     participant R as Runner and journal
     participant HS as History Service
+    participant E as Electric
     participant H as Codex harness
     F->>A: POST /upstream/dispatcher/v1/sessions/T:changeModel<br/>commandId:M, sandbox:S, sandboxUid:U, model:new-model
     A->>SD: Generated ChangeModel {command_id:M, session_id:T, sandbox:S, sandbox_uid:U, model:new-model}
@@ -328,8 +331,10 @@ sequenceDiagram
     SD-->>A: WatchDispatches T reports M changed
     A->>SD: ListDispatches T
     SD-->>A: Dispatch M runner-admitted
-    A-->>F: SSE snapshot, Dispatch M runner-admitted
-    A-->>F: SSE id:41, data:E41
+    A-->>F: Dispatch watch update, M runner-admitted
+    Note over HS,E: Committed projection reaches Electric via logical replication
+    E-->>A: Projected admission for M
+    A-->>F: Electric shape update for M
     Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /upstream/dispatcher/v1/sessions/T:submitInput<br/>commandId:I, sandbox:S, sandboxUid:U, text:Continue the task
     A->>SD: Generated SubmitInput {command_id:I, session_id:T, sandbox:S, sandbox_uid:U, text:Continue the task}
@@ -341,7 +346,7 @@ sequenceDiagram
     G-->>SD: Admission I
     SD->>SD: Mark I runner-admitted
     R->>HS: Push E(42, command_admitted{command:I})
-    A-->>F: SSE id:42, data:E42
+    Note over HS,F: History folds E42; Electric synchronizes the projected admission
     Note over R,H: Runner schedules when the native turn can start
     R->>H: method:turn/start, id:rpc-9<br/>params:{threadId:native-T, model:new-model,<br/>input:[{type:text, text:Continue the task}]}
     H-->>R: id:rpc-9, result:{turn:{id:turn-8, ...}}
@@ -349,7 +354,8 @@ sequenceDiagram
     R->>HS: Push E(n, model_changed{command_id:M, model:new-model, ...})
     R->>HS: Push E(m, harness_user_message_confirmed{<br/>origin_command_ids:[I], harness_message_id:turn-8,<br/>turn_id:turn-8, text:Continue the task})
     HS->>HS: Commit Events, fold
-    A-->>F: SSE id:n, data:E(n, ...)<br/>intermediate Events, then E(m, ...)
+    E-->>A: Projected model and confirmed input
+    A-->>F: Electric shape updates
 ```
 
 The diagram omits intermediate Native/turn Events; `n` and `m` identify the
@@ -385,7 +391,7 @@ sequenceDiagram
     participant HS as History Service
     participant DB as History PostgreSQL
     participant A as App
-    participant F as Frontend
+    participant C as Direct archive reader
     R->>HS: Push {announce:Attached}, E1..E80
     HS->>DB: INSERT E1..E80 and checkpoint=80, COMMIT
     HS-->>R: Acknowledgement {cursor:80}
@@ -395,12 +401,11 @@ sequenceDiagram
     HS-->>R: Acknowledgement {cursor:80}
     R->>HS: E81..E90
     HS->>DB: INSERT E81..E90 and checkpoint=90, COMMIT
-    HS-->>A: Wake-up only
-    F->>A: GET /threads/T/events/stream?after=75
-    A->>HS: Read entries with cursor greater than 75
-    HS-->>A: E76..E90
-    A-->>F: SSE id:76, data:E76 ... id:90, data:E90
-    Note over A,F: Wake-up loss is repaired by durable reread
+    C->>A: GET /upstream/history/v1/sessions/T/events<br/>after_cursor=75, limit=100
+    A->>HS: ReadSessionEvents after cursor 75
+    HS-->>A: E76..E90, watermark and correction ranges
+    A-->>C: Typed History page in ProtoJSON
+    Note over A,C: Advance only through a covered prefix; later reads resume there
 ```
 
 Any app replica may relay commands and serve any Thread; none copies history. The ingress
@@ -418,6 +423,7 @@ sequenceDiagram
     participant G as Runner Gateway proxy
     participant R as Runner
     participant HS as History Service
+    participant E as Electric
     F->>F: Persist typed operation C and id for retry
     F->>A: POST /upstream/dispatcher/v1/sessions/T:submitInput<br/>commandId:C, sandbox:S, sandboxUid:U and text
     A->>SD: SubmitInput C
@@ -444,15 +450,17 @@ sequenceDiagram
         A-->>F: Dispatch C
     end
     R->>HS: Push E101 and later Events
-    HS-->>A: Retained event prefix includes E101
-    A-->>F: SSE id:101, data:E(101, command_admitted{command:C})
+    HS->>HS: Commit and fold command_admitted C
+    Note over HS,E: Committed projection reaches Electric via logical replication
+    E-->>A: Projected admission for C
+    A-->>F: Electric shape update for C
 ```
 
-A browser may follow from zero on a fresh load. A saved cursor is valid only with the
-corresponding cached prefix/projection; persisting the cursor alone would skip history.
-Duplicate delivery is harmless; missing or conflicting sequence entries are errors.
-Replay hands off to live following without a gap. Notifications are wakeups, never
-the authoritative transport of history.
+An archive reader can start from zero or resume from a covered raw cursor. Full pages cover only
+through their final entry; settlement/removal ranges account for intentionally missing cursors.
+The browser instead resumes Electric shapes from their engine-owned tokens and reloads subsets
+when a shape expires. A saved cursor or token is valid only with its corresponding cached state;
+persisting it alone would skip history. Notifications are wakeups, never the authority for history.
 
 ### Runner restarts with its state intact
 
@@ -554,7 +562,7 @@ The [Thread view synchronization design](thread_view_sync.md) documents the impl
 conversation records, sync-engine integration, materialization, snapshot/live handoff, long-gap
 catch-up, history/payload hydration, on-demand Raw, frontend ownership and validation.
 It is an explicitly derived read API, not a filtered version of the runner Event
-stream. The HTTP/SSE sequence diagrams above describe the current implementation.
+stream. The sequence diagrams above distinguish raw archive reads from Electric projection updates.
 
 The normal view loads selected assembled state and follows it through Electric. Long content is
 loaded on demand, while the browser store retains loaded rows and bodies until the Thread closes;

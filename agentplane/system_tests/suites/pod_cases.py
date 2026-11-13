@@ -5,13 +5,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-import httpx
 import pytest
 
 from agentplane.app.testing.client import Client
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import scenario
-from agentplane.system_tests.driver.agent import TURN_SECONDS
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.harness_pair import run_harness_pair, run_harness_pair_in_own_sandboxes
@@ -28,7 +26,7 @@ from agentplane.system_tests.scenarios import (
     session_instructions,
     storage,
     suspend_resume,
-    thread_stream,
+    thread_history,
     workload_trust,
 )
 from agentplane.system_tests.suites import pod_runners
@@ -57,18 +55,9 @@ class Resources:
         async with (
             self.borrow() as runners,
             self.scripted.case_scope(),
-            Client(base_url=self.base_url, token=self.token) as client,
+            Client.connect(base_url=self.base_url, token=self.token) as client,
         ):
             yield client, runners
-
-    @asynccontextmanager
-    async def http(self) -> AsyncIterator[httpx.AsyncClient]:
-        async with httpx.AsyncClient(
-            base_url=self.base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {self.token}"},
-            timeout=httpx.Timeout(thread_stream.REQUEST_SECONDS, read=TURN_SECONDS),
-        ) as client:
-            yield client
 
 
 type Scenario = Callable[[Resources], Awaitable[None]]
@@ -199,30 +188,32 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
         )
 
 
-async def an_unknown_thread_is_not_found(resources: Resources) -> None:
-    async with resources.http() as http:
-        await thread_stream.an_unknown_thread_is_not_found(http)
+async def an_unknown_history_session_is_not_found(resources: Resources) -> None:
+    async with Client.connect(base_url=resources.base_url, token=resources.token) as client:
+        await thread_history.an_unknown_history_session_is_not_found(client)
 
 
-async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(resources: Resources) -> None:
-    async with resources.shared() as (client, runners), resources.http() as http:
+async def every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor(resources: Resources) -> None:
+    async with resources.shared() as (client, runners):
         await run_harness_pair(
             client,
-            lambda harness, model: thread_stream.every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
-                client, resources.dispatcher, http, runners.for_harness(harness), harness, model, resources.scripted
+            lambda harness, model: (
+                thread_history.every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor(
+                    client, resources.dispatcher, runners.for_harness(harness), harness, model, resources.scripted
+                )
             ),
         )
 
 
-async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
+async def turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn(
     resources: Resources,
 ) -> None:
-    async with resources.shared() as (client, runners), resources.http() as http:
+    async with resources.shared() as (client, runners):
         await run_harness_pair(
             client,
             lambda harness, model: (
-                thread_stream.turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
-                    client, resources.dispatcher, http, runners.for_harness(harness), harness, model, resources.scripted
+                thread_history.unwatched_turns_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn(
+                    client, resources.dispatcher, runners.for_harness(harness), harness, model, resources.scripted
                 )
             ),
         )
@@ -293,7 +284,7 @@ SCENARIOS = (
     ),
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
-    pytest.param(an_unknown_thread_is_not_found),
+    pytest.param(an_unknown_history_session_is_not_found),
     # The node holds five Sandboxes beside the stack, and the runner pool keeps every pair it creates
     # until the suite ends. Two `shared` cases running together make a second pair, and an open case's
     # two Sandboxes do not fit beside both, so adjacent `shared` cases go last.
@@ -301,10 +292,10 @@ SCENARIOS = (
     pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
     pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),
     pytest.param(
-        every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event, marks=pytest.mark.scripted_model
+        every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor, marks=pytest.mark.scripted_model
     ),
     pytest.param(
-        turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn,
+        turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn,
         marks=pytest.mark.scripted_model,
     ),
 )
