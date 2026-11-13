@@ -8853,11 +8853,6 @@ metadata:
 data:
   settings.yaml: |
     namespace: agentplane-staging
-    token_audience: agentplane-notifications
-    operator_reader_account: app
-    notice_debounce:
-      quiet_seconds: 60
-      max_wait_seconds: 120
     actions:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
@@ -8872,13 +8867,6 @@ data:
       control_target: "{sandbox}-control.{namespace}.svc:8080"
       request_timeout_s: 5
       token_file: /var/run/secrets/notifications/gateway
-    history_service:
-      tls:
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/history-ingress
-      target: history-service.agentplane-staging.svc.cluster.local:8080
-      request_timeout_s: 20
-      token_file: /var/run/secrets/notifications/history
     session_dispatcher:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
@@ -8886,9 +8874,28 @@ data:
       target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
       request_timeout_s: 15
       token_file: /var/run/secrets/notifications/dispatcher
-    github:
-      app_id: 5188971
-    http_port: 8081
+    history_service:
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/history-ingress
+      target: history-service.agentplane-staging.svc.cluster.local:8080
+      request_timeout_s: 20
+      token_file: /var/run/secrets/notifications/history
+    token_audience: agentplane-notifications
+    operator_reader_account: app
+    quotas:
+      inboxes_per_account: 64
+      active_subscriptions_per_inbox: 64
+      entries_per_inbox: 10000
+      unacknowledged_messages_per_sender: 128
+    notice_debounce:
+      quiet_seconds: 60
+      max_wait_seconds: 120
+    github_delivery_retention_days: 7
+    unavailable_destination_retry_s: 30
+    request_timeout_s: 15
+    message_body_limit_bytes: 32768
+    host: 0.0.0.0
     rpc:
       listen_address: 0.0.0.0:8080
       tls:
@@ -8900,6 +8907,15 @@ data:
             - agentplane-notifications
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    http_port: 8081
+    github:
+      api_url: https://api.github.com/
+      request_timeout_s: 5
+      api_version: "2022-11-28"
+      app_id: 5188971
+      freshness_seconds: 600
+      max_body_bytes: 1048576
+      webhook_concurrency: 8
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1

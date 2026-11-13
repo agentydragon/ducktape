@@ -4,14 +4,11 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener
-from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
-from util.yaml_file_settings import YamlFileSettings
 
 TOKEN_AUDIENCE = "agentplane-notifications"
 PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
@@ -37,12 +34,6 @@ class GitHubSettings(BaseModel):
     api_version: date = Field(default=date(2022, 11, 28), description="GitHub REST API version header date.")
 
     app_id: int = Field(gt=0, description="Public numeric GitHub App ID; not a secret.")
-    private_key: SecretStr = Field(
-        min_length=1, description="PEM App private key, supplied through a Secret-backed environment variable."
-    )
-    webhook_secret: SecretStr = Field(
-        min_length=16, description="Webhook HMAC signing secret, supplied through a Secret-backed environment variable."
-    )
     freshness_seconds: int = Field(
         default=600,
         ge=60,
@@ -131,17 +122,9 @@ class QuotaSettings(BaseModel):
     )
 
 
-class Settings(YamlFileSettings):
+class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_NOTIFICATIONS_CONFIG_FILE"
-    model_config = SettingsConfigDict(
-        env_prefix="AGENTPLANE_NOTIFICATIONS_",
-        env_nested_delimiter="__",
-        extra="forbid",
-        cli_parse_args=True,
-        cli_kebab_case=True,
-        hide_input_in_errors=True,
-    )
-    database_url: str = Field(description="PostgreSQL DSN supplied through a Secret-backed environment variable.")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     namespace: str = Field(description="Allowed caller ServiceAccount namespace and destination sandbox namespace.")
     actions: ActionsSettings
     runner_gateway: RunnerGatewaySettings
@@ -168,7 +151,15 @@ class Settings(YamlFileSettings):
     unavailable_destination_retry_s: PositiveSeconds = Field(
         default=30, le=3600, description="Seconds between checks of an unavailable UID-pinned Sandbox."
     )
-    log_levels: LogLevels
+    request_timeout_s: PositiveSeconds = Field(
+        default=15, description="Bounds a call's backend work and each write to a watch stream."
+    )
+    message_body_limit_bytes: int = Field(
+        default=32 * 1024,
+        ge=1,
+        le=256 * 1024,
+        description="Maximum UTF-8 bytes in a message body; the database enforces the same ceiling.",
+    )
     host: str = "0.0.0.0"
     rpc: Listener
     http_port: int = Field(
@@ -185,10 +176,5 @@ class Settings(YamlFileSettings):
         return self
 
     github: GitHubSettings | None = Field(
-        default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
+        default=None, description="GitHub source configuration. Disabled when absent from the settings file."
     )
-
-    @field_validator("github_delivery_retention_days", mode="before")
-    @classmethod
-    def parse_infinite_retention(cls, value: object) -> object:
-        return None if value == "null" else value
