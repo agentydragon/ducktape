@@ -31,13 +31,13 @@ Fix: UID-bound deletes; use resourceVersion where the authorization depends on m
 
 ### C — Controller reads connection Leases without checking Sandbox ownership
 
-`agentplane/sandbox_controller/controller.go:320` retrieves the expected Lease name and returns annotations without checking its Sandbox owner UID, API or deletion state. Gateway writers reject foreign Leases, but controller lifecycle readers do not. A collision can affect bootstrap, suspend holds, quiescence and verified-contact decisions even while Gateway refuses to adopt it.
+`agentplane/sandbox_controller/internal/controller/controller.go:320` retrieves the expected Lease name and returns annotations without checking its Sandbox owner UID, API or deletion state. Gateway writers reject foreign Leases, but controller lifecycle readers do not. A collision can affect bootstrap, suspend holds, quiescence and verified-contact decisions even while Gateway refuses to adopt it.
 
 Fix: validate ownership at the common runnerLease read boundary; expose a conflict rather than interpret foreign annotations. Validate pending/expired/verified state separately. Test previous Sandbox UID, foreign API/kind, missing owner and deletion. PR #13040 repairs claim/contact interpretation but does not add this owner check.
 
 ### D — VMI discovery trusts owner name/kind without VM identity
 
-`agentplane/sandbox_controller/vm.go:36` accepts a VMI whose controller owner is named like the Sandbox VM, without verifying API version, VM UID or the VM-to-Sandbox chain. It can publish an unrelated/stale launcher's incarnation and wait on an unrelated VMI during teardown. Gateway's `gateway/peer.go` performs a substantially stronger chain check, so the components can disagree.
+`agentplane/sandbox_controller/internal/controller/vm.go:36` accepts a VMI whose controller owner is named like the Sandbox VM, without verifying API version, VM UID or the VM-to-Sandbox chain. It can publish an unrelated/stale launcher's incarnation and wait on an unrelated VMI during teardown. Gateway's `gateway/peer.go` performs a substantially stronger chain check, so the components can disagree.
 
 Fix: validate the full chain when the VM exists. Define the orphan/deleting-VM case explicitly using recorded identity; do not recover identity by name alone. Test same-name foreign VM, stale VM UID, wrong API, and VM deletion before VMI disappearance.
 

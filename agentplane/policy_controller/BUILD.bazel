@@ -15,7 +15,7 @@ go_library(
     visibility = [
         "//agentplane/policy_controller:__subpackages__",
         # The Sandbox Controller writes each Sandbox's PolicyBinding.
-        "//agentplane/sandbox_controller:__subpackages__",
+        "//agentplane/sandbox_controller/internal/controller:__pkg__",
     ],
     deps = [
         "//agentplane/egress/api/v1alpha1",
