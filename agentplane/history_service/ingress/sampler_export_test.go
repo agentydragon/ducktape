@@ -244,6 +244,11 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 // openSessionExecutingAs opens a Session the Dispatcher recorded as executing as identity.
 func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *identitypb.Identity) *centralsampler.Session {
 	t.Helper()
+	return f.openSessionWithAPI(t, identity, protocol.APIStyleResponses)
+}
+
+func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identitypb.Identity, api protocol.APIStyle) *centralsampler.Session {
+	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
 	executorUID := uuid.NewString()
 	session, err := f.sampler.CreateSession(t.Context(), &samplerpb.CreateSessionRequest{
@@ -260,7 +265,7 @@ func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *ide
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
 		ExecutionIdentity:      identity,
-	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)
+	}, samplerOwnerUID, api, &platformInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}

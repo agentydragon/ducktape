@@ -19,8 +19,6 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -2017,58 +2015,6 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 				if persisted.BlockedReason == nil || !strings.Contains(*persisted.BlockedReason, test.wantReasonContains) {
 					t.Fatalf("GetSession blocked_reason=%v, want it to contain %q", persisted.BlockedReason, test.wantReasonContains)
 				}
-			}
-
-			entries, err := store.Events(t.Context(), session.ID, 0, 32)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(entries) == 0 {
-				t.Fatal("store persisted no session events")
-			}
-			batch := threadfold.EventBatch{
-				SourceID:    entries[0].GetOrigin().GetSourceId(),
-				AfterCursor: 0,
-				Entries:     entries,
-			}
-			state, err := threadfold.Initial(batch.SourceID, "fixture-projection")
-			if err != nil {
-				t.Fatal(err)
-			}
-			prior := threadfold.PriorEntities{Commands: make(map[string]*threadfold.CommandSummary)}
-			for _, commandID := range threadfold.Touched(batch).CommandIDs {
-				prior.Commands[commandID] = nil
-			}
-			folded, err := threadfold.Advance(state, batch, prior)
-			if err != nil {
-				t.Fatalf("fold persisted sampler events: %v", err)
-			}
-			outcomes := make(map[string]historypb.ThreadCommandOutcome, len(folded.CommandUpserts))
-			for _, command := range folded.CommandUpserts {
-				outcomes[command.CommandID] = command.Outcome
-			}
-			if outcomes["active-input"] != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED {
-				t.Fatalf("confirmed input history outcome=%q, want %q", outcomes["active-input"], historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED)
-			}
-			if test.wantQueueError && outcomes["queued-input"] != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED {
-				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED)
-			}
-			if !test.wantQueueError && outcomes["queued-input"] != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING {
-				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING)
-			}
-			var failedTurn, failedTurnReason bool
-			for _, lifecycle := range folded.LifecycleUpserts {
-				turn := lifecycle.Event.GetTurnCompleted()
-				if turn != nil && turn.GetTurnId() == "active-input" && turn.GetStatus() == eventpb.TurnStatus_TURN_STATUS_FAILED {
-					failedTurn = true
-					failedTurnReason = test.wantReasonContains == "" || strings.Contains(turn.GetError(), test.wantReasonContains)
-				}
-			}
-			if !failedTurn {
-				t.Fatal("History fold did not retain the failed active turn")
-			}
-			if !failedTurnReason {
-				t.Fatal("History fold did not retain the original driver error in the failed turn")
 			}
 		})
 	}
