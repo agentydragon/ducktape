@@ -220,8 +220,8 @@ class Settings(BaseModel):
     max_live_sessions: int = Field(gt=0)
     turn_timeout_seconds: int = Field(gt=0)
     rpc_timeout_seconds: int = Field(gt=0)
-    code_mode_observation_timeout_seconds: int = Field(
-        default=300,
+    code_mode_observation_timeout_seconds: int | None = Field(
+        default=None,
         gt=0,
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Maximum requested wait for a JavaScript observation; execution can continue after yielding.",
@@ -250,10 +250,10 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def observation_budget_fits_duration(self) -> Self:
-        if (
-            self.code_mode_observation_timeout_seconds + self.rpc_timeout_seconds
-            > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
-        ):
+        observation_seconds = self.code_mode_observation_timeout_seconds
+        if observation_seconds is None:
+            observation_seconds = 300
+        if observation_seconds + self.rpc_timeout_seconds > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS:
             raise ValueError("code-mode observation and RPC budgets must fit together in time.Duration")
         return self
 
