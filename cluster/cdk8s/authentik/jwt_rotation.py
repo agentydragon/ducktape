@@ -235,6 +235,9 @@ def _cronjob(chart: Chart) -> None:
                             restart_policy="OnFailure",
                             volumes=[
                                 k8s.Volume(
+                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
+                                ),
+                                k8s.Volume(
                                     name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
                                 ),
                                 _secret_volume("github-pat", _GITHUB_PAT),
@@ -250,10 +253,16 @@ def _cronjob(chart: Chart) -> None:
                                     name="rotate",
                                     image=_IMAGE,
                                     args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
+                                    env=[
+                                        k8s.EnvVar(
+                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        )
+                                    ],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
                                     volume_mounts=[
+                                        _mount("public-web-pki", "/var/run/public-web-pki"),
                                         _mount("rotations-config", _CONFIG_DIR),
                                         _mount("github-pat", "/var/run/secrets/github-pat"),
                                         *(_mount(c.volume, str(c.directory)) for c in client_credentials),
@@ -353,14 +362,20 @@ def chart(app: App) -> Chart:
 
 
 def authentik_jwt_rotation(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         wait=None,
-        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
+        depends_on=[
+            flux_kustomization_depends_on(external_secrets_operator),
+            flux_kustomization_depends_on(cert_manager_environment),
+        ],
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1", kind="ExternalSecret", name=_GITHUB_PAT, namespace=NAMESPACE

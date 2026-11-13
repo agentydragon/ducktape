@@ -170,6 +170,9 @@ def chart(app: App) -> Chart:
                             restart_policy="OnFailure",
                             volumes=[
                                 k8s.Volume(
+                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
+                                ),
+                                k8s.Volume(
                                     name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
                                 ),
                                 _secret_volume("github-pat", _GITHUB_PAT),
@@ -188,10 +191,16 @@ def chart(app: App) -> Chart:
                                     name="rotate",
                                     image=_IMAGE,
                                     args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
+                                    env=[
+                                        k8s.EnvVar(
+                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        )
+                                    ],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
                                     volume_mounts=[
+                                        _mount("public-web-pki", "/var/run/public-web-pki"),
                                         _mount("rotations-config", _CONFIG_DIR),
                                         _mount("github-pat", "/var/run/secrets/github-pat"),
                                         *(
@@ -218,7 +227,10 @@ def chart(app: App) -> Chart:
 
 
 def forgejo_token_rotation(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -227,5 +239,5 @@ def forgejo_token_rotation(
         retry_interval=None,
         wait=None,
         timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, cert_manager_environment),
     )

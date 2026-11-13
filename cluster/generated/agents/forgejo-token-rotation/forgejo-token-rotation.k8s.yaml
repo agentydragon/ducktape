@@ -161,6 +161,9 @@ spec:
             - args:
                 - --config
                 - /config/tokens.yaml
+              env:
+                - name: SSL_CERT_FILE
+                  value: /var/run/public-web-pki/ca-certificates.crt
               image: git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset
               name: rotate
               resources:
@@ -175,6 +178,9 @@ spec:
                   drop:
                     - ALL
               volumeMounts:
+                - mountPath: /var/run/public-web-pki
+                  name: public-web-pki
+                  readOnly: true
                 - mountPath: /config
                   name: rotations-config
                   readOnly: true
@@ -197,6 +203,9 @@ spec:
               type: RuntimeDefault
           serviceAccountName: ""
           volumes:
+            - configMap:
+                name: public-web-pki
+              name: public-web-pki
             - configMap:
                 name: forgejo-token-rotations-config
               name: rotations-config

@@ -1484,6 +1484,7 @@ def generate_manifests(root: Path) -> None:
             config_map_generator=[authentik_jwt_rotation.CONFIG_MAP],
         ),
         external_secrets_operator_kustomization,
+        cert_manager_environment_kustomization,
     )
     loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR, loki_read_proxy.PINS_DIR)
     loki_read_proxy.loki_read_proxy(
@@ -1869,6 +1870,7 @@ def generate_manifests(root: Path) -> None:
             config_map_generator=[forgejo_token_rotation.CONFIG_MAP],
         ),
         external_secrets_operator_kustomization,
+        cert_manager_environment_kustomization,
     )
     haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", haku_ui_image_webhook.OUTPUT_DIR)
     haku_ui_image_webhook.haku_ui_image_webhook(
