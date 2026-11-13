@@ -34,10 +34,10 @@ type Workload struct {
 // NewWorkload records a Sandbox, its Pod and Identity credential. Principal is the separate
 // ServiceAccount identity a TokenReview of that Pod proves. No controller, issuer or kubelet runs.
 func NewWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name string) Workload {
-	return newWorkload(t, api, namespace, name, namespace)
+	return newWorkload(t, api, namespace, name, namespace, nil)
 }
 
-func newWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, policyNamespace string) Workload {
+func newWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, policyNamespace string, identity *policyapi.Identity) Workload {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
@@ -71,12 +71,14 @@ func newWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, polic
 	if err := objects.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: policyNamespace}}); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)
 	}
-	identity := &policyapi.Identity{
-		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
-		Spec:       policyapi.IdentitySpec{Description: "test workload identity " + name},
-	}
-	if err := objects.Create(t.Context(), identity); err != nil {
-		t.Fatal(err)
+	if identity == nil {
+		identity = &policyapi.Identity{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
+			Spec:       policyapi.IdentitySpec{Description: "test workload identity " + name},
+		}
+		if err := objects.Create(t.Context(), identity); err != nil {
+			t.Fatal(err)
+		}
 	}
 	record := &workloadapi.WorkloadCredential{
 		ObjectMeta: metav1.ObjectMeta{
@@ -145,11 +147,21 @@ func (w Workload) Delete(t *testing.T) {
 // Principal is still what a TokenReview of its Pod's token proves.
 type IdentityWorkload struct{ Workload }
 
-// NewIdentityWorkload is NewWorkload with the record naming a new Identity in policyNamespace,
-// which it creates if missing.
+// NewIdentityWorkload creates a Sandbox and a new Identity in policyNamespace, with its credential
+// pinned to that Identity incarnation.
 func NewIdentityWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, policyNamespace string) IdentityWorkload {
 	t.Helper()
-	return IdentityWorkload{Workload: newWorkload(t, api, namespace, name, policyNamespace)}
+	return IdentityWorkload{Workload: newWorkload(t, api, namespace, name, policyNamespace, nil)}
+}
+
+// NewWorkloadForIdentity creates a Sandbox credential for an explicitly supplied existing Identity.
+// It preserves that Identity when creating another Sandbox incarnation under the same name.
+func NewWorkloadForIdentity(t *testing.T, api *kubeapiserver.Server, namespace, name string, identity *policyapi.Identity) IdentityWorkload {
+	t.Helper()
+	if identity == nil || identity.Namespace == "" || identity.Name == "" || identity.UID == "" {
+		t.Fatal("an existing Identity incarnation is required")
+	}
+	return IdentityWorkload{Workload: newWorkload(t, api, namespace, name, identity.Namespace, identity)}
 }
 
 // RunAs replaces workload's record with one naming identity, an existing Identity, as a Sandbox

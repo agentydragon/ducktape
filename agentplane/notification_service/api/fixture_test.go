@@ -336,8 +336,7 @@ func identityWorkloadForTest(t *testing.T) workloadauthtesting.IdentityWorkload 
 		testPolicyIdentity = created.Identity
 		testIdentityWorkload = &created
 	} else {
-		workload := workloadauthtesting.NewWorkload(t, kube, testNamespace, sandboxName)
-		created := workloadauthtesting.RunAs(t, workload, testPolicyIdentity)
+		created := workloadauthtesting.NewWorkloadForIdentity(t, kube, testNamespace, sandboxName, testPolicyIdentity)
 		testIdentityWorkload = &created
 	}
 	// The authenticated credential and the Sandbox contract must name the same Identity. The
@@ -571,8 +570,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 		t.Fatal("Identity workload fixture is unavailable")
 	}
 	s.workload.Workload.Delete(t)
-	workload := workloadauthtesting.NewWorkload(t, kube, testNamespace, sandboxName)
-	successor := workloadauthtesting.RunAs(t, workload, s.workload.Identity)
+	successor := workloadauthtesting.NewWorkloadForIdentity(t, kube, testNamespace, sandboxName, s.workload.Identity)
 	sandbox := successor.Workload.Sandbox.DeepCopy()
 	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: successor.Identity.Name}
 	if err := successor.Workload.Objects.Update(t.Context(), sandbox); err != nil {
