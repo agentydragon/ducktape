@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "scope": "Initial source audit and iterations2-5 are historical; iteration6 records literal663 validation, native Sampler auth/History coverage, merged backports, physical infrastructure retry, profile/capacity findings and partial historical replay. No qualified complete-feedback saving or gate promotion.",
+  "scope": "Iterations 2-6 remain historical evidence; iteration7 records a completed selector-only historical pair, a rejected renderer-batching arrangement, native Gateway fixture extraction, exact-source-135 configured guest focused validation, and a non-green full required workflow with an observer cancellation followed by a fixture listener-port failure. No qualified complete-feedback saving or gate promotion.",
   "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
   "observed_at_utc": "2026-11-13T12:39:04.934736+00:00",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
@@ -1727,7 +1727,7 @@
     "scope_note": "One concurrent pair on the same base: identical four target labels and case nodeids, literal devel 73c214534d control and its e81dd61 experimental merge head; no local patches. Control 342.108s versus candidate 271.736s Bazel wall: 70.372s (20.57%) lower in this observation. All eight physical tests used warm baselines, one uncached attempt and clean teardown. Different workers and setup exposure remain; this is not a population estimate or a complete required-CI saving. The budget profile deliberately shortens the configured deadline from 120 to 45 seconds. Other setup changes cannot be causally separated in this pair.",
     "control_url": "https://app.buildbuddy.io/invocation/e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
     "candidate_url": "https://app.buildbuddy.io/invocation/d285e3ca-547c-4e5d-89d9-c6cbd5b74510",
-    "control_link_text": "Control 73c214534d \u00b7 four targets \u00b7 342.108s",
+    "control_link_text": "Control 73c214534d · four targets · 342.108s",
     "control": {
       "invocation": "e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
       "url": "https://app.buildbuddy.io/invocation/e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
@@ -4626,7 +4626,7 @@
         "control": {
           "invocation": "aff9fdf1-e96b-4638-b6c3-6459f23409e0",
           "url": "https://app.buildbuddy.io/invocation/aff9fdf1-e96b-4638-b6c3-6459f23409e0",
-          "outcome": "On literal source 220, configured control path is test_services \u2192 test_services_image_manifest \u2192 mcp_edge:service_image (three nodes)."
+          "outcome": "On literal source 220, configured control path is test_services → test_services_image_manifest → mcp_edge:service_image (three nodes)."
         },
         "candidate": {
           "invocation": "a38fb697-316d-42cb-b61e-1036769dc1c8",
@@ -5054,9 +5054,9 @@
       "scope_and_limits": [
         "A1/B1/B2/A2 are one selected graph cohort on one source SHA, not whole-PR CI or repeated matched trials.",
         "A1 overlapped native25 and ordinary CI; B1 had less unrelated load. The selected graph wall differences are not causal speedup estimates.",
-        "Candidate MCP JUnit IDs are disjoint and cover the same seven MCP test cases in A1/B1/B2; A1 required target behavior is unchanged. Pod remains the same 21 cases. Full VM remains the same one case, with A2\u2019s teardown error retained.",
+        "Candidate MCP JUnit IDs are disjoint and cover the same seven MCP test cases in A1/B1/B2; A1 required target behavior is unchanged. Pod remains the same 21 cases. Full VM remains the same one case, with A2’s teardown error retained.",
         "B2 includes a physical infra interruption even though its final test target summary is PASSED. BuildBuddy event data did not identify whether a worker loss, runner drain, or transport caused the Firecracker socket refusal.",
-        "A2\u2019s scenario body passed; the failure is a separate fixture teardown request timeout. The API-side cause is not visible in the available client spans.",
+        "A2’s scenario body passed; the failure is a separate fixture teardown request timeout. The API-side cause is not visible in the available client spans.",
         "The selected cohort and candidate witnesses do not establish end-to-end CI time savings. They support graph selectivity and preserve coverage facts only."
       ],
       "vm_witnesses": {
@@ -5087,7 +5087,7 @@
           "target": "//agentplane/system_tests/suites:test_vm",
           "test_runner_cpu_seconds": 1494.586
         },
-        "interpretation": "The boot-only candidate omits the full suite guarantees (real concurrent Claude and Codex turns, native cgroups/systemd assertions, denied systemctl, setup supervision, egress, notifications, and SVID continuity under workload). It is a separate boot/transport witness, not full acceptance equivalence. The later full no-edge pass does not erase A2\u2019s earlier control failure."
+        "interpretation": "The boot-only candidate omits the full suite guarantees (real concurrent Claude and Codex turns, native cgroups/systemd assertions, denied systemctl, setup supervision, egress, notifications, and SVID continuity under workload). It is a separate boot/transport witness, not full acceptance equivalence. The later full no-edge pass does not erase A2’s earlier control failure."
       }
     },
     "last_green_source_ci": {
@@ -9143,5 +9143,178 @@
       "skips": 0
     },
     "source_head": "66320ca9960967305b7683dbfbacae6456c46a1a"
+  },
+  "iteration7": {
+    "prepared_at_utc": "2026-11-13T14:55:57.010724+00:00",
+    "status": "SOURCE_5699_REQUIRED_CHECKS_PASSED; APP_SELECTOR_CUT_PROVED",
+    "source": {
+      "devel_base_commit": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+      "source_milestone_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+      "branch_head_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+      "required_ci_status": "SUCCESS: all three checks;318s workflow-created to lastrequired;54 NEW TestRunnerrecords;0freshK3s",
+      "exact_source_validation_status": "Working-tree source-verified focused validation: App42 cases and listener4 cases. Required exact-head CI is separate.",
+      "latest_completed_full_required_ci": {
+        "source_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+        "evidence": "required-ci-5699-workflow.json",
+        "status": "SUCCESS",
+        "workflow_created_to_last_required_seconds": 318,
+        "physical_test_runner_records": 54,
+        "fresh_k3s_test_actions": 0,
+        "limit": "Single exact-head validation, no matched saving; deployment acceptance results cached."
+      }
+    },
+    "finding": "Source5699 is green. Actual CI selector hashing for the same Runtime-only input drops exactly 12 unrelated App tests: 49 → 37 runnable tests, while bridge/history-gateway stay selected. The listener-race repair passed a real-socket regression and its old-allocation negative control. No complete-feedback saving, population reliability improvement or gate promotion is established.",
+    "historical_selector_first_pair": {
+      "evidence": "historical-selector-first-pair.json",
+      "reviewed_summary_sha256": "388ff7076eb0b333e608e3206bcc33405897bc3ff261bde2a8685566c1f44322",
+      "repaired_payload_manifest_sha256": "2bdc7629dc47922fb532b80828b816fa81827e3d8547ee705d485403138af7cb",
+      "status": "selector only; complete for this one pair",
+      "control_affected_targets": 117,
+      "candidate_affected_targets": 124,
+      "control_tests_before_runtime_tag_filter": 51,
+      "candidate_tests_before_runtime_tag_filter": 51,
+      "same_test_labels": true,
+      "tests_executed": 0,
+      "source_overlay_head": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+      "source_overlay_base": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+      "selection_invocation": "d89cacfc-35af-47e8-acdf-f679961ec5d3",
+      "limit": "One behavior-neutral historical pair and one overlay; not a test run, timing comparison, current-architecture validation, or the 30-pair qualification.",
+      "hosted_materialization": {
+        "cas_archive_digest_and_size": "d71c8606dda154402470519b1d092a4a04f22f0338cfc48a40c0ea186134a724/13473843",
+        "control_hash_count": 42948,
+        "candidate_hash_count": 42978,
+        "hosted_commands": 541,
+        "local_stage_commands": 515
+      }
+    },
+    "render_batching": {
+      "evidence": "render-batching-rejected.json",
+      "candidate_patch": "render-batching-candidate.patch",
+      "baseline_seven_render_cpu_seconds": 219.212,
+      "candidate_batch_render_cpu_seconds": 38.620124,
+      "baseline_seven_action_overlap": "All seven began within about 73ms; last ended about 30.048s after first start.",
+      "candidate_batch_wall_seconds": 30.939643,
+      "baseline_overlapped_render_window_seconds": 30.048,
+      "baseline_test_runner_wall_seconds": 26.300445,
+      "candidate_test_runner_wall_seconds": 28.455,
+      "matching_output_hashes": 6,
+      "compared_standard_outputs": 7,
+      "baseline_hash_unavailable": "central-budget",
+      "selection_broadening": "One VM-only consumer would depend on the nine-output batch instead of its dedicated VM render action.",
+      "decision": "Rejected as a CI latency improvement; revisit only if measured renderer CPU capacity or CPU queueing limits a selected critical path.",
+      "limits": "No matched cold whole-graph or four-PR-burst comparison; aggregate CPU reduction is not a wall-time or queue saving.",
+      "candidate_patch_sha256": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb"
+    },
+    "native_gateway_fixture_split": {
+      "evidence": "native-gateway-fixture-split.json",
+      "base_source": "66320ca9960967305b7683dbfbacae6456c46a1a",
+      "build_invocation": "bcdc607b-f2b9-4cfa-8100-66e512c9f2c6",
+      "test_invocation": "08c6336a-911a-42dc-ab49-f92363767f14",
+      "passed_targets": [
+        "//agentplane/x/native_contracts:test_recovery",
+        "//agentplane/x/native_contracts:test_admission_reply_loss"
+      ],
+      "result": "Both targets passed; shared fixture libraries and callers built.",
+      "saving": "Not measured; setup extraction is validated at base 663, not a current-head speedup."
+    },
+    "configured_guest_runtime_gateway": {
+      "evidence": "configured-guest-runtime-gateway.json",
+      "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+      "working_tree_positive_invocation": "5dbc7412-7db7-4922-a5a5-cba7d90d6d47",
+      "working_tree_wrong_ca_control_invocation": "9a028ac2-095e-4fb3-85ca-29fe5047b702",
+      "positive_result": "Exact source 135: one physical TestRunner action passed in 125.464s; included in the seven-target, 27-case selected validation.",
+      "negative_result": "Exact source 135: expected red at the final readiness assertion after TLS bad-certificate evidence; container exited and cleanup restored state ownership and removed it.",
+      "identity_ownership": "Fixture-issued test CA and envtest-authored Sandbox status; no production controller/PKI ownership claim.",
+      "limit": "No Session, executor turn, History, App, K3s/controller, scheduler, or KubeVirt guarantee. Literal135 focused validation passed; full required CI failed and is being repaired on a successor source head.",
+      "wrong_ca_control_invocation": "482768c1-2ae2-4529-b632-6cca14b89692",
+      "wrong_ca_transport_note": "Runtime rejects Gateway client certificate under the unrelated configured client CA; Gateway observes remote error: tls: bad certificate.",
+      "exact_head_validation": "Exact source 135: seven targets, 27 JUnit cases, zero failures/errors/skips. The opt-in wrong-CA control has one expected failed case with cleanup verified.",
+      "positive_invocation": "2828e1ea-f318-4ba2-aac6-b797345ac056"
+    },
+    "promotion_boundary": {
+      "current_required_gate_changed": false,
+      "required_ci_frequency_changed": false,
+      "remaining": [
+        "29 compatible historical pairs",
+        "100 fresh contract executions with reliability denominator review",
+        "three busy windows",
+        "a four-PR burst",
+        "matched exact-head rerun-inclusive required-feedback comparison",
+        "matched current-architecture coverage and speed qualification"
+      ],
+      "claim_limit": "No complete-CI or auto-merge feedback saving is established."
+    },
+    "exact_source_validation": {
+      "evidence": "configured-guest-runtime-gateway.json",
+      "build_parent_invocation": "d119f302-b9b6-4428-8cdd-2eb94278ee65",
+      "build_child_invocation": "8b49fd56-2969-4136-9b04-b999472e5a9c",
+      "test_parent_invocation": "324dbea7-e790-46f2-96bb-c4abee57760f",
+      "test_child_invocation": "2828e1ea-f318-4ba2-aac6-b797345ac056",
+      "targets": 7,
+      "physical_test_runner_actions": 7,
+      "attempts_per_target": 1,
+      "cached_test_results": 0,
+      "junit": {
+        "cases": 27,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "wrong_ca_control": "Expected red at final readiness assertion; cleanup passed.",
+      "limit": "Selected exact-source validation, not full required CI or complete application/deployment acceptance.",
+      "source_head": "135dba720768d9dfdb60a122145d9d23f9699dd0"
+    },
+    "required_ci_workflow_135": {
+      "evidence": "required-ci-135-workflow.json",
+      "status": "FAILED_AND_SUPERSEDED_BY_5699; original source was not made green",
+      "attempt_1": "Observer RST_STREAM INTERNAL_ERROR then parent cancellation; physical attempt census unknown.",
+      "attempt_2": "56 NEW TestRunner records, one failure in //agentplane/env/e2e:test_codex_shared_process, zero REAPI failure statuses.",
+      "tracking_issues": [
+        "https://github.com/agentydragon/ducktape/issues/13270#issuecomment-6855285177",
+        "https://github.com/agentydragon/ducktape/issues/16231"
+      ],
+      "creation_to_attempt_2_failed_result_seconds": 523,
+      "green_rerun_inclusive_feedback_seconds": null
+    },
+    "next_source_boundary": {
+      "status": "COMMITTED; GRAPH_FOCUSED_REQUIRED_CI_AND_SYNTHETIC_SELECTOR_PASSED",
+      "change": "Remove accidental Runtime binary edge from 13 App py_tests while retaining the two intentional owners.",
+      "historical_51_label_overlap": 12,
+      "manual_targets_in_overlap": 0,
+      "proof": "App graph15→2 Runtime owners. Same Runtime-only input selects50→38 tests before tags and49→37 after tags; exactly12 unrelated App tests removed; both Runtime owners retained. No tests executed in selector run.",
+      "additional_manual_targets_filtered": 1,
+      "intentional_owner_test_functions": {
+        "//agentplane/app:test_bridge": 6,
+        "//agentplane/app:test_history_gateway": 3
+      },
+      "case_count_limit": "Six/three are source functions; observed parametrization produces24/6 JUnit cases.",
+      "source_head": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+      "intentional_owner_junit_cases": {
+        "//agentplane/app:test_bridge": 24,
+        "//agentplane/app:test_history_gateway": 6
+      },
+      "focused_junit_cases": 42,
+      "focused_invocation": "8efca746-a5cf-48d4-b215-cc62ab34a73e",
+      "evidence": "app-fixture-ownership.json",
+      "selector_evidence": "app-fixture-selector.json",
+      "selector_invocation": "fafd9710-456e-4cb1-b290-469ba7d6153b"
+    },
+    "source_summary": "Branch head 5699e8758f04bdf8c5834fbe21d7bafb8fbd9702 integrates devel f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de. All three required checks passed in 318s from workflow creation to the last result, with 54 fresh TestRunner actions and no fresh K3s action. The App cut passed 42 focused cases. The listener repair passed four cases under real socket competition and the old allocator failed actual Runtime bind. Source135 remains failed/superseded; its seven-target/27-case configured-guest validation is retained separately. This is validation, not a matched CI saving.",
+    "current_status_label": "5699 required checks passed",
+    "listener_repair": {
+      "evidence": "runtime-control-listener-repair.json",
+      "positive_invocation": "a9500358-00a7-4d25-8232-385da8155340",
+      "negative_invocation": "9d1cc189-37f1-49fa-ab93-758aad1ed737",
+      "devel_pr": "https://github.com/agentydragon/ducktape/pull/16233",
+      "saving": "No population recurrence or complete-feedback benefit measured."
+    },
+    "current_required_ci": {
+      "evidence": "required-ci-5699-workflow.json",
+      "status": "SUCCESS",
+      "workflow_id": 43445505282,
+      "workflow_created_to_last_required_seconds": 318,
+      "fresh_test_runner_records": 54,
+      "fresh_k3s_test_runner_records": 0
+    }
   }
 }

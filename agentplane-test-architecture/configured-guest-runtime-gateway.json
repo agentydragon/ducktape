@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "status": "EXACT_SOURCE_135_FOCUSED_VALIDATION_PASSED; FULL_REQUIRED_CI_NOT_GREEN",
+  "source": {
+    "validated_base": "66320ca9960967305b7683dbfbacae6456c46a1a",
+    "integrated_source_commit": "a9bab8e6bb",
+    "current_branch_head": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+    "branch": "agent/test-architecture-pivot",
+    "exact_branch_head_test_state": "Focused exact source-135 validation passed seven targets and 27 JUnit cases; the opt-in wrong-CA control was expected red.",
+    "required_ci_state": "Attempt 2 ended TESTS_FAILED due a separate //agentplane/env/e2e:test_codex_shared_process listener-port allocation race. Repair and next full required run pending.",
+    "exact_validation_commit": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+    "exact_validation_milestone": "a9bab8e6bb9af75ad838b5800cfbe47113ed6073",
+    "exact_head_test_state": "Seven targets passed with 27 JUnit cases; the opt-in wrong-CA control failed at its expected final readiness assertion."
+  },
+  "contract": {
+    "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+    "positive_invocation": "2828e1ea-f318-4ba2-aac6-b797345ac056",
+    "wrong_ca_control_invocation": "482768c1-2ae2-4529-b632-6cca14b89692",
+    "real_guest": "Packaged production Runtime in the actual guest image connects to the real Gateway process started by the native fixture.",
+    "identity_ownership": "The fixture issues the Runtime leaf certificate from a fixture-owned test CA and authors Sandbox status in envtest. This is not controller-issued status or production PKI.",
+    "positive_assertion": "Guest Runtime establishes fixture-authenticated Gateway transport and the expected status exchange.",
+    "explicit_nonclaims": [
+      "No Session creation",
+      "No executor turn/completion",
+      "No History read/write/recovery",
+      "No controller reconciliation, Kubernetes issuer, Secret projection, scheduler, KubeVirt, App or browser journey"
+    ]
+  },
+  "positive": {
+    "status": "PASSED on exact source 135",
+    "physical_test_runner_records_for_target": 1,
+    "attempts": 1,
+    "run": 1,
+    "shard": 1,
+    "exit_code": 0,
+    "process_seconds": 125.464,
+    "junit": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "invocation": "2828e1ea-f318-4ba2-aac6-b797345ac056"
+  },
+  "wrong_ca_control": {
+    "status": "EXPECTED RED on exact source 135",
+    "physical_test_runner_records": 1,
+    "attempts": 1,
+    "run": 1,
+    "shard": 1,
+    "exit_code": 1,
+    "junit": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "observed_assertion": "Final Runtime proxy readiness assertion failed.",
+    "transport_evidence": "The Gateway log contained a TLS bad-certificate rejection; do not attribute the rejecting endpoint.",
+    "cleanup": "Runtime exited; state owner restored uid/gid 1000; container removal exited 0.",
+    "interpretation": "Intentional expected-red negative control; not a passing test target.",
+    "invocation": "482768c1-2ae2-4529-b632-6cca14b89692"
+  },
+  "limits": [
+    "The configured guest pair is now validated at exact source 135, but the full required workflow for that source is not green.",
+    "No Session, executor turn, History, App, K3s/controller, scheduler or KubeVirt guarantee.",
+    "Fixture-issued test CA and envtest-authored Sandbox status are not production controller-issued identity/status.",
+    "Raw serial/process logs and private physical worker metadata are not published."
+  ],
+  "exact_source_validation": {
+    "build_parent_invocation": "d119f302-b9b6-4428-8cdd-2eb94278ee65",
+    "build_child_invocation": "8b49fd56-2969-4136-9b04-b999472e5a9c",
+    "build_result": "SUCCESS; fixture libraries/conftests built",
+    "test_parent_invocation": "324dbea7-e790-46f2-96bb-c4abee57760f",
+    "test_child_invocation": "2828e1ea-f318-4ba2-aac6-b797345ac056",
+    "test_result": "SUCCESS",
+    "targets": 7,
+    "physical_test_runner_actions": 7,
+    "attempts_per_target": 1,
+    "test_result_cache_reuse": false,
+    "junit": {
+      "cases": 27,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "runtime_gateway_target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+    "runtime_gateway_test_runner_process_seconds": 125.464,
+    "limitations": [
+      "This selected set is not full required CI.",
+      "The JUnit count does not imply Session, executor, History, App, controller PKI or KubeVirt coverage.",
+      "No timing improvement is claimed against earlier working-tree durations."
+    ],
+    "runtime_gateway_target_junit_cases": 1,
+    "runtime_gateway_target_status": "PASSED",
+    "wrong_ca_expected_red_invocation": "482768c1-2ae2-4529-b632-6cca14b89692",
+    "invocation_url": "https://app.buildbuddy.io/invocation/324dbea7-e790-46f2-96bb-c4abee57760f"
+  },
+  "wrong_ca_control_exact_source": {
+    "parent_invocation": "934092bc-4103-4a12-ab7d-4915f72a90ab",
+    "child_invocation": "482768c1-2ae2-4529-b632-6cca14b89692",
+    "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+    "result": "EXPECTED_FAILURE",
+    "run": 1,
+    "shard": 1,
+    "attempt": 1,
+    "junit": {
+      "cases": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "assertion": "Final Runtime proxy readiness assertion failed; the Gateway log contained a TLS bad-certificate rejection.",
+    "cleanup": "Runtime exited; state owner restored uid/gid 1000; container removal exited 0.",
+    "interpretation": "Intentional negative control, not a passing test target. Do not attribute the rejection to the Gateway; do not infer the owner of the separate CI port collision.",
+    "transport": "TLS bad-certificate was in Gateway log; the report does not attribute the rejecting endpoint."
+  },
+  "pre_commit_working_tree_pair": {
+    "positive_invocation": "5dbc7412-7db7-4922-a5a5-cba7d90d6d47",
+    "wrong_ca_control_invocation": "9a028ac2-095e-4fb3-85ca-29fe5047b702",
+    "positive_process_seconds": 87.756,
+    "control_process_seconds": 70.829,
+    "status": "Earlier working-tree pair; superseded by exact source-135 evidence for source validation."
+  }
+}

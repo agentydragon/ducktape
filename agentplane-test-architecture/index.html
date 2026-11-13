@@ -150,7 +150,7 @@
         ],
         [
           "M4 · Real acceptance and qualification · pending",
-          "Keep owner/native contracts, focused real deployment acceptance, and app/browser/MCP journeys required. A curated 30-pair historical source cohort is now prepared, but no pairs have been replayed; three busy windows, a four-PR burst and rerun-inclusive required-feedback comparison remain. The 100 native case executions are 25 per contract, not 100 independent reliability trials.",
+          "Keep owner/native contracts, focused real deployment acceptance, and app/browser/MCP journeys required. One historical selector-only pair is complete; 29 pairs remain. Three busy windows, a four-PR burst and rerun-inclusive required-feedback comparison remain. The 100 native case executions are 25 per contract, not 100 independent reliability trials.",
         ],
         [
           "M5 · Prove a narrow frequency move · not enabled",
@@ -193,6 +193,7 @@
           Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
         const iteration4 = data?.iteration4;
         const iteration5 = data?.iteration5;
+        const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
         const iteration5PairRows = (iteration5Cohort?.pairs || []).map(
           (pair) => [
@@ -846,10 +847,12 @@
             ><${Badge} color="blue"
               >Historical source91f CI:
               ${iteration5?.final_source_ci?.status || "Pending"}<//
+            ><${Badge} color="orange"
+              >Iteration 7 · ${iteration7?.current_status_label || "Loading"}<//
             ><//
           >
           <${Text} size="sm"
-            >${data?.iteration6?.finding || iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
+            >${iteration7?.finding || data?.iteration6?.finding || iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -859,7 +862,8 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration6", "Current implementation"],
+              ["iteration7", "Iteration 7 current evidence"],
+              ["iteration6", "Iteration 6 evidence · 663"],
               ["iteration5", "Iteration 5 history"],
               ["iteration4", "Iteration 4 history"],
               ["iteration3", "Iteration 3 history"],
@@ -875,20 +879,115 @@
                 html`<${Anchor} key=${id} href=${`#${id}`}>${label}<//>`,
             )}
           <//>
-          <${Alert} color="blue" title="Current state">
-            Architecture source 66320ca996 on draft PR #16102 passes all three
-            required checks in 10m01s from workflow creation. Six selected
-            targets also pass: 25 Python JUnit cases, plus the Go startup
-            target. This is a source-specific validation, with no matched
-            speedup established. Required scenario bodies and frequency stay in
-            place. The previous 91f measurements remain labeled as history
-            below.
+          <${Alert} color="orange" title="Current architecture evidence">
+            ${iteration7?.finding || "Loading current source evidence…"}
+          <//>
+          <${Section}
+            id="iteration7"
+            title="Iteration 7: fixture ownership, reproduced reliability repair and guest transport"
+          >
+            <${Title} order=${3}>Current source and required-check state<//>
+            ${p(iteration7?.source_summary || "Loading current source and required-check status…")}
+            <${Rows}
+              headers=${["Evidence", "Observed result", "Boundary"]}
+              rows=${[
+                [
+                  html`<${Anchor} href="required-ci-5699-workflow.json"
+                    >Current required workflow · source5699<//
+                  >`,
+                  "All three required checks passed. Workflow creation to last required result: 318s (5m18s); 54 fresh physical TestRunner records, all completed with exit0 and REAPI status0.",
+                  "No fresh K3s action in this workflow. Cached deployment results and one successful workflow do not establish a matched speedup or new deployment exposure.",
+                ],
+                [
+                  html`<${Anchor} href="app-fixture-selector.json"
+                    >Runtime-only selector comparison<//
+                  >`,
+                  "The same Runtime input selects 50 → 38 tests before runtime tags and 49 → 37 after tags. Exactly 12 unrelated App tests leave; both intended Runtime owners stay selected.",
+                  "Pinned source135/source5699 and identical Runtime input, CI selector and tag configuration. Zero tests executed; no workload-frequency or latency claim.",
+                ],
+                [
+                  html`<${Anchor} href="app-fixture-ownership.json"
+                    >App fixture ownership cut<//
+                  >`,
+                  "Thirteen App tests lose the unused Runtime executable edge; bridge and history-gateway retain it. Focused regressions passed 42 cases, including all 24 bridge cases across four shards and six history-gateway cases.",
+                  "Existing fixtures and assertions retained. Twelve light targets are ordinary tests; one is manual. Actual selector results are separate from graph queries and timing.",
+                ],
+                [
+                  html`<${Anchor} href="runtime-control-listener-repair.json"
+                    >Runtime listener race repair<//
+                  >`,
+                  "Four cases pass with a competing default-loopback socket. The restored old allocator fails real Runtime startup with address already in use.",
+                  html`<${Anchor}
+                      href="https://github.com/agentydragon/ducktape/pull/16233"
+                      >Independent devel repair · #16233<//
+                    >
+                    · no population flake-rate or feedback saving measured.`,
+                ],
+                [
+                  html`<${Anchor} href="historical-selector-first-pair.json"
+                    >Historical selector pair · PR #15687<//
+                  >`,
+                  "Affected targets 117 → 124; the same 51 tests before runtime tag filtering; zero tests executed.",
+                  "One selector-only pair. The d717 overlay has 40 paths; pair-era k3s args and _POD_DEPS adaptations were applied to candidate base and candidate tested-merge trees. No timing or savings claim.",
+                ],
+                [
+                  html`<${Anchor} href="render-batching-rejected.json"
+                    >Renderer batching experiment<//
+                  >`,
+                  "Seven separate render actions used 219.212 CPU seconds; the nine-output batch used 38.620 CPU seconds.",
+                  "The separate actions overlapped in about 30.048s; the batch took 30.940s and the candidate TestRunner was 2.155s slower. Six of seven standard output hashes match; central-budget baseline hash was unavailable. Rejected for CI latency.",
+                ],
+                [
+                  html`<${Anchor} href="native-gateway-fixture-split.json"
+                    >Native Gateway fixture extraction<//
+                  >`,
+                  "Shared fixture libraries built; native recovery (74.2s) and admission reply-loss (39.2s) targets passed on base 663.",
+                  "Validates fixture organization and existing owner assertions. No CI saving or target-count reduction measured; not current-head source validation.",
+                ],
+                [
+                  html`<${Anchor} href="configured-guest-runtime-gateway.json"
+                    >Configured guest Runtime/Gateway witness<//
+                  >`,
+                  "At exact source 135, seven focused targets passed 27 JUnit cases; the wrong-CA control produced one expected readiness failure. The Runtime/Gateway target took 125.464s in this run, with no timing improvement claim.",
+                  "Fixture-owned test CA and envtest-authored Sandbox status; no Session, executor turn, History, App, controller PKI or KubeVirt acceptance claim.",
+                ],
+                [
+                  html`<${Anchor} href="required-ci-135-workflow.json"
+                    >Full required workflow · attempt 1 and attempt 2<//
+                  >`,
+                  "Attempt 1: RST_STREAM INTERNAL_ERROR and parent cancellation; physical-attempt census unknown. Attempt 2: 56 NEW TestRunner records and one failure in //agentplane/env/e2e:test_codex_shared_process.",
+                  html`<${Anchor}
+                      href="https://github.com/agentydragon/ducktape/issues/13270#issuecomment-6855285177"
+                      >Observer cancellation · #13270<//
+                    >
+                    ·
+                    <${Anchor}
+                      href="https://github.com/agentydragon/ducktape/issues/16231"
+                      >listener-port race · #16231<//
+                    >`,
+                ],
+              ]}
+            />
+            ${p("Source135 attempt2 failed binding Runtime to 127.0.0.1:43377 after a fixture selected and released an ephemeral port. The new fixture uses a Sandbox-specific loopback address. A seeded real-socket control reproduces the old allocator failure and passes all four existing cases with the repair. The natural port occupier remains unknown. Source135 was superseded while red:523s to its failed second result is not green feedback. Source5699 has its own workflow clock.")}
+            ${p("The App split preserves real App, Gateway, History, PostgreSQL and Kubernetes API services. Only bridge and history-gateway explicitly load Runtime and harness fixtures. Their existing bodies and all assertions are retained. Dependency queries prove the intended graph cut. Actual CI hashing of the same synthetic Runtime input on source135 and source5699 confirms exactly 12 unrelated App tests leave selection; bridge and history-gateway remain. The detailed result separates 50 → 38 pre-tag tests from 49 → 37 runnable tests.")}
+            ${p("One historical pair is complete;29 compatible pairs remain. Keep the100 fresh contract-execution qualification, three busy windows, four-PR burst and matched rerun-inclusive exact-head feedback comparison. Required-gate frequency is unchanged. No complete-CI saving or promotion follows from these focused passes.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor} href="historical-selector-first-pair.json"
+                >Selector pair details<//
+              >
+              <${Anchor} href="render-batching-candidate.patch"
+                >Archived full batching patch<//
+              >
+              <${Anchor} href="required-ci-135-workflow.json"
+                >135 workflow evidence<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration6"
-            title="Current implementation: authenticated recovery and measured limits"
+            title="Iteration 6 evidence checkpoint: authenticated recovery and measured limits"
           >
-            <${Title} order=${3}>Current source validation<//>
+            <${Title} order=${3}>Literal source-663 validation checkpoint<//>
             ${p("At literal 66320ca996, six test targets and the shared native-fixture library passed in a fresh selected run: four recovery cases, admission reply loss, direct guest boot, native Sampler integration, 18 renderer cases and the Go startup target. There are 25 observed Python JUnit cases with zero failures, errors or skips; the Go target reports PASS but its XML has no testcase elements. The selected command took 214.289s, separate from full PR feedback.")}
             <${Rows}
               headers=${["Evidence", "Observed result", "Boundary"]}
@@ -934,13 +1033,14 @@
             ${p("APT resolution occupies 20.191s in this cold selected run, including 17.005s fetching/parsing indexes. Main CI already restores Bazel's validated generated module lockfile; the profile is not evidence of its steady-state miss rate. Do not split the shared resolver or promise 20s savings without that measurement. Existing OCI-import optimization remains in #16028/#16040.")}
             ${p("The read-only KVM audit distinguishes policy from hardware. Exactly three current HIL VMX hosts have eligible local SSD. At the three-worker snapshot, ovh-ns1001419 alone had request headroom for a fourth 4.01 CPU/~8.40Gi launcher, leaving 1.507 CPU; later SSD capacity was sufficient for another observed-size volume. Nodes advertise 1000 KVM scheduler units, not one. Required one-worker-per-host anti-affinity and max 3 currently prevent colocation. A max 4 with preferred spread experiment could test contention, but no placement, scaler or live infrastructure was changed; request headroom is not measured simultaneous performance or failure isolation.")}
             <${Title} order=${3} mt="lg"
-              >Historical replay: partial, with failures preserved<//
+              >First historical selector pair complete; earlier failures
+              retained<//
             >
-            ${p("The first #15687 replay failed staging before any graph because the scratch Git database lacked a promisor remote. A localized repair passed its isolated Git regression and verified all four expected trees on the hosted retry. The control then selected 117 affected targets and 51 tests before runtime tag filtering. Candidate loading failed on missing pair-era helper prerequisites: _POD_DEPS and k3s_suite's args support. No selected tests ran and no candidate/control timing comparison exists. Explicit compatibility repair and the remaining 30-pair qualification are still work, not a completed experiment.")}
+            ${p("At this report's iteration6 checkpoint, the first #15687 attempt failed staging because the scratch Git database lacked a promisor remote; a later candidate graph load lacked pair-era _POD_DEPS and k3s_suite args support. Iteration7 completed the localized payload repair and selector-only comparison: 117 to 124 affected targets, the same 51 tests before runtime tag filtering, and no tests executed. The exact overlay, candidate-only pair-era adaptations, both prior failures and hosted payload provenance are in the first-pair record above. This is one completed selector pair, not the remaining 29-pair qualification or a timing comparison.")}
             <${Title} order=${3} mt="lg"
               >Next implementation and adoption boundary<//
             >
-            ${p("Extend the direct guest witness to run the packaged production Runtime under guest systemd, using fixture-issued mTLS and the real Gateway with exact Sandbox UID/incarnation status. Require the same healthy-readiness assertion to reject seeded wrong client trust. That work is in progress, without a passing result claimed here. Preserve the boot-only controls and every full deployment path. Then complete compatible graph replay and matched feedback/load qualification. No gate or frequency promotion follows from the current green checks.")}
+            ${p("At this checkpoint the next proposed step was to configure the guest Runtime against a real Gateway. Iteration7 now records a focused exact-source positive and expected-red wrong-CA control; fixture-issued trust and envtest-authored status are not controller-issued PKI/status, and this pair does not establish Session, executor, History, App or Kubernetes acceptance. Source135 full required CI failed; its listener fixture repair is now committed on successor source5699. See the current evidence above for required checks. Continue the remaining 29 compatible graph pairs and matched busy-window/four-PR qualification before considering selection changes. No gate or frequency promotion follows from the current evidence.")}
             <${Group} gap="md" my="sm">
               <${Anchor} href="native-contract-validation.json"
                 >Contract results<//
@@ -1097,9 +1197,9 @@
             <//>
             ${p("This is a synthetic selection-only counterfactual: no tests ran and no feedback-time saving is inferred. Its control restores only fixture/image ownership and is not a qualified executable full-gate control. Raw hashes and label sets are preserved in the uploaded archive, with identities recorded in evidence.json. The actual 15-head historical MCP frame contains no isolated MCP-edge-only PR, so this footprint's frequency and practical benefit remain unmeasured.")}
             <${Title} order=${3} mt="xl" mb="sm"
-              >Historical replay inputs prepared; no replay run<//
+              >Iteration5 checkpoint: replay inputs prepared<//
             >
-            ${p("The sample pins actual tested CI base/head pairs from source-resolved Actions logs, matching BuildBuddy commit metadata and immutable Git parents. It deliberately includes failed and cancelled heads. Current PR API bases are retained separately where they differ from the historical tested base. This is cohort preparation only: no historical test graphs were replayed and no matched performance result or savings claim exists.")}
+            ${p("At this iteration5 checkpoint, the sample pinned actual tested CI base/head pairs from source-resolved Actions logs, matching BuildBuddy commit metadata and immutable Git parents. It deliberately included failed and cancelled heads. Iteration7 later completed one selector-only pair; the other 29 remain. No matched performance result or savings claim exists.")}
             <${Rows}
               headers=${["Stratum", "Selected / frame", "Required outcomes"]}
               rows=${iteration5StrataRows}
@@ -1124,7 +1224,7 @@
             <${Title} order=${3} mt="xl" mb="sm"
               >What remains before promotion<//
             >
-            ${p("The direct-QEMU wrong-configuration negative rejected readiness as expected, and retained artifacts are verified. Literal published-head contracts and all three required checks pass on 91f72591a1. The existing app-free Central Sampler integration is being extended with real incoming authentication and a bounded History outage; those additions have not yet been validated. Next, execute the prepared compatible candidate/control pairs across real busy windows and a four-PR burst; assign each retained assertion to its owning contract before changing selection. Keep the devel gate unchanged. Apply the stop rule if the strongest remaining candidate cannot repay implementation, review and maintenance within about a quarter and the two best probes show no worthwhile gain. No complete-feedback saving has been measured.")}
+            ${p("At the iteration5 checkpoint, the direct-QEMU wrong-configuration control and 91f exact-head checks were complete while Sampler auth/History work was pending. Later iteration6 evidence validated that native composition on source 663; iteration7 adds a configured guest Runtime/Gateway exact-source-135 witness and completes one selector-only historical pair. Source135 required CI failed and was superseded. The fixture repair is committed on source5699; current checks are recorded above. Continue 29 historical pairs, three busy windows and a four-PR burst; keep the devel gate unchanged. No complete-feedback saving has been measured.")}
           <//>
           <${Section}
             id="iteration4"

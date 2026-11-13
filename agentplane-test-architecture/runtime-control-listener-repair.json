@@ -1,0 +1,89 @@
+{
+  "schema": "agentplane.runtime_control_listener_repair.v1",
+  "source_head": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+  "backport_pr": "https://github.com/agentydragon/ducktape/pull/16233",
+  "backport_head": "241e9a6e5173f9ffe5f1691981478ec24dc4ff90",
+  "natural_failure": {
+    "source_head": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+    "invocation": "03a1aa59-ade3-5637-97da-de0d6779f80c",
+    "error": "listen for Gateway control: listen tcp 127.0.0.1:43377: bind: address already in use",
+    "port_occupier": "unknown"
+  },
+  "mechanism": "Fixture chose a default-loopback ephemeral port, closed its socket, then started Runtime later. That address was available for reuse during setup.",
+  "repair": "Use port9090 on a loopback address derived from the fresh Sandbox UID. Keep explicit App/Sampler production Gateway endpoints unchanged. No startup retry or production change.",
+  "regression": "Existing Codex shared-process cases hold a real listening socket on default loopback at the same port before starting production Runtime.",
+  "build": {
+    "invocation": "4b46b507-9ff5-45c4-9422-21dc7bec58f1",
+    "status": "SUCCESS",
+    "changed_library_explicitly_named": true
+  },
+  "positive": {
+    "invocation": "a9500358-00a7-4d25-8232-385da8155340",
+    "status": "SUCCESS",
+    "junit": {
+      "tests": 4,
+      "passed": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "fresh_physical_test_runner_actions": 1,
+    "run": 1,
+    "shard": 1,
+    "attempt": 1,
+    "wall_seconds": 28.967
+  },
+  "old_allocator_control": {
+    "invocation": "9d1cc189-37f1-49fa-ab93-758aad1ed737",
+    "status": "EXPECTED_SETUP_ERROR",
+    "selected_cases": 1,
+    "deselected": 3,
+    "fresh_physical_test_runner_actions": 1,
+    "run": 1,
+    "shard": 1,
+    "attempt": 1,
+    "runtime_error": "listen for Gateway control: listen tcp 127.0.0.1:56707: bind: address already in use"
+  },
+  "source_identity": {
+    "base": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+    "candidate_files": [
+      {
+        "path": "agentplane/env/e2e/testing/gateway.py",
+        "sha256": "9f546a783ed01b0bf1b2afdfe0f4f14d792460913b01ab2410fd53a4deb7b85d",
+        "bytes": 11901,
+        "change": "Use a deterministic per-Sandbox 127/8 loopback address and fixed port 9090 instead of bind-to-ephemeral-then-close."
+      },
+      {
+        "path": "agentplane/env/e2e/test_codex_shared_process.py",
+        "sha256": "ee59e3f571f74735938a310581565abaa774347942cfc0bd1ba25d6a6edc1e40",
+        "bytes": 9513,
+        "change": "Hold the served port on 127.0.0.1 throughout the test, then exercise the actual Runtime startup and authenticated Gateway connection."
+      },
+      {
+        "path": "agentplane/env/e2e/BUILD.bazel",
+        "sha256": "00386c02ed3b2899cc63e567ee489a104446f2dab7009b783e1fd80a3848be15",
+        "change": "Declare direct test deps for the gateway and Sandbox fixtures."
+      }
+    ],
+    "remote_patch_and_source_artifacts_verified": true,
+    "candidate_restored_after_control": true,
+    "candidate_gateway_sha256": "9f546a783ed01b0bf1b2afdfe0f4f14d792460913b01ab2410fd53a4deb7b85d"
+  },
+  "rejected_validation": "Earlier --run_from_commit calls excluded uncommitted patches. Their green results are baseline-only, not candidate or seeded-control evidence.",
+  "normal_milestone_commit_hooks": "PASS on source5699 and isolated devel241; no bypass.",
+  "limits": [
+    "Deterministic mechanism repair, not a population flake-rate or complete-feedback saving.",
+    "Required CI and merge state are recorded separately."
+  ],
+  "follow_up": "After merge, record seven days of fresh physical attempts and signatures in #16231 and #16034; cached passes are not exposures.",
+  "backport_required_checks": {
+    "status": "SUCCESS",
+    "head": "241e9a6e5173f9ffe5f1691981478ec24dc4ff90",
+    "workflow_id": 43445305470,
+    "workflow_created_at_utc": "2026-11-13T14:42:35Z",
+    "last_required_completed_at_utc": "2026-11-13T14:47:07Z",
+    "workflow_created_to_last_required_seconds": 272,
+    "merge_state": "OPEN; no merge claimed",
+    "limits": "Single validation workflow, not a matched feedback saving or recurrence estimate."
+  }
+}

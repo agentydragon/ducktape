@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "title": "Native Gateway fixture split validation",
+  "source": {
+    "branch": "agent/test-architecture-pivot",
+    "base_source": "66320ca9960967305b7683dbfbacae6456c46a1a",
+    "fixture_split_patch_sha256": "c29b397241e13a776dd585a1edc516408a01c3471a939efe815b78689a194ac2"
+  },
+  "build": {
+    "invocation_id": "bcdc607b-f2b9-4cfa-8100-66e512c9f2c6",
+    "result": "SUCCESS",
+    "actions": 15,
+    "scope": "Changed fixture libraries and conftests built, including mypy/ruff aspects."
+  },
+  "tests": {
+    "invocation_id": "08c6336a-911a-42dc-ab49-f92363767f14",
+    "result": "SUCCESS",
+    "targets": [
+      {
+        "label": "//agentplane/x/native_contracts:test_recovery",
+        "result": "PASSED",
+        "process_seconds": 74.2
+      },
+      {
+        "label": "//agentplane/x/native_contracts:test_admission_reply_loss",
+        "result": "PASSED",
+        "process_seconds": 39.2
+      }
+    ],
+    "bazel_elapsed_seconds": 78.109,
+    "critical_path_seconds": 75.46
+  },
+  "decision": "Fixture organization only; no dependency-count or CI-saving measurement is claimed.",
+  "limits": [
+    "The packaged guest Runtime and both Claude/Codex harnesses remain required.",
+    "Standalone host Runtime and History paths may still be in TestRunner runfiles.",
+    "This base-source fixture split is validation for reusable setup, not current-head test evidence."
+  ]
+}
