@@ -73577,5 +73577,144 @@
       "pre_test_login_read_timeouts": 2,
       "unit": "Four failed required checks in the selected recovered-head audit; no fresh target exposure denominator."
     }
+  },
+  "nov13_selected_followup": {
+    "reviewed_at_utc": "2026-11-13T02:12:00Z",
+    "scope": "Selected Nov 13 physical experiments and current PR status only; existing latency population windows, denominators, source pins, and rates were not recollected.",
+    "initial_graph_source_devel_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+    "fixture": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/15966",
+      "pr_state": "MERGED",
+      "focused_cold_pod_setup_seconds": {
+        "control": 140.131,
+        "candidate": 125.428
+      },
+      "focused_cold_pod_cases_passed": {
+        "control": 21,
+        "candidate": 21
+      },
+      "limits": "One cold pair, with case and import time also varying; no full-gate saving established."
+    },
+    "graph": {
+      "note_url": "https://github.com/agentydragon/ducktape/blob/b0c378e104795d514ecb296b8c155083bbda9fee/devinfra/ci/debug/fixture_overlap_three_suite_graph_2026_11_12.md",
+      "correction_pr_url": "https://github.com/agentydragon/ducktape/pull/15979",
+      "control_invocation_url": "https://app.buildbuddy.io/invocation/1f32be52-d51a-44ff-b5e5-ab83a579cc92",
+      "candidate_invocation_url": "https://app.buildbuddy.io/invocation/9aa93480-4b18-4073-bbe8-1d1afce70fb9",
+      "control_source_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+      "candidate_source_commit": "54267247e728b7860546febefab75229b72b021d",
+      "command_labels": [
+        "//agentplane/system_tests/suites:test_pod",
+        "//agentplane/system_tests/suites/mcp:test_actions",
+        "//agentplane/system_tests/suites:test_vm"
+      ],
+      "flags": ["--nocache_test_results", "--keep_going"],
+      "coverage_cases": {
+        "pod": 21,
+        "mcp_actions": 5,
+        "vm": 1
+      },
+      "bazel_elapsed_seconds": {
+        "control": 492.125,
+        "candidate": 519.987
+      },
+      "pod_finished_last": {
+        "control": true,
+        "candidate": true
+      },
+      "setup_seconds": {
+        "pod": {
+          "control": 152.932,
+          "candidate": 149.724
+        },
+        "mcp_actions": {
+          "control": 144.363,
+          "candidate": 172.264
+        },
+        "vm": {
+          "control": 150.502,
+          "candidate": 67.736
+        }
+      },
+      "baseline_state": {
+        "control": {
+          "pod": "cold",
+          "mcp_actions": "cold",
+          "vm": "cold"
+        },
+        "candidate": {
+          "pod": "cold",
+          "mcp_actions": "cold",
+          "vm": "warm"
+        }
+      },
+      "requested_compute_units_per_action": {
+        "pod": 4,
+        "mcp_actions": 4,
+        "vm": 8
+      },
+      "requested_cu_minutes": {
+        "control": 107.29,
+        "candidate": 95.58
+      },
+      "input_comparison": "Recursive CAS runfiles per suite: same command, platform, timeout, and common files; only deployment/stack.py differed.",
+      "limits": "Different overlapping executor loads, VM cold/warm mismatch, selected three targets rather than full required CI, and only returned provider actions visible. No causal gate, regression, or cost conclusion."
+    },
+    "pod_partition": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/16003",
+      "pr_state": "MERGED",
+      "merged_at_utc": "2026-11-13T02:10:41Z",
+      "pr_head_commit": "605bd8b7555294ce098249262051cd1298b03c69",
+      "local_source_commit": "c44a15e40c162fbb9d7760254020a6e78aeaca73",
+      "source_patch": "Uncommitted manual spike in k3s/defs.bzl and suites/BUILD.bazel; reproducible patch is attached to PR #16003.",
+      "remote_runner_base_commits": {
+        "control": "8a8ce47a",
+        "candidate": "60d97d69"
+      },
+      "source_comparison": "Both remote runners applied cumulative patches to the same local tree; MCP Actions and VM action digests match. Five common Pod source files matched by CAS; full Pod runfiles trees were not compared.",
+      "control_invocation_url": "https://app.buildbuddy.io/invocation/02e68907-8fb7-46f3-9fc5-f8c7023c837b",
+      "candidate_invocation_url": "https://app.buildbuddy.io/invocation/369fbd72-f1af-418e-a110-cfc01851b8e8",
+      "bazel_elapsed_seconds": { "control": 580.533, "candidate": 357.487 },
+      "junit_cases_passed": { "control": 27, "candidate": 27 },
+      "candidate_pod_group_cases": [5, 9, 7],
+      "candidate_pod_group_process_seconds": [220.075, 255.994, 256.097],
+      "control_pod_process_seconds": 387.428,
+      "candidate_vm_last_seconds_approx": 314,
+      "fixture_state": "All selected fixtures warm, with distinct fresh identities and cleanup.",
+      "extra_stack_count": 2,
+      "largest_shared_group_sandboxes_at_node_cap": 5,
+      "pod_requested_cu_minutes": { "control": 25.829, "candidate": 48.811 },
+      "pod_observed_cpu_seconds": { "control": 1175.31, "candidate": 1976.706 },
+      "limits": "Control had a failed VM execution followed by a successful new execution, with initiator unknown; run times and load differed, and control overlapped KVM trial. Selected graph only; both Bazel runs exceeded 240s. No causal CI gate or capacity-cost improvement established."
+    },
+    "vm_pilot": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/15996",
+      "pr_state": "MERGED",
+      "merged_at_utc": "2026-11-13T01:57:23Z",
+      "source_commit": "c44a15e40c162fbb9d7760254020a6e78aeaca73",
+      "source_patch": "Temporary uncommitted managed-control target sizing patch: EstimatedCPU=4, EstimatedMemory=7GiB, EstimatedFreeDiskBytes=50GB; removed after experiment.",
+      "invocation_url": "https://app.buildbuddy.io/invocation/587be4c8-2b03-4323-966c-3fc1b1f26e53",
+      "bazel_elapsed_seconds": 396.977,
+      "test_action_seconds": { "kvm": 219.986, "managed_tcg": 346.448 },
+      "requested_resources": { "cpu": 4, "memory_gib": 7, "free_disk_gb": 50 },
+      "junit_cases_passed": { "kvm": 1, "managed_tcg": 1 },
+      "limits": "Same source and uncached selected test actions, but managed fixture cold, KVM cache warmth unknown, isolation and retention differ, managed actual resource assignment unobserved, and KVM queue timestamps inverted. No causal last-gate, normal-load admission, or compute-cost saving established. PR records the trial only."
+    },
+    "images": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/15214",
+      "pr_state": "OPEN",
+      "draft": false,
+      "required_checks": "green at 2026-11-13T01:38Z",
+      "oci_unique_blob_mb": {
+        "full": 914.5,
+        "codex_only": 486.1,
+        "both_harnesses": 700.5,
+        "pod_egress": 798.9
+      },
+      "observed_pod_import_seconds": {
+        "full_control": 31.528,
+        "pod_egress_candidate": 55.983
+      },
+      "limits": "Different workers and overlapping load; OCI blob size is not transfer bytes or a CI-time saving. The real-model manual suite was built but not run."
+    }
   }
 }

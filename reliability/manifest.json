@@ -2,11 +2,11 @@
   "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "window_start_utc": "2026-11-05T07:20:00Z",
   "window_end_utc": "2026-11-12T07:20:00Z",
-  "published_at_utc": "2026-11-13T01:18:14.669661+00:00",
+  "published_at_utc": "2026-11-13T02:12:48.179572+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "c3dd12dd637d1a8d25abc95303ae519f8a1b2e9e",
-  "report_sha256": "34575a65a5f197d1382524e251b2df25b9fee2d888024a580a9703d1ce442433",
-  "evidence_sha256": "baefc630fe44418c6b966664e4d36f0c91b5ea46c7bf7a9098ec679db2f5f28a",
+  "previous_report_commit": "bf7f219f091b33071b5bdfeebf42b930d20f6ebe",
+  "report_sha256": "b630343646b00756862bf208f9ce086c2a652a7ddbcd17d493c75e28b4c35c8a",
+  "evidence_sha256": "e72975c0cbf15b9bdeb46cf3678766fbbfeb433ac8f31f12933eec67e48a5a7a",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -18,5 +18,8 @@
   "backend_retry_population_window_utc": [
     "2026-11-10T00:00:00Z",
     "2026-11-12T23:59:19Z"
-  ]
+  ],
+  "nov13_selected_followup_reviewed_at_utc": "2026-11-13T01:40:00Z",
+  "nov13_selected_followup_source_devel_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+  "nov13_selected_followup_scope": "Selected physical experiments and PR status; original cohort windows, source pins, denominators and rates unchanged."
 }

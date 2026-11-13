@@ -498,7 +498,53 @@
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
         >
-          <${Title} order=${1}>Backend reruns: VM and browser repairs merged<//>
+          <${Title} order=${1}>Backend reruns: VM work and browser diagnosis<//>
+          <${Paper}
+            component="section"
+            id="latest-browser"
+            withBorder
+            p="lg"
+            my="lg"
+          >
+            <${Stack} gap="sm">
+              <${Title} order=${2}
+                >Browser projection: five fresh passes, cause still open<//
+              >
+              <${Text} size="sm" c="dimmed"
+                >${`Supplement reviewed ${evidence.nov13_selected_followup.reviewed_at_utc}; the original 5–12 November mainline window and target statistics below were not recollected.`}<//
+              >
+              <${Text}>
+                Five distinct, uncached RBE executions of the exact
+                growing-thread scenario passed on devel${" "}
+                <${Anchor}
+                  href=${`https://github.com/agentydragon/ducktape/commit/${evidence.nov13_selected_followup.browser.source_commit}`}
+                  >${evidence.nov13_selected_followup.browser.source_commit.slice(0, 10)}<//
+                >. Each selected test log reported one pass. See the${" "}
+                <${Anchor}
+                  href=${evidence.nov13_selected_followup.browser.invocation_url}
+                  >five-run invocation<//
+                >${" "} and${" "}
+                <${Anchor}
+                  href=${evidence.nov13_selected_followup.browser.note_url}
+                  >investigation note<//
+                >. The earlier cursor-334 failure remains unexplained; this
+                selected sample is not a refreshed failure rate or proof of a
+                runtime repair.
+              <//>
+              <${Text} size="sm">
+                <${Anchor}
+                  href=${evidence.nov13_selected_followup.browser.diagnostic_pr_url}
+                  >Merged PR #15913<//
+                >${" "} captures bounded cursor and entity-stream metadata when
+                the assertion fails, without publishing thread content. None of
+                these five passing executions exercised that failure path. The
+                next useful observation is a natural failure with direct view,
+                fresh Electric snapshot, Chromium stream metadata, and browser
+                cursor captured together; then locate the stalled boundary
+                before changing runtime delivery.
+              <//>
+            <//>
+          <//>
           <${ReliabilityWork} />
           <${Stack} component="section" id="current" gap="sm" my="xl">
             <${Text} component="p" c="dimmed" my="sm">
