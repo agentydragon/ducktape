@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "webhook",
+    srcs = ["handler.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook",
+    deps = [
+        "//agentplane/notification_service/internal/sources/github",
+        "//agentplane/notification_service/internal/sources/github/settings",
+        "//agentplane/notification_service/internal/store",
+        "@com_github_google_go_github_v88//github",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "handler_integration_test.go",
+        "integration_testmain_test.go",
+    ],
+    embed = [":webhook"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/notification_service/internal/sources/github/settings",
+        "//agentplane/notification_service/internal/store",
+        "//agentplane/notification_service/migrations",
+        "//agentplane/postgres/wakeups",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+    ],
+)
