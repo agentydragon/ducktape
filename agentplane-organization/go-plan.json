@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
-  "source_sha": "8cadf53a8982f7ff5e14fc5410173de142d08235",
-  "observed_at_utc": "2026-11-13T20:20:28+00:00",
+  "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
+  "observed_at_utc": "2026-11-13T22:14:00+00:00",
   "scope": "Every tracked Go file and package under agentplane; every top-level Agentplane area is represented, with protocol, frontend, native-driver and documentation context. No Go directory or filename exclusions.",
   "counts": {
-    "files": 1241,
-    "directories": 217,
-    "production": 682,
-    "tests": 559
+    "files": 1253,
+    "directories": 219,
+    "production": 691,
+    "tests": 562
   },
   "legend": {
     "=": "Keep current owner / structure",
@@ -1967,28 +1967,28 @@
       },
       "directories": [
         {
-          "path": "agentplane/history_service",
-          "production": 4,
-          "tests": 5,
-          "files": [
-            "agentplane/history_service/compact_history.go",
-            "agentplane/history_service/config.go",
-            "agentplane/history_service/config_test.go",
-            "agentplane/history_service/integration_testmain_test.go",
-            "agentplane/history_service/main.go",
-            "agentplane/history_service/main_test.go",
-            "agentplane/history_service/settle_history.go",
-            "agentplane/history_service/settle_history_test.go",
-            "agentplane/history_service/svid_test.go"
-          ]
-        },
-        {
           "path": "agentplane/history_service/backfill",
           "production": 1,
           "tests": 1,
           "files": [
             "agentplane/history_service/backfill/settlement.go",
             "agentplane/history_service/backfill/settlement_integration_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/history_service/cmd",
+          "production": 4,
+          "tests": 5,
+          "files": [
+            "agentplane/history_service/cmd/compact_history.go",
+            "agentplane/history_service/cmd/config.go",
+            "agentplane/history_service/cmd/config_test.go",
+            "agentplane/history_service/cmd/integration_testmain_test.go",
+            "agentplane/history_service/cmd/main.go",
+            "agentplane/history_service/cmd/main_test.go",
+            "agentplane/history_service/cmd/settle_history.go",
+            "agentplane/history_service/cmd/settle_history_test.go",
+            "agentplane/history_service/cmd/svid_test.go"
           ]
         },
         {
@@ -2142,20 +2142,23 @@
         "agentplane/history_service/api/history/history_service.proto",
         "agentplane/history_service/api/ingress/session_ingress.proto"
       ],
-      "pending_tracks": ["history_service-command", "protobuf-alignment"],
-      "goal_note": "Keep private ingress, storage, projection, reads, RPC, threadfold and cursor semantics independent. Move only the composition/maintenance command package to cmd/; data ownership and wire contracts remain unchanged.",
+      "pending_tracks": ["protobuf-alignment"],
+      "goal_note": "Keep ingress, storage, projection, reads, RPC, threadfold, cursors and backfill as separate owners; the service and maintenance command lives under cmd/.",
       "decision": {
-        "state": "READY MOVE",
-        "role": "Archive ingress/storage, settlement, projection, reads and service commands",
-        "goal_summary": "Keep private ingress, storage, projection, reads, RPC, threadfold and cursor semantics independent. Move only the composition/maintenance command package to cmd/; data ownership and wire contracts remain unchanged.",
-        "reason": "Recommend moving the command package and all its colocated Go tests from the component root to cmd/. This is a path-only cleanup: service composition stays in the command, concrete implementations remain in internal/ and backfill/, and the installed binary plus compact-history/settle-history/--migrate-only CLI contract stays stable. Keeping root is also idiomatic for a single service binary, so this can remain optional if the project prefers the shortest diff.",
+        "state": "KEEP",
+        "role": "History ingress, storage, projections, reads and service command",
+        "goal_summary": "Keep ingress, storage, projection, reads, RPC, threadfold, cursors and backfill as separate owners; the service and maintenance command lives under cmd/.",
+        "reason": "At the pinned source SHA, the command package and its Go tests live in history_service/cmd. Root image packaging retains the history-service executable contract. No History command placement remains.",
         "evidence_paths": [
+          "agentplane/history_service/cmd/BUILD.bazel",
+          "agentplane/history_service/BUILD.bazel",
           "agentplane/history_service/README.md",
-          "agentplane/history_service/BUILD.bazel"
+          "agentplane/history_service/testing/BUILD.bazel",
+          "agentplane/history_service/testing/go_service.py"
         ],
         "reviewed_package_paths": [
-          "agentplane/history_service",
           "agentplane/history_service/backfill",
+          "agentplane/history_service/cmd",
           "agentplane/history_service/internal/ingress",
           "agentplane/history_service/internal/migrations",
           "agentplane/history_service/internal/projection",
@@ -2637,8 +2640,8 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 164,
-        "directories": 18
+        "files": 176,
+        "directories": 20
       },
       "directories": [
         {
@@ -2712,6 +2715,15 @@
           ]
         },
         {
+          "path": "agentplane/notification_service/internal/sources",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/sources/provider.go",
+            "agentplane/notification_service/internal/sources/worker.go"
+          ]
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/actions",
           "production": 1,
           "tests": 2,
@@ -2723,8 +2735,8 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github",
-          "production": 10,
-          "tests": 8,
+          "production": 11,
+          "tests": 10,
           "files": [
             "agentplane/notification_service/internal/sources/github/access.go",
             "agentplane/notification_service/internal/sources/github/check_runs.go",
@@ -2733,6 +2745,8 @@
             "agentplane/notification_service/internal/sources/github/commit_resources_provider_integration_test.go",
             "agentplane/notification_service/internal/sources/github/commit_statuses.go",
             "agentplane/notification_service/internal/sources/github/failures.go",
+            "agentplane/notification_service/internal/sources/github/maintenance.go",
+            "agentplane/notification_service/internal/sources/github/maintenance_integration_test.go",
             "agentplane/notification_service/internal/sources/github/pr_state_provider_integration_test.go",
             "agentplane/notification_service/internal/sources/github/pr_state_webhook.go",
             "agentplane/notification_service/internal/sources/github/pr_state_webhook_test.go",
@@ -2741,6 +2755,7 @@
             "agentplane/notification_service/internal/sources/github/provider_harness_integration_test.go",
             "agentplane/notification_service/internal/sources/github/provider_integration_test.go",
             "agentplane/notification_service/internal/sources/github/reviews_provider.go",
+            "agentplane/notification_service/internal/sources/github/source_worker_integration_test.go",
             "agentplane/notification_service/internal/sources/github/subjects.go",
             "agentplane/notification_service/internal/sources/github/webhook.go",
             "agentplane/notification_service/internal/sources/github/webhook_test.go"
@@ -2772,11 +2787,28 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github/settings",
-          "production": 1,
-          "tests": 1,
+          "production": 2,
+          "tests": 2,
           "files": [
+            "agentplane/notification_service/internal/sources/github/settings/retention.go",
+            "agentplane/notification_service/internal/sources/github/settings/retention_test.go",
             "agentplane/notification_service/internal/sources/github/settings/settings.go",
             "agentplane/notification_service/internal/sources/github/settings/settings_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/notification_service/internal/sources/github/state",
+          "production": 8,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/sources/github/state/commit.go",
+            "agentplane/notification_service/internal/sources/github/state/completion.go",
+            "agentplane/notification_service/internal/sources/github/state/ingest.go",
+            "agentplane/notification_service/internal/sources/github/state/mergeability.go",
+            "agentplane/notification_service/internal/sources/github/state/pr.go",
+            "agentplane/notification_service/internal/sources/github/state/reconcile.go",
+            "agentplane/notification_service/internal/sources/github/state/state.go",
+            "agentplane/notification_service/internal/sources/github/state/status.go"
           ]
         },
         {
@@ -2812,7 +2844,7 @@
         },
         {
           "path": "agentplane/notification_service/internal/store",
-          "production": 17,
+          "production": 14,
           "tests": 32,
           "files": [
             "agentplane/notification_service/internal/store/actions.go",
@@ -2824,25 +2856,22 @@
             "agentplane/notification_service/internal/store/event_identity_contract_integration_test.go",
             "agentplane/notification_service/internal/store/event_identity_storage_integration_test.go",
             "agentplane/notification_service/internal/store/event_native_content_constraints_integration_test.go",
+            "agentplane/notification_service/internal/store/github_commit_entries.go",
             "agentplane/notification_service/internal/store/github_commit_integration_test.go",
-            "agentplane/notification_service/internal/store/github_commit_observations.go",
             "agentplane/notification_service/internal/store/github_deliveries.go",
             "agentplane/notification_service/internal/store/github_ingest.go",
             "agentplane/notification_service/internal/store/github_ingest_integration_test.go",
             "agentplane/notification_service/internal/store/github_integration_test.go",
             "agentplane/notification_service/internal/store/github_matching_integration_test.go",
-            "agentplane/notification_service/internal/store/github_mergeability.go",
+            "agentplane/notification_service/internal/store/github_mergeability_entries.go",
             "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
             "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
-            "agentplane/notification_service/internal/store/github_pr_state.go",
+            "agentplane/notification_service/internal/store/github_pr_entries.go",
             "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-            "agentplane/notification_service/internal/store/github_reconcile.go",
             "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
             "agentplane/notification_service/internal/store/github_record_integration_test.go",
-            "agentplane/notification_service/internal/store/github_refresh_completion.go",
-            "agentplane/notification_service/internal/store/github_state.go",
             "agentplane/notification_service/internal/store/github_state_integration_test.go",
-            "agentplane/notification_service/internal/store/github_status.go",
+            "agentplane/notification_service/internal/store/github_status_projection.go",
             "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
             "agentplane/notification_service/internal/store/golden_test.go",
             "agentplane/notification_service/internal/store/golden_vectors_test.go",
@@ -2877,7 +2906,7 @@
         },
         {
           "path": "agentplane/notification_service/internal/worker",
-          "production": 5,
+          "production": 4,
           "tests": 8,
           "files": [
             "agentplane/notification_service/internal/worker/debounce_integration_test.go",
@@ -2887,7 +2916,6 @@
             "agentplane/notification_service/internal/worker/destination_integration_test.go",
             "agentplane/notification_service/internal/worker/harness_integration_test.go",
             "agentplane/notification_service/internal/worker/integration_testmain_test.go",
-            "agentplane/notification_service/internal/worker/provider.go",
             "agentplane/notification_service/internal/worker/run_integration_test.go",
             "agentplane/notification_service/internal/worker/settings.go",
             "agentplane/notification_service/internal/worker/settings_test.go",
@@ -2906,7 +2934,7 @@
         },
         {
           "path": "agentplane/notification_service/model",
-          "production": 9,
+          "production": 10,
           "tests": 1,
           "files": [
             "agentplane/notification_service/model/event_identity.go",
@@ -2917,6 +2945,7 @@
             "agentplane/notification_service/model/identity.go",
             "agentplane/notification_service/model/model_test.go",
             "agentplane/notification_service/model/selection.go",
+            "agentplane/notification_service/model/source_failure.go",
             "agentplane/notification_service/model/subscription.go",
             "agentplane/notification_service/model/validation.go"
           ]
@@ -2932,18 +2961,22 @@
         "agentplane/notification_service/api/notifications/notifications.proto",
         "agentplane/notification_service/storage.proto"
       ],
-      "pending_tracks": ["notification-transactions", "protobuf-alignment"],
-      "goal_note": "Keep sources/actions and sources/github apart from delivery workers and RPC. Store remains one transaction authority; only the explicitly gated GitHub-state query extraction is a candidate.",
+      "pending_tracks": ["protobuf-alignment"],
+      "goal_note": "Keep event-driven sources independent from inbox delivery. GitHub owns API interpretation, refresh leases and facts; internal/sources/github/state owns SQL and shared status. The inbox store retains fenced publication, binding, quotas, cursors and delivery adapters.",
       "decision": {
-        "state": "DESIGN",
-        "role": "Inboxes, provider observations, workers and notification RPC",
-        "goal_summary": "Keep sources/actions and sources/github apart from delivery workers and RPC. Store remains one transaction authority; only the explicitly gated GitHub-state query extraction is a candidate.",
-        "reason": "The concrete package owners and production import graph remain sound. One query-family extraction is still design-required inside Store.",
+        "state": "KEEP",
+        "role": "Event-driven provider sources and independently delivered notifications",
+        "goal_summary": "Keep event-driven sources independent from inbox delivery. GitHub owns API interpretation, refresh leases and facts; internal/sources/github/state owns SQL and shared status. The inbox store retains fenced publication, binding, quotas, cursors and delivery adapters.",
+        "reason": "Concrete GitHub state is injected into the provider at composition. Source-state writes and inbox publication share the PostgreSQL transaction and generation fences. Successful quiet refreshes remain idle; cache expiry alone creates no API work.",
         "evidence_paths": [
           "agentplane/notification_service/README.md",
-          "agentplane/notification_service/config.go",
           "agentplane/notification_service/main.go",
-          "agentplane/notification_service/workers.go"
+          "agentplane/notification_service/internal/sources/worker.go",
+          "agentplane/notification_service/internal/sources/github/provider.go",
+          "agentplane/notification_service/internal/sources/github/state/state.go",
+          "agentplane/notification_service/internal/store/github_ingest.go",
+          "agentplane/notification_service/internal/store/github_deliveries.go",
+          "agentplane/notification_service/internal/worker/worker.go"
         ],
         "reviewed_package_paths": [
           "agentplane/notification_service",
@@ -2951,10 +2984,12 @@
           "agentplane/notification_service/internal/inboxaccess",
           "agentplane/notification_service/internal/rpc",
           "agentplane/notification_service/internal/sessionidentity",
+          "agentplane/notification_service/internal/sources",
           "agentplane/notification_service/internal/sources/actions",
           "agentplane/notification_service/internal/sources/github",
           "agentplane/notification_service/internal/sources/github/client",
           "agentplane/notification_service/internal/sources/github/settings",
+          "agentplane/notification_service/internal/sources/github/state",
           "agentplane/notification_service/internal/sources/github/testing",
           "agentplane/notification_service/internal/sources/github/webhook",
           "agentplane/notification_service/internal/storagecodec",
@@ -2964,6 +2999,44 @@
           "agentplane/notification_service/migrations",
           "agentplane/notification_service/model",
           "agentplane/notification_service/testing"
+        ]
+      },
+      "tree_annotations": {
+        "current": [
+          {
+            "path": "agentplane/notification_service/internal/sources",
+            "note": "event-driven source coordinator; quiet success idle"
+          },
+          {
+            "path": "agentplane/notification_service/internal/sources/github/state",
+            "note": "GitHub SQL, facts, leases and shared status"
+          },
+          {
+            "path": "agentplane/notification_service/internal/store",
+            "note": "fenced inbox publication and generic delivery adapters"
+          },
+          {
+            "path": "agentplane/notification_service/internal/worker",
+            "note": "independent inbox delivery"
+          }
+        ],
+        "goal": [
+          {
+            "path": "agentplane/notification_service/internal/sources",
+            "note": "event-driven source coordinator; quiet success idle"
+          },
+          {
+            "path": "agentplane/notification_service/internal/sources/github/state",
+            "note": "GitHub SQL, facts, leases and shared status"
+          },
+          {
+            "path": "agentplane/notification_service/internal/store",
+            "note": "fenced inbox publication and generic delivery adapters"
+          },
+          {
+            "path": "agentplane/notification_service/internal/worker",
+            "note": "independent inbox delivery"
+          }
         ]
       }
     },
@@ -3956,96 +4029,8 @@
         "//agentplane/runner_gateway:test_grpc_native",
         "//agentplane/runner_gateway/migrations:test_migrations"
       ],
-      "validation_note": "Validation after placement; config_test currently lives at the service root."
-    },
-    {
-      "id": "history_service-command",
-      "title": "Place History service and maintenance commands under cmd/",
-      "status": "READY",
-      "components": ["history_service"],
-      "kind": "whole-command placement; no new responsibility API",
-      "source_paths": [
-        "agentplane/history_service/compact_history.go",
-        "agentplane/history_service/config.go",
-        "agentplane/history_service/config_test.go",
-        "agentplane/history_service/integration_testmain_test.go",
-        "agentplane/history_service/main.go",
-        "agentplane/history_service/main_test.go",
-        "agentplane/history_service/settle_history.go",
-        "agentplane/history_service/settle_history_test.go",
-        "agentplane/history_service/svid_test.go"
-      ],
-      "source_owner": "agentplane/history_service",
-      "target_path": "agentplane/history_service/cmd",
-      "candidate_target": null,
-      "path_moves": [
-        {
-          "from": "agentplane/history_service/compact_history.go",
-          "to": "agentplane/history_service/cmd/compact_history.go"
-        },
-        {
-          "from": "agentplane/history_service/config.go",
-          "to": "agentplane/history_service/cmd/config.go"
-        },
-        {
-          "from": "agentplane/history_service/config_test.go",
-          "to": "agentplane/history_service/cmd/config_test.go"
-        },
-        {
-          "from": "agentplane/history_service/integration_testmain_test.go",
-          "to": "agentplane/history_service/cmd/integration_testmain_test.go"
-        },
-        {
-          "from": "agentplane/history_service/main.go",
-          "to": "agentplane/history_service/cmd/main.go"
-        },
-        {
-          "from": "agentplane/history_service/main_test.go",
-          "to": "agentplane/history_service/cmd/main_test.go"
-        },
-        {
-          "from": "agentplane/history_service/settle_history.go",
-          "to": "agentplane/history_service/cmd/settle_history.go"
-        },
-        {
-          "from": "agentplane/history_service/settle_history_test.go",
-          "to": "agentplane/history_service/cmd/settle_history_test.go"
-        },
-        {
-          "from": "agentplane/history_service/svid_test.go",
-          "to": "agentplane/history_service/cmd/svid_test.go"
-        }
-      ],
-      "summary": "Keep private ingress, storage, projection, reads, RPC, threadfold and cursor semantics independent. Move only the composition/maintenance command package to cmd/; data ownership and wire contracts remain unchanged.",
-      "how": [
-        "Move the complete root Go command package and all five root Go test files into cmd/. Compact/settle orchestration stays with the service command; storage/backfill owners stay separate.",
-        "Move main_lib, the history-service binary and root Go test rules to cmd/BUILD.bazel. Root service_image/service_binary_layer keep their public labels and package the cmd binary.",
-        "Update history_service/testing/BUILD.bazel to the new binary target and the hardcoded _SERVICE path in testing/go_service.py to include cmd/. Preserve the executable basename, /usr/local/bin/history-service entrypoint, manual Job commands and migrate-only behavior."
-      ],
-      "gate": "No design dependency. Keep the command package intact and close every binary target/runfile reference in the same change.",
-      "preserve": "Serving/maintenance command behavior, config validation, image labels, embedded migrations and deployed executable names.",
-      "validation": [
-        "//agentplane/history_service/cmd:config_test",
-        "//agentplane/history_service/cmd:integration_test",
-        "//agentplane/history_service:service_image"
-      ],
-      "evidence_paths": [
-        "agentplane/history_service/main.go",
-        "agentplane/history_service/config.go",
-        "agentplane/history_service/compact_history.go",
-        "agentplane/history_service/settle_history.go",
-        "agentplane/history_service/BUILD.bazel",
-        "agentplane/history_service/testing/BUILD.bazel",
-        "agentplane/history_service/testing/go_service.py",
-        "agentplane/history_service/README.md",
-        "agentplane/history_service/ops/compact-history-job.yaml",
-        "agentplane/history_service/ops/settle-history-job.yaml"
-      ],
-      "existing_validation": [
-        "//agentplane/history_service:config_test",
-        "//agentplane/history_service:integration_test"
-      ],
-      "validation_note": "Validation targets after placement; config_test and integration_test currently live at the service root."
+      "validation_note": "Validation after placement; config_test currently lives at the service root.",
+      "pull_request": null
     },
     {
       "id": "runtime-lifecycle",
@@ -4089,43 +4074,6 @@
         "agentplane/env/runtime/internal/coordinator/session_lifecycle_inputs.go",
         "agentplane/env/runtime/internal/coordinator/lifecycle_controller.go",
         "agentplane/env/runtime/internal/coordinator/BUILD.bazel"
-      ]
-    },
-    {
-      "id": "notification-transactions",
-      "title": "Separate GitHub state query responsibilities",
-      "status": "DESIGN REQUIRED",
-      "components": ["notification_service"],
-      "kind": "responsibility extraction",
-      "source_paths": [
-        "agentplane/notification_service/internal/store/github_state.go",
-        "agentplane/notification_service/internal/store/github_commit_observations.go",
-        "agentplane/notification_service/internal/store/github_pr_state.go",
-        "agentplane/notification_service/internal/store/github_reconcile.go",
-        "agentplane/notification_service/internal/store/github_refresh_completion.go",
-        "agentplane/notification_service/internal/store/github_status.go"
-      ],
-      "source_owner": "agentplane/notification_service/internal/store",
-      "candidate_target": "agentplane/notification_service/internal/store/internal/githubstate",
-      "target_status": "candidate name; not an approved file allocation",
-      "summary": "A private GitHub-state helper could own refresh/access/subject query details. Store must remain the transaction authority for shared provider observations, inbox updates, receipts and notifications. Ingest/delivery writes that cross those facts stay with Store.",
-      "how": [
-        "Trace which GitHubState operations share Store transactions with inbox and subscription writes. Specify the typed transaction/fence inputs and lock order before moving code.",
-        "Keep transaction begin/commit, the GitHub ingress advisory lock, row locks and commit-time NOTIFY under one authority; never create independent commits per query family.",
-        "After that contract is checked, extract the query/type responsibility into store/internal/githubstate with owner-local tests. Update every consumer and Bazel target together."
-      ],
-      "gate": "No filename-prefix split or new public Store forwarding API. Exact methods and types that can cross the transaction boundary remain to be decided.",
-      "preserve": "GitHub advisory lock before inbox locks; lease and installation generations; receipt/cursor atomicity; NOTIFY on commit.",
-      "validation": [
-        "//agentplane/notification_service/internal/store:store_integration_test",
-        "//agentplane/notification_service/internal/store:golden_test"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/internal/store/store.go",
-        "agentplane/notification_service/internal/store/github_state.go",
-        "agentplane/notification_service/internal/store/github_ingest.go",
-        "agentplane/notification_service/internal/store/github_refresh_completion.go",
-        "agentplane/notification_service/internal/store/BUILD.bazel"
       ]
     },
     {
@@ -4255,74 +4203,250 @@
       ]
     }
   ],
-  "ready_filesystem_moves": [
-    "runner_gateway-command",
-    "history_service-command"
-  ],
-  "remaining_work_note": "All Agentplane areas have an explicit goal decision. Two whole-command placements (Runner Gateway and History) are ready without semantic fixes. Runtime lifecycle and Notification transaction extractions require ownership contracts; authentication and protobuf alignment remain deferred. Merged work is removed.",
+  "ready_filesystem_moves": ["runner_gateway-command"],
+  "remaining_work_note": "All 36 Agentplane areas and every tracked Go file remain in scope. The current tree contains independent event-driven source coordination, GitHub-owned state, generic inbox delivery and History commands under cmd/. Runner Gateway command placement is the remaining ready move. Runtime lifecycle, privileged authentication and protobuf naming retain their separate design gates.",
   "adoption": [
     {
       "stage": 1,
-      "title": "Place the remaining service commands",
-      "work": ["runner_gateway-command", "history_service-command"],
-      "result": "Move each complete command/test package and update binary BUILD/runfile closure while preserving image and deployed executable names. These moves are independent of lifecycle or database redesign."
+      "title": "Place the remaining service command",
+      "work": ["runner_gateway-command"],
+      "result": "Move the complete Runner Gateway command and close its binary BUILD/runfile references. This ready move can proceed independently."
     },
     {
       "stage": 2,
-      "title": "Specify lifecycle ownership",
+      "title": "Specify runtime lifecycle ownership",
       "work": ["runtime-lifecycle"],
-      "result": "One ownership map and one simplified race-tested path; exact lifecycle API and file split reviewed before extraction."
+      "result": "Map shared state and shutdown ownership, then simplify one bounded race-tested path before choosing an extraction API."
     },
     {
       "stage": 3,
-      "title": "Specify Notification transaction access",
-      "work": ["notification-transactions"],
-      "result": "An explicit typed transaction/fence contract and preserved lock order; then a concrete private query extraction."
-    },
-    {
-      "stage": 4,
-      "title": "Dispatch each decided boundary",
-      "work": [
-        "runner_gateway-command",
-        "history_service-command",
-        "runtime-lifecycle",
-        "notification-transactions"
-      ],
-      "result": "Complete imports, BUILD labels, tests and docs in each owner-scoped PR. Use native GitHub Stacks for actual content dependencies; burn merged items out of this plan."
-    },
-    {
-      "stage": 5,
-      "title": "Design the deferred contract migrations",
+      "title": "Keep deferred contract migrations separate",
       "work": ["privileged-auth", "protobuf-alignment"],
-      "result": "A separately reviewed mechanism/compatibility plan before changing authentication or wire names."
+      "result": "Choose authentication and wire-name compatibility contracts before any corresponding move or migration."
     }
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 217,
-    "go_files": 1241,
+    "go_packages": 219,
+    "go_files": 1253,
     "all_source_directories_accounted_for": true,
-    "review_source_sha": "8cadf53a8982f7ff5e14fc5410173de142d08235",
+    "review_source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
     "review_slices": [
       {
-        "slice": "service owners",
-        "packages": 73,
-        "go_files": 479
+        "slice": "action_service",
+        "components": ["action_service"],
+        "packages": 22,
+        "go_files": 150
       },
       {
-        "slice": "App, data and tools",
-        "packages": 60,
-        "go_files": 344
+        "slice": "app",
+        "components": ["app"],
+        "packages": 15,
+        "go_files": 71
       },
       {
-        "slice": "runtimes, controllers and clients",
-        "packages": 56,
-        "go_files": 341
+        "slice": "central_sampler",
+        "components": ["central_sampler"],
+        "packages": 19,
+        "go_files": 144
       },
       {
-        "slice": "shared capabilities",
-        "packages": 28,
-        "go_files": 77
+        "slice": "cli",
+        "components": ["cli"],
+        "packages": 1,
+        "go_files": 24
+      },
+      {
+        "slice": "crds",
+        "components": ["crds"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "debug",
+        "components": ["debug"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "docs",
+        "components": ["docs"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "egress",
+        "components": ["egress"],
+        "packages": 18,
+        "go_files": 76
+      },
+      {
+        "slice": "env",
+        "components": ["env"],
+        "packages": 32,
+        "go_files": 205
+      },
+      {
+        "slice": "environments",
+        "components": ["environments"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "firecracker",
+        "components": ["firecracker"],
+        "packages": 5,
+        "go_files": 23
+      },
+      {
+        "slice": "grpc",
+        "components": ["grpc"],
+        "packages": 5,
+        "go_files": 9
+      },
+      {
+        "slice": "history_service",
+        "components": ["history_service"],
+        "packages": 13,
+        "go_files": 84
+      },
+      {
+        "slice": "identity",
+        "components": ["identity"],
+        "packages": 11,
+        "go_files": 30
+      },
+      {
+        "slice": "indexing",
+        "components": ["indexing"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "kubeclient",
+        "components": ["kubeclient"],
+        "packages": 1,
+        "go_files": 1
+      },
+      {
+        "slice": "llm_ingress",
+        "components": ["llm_ingress"],
+        "packages": 1,
+        "go_files": 12
+      },
+      {
+        "slice": "mcp_edge",
+        "components": ["mcp_edge"],
+        "packages": 6,
+        "go_files": 46
+      },
+      {
+        "slice": "native",
+        "components": ["native"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "net",
+        "components": ["net"],
+        "packages": 4,
+        "go_files": 19
+      },
+      {
+        "slice": "notification_service",
+        "components": ["notification_service"],
+        "packages": 20,
+        "go_files": 176
+      },
+      {
+        "slice": "observability",
+        "components": ["observability"],
+        "packages": 1,
+        "go_files": 3
+      },
+      {
+        "slice": "plans",
+        "components": ["plans"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "policy",
+        "components": ["policy"],
+        "packages": 5,
+        "go_files": 18
+      },
+      {
+        "slice": "policy_controller",
+        "components": ["policy_controller"],
+        "packages": 3,
+        "go_files": 13
+      },
+      {
+        "slice": "postgres",
+        "components": ["postgres"],
+        "packages": 5,
+        "go_files": 13
+      },
+      {
+        "slice": "proto",
+        "components": ["proto"],
+        "packages": 0,
+        "go_files": 0
+      },
+      {
+        "slice": "runner_gateway",
+        "components": ["runner_gateway"],
+        "packages": 11,
+        "go_files": 66
+      },
+      {
+        "slice": "sandbox_controller",
+        "components": ["sandbox_controller"],
+        "packages": 3,
+        "go_files": 34
+      },
+      {
+        "slice": "sandboxes",
+        "components": ["sandboxes"],
+        "packages": 5,
+        "go_files": 13
+      },
+      {
+        "slice": "session_client",
+        "components": ["session_client"],
+        "packages": 1,
+        "go_files": 5
+      },
+      {
+        "slice": "session_instructions",
+        "components": ["session_instructions"],
+        "packages": 1,
+        "go_files": 1
+      },
+      {
+        "slice": "system_tests",
+        "components": ["system_tests"],
+        "packages": 1,
+        "go_files": 2
+      },
+      {
+        "slice": "testing",
+        "components": ["testing"],
+        "packages": 8,
+        "go_files": 11
+      },
+      {
+        "slice": "watchhealth",
+        "components": ["watchhealth"],
+        "packages": 1,
+        "go_files": 2
+      },
+      {
+        "slice": "x",
+        "components": ["x"],
+        "packages": 1,
+        "go_files": 2
       }
     ]
   }

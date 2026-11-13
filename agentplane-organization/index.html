@@ -161,9 +161,21 @@
             target.note = "candidate; contract and allocation TBD";
           }
         }
-        const focus = tracks.flatMap((t) =>
-          [t.source_owner, t.candidate_target, t.target_path].filter(Boolean),
-        );
+        const annotations = all
+          ? plan.components.flatMap(
+              (c) => c.tree_annotations?.[goal ? "goal" : "current"] || [],
+            )
+          : component.tree_annotations?.[goal ? "goal" : "current"] || [];
+        for (const annotation of annotations) {
+          const n = node(annotation.path);
+          n.note = n.note ? n.note + " · " + annotation.note : annotation.note;
+        }
+        const focus = [
+          ...tracks.flatMap((t) =>
+            [t.source_owner, t.candidate_target, t.target_path].filter(Boolean),
+          ),
+          ...annotations.map((annotation) => annotation.path),
+        ];
         const lines = [root.name + (root.note ? `  [${root.note}]` : "")];
         function visit(parent, prefix, depth) {
           const children = [...parent.children.values()].sort((a, b) =>
