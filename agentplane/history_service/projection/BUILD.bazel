@@ -86,7 +86,7 @@ go_test(
     ],
     deps = [
         "//agentplane/history_service:history_service_go_proto",
-        "//agentplane/history_service/reads",
+        "//agentplane/history_service/internal/reads",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

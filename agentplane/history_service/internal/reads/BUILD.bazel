@@ -11,7 +11,7 @@ go_library(
         "summaries.go",
         "threads.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/reads",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/reads",
     deps = [
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/storage",

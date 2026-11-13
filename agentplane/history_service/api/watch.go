@@ -7,8 +7,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
