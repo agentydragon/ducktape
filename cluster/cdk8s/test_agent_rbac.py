@@ -193,6 +193,19 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(rendering: Rend
     assert not uncovered(expected, actual)
 
 
+@pytest.mark.parametrize("caller", ["claude-ai", "haku-agent"])
+def test_standing_identity_accounts_preserve_exact_previous_kubernetes_rights(
+    serviceaccount_rendering: Rendering, identity_rendering: Rendering, caller: str
+) -> None:
+    """The new named account retains exactly the old direct ServiceAccount and PolicySet rights."""
+    previous = serviceaccount_rendering.rbac.identity("ServiceAccount", caller, _NAMESPACE)
+    previous |= serviceaccount_rendering.binding(caller)
+    current = identity_rendering.binding(caller)
+
+    assert not uncovered(previous, current), f"Identity account lost {sorted(map(str, uncovered(previous, current)))}"
+    assert not uncovered(current, previous), f"Identity account gained {sorted(map(str, uncovered(current, previous)))}"
+
+
 def test_agent_permission_denials(rendering: Rendering) -> None:
     rbac = rendering.rbac
     profiles = {name: rendering.launch(name) for name in ("public-coder", "finance-agent", "haku")}

@@ -169,10 +169,12 @@ The retained ServiceAccount's direct Kubernetes access includes:
 
 The `coinbase` PolicySet combines GET egress to `api.coinbase.com` with the `get` grant on
 the named Coinbase Secret for ServiceAccount subjects. The standing Identity bindings select
-`coinbase-identity` (pure GET egress) and `k8s-account-claude-ai` or `k8s-account-haku-agent`;
-each named account's `ServiceAccountGrant` carries exactly the `coinbase` and `plaid-diagnostics`
-role sets. Haku and finance-agent presets use their own account grants, while static Haku
-identities keep their explicit RoleBinding to the same named Secret. These grants do not make
+`coinbase-identity` (pure GET egress) and `k8s-account-claude-ai` or `k8s-account-haku-agent`.
+Claude's account also carries `claude-ai-static`, the exact direct RoleBinding footprint listed
+above; its `coinbase` and `plaid-diagnostics` PolicySet grants remain separate. Haku's account
+carries those two PolicySet role sets only. Haku and finance-agent presets use their own account
+grants, while static Haku identities keep their explicit RoleBinding to the same named Secret.
+These grants do not make
 `claude-ai` an alias for Haku: it has no Haku sandbox write authority or staging operator access,
 and `haku-agent` has no Haku profile grants.
 
@@ -272,8 +274,9 @@ ServiceAccount, Flux-owned grant, credential and one-rule use set `k8s-account-<
 - One per managed preset (`public-coder`, `finance-agent`, `haku`), holding the role sets that
   preset's launch grants plus cluster diagnostics, so each agent has one `kubectl` identity
   (operator, 2026-11-09). A launch binds the preset's use set and the egress halves of its sets.
-- One each for `claude-ai` and `haku-agent`, always rendered and holding exactly the `coinbase` and
-  `plaid-diagnostics` role sets their Identity bindings use.
+- One each for `claude-ai` and `haku-agent`, always rendered. Claude holds its exact prior direct
+  diagnostic footprint in `claude-ai-static`, plus the `coinbase` and `plaid-diagnostics` role
+  sets selected by its binding. Haku holds those two PolicySet role sets only.
 
 Sandbox Pods and Action command boxes project no Kubernetes-audience token: an agent reaches the
 API server only through the proxy as an account its use set names, and learns the
@@ -282,8 +285,9 @@ the rules endpoint. A Sandbox with no use rule has no Kubernetes access. Direct 
 authentication between Agentplane platform components remains supported independently.
 
 `cluster/cdk8s/test_agent_rbac.py` checks both renderings, including that the proxy impersonates
-only these accounts, that each holds only its grants, and that no Flux binding's holder gains
-Kubernetes access on the switch.
+only these accounts, that each holds only its grants, that the Claude and Haku accounts preserve
+their exact previous Kubernetes permissions, and that no Flux binding's holder gains access on
+the switch.
 
 ### Shared deployment definitions and parity contract
 

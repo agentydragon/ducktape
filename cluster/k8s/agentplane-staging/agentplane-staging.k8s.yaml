@@ -10319,6 +10319,114 @@ spec:
         name: plaid-spend-finance-config-reader
       type: kubernetes_role_binding
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: claude-ai-static
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - activitywatch
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-logs
+      type: role_binding
+    - namespaces:
+        - activitywatch
+        - agent-sandbox-system
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - public-coder-agent
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-metadata
+      type: role_binding
+    - namespaces:
+        - clickhouse
+      role:
+        kind: Role
+        name: agent-clickhouse-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - haku-console
+      role:
+        kind: Role
+        name: agent-haku-console-metadata-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: agent-public-coder-extended-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: claude-ai-sandbox-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: public-coder-agent-reader
+      type: role_binding
+    - clusterRole: cluster-diagnostics-reader
+      type: cluster_role_binding
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -10576,6 +10684,7 @@ spec:
   roleSets:
     - coinbase
     - plaid-diagnostics
+    - claude-ai-static
   serviceAccount:
     name: claude-ai
     namespace: agentplane-staging-k8s-accounts
@@ -11107,6 +11216,14 @@ rules:
       - rbac.authorization.k8s.io
     resourceNames:
       - claude-ai-coinbase-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - claude-ai-sandbox-reader
     resources:
       - roles
     verbs:

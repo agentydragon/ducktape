@@ -697,7 +697,11 @@ def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
 
 
 def assignable_grants() -> tuple[KubernetesGrant, ...]:
-    return tuple(grant for grants in assignable_policy_sets().values() for grant in grants)
+    """Role grants the controller may bind for presets and the standing Claude account."""
+    return (
+        *(grant for grants in assignable_policy_sets().values() for grant in grants),
+        *agent_access_profiles.claude_ai_static_grants(),
+    )
 
 
 def chart(app: App, env: Environment = ENV) -> Chart:
@@ -794,6 +798,13 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 rules=egress_rules[name],
             )
+    claude_ai_static_grants = agent_access_profiles.claude_ai_static_grants()
+    role_sets[agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] = KubernetesRoleSet(
+        chart,
+        "kubernetes-role-set-claude-ai-static",
+        metadata=ApiObjectMetadata(name=agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET, namespace=env.namespace),
+        rules=agent_access_profiles.role_set_rules_for_grants(claude_ai_static_grants),
+    )
     _add_launch_accounts(chart, env, role_sets=role_sets)
     _add_standing_identity_access(chart, env, role_sets=role_sets)
     for group in staging_config.INBOX_GROUPS:
@@ -820,7 +831,10 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         "policy-controller-rbac",
         env,
         account=controller.account,
-        assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
+        assignable_grants=[
+            *(grant for grants in assignable_sets.values() for grant in grants),
+            *claude_ai_static_grants,
+        ],
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
         workload_namespaces=workload_namespaces,
     )
@@ -997,7 +1011,11 @@ def _add_standing_identity_access(
         )
     # Each standing caller with roles of its own has its own account.
     accounts = [
-        (caller.identity, f"The {caller.identity} agent's own Kubernetes identity.", caller_role_sets())
+        (
+            caller.identity,
+            f"The {caller.identity} agent's own Kubernetes identity.",
+            [*caller_role_sets(), *([agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] if caller == CLAUDE_AI else [])],
+        )
         for caller in (CLAUDE_AI, HAKU_AGENT)
     ]
     for name, description, names in accounts:

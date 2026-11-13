@@ -11,6 +11,7 @@ import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
 from more_itertools import one
 
+from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import binding_delegation, egress, kubernetes_account_ref, policy_controller, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import COMMON_GITHUB_READ_SET
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY, KUBERNETES_HOST
@@ -114,7 +115,10 @@ def test_standing_callers_always_use_identity_policies_and_exact_account_grants(
                 for doc in grants
                 if doc["spec"]["serviceAccount"] == {"name": account.name, "namespace": account.namespace}
             )
-            assert set(grant["spec"]["roleSets"]) == set(expected_role_set_rules)
+            expected_role_sets = set(expected_role_set_rules)
+            if name == "claude-ai":
+                expected_role_sets.add(agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET)
+            assert set(grant["spec"]["roleSets"]) == expected_role_sets
             assert {name: role_sets[name] for name in expected_role_set_rules} == expected_role_set_rules
 
             service_account = one(
