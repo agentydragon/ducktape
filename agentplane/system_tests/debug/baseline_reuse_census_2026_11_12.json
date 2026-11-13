@@ -1,0 +1,319 @@
+{
+  "source_report": "gh-pages/latency/evidence.json backend_refresh",
+  "selection": "Latest twelve green single-attempt production-backend heads in the report cohort, ordered by first_workflow; not a fleet rate or failure population",
+  "head_count": 12,
+  "head_window": ["2026-11-12T22:27:48Z", "2026-11-12T23:54:04Z"],
+  "counts": {
+    "absent_target": 21,
+    "fresh_suite_outcome": 12,
+    "cached_target": 3
+  },
+  "records": [
+    {
+      "pr": 15898,
+      "head": "9ada9fee36ce1d6bf324f1a2812ccc45e4c7d4e0",
+      "invocation": "a1e5e6ec-c808-5a82-9fb1-617d0ada895c",
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "status": "PASSED",
+      "outcome": "cold",
+      "fingerprint": "1bdcd4fddf45de56067083efa5a560f33ef7e542066851836924567941dd0820",
+      "cleanup": "complete",
+      "namespace_uid": "2e34f724-a039-4352-a747-96a132490ce6",
+      "postgres_pod_uid": "7316c579-e82f-4876-94f6-1a18846e8f73",
+      "root_secret_uid": "456df5e3-fd57-4cf2-bbca-674f238b7cef",
+      "setup_seconds": 223.601846,
+      "physical_attempts": [
+        {
+          "id": "/uploads/4ca6f4cc-8bbe-414c-a992-755b9fa4e438/blobs/1a93b402e5aa8cfd76f707fb8be348a09b605ea1b282e67ebf8665089d9dafeb/1850",
+          "status": {
+            "code": 14,
+            "message": "error pausing VM: Patch \"http://localhost/vm\": dial unix /buildbuddy/remotebuilds/firecracker/cc845836-15d3-4dd7-8b45-4b8ba6dead52/root/run/fc.sock: connect: connection refused"
+          },
+          "worker": "38c5092d-0d55-45b6-9299-07d3a9af0c08",
+          "start": "2026-11-12T23:01:03.935179Z",
+          "finish": "2026-11-12T23:07:25.247269Z"
+        },
+        {
+          "id": "/uploads/7511211b-5187-4a27-915f-7eece84c9d7b/blobs/1a93b402e5aa8cfd76f707fb8be348a09b605ea1b282e67ebf8665089d9dafeb/1850",
+          "status": {},
+          "worker": "5a3e0a93-f454-459a-88ac-a79e3e36cb3a",
+          "start": "2026-11-12T23:07:36.157265Z",
+          "finish": "2026-11-12T23:17:09.638809Z"
+        }
+      ]
+    },
+    {
+      "pr": 15898,
+      "head": "9ada9fee36ce1d6bf324f1a2812ccc45e4c7d4e0",
+      "invocation": "a1e5e6ec-c808-5a82-9fb1-617d0ada895c",
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "status": "PASSED",
+      "outcome": "cold",
+      "fingerprint": "526e7021c002d363febbe69dd8042f947a19e256089df187fcb272675fdbd56a",
+      "cleanup": "complete",
+      "namespace_uid": "07c2624b-ce1c-4dc5-969f-06b8c64fe82e",
+      "postgres_pod_uid": "e448e165-51e7-4ddc-bd9c-1035d5d86593",
+      "root_secret_uid": "92ca53c9-51e9-4e24-a033-a181af07f588",
+      "setup_seconds": 124.000976,
+      "physical_attempts": [
+        {
+          "id": "/uploads/3c3789c2-0c47-4469-b6f6-794f92150869/blobs/7db5ac85d187f663408584f8de1da7b969adddb08c7730ccd5d2981148cb61e6/1216",
+          "status": {},
+          "worker": "2d010d2d-389d-4a21-8c82-49e750f4e920",
+          "start": "2026-11-12T23:01:03.392305Z",
+          "finish": "2026-11-12T23:08:24.801803Z"
+        }
+      ]
+    },
+    {
+      "pr": 15898,
+      "head": "9ada9fee36ce1d6bf324f1a2812ccc45e4c7d4e0",
+      "invocation": "a1e5e6ec-c808-5a82-9fb1-617d0ada895c",
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "outcome": "cold",
+      "fingerprint": "526e7021c002d363febbe69dd8042f947a19e256089df187fcb272675fdbd56a",
+      "cleanup": "complete",
+      "namespace_uid": "91a13c19-a90b-4c61-8d30-3e3363729009",
+      "postgres_pod_uid": "8834b5d7-9bbf-456c-b81a-dd6d6b1bc321",
+      "root_secret_uid": "9345a2c0-584a-4dc4-9c2a-a2fdee76d869",
+      "setup_seconds": 140.816712,
+      "physical_attempts": [
+        {
+          "id": "/uploads/7beae127-4625-46ed-afb1-08a2e8b4e009/blobs/c90d94fec182b60facda033aa55bd0915b0db37608701b05717c3de8d5689703/499",
+          "status": {},
+          "worker": "9043504f-9670-42cf-bf66-493aea33170d",
+          "start": "2026-11-12T23:00:32.416553Z",
+          "finish": "2026-11-12T23:01:09.481150Z"
+        },
+        {
+          "id": "/uploads/1321a620-7093-4eda-94be-4bbd9134f129/blobs/1e9ef4b91c9f9916e7d293846b2f3f1a9624d1f7c3a4528c45750cf24cf29d80/1216",
+          "status": {},
+          "worker": "298cab4b-2d91-47fb-a7e8-23d60ccc811f",
+          "start": "2026-11-12T23:01:03.592340Z",
+          "finish": "2026-11-12T23:06:21.674739Z"
+        }
+      ]
+    },
+    {
+      "pr": 15906,
+      "head": "e22c30a4925871e3e08ad63ef08ad6d3d9db9333",
+      "invocation": "44c70953-e371-5d4f-bdd8-66b9a8f1eb09",
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "status": "PASSED",
+      "outcome": "warm",
+      "fingerprint": "bb242e82cfa8a1160c401bb3bc0eb0d65dba79278cbac4d06c3a78ab0b312e12",
+      "cleanup": "complete",
+      "namespace_uid": "7311f36e-7ab8-4e75-88ac-d264961ef900",
+      "postgres_pod_uid": "90d20ee2-9836-4327-bd93-16e8feb3928f",
+      "root_secret_uid": "e0faeea5-4ec7-4554-ab89-01234bc923a9",
+      "setup_seconds": 96.65268,
+      "physical_attempts": [
+        {
+          "id": "/uploads/f07e61b3-87e6-41d6-abee-04c4de28e0df/blobs/973c87b11ad1174e4dc33103950f3854cee7323a41364fa4412b53eb48cbc570/1850",
+          "status": {},
+          "worker": "1b742924-6def-40a1-b21b-13d276b7b976",
+          "start": "2026-11-12T23:07:38.070615Z",
+          "finish": "2026-11-12T23:13:42.200471Z"
+        }
+      ]
+    },
+    {
+      "pr": 15906,
+      "head": "e22c30a4925871e3e08ad63ef08ad6d3d9db9333",
+      "invocation": "44c70953-e371-5d4f-bdd8-66b9a8f1eb09",
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "status": "PASSED",
+      "outcome": "warm",
+      "fingerprint": "8535b343ea0bc744809b4a54773a2630e48ed31e12c6d39d2ae6462b2c8b61d7",
+      "cleanup": "complete",
+      "namespace_uid": "7cf692a1-a319-4e72-97e7-a1f5a6617434",
+      "postgres_pod_uid": "1986d3f1-f54b-4fe1-95bc-1c0787f1fc3c",
+      "root_secret_uid": "f95f4bb2-0e79-4df8-8b7b-f815cd8e47a3",
+      "setup_seconds": 101.736041,
+      "physical_attempts": [
+        {
+          "id": "/uploads/8e21dfa8-9209-4525-a626-d1c053808b94/blobs/8bde9c44ac7b87a7a831b01957f508e6299665374e51a38c941b72c28cf76caa/1216",
+          "status": {},
+          "worker": "2d010d2d-389d-4a21-8c82-49e750f4e920",
+          "start": "2026-11-12T23:07:35.469269Z",
+          "finish": "2026-11-12T23:14:54.534314Z"
+        }
+      ]
+    },
+    {
+      "pr": 15906,
+      "head": "e22c30a4925871e3e08ad63ef08ad6d3d9db9333",
+      "invocation": "44c70953-e371-5d4f-bdd8-66b9a8f1eb09",
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "outcome": "cold",
+      "fingerprint": "8535b343ea0bc744809b4a54773a2630e48ed31e12c6d39d2ae6462b2c8b61d7",
+      "cleanup": "complete",
+      "namespace_uid": "5e0b0dea-8360-46fc-925c-062b0c630718",
+      "postgres_pod_uid": "9a85f0ff-fda3-4fb1-89ed-cd2b6b39f082",
+      "root_secret_uid": "cf108f83-d7df-444e-b27c-cdf44f7c31ac",
+      "setup_seconds": 143.476495,
+      "physical_attempts": [
+        {
+          "id": "/uploads/d30c4d8b-b15f-4d84-bcba-36206b023603/blobs/b40c224516e717c670f62d94adc84a8c604daa856ccf001c34fdf653f0a8558f/499",
+          "status": {},
+          "worker": "9043504f-9670-42cf-bf66-493aea33170d",
+          "start": "2026-11-12T23:07:07.902317Z",
+          "finish": "2026-11-12T23:07:39.773974Z"
+        },
+        {
+          "id": "/uploads/80b69c8f-6a3a-420e-8f2b-5817c131930d/blobs/c4cf8246c10abc21227d2b32c87eff4466ce47a6856c39a3e4f8b3b1ffc9dbbd/1216",
+          "status": {},
+          "worker": "8d92b5e9-72a3-441b-a496-3dd40592af85",
+          "start": "2026-11-12T23:07:35.476837Z",
+          "finish": "2026-11-12T23:12:56.177541Z"
+        }
+      ]
+    },
+    {
+      "pr": 15908,
+      "head": "a9c35370d43c6a96d041d76c80f52984ba995e24",
+      "invocation": "def4261b-d997-5765-a247-cc424a10ebc1",
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "status": "PASSED",
+      "outcome": "cold",
+      "fingerprint": "bb242e82cfa8a1160c401bb3bc0eb0d65dba79278cbac4d06c3a78ab0b312e12",
+      "cleanup": "complete",
+      "namespace_uid": "446a708a-1073-42bd-957f-36ffb15d3347",
+      "postgres_pod_uid": "8cdb329f-e5b0-4dd6-9758-cfdf11bd3fbd",
+      "root_secret_uid": "bde9d6a9-860e-4949-8300-3857b9e30e56",
+      "setup_seconds": 202.176377,
+      "physical_attempts": [
+        {
+          "id": "/uploads/2de18b98-3290-4a13-b8d2-259b7e1c79db/blobs/edf88095680d3de9547341fce56b84dc6792c7942cf2265eac8262ad46745247/1850",
+          "status": {},
+          "worker": "5a3e0a93-f454-459a-88ac-a79e3e36cb3a",
+          "start": "2026-11-12T23:20:15.480037Z",
+          "finish": "2026-11-12T23:29:18.512066Z"
+        }
+      ]
+    },
+    {
+      "pr": 15908,
+      "head": "a9c35370d43c6a96d041d76c80f52984ba995e24",
+      "invocation": "def4261b-d997-5765-a247-cc424a10ebc1",
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "status": "PASSED",
+      "outcome": "warm",
+      "fingerprint": "8535b343ea0bc744809b4a54773a2630e48ed31e12c6d39d2ae6462b2c8b61d7",
+      "cleanup": "complete",
+      "namespace_uid": "0664fe2b-501a-414f-8d8b-3a858b14636e",
+      "postgres_pod_uid": "5022e677-48a9-4791-98eb-08ca281c5a28",
+      "root_secret_uid": "414707cf-3787-41e4-8e8e-59e58f6f759b",
+      "setup_seconds": 87.658978,
+      "physical_attempts": [
+        {
+          "id": "/uploads/5181c1c8-aa34-4c47-82f7-0602f597d1ce/blobs/1cd52d8fa42e8ab5a9a0c15e8fef3a4a2de43131c6129ce55c6bf2a02ad140c3/1216",
+          "status": {},
+          "worker": "2d010d2d-389d-4a21-8c82-49e750f4e920",
+          "start": "2026-11-12T23:20:14.283284Z",
+          "finish": "2026-11-12T23:28:12.273080Z"
+        }
+      ]
+    },
+    {
+      "pr": 15908,
+      "head": "a9c35370d43c6a96d041d76c80f52984ba995e24",
+      "invocation": "def4261b-d997-5765-a247-cc424a10ebc1",
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "outcome": "warm",
+      "fingerprint": "8535b343ea0bc744809b4a54773a2630e48ed31e12c6d39d2ae6462b2c8b61d7",
+      "cleanup": "complete",
+      "namespace_uid": "a5709ee9-97c3-4fca-b638-71d3f273e74b",
+      "postgres_pod_uid": "29f82b40-e516-4ea9-8bf5-0c53226792e8",
+      "root_secret_uid": "b8826f27-a4a7-485a-bbda-657d715e1caa",
+      "setup_seconds": 129.992464,
+      "physical_attempts": [
+        {
+          "id": "/uploads/233dcc02-c5b0-4027-9a9e-60afa92ad3d6/blobs/bebb4e3956cd164410838cf0b4ea29bb37c788e87904223983299dd560515a0d/1216",
+          "status": {},
+          "worker": "729fd17c-2bd7-455a-85f7-5719ea8ca1c6",
+          "start": "2026-11-12T23:20:16.827141Z",
+          "finish": "2026-11-12T23:26:11.521521Z"
+        }
+      ]
+    },
+    {
+      "pr": 15920,
+      "head": "5d1e9a9588462b315ae2c169d66b80cb2d89032c",
+      "invocation": "eb005ff3-63c8-51a6-8d55-ca1fff5726a4",
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "outcome": "cold",
+      "fingerprint": "526e7021c002d363febbe69dd8042f947a19e256089df187fcb272675fdbd56a",
+      "cleanup": "complete",
+      "namespace_uid": "e0bb382d-32c4-4039-846e-2be0547545fa",
+      "postgres_pod_uid": "a5c910a4-02ee-46e8-bafa-02904e46843d",
+      "root_secret_uid": "91edffb8-3692-4017-9a98-9b312beda202",
+      "setup_seconds": 141.529223,
+      "physical_attempts": [
+        {
+          "id": "/uploads/e175151d-f9fa-4cce-99a1-8e70b3f6a2c4/blobs/8b332721fdccb9aea2a1da2ea5817cbf061ebc763d958ddf232ff499e6a1930a/1216",
+          "status": {},
+          "worker": "10a9b3d6-05d8-41ef-bbf0-6f6c27bfd0a2",
+          "start": "2026-11-12T23:47:22.490061Z",
+          "finish": "2026-11-12T23:52:52.340121Z"
+        }
+      ]
+    },
+    {
+      "pr": 15921,
+      "head": "161d5ca05f2f6b40057b78c46b4d4a1d99ee0b0e",
+      "invocation": "a5669e7c-a746-5733-bf9d-3df51d9dbdd9",
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "outcome": "warm",
+      "fingerprint": "526e7021c002d363febbe69dd8042f947a19e256089df187fcb272675fdbd56a",
+      "cleanup": "complete",
+      "namespace_uid": "df82682e-fb2a-46d6-a1de-954a9819da45",
+      "postgres_pod_uid": "1c37bbd7-37c4-4d71-8143-55ed5dd62365",
+      "root_secret_uid": "7881b4b4-ff07-4c7d-87b3-c2a269e06bde",
+      "setup_seconds": 118.402832,
+      "physical_attempts": [
+        {
+          "id": "/uploads/198375c7-a1f6-4f49-a65f-4145eecd5fa0/blobs/dda8fff3332613e8a26eb2ac7c2ca14154cf201f0fe969dd5898a42dc22c4c81/1216",
+          "status": {},
+          "worker": "8d92b5e9-72a3-441b-a496-3dd40592af85",
+          "start": "2026-11-12T23:47:56.686622Z",
+          "finish": "2026-11-12T23:53:08.036998Z"
+        }
+      ]
+    },
+    {
+      "pr": 15922,
+      "head": "d1e4bf05022435b259e8d95f74a6854fc95a959e",
+      "invocation": "ef315d79-3db6-5727-9772-cbede22b53cd",
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "outcome": "warm",
+      "fingerprint": "526e7021c002d363febbe69dd8042f947a19e256089df187fcb272675fdbd56a",
+      "cleanup": "complete",
+      "namespace_uid": "4f145338-5a52-4dd7-81c5-bd32152223ee",
+      "postgres_pod_uid": "9093c2c8-b346-4391-a0cd-fe16bfb47fbf",
+      "root_secret_uid": "30989891-4837-4fea-9311-52f963e02813",
+      "setup_seconds": 128.295287,
+      "physical_attempts": [
+        {
+          "id": "/uploads/3d2ab6fe-e732-48fe-ab25-8ae62124acd4/blobs/594c482a2b40545ac6cf7e5b8bea99c7ba58ee831d187ed20786d953398434a3/1216",
+          "status": {},
+          "worker": "8d92b5e9-72a3-441b-a496-3dd40592af85",
+          "start": "2026-11-12T23:50:43.348223Z",
+          "finish": "2026-11-12T23:55:50.842096Z"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Absent targets were explicitly NotFound, not failed suites.",
+    "Cache hits excluded from physical exposure. Multiple returned physical attempts retained; outcome count is not attempt count.",
+    "Final persistence records omit cold rebuild reason. Cannot infer absent snapshot, dirty state, input mismatch, health failure or identity change.",
+    "No source-equivalent timing claim; different workers, fingerprints and overlap."
+  ]
+}
