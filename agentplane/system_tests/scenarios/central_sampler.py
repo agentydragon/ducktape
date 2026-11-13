@@ -1110,7 +1110,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
         assert read_failure is None
         request = await asyncio.wait_for(model.request(), timeout=45)
         request, read_text, visible = await _follow_code_mode_cell(model, request, "read-crash-process", timeout_s=140)
-        if "retained exec-server session was definitively lost" in visible:
+        if f'retained exec-server session "{native_session_id}" was definitively lost' in visible:
             assert "no mutation was replayed" in visible, visible
             await _assert_replacement_native_session_started(recovered, session_id, cursor, native_session_id)
         else:
