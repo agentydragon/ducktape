@@ -476,6 +476,12 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 	return progressed, nil
 }
 
+func (e *Executor) stopDispatch() {
+	e.dispatchMu.Lock()
+	e.stopping = true
+	e.dispatchMu.Unlock()
+}
+
 func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 	e.dispatchMu.Lock()
 	e.stopping = true
