@@ -630,6 +630,61 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
         }
 
 
+async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const restore = await import('./editor/packages/excalidraw/data/restore.js');
+                const rectangle = {id: 'restored-rectangle', type: 'rectangle', x: 10, y: 20,
+                    width: 80, height: 60, version: 0, frameId: 'missing-frame',
+                    boundElements: [{id: 'restored-text', type: 'text'},
+                                    {id: 'restored-text', type: 'text'}, {id: 'missing', type: 'text'}]};
+                const text = {id: 'restored-text', type: 'text', x: 10, y: 20, width: 40, height: 20,
+                    text: 'Legacy', font: '20 Virgil', lineHeight: 1.25, containerId: rectangle.id};
+                const elements = restore.restoreElements([
+                    {id: 'legacy-selection', type: 'selection', x: 0, y: 0, width: 40, height: 40},
+                    rectangle, text
+                ], [{...rectangle, version: 8}], {repairBindings: true});
+                const duplicates = restore.restoreElements([rectangle, rectangle], null);
+                const appState = restore.restoreAppState({zoom: 100, activeTool: {type: 'eraser'},
+                    viewBackgroundColor: '#abcdef'}, {cursorButton: 'down', scrollX: 45});
+                const library = restore.restoreLibraryItems([[rectangle]], 'unpublished');
+                const files = {example: {id: 'example'}};
+                const restored = restore.restore({elements: [rectangle], files}, null, null);
+                return {
+                    ids: elements.map(element => element.id),
+                    rectangle: [elements[0].version, elements[0].frameId, elements[0].boundElements],
+                    text: [elements[1].text, elements[1].fontSize, elements[1].fontFamily,
+                           elements[1].containerId, elements[1].lineHeight],
+                    untouched: [rectangle.version, rectangle.frameId, rectangle.boundElements.length],
+                    uniqueIds: duplicates.length === 2 && new Set(duplicates.map(element => element.id)).size === 2,
+                    appState: [appState.zoom.value, appState.activeTool.type, appState.cursorButton,
+                               appState.scrollX, appState.viewBackgroundColor, appState.editingFrame],
+                    library: [library.length, library[0].status, library[0].elements.length,
+                              Boolean(library[0].id), library[0].created > 0],
+                    restored: [restored.elements.length, restored.files === files],
+                    empty: restore.restore(null, null, null).elements
+                };
+            }"""
+        )
+        assert result == {
+            "ids": ["restored-rectangle", "restored-text"],
+            "rectangle": [9, None, [{"id": "restored-text", "type": "text"}]],
+            "text": ["Legacy", 20, 1, "restored-rectangle", 1.25],
+            "untouched": [0, "missing-frame", 3],
+            "uniqueIds": True,
+            "appState": [30, "selection", "down", 45, "#abcdef", None],
+            "library": [1, "unpublished", 1, True, True],
+            "restored": [1, True],
+            "empty": [],
+        }
+
+
 async def test_resize_handle_devices(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
