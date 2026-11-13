@@ -6,7 +6,8 @@ Manage Gmail filters from YAML and preview or archive eligible inbox messages wi
 
 ## Setup
 
-Requires Gmail API credentials in `~/.gmail-mcp/` (`gcp-oauth.keys.json` + `token.json`).
+Gmail API commands require a Google authorized-user OAuth token. By default, they read
+`~/.gmail-mcp/token.json`; pass `--token-file` to use a different file.
 
 ## Usage
 
@@ -15,7 +16,8 @@ gmail-archiver autoclean-inbox              # Preview (dry-run)
 gmail-archiver autoclean-inbox --no-dry-run # Archive for real
 gmail-archiver filters sync filters.yaml    # Sync filters to Gmail
 gmail-archiver filters diff filters.yaml    # Preview filter changes
-gmail-archiver filters apply filters.yaml   # Apply filter labels to existing emails
+gmail-archiver filters list                # Find a Gmail filter ID
+gmail-archiver filters apply FILTER_ID     # Apply that filter to existing emails
 gmail-archiver filters download             # Export Gmail filters to YAML
 ```
 
