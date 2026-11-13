@@ -31,22 +31,65 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+type startupFailure struct {
+	stage string
+	err   error
+}
+
+func (e *startupFailure) Error() string { return e.err.Error() }
+func (e *startupFailure) Unwrap() error { return e.err }
+
+func atStartupStage(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &startupFailure{stage: stage, err: err}
+}
+
+func startupLogAttrs(err error) []any {
+	stage := "startup"
+	var failure *startupFailure
+	if errors.As(err, &failure) {
+		stage = failure.stage
+	}
+	attrs := []any{"stage", stage, "error_type", safeErrorType(err)}
+	var validation *samplersettings.ValidationError
+	if errors.As(err, &validation) {
+		attrs = append(attrs, "field", validation.Field(), "rule", validation.Rule())
+	}
+	return attrs
+}
+
+func safeErrorType(err error) string {
+	var validation *samplersettings.ValidationError
+	if errors.As(err, &validation) {
+		return fmt.Sprintf("%T", validation)
+	}
+	for {
+		unwrapped := errors.Unwrap(err)
+		if unwrapped == nil {
+			return fmt.Sprintf("%T", err)
+		}
+		err = unwrapped
+	}
+}
+
 func run(ctx context.Context, settings samplersettings.Settings) error {
 	if settings.PlatformInstructions == nil {
 		slog.Warn("Agentplane platform guidance is not configured; new Sessions retain caller-only instructions")
 	}
 	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
 	if err := migrate.Run(ctx, databaseURL, centralsampler.Migrate); err != nil {
-		return err
+		return atStartupStage("database_migrations", err)
 	}
 	// Allow session state writes and lease renewals, eight exporter workers, and sixteen RPCs.
 	db, err := postgres.Open(ctx, databaseURL, 2*settings.MaxLiveSessions+8+16, 16)
 	if err != nil {
-		return err
+		return atStartupStage("service_database", err)
 	}
 	defer db.Close()
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
-		return err
+		return atStartupStage("logs_directory", err)
 	}
 	var kubeConfig *rest.Config
 	if settings.Kubeconfig != "" {
@@ -55,13 +98,13 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		kubeConfig, err = rest.InClusterConfig()
 	}
 	if err != nil {
-		return err
+		return atStartupStage("kubernetes_config", err)
 	}
 	kubeConfig.QPS = -1
 	kubeConfig.ContentType = "application/json"
 	client, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		return err
+		return atStartupStage("kubernetes_client", err)
 	}
 	namespaces := make([]string, 0, len(settings.AllowedAccounts))
 	for _, account := range settings.AllowedAccounts {
@@ -70,17 +113,17 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	}
 	resolver, err := auth.NewResolver(client.AuthenticationV1().TokenReviews(), settings.Audience, namespaces)
 	if err != nil {
-		return err
+		return atStartupStage("token_review_resolver", err)
 	}
 	store := centralsampler.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
 	hub, err := wakeups.Listen(ctx, databaseURL, centralsampler.OutboxChannel, centralsampler.WorkChannel)
 	if err != nil {
-		return err
+		return atStartupStage("database_wakeups", err)
 	}
 	defer hub.Close()
 	work, unsubscribe, err := hub.Subscribe(centralsampler.WorkChannel)
 	if err != nil {
-		return err
+		return atStartupStage("work_subscription", err)
 	}
 	defer unsubscribe()
 	runtime := centralsampler.NewRuntime(store, settings, centralsampler.NewCodeModeHost(context.Background(), settings, store))
@@ -90,7 +133,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	healthpb.RegisterHealthServer(server, healthServer)
 	listener, err := netlistener.Open(settings.Listen)
 	if err != nil {
-		return err
+		return atStartupStage("grpc_listener", err)
 	}
 	defer listener.Close()
 	running, runningCtx := errgroup.WithContext(ctx)
@@ -120,7 +163,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 		return nil
 	}
-	return err
+	return atStartupStage("service_runtime", err)
 }
 
 func main() {
@@ -129,7 +172,7 @@ func main() {
 	defer cancel()
 	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", centralsampler.Migrate); handled {
 		if err != nil {
-			slog.Error("central sampler migration stopped", "error_type", fmt.Sprintf("%T", err))
+			slog.Error("central sampler migration stopped", startupLogAttrs(atStartupStage("migration_only", err))...)
 			os.Exit(1)
 		}
 		return
@@ -139,9 +182,16 @@ func main() {
 	settings, err := samplersettings.LoadSettings(*configuration)
 	if err == nil {
 		err = run(ctx, settings)
+	} else {
+		var validation *samplersettings.ValidationError
+		stage := "load_settings"
+		if errors.As(err, &validation) {
+			stage = "validate_settings"
+		}
+		err = atStartupStage(stage, err)
 	}
 	if err != nil {
-		slog.Error("central sampler stopped", "error_type", fmt.Sprintf("%T", err))
+		slog.Error("central sampler stopped", startupLogAttrs(err)...)
 		os.Exit(1)
 	}
 }

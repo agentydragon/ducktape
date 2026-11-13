@@ -2,6 +2,7 @@ package settings
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -263,6 +264,44 @@ func TestTurnTimeoutIsOptionalAndValidatesConfiguredValues(t *testing.T) {
 		if err := settings.Validate(); err == nil {
 			t.Fatalf("accepted turn_timeout_seconds=%d", invalid)
 		}
+	}
+}
+
+func TestInvalidTurnTimeoutHasSafeFieldDiagnostic(t *testing.T) {
+	settings := fixtureSettings()
+	invalid := 0
+	settings.TurnTimeoutSeconds = &invalid
+	err := settings.Validate()
+	if err == nil {
+		t.Fatal("accepted invalid turn_timeout_seconds")
+	}
+	var diagnostic *ValidationError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("validation error type=%T, want *ValidationError", err)
+	}
+	if diagnostic.Field() != "turn_timeout_seconds" || diagnostic.Rule() != "must be positive and fit in time.Duration" {
+		t.Fatalf("diagnostic=%+v", diagnostic)
+	}
+	if !strings.Contains(err.Error(), "turn_timeout_seconds") {
+		t.Fatalf("caller-facing error lost setting context: %v", err)
+	}
+}
+
+func TestValidationDiagnosticRetainsCallerErrorContext(t *testing.T) {
+	settings := fixtureSettings()
+	model := settings.Models["test-model"]
+	model.Connection = "missing-connection"
+	settings.Models["test-model"] = model
+	err := settings.Validate()
+	if err == nil {
+		t.Fatal("accepted a model with an unknown connection")
+	}
+	if !strings.Contains(err.Error(), "model test-model references unknown connection missing-connection") {
+		t.Fatalf("caller-facing error lost model/connection context: %v", err)
+	}
+	var diagnostic *ValidationError
+	if !errors.As(err, &diagnostic) || diagnostic.Field() != "models.*.connection" {
+		t.Fatalf("safe field diagnostic=%v", diagnostic)
 	}
 }
 

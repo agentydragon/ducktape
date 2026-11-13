@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:select_file.bzl", "select_file")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -29,6 +29,16 @@ go_library(
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "main_test",
+    srcs = ["main_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/central_sampler/internal/settings",
+        "//agentplane/environment_runtime_transport",
     ],
 )
 

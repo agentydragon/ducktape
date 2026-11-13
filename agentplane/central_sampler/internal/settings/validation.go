@@ -24,9 +24,46 @@ const (
 	maxExecutorInitializeTimeoutSeconds         = int64((1<<63 - 1) / int64(time.Second))
 )
 
+// ValidationError identifies a setting and a static validation rule through Field and Rule. Its
+// wrapped cause may retain configured values for callers and must not be logged.
+type ValidationError struct {
+	field string
+	cause string
+	err   error
+}
+
+func (e *ValidationError) Error() string {
+	message := e.field + ": " + e.cause
+	if e.err != nil {
+		message += ": " + e.err.Error()
+	}
+	return message
+}
+
+func (e *ValidationError) Unwrap() error { return e.err }
+
+func (e *ValidationError) Field() string { return e.field }
+func (e *ValidationError) Rule() string  { return e.cause }
+
+func invalidSetting(field, cause string) error {
+	return &ValidationError{field: field, cause: cause}
+}
+
+func invalidSettingWithCause(field, cause string, err error) error {
+	return &ValidationError{field: field, cause: cause, err: err}
+}
+
+func prefixValidationError(prefix string, err error) error {
+	var validation *ValidationError
+	if errors.As(err, &validation) {
+		return &ValidationError{field: prefix + "." + validation.Field(), cause: validation.Rule(), err: err}
+	}
+	return &ValidationError{field: prefix, cause: "is invalid", err: err}
+}
+
 func (s Settings) Validate() error {
 	if s.PlatformInstructions != nil && strings.TrimSpace(*s.PlatformInstructions) == "" {
-		return errors.New("platform_instructions must not be empty when configured")
+		return invalidSetting("platform_instructions", "must not be empty when configured")
 	}
 	for name, value := range map[string]string{
 		"database_url":   s.DatabaseURL,
@@ -37,80 +74,80 @@ func (s Settings) Validate() error {
 		"logs":           s.Logs,
 	} {
 		if value == "" {
-			return fmt.Errorf("%s is required", name)
+			return invalidSetting(name, "is required")
 		}
 	}
 	if len(s.Models) == 0 || len(s.AllowedAccounts) == 0 {
-		return errors.New("models and allowed_accounts must not be empty")
+		return invalidSetting("models,allowed_accounts", "must not be empty")
 	}
 	if len(s.Connections) == 0 {
-		return errors.New("connections must not be empty")
+		return invalidSetting("connections", "must not be empty")
 	}
 	for name, connection := range s.Connections {
 		if name == "" {
-			return errors.New("connection name must not be empty")
+			return invalidSetting("connections", "connection name must not be empty")
 		}
 		if err := connection.Validate(); err != nil {
-			return fmt.Errorf("connection %s: %w", name, err)
+			return fmt.Errorf("connection %s: %w", name, prefixValidationError("connections.*", err))
 		}
 	}
 	for model, config := range s.Models {
 		if model == "" {
-			return errors.New("model route must not be empty")
+			return invalidSetting("models", "model route must not be empty")
 		}
 		if err := config.Validate(); err != nil {
-			return fmt.Errorf("model %s: %w", model, err)
+			return fmt.Errorf("model %s: %w", model, prefixValidationError("models.*", err))
 		}
 		connection, ok := s.Connections[config.Connection]
 		if !ok {
-			return fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
+			return invalidSettingWithCause("models.*.connection", "references an unknown connection", fmt.Errorf("model %s references unknown connection %s", model, config.Connection))
 		}
 		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
-			return fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model)
+			return invalidSettingWithCause("models.*.api", "responses API requires bearer or agentplane_ingress connection auth", fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model))
 		}
 		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
-			return fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model)
+			return invalidSettingWithCause("models.*.api", "anthropic_messages API requires anthropic_api_key connection auth", fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model))
 		}
 	}
 	for _, account := range s.AllowedAccounts {
 		parts := strings.Split(account, "/")
 		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return errors.New("allowed_accounts must use namespace/name")
+			return invalidSetting("allowed_accounts", "must use namespace/name")
 		}
 	}
 	if (s.HistoryTarget == "") != (s.HistoryTokenFile == "") {
-		return errors.New("history target and token file must be configured together")
+		return invalidSetting("history_target,history_token_file", "must be configured together")
 	}
 	gateway := s.GatewayTarget != ""
 	if gateway != (s.GatewayTokenFile != "") {
-		return errors.New("gateway target and token file must be configured together")
+		return invalidSetting("gateway_target,gateway_token_file", "must be configured together")
 	}
 	direct := s.DirectExecutorTarget != ""
 	if gateway == direct {
-		return errors.New("configure exactly one gateway or direct executor target")
+		return invalidSetting("gateway_target,direct_executor_target", "configure exactly one gateway or direct executor target")
 	}
 	if direct != s.DirectExecutorInsecureLocaltest {
-		return errors.New("direct executor target and explicit insecure localtest mode must be configured together")
+		return invalidSetting("direct_executor_target,direct_executor_insecure_localtest", "must be configured together")
 	}
 	if direct {
 		address, err := netip.ParseAddrPort(s.DirectExecutorTarget)
 		if err != nil || !address.Addr().IsLoopback() {
-			return errors.New("insecure direct executor target must use a loopback IP address")
+			return invalidSetting("direct_executor_target", "must use a loopback IP address")
 		}
 	}
 	remaining := strings.ReplaceAll(strings.ReplaceAll(s.GatewayTarget, "{namespace}", ""), "{sandbox}", "")
 	if strings.ContainsAny(remaining, "{}") {
-		return errors.New("gateway target supports only namespace and sandbox placeholders")
+		return invalidSetting("gateway_target", "supports only namespace and sandbox placeholders")
 	}
 	if s.MaxLiveSessions <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
-		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
+		return invalidSetting("max_live_sessions,rpc_timeout_seconds,lease_seconds", "must be positive; lease_seconds must exceed 30")
 	}
 	for name, seconds := range map[string]int{
 		"rpc_timeout_seconds": s.RPCTimeoutSeconds,
 		"lease_seconds":       s.LeaseSeconds,
 	} {
 		if int64(seconds) > maxExecutorInitializeTimeoutSeconds {
-			return fmt.Errorf("%s must fit in time.Duration", name)
+			return invalidSetting(name, "must fit in time.Duration")
 		}
 	}
 	observationSeconds := defaultCodeModeObservationTimeoutSeconds
@@ -118,24 +155,24 @@ func (s Settings) Validate() error {
 		observationSeconds = *s.CodeModeObservationTimeoutSeconds
 	}
 	if observationSeconds <= 0 || int64(observationSeconds) > maxExecutorInitializeTimeoutSeconds-int64(s.RPCTimeoutSeconds) {
-		return errors.New("code_mode_observation_timeout_seconds must be positive and fit with rpc_timeout_seconds in time.Duration")
+		return invalidSetting("code_mode_observation_timeout_seconds", "must be positive and fit with rpc_timeout_seconds in time.Duration")
 	}
 	if s.SetupTimeoutSeconds != nil && (*s.SetupTimeoutSeconds <= 0 || int64(*s.SetupTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
-		return errors.New("setup_timeout_seconds must be positive and fit in time.Duration")
+		return invalidSetting("setup_timeout_seconds", "must be positive and fit in time.Duration")
 	}
 	if s.TurnTimeoutSeconds != nil && (*s.TurnTimeoutSeconds <= 0 || int64(*s.TurnTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
-		return errors.New("turn_timeout_seconds must be positive and fit in time.Duration")
+		return invalidSetting("turn_timeout_seconds", "must be positive and fit in time.Duration")
 	}
 	if s.ExecutorInitializeTimeoutSeconds != nil {
 		seconds := int64(*s.ExecutorInitializeTimeoutSeconds)
 		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
-			return errors.New("executor_initialize_timeout_seconds must be positive and fit in time.Duration")
+			return invalidSetting("executor_initialize_timeout_seconds", "must be positive and fit in time.Duration")
 		}
 	}
 	if s.ExecutorReconnectTimeoutSeconds != nil {
 		seconds := int64(*s.ExecutorReconnectTimeoutSeconds)
 		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
-			return errors.New("executor_reconnect_timeout_seconds must be positive and fit in time.Duration")
+			return invalidSetting("executor_reconnect_timeout_seconds", "must be positive and fit in time.Duration")
 		}
 	}
 	for name, seconds := range map[string]*int{
@@ -143,7 +180,7 @@ func (s Settings) Validate() error {
 		"provider_idle_timeout_seconds":            s.ProviderIdleTimeoutSeconds,
 	} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
-			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
+			return invalidSetting(name, "must be positive and fit in time.Duration")
 		}
 	}
 	headerSeconds := int64(s.ProviderResponseHeaderTimeout() / time.Second)
@@ -152,18 +189,18 @@ func (s Settings) Validate() error {
 	if rpcSlack > maxExecutorInitializeTimeoutSeconds/3 ||
 		headerSeconds > maxExecutorInitializeTimeoutSeconds-idleSeconds ||
 		headerSeconds+idleSeconds > maxExecutorInitializeTimeoutSeconds-3*rpcSlack {
-		return errors.New("provider response-header timeout, idle timeout, and three RPC journal slack intervals must fit together in time.Duration")
+		return invalidSetting("provider_response_header_timeout_seconds,provider_idle_timeout_seconds,rpc_timeout_seconds", "provider response-header timeout, idle timeout, and three RPC journal slack intervals must fit together in time.Duration")
 	}
 	for name, seconds := range map[string]*int{"shutdown_drain_seconds": s.ShutdownDrainSeconds, "shutdown_budget_seconds": s.ShutdownBudgetSeconds} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
-			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
+			return invalidSetting(name, "must be positive and fit in time.Duration")
 		}
 	}
 	if s.ShutdownBudgetTimeout()-s.ShutdownDrainTimeout() < 15*time.Second {
-		return errors.New("shutdown_budget_seconds must leave at least 15 seconds after shutdown_drain_seconds for cleanup")
+		return invalidSetting("shutdown_budget_seconds,shutdown_drain_seconds", "must leave at least 15 seconds after shutdown_drain_seconds for cleanup")
 	}
 	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {
-		return errors.New("auto_compact_tokens must be positive")
+		return invalidSetting("auto_compact_tokens", "must be positive")
 	}
 	return nil
 }

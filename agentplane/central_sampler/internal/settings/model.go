@@ -41,45 +41,45 @@ type ModelConfig struct {
 
 func (c ModelConfig) Validate() error {
 	if c.Connection == "" {
-		return errors.New("model connection is required")
+		return invalidSetting("connection", "model connection is required")
 	}
 	if c.ProviderModel == "" {
-		return errors.New("model provider_model is required")
+		return invalidSetting("provider_model", "model provider_model is required")
 	}
 	if len(c.ReasoningEfforts) == 0 {
-		return errors.New("model reasoning_efforts must not be empty")
+		return invalidSetting("reasoning_efforts", "model reasoning_efforts must not be empty")
 	}
 	if c.ExecEncoding != protocol.ExecEncodingFreeform && c.ExecEncoding != protocol.ExecEncodingJSON {
-		return errors.New("exec_encoding must be freeform or json")
+		return invalidSetting("exec_encoding", "exec_encoding must be freeform or json")
 	}
 	switch c.API {
 	case protocol.APIStyleResponses:
 		if err := c.Responses.Validate(); err != nil {
-			return err
+			return invalidSettingWithCause("responses", "responses settings are invalid", err)
 		}
 		if c.AnthropicMessages != nil {
-			return errors.New("anthropic_messages settings are only valid for the anthropic_messages API")
+			return invalidSetting("anthropic_messages", "settings are only valid for the anthropic_messages API")
 		}
 	case protocol.APIStyleAnthropicMessages:
 		if c.Responses != (responses.Config{}) {
-			return errors.New("responses settings are only valid for the responses API")
+			return invalidSetting("responses", "settings are only valid for the responses API")
 		}
 		if c.ExecEncoding != protocol.ExecEncodingJSON {
-			return errors.New("anthropic_messages requires exec_encoding json")
+			return invalidSetting("exec_encoding", "anthropic_messages requires exec_encoding json")
 		}
 		if c.AnthropicMessages == nil {
-			return errors.New("anthropic_messages settings are required for the anthropic_messages API")
+			return invalidSetting("anthropic_messages", "settings are required for the anthropic_messages API")
 		}
 		for _, effort := range c.ReasoningEfforts {
 			if !slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort) {
-				return fmt.Errorf("anthropic reasoning effort %q is unsupported", effort)
+				return invalidSettingWithCause("reasoning_efforts", "anthropic reasoning effort is unsupported", fmt.Errorf("anthropic reasoning effort %q is unsupported", effort))
 			}
 		}
 		if err := c.AnthropicMessages.Validate(); err != nil {
-			return err
+			return invalidSettingWithCause("anthropic_messages", "settings are invalid", err)
 		}
 	default:
-		return errors.New("model api must be responses or anthropic_messages")
+		return invalidSetting("api", "model api must be responses or anthropic_messages")
 	}
 	return nil
 }
@@ -141,29 +141,29 @@ type AuthConfig struct {
 func (c ConnectionConfig) Validate() error {
 	parsed, err := url.Parse(c.BaseURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || strings.HasSuffix(parsed.Host, ":") || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.ContainsAny(c.BaseURL, "?#") {
-		return errors.New("connection base_url must be a safe http(s) URL without credentials, query, or fragment")
+		return invalidSetting("base_url", "connection base_url must be a safe http(s) URL without credentials, query, or fragment")
 	}
 	if rawPort := parsed.Port(); rawPort != "" {
 		port, err := strconv.Atoi(rawPort)
 		if err != nil || port < 1 || port > 65535 {
-			return errors.New("connection base_url must use a valid TCP port")
+			return invalidSetting("base_url", "connection base_url must use a valid TCP port")
 		}
 	}
 	if c.TLS != nil {
 		if parsed.Scheme != "https" {
-			return errors.New("connection tls requires an https base_url")
+			return invalidSetting("tls", "connection tls requires an https base_url")
 		}
 		if err := c.TLS.Validate(); err != nil {
-			return err
+			return invalidSettingWithCause("tls", "connection TLS settings are invalid", err)
 		}
 	}
 	if (c.Auth.Credential == "") == (c.Auth.CredentialFile == "") {
-		return errors.New("connection auth requires exactly one of credential and credential_file")
+		return invalidSetting("auth", "connection auth requires exactly one of credential and credential_file")
 	}
 	switch c.Auth.Type {
 	case AuthTypeBearer, AuthTypeAgentplaneIngress, AuthTypeAnthropicAPIKey:
 	default:
-		return errors.New("connection auth.type must be bearer, agentplane_ingress or anthropic_api_key")
+		return invalidSetting("auth.type", "connection auth.type must be bearer, agentplane_ingress or anthropic_api_key")
 	}
 	return nil
 }
