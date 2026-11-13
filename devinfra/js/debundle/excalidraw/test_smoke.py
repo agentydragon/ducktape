@@ -292,6 +292,47 @@ async def test_library_class(playwright_driver: Playwright, origin: str) -> None
         }
 
 
+async def test_library_algorithms(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Library, distributeLibraryItemsOnSquareGrid } =
+                    await import('./main/packages/excalidraw/data/library.js');
+                const rectangle = (id, x, y, width, height) => ({
+                    id, type: 'rectangle', index: 'a0', x, y, width, height, angle: 0,
+                    isDeleted: false, groupIds: [], boundElements: null, frameId: null,
+                    version: 1, versionNonce: 1, seed: 1, updated: 1, locked: false, link: null,
+                });
+                const positioned = distributeLibraryItemsOnSquareGrid([
+                    {id: 'first', elements: [rectangle('first-shape', 10, 20, 20, 10)]},
+                    {id: 'second', elements: [rectangle('second-shape', 100, 200, 40, 30)]},
+                ]);
+
+                const library = new Library({props: {onLibraryChange: () => {}}});
+                const local = {id: 'local-item', elements: [rectangle('same-shape', 0, 0, 10, 10)]};
+                const duplicate = {id: 'duplicate-item', elements: [rectangle('same-shape', 50, 50, 10, 10)]};
+                const unique = {id: 'new-item', elements: [rectangle('new-shape', 100, 100, 10, 10)]};
+                await library.setLibrary([local]);
+                await library.updateLibrary({libraryItems: [duplicate, unique], merge: true});
+                const merged = (await library.getLatestLibrary()).map(item => item.id);
+                library.destroy();
+                return {
+                    positioned: positioned.map(element => [element.id, element.x, element.y]),
+                    merged,
+                };
+            }"""
+        )
+        assert result == {
+            "positioned": [["first-shape", 0, 10], ["second-shape", 70, 0]],
+            "merged": ["new-item", "local-item"],
+        }
+
+
 async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
@@ -878,6 +919,93 @@ async def test_resize_handle_devices(playwright_driver: Playwright, origin: str)
         )
         default_sides = {"e": True, "s": True, "n": True, "w": True}
         assert result == {"desktop": [True, default_sides], "mobile": [False, {}], "touch": [True, default_sides]}
+
+
+async def test_library_and_icon_picker(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        page.set_default_timeout(5_000)
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar")).to_be_visible()
+
+        # Opening the library exercises the extracted menu's empty-library branch.
+        library = page.get_by_role("checkbox", name="Library", exact=True)
+        await page.locator("label", has=library).click()
+        await expect(library).to_be_checked()
+        await expect(page.locator(".library-menu-items__no-items")).to_be_visible()
+        await page.get_by_test_id("sidebar-close").click()
+        await expect(library).not_to_be_checked()
+        await expect(page.locator(".library-menu-items__no-items")).to_be_hidden()
+
+        # Arrow properties use both IconPicker and its private Picker implementation.
+        arrow = page.get_by_test_id("toolbar-arrow")
+        await page.locator("label", has=arrow).click()
+        picker = page.get_by_role("button", name="arrowhead_end", exact=True)
+        await picker.click()
+        options = page.get_by_role("dialog", name="arrowhead_end", exact=True)
+        await options.get_by_text("More options", exact=True).click()
+        bar = options.get_by_role("button", name="Bar", exact=True)
+        await bar.click()
+        await expect(bar).to_have_class("picker-option active")
+        await bar.press("Escape")
+        await expect(options).to_be_hidden()
+        await picker.click()
+        await expect(options.get_by_role("button", name="Bar", exact=True)).to_have_class("picker-option active")
+        await page.keyboard.press("Escape")
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
+async def test_clipboard_parsing_and_system_round_trip(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        await context.grant_permissions(["clipboard-read", "clipboard-write"])
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await page.bring_to_front()
+        result = await page.evaluate(
+            """async () => {
+                const clipboard = await import('./editor/packages/excalidraw/clipboard.js');
+                const {newElement} = await import('./editor/packages/excalidraw/element/newElement.js');
+                const event = types => clipboard.createPasteEvent({types});
+                const plain = await clipboard.parseClipboard(event({'text/plain': '  hello  '}));
+                const mixedTypes = {'text/plain': 'fallback', 'text/html':
+                    '<div>hello<img src="https://example.com/image.png">world</div>'};
+                const mixed = await clipboard.parseClipboard(event(mixedTypes));
+                const plainPaste = await clipboard.parseClipboard(event(mixedTypes), true);
+                const sheet = await clipboard.parseClipboard(event({
+                    'text/plain': 'Name\\tCount\\nA\\t10\\nB\\t20'}));
+                const file = new File(['content'], 'example.txt', {type: 'text/plain'});
+                const fileEvent = clipboard.createPasteEvent({files: [file]});
+                const rectangle = newElement({type: 'rectangle', x: 10, y: 20, width: 30, height: 40});
+                await clipboard.copyToClipboard([rectangle], {});
+                const contents = await clipboard.readSystemClipboard();
+                const parsed = await clipboard.parseClipboard(event(contents));
+                return {plain, mixed, plainPaste, sheet,
+                    files: [...fileEvent.clipboardData.files].map(file => [file.name, file.type]),
+                    copied: parsed.elements.map(element => [element.id === rectangle.id, element.x,
+                        element.y, element.width, element.height]), programmaticAPI: parsed.programmaticAPI};
+            }"""
+        )
+        assert result == {
+            "plain": {"text": "hello"},
+            "mixed": {
+                "mixedContent": [
+                    {"type": "text", "value": "hello"},
+                    {"type": "imageUrl", "value": "https://example.com/image.png"},
+                    {"type": "text", "value": "world"},
+                ]
+            },
+            "plainPaste": {"text": "fallback"},
+            "sheet": {"spreadsheet": {"title": "Count", "labels": ["A", "B"], "values": [10, 20]}},
+            "files": [["example.txt", "text/plain"]],
+            "copied": [[True, 10, 20, 30, 40]],
+            "programmaticAPI": False,
+        }
 
 
 if __name__ == "__main__":

@@ -16,3 +16,64 @@ source_matches:
       };
     bindings:
       - Library
+
+  - match: |
+      var selected = (existingLibraryItems, targetLibraryItem) =>
+        !existingLibraryItems.find((libraryItem) =>
+          libraryItem.elements.length !== targetLibraryItem.elements.length
+            ? !1
+            : libraryItem.elements.every(
+                (element, index) =>
+                  element.id === targetLibraryItem.elements[index].id &&
+                  element.versionNonce ===
+                    targetLibraryItem.elements[index].versionNonce,
+              ),
+        );
+    bindings:
+      - local: selected
+        name: isUniqueItem
+
+  - match: |
+      var selected = (localItems, otherItems) => {
+        let newItems = [];
+        for (let item of otherItems) ANYTHING(localItems, item) && newItems.push(item);
+        return [...newItems, ...localItems];
+      };
+    bindings:
+      - local: selected
+        name: mergeLibraryItems
+
+  - match: |
+      var selected = (prevLibraryItems, nextLibraryItems) => {
+        let nextItemsMap = ANYTHING(nextLibraryItems), update = {
+          deletedItems: new Map,
+          addedItems: new Map,
+        };
+        for (let item of prevLibraryItems) nextItemsMap.has(item.id) || update.deletedItems.set(item.id, item);
+        let prevItemsMap = ANYTHING(prevLibraryItems);
+        for (let item of nextLibraryItems) prevItemsMap.has(item.id) || update.addedItems.set(item.id, item);
+        return update;
+      };
+    bindings:
+      - local: selected
+        name: createLibraryUpdate
+
+  - match: |
+      var selected = (libraryItems) => {
+        let itemsPerRow = Math.ceil(Math.sqrt(libraryItems.length)),
+          resultElements = [],
+          getMaxHeightPerRow = ANYTHING,
+          getMaxWidthPerCol = ANYTHING,
+          colOffsetX = 0,
+          rowOffsetY = 0,
+          maxHeightCurrRow = 0,
+          maxWidthCurrCol = 0,
+          index = 0,
+          col = 0,
+          row = 0;
+        STMT_LIST;
+        return resultElements;
+      };
+    bindings:
+      - local: selected
+        name: distributeLibraryItemsOnSquareGrid

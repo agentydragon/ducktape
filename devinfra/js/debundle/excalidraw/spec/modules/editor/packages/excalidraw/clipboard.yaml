@@ -1,0 +1,94 @@
+# Original home: packages/excalidraw/clipboard.ts
+source_matches:
+  - match: |
+      var selected = (contents) => !!([
+        types.excalidraw, types.excalidrawClipboard, types.excalidrawClipboardWithAPI
+      ].includes(contents?.type) && Array.isArray(contents.elements));
+    bindings:
+      - local: selected
+        name: clipboardContainsElements
+  - match: |
+      var selected = AST_CONTAINS_STRING("createPasteEvent: no types or files provided");
+    bindings:
+      - local: selected
+        name: createPasteEvent
+  - match: |
+      var selected = AST_CONTAINS_STRING("copyToClipboard: attempting to file element(s) without providing associated `files` object.");
+    bindings:
+      - local: selected
+        name: serializeAsClipboardJSON
+  - match: |
+      var selected = async (elements, files, event) => {
+        await copyTextToSystemClipboard(serializeAsClipboardJSON({elements: elements, files: files}), event);
+      };
+    bindings:
+      - local: selected
+        name: copyToClipboard
+  - match: |
+      var selected = (text) => {
+        let result = EXPR(text);
+        return result.type === EXPR ? {spreadsheet: result.spreadsheet} : null;
+      };
+    bindings:
+      - local: selected
+        name: parsePotentialSpreadsheet
+  - match: |
+      function selected(element) {
+        let result = [];
+        for (let node of element.childNodes) STMT;
+        return result;
+      }
+    bindings:
+      - local: selected
+        name: parseHTMLTree
+  - match: |
+      var selected = (event) => {
+        let html = event.clipboardData?.getData(EXPR.html);
+        if (!html) return null;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: maybeParseHTMLPaste
+  - match: |
+      var selected = AST_CONTAINS_STRING("No clipboard data found from clipboard.read().");
+    bindings:
+      - local: selected
+        name: readSystemClipboard
+  - match: |
+      var selected = async (event, isPlainPaste = !1) => {
+        try {
+          let content = !isPlainPaste && event && maybeParseHTMLPaste(event);
+          STMT_LIST;
+        } catch { return {type: "text", value: ""}; }
+      };
+    bindings:
+      - local: selected
+        name: parseClipboardEventTextData
+  - match: |
+      var selected = async (event, isPlainPaste = !1) => {
+        let data = await parseClipboardEventTextData(event, isPlainPaste);
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: parseClipboard
+  - match: |
+      var selected = async (blob) => {
+        try {
+          await navigator.clipboard.write([new window.ClipboardItem({[EXPR.png]: blob})]);
+        } catch (error) { STMT_LIST; }
+      };
+    bindings:
+      - local: selected
+        name: copyBlobToClipboardAsPng
+  - match: |
+      var selected = AST_CONTAINS_STRING("Error copying to clipboard.");
+    bindings:
+      - local: selected
+        name: copyTextToSystemClipboard
+  - match: |
+      var selected = AST_CONTAINS_STRING("-9999px");
+    bindings:
+      - local: selected
+        name: copyTextViaExecCommand
