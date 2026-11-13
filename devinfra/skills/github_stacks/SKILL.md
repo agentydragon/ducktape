@@ -16,7 +16,12 @@ repository; cross-fork stacks are unsupported. Keep independent changes independ
    or the PR's REST `stack` field.
 3. Register the chain explicitly: `POST /repos/OWNER/REPO/stacks` with
    `{"pull_requests":[101,102,103]}` ordered **bottom to top**. Creating ordinary
-   branch-based PRs alone does not register a native stack.
+   branch-based PRs alone does not register a native stack. Use JSON integers for PR
+   numbers: `gh api --input -` accepts a JSON body; `-f` array values are strings and
+   the endpoint rejects them.
+   Registration rejects PRs with auto-merge enabled. Recheck PR state before changing
+   auto-merge: a PR can merge while the stack is being prepared. Preserve intentional
+   merge settings unless the user authorizes changing them.
 4. Read membership with `GET /repos/OWNER/REPO/stacks/STACK_NUMBER`; append PRs with
    `POST /repos/OWNER/REPO/stacks/STACK_NUMBER/add` and the same body shape.
 
