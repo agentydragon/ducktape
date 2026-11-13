@@ -14,10 +14,10 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"

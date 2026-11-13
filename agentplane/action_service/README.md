@@ -440,12 +440,16 @@ is accepted.
 ## Action policy sets and bindings
 
 `PolicySet` and `PolicyBinding` (CRDs in `agentplane/crds/`) supply Action policies. The Go
-[`informer`](informer/informer.go) watches the policy namespace's sets and bindings and labeled
+[`informer`](internal/admission/informer/informer.go) watches the policy namespace's sets and bindings and labeled
 caller ServiceAccounts, and writes `ActionsReady` on bindings. The Go
-[`policies.Provider`](policies/provider.go) evaluates valid `action_auto_approve` rules at admission;
+[`policies.Provider`](internal/admission/policies/provider.go) evaluates valid `action_auto_approve` rules at admission;
 a matching allow records `PolicyEvidence`, including the matched rule and any resolved GitHub
 repository. A set has no deny form: no match leaves the request for a human. The Go
 [`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
+
+The Go admission implementation lives under `internal/admission`; the Python `policies/`
+authoring package and its `resources` target remain at their existing path for cdk8s and
+system-test consumers.
 
 The Go integration app obtains PolicySet names from the Policy Controller's
 `ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/go/appconfigapi.go).

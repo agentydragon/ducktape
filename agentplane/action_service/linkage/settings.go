@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 )
 
 // Server is an MCP server an operator can link an account to: an entry of the configured `mcp_servers` map.

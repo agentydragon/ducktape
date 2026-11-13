@@ -21,9 +21,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 

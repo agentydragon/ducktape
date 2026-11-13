@@ -13,7 +13,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/mcpexec",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/worker",
@@ -53,7 +53,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/migrations",

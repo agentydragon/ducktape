@@ -3,11 +3,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "informer",
     srcs = ["informer.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/informer",
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
         "//agentplane/action_service/callers",
-        "//agentplane/action_service/policies",
+        "//agentplane/action_service/internal/admission/policies",
         "//agentplane/identity/auth/auth",
         "//agentplane/policy/reader",
         "//agentplane/watchhealth",
@@ -30,8 +30,8 @@ go_test(
     embed = [":informer"],
     deps = [
         "//agentplane/action_service/callers",
+        "//agentplane/action_service/internal/admission/policies",
         "//agentplane/action_service/internal/store",
-        "//agentplane/action_service/policies",
         "//agentplane/identity/auth/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",

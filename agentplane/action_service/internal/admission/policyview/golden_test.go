@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )

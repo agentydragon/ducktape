@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"

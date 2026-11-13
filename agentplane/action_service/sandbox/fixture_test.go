@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
