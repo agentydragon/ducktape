@@ -44,7 +44,7 @@ submitted continue through the Action lifecycle.
 The operator can list or watch Connections, rename, rebind, and unbind them; the
 integration app presents the operator UI ([consent UI](../app/README.md)). See the
 [ConnectionService implementation](../mcp_edge/internal/connections/service.go) and
-[authorization server](../mcp_edge/authserver/authserver.go).
+[authorization server](../mcp_edge/internal/authserver/authserver.go).
 
 The executable contract is deliberately small:
 
@@ -87,7 +87,7 @@ issuance share the code-exchange transaction. See the
 [enrollment store](../mcp_edge/internal/connections/enrollments.go),
 [authorization store](../mcp_edge/internal/connections/authorizations.go),
 [consent API](../mcp_edge/api/connection/connection_service.proto), and
-[OAuth code exchange](../mcp_edge/authserver/tokens.go).
+[OAuth code exchange](../mcp_edge/internal/authserver/tokens.go).
 
 ## Caller UID provenance
 
@@ -185,7 +185,7 @@ The standalone [MCP edge](../mcp_edge/README.md) serves `/mcp` and OAuth protoco
 authenticates external bearers, resolves each Connection to its currently bound, labeled
 ServiceAccount, and calls this service with that workload identity. The Action Service does not
 serve `/mcp`, ConnectionService, or the external OAuth protocol. See the edge's
-[MCP handler](../mcp_edge/internal/mcpserver/server.go) and [bearer verifier](../mcp_edge/authserver/tokens.go).
+[MCP handler](../mcp_edge/internal/mcpserver/server.go) and [bearer verifier](../mcp_edge/internal/authserver/tokens.go).
 The `basic` `PolicySet` controls Sandbox egress; it does not grant MCP edge authority.
 
 ### External OAuth
@@ -208,7 +208,7 @@ grant; upstream account revocation is separate.
 Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client_id`,
 `upstream_client_secret_file`, `upstream_subject`, and `approving_operator` in the optional `oauth`
 settings. See the edge's [Go OAuth configuration](../mcp_edge/config.go), the
-[authorization server](../mcp_edge/authserver/authserver.go), and the
+[authorization server](../mcp_edge/internal/authserver/authserver.go), and the
 [ConnectionService contract](../mcp_edge/api/connection/connection_service.proto).
 
 | Tool                         | Use                                                                                                                                                            |

@@ -1,9 +1,9 @@
 # External-client dynamic registration
 
-`//agentplane/mcp_edge/authserver:sdk_dcr_test` starts the production Go MCP and OAuth handlers
+`//agentplane/mcp_edge/internal/authserver:sdk_dcr_test` starts the production Go MCP and OAuth handlers
 with real PostgreSQL, then runs the actual MCP Python SDK `ClientSession` over Streamable HTTP.
 The SDK follows the unauthenticated challenge through protected-resource and authorization-server
-metadata to the advertised registration endpoint. The unchanged [wire helper](../mcp_edge/authserver/dcr.py)
+metadata to the advertised registration endpoint. The unchanged [wire helper](../mcp_edge/internal/authserver/dcr.py)
 checks JSON content types, RFC 7591 `201`, one registration, persisted public-client metadata,
 the authorization URL, PKCE/state, and absence of a token. Loopback and hosted-style HTTPS
 redirect URIs both run. The existing auth-server fixture supplies upstream OIDC discovery;

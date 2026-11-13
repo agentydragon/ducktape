@@ -107,7 +107,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 )
 
-// Direct dependencies for agentplane/mcp_edge/authserver (the OAuth authorization server external MCP clients use)
+// Direct dependencies for agentplane/mcp_edge/internal/authserver (the OAuth authorization server external MCP clients use)
 // Gotcha: op.Server and op.RegisterServer "may change until v4", in a v3 minor release too.
 require github.com/zitadel/oidc/v3 v3.51.16
 

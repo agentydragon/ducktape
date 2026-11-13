@@ -3,11 +3,12 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//agentplane:__subpackages__"])
+package(default_visibility = ["//agentplane/mcp_edge:__subpackages__"])
 
 py_library(
     name = "oauth_settings",
     srcs = ["oauth_settings.py"],
+    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
     deps = ["@pypi//pydantic"],
 )
 
@@ -43,7 +44,7 @@ go_library(
         "main.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge",
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = ["//agentplane/mcp_edge:__subpackages__"],
     deps = [
         "//agentplane/action_service/api",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
@@ -56,7 +57,7 @@ go_library(
         "//agentplane/identity/auth/grpc",
         "//agentplane/kubeclient",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
-        "//agentplane/mcp_edge/authserver",
+        "//agentplane/mcp_edge/internal/authserver",
         "//agentplane/mcp_edge/internal/connections",
         "//agentplane/mcp_edge/internal/mcpserver",
         "//agentplane/mcp_edge/migrations",

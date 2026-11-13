@@ -24,7 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"

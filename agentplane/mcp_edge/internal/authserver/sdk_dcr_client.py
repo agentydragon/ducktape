@@ -3,7 +3,7 @@
 import asyncio
 import sys
 
-from agentplane.mcp_edge.authserver.dcr import DcrError, register_client
+from agentplane.mcp_edge.internal.authserver.dcr import DcrError, register_client
 
 
 async def async_main() -> None:
