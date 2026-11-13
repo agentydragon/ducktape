@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"

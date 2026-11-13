@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"

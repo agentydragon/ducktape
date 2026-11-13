@@ -83,7 +83,7 @@ require (
 // Direct dependencies for agentplane/action_service/internal/admission/policies
 require github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 
-// Direct dependencies for agentplane/notification_service/github
+// Direct dependencies for agentplane/notification_service/internal/sources/github
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/google/go-github/v88 v88.0.0
