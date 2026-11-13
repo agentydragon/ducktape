@@ -86,9 +86,15 @@ def test_default_layer_parameters_preserve_supported_wire_bytes():
     assert hashlib.sha256(data).hexdigest() == "408665a748ff1191723fc8c5370d6d259a1718f4839668a9e45df40766d93d0e"
 
 
-@pytest.mark.parametrize(("field_name", "value"), [("num_passes", 2), ("z_offset_mm", 0.1), ("z_per_pass_mm", -0.1)])
-def test_to_bytes_rejects_unsupported_layer_parameters(field_name: str, value: float):
-    layer = RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, **{field_name: value})
+@pytest.mark.parametrize(
+    ("layer", "field_name"),
+    [
+        (RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, num_passes=2), "num_passes"),
+        (RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, z_offset_mm=0.1), "z_offset_mm"),
+        (RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, z_per_pass_mm=-0.1), "z_per_pass_mm"),
+    ],
+)
+def test_to_bytes_rejects_unsupported_layer_parameters(layer: RdLayer, field_name: str):
     with pytest.raises(ValueError, match=field_name):
         RdJob(layers=[layer]).to_bytes()
 
