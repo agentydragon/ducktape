@@ -37,8 +37,6 @@ EXECUTION_BINARY = (
 )
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
-SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")
-SANDBOX_LAUNCH = SandboxLaunch(sandbox=SANDBOX, bootstrap=None, platform_instructions=PLATFORM_INSTRUCTIONS)
 
 
 def spec(harness: session_pb2.Harness, cwd: Path, sandbox: SandboxIdentity) -> session_pb2.SessionSpec:
@@ -75,6 +73,7 @@ def config(
     harness: session_pb2.Harness,
     endpoint: str,
     *,
+    sandbox: SandboxIdentity,
     state_dir: Path,
     home: Path,
     codex_executor_url: str | None = None,
@@ -82,7 +81,7 @@ def config(
 ) -> RunnerTestConfig:
     return RunnerTestConfig(
         state_dir=state_dir,
-        launch=SANDBOX_LAUNCH,
+        launch=SandboxLaunch(sandbox=sandbox, bootstrap=None, platform_instructions=PLATFORM_INSTRUCTIONS),
         harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == session_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None,

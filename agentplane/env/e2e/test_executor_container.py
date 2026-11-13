@@ -31,6 +31,7 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
     inspect_codex_exec_server_container,
 )
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
@@ -50,10 +51,12 @@ def config(
     endpoint: ModelEndpoint,
     tmp_path: Path,
     codex_exec_server_container: CodexExecServerContainer,
+    sandbox: SandboxCluster,
 ) -> RunnerTestConfig:
     runner_config = launches.config(
         harness,
         endpoint.origin,
+        sandbox=sandbox.identity,
         state_dir=tmp_path / "state",
         home=tmp_path / "home",
         codex_executor_url=codex_exec_server_container.url,
@@ -342,8 +345,8 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
         expected_incarnation_uid=runner.gateway.control.incarnation_uid,
         session_id="test-execution-session",
     )
-    target = runner.control_endpoint.listen_address
-    async with grpc.aio.insecure_channel(target, options=[("grpc.enable_retries", 0)]) as channel:
+    channel = await runner.gateway.control.open_channel(runner.control_endpoint, options=(("grpc.enable_retries", 0),))
+    async with channel:
         async with asyncio.timeout(30):
             await channel.channel_ready()
         control_status = await (await runner.control()).GetStatus(session_pb2.GetStatusRequest())

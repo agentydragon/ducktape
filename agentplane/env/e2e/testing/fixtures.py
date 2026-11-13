@@ -108,8 +108,12 @@ def spec(harness: session_pb2.Harness, workspace: Path, sandbox: SandboxCluster)
 
 
 @pytest.fixture
-def config(harness: session_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerTestConfig:
-    return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
+def config(
+    harness: session_pb2.Harness, endpoint: ModelEndpoint, sandbox: SandboxCluster, tmp_path: Path
+) -> RunnerTestConfig:
+    return launches.config(
+        harness, endpoint.origin, sandbox=sandbox.identity, state_dir=tmp_path / "state", home=tmp_path / "home"
+    )
 
 
 @pytest.fixture

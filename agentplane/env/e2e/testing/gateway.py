@@ -115,7 +115,10 @@ class ControlListener:
             return
 
     async def _new_channel(
-        self, endpoint: EnvironmentRuntimeControl, metadata: tuple[tuple[str, str], ...] = ()
+        self,
+        endpoint: EnvironmentRuntimeControl,
+        metadata: tuple[tuple[str, str], ...] = (),
+        options: tuple[tuple[str, Any], ...] = (),
     ) -> grpc.aio.Channel:
         interceptors = (_RunnerMetadataInterceptor(metadata),) if metadata else ()
         if isinstance(endpoint.security, Insecure):
@@ -123,9 +126,15 @@ class ControlListener:
         return grpc.aio.secure_channel(
             endpoint.listen_address,
             self._client_credentials,
-            options=(("grpc.ssl_target_name_override", RUNNER_GATEWAY_TEST_DNS),),
+            options=(("grpc.ssl_target_name_override", RUNNER_GATEWAY_TEST_DNS), *options),
             interceptors=interceptors,
         )
+
+    async def open_channel(
+        self, endpoint: EnvironmentRuntimeControl, *, options: tuple[tuple[str, Any], ...] = ()
+    ) -> grpc.aio.Channel:
+        """Open a separately authenticated channel for other Runtime services."""
+        return await self._new_channel(endpoint, options=options)
 
     async def disconnect(self) -> None:
         task, self._watch_task = self._watch_task, None
