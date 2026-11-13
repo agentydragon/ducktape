@@ -1,0 +1,452 @@
+{
+  "source_sha": "9b58dd18f932f4129dbd1d673450cc5df87e859d",
+  "observed_at_utc": "2026-11-13 05:19 UTC",
+  "scope": "Reorganization source/import preflight and GitHub PR state; no new backend test or deployment evidence.",
+  "original_inventory_sha": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+  "pull_requests": [
+    {
+      "number": 15922,
+      "title": "Organize central sampler runtime files",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T02:18:14Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15922",
+      "headRefName": "codex/central-sampler-runtime-organization",
+      "headRefOid": "b41be01650130114d2b9e1fa805da0409662d4dd",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 15931,
+      "title": "Make History reads an internal package",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T00:10:42Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15931",
+      "headRefName": "codex/history-reads-private",
+      "headRefOid": "6536f32f129760663401985967d103a59726fb15",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 15938,
+      "title": "agentplane: make notification inbox access internal",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T00:17:22Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15938",
+      "headRefName": "codex/notification-inboxaccess-private",
+      "headRefOid": "c773878ce3c0af2e0f2ac616080404974277f1e6",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 15964,
+      "title": "refactor(agentplane): extract sampler prompt image preparation",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T01:23:10Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15964",
+      "headRefName": "codex/sampler-promptimage-20261112",
+      "headRefOid": "69c59e4cb9cf38cbc1e891759d284ac3bbb3670d",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 15967,
+      "title": "Move History read API proto under api/history",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T01:27:13Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15967",
+      "headRefName": "codex/history-service-api",
+      "headRefOid": "f0016c35093dce1851050def16e13f6275439237",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 15987,
+      "title": "agentplane: extract notification entry storage",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T01:56:12Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15987",
+      "headRefName": "codex/notification-entry-storage",
+      "headRefOid": "ee1afdf430512a371be2c35484c554eac920b57e",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 15990,
+      "title": "agentplane: move History ingress API under api/ingress",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T02:11:33Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/15990",
+      "headRefName": "agent/history-ingress-contract-20261112",
+      "headRefOid": "7e2b87ffd67b0fd2a9537440c4aa97fe312a3cc7",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16017,
+      "title": "agentplane: make Notification store package private",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T02:45:34Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16017",
+      "headRefName": "codex/notification-store-private",
+      "headRefOid": "b31d24190a0f2c8c1e5eea3f8dc93c63f9252c67",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16018,
+      "title": "Extract central sampler output buffer",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T02:45:40Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16018",
+      "headRefName": "codex/central-sampler-outputbuffer",
+      "headRefOid": "c5d04002fb8057b4291523726f96659738b6efbb",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16020,
+      "title": "Extract central sampler History exporter",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T03:02:05Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16020",
+      "headRefName": "codex/sampler-history-export",
+      "headRefOid": "c3440e69ad2ae6631606e7ee1d7fb314a5c80d8e",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16067,
+      "title": "Move sampler API contract beside its owner",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T04:14:55Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16067",
+      "headRefName": "codex/sampler-api-contract",
+      "headRefOid": "801c1079c14f0747d49e90aff710736adaa2d4a8",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16069,
+      "title": "Move Notification API contract beside its owner",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T04:31:28Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16069",
+      "headRefName": "codex/notification-api-contract",
+      "headRefOid": "b544253abd23a944829380ab3f529de6a749fb9a",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16073,
+      "title": "Move Action Service store under internal",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T04:18:19Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16073",
+      "headRefName": "relocate-action-store-internal",
+      "headRefOid": "edd9c3c7420a788efd24cd6466128eabcee8f4bd",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16074,
+      "title": "Move Dispatcher API contract beside its owner",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T04:44:23Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16074",
+      "headRefName": "codex/dispatcher-api-contract",
+      "headRefOid": "e11066a749c19ec24b36cc092bb089d973a6a3fd",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16080,
+      "title": "Keep sampler History recovery coverage at ingress boundary",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T05:04:32Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16080",
+      "headRefName": "agent/history-fold-privacy",
+      "headRefOid": "362b4a96ec94a3923ea7592ab74fc0bd1a3edede",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16088,
+      "title": "agentplane: move Action API contracts beside owner",
+      "state": "OPEN",
+      "isDraft": false,
+      "mergedAt": null,
+      "url": "https://github.com/agentydragon/ducktape/pull/16088",
+      "headRefName": "codex/action-service-api-layout",
+      "headRefOid": "041a4f92f643896193c2a5629c84f55ff64138b7",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16094,
+      "title": "Make History threadfold package internal",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergedAt": null,
+      "url": "https://github.com/agentydragon/ducktape/pull/16094",
+      "headRefName": "agent/history-threadfold-internal",
+      "headRefOid": "e812f6c40568b14c1799e4fab04d69ab9159263d",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16097,
+      "title": "agentplane: move Web Push API contract beside owner",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T05:01:10Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16097",
+      "headRefName": "codex/action-service-web-push-api-layout",
+      "headRefOid": "836bd4d4d864b6fd51197d708a02a574922d2a37",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    },
+    {
+      "number": 16105,
+      "title": "agentplane: make History storage private",
+      "state": "MERGED",
+      "isDraft": false,
+      "mergedAt": "2026-11-13T05:17:46Z",
+      "url": "https://github.com/agentydragon/ducktape/pull/16105",
+      "headRefName": "agent/history-storage-private",
+      "headRefOid": "9112b5bb4db2fc04363780e76f522270fdf86dc4",
+      "baseRefName": "devel",
+      "mergeable": "UNKNOWN"
+    }
+  ],
+  "package_metrics": [
+    {
+      "path": "agentplane/central_sampler",
+      "go_files": 80,
+      "tests": 26,
+      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/env/runtime",
+      "go_files": 57,
+      "tests": 33,
+      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/notification_service/internal/store",
+      "go_files": 49,
+      "tests": 32,
+      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/action_service/api",
+      "go_files": 28,
+      "tests": 16,
+      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/runner_gateway/dispatcher",
+      "go_files": 27,
+      "tests": 14,
+      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/notification_service/api",
+      "go_files": 22,
+      "tests": 11,
+      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+    }
+  ],
+  "next_prs": [
+    {
+      "number": 1,
+      "title": "Give shared workload transport an honest home",
+      "destination": "agentplane/identity/transport/",
+      "readiness": "Ready; broad mechanical move",
+      "scope": "Move environment_runtime_transport, its Python config and testing helpers together. The Go library depends on SPIFFE and gRPC, not the identity resolver or issuer, so placing it below identity does not itself create a cycle. Update every Go/Python import, Bazel label, cdk8s setting reference and document. Keep transport policy and credential resolution in their existing roles.",
+      "invariant": "Preserve TLS verification, URI and EKU validation, SPIFFE trust domains, expiry behavior, token audiences and configuration keys. Do not absorb resolver or issuer logic in this move.",
+      "check": "Run the relocated transport race suite; build credential resolver and issuer, affected Go binaries and Python settings/cdk8s libraries. Search the entire repository for the old path; remaining active references must be zero.",
+      "sources": [
+        "agentplane/environment_runtime_transport/BUILD.bazel",
+        "agentplane/environment_runtime_transport/security.go",
+        "agentplane/environment_runtime_transport/config.py"
+      ],
+      "commands": [
+        "bbr test //agentplane/identity/transport:transport_test",
+        "bbr build //agentplane/identity/credentials/resolver //agentplane/identity/credentials/issuer"
+      ],
+      "dependency": "No content dependency on the remaining open PRs; reconcile overlapping imports by rebasing."
+    },
+    {
+      "number": 2,
+      "title": "Extract sampler configuration and model-route settings",
+      "destination": "agentplane/central_sampler/settings/",
+      "readiness": "Ready; leaf extraction",
+      "scope": "Move Settings, ModelConfig, ConnectionConfig, AuthConfig, decoding, validation and their methods from settings.go into a public settings package. Keep the configuration family together; split the 441-line implementation into decoding, model/connection settings and validation files as useful. Update sampler, command and History integration callers to name the defining package directly. Move settings tests; keep test fixture builders with their consumers.",
+      "invariant": "The file imports provider adapters, protocol and shared transport, with no sampler-root dependency. Preserve unknown-key rejection, defaults, model compatibility, credential reading, gateway address checks and timeout budgets. Keep the Python rendering schema and its keys stable; add no type aliases or re-exports.",
+      "check": "Run relocated settings tests and central_sampler_unit_test, build the sampler command, and run the existing History ingress and sampler service tests that construct these settings.",
+      "sources": [
+        "agentplane/central_sampler/settings.go",
+        "agentplane/central_sampler/settings_test.go",
+        "agentplane/central_sampler/settings_fixture_test.go",
+        "agentplane/central_sampler/cmd/main.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/central_sampler/settings:settings_test //agentplane/central_sampler:central_sampler_unit_test",
+        "bbr build //agentplane/central_sampler/cmd:main_bin"
+      ],
+      "dependency": "Independent of lane 1; update transport imports again if its move lands first."
+    },
+    {
+      "number": 3,
+      "title": "Extract the sampler code-mode tool contract",
+      "destination": "agentplane/central_sampler/internal/toolcontract/",
+      "readiness": "Ready with a bounded parser split",
+      "scope": "Move codemode_description.go, its embedded templates and description tests, plus the pure exec/wait input types and parsers from codemode.go and tool_protocol.go. Make the schema reflector and decoder use the same concrete input types. Keep prepareExecute, prepareJSONCall and other methods that touch CodeMode, Store or a live host in the sampler root.",
+      "invariant": "Preserve freeform and JSON contracts, safe-integer checks, unknown-field rejection, defaults, code-tool ordering and schema behavior. Leave journal writes, live-cell handles, admission and cancellation with their current owners. Pure parsing must not import the sampler root or require callback plumbing.",
+      "check": "Run the moved description/input tests, existing code-mode execution and unit suites, and build the command including embedded template runfiles. Verify both exec encodings with existing provider/service coverage.",
+      "sources": [
+        "agentplane/central_sampler/codemode_description.go",
+        "agentplane/central_sampler/codemode.go",
+        "agentplane/central_sampler/tool_protocol.go",
+        "agentplane/central_sampler/codemode_description_test.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/central_sampler/internal/toolcontract:toolcontract_test //agentplane/central_sampler:central_sampler_unit_test //agentplane/central_sampler:central_sampler_test",
+        "bbr build //agentplane/central_sampler/cmd:main_bin"
+      ],
+      "dependency": "Independent of settings extraction. Shared edits in codemode.go are rebase work, not a reason to serialize ready PRs."
+    },
+    {
+      "number": 4,
+      "title": "Extract sampler tool-result decoding and rendering",
+      "destination": "agentplane/central_sampler/internal/tooloutput/",
+      "readiness": "Ready; pure result boundary",
+      "scope": "Move codemode_output.go, codemode_protocol.go, output_truncation.go and their tests into one result-decoding/rendering package. Keep observation types concrete. Pass the resolved output budget into rendering so output code does not depend on the root tool-description constants. Update process-output callers as well as CodeMode.Execute.",
+      "invariant": "Preserve UTF-8 boundaries, omission markers, image/audio accounting, strict result variants, host duration and error rendering. Keep CodeMode.observe and all Store writes in the coordinator; parsing and rendering must not acquire a lease or touch the executor.",
+      "check": "Run the relocated protocol/output tests and existing sampler unit and execution tests. Retain behavior coverage for mixed content, failed/yielded cells, process output truncation and image preparation.",
+      "sources": [
+        "agentplane/central_sampler/codemode_output.go",
+        "agentplane/central_sampler/codemode_protocol.go",
+        "agentplane/central_sampler/output_truncation.go",
+        "agentplane/central_sampler/codemode_output_test.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/central_sampler/internal/tooloutput:tooloutput_test //agentplane/central_sampler:central_sampler_unit_test //agentplane/central_sampler:central_sampler_test"
+      ],
+      "dependency": "Can start alongside lane 3. Resolve the default budget at its caller rather than creating a dependency on the tool-contract package."
+    },
+    {
+      "number": 5,
+      "title": "Make History projection and cursor walking private",
+      "destination": "agentplane/history_service/internal/{projection,settledcursors}/",
+      "readiness": "Ready; owner-only imports verified",
+      "scope": "Move the existing projection and settledcursors Go packages and tests under History internal. There are nine projection import files and three cursor-helper import files, all inside History. Update read/watch handlers, settlement backfill, ingress recovery tests and the fold package together; leave Python fold/models.py and its browser-sync consumers at their established boundary.",
+      "invariant": "Keep leases, cursor coverage, checkpoint commits, settlement rules and stored schemas unchanged. Preserve the real sampler-to-History projection scenarios landed in #16080.",
+      "check": "Run relocated projection lifecycle/integration and cursor tests, the History read integration suite and ingress integration suite, and build the History binary. Reuse existing scale coverage if the diff changes its setup; a path-only move does not call for a new performance claim.",
+      "sources": [
+        "agentplane/history_service/projection/BUILD.bazel",
+        "agentplane/history_service/projection/projector.go",
+        "agentplane/history_service/settledcursors/settledcursors.go",
+        "agentplane/history_service/ingress/sampler_history_projection_test.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/history_service/internal/projection:lifecycle_test //agentplane/history_service/internal/projection:integration_test //agentplane/history_service/internal/settledcursors:settledcursors_test",
+        "bbr test //agentplane/history_service/internal/reads:integration_test //agentplane/history_service/ingress:integration_test"
+      ],
+      "dependency": "Do not duplicate #16094 or #16105. Their package moves may cause import conflicts; these are not content prerequisites. Recheck their landed paths at dispatch."
+    },
+    {
+      "number": 6,
+      "title": "Make History ingress implementation private",
+      "destination": "agentplane/history_service/internal/ingress/",
+      "readiness": "Ready; one owner-local importer",
+      "scope": "Move ingress implementation and its full integration harness under internal, updating main.go and Bazel labels. The only Go import of the implementation is History main. Public producer contracts stay in api/ingress; include the producer-to-History scenarios and real exporter in the relocated test target.",
+      "invariant": "Preserve SVID/delegated authorization, Sandbox UID validation, bounds, duplicate handling and acknowledgement timing. Keep the producer fixture dependent on public sampler APIs and its explicit historyexport boundary.",
+      "check": "Run the relocated ingress integration suite and History startup/integration suites; build history-service and the Runtime/sampler exporters. Search all repository references, including test target selectors and docs, for the old implementation path.",
+      "sources": [
+        "agentplane/history_service/ingress/ingress.go",
+        "agentplane/history_service/ingress/BUILD.bazel",
+        "agentplane/history_service/main.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/history_service/internal/ingress:integration_test //agentplane/history_service:integration_test",
+        "bbr build //agentplane/history_service:history-service //agentplane/central_sampler/cmd:main_bin"
+      ],
+      "dependency": "Independent of lane 5 and the landed storage move; rebase shared BUILD/import edits. If a test actually depends on an unmerged commit, use a native GitHub stack."
+    },
+    {
+      "number": 7,
+      "title": "Separate Notification handlers from public contracts",
+      "destination": "agentplane/notification_service/internal/rpc/",
+      "readiness": "Ready; 22 Go files, one owner-local importer",
+      "scope": "Move the eleven implementation files and eleven tests currently directly under notification_service/api to internal/rpc. Leave api/notifications and its generated bindings public. Update Notification main, test labels and documentation; the empty api grouping directory can still contain the contract package.",
+      "invariant": "Preserve authorization, delegation, watch behavior and error mapping. Keep the transactional store, GitHub advisory lock order, inbox wakeups and commit ownership together.",
+      "check": "Run relocated RPC unit and integration tests, service integration tests and the store integration suite; build notification-service and its API clients. No database or wire rename belongs in this PR.",
+      "sources": [
+        "agentplane/notification_service/api/BUILD.bazel",
+        "agentplane/notification_service/api/service.go",
+        "agentplane/notification_service/main.go",
+        "agentplane/notification_service/internal/store/github_ingest.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/notification_service/internal/rpc:unit_test //agentplane/notification_service/internal/rpc:integration_test //agentplane/notification_service:integration_test",
+        "bbr build //agentplane/notification_service:notification-service"
+      ],
+      "dependency": "Independent of lanes 1\u20136; public Notification API relocation #16069 is already merged."
+    },
+    {
+      "number": 8,
+      "title": "Put the MCP Connection contract under api/connection",
+      "destination": "agentplane/mcp_edge/api/connection/",
+      "readiness": "Ready after generated-consumer preflight",
+      "scope": "Move connection_service.proto and its generated Go, Python, TypeScript and gateway targets out of the MCP edge composition BUILD. Update imports in app frontend/backend, CLI and MCP edge, including HTTP-facade/OpenAPI generation and references in system-test fixtures.",
+      "invariant": "Retain agentplane.mcp_edge package, ConnectionService full method names, field numbers and HTTP annotations. File/descriptors and generated import paths will move, so inventory descriptor/reflection consumers too. Keep OAuth and Connection state ownership unchanged.",
+      "check": "Build every generated language consumer and affected app/CLI/MCP targets; run Connection and OAuth authserver integration tests and facade coverage. Use existing authorization tests to check method policies still match.",
+      "sources": [
+        "agentplane/mcp_edge/connection_service.proto",
+        "agentplane/mcp_edge/BUILD.bazel",
+        "agentplane/mcp_edge/connections/BUILD.bazel",
+        "agentplane/mcp_edge/authserver/BUILD.bazel"
+      ],
+      "commands": [
+        "bbr test //agentplane/mcp_edge/connections:integration_test //agentplane/mcp_edge/authserver:integration_test",
+        "bbr build //agentplane/mcp_edge:main_lib"
+      ],
+      "dependency": "Action contract imports overlap #16088. Recheck its status and import paths; stack only if the implementation uses content that exists solely in that PR."
+    },
+    {
+      "number": 9,
+      "title": "Put Egress admin and rules contracts beside their implementations",
+      "destination": "agentplane/egress/api/{rules,admin}/",
+      "readiness": "Ready after generated-consumer preflight",
+      "scope": "Move egress_rules.proto and egress_admin.proto with their generated targets. They form one source-import closure because admin imports rules. Keep implementation packages admin/, rules/ and proxy/ in place; update Go/Python/TypeScript, CLI, app, policy tooling and test consumers atomically.",
+      "invariant": "Retain protobuf packages, gRPC method names, HTTP annotations, policy semantics and credential-substitution behavior. Account for changed proto source paths and generated descriptors; no deployment setting, trust or egress policy change.",
+      "check": "Build affected clients and gateway/schema generators, run existing admin/rules tests and proxy integration coverage, and build the deployed proxy and sidecar. Verify exact method names used by authentication still match.",
+      "sources": [
+        "agentplane/egress/egress_rules.proto",
+        "agentplane/egress/egress_admin.proto",
+        "agentplane/egress/admin/BUILD.bazel",
+        "agentplane/egress/rules/BUILD.bazel"
+      ],
+      "commands": [
+        "bbr test //agentplane/egress/admin:admin_test //agentplane/egress/rules:rules_test //agentplane/egress:test_proxy"
+      ],
+      "dependency": "Independent of the other API moves; lane 1 may overlap transport imports. Protobuf package-name alignment remains deferred."
+    }
+  ]
+}
