@@ -215,6 +215,8 @@ spec:
               env:
                 - name: TMPDIR
                   value: /workdir
+                - name: SSL_CERT_FILE
+                  value: /var/run/public-web-pki/ca-certificates.crt
                 - name: GIT_REPO_URL
                   valueFrom:
                     secretKeyRef:
@@ -248,12 +250,18 @@ spec:
               volumeMounts:
                 - mountPath: /workdir
                   name: workdir
+                - mountPath: /var/run/public-web-pki
+                  name: public-web-pki
+                  readOnly: true
           nodeSelector:
             kubernetes.io/hostname: optiplex
           restartPolicy: OnFailure
           volumes:
             - emptyDir: {}
               name: workdir
+            - configMap:
+                name: public-web-pki
+              name: public-web-pki
   schedule: 0 10 * * *
   successfulJobsHistoryLimit: 3
 ---

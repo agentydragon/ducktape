@@ -3711,6 +3711,8 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/cpap-sync
   prune: true
