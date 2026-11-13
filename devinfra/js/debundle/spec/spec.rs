@@ -1952,6 +1952,23 @@ pub struct SourceMatchClaim {
 }
 
 impl SourceMatchClaim {
+    /// Return this selector without its YAML-only author rationale. The
+    /// explicit field projection keeps future selector fields owned here.
+    pub fn without_author_note(&self) -> Self {
+        let Self {
+            identifiers,
+            match_source,
+            bindings,
+            note: _,
+        } = self;
+        Self {
+            identifiers: *identifiers,
+            match_source: match_source.clone(),
+            bindings: bindings.clone(),
+            note: None,
+        }
+    }
+
     pub fn source_match(&self) -> SourceMatch {
         SourceMatch {
             identifiers: self.identifiers,

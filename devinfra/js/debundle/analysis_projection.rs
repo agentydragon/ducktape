@@ -22,7 +22,7 @@ use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclara
 use analysis::{GraphOptions, LocalEffectPolicy};
 use anyhow::{Context, Result, ensure};
 use artifact::{ArtifactIndexes, ChunkBundle};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
 use spec::{
     AdmissionOverrides, ArgumentInputContract, BuiltinGlobalRoot, ChunkExportPurity,
@@ -109,19 +109,16 @@ pub struct ProjectedChunkOptions {
 /// Every field is named here so adding an option requires an explicit owner.
 pub fn project_chunk_options(
     options: &BTreeMap<String, DependencyGraphOptions>,
-) -> Result<BTreeMap<String, ProjectedChunkOptions>> {
+) -> BTreeMap<String, ProjectedChunkOptions> {
     options
         .iter()
         .map(|(chunk, authored)| {
-            // Graph report evidence retains the authored rationale. Analysis
-            // identities strip notes from the source contracts below.
-            let commuting_statements = authored.commuting_statements.clone();
             let DependencyGraphOptions {
                 value_inputs,
                 native_operation_inputs,
                 initializer_call_effect_inputs,
                 imported_primitive_array_spread_inputs,
-                commuting_statements: _,
+                commuting_statements,
                 native_call_identity_inputs,
                 argument_inputs,
                 no_accessor_install_callables,
@@ -131,8 +128,14 @@ pub fn project_chunk_options(
                 trusted_dataflow_summaries,
                 admission_overrides,
                 local_property_effects,
-            } = without_notes(authored)?;
-            Ok((
+            } = authored.clone();
+            let graph = ChunkGraphInputs {
+                options: GraphOptions {
+                    dataflow_aware_s_chain,
+                },
+                commuting_statements,
+            };
+            (
                 chunk.clone(),
                 ProjectedChunkOptions {
                     analysis: ChunkAnalysisInputs {
@@ -145,24 +148,241 @@ pub fn project_chunk_options(
                             LocalEffectPolicy::KnownEffectsOnly
                         },
                         admission_overrides,
-                        value_inputs,
-                        native_call_identity_inputs,
-                        initializer_call_effect_inputs,
-                        argument_inputs,
-                        no_accessor_install_callables,
+                        value_inputs: value_inputs.into_iter().map(project_value_input).collect(),
+                        native_call_identity_inputs: native_call_identity_inputs
+                            .into_iter()
+                            .map(project_native_call_identity_input)
+                            .collect(),
+                        initializer_call_effect_inputs: initializer_call_effect_inputs
+                            .into_iter()
+                            .map(project_initializer_call_effect_input)
+                            .collect(),
+                        argument_inputs: argument_inputs
+                            .into_iter()
+                            .map(project_argument_input)
+                            .collect(),
+                        no_accessor_install_callables: no_accessor_install_callables
+                            .into_iter()
+                            .map(project_no_accessor_install_callable)
+                            .collect(),
                     },
-                    graph: ChunkGraphInputs {
-                        options: GraphOptions {
-                            dataflow_aware_s_chain,
-                        },
-                        commuting_statements,
-                    },
-                    native_operation_inputs,
-                    imported_primitive_array_spread_inputs,
+                    graph,
+                    native_operation_inputs: native_operation_inputs
+                        .into_iter()
+                        .map(project_native_operation_input)
+                        .collect(),
+                    imported_primitive_array_spread_inputs: imported_primitive_array_spread_inputs
+                        .into_iter()
+                        .map(project_imported_primitive_array_spread_input)
+                        .collect(),
                 },
-            ))
+            )
         })
         .collect()
+}
+
+fn project_value_input(input: ValueInputContract) -> ValueInputContract {
+    let ValueInputContract {
+        source_match,
+        value,
+        audited_source_sha256,
+        expected_export,
+        note: _,
+    } = input;
+    ValueInputContract {
+        source_match: source_match.without_author_note(),
+        value,
+        audited_source_sha256,
+        expected_export,
+        note: None,
+    }
+}
+
+fn project_native_operation_input(
+    input: NativeOperationInputContract,
+) -> NativeOperationInputContract {
+    let NativeOperationInputContract {
+        selector,
+        operation,
+        audited_source_sha256,
+        note: _,
+    } = input;
+    NativeOperationInputContract {
+        selector: project_source_unit_selector(selector),
+        operation,
+        audited_source_sha256,
+        note: None,
+    }
+}
+
+fn project_source_unit_selector(selector: spec::SourceUnitSelector) -> spec::SourceUnitSelector {
+    match selector {
+        spec::SourceUnitSelector::SourceMatch(source_match) => {
+            spec::SourceUnitSelector::SourceMatch(source_match.without_author_note())
+        }
+        spec::SourceUnitSelector::ResolvedMember(member) => {
+            spec::SourceUnitSelector::ResolvedMember(member)
+        }
+    }
+}
+
+fn project_initializer_call_effect_input(
+    input: InitializerCallEffectInputContract,
+) -> InitializerCallEffectInputContract {
+    let InitializerCallEffectInputContract {
+        resolved_member,
+        audited_source_sha256,
+        provider_chunk,
+        provider_export,
+        audited_provider_sha256,
+        returns_opaque_function_from_const_primitive,
+        effective_replacement,
+        note: _,
+    } = input;
+    InitializerCallEffectInputContract {
+        resolved_member,
+        audited_source_sha256,
+        provider_chunk,
+        provider_export,
+        audited_provider_sha256,
+        returns_opaque_function_from_const_primitive,
+        effective_replacement,
+        note: None,
+    }
+}
+
+fn project_imported_primitive_array_spread_input(
+    input: spec::ImportedPrimitiveArraySpreadInputContract,
+) -> spec::ImportedPrimitiveArraySpreadInputContract {
+    let spec::ImportedPrimitiveArraySpreadInputContract {
+        source_match,
+        operands,
+        audited_source_sha256,
+        lifetime,
+        note: _,
+    } = input;
+    spec::ImportedPrimitiveArraySpreadInputContract {
+        source_match: source_match.without_author_note(),
+        operands: operands
+            .into_iter()
+            .map(|operand| {
+                let spec::ImportedPrimitiveArrayOperandContract {
+                    selector_local,
+                    provider_chunk,
+                    provider_source_match,
+                    audited_provider_source_sha256,
+                } = operand;
+                spec::ImportedPrimitiveArrayOperandContract {
+                    selector_local,
+                    provider_chunk,
+                    provider_source_match: provider_source_match.without_author_note(),
+                    audited_provider_source_sha256,
+                }
+            })
+            .collect(),
+        audited_source_sha256,
+        lifetime,
+        note: None,
+    }
+}
+
+fn project_native_call_identity_input(
+    input: NativeCallIdentityInputContract,
+) -> NativeCallIdentityInputContract {
+    let NativeCallIdentityInputContract {
+        source_match,
+        callee,
+        audited_source_sha256,
+        note: _,
+    } = input;
+    NativeCallIdentityInputContract {
+        source_match: source_match.without_author_note(),
+        callee,
+        audited_source_sha256,
+        note: None,
+    }
+}
+
+fn project_argument_input(input: ArgumentInputContract) -> ArgumentInputContract {
+    let ArgumentInputContract {
+        source_match,
+        parameter_index,
+        exact_arity,
+        audited_source_sha256,
+        note: _,
+    } = input;
+    ArgumentInputContract {
+        source_match: source_match.without_author_note(),
+        parameter_index,
+        exact_arity,
+        audited_source_sha256,
+        note: None,
+    }
+}
+
+fn project_no_accessor_install_callable(
+    input: NoAccessorInstallCallableContract,
+) -> NoAccessorInstallCallableContract {
+    let NoAccessorInstallCallableContract {
+        source_match,
+        note: _,
+    } = input;
+    NoAccessorInstallCallableContract {
+        source_match: source_match.without_author_note(),
+        note: None,
+    }
+}
+
+fn project_host_behavior(host: &HostBehavior) -> HostBehavior {
+    let HostBehavior {
+        synchronous_module_loader,
+        loader_result_for_evaluating_module,
+        synchronous_load_runs_app_callbacks,
+        synchronous_load_drains_microtasks,
+        reentry_free_builtin_modules,
+        reentry_free_bun_modules,
+        reentry_free_embedded_loaders,
+        reentry_free_operations,
+        predefined_globals,
+        note: _,
+    } = host;
+    HostBehavior {
+        synchronous_module_loader: *synchronous_module_loader,
+        loader_result_for_evaluating_module: *loader_result_for_evaluating_module,
+        synchronous_load_runs_app_callbacks: *synchronous_load_runs_app_callbacks,
+        synchronous_load_drains_microtasks: *synchronous_load_drains_microtasks,
+        reentry_free_builtin_modules: reentry_free_builtin_modules.clone(),
+        reentry_free_bun_modules: reentry_free_bun_modules.clone(),
+        reentry_free_embedded_loaders: reentry_free_embedded_loaders.clone(),
+        reentry_free_operations: reentry_free_operations.clone(),
+        predefined_globals: *predefined_globals,
+        note: None,
+    }
+}
+
+fn project_program_premises(premises: &ProgramPremises) -> ProgramPremises {
+    let ProgramPremises {
+        process_prototype_chain_accessors,
+        non_literal_loader_calls,
+        intrinsics_never_written,
+        note: _,
+    } = premises;
+    ProgramPremises {
+        process_prototype_chain_accessors: *process_prototype_chain_accessors,
+        non_literal_loader_calls: *non_literal_loader_calls,
+        intrinsics_never_written: intrinsics_never_written
+            .as_ref()
+            .map(project_intrinsics_never_written),
+        note: None,
+    }
+}
+
+fn project_intrinsics_never_written(premises: &IntrinsicsNeverWritten) -> IntrinsicsNeverWritten {
+    let IntrinsicsNeverWritten { families, note: _ } = premises;
+    IntrinsicsNeverWritten {
+        families: families.clone(),
+        note: None,
+    }
 }
 
 /// Static-request provider closure shared by frontend premise resolution and
@@ -295,13 +515,15 @@ impl AnalysisSpec {
             path.strip_prefix(source_root)
                 .map_or_else(|_| path.to_path_buf(), Path::to_path_buf)
         };
-        let mut vendor = without_notes(&spec.vendor)?;
+        // Vendor markings are all semantic data. Preserve arbitrary chunk,
+        // package, and symbol keys literally named "note".
+        let mut vendor = spec.vendor.clone();
         for mark in vendor.values_mut() {
             if let VendorLevel::BundledPartialSwap(swap) = &mut mark.level {
                 swap.bundle.path = relative(&swap.bundle.path);
             }
         }
-        let projected_options = project_chunk_options(&spec.chunk_analysis_options)?;
+        let projected_options = project_chunk_options(&spec.chunk_analysis_options);
         // Graph-only and empty authored entries have no source-analysis identity.
         let chunk_analysis_inputs = projected_options
             .into_iter()
@@ -314,10 +536,11 @@ impl AnalysisSpec {
                 js_list_path: relative(&spec.inputs.js_list_path),
                 embedded_loaders_path: spec.inputs.embedded_loaders_path.as_deref().map(relative),
             },
-            host_behavior: without_notes(&spec.host_behavior)?,
-            program_premises: without_notes(&spec.program_premises)?,
+            host_behavior: project_host_behavior(&spec.host_behavior),
+            program_premises: project_program_premises(&spec.program_premises),
             vendor,
-            chunk_export_purity: without_notes(&spec.chunk_export_purity)?,
+            // Purity maps are all semantic data, including export keys named "note".
+            chunk_export_purity: spec.chunk_export_purity.clone(),
             chunk_analysis_inputs,
             analysed_chunks: spec.materialize_chunk_ids().into_iter().collect(),
             entry_file: spec.materialize_logical_modules.file.clone(),
@@ -489,22 +712,4 @@ fn keyed_differences<T: Serialize>(
         }
     }
     Ok(differing)
-}
-
-/// `value` with every `note` key removed. A `note` is author rationale that
-/// no engine stage reads.
-fn without_notes<T: Serialize + DeserializeOwned>(value: &T) -> Result<T> {
-    fn strip(value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::Object(map) => {
-                map.remove("note");
-                map.values_mut().for_each(strip);
-            }
-            serde_json::Value::Array(items) => items.iter_mut().for_each(strip),
-            _ => {}
-        }
-    }
-    let mut json = serde_json::to_value(value)?;
-    strip(&mut json);
-    Ok(serde_json::from_value(json)?)
 }

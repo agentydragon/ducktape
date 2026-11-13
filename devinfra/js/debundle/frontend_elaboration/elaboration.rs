@@ -257,8 +257,7 @@ pub fn elaborate<'a>(
                 .push(site);
         }
     }
-    let projected_options =
-        analysis_projection::project_chunk_options(spec.chunk_analysis_options)?;
+    let projected_options = analysis_projection::project_chunk_options(spec.chunk_analysis_options);
     let graph_inputs = projected_options
         .iter()
         .map(|(chunk, options)| (chunk.clone(), options.graph.clone()))
