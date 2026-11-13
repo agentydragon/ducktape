@@ -688,7 +688,20 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
         for source in gateway_tokens
     )
     history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
+    assert history_config["migration_timeout_s"] == 600
+    assert history_config["fold_concurrency"] == 4
+    assert history_config["native_frame_read_batch_size"] == 200
+    assert "database_url" not in history_config
+    assert "log_levels" not in history_config
     assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
+    history_pod = _resource(docs, "Deployment", "history-service")["spec"]["template"]["spec"]
+    history_container = history_pod["containers"][0]
+    history_env = {entry["name"]: entry for entry in history_container["env"]}
+    assert history_env["AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"]["value"] == (
+        "/etc/agentplane-history-service/config.yaml"
+    )
+    history_database_env = history_env["AGENTPLANE_HISTORY_SERVICE_DATABASE_URL"]
+    assert history_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-sandbox-service"
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:

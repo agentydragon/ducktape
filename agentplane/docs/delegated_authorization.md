@@ -26,8 +26,8 @@ environment handles and provenance identifiers confer no authority.
 The receiving backend explicitly trusts the actor to assert a live Identity on designated methods.
 This is a real trust grant: a trusted actor can assert any live Identity in the receiver's policy
 namespace on those methods. Configure it separately from ordinary caller admission and privileged
-backend access; neither implies permission to delegate. Legacy `caller_namespaces` settings remain
-accepted but are inert during rollout. An actor's ordinary ServiceAccount grant never becomes an
+backend access; neither implies permission to delegate. Legacy `caller_namespaces` settings never
+grant authority; strict service settings may reject them. An actor's ordinary ServiceAccount grant never becomes an
 Identity grant without the explicit `identity_callers` setting.
 
 For a direct call, actor and caller are the authenticated subject. Agentplane service actors continue

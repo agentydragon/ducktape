@@ -1,17 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -19,14 +21,13 @@ const (
 	defaultMigrationTimeoutSeconds = 600
 )
 
-// config is the History Service's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE, and each top-level key also names an AGENTPLANE_HISTORY_SERVICE_*
-// environment variable that overrides it. A list takes one element that way, so lists belong in the file.
+// config is the History Service's deployment contract: static settings come from the YAML file named by
+// AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE. The database URL is the only service-specific runtime environment input.
 // An account is written `namespace/name`, or as a `namespace` and `name` pair.
 //
 // The database URL is a Secret, so it is an environment value.
 type config struct {
-	DatabaseURL             string  `mapstructure:"database_url"`
+	DatabaseURL             string  `mapstructure:"-"`
 	MigrationTimeoutSeconds float64 `mapstructure:"migration_timeout_s"`
 	// ReaderAccounts may call the read API; their namespaces are the ones a reader's token may come from.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
@@ -51,8 +52,6 @@ type config struct {
 
 type delegationConfig struct {
 	Actor auth.Account `mapstructure:"actor"`
-	// CallerNamespaces remains accepted during config rollout but no longer grants effective callers.
-	CallerNamespaces []string `mapstructure:"caller_namespaces"`
 	// IdentityCallers lets the actor assert Identities in policy_namespace.
 	IdentityCallers bool     `mapstructure:"identity_callers"`
 	Methods         []string `mapstructure:"methods"`
@@ -88,23 +87,43 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
-	c := defaultConfig()
-	// Without ExperimentalBindStruct, Unmarshal reads an environment variable only for a bound key.
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct())
-	settings.SetEnvPrefix("AGENTPLANE_HISTORY_SERVICE")
-	settings.AutomaticEnv()
-	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
-		settings.SetConfigFile(path)
-		settings.SetConfigType("yaml")
-		if err := settings.ReadInConfig(); err != nil {
-			return config{}, errors.New("could not read History Service settings file")
-		}
+	path := strings.TrimSpace(os.Getenv(settingPrefix + "CONFIG_FILE"))
+	if path == "" {
+		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
-		mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
-	))); err != nil {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return config{}, errors.New("could not read History Service settings file")
+	}
+	var settings map[string]any
+	decoder := yaml.NewDecoder(bytes.NewReader(contents))
+	if err := decoder.Decode(&settings); err != nil {
+		return config{}, errors.New("could not decode History Service settings file")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return config{}, errors.New("could not decode History Service settings file")
+		}
+		return config{}, errors.New("History Service settings file must contain one YAML document")
+	}
+
+	c := defaultConfig()
+	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:      &c,
+		TagName:     "mapstructure",
+		ErrorUnused: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
+		),
+	})
+	if err != nil {
 		return config{}, errors.New("invalid History Service settings")
 	}
+	if err := mapDecoder.Decode(settings); err != nil {
+		return config{}, errors.New("invalid History Service settings")
+	}
+	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
@@ -168,17 +187,4 @@ func seconds(value float64) time.Duration { return time.Duration(value * float64
 
 func validMigrationTimeout(value float64) bool {
 	return !math.IsNaN(value) && value >= 0.001 && value <= 86400
-}
-
-// Migration-only mode needs only the database URL and its optional timeout, not serving settings.
-func migrationOnlyTimeout() (time.Duration, error) {
-	value := float64(defaultMigrationTimeoutSeconds)
-	if raw := os.Getenv(settingPrefix + "MIGRATION_TIMEOUT_S"); raw != "" {
-		var err error
-		value, err = strconv.ParseFloat(raw, 64)
-		if err != nil || !validMigrationTimeout(value) {
-			return 0, errors.New("migration_timeout_s must be between 0.001 and 86400 seconds")
-		}
-	}
-	return seconds(value), nil
 }

@@ -120,6 +120,7 @@ py_library(
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
+        "//agentplane/history_service:settings",
         "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/history_service/api/ingress:session_ingress_pb2",
         "//agentplane/history_service/api/ingress:session_ingress_pb2_grpc",
@@ -134,6 +135,7 @@ py_library(
         "//util/testing:postgres",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

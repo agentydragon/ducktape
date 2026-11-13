@@ -9,7 +9,7 @@ Consumers use `client.py`; `testing/go_service.py` runs the built Go service ove
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
 
-An optional, separate `delegation` setting names the Actions actor, caller namespaces, whether it may
+An optional, separate `delegation` setting names the Actions actor, whether it may
 assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
 method names that admit delegated reads. The shared workload-auth middleware rechecks the asserted
 caller's current UID; a delegated Identity reads only the Sessions recorded with that incarnation,
@@ -28,8 +28,8 @@ The service binary embeds Goose migrations and applies them during normal startu
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
 lifecycle. Its runner ingress and fold are the runtime writers.
 The `migration_timeout_s` setting defaults to 600 seconds and includes advisory-lock waiting;
-the startup probe must also cover connection retry and serving startup. Migration-only mode accepts
-the same setting through `AGENTPLANE_HISTORY_SERVICE_MIGRATION_TIMEOUT_S` without serving settings.
+the startup probe must also cover connection retry and serving startup. Migration-only mode reads
+this setting from the same required settings file.
 
 ## While the History Service is down or rolling
 
@@ -353,13 +353,14 @@ row shape. The conversion locks the entity table until it commits, so migration 
 number of retained entities. A malformed row aborts and rolls back the entire conversion.
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
-`native_frame_read_batch_size` (default `200`, set by the YAML key or
-`AGENTPLANE_HISTORY_SERVICE_NATIVE_FRAME_READ_BATCH_SIZE`) bounds the linked sequences in each raw-history
+`native_frame_read_batch_size` (default `200`, set by the YAML key) bounds the linked sequences in each raw-history
 query. It is independent of the public `ReadNativeFrames` page limit of `200`: storage chunks for one request
 share a repeatable-read snapshot and committed-history watermark.
 
-Bazel targets: `:history-service` and `:service_image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
-variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
+Bazel targets: `:history-service` and `:service_image`. All non-secret settings come from the required YAML file named
+by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`). Generic `AGENTPLANE_HISTORY_SERVICE_*`
+environment variables do not override it. The database URL remains an explicit Secret input in
+`AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`.
 The read API and journal ingress share `rpc.listen_address`, where `grpc.health.v1.Health` reports process liveness only.
 The listener accepts TCP addresses or inherited descriptors as documented by
 [`agentplane/net/listener`](../net/listener/README.md).

@@ -20,7 +20,6 @@ def _settings_source(
     if spiffe_listener:
         auth.append({"mode": "spiffe", "ca_file": "/test/workload-ca.crt"})
     return {
-        "database_url": "postgresql://history:history@postgres.invalid/history",
         "reader_accounts": [{"namespace": "test-agentplane", "name": "test-reader"}],
         "token_audience": "test-history",
         "policy_namespace": policy_namespace,
@@ -73,6 +72,40 @@ def test_sampler_identity_callers_require_all_go_prerequisites(missing: str) -> 
 
     with pytest.raises(ValidationError, match=r"ingress\.sampler_identity_callers requires"):
         Settings.model_validate(source)
+
+
+def test_settings_reject_runtime_secrets_and_legacy_namespace_authority() -> None:
+    source = _settings_source()
+    source["database_url"] = "postgresql://secret.invalid/history"
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
+
+    source = _settings_source()
+    source["delegation"] = {
+        "actor": "test-agentplane/actions",
+        "identity_callers": False,
+        "methods": ["/agentplane.history_service.HistoryService/ReadSessionEvents"],
+    }
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+    source = _settings_source()
+    source["delegation"] = {
+        "actor": "test-agentplane/actions",
+        "identity_callers": True,
+        "methods": ["/agentplane.history_service.HistoryService/ReadSessionEvents"],
+        "caller_namespaces": ["test-agentplane"],
+    }
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
+
+
+def test_file_settings_do_not_read_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTPLANE_HISTORY_SERVICE_TOKEN_AUDIENCE", "environment-value")
+    settings = Settings.model_validate(_settings_source())
+    assert settings.token_audience == "test-history"
+    assert "database_url" not in Settings.model_fields
+    assert Settings.config_file_env == "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 
 
 if __name__ == "__main__":

@@ -332,12 +332,13 @@ func main() {
 		return
 	}
 	if slices.Contains(os.Args[1:], "--migrate-only") {
-		timeout, err := migrationOnlyTimeout()
+		c, err := loadConfig()
 		if err != nil {
-			slog.Error("invalid History Service migration configuration", "error", err)
+			slog.Error("invalid History Service configuration", "error", err)
 			os.Exit(2)
 		}
-		_, err = migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", migrations.Up, migrate.WithMigrationTimeout(timeout))
+		_, err = migrate.RunOnly(ctx, os.Args[1:], settingPrefix+"DATABASE_URL", migrations.Up,
+			migrate.WithMigrationTimeout(seconds(c.MigrationTimeoutSeconds)))
 		if err != nil {
 			slog.Error("History Service migration failed", "error", err)
 			os.Exit(1)

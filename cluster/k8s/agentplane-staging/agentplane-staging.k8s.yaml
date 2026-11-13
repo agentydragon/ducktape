@@ -2889,18 +2889,6 @@ data:
         name: app
       - namespace: agentplane-staging
         name: notifications
-    token_audience: agentplane-history-service
-    policy_namespace: agentplane-staging
-    ingress:
-      token_audience: agentplane-runner-ingress
-      writer_namespaces:
-        - agentplane-staging
-      sampler_accounts:
-        - namespace: agentplane-staging
-          name: central-sampler
-      sampler_identity_callers: true
-      settle_deltas: true
-      compact_deltas: true
     delegation:
       actor: agentplane-staging/actions
       identity_callers: true
@@ -2915,6 +2903,9 @@ data:
         - /agentplane.history_service.HistoryService/ReadNativeFrames
         - /agentplane.history_service.HistoryService/FindSessions
         - /agentplane.history_service.HistoryService/WatchSessionSummaries
+    token_audience: agentplane-history-service
+    request_timeout_s: 15
+    migration_timeout_s: 600
     rpc:
       listen_address: 0.0.0.0:8080
       tls:
@@ -2927,6 +2918,22 @@ data:
             - agentplane-runner-ingress
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    policy_namespace: agentplane-staging
+    ingress:
+      token_audience: agentplane-runner-ingress
+      writer_namespaces:
+        - agentplane-staging
+      sampler_accounts:
+        - namespace: agentplane-staging
+          name: central-sampler
+      sampler_identity_callers: true
+      settle_deltas: true
+      compact_deltas: true
+    fold_concurrency: 4
+    fold_page_size: 1000
+    fold_interval_s: 2
+    native_frame_read_batch_size: 200
+    watch_lease_s: 300
 immutable: false
 ---
 apiVersion: cilium.io/v2
