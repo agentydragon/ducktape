@@ -901,6 +901,12 @@ SELECT source_pod_uid FROM egress_decision
 WHERE subject_identity = :name
 """)
 
+_UNAUTHENTICATED_UNAVAILABLE_DECISIONS = text("""
+SELECT count(*) FROM egress_decision
+WHERE subject_namespace IS NULL AND subject_name IS NULL AND subject_identity IS NULL
+  AND reason = 'unavailable' AND host = :host AND method = :method
+""")
+
 
 def _source_pod_uids(database_url: str, subject: str) -> list[str | None]:
     """The source Pod UIDs the subject's decisions recorded in the shared history."""
@@ -921,6 +927,18 @@ def _decisions_of(database_url: str, subject: str) -> list[tuple[UUID, str, str 
                 (row.producer_id, row.connection_id, row.reason)
                 for row in connection.execute(_SUBJECT_DECISIONS, {"name": subject})
             ]
+
+
+def _unauthenticated_unavailable_decisions(database_url: str, *, host: str, method: str) -> int:
+    """Unavailable refusals before SVID authentication, which therefore have no subject."""
+    with ExitStack() as stack:
+        engine = create_engine(database_url)
+        stack.callback(engine.dispose)
+        with engine.connect() as connection:
+            result = connection.execute(
+                _UNAUTHENTICATED_UNAVAILABLE_DECISIONS, {"host": host, "method": method}
+            ).scalar_one()
+            return int(result)
 
 
 @dataclass
@@ -1078,7 +1096,14 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             aiohttp.ClientSession() as client,
         ):
 
-            async def get(replica: GoReplica, context: ssl.SSLContext, path: str, expected: int) -> None:
+            async def get(
+                replica: GoReplica,
+                context: ssl.SSLContext,
+                path: str,
+                expected: int,
+                *,
+                denied_reason: str | None = None,
+            ) -> None:
                 async with client.get(
                     f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
                     proxy=f"https://localhost:{replica.proxy_listener.port}",
@@ -1086,6 +1111,8 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 ) as response:
                     await response.read()
                     assert response.status == expected, dict(response.headers)
+                    if denied_reason is not None:
+                        assert response.headers["x-agentplane-egress"] == f"denied; reason={denied_reason}"
 
             await get(first, first_tls, "first", 200)
             await get(second, second_tls, "second", 200)
@@ -1103,7 +1130,20 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             second_path.sever()
             await second.process.health(serving=False)
             before = len(upstream.requests)
-            await get(second, second_tls, "stale-existing-connection", 502)
+            unavailable_before = await asyncio.to_thread(
+                _unauthenticated_unavailable_decisions, history_db_url, host=UPSTREAM_HOST, method="GET"
+            )
+            # Identity authentication must re-read the live Identity. Its API read is now unavailable too, so
+            # the refusal is deliberately unattributed rather than claiming a subject whose incarnation could
+            # not be verified.
+            await get(second, second_tls, "stale-existing-connection", 502, denied_reason="unavailable")
+            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+                with attempt:
+                    assert (
+                        await asyncio.to_thread(
+                            _unauthenticated_unavailable_decisions, history_db_url, host=UPSTREAM_HOST, method="GET"
+                        )
+                    ) > unavailable_before
             assert len(upstream.requests) == before
             await revoke_binding(second_api)
             await grant_replica(second_api, NAMESPACE)
@@ -1118,7 +1158,6 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                         len({connection for row_producer, connection, _ in rows if row_producer == producer}) == 1
                         for producer in producers
                     )
-                    assert any(reason == "unavailable" for _, _, reason in rows)
 
 
 async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egress) -> None:
