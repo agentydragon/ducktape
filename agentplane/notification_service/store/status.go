@@ -156,7 +156,7 @@ func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []by
 // Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in
 // the identity, so the SQL projection never fetches or decodes a Message body.
 const entryContentSummaryReadColumns = `action_state, action_at,
-	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject,
+	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject, action_actor_identity_name, action_actor_identity_uid,
 	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
 	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
 	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, NULL::text, NULL::text`

@@ -94,6 +94,11 @@ event can match multiple subscriptions. Payload content remains provider-defined
 }
 ```
 
+An Action cancellation's `actor` is attribution: `account` retains a ServiceAccount namespace and
+name, `identity` retains an Identity name and UID, and `issuer` plus `subject` identifies an operator.
+These forms are exclusive. Recreating an Identity does not rewrite a stored actor. Source access is
+checked against the request owner independently of the actor who cancelled it.
+
 Pull-request subscriptions include the Agentplane-generated `mergeability_changed` selector by
 default. Selecting it explicitly replaces the defaults and accepts no `actions` filter. The service
 records mergeability observations when the pull request is conflicted and later changes to either

@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -86,6 +87,36 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 				sameJSON(t, written, []byte(`{"issuer":"test-issuer","subject":"test-subject"}`))
 			}
 		})
+	}
+}
+
+func TestIdentityActionActorJSONPinsItsIncarnation(t *testing.T) {
+	want := &action_servicepb.Principal{Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: &identitypb.Identity{Name: "requester", Uid: "original-identity-uid"}}}
+	encoded, err := storagecodec.EncodeActionActor(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameJSON(t, encoded, []byte(`{"identity":{"name":"requester","uid":"original-identity-uid"}}`))
+	decoded, err := storagecodec.DecodeActionActor(encoded)
+	if err != nil || !proto.Equal(decoded, want) {
+		t.Fatalf("Identity actor = %v, %v", decoded, err)
+	}
+	for _, invalid := range []string{
+		`{"identity":{"name":"requester"}}`,
+		`{"identity":{"uid":"original-identity-uid"}}`,
+		`{"identity":{"name":"requester","uid":""}}`,
+		`{"identity":{"name":"requester","uid":"uid","namespace":"unexpected"}}`,
+		`{"identity":{"name":"requester","uid":"uid"},"account":{"namespace":"ns","name":"account"}}`,
+		`{"identity":{"name":"requester","uid":"uid"},"issuer":"operator","subject":"subject"}`,
+	} {
+		if _, err := storagecodec.DecodeActionActor([]byte(invalid)); err == nil {
+			t.Errorf("accepted actor %s", invalid)
+		}
+	}
+	uid := "account-uid"
+	want.CallerUid = &uid
+	if _, err := storagecodec.EncodeActionActor(want); err == nil {
+		t.Fatal("accepted Identity actor with ServiceAccount UID")
 	}
 }
 

@@ -8,12 +8,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // The column order is also the order of EntryContentStorage.args and destinations.
 const EntryContentReadColumns = `action_state, action_at,
-	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject,
+	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject, action_actor_identity_name, action_actor_identity_uid,
 	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
 	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
 	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, message_body, message_from_session`
@@ -26,6 +27,8 @@ type EntryContentStorage struct {
 	ActionActorName                     *string
 	ActionActorIssuer                   *string
 	ActionActorSubject                  *string
+	ActionActorIdentityName             *string
+	ActionActorIdentityUID              *string
 	MergeabilityRepository              *string
 	MergeabilityBaseRef                 *string
 	MergeabilityHeadSHA                 *string
@@ -44,7 +47,7 @@ type EntryContentStorage struct {
 func (c EntryContentStorage) Args() []any {
 	return []any{
 		c.ActionState, c.ActionAt,
-		c.ActionActorKind, c.ActionActorNamespace, c.ActionActorName, c.ActionActorIssuer, c.ActionActorSubject,
+		c.ActionActorKind, c.ActionActorNamespace, c.ActionActorName, c.ActionActorIssuer, c.ActionActorSubject, c.ActionActorIdentityName, c.ActionActorIdentityUID,
 		c.MergeabilityRepository, c.MergeabilityBaseRef, c.MergeabilityHeadSHA, c.MergeabilityBaseSHA,
 		c.MergeabilityPrevious, c.MergeabilityCurrent, c.MergeabilityObservedAt, c.MergeabilityObservedAtSubmicroNanos,
 		c.MergeCommitSHA, c.MergeCommitBaseSHA, c.MergeCommitHeadSHA, c.MessageBody, c.MessageFromSession,
@@ -54,7 +57,7 @@ func (c EntryContentStorage) Args() []any {
 func (c *EntryContentStorage) Destinations() []any {
 	return []any{
 		&c.ActionState, &c.ActionAt,
-		&c.ActionActorKind, &c.ActionActorNamespace, &c.ActionActorName, &c.ActionActorIssuer, &c.ActionActorSubject,
+		&c.ActionActorKind, &c.ActionActorNamespace, &c.ActionActorName, &c.ActionActorIssuer, &c.ActionActorSubject, &c.ActionActorIdentityName, &c.ActionActorIdentityUID,
 		&c.MergeabilityRepository, &c.MergeabilityBaseRef, &c.MergeabilityHeadSHA, &c.MergeabilityBaseSHA,
 		&c.MergeabilityPrevious, &c.MergeabilityCurrent, &c.MergeabilityObservedAt, &c.MergeabilityObservedAtSubmicroNanos,
 		&c.MergeCommitSHA, &c.MergeCommitBaseSHA, &c.MergeCommitHeadSHA, &c.MessageBody, &c.MessageFromSession,
@@ -100,6 +103,10 @@ func EntryContentStorageFor(event model.EventIdentity, payload json.RawMessage) 
 				kind := "caller"
 				namespace, name := principal.Caller.GetNamespace(), principal.Caller.GetName()
 				c.ActionActorKind, c.ActionActorNamespace, c.ActionActorName = &kind, &namespace, &name
+			case *action_servicepb.Principal_CallerIdentity:
+				kind := "identity"
+				name, uid := principal.CallerIdentity.GetName(), principal.CallerIdentity.GetUid()
+				c.ActionActorKind, c.ActionActorIdentityName, c.ActionActorIdentityUID = &kind, &name, &uid
 			case *action_servicepb.Principal_Operator:
 				kind := "operator"
 				issuer, subject := principal.Operator.GetIssuer(), principal.Operator.GetSubject()
@@ -194,6 +201,11 @@ func (c EntryContentStorage) Payload(event model.EventIdentity) (json.RawMessage
 					return nil, errors.New("incomplete caller actor")
 				}
 				actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccountProto(model.ServiceAccount{Namespace: *c.ActionActorNamespace, Name: *c.ActionActorName})}}
+			case "identity":
+				if c.ActionActorIdentityName == nil || c.ActionActorIdentityUID == nil {
+					return nil, errors.New("incomplete Identity actor")
+				}
+				actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: &identitypb.Identity{Name: *c.ActionActorIdentityName, Uid: *c.ActionActorIdentityUID}}}
 			case "operator":
 				if c.ActionActorIssuer == nil || c.ActionActorSubject == nil {
 					return nil, errors.New("incomplete operator actor")

@@ -173,3 +173,83 @@ func applyBaseline(ctx context.Context, db *sql.DB) error {
 	_, err = provider.Up(ctx)
 	return err
 }
+
+func TestIdentityActionActorMigrationPreservesExistingRowsAndLegacyWriters(t *testing.T) {
+	db := cloneDatabase(t)
+	resetSchema(t, db)
+	previous := fstest.MapFS{}
+	files, err := scripts.ReadDir("notifications")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if file.Name() >= "00018_" {
+			continue
+		}
+		data, err := scripts.ReadFile("notifications/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous[file.Name()] = &fstest.MapFile{Data: data}
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, previous,
+		goose.WithTableName("notification_service_goose_version"), goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, subscription := seedSubscription(t, db, "legacy-action-actors")
+	insert := func(cursor int, kind, namespace, name, issuer, subject any) {
+		t.Helper()
+		_, err := db.ExecContext(t.Context(), `INSERT INTO entry
+			(inbox_id, cursor, created_at, identity_provider, actions_request_id, actions_sequence,
+			 action_state, action_at, action_actor_kind, action_actor_namespace, action_actor_name,
+			 action_actor_issuer, action_actor_subject)
+			VALUES ($1, $2, now(), 'actions', $3, $2, 2, now(), $4, $5, $6, $7, $8)`,
+			subscription.InboxID, cursor, uuid.New(), kind, namespace, name, issuer, subject)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert(1, "caller", "legacy-namespace", "legacy-account", nil, nil)
+	insert(2, "operator", nil, nil, "legacy-issuer", "legacy-subject")
+	insert(3, nil, nil, nil, nil, nil)
+	retained := func() string {
+		t.Helper()
+		var snapshot string
+		if err := db.QueryRowContext(t.Context(), `SELECT jsonb_agg(
+			to_jsonb(e) - 'action_actor_identity_name' - 'action_actor_identity_uid' ORDER BY cursor)::text
+			FROM entry e WHERE inbox_id = $1 AND cursor <= 3`, subscription.InboxID).Scan(&snapshot); err != nil {
+			t.Fatal(err)
+		}
+		return snapshot
+	}
+	before := retained()
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	assertApplied(t, db, 18)
+	if after := retained(); after != before {
+		t.Fatal("Identity actor migration changed retained ServiceAccount/operator events")
+	}
+	// A previous writer still omits the new nullable columns after the migration.
+	insert(4, "caller", "legacy-namespace", "legacy-account", nil, nil)
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatalf("previous binary migration provider: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO entry
+		(inbox_id, cursor, created_at, identity_provider, actions_request_id, actions_sequence,
+		 action_state, action_at, action_actor_kind, action_actor_identity_name, action_actor_identity_uid)
+		VALUES ($1, 5, now(), 'actions', $2, 1, 2, now(), 'identity', 'requester', 'original-identity-uid')`,
+		subscription.InboxID, uuid.New()); err != nil {
+		t.Fatalf("new Identity actor writer: %v", err)
+	}
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if after := retained(); after != before {
+		t.Fatal("repeat migration changed retained events")
+	}
+}
