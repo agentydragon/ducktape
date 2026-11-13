@@ -55,8 +55,8 @@ is cheap. Boxes and Sandboxes converge on the plan's
 [acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting in the workload is
 implied for its bound Identity, so box access keyed on the box's acting Identity is correct;
 lifecycle (create, dispose, rebind) needs an explicit grant. A box's acting Identity is its
-requester today, so this changes no behaviour. Linked from `ACTION_BOX_IDLE_REAPER` and
-`SANDBOX_IDENTITY_SPEC` in the [DAG](task_dag.md).
+requester today, so this changes no behaviour. The unused-box cleanup trigger is tracked by
+[`ACTION_BOX_IDLE_REAPER`](task_dag.md#action_box_idle_reaper--delete-action-boxes-nobody-uses).
 
 ## Workload credentials
 
