@@ -38,11 +38,36 @@ ServiceError` in [740efe9c](https://app.buildbuddy.io/invocation/740efe9c-93d1-4
 That mutation was restored and never committed. The latter invocation used a
 patched tree; do not describe it as an unmodified commit execution.
 
-These cases do not prove actual Dispatcher loss/retry of a real Runtime admission
-reply, History crash recovery or database failover. Runtime journal/RPC retry,
+These four cases do not prove actual Dispatcher loss/retry of a real Runtime admission
+reply; the separate contract below covers a post-handler error. They do not prove
+History crash recovery or database failover. Runtime journal/RPC retry,
 Gateway stale-incarnation, Dispatcher authorization and History ordering owner
 tests retain those narrower guarantees. The full composed coverage audit remains
 an adoption prerequisite.
+
+The separate manual `test_admission_reply_loss` uses the same production Runtime
+and CLI startup code with a test-only `ControlInterceptor`, after existing
+authorization and fencing. One actual Dispatcher submission reaches the real
+Runtime handler, commits an admission, then receives an injected `UNAVAILABLE`.
+The actual retry reaches the handler again and returns the same journal receipt.
+Both intermediate transports disable retries, so the repeated handler call
+belongs to Dispatcher delivery. The test compares both full responses with
+Dispatcher's receipt and History's one admission, retains the request/result
+records in undeclared outputs, checks that later Dispatcher receipt replay
+causes no third handler call, and completes a distinct next input.
+
+The patched-tree positive
+[0b289ddb](https://app.buildbuddy.io/invocation/0b289ddb-c9ff-4c99-8e0b-c29abcefd284)
+passes. A temporary one-line mutation rejecting valid identical-command journal
+replay as a conflict fails in
+[b10c10d5](https://app.buildbuddy.io/invocation/b10c10d5-74cd-4e1b-b738-28e9c68fdd94):
+the second real handler returns `AlreadyExists` without an admission. The
+mutation was restored; it is not part of the branch. The existing four-case
+target then passes in
+[b2712fa6](https://app.buildbuddy.io/invocation/b2712fa6-0eee-40a2-87cf-818ad4b0bf8c).
+These calls used the working-tree patch over d717, not an unmodified published
+revision. This establishes the composed post-handler-error path; it does not
+establish HTTP/2 socket-reset behavior or a complete-CI saving.
 
 ## Image ownership and the selected graph
 
@@ -142,9 +167,123 @@ recovery, exact last-error propagation on exhaustion, stop, cancellation and
 403 checks. This proves the injected-failure behavior; the real API delay's
 cause and recurrence rate remain unmeasured.
 
+## Required-head capacity evidence
+
+All three required checks passed for head
+`d717b4256d63c540179e61b5b90ed8c7d25f64d4` in
+[workflow 43403429849](https://github.com/agentydragon/ducktape/actions/runs/43403429849):
+12m01s from workflow creation to the last required result. Its tested merge is
+`c22d0c4e37d9abe82de088c94e835466a3dd117d`, with actual base
+`a8f15395e09d8d2edac60ca810d17bef7cc2e225`. This is one full-sweep head,
+not a matched routine-backend comparison. The actual selected-label archive
+contains 2,223 labels before runtime tag filtering; its test invocation has
+87 new physical TestRunner records and no failed physical record.
+
+In [that test invocation](https://app.buildbuddy.io/invocation/d91c70d4-3460-54bc-94a0-164f963b0882),
+the Firecracker action queued for 310.328s, prepared for 0.830s and executed
+for 213.737s. Decoded Action properties establish self-hosted `kvm-vm`, Docker,
+4 CPUs, 6 GB and 20 GB disk. Mimir query-range samples every 15s from
+09:44:30 to 09:49:15 UTC on November 13 show three desired, registered and
+up workers, each with 4,000 assigned milliCPU, at the configured maximum of
+three one-action workers. Relevant gauge ages were checked: maximum 50.521s.
+Assigned CPU is an allocation, not measured utilization; local queue reservations
+can duplicate a central task and do not count distinct queued PRs.
+
+This window establishes saturated compatible capacity. Raising only the idle
+floor would not remove its wait. Removing this queue with every other action
+unchanged has at most 153.499s of observed test-tail headroom: the VM target
+would become last at 09:50:29.091 UTC. This is a conditional bound, not a measured
+feedback saving. Do not route additional VM tests into this pool without a
+capacity comparison. Burst qualification must compare narrower validated KVM
+ownership with bounded horizontal capacity, accounting for cold registration,
+cache, host/SSD eligibility and recurring reservations. No live policy changed.
+
+The unchanged full VM scenario also passes on literal d717 in
+[1249aacf](https://app.buildbuddy.io/invocation/1249aacf-2eab-492c-97a2-eb27403ef13e):
+one physical action, 379.284s process and 359.159s JUnit suite. Independent devel
+backports [#16198](https://github.com/agentydragon/ducktape/pull/16198) (CaseBatch)
+and [#16201](https://github.com/agentydragon/ducktape/pull/16201) (PVC reads) pass
+all required checks and are merged as of 10:16:56 UTC on November 13.
+Start post-merge recurrence measurements from each merge; the focused controls
+do not establish a lower real failure rate.
+
 Follow [#16099](https://github.com/agentydragon/ducktape/issues/16099) for the
 remaining coverage assignments, 30 pinned base/head pairs, busy-window and
 four-PR-burst exposure, and rerun-inclusive exact-head required feedback. The
 100 native case exposures do not satisfy the whole adoption protocol by themselves.
 Stop dedicated optimization at the accepted quarter-payback/two-failed-probe rule;
 the four-minute target is an intermediate budget. Image split #15214 remains held.
+
+## Direct guest packaging without cluster setup
+
+The manual `//agentplane/x/direct_vm_boot:test_guest_boot` runs the existing
+kernel/initramfs, guest root and Runtime disk with the already-pinned KubeVirt
+launcher image's QEMU/virtiofsd. A test-only root overlay starts one systemd
+probe. It checks PID1, cgroup v2 and seven real mounts, writes a fresh host nonce
+through virtiofs and requests poweroff. The host requires that marker, all mount
+records, QEMU exit zero and Linux's `reboot: Power down` message. Each action has
+fresh state, workspace and read-only input artifacts.
+
+The initial patched-tree healthy run
+[dd39c14f](https://app.buildbuddy.io/invocation/dd39c14f-badf-45e0-9b74-3cac57d20364)
+passed one case: 61.20s pytest and 69.3s Bazel target time. Its serial trace reaches
+poweroff at 17.336s of guest kernel time. These clocks describe different scopes;
+there is no matched comparison with the KubeVirt VM scenario. The proof establishes
+software-emulated boot feasibility, not a full-PR saving.
+
+Configuration ISOs are empty. The Runtime binary must be executable but is not
+configured or required healthy. Controller-issued identity, PKI, scheduling,
+KubeVirt, authenticated Runtime operations, harness turns, egress and Kubernetes
+storage remain owned by the required deployment tests. The wrong-config-serial
+control is opt-in; it must boot Linux/systemd and fail the same readiness assertion
+when the real required mount cannot appear. See the experiment README for commands.
+
+## Historical replay input provenance
+
+Thirty distinct recent PR heads now have resolved CI-tested base/head pairs,
+spanning Runtime/backend, App/browser, MCP and platform/wiring. The resolved
+source SHA in each latest-attempt action log agrees with BuildBuddy commit
+metadata; its immutable Git parents identify the historical tested base and
+exact PR head. The cohort preserves 40 workflow attempts, including failed and
+cancelled outcomes. Current PR API bases and landing commits are separate facts.
+
+This is preparation, not 30 completed graph replays. Earlier attempts retain
+statuses and clocks but do not yet have individually resolved tested merges;
+latest gate clocks do not imply complete rerun-inclusive feedback for every
+historical head. GitHub and BuildBuddy outcomes remain separate, including a
+green GitHub head with BuildBuddy `REMOTE_CACHE_EVICTED`. An architecture overlay
+must preserve each historical production tree or explicitly record incompatibility.
+The curated cohort and its API provenance will accompany the next architecture
+report snapshot; raw logs remain private task artifacts.
+
+The cleanup-tested healthy run
+[eb0cc3b8](https://app.buildbuddy.io/invocation/eb0cc3b8-7312-4360-bea2-3e14b6a04bd3)
+passes one case in one physical TestRunner: 60.512s process, 102.875 CPU seconds,
+53.177s pytest. Its actual guest reaches poweroff at 11.514s kernel time.
+The wrong-config-serial control
+[8388bce1](https://app.buildbuddy.io/invocation/8388bce1-d471-498b-a6ee-202e0496bc12)
+boots Linux/systemd, waits for the absent required configuration device and fails
+the same readiness assertion without a nonce. The deliberately bounded QEMU
+process exits 124 after 30s. Both named Docker containers are removed successfully.
+These are patched-d717 executions; final diagnostics-copy ordering was subsequently
+built with mypy/Ruff before commit. No Runtime/authentication equivalence is implied.
+
+## Remove a false Firecracker image dependency
+
+The existing Firecracker suite's two unchanged cases exercise live guest
+suspend/resume, Runtime/Session continuity, real issued and rotated credentials,
+guest egress and rejection of a cluster-CA impostor. Neither uses external
+Connections. Its stack now shares the explicit `NO_MCP_EDGE` profile and common
+service-image map already used by Pod/VM contracts. The rendered-resource control
+compares both VM and Firecracker with their full profiles: every retained object
+is identical, and only names belonging to MCP edge disappear.
+
+The patched-tree screen
+[85ecece4](https://app.buildbuddy.io/invocation/85ecece4-f355-40f9-9cf1-0c370065ff1d)
+passes all 18 rendering cases and both full hardware-backed Firecracker cases,
+with no skipped cases. Firecracker's Bazel target time is 244.6s; selected invocation
+wall time is 408.884s. This preserves coverage and removes an unused image edge;
+it is not a matched timing comparison. The recent 15-head MCP source frame has
+no PR confined to MCP-edge implementation/tests. Do not attribute a historical
+saving to that class without actual selector evidence: common Action, Gateway,
+platform and fixture edits can still legitimately select Firecracker.
