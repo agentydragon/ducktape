@@ -23,7 +23,7 @@ class FileChange:
 
 def _strip_path_prefix(path: str) -> str:
     """Strip git diff path prefixes (a/ or b/)."""
-    return path.removeprefix("b/").removeprefix("a/")
+    return path.removeprefix("a/") if path.startswith("a/") else path.removeprefix("b/")
 
 
 def parse_unified_diff(diff_output: str) -> list[FileChange]:
