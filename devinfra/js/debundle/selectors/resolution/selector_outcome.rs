@@ -891,3 +891,28 @@ impl Serialize for SelectorOutcomeReport {
         report.end()
     }
 }
+
+/// A selector rejection retains its outcomes until an error boundary renders it.
+#[derive(Debug)]
+pub enum SelectorFailure {
+    Single(Box<SelectorOutcome>),
+    KeepGoing(SelectorOutcomeReport),
+}
+
+impl std::fmt::Display for SelectorFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single(outcome) => f.write_str(&outcome.render_line()),
+            Self::KeepGoing(report) => {
+                let mut text = String::from(
+                    "Selector outcome report: in keep-going mode, selectors that did not resolve are \
+                     left unclaimed so the rest of the chunk can still be checked.\n",
+                );
+                report.render_text(&mut text, Some(200));
+                f.write_str(&text)
+            }
+        }
+    }
+}
+
+impl std::error::Error for SelectorFailure {}

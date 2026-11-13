@@ -50,6 +50,19 @@ With `run --reports-only`, `--out-root` is also a shared input and must name
 that same reports destination. The standalone projector applies the same mode
 resolution.
 
+## Diagnostic ownership
+
+Analysis and source-claim libraries return facts and record typed diagnostics in
+an explicit invocation context. They do not print authoring warnings or notices.
+Command adapters render the accumulated diagnostics to stderr on success and
+failure; machine-readable stdout and serialized facts retain their typed shapes.
+Parallel chunk work is reported in chunk order. `analyze` and the standalone
+analyzer emit the same hint and admission diagnostics as `run`, including
+`run --analysis`; each occurrence is rendered once per analysis operation.
+Project-analysis performs selector resolution and reports its selector warnings,
+but does not compute purity-hint facts. Progress and analysis telemetry have
+independent instrumentation owners.
+
 ## Read-only query failures
 
 Once Clap accepts the command line, runtime failures from `describe`,

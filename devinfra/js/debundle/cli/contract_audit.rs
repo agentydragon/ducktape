@@ -333,7 +333,9 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
 
     let eligible = targets.len().min(args.max_probes);
     eprintln!("audit-progress baseline start eligible={eligible} completed=0");
-    let audit = match ContractAudit::prepare(&cli, &spec) {
+    let audit = match command_diagnostics::run(|diagnostics| {
+        ContractAudit::prepare(&cli, &spec, diagnostics)
+    }) {
         Ok(audit) => audit,
         Err(error) => {
             eprintln!(
@@ -384,18 +386,19 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         );
         let mut contracts = spec.chunk_export_purity.clone();
         remove_one(&mut contracts, &target)?;
-        let (verdict, error) = match audit.probe(contracts)? {
-            ContractProbeOutcome::Accepted => {
-                (ProbeVerdict::RemovableUnderRemainingAssumptions, None)
-            }
-            ContractProbeOutcome::Rejected(error) => (
-                ProbeVerdict::FailedFullAcceptance,
-                Some(format!("{error:#}")),
-            ),
-            ContractProbeOutcome::Inconclusive(error) => {
-                (ProbeVerdict::Inconclusive, Some(format!("{error:#}")))
-            }
-        };
+        let (verdict, error) =
+            match command_diagnostics::run(|diagnostics| audit.probe(contracts, diagnostics))? {
+                ContractProbeOutcome::Accepted => {
+                    (ProbeVerdict::RemovableUnderRemainingAssumptions, None)
+                }
+                ContractProbeOutcome::Rejected(error) => (
+                    ProbeVerdict::FailedFullAcceptance,
+                    Some(format!("{error:#}")),
+                ),
+                ContractProbeOutcome::Inconclusive(error) => {
+                    (ProbeVerdict::Inconclusive, Some(format!("{error:#}")))
+                }
+            };
         eprintln!(
             "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict={} target={target:?}",
             ordinal, verdict

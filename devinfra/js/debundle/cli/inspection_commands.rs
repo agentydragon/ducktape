@@ -416,19 +416,23 @@ pub(super) fn run_describe(
         .into_iter()
         .enumerate()
         .map(|(index, selection)| {
-            session
-                .explain(&ExplainArgs {
-                    selection,
-                    limit: if args.all {
-                        0
-                    } else {
-                        args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
+            command_diagnostics::run(|diagnostics| {
+                session.explain(
+                    &ExplainArgs {
+                        selection,
+                        limit: if args.all {
+                            0
+                        } else {
+                            args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
+                        },
+                        direction: args.direction,
+                        reasons: args.reasons.clone(),
+                        include_proposals: args.include_proposals,
                     },
-                    direction: args.direction,
-                    reasons: args.reasons.clone(),
-                    include_proposals: args.include_proposals,
-                })
-                .with_context(|| format!("describing item {} ({:?})", index + 1, ids[index]))
+                    diagnostics,
+                )
+            })
+            .with_context(|| format!("describing item {} ({:?})", index + 1, ids[index]))
         })
         .collect::<Result<Vec<_>>>()?;
     if args.batch_file.is_none() {
@@ -479,18 +483,21 @@ pub(super) fn run_inspect_source(
         let graph = args.graph.clone().context("--id requires --graph")?;
         let modules = args.modules.clone().context("--id requires --modules")?;
         let selection = dispatch_id_selection(id, &mut ModulePathIndex::under(&modules))?;
-        let selected = run_source_selection_report(
-            &SourceSelectionArgs {
-                common: PeelCommonArgs {
-                    dependency_graph_path: graph,
-                    modules_root: modules,
+        let selected = command_diagnostics::run(|diagnostics| {
+            run_source_selection_report(
+                &SourceSelectionArgs {
+                    common: PeelCommonArgs {
+                        dependency_graph_path: graph,
+                        modules_root: modules,
+                    },
+                    selection,
+                    size_cap_lines: args.size_cap_lines,
+                    source_root: args.source_root.clone(),
                 },
-                selection,
-                size_cap_lines: args.size_cap_lines,
-                source_root: args.source_root.clone(),
-            },
-            source_context,
-        )?;
+                source_context,
+                diagnostics,
+            )
+        })?;
         report.query = Some(selected.query);
         report.selected_source_unit_count = Some(selected.source_unit_ids.len());
         report.unknown_binding_ids = selected.unknown_binding_ids;
@@ -1036,7 +1043,9 @@ pub(super) fn run_coverage(
     args: PatchPlanArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<()> {
-    let report = run_patch_plan_report(&args, source_context)?;
+    let report = command_diagnostics::run(|diagnostics| {
+        run_patch_plan_report(&args, source_context, diagnostics)
+    })?;
     emit_report(
         args.format,
         &report,

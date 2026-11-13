@@ -437,7 +437,7 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: CurrentRoots) -> Resul
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    peel::print_report(&report, format, render_diagnose_text)
+    command_output::print_report(&report, format, render_diagnose_text)
         .context("writing gate diagnose output")
 }
 
@@ -910,10 +910,11 @@ fn run_list(args: GateListArgs) -> Result<()> {
             .collect(),
     };
     let format = peel::OutputFormat::resolve(args.format);
-    if peel::print_ndjson_list(&report.blocking_sccs, format)? {
+    if command_output::print_ndjson_list(&report.blocking_sccs, format)? {
         return Ok(());
     }
-    peel::print_report(&report, format, render_list_text).context("writing gate list output")
+    command_output::print_report(&report, format, render_list_text)
+        .context("writing gate list output")
 }
 
 fn render_list_text(report: &GateListReport, out: &mut String) {
@@ -991,7 +992,7 @@ fn run_describe(args: GateDescribeArgs, inspection_roots: CurrentRoots) -> Resul
         sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    peel::print_report(&report, format, render_describe_text)
+    command_output::print_report(&report, format, render_describe_text)
         .context("writing gate describe output")
 }
 
@@ -1063,10 +1064,11 @@ fn run_cut(args: GateCutArgs) -> Result<()> {
         inert_commuting_edges: entry.inert_commuting_edges.clone(),
     };
     let format = peel::OutputFormat::resolve(args.format);
-    if peel::print_ndjson_list(&report.cut, format)? {
+    if command_output::print_ndjson_list(&report.cut, format)? {
         return Ok(());
     }
-    peel::print_report(&report, format, render_cut_text).context("writing gate cut output")
+    command_output::print_report(&report, format, render_cut_text)
+        .context("writing gate cut output")
 }
 
 fn render_cut_text(report: &GateCutReport, out: &mut String) {

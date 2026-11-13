@@ -5,6 +5,7 @@
 //! (`analysis::cross_module_purity`). Its results feed each chunk's
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
+use analysis::diagnostics::{Diagnostic, Diagnostics, ExportContract};
 use analysis_model::{PrimKinds, StableExportValue};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -336,6 +337,7 @@ pub struct ProgramSummaryOptions<'a> {
 pub fn reparse_unretained_entries(
     artifact: &ChunkBundle,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
+    diagnostics: &Diagnostics,
 ) -> BTreeMap<ChunkId, ReparsedEntry> {
     let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
@@ -368,10 +370,7 @@ pub fn reparse_unretained_entries(
                 );
             }
             Err(error) => {
-                eprintln!(
-                    "cross_module_purity: chunk {chunk_name} entry failed to parse; \
-                     leaving it opaque to the purity oracle: {error:#}"
-                );
+                diagnostics.record(chunk_name, Diagnostic::OpaqueEntry { error });
             }
         }
     }
@@ -386,6 +385,7 @@ pub fn collect_program_summary(
     options: ProgramSummaryOptions<'_>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     reparsed: &BTreeMap<ChunkId, ReparsedEntry>,
+    diagnostics: &Diagnostics,
 ) -> Result<ProgramSummary> {
     let ProgramSummaryOptions {
         graph_provenance,
@@ -760,9 +760,15 @@ pub fn collect_program_summary(
                 })
                 .unwrap_or_default(),
         },
+        diagnostics,
     )?;
     let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
-    let bindings = resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries)?;
+    let bindings = resolve_imported_purities(
+        &modules,
+        &asserted_pure,
+        &mut callable_summaries,
+        diagnostics,
+    )?;
     // A proved imported primitive read names a provider binding declared once
     // and never written (`StableExportValue`).
     let mut stable_imports = resolve_stable_imports(&modules, &asserted_pure);
@@ -809,35 +815,54 @@ pub fn collect_program_summary(
         }
     }
     macro_rules! members {
-        ($field:ident) => {
+        ($field:ident, $contract:ident) => {
             project_onto_importers(
                 &modules,
                 &scoped(chunk_export_purity, &modules, |p| &p.$field),
-                stringify!($field),
+                ExportContract::$contract,
+                diagnostics,
             )
         };
     }
     macro_rules! exports {
-        ($field:ident) => {
+        ($field:ident, $contract:ident) => {
             project_export_set(
                 &modules,
                 &scoped(chunk_export_purity, &modules, |p| &p.$field),
-                stringify!($field),
+                ExportContract::$contract,
+                diagnostics,
             )
         };
     }
     Ok(ProgramSummary {
-        no_reentry_callback_exports: members!(no_reentry_callback_exports),
-        retained_callback_constructors: members!(retained_callback_constructor_exports),
-        retained_callback_factories: members!(retained_callback_factory_exports),
-        retained_callback_factory_members: members!(retained_callback_factory_members),
+        no_reentry_callback_exports: members!(
+            no_reentry_callback_exports,
+            NoReentryCallbackExports
+        ),
+        retained_callback_constructors: members!(
+            retained_callback_constructor_exports,
+            RetainedCallbackConstructorExports
+        ),
+        retained_callback_factories: members!(
+            retained_callback_factory_exports,
+            RetainedCallbackFactoryExports
+        ),
+        retained_callback_factory_members: members!(
+            retained_callback_factory_members,
+            RetainedCallbackFactoryMembers
+        ),
         values,
         primitive_reads,
         bindings,
         stable_imports,
-        members: members!(pure_members),
-        fluent: exports!(fluent_exports),
-        constructors: project_export_set(&modules, &asserted_pure_new, "pure_new_exports"),
+        members: members!(pure_members, PureMembers),
+        fluent: exports!(fluent_exports, FluentExports),
+        constructors: project_export_set(
+            &modules,
+            &asserted_pure_new,
+            ExportContract::PureNewExports,
+            diagnostics,
+        ),
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,
@@ -849,12 +874,18 @@ pub fn collect_program_summary(
         stable_set_spreads: callable_summaries.stable_set_spreads,
         inferred_set_constructions: callable_summaries.inferred_set_constructions,
         argument_inputs: callable_summaries.argument_inputs,
-        inline_callback_factories: exports!(inline_callback_factory_exports),
-        namespace_independent_members: members!(namespace_independent_members),
-        callback_factory_members: members!(callback_factory_members),
-        no_reentry_members: members!(no_reentry_members),
-        no_reentry_record_members: members!(no_reentry_record_members),
-        no_reentry_exports: exports!(no_reentry_exports),
+        inline_callback_factories: exports!(
+            inline_callback_factory_exports,
+            InlineCallbackFactoryExports
+        ),
+        namespace_independent_members: members!(
+            namespace_independent_members,
+            NamespaceIndependentMembers
+        ),
+        callback_factory_members: members!(callback_factory_members, CallbackFactoryMembers),
+        no_reentry_members: members!(no_reentry_members, NoReentryMembers),
+        no_reentry_record_members: members!(no_reentry_record_members, NoReentryRecordMembers),
+        no_reentry_exports: exports!(no_reentry_exports, NoReentryExports),
     })
 }
 
@@ -1845,7 +1876,12 @@ mod tests {
                         replacement_packages: &BTreeMap::new(),
                     },
                     None,
-                    &reparse_unretained_entries(&artifact, None),
+                    &reparse_unretained_entries(
+                        &artifact,
+                        None,
+                        &analysis::diagnostics::Diagnostics::default(),
+                    ),
+                    &analysis::diagnostics::Diagnostics::default(),
                 )
                 .expect("program summary analysis succeeds");
                 let provider_chunk = artifact
@@ -1926,7 +1962,12 @@ mod tests {
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
-                &reparse_unretained_entries(&artifact, None),
+                &reparse_unretained_entries(
+                    &artifact,
+                    None,
+                    &analysis::diagnostics::Diagnostics::default(),
+                ),
+                &analysis::diagnostics::Diagnostics::default(),
             )
             .expect("program summary analysis succeeds");
 
@@ -1991,7 +2032,12 @@ mod tests {
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
-                &reparse_unretained_entries(&artifact, None),
+                &reparse_unretained_entries(
+                    &artifact,
+                    None,
+                    &analysis::diagnostics::Diagnostics::default(),
+                ),
+                &analysis::diagnostics::Diagnostics::default(),
             )
             .expect("program summary analysis succeeds");
 

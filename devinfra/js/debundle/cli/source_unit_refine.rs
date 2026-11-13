@@ -131,14 +131,19 @@ pub fn run_source_unit_refine(
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
     let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
-    let resolved = resolve_source_claims(
-        dependency_graph,
-        dependency_graph_path,
-        modules_root,
-        Some(source_root),
-        source_context,
-        &claim_sets,
-    )?;
+    let resolved = command_diagnostics::run(|diagnostics| {
+        resolve_source_claims(
+            anonymous_resolution::SourceClaimsContext {
+                graph: dependency_graph,
+                dependency_graph_path: dependency_graph_path,
+                modules_root: modules_root,
+                source_root: Some(source_root),
+                source_context: source_context,
+                diagnostics: diagnostics,
+            },
+            &claim_sets,
+        )
+    })?;
     let claim_projection = project_source_unit_claims(&graph_input, &initial_spec, &resolved)?;
     let current_source_unit_modules = source_unit_module_assignments_from_projection(
         dependency_graph,
@@ -478,13 +483,16 @@ pub fn run_source_unit_refine(
             .filter(|(path, _)| !to_delete.contains(*path))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
-        Some(assess_candidate_effect_relocation(
-            context.transform,
-            context.analysis,
-            context.graph_source,
-            modules_root,
-            &candidate_modules,
-        )?)
+        Some(command_diagnostics::run(|diagnostics| {
+            assess_candidate_effect_relocation(
+                context.transform,
+                context.analysis,
+                context.graph_source,
+                modules_root,
+                &candidate_modules,
+                diagnostics,
+            )
+        })?)
     } else {
         None
     };

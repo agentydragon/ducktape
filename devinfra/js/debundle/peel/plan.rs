@@ -454,52 +454,6 @@ impl OutputFormat {
     }
 }
 
-/// Emit `value` in the requested `format`. `text_render` produces the
-/// human-readable rendering when `format` resolves to text.
-pub fn print_report<T, F>(value: &T, format: OutputFormat, text_render: F) -> Result<()>
-where
-    T: Serialize,
-    F: FnOnce(&T, &mut String),
-{
-    match format {
-        OutputFormat::Text => {
-            let mut buf = String::new();
-            text_render(value, &mut buf);
-            if !buf.is_empty() && !buf.ends_with('\n') {
-                buf.push('\n');
-            }
-            print!("{buf}");
-            Ok(())
-        }
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(value)?);
-            Ok(())
-        }
-        OutputFormat::Ndjson => {
-            // For ndjson on a non-array shape, fall back to one
-            // compact JSON document per call. Commands whose primary
-            // output is an array (atoms, scc, modules list) override
-            // and emit one line per item.
-            println!("{}", serde_json::to_string(value)?);
-            Ok(())
-        }
-    }
-}
-
-/// For a command whose primary output is an array: when `format` is `Ndjson`,
-/// emit one compact JSON line per item and return `true` (the caller should
-/// stop). Otherwise emit nothing and return `false`, so the caller falls through
-/// to [`print_report`] for the text/json rendering of the whole report.
-pub fn print_ndjson_list<T: Serialize>(items: &[T], format: OutputFormat) -> Result<bool> {
-    if format != OutputFormat::Ndjson {
-        return Ok(false);
-    }
-    for item in items {
-        println!("{}", serde_json::to_string(item)?);
-    }
-    Ok(true)
-}
-
 pub fn run_plan_work_report(
     args: &PlanWorkArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
@@ -576,6 +530,7 @@ pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsR
 pub fn run_patch_plan_report(
     args: &PatchPlanArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<PatchPlanReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
@@ -601,6 +556,7 @@ pub fn run_patch_plan_report(
         args.source_root.as_deref(),
         source_context,
         propose.as_ref(),
+        diagnostics,
     )?;
     rows.sort_by_key(|row| (row.status, row.path.clone()));
     let summary = PatchPlanSummary {
@@ -781,7 +737,11 @@ impl ExplainSession {
             .collect()
     }
 
-    pub fn explain(&mut self, args: &ExplainArgs) -> Result<ExplainReport> {
+    pub fn explain(
+        &mut self,
+        args: &ExplainArgs,
+        diagnostics: &analysis::diagnostics::Diagnostics,
+    ) -> Result<ExplainReport> {
         if self.binding_homes.is_none() {
             self.binding_homes = Some(binding_homes(
                 &self.common.modules_root,
@@ -814,6 +774,7 @@ impl ExplainSession {
             } else {
                 None
             },
+            diagnostics,
         )
     }
 }
@@ -822,6 +783,7 @@ fn explain_from_graph(
     session: &ExplainSession,
     args: &ExplainArgs,
     propose: Option<&ProposalsReport>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<ExplainReport> {
     let ExplainSession {
         graph,
@@ -860,6 +822,7 @@ fn explain_from_graph(
             tree_config: session.tree_config.as_deref(),
             module_files: &session.module_files,
         },
+        diagnostics,
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let mut source_units = source_units_for_ids(report, &source_unit_set);
@@ -1214,6 +1177,7 @@ fn edge_census_rows(edges: &[DependencyEdgeReport]) -> Vec<EdgeCensusRow> {
 pub fn run_source_selection_report(
     args: &SourceSelectionArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<SourceSelectionReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
@@ -1239,6 +1203,7 @@ pub fn run_source_selection_report(
             tree_config: None,
             module_files: &module_files,
         },
+        diagnostics,
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let source_units = source_units_for_ids(graph, &source_unit_set);
@@ -1422,6 +1387,7 @@ fn patch_plan_rows(
     source_root: Option<&Path>,
     source_context: Option<&VerifiedGraphSourceContext>,
     propose: Option<&ProposalsReport>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_source_units = binding_to_source_units(graph);
     let atomic_group_by_source_unit = atomic_group_by_source_unit(graph);
@@ -1435,11 +1401,14 @@ fn patch_plan_rows(
     // Resolve every patch set's source-backed claims in ONE batched call: the
     // resolver parses each claimed source file once per call.
     let resolved_by_set = resolve_source_claims(
-        graph,
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        source_context,
+        anonymous_resolution::SourceClaimsContext {
+            graph: graph,
+            dependency_graph_path: dependency_graph_path,
+            modules_root: modules_root,
+            source_root: source_root,
+            source_context: source_context,
+            diagnostics: diagnostics,
+        },
         &patch_sets
             .iter()
             .map(|patch_set| SourceClaimSet {
@@ -1715,6 +1684,7 @@ fn resolve_source_unit_ids(
     selection: &SelectionKind,
     input: &DependencyGraphInput,
     context: &ResolveSourceUnitContext<'_>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<ResolvedSelection> {
     let graph = input.report();
     let mut unknown_binding_ids: Vec<String> = Vec::new();
@@ -1737,6 +1707,7 @@ fn resolve_source_unit_ids(
                 context.source_context,
                 module_path,
                 context.module_files,
+                diagnostics,
             )?;
             unknown_binding_ids = unknown;
             resolved
@@ -1843,6 +1814,7 @@ fn resolve_module_path_source_unit_ids(
     source_context: Option<&VerifiedGraphSourceContext>,
     module_path: &str,
     module_files: &[PathBuf],
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<(Vec<String>, Vec<String>)> {
     let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
     let claims = read_module_claims(&yaml_path)
@@ -1872,11 +1844,14 @@ fn resolve_module_path_source_unit_ids(
         .position(|file| module_path_from_file(file, &common.modules_root) == module_path)
         .with_context(|| format!("module {module_path:?} is not in the modules tree"))?;
     let resolved = resolve_source_claims_of(
-        graph,
-        &common.dependency_graph_path,
-        &common.modules_root,
-        source_root,
-        source_context,
+        anonymous_resolution::SourceClaimsContext {
+            graph: graph,
+            dependency_graph_path: &common.dependency_graph_path,
+            modules_root: &common.modules_root,
+            source_root: source_root,
+            source_context: source_context,
+            diagnostics: diagnostics,
+        },
         &module_files
             .iter()
             .zip(&all_claims)

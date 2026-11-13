@@ -21,6 +21,7 @@ pub mod analysis_provenance;
 pub mod assignment_assembly;
 pub mod atomic_groups;
 pub mod cross_module_purity;
+pub mod diagnostics;
 pub mod execution_evidence;
 pub mod facts;
 pub mod graph;

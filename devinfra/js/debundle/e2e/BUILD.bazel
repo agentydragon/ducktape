@@ -1564,3 +1564,9 @@ debundle_e2e_test(
         "@crates//:tempfile",
     ],
 )
+
+debundle_e2e_test(
+    name = "diagnostic_boundaries_test",
+    saved_analysis_tools = True,
+    deps = ["@crates//:serde_json"],
+)

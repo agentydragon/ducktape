@@ -591,38 +591,41 @@ fn run_module_decompose(
         !args.include_residual || args.atomic,
         "--include-residual requires --atomic"
     );
-    let report = decompose_modules_from_files_with_options(
-        &ProposalOptions {
-            dependency_graph_path: args.common.dependency_graph_path,
-            modules_root: args.common.modules_root,
-            tree_config: args.tree_config,
-            source_root: args.source_root,
-            source_context: source_context.cloned(),
-            size_cap_lines: DEFAULT_SIZE_CAP_LINES,
-        },
-        ModuleDecompositionOptions {
-            strategy: if args.atomic {
-                if args.include_residual {
-                    ModuleDecompositionStrategy::AtomicIncludingResidual
+    let report = command_diagnostics::run(|diagnostics| {
+        decompose_modules_from_files_with_options(
+            &ProposalOptions {
+                dependency_graph_path: args.common.dependency_graph_path,
+                modules_root: args.common.modules_root,
+                tree_config: args.tree_config,
+                source_root: args.source_root,
+                source_context: source_context.cloned(),
+                size_cap_lines: DEFAULT_SIZE_CAP_LINES,
+            },
+            ModuleDecompositionOptions {
+                strategy: if args.atomic {
+                    if args.include_residual {
+                        ModuleDecompositionStrategy::AtomicIncludingResidual
+                    } else {
+                        ModuleDecompositionStrategy::Atomic
+                    }
                 } else {
-                    ModuleDecompositionStrategy::Atomic
-                }
-            } else {
-                ModuleDecompositionStrategy::Seed
+                    ModuleDecompositionStrategy::Seed
+                },
+                coarsening: if args.coarsen_blocking_sccs {
+                    ModuleDecompositionCoarseningMode::MergeBlockingSccs
+                } else {
+                    ModuleDecompositionCoarseningMode::None
+                },
+                preserve_selector_anchors: args.preserve_selector_anchors,
+                include_unchanged: args.include_unchanged,
+                coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
+                rejoin_original_modules: args.rejoin_original_modules,
+                rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,
+                whole_home_pass_limit: args.rejoin_home_pass_limit,
             },
-            coarsening: if args.coarsen_blocking_sccs {
-                ModuleDecompositionCoarseningMode::MergeBlockingSccs
-            } else {
-                ModuleDecompositionCoarseningMode::None
-            },
-            preserve_selector_anchors: args.preserve_selector_anchors,
-            include_unchanged: args.include_unchanged,
-            coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
-            rejoin_original_modules: args.rejoin_original_modules,
-            rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,
-            whole_home_pass_limit: args.rejoin_home_pass_limit,
-        },
-    )?;
+            diagnostics,
+        )
+    })?;
     emit_report(
         args.format,
         &report,

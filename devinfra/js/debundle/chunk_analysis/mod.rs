@@ -4,7 +4,7 @@
 //! [`AnalysisInputs`] (author assumptions already resolved by the caller) and
 //! produces per-statement facts: declared bindings, eager/lazy reads,
 //! side-effect summaries, purity, top-level-await detection. It also owns the
-//! side effects that derive from those facts alone: stderr warnings for
+//! checks that derive from those facts alone: structured diagnostics for
 //! redundant purity hints, the top-level `await` bail (the realizability
 //! theorem does not cover it), and the input-chunk admission scan
 //! (docs/design.md A1/A3/A5; see `chunk_admission`).
@@ -31,6 +31,7 @@ use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::atomic_groups::{
     DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
 };
+use analysis::diagnostics::{Diagnostic, Diagnostics};
 use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
@@ -39,7 +40,7 @@ use analysis::graph::GraphOptions;
 use spec::{AdmissionCheck, AdmissionOverrides};
 
 /// Analyze a chunk from its precomputed structural layer: compute its facts,
-/// emit any redundant-purity-hint diagnostics, and fail if the chunk has
+/// record redundant-purity-hint diagnostics, and fail if the chunk has
 /// top-level `await` or fails the input-chunk admission scan. Selector
 /// resolution uses the same structural layer before semantic member
 /// annotations are projected to concrete bindings.
@@ -51,6 +52,7 @@ use spec::{AdmissionCheck, AdmissionOverrides};
 #[allow(clippy::too_many_arguments)]
 pub fn compute_chunk_facts(
     chunk_id: &str,
+    diagnostics: &Diagnostics,
     module: &Module,
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
@@ -63,6 +65,7 @@ pub fn compute_chunk_facts(
         analyze_chunk_with_policy(structural, hints, export_reentry_policy, locator);
     let redundant_admission_overrides = check_chunk_facts(
         chunk_id,
+        diagnostics,
         module,
         &fact_analysis,
         admission_overrides,
@@ -72,18 +75,24 @@ pub fn compute_chunk_facts(
 }
 
 /// What [`compute_chunk_facts`] does once the facts exist: the redundant-hint
-/// warnings, the top-level `await` bail and the admission scan. A run that
+/// diagnostics, the top-level `await` bail and the admission scan. A run that
 /// takes its facts from an analysis artifact calls it directly, so its
 /// diagnostics and verdict match a run that computes them. Returns the
 /// configured admission overrides that suppressed no violation.
 pub fn check_chunk_facts(
     chunk_id: &str,
+    diagnostics: &Diagnostics,
     module: &Module,
     fact_analysis: &ChunkFactAnalysis,
     admission_overrides: AdmissionOverrides,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<Vec<AdmissionCheck>> {
-    report_redundant_hints_to_stderr(chunk_id, fact_analysis);
+    for hint in &fact_analysis.redundant_purity_hints {
+        diagnostics.record(chunk_id, Diagnostic::RedundantPurityHint(hint.clone()));
+    }
+    for hint in &fact_analysis.redundant_pure_member_hints {
+        diagnostics.record(chunk_id, Diagnostic::RedundantPureMemberHint(hint.clone()));
+    }
     if let Some(ord) = fact_analysis.top_level_await {
         bail!(
             "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
@@ -95,6 +104,7 @@ pub fn check_chunk_facts(
     }
     enforce_chunk_admission(
         chunk_id,
+        diagnostics,
         module,
         admission_overrides,
         resolve_dynamic_import,
@@ -127,29 +137,69 @@ pub fn build_chunk_graph(
         .with_context(|| format!("building dependency graph for chunk {chunk_id}"))
 }
 
-/// Emit one stderr warning per spec hint the analyzer inferred
-/// automatically. Surfaced every build so spec authors are nudged to
-/// prune load-free hints — every such hint is an extra trust
-/// assertion the validator can't re-verify, and the shrinking trust
-/// surface is the point of recursive purity inference.
-fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis) {
-    for hint in &analysis.redundant_purity_hints {
-        eprintln!(
-            "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
-             the analyzer infers {reason} for this binding without this hint. {basis}",
-            binding = hint.binding_name,
-            reason = hint.reason.explanation(),
-            basis = hint.proof_basis.explanation(),
-        );
-    }
-    for hint in &analysis.redundant_pure_member_hints {
-        eprintln!(
-            "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
-             is redundant — the analyzer infers {reason} without the hint. \
-             Remove the entry from the spec.",
-            binding = hint.binding_name,
-            property = hint.property,
-            reason = hint.reason.explanation(),
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    #[test]
+    fn analysis_records_diagnostics_without_printing() {
+        // Execute the real library path in a child so the test can observe its
+        // process streams independently of libtest's output capture.
+        const CHILD: &str = "DEBUNDLE_DIAGNOSTICS_PROBE_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tests::analysis_records_diagnostics_without_printing",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert!(
+                !stdout.contains("warning:") && !stdout.contains("notice:"),
+                "{stdout}"
+            );
+            return;
+        }
+        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+            let module =
+                raw_js_test_support::parse("function leaf() { return 7; } export { leaf };\n");
+            let structural = analysis::facts::complete_chunk_structural(
+                analysis::facts::collect_chunk_source_facts(&module, None),
+            );
+            let mut inputs = AnalysisInputs::default();
+            inputs.assumptions.declared_pure.insert("leaf".to_owned());
+            let diagnostics = Diagnostics::default();
+            let (facts, redundant) = compute_chunk_facts(
+                "main",
+                &diagnostics,
+                &module,
+                structural,
+                &inputs,
+                None,
+                AdmissionOverrides {
+                    a1_eval: true,
+                    ..AdmissionOverrides::default()
+                },
+                &ExportReentryPolicy::Conservative,
+                &|_| DynamicImportTarget::External,
+            )
+            .unwrap();
+            assert_eq!(facts.redundant_purity_hints.len(), 1);
+            assert_eq!(redundant, vec![AdmissionCheck::A1Eval]);
+            let records = diagnostics.drain();
+            assert!(matches!(
+                records["main"].as_slice(),
+                [
+                    Diagnostic::RedundantPurityHint(_),
+                    Diagnostic::RedundantAdmissionOverride(AdmissionCheck::A1Eval)
+                ]
+            ));
+        });
     }
 }

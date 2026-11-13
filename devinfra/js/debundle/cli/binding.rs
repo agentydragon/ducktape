@@ -1077,13 +1077,16 @@ pub fn run_bindings_assign(
             .filter(|(path, _)| !to_delete.contains(*path))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
-        Some(assess_candidate_effect_relocation(
-            context.transform,
-            context.analysis,
-            context.graph_source,
-            modules_root,
-            &candidate_modules,
-        )?)
+        Some(command_diagnostics::run(|diagnostics| {
+            assess_candidate_effect_relocation(
+                context.transform,
+                context.analysis,
+                context.graph_source,
+                modules_root,
+                &candidate_modules,
+                diagnostics,
+            )
+        })?)
     } else {
         None
     };
@@ -1455,13 +1458,16 @@ pub fn run_bindings_unassign(
             .filter(|(path, _)| !to_delete.contains(*path))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
-        Some(assess_candidate_effect_relocation(
-            context.transform,
-            context.analysis,
-            context.graph_source,
-            modules_root,
-            &candidate_modules,
-        )?)
+        Some(command_diagnostics::run(|diagnostics| {
+            assess_candidate_effect_relocation(
+                context.transform,
+                context.analysis,
+                context.graph_source,
+                modules_root,
+                &candidate_modules,
+                diagnostics,
+            )
+        })?)
     } else {
         None
     };

@@ -23,7 +23,11 @@ pub struct AnalyzeRequest {
 /// `debundle analyze`: compute the cross-module pass and every analysed
 /// chunk's facts from a projection and the sources, and write them as an
 /// analysis artifact for `debundle run --analysis`.
-pub fn analyze_from_projection(args: AnalyzeRequest, analysis_engine_sha256: &str) -> Result<()> {
+pub fn analyze_from_projection(
+    args: AnalyzeRequest,
+    analysis_engine_sha256: &str,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<()> {
     let projection_bytes = fs::read(&args.projection)
         .with_context(|| format!("read analysis projection {}", args.projection.display()))?;
     let spec = AnalysisSpec::decode(&projection_bytes)?;
@@ -90,6 +94,7 @@ pub fn analyze_from_projection(args: AnalyzeRequest, analysis_engine_sha256: &st
     let bytes = super::analyze_program(
         source.program.into_artifact(),
         AnalyzeProgramInputs {
+            diagnostics,
             spec: &spec,
             embedded_loaders: &embedded_loaders,
             vendor_plan: &vendor_plan,
