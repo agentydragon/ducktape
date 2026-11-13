@@ -131,7 +131,13 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   cases passed unchanged across source-pinned control/concurrency/profile runs;
   configured graph queries prove the image edge is absent. Unused app Connection
   routes remain unavailable in this profile, so external connections retain their
-  separate MCP/app witnesses. Dispatcher/probe and default/MCP profiles retain their previous image ownership.
+  separate MCP/app witnesses. Dispatcher and Session-deletion scenarios now use
+  the same existing composition without MCP Edge; App, Actions, notification,
+  controller and storage services remain. Deletion keeps its dedicated runner
+  disk. Configured closure checks retain all 11 common service images and both
+  required runner disks. Required real-deployment CI must validate this extension;
+  the input cut is not a latency measurement. Probe and default/MCP profiles
+  retain their previous image ownership.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
   acceptance and existing controller fake-clock matrix. Trace producer/watch timing
