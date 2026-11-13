@@ -1468,7 +1468,9 @@ def generate_manifests(root: Path) -> None:
         components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
         config_map_generator=[airlock.CONFIG_MAP],
     )
-    airlock_kustomization = airlock.airlock(flux_chart, airlock_directory, external_secrets_operator_kustomization)
+    airlock_kustomization = airlock.airlock(
+        flux_chart, airlock_directory, external_secrets_operator_kustomization, cert_manager_environment_kustomization
+    )
     authentik_jwt_rotation_artifact = artifact(
         "authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR, authentik_jwt_rotation.PINS_DIR
     )
