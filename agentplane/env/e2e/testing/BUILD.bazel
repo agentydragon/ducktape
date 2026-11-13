@@ -137,7 +137,7 @@ py_library(
         "//agentplane/env:config",
         "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
-        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/net/peertls:config",
         "//agentplane/proto:environment_runtime_state_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/sandboxes/testing:kubernetes",

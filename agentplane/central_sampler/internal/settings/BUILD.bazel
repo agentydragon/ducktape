@@ -18,7 +18,7 @@ go_library(
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/providers/anthropic",
         "//agentplane/central_sampler/providers/responses",
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
     ],
 )
 

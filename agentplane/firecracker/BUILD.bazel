@@ -41,7 +41,7 @@ go_test(
     embed = [":firecracker"],
     deps = [
         "//agentplane/env/firecracker:management_go_proto",
-        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/net/peertls/testing",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

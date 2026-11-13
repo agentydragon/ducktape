@@ -1,4 +1,4 @@
-package environment_runtime_transport_test
+package peertls_test
 
 import (
 	"crypto/tls"
@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
@@ -34,8 +34,8 @@ func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
 
 func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	localURI := environment_runtime_transport.EgressProxyURI
-	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	localURI := peertls.EgressProxyURI
+	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	connState, err := peertls.ConfigureHTTPServerTLSExpiry(serverTLS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +70,8 @@ func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *t
 
 func TestConfigureHTTPServerTLSExpiryDisablesSessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	localURI := environment_runtime_transport.EgressProxyURI
-	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	localURI := peertls.EgressProxyURI
+	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestConfigureHTTPServerTLSExpiryDisablesSessionResumption(t *testing.T) {
 		selections++
 		return getCertificate(hello)
 	}
-	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	connState, err := peertls.ConfigureHTTPServerTLSExpiry(serverTLS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestConfigureHTTPServerTLSExpiryRejectsUntrackedCertificateSelection(t *tes
 		{Certificates: []tls.Certificate{{}}},
 		{GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return nil, nil }, GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) { return nil, nil }},
 	} {
-		if _, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(config); err == nil {
+		if _, err := peertls.ConfigureHTTPServerTLSExpiry(config); err == nil {
 			t.Fatalf("ConfigureHTTPServerTLSExpiry(%+v) succeeded without an observable certificate selector", config)
 		}
 	}
@@ -141,7 +141,7 @@ func establishHTTPExpiryConnection(
 ) (*tls.Conn, *tls.Conn, func(net.Conn, http.ConnState), time.Time) {
 	t.Helper()
 	ca := environmentruntimetransporttesting.NewCA(t)
-	localURI := environment_runtime_transport.EgressProxyURI
+	localURI := peertls.EgressProxyURI
 	now := time.Now().UTC().Truncate(time.Second)
 	localExpiry := now.Add(localLifetime)
 	local := ca.IssueWithValidity(t, localURI, now.Add(-time.Minute), localExpiry, x509.ExtKeyUsageServerAuth)
@@ -149,14 +149,14 @@ func establishHTTPExpiryConnection(
 	var clientTLS *tls.Config
 	var err error
 	if bearerOnly {
-		clientTLS, err = (environment_runtime_transport.ClientTLS{
+		clientTLS, err = (peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: localURI,
 		}).TLSConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
 	} else {
-		runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+		runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +176,7 @@ func establishHTTPExpiryConnection(
 	if err != nil {
 		t.Fatal(err)
 	}
-	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	connState, err := peertls.ConfigureHTTPServerTLSExpiry(serverTLS)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,9 +9,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/cmd",
     visibility = ["//visibility:private"],
     deps = [
-        "//agentplane/environment_runtime_transport",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandbox_controller/internal/controller",

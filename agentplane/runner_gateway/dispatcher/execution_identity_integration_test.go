@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
@@ -64,13 +64,13 @@ func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace str
 		t.Fatal(err)
 	}
 	ca := transporttesting.NewCA(t)
-	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
+	serverCredential := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
 	listenerConfig := listener.Config{
 		ListenAddress: ":8080",
 		TLS:           &listener.TLS{CertFile: serverCredential.CertFile, KeyFile: serverCredential.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	serverTLS, err := listenerConfig.TLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	serverTLS, err := listenerConfig.TLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace str
 	go func() { _ = server.Serve(netListener) }()
 	t.Cleanup(server.Stop)
 	dial := func(uri string) dispatcherpb.SessionDispatcherClient {
-		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(peertls.SessionDispatcherURI)
 		if err != nil {
 			t.Fatal(err)
 		}

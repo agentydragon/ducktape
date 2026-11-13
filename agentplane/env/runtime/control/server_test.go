@@ -7,7 +7,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -17,12 +17,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -97,7 +97,7 @@ func (idleHistory) Health() history.Health { return history.Health{} }
 func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 	t.Helper()
 	ca := environmentruntimetransporttesting.NewCA(t)
-	proxySVID := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
+	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
@@ -183,7 +183,7 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 
 func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	proxySVID := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
+	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
@@ -217,7 +217,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		_ = server.Shutdown(ctx)
 	})
 
-	backendCredentials, err := (&environment_runtime_transport.ClientTLS{CAFile: ca.RootFile, ServerURI: environment_runtime_transport.EgressProxyURI}).Credentials()
+	backendCredentials, err := (&peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.EgressProxyURI}).Credentials()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,12 +239,12 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatalf("Rules with a backend bearer: %v, want Unauthenticated", err)
 	}
 
-	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
+	runnerURI, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerSVID := ca.Issue(t, runnerURI)
-	runnerCredentials, err := runnerSVID.ClientCredentials(environment_runtime_transport.EgressProxyURI)
+	runnerCredentials, err := runnerSVID.ClientCredentials(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,11 +259,11 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatalf("SVID Rules response: %v, %v", response, err)
 	}
 	// An Identity caller is answered with the rules of the bindings naming that Identity.
-	agentURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
+	agentURI, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentCredentials, err := ca.Issue(t, agentURI).ClientCredentials(environment_runtime_transport.EgressProxyURI)
+	agentCredentials, err := ca.Issue(t, agentURI).ClientCredentials(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 			t.Fatal(err)
 		}
 	}
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
+	uri, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 		Status: workloadapi.WorkloadCredentialStatus{CredentialID: runnerCredentialID, URI: uri, AcceptedBinding: pod},
 	}
 	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", UID: types.UID("test-account-uid")}}
-	agentURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
+	agentURI, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

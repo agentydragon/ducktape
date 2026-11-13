@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.environment_runtime_transport.config import ClientTLS
+from agentplane.net.peertls.config import ClientTLS
 
 
 class Settings(BaseModel):

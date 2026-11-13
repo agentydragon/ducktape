@@ -52,8 +52,8 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import APIServer, Settings
-from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
+from agentplane.net.peertls.config import EGRESS_PROXY_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway

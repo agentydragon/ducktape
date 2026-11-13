@@ -12,7 +12,7 @@ import grpc
 from cryptography import x509
 
 from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.environment_runtime_transport.config import TLS
+from agentplane.net.peertls.config import TLS
 from agentplane.proto import environment_runtime_state_pb2
 
 # gazelle:include_dep @pypi//protobuf

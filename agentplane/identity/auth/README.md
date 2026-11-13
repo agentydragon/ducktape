@@ -38,7 +38,7 @@ asserting a caller. The central sampler authenticates to services as its own com
 when it delegates Session work, the envelope names the Identity recorded for that Session.
 
 Each service uses one TLS RPC listener for Sandbox and backend callers. Backend clients verify the
-service's SPIFFE URI using `environment_runtime_transport.ClientTLS`, then authenticate with their
+service's SPIFFE URI using `peertls.ClientTLS`, then authenticate with their
 existing bearer or delegation credentials. They receive no SVID. The shared `grpc/healthprobe`
 binary checks the same listener through verified TLS without application credentials.
 

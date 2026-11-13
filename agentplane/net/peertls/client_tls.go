@@ -1,4 +1,4 @@
-package environment_runtime_transport
+package peertls
 
 import (
 	"crypto/tls"

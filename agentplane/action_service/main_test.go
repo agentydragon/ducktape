@@ -24,12 +24,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/identity/credentials/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -151,8 +151,8 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		}
 		for _, method := range c.RPC.Auth {
 			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				clientCredentials, err = (&environment_runtime_transport.ClientTLS{
-					CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.ActionsURI,
+				clientCredentials, err = (&peertls.ClientTLS{
+					CAFile: spiffe.CAFile, ServerURI: peertls.ActionsURI,
 				}).Credentials()
 				if err != nil {
 					t.Fatal(err)

@@ -14,10 +14,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/rules"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -74,7 +74,7 @@ func newAdminServer(
 	// Rules and Admin retain their separate per-method authentication policies.
 	var serverOptions []grpc.ServerOption
 	if rpc.TLS != nil {
-		credentials, err := rpc.ServerCredentials(environment_runtime_transport.EgressProxyURI)
+		credentials, err := rpc.ServerCredentials(peertls.EgressProxyURI)
 		if err != nil {
 			return nil, err
 		}

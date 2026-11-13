@@ -154,7 +154,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway",
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
-        "//agentplane/environment_runtime_transport",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth/auth",
@@ -163,6 +162,7 @@ go_library(
         "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
         "//agentplane/net/listener",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres",
@@ -243,8 +243,8 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        "//agentplane/environment_runtime_transport:config",
         "//agentplane/identity/auth:listener",
+        "//agentplane/net/peertls:config",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "@pypi//pydantic",
     ],

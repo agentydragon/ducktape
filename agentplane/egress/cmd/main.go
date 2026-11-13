@@ -25,10 +25,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/upstream"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"golang.org/x/sync/errgroup"
@@ -163,7 +163,7 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer proxyListener.Close()
-	proxyTLS, err := c.Forward.TLSConfig(environment_runtime_transport.EgressProxyURI)
+	proxyTLS, err := c.Forward.TLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		return fmt.Errorf("proxy listener TLS configuration: %w", err)
 	}

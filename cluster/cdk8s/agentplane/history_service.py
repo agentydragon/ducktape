@@ -20,9 +20,9 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, DelegationSettings, IngressSettings, Settings
 from agentplane.identity.auth import listener
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, egress, workload_tls

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

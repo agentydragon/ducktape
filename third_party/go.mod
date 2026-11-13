@@ -111,7 +111,7 @@ require (
 // Gotcha: op.Server and op.RegisterServer "may change until v4", in a v3 minor release too.
 require github.com/zitadel/oidc/v3 v3.51.16
 
-// Direct dependencies for agentplane/environment_runtime_transport (SPIFFE mTLS between Environment Runtime and Gateway)
+// Direct dependencies for agentplane/net/peertls (shared SPIFFE peer TLS across Agentplane services)
 require github.com/spiffe/go-spiffe/v2 v2.8.2
 
 // Native AF_VSOCK listener used by the Firecracker guest management service.

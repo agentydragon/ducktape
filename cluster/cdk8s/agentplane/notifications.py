@@ -19,14 +19,9 @@ from constructs import Construct
 from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.environment_runtime_transport.config import (
-    ACTIONS_URI,
-    HISTORY_SERVICE_URI,
-    NOTIFICATIONS_URI,
-    SESSION_DISPATCHER_URI,
-)
 from agentplane.identity.auth import listener
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.net.peertls.config import ACTIONS_URI, HISTORY_SERVICE_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from agentplane.notification_service.settings import (
     TOKEN_AUDIENCE,
     ActionsSettings,

@@ -10,8 +10,8 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, Memor
 from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (

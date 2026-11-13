@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -26,7 +26,7 @@ import (
 func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-model-config-grpc", testPolicyNamespace).Workload
 	ca := transporttesting.NewCA(t)
-	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 	resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 func TestWorkloadModelConfigGRPCServesAnIdentityCaller(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-model-config-identity", testPolicyNamespace)
 	ca := transporttesting.NewCA(t)
-	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 	svid, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
@@ -79,14 +79,14 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 	for _, test := range []struct {
 		name                string
 		workloadName        string
-		prepare             func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) environment_runtime_transport.Config
+		prepare             func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) peertls.Config
 		mutate              func(t *testing.T, workload workloadauthtesting.Workload)
 		wantUnauthenticated bool
 	}{
 		{
 			name:         "untrusted leaf",
 			workloadName: "llm-model-config-untrusted",
-			prepare: func(t *testing.T, _ *transporttesting.CA, workload workloadauthtesting.Workload) environment_runtime_transport.Config {
+			prepare: func(t *testing.T, _ *transporttesting.CA, workload workloadauthtesting.Workload) peertls.Config {
 				untrustedCA := transporttesting.NewCA(t)
 				return untrustedCA.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 			},
@@ -94,7 +94,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 		{
 			name:         "expired leaf",
 			workloadName: "llm-model-config-expired",
-			prepare: func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) environment_runtime_transport.Config {
+			prepare: func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) peertls.Config {
 				now := time.Now().UTC()
 				return ca.IssueWithValidity(
 					t,
@@ -109,7 +109,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			name:                "rotated credential",
 			workloadName:        "llm-model-config-unaccepted",
 			wantUnauthenticated: true,
-			prepare: func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) environment_runtime_transport.Config {
+			prepare: func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) peertls.Config {
 				return ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 			},
 			mutate: func(t *testing.T, workload workloadauthtesting.Workload) {
@@ -120,7 +120,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 		t.Run(test.name, func(t *testing.T) {
 			workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, test.workloadName, testPolicyNamespace).Workload
 			ca := transporttesting.NewCA(t)
-			serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+			serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 			trustedClientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 			invalidClientCredentials := test.prepare(t, ca, workload)
 			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
@@ -157,7 +157,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 }
 
 // svidCallers is the listener's resolver accepting SVIDs alone.
-func svidCallers(t *testing.T, svid *auth.SVIDResolver, serverCredentials environment_runtime_transport.Config) *auth.Resolver {
+func svidCallers(t *testing.T, svid *auth.SVIDResolver, serverCredentials peertls.Config) *auth.Resolver {
 	t.Helper()
 	callers, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
@@ -191,10 +191,10 @@ func (s *countedModelConfigService) GetModelConfig(
 func serveWorkloadModelConfigHTTP2(
 	t *testing.T,
 	grpcServer *grpc.Server,
-	serverCredentials environment_runtime_transport.Config,
+	serverCredentials peertls.Config,
 ) string {
 	t.Helper()
-	tlsConfig, err := serverCredentials.WorkloadServerTLSConfig(environment_runtime_transport.LLMIngressURI)
+	tlsConfig, err := serverCredentials.WorkloadServerTLSConfig(peertls.LLMIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,11 +222,11 @@ func serveWorkloadModelConfigHTTP2(
 func newWorkloadModelConfigGRPCClient(
 	t *testing.T,
 	address string,
-	trustedCredentials environment_runtime_transport.Config,
-	clientLeaf environment_runtime_transport.Config,
+	trustedCredentials peertls.Config,
+	clientLeaf peertls.Config,
 ) *grpc.ClientConn {
 	t.Helper()
-	tlsConfig, err := trustedCredentials.ClientTLSConfig(environment_runtime_transport.LLMIngressURI)
+	tlsConfig, err := trustedCredentials.ClientTLSConfig(peertls.LLMIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -72,9 +72,9 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 		credentialID = vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	}
 	var uri string
-	if g.config.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
+	if g.config.RunnerSecurity.Mode == peertls.MutualTLS {
 		var err error
-		uri, err = environment_runtime_transport.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: credentialID}.URI()
+		uri, err = peertls.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: credentialID}.URI()
 		if err != nil {
 			return runnerDestination{}, err
 		}

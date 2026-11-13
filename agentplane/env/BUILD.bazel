@@ -8,7 +8,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
-        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/net/peertls:config",
         "@pypi//pydantic",
     ],
 )

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,7 +25,7 @@ const (
 // Dial opens a connection to target whose calls carry the token in tokenPath; unary calls end after timeout. It
 // never retries: a mutation whose outcome is unknown needs its caller's reconciliation, not a repeat. It does
 // not connect until the first call, and options come after, so they may override these.
-func Dial(target, tokenPath string, timeout time.Duration, transport *environment_runtime_transport.ClientTLS, options ...grpc.DialOption) (*grpc.ClientConn, error) {
+func Dial(target, tokenPath string, timeout time.Duration, transport *peertls.ClientTLS, options ...grpc.DialOption) (*grpc.ClientConn, error) {
 	if target == "" || tokenPath == "" || timeout <= 0 {
 		return nil, errors.New("target, token file and a positive timeout are required")
 	}

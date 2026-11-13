@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -227,14 +227,14 @@ func restart(t *testing.T, tune func(*config)) running {
 	if c.RPC.TLS == nil {
 		workloads := acceptanceIdentityWorkloads(t)
 		ca := environmentruntimetransporttesting.NewCA(t)
-		serving := ca.IssueWithUsage(t, environment_runtime_transport.NotificationsURI, x509.ExtKeyUsageServerAuth)
+		serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}}
-		mainCredentials, err := ca.Issue(t, workloads.sandbox.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+		mainCredentials, err := ca.Issue(t, workloads.sandbox.URI).ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
 			t.Fatal(err)
 		}
-		otherCredentials, err := ca.Issue(t, workloads.other.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+		otherCredentials, err := ca.Issue(t, workloads.other.URI).ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,11 +280,11 @@ func restart(t *testing.T, tune func(*config)) running {
 		return wait()
 	}
 	t.Cleanup(func() { _ = stop() })
-	security, err := (*environment_runtime_transport.ClientTLS)(nil).Credentials()
+	security, err := (*peertls.ClientTLS)(nil).Credentials()
 	if c.RPC.TLS != nil {
 		for _, method := range c.RPC.Auth {
 			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				security, err = (&environment_runtime_transport.ClientTLS{CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.NotificationsURI}).Credentials()
+				security, err = (&peertls.ClientTLS{CAFile: spiffe.CAFile, ServerURI: peertls.NotificationsURI}).Credentials()
 			}
 		}
 	}

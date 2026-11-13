@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 
@@ -383,7 +383,7 @@ func postgresDriverURL(value string) string {
 func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
 	probes := make([]status.Probe, 0, 7)
 	connections := make([]*grpc.ClientConn, 0, 5)
-	dialHealth := func(name, target string, tls *environment_runtime_transport.ClientTLS) error {
+	dialHealth := func(name, target string, tls *peertls.ClientTLS) error {
 		credentials, err := tls.Credentials()
 		if err != nil {
 			return err
@@ -399,7 +399,7 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 	}
 	for _, endpoint := range []struct {
 		name, target string
-		tls          *environment_runtime_transport.ClientTLS
+		tls          *peertls.ClientTLS
 	}{
 		{"Runner Gateway", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
 	} {
@@ -410,7 +410,7 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 	}
 	for _, endpoint := range []struct {
 		name, raw string
-		tls       *environment_runtime_transport.ClientTLS
+		tls       *peertls.ClientTLS
 	}{
 		{"Action Service", config.ActionFederation.ServiceURL, config.ActionsTLS},
 		{"Connection Service", config.ConnectionServiceURL, nil},

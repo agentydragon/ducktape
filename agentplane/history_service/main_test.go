@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -128,10 +128,10 @@ func start(t *testing.T, tune func(*config)) running {
 	}
 	t.Cleanup(func() { _ = stop() })
 	dial := func(socket net.Listener) *grpc.ClientConn {
-		security, err := (*environment_runtime_transport.ClientTLS)(nil).Credentials()
+		security, err := (*peertls.ClientTLS)(nil).Credentials()
 		for _, method := range c.RPC.Auth {
 			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				security, err = (&environment_runtime_transport.ClientTLS{CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.HistoryIngressURI}).Credentials()
+				security, err = (&peertls.ClientTLS{CAFile: spiffe.CAFile, ServerURI: peertls.HistoryIngressURI}).Credentials()
 			}
 		}
 		if err != nil {

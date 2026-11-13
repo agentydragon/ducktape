@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 const (
@@ -39,7 +39,7 @@ type testProxyRequest struct {
 type testCentralProxy struct {
 	listener net.Listener
 	// client is the workload SVID a test sidecar presents, and peer its URI.
-	client      environment_runtime_transport.Config
+	client      peertls.Config
 	peer        string
 	requests    chan testProxyRequest
 	connections atomic.Int64
@@ -53,8 +53,8 @@ type testCentralProxy struct {
 func startTestCentralProxy(t *testing.T) *testCentralProxy {
 	t.Helper()
 	ca := environmentruntimetransporttesting.NewCA(t)
-	server := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
-	security, err := server.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	server := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	security, err := server.WorkloadServerTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func startTestCentralProxy(t *testing.T) *testCentralProxy {
 		t.Fatal(err)
 	}
 	security.Certificates = []tls.Certificate{certificate}
-	peer, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	peer, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func (p *testCentralProxy) handle(conn net.Conn) {
 	if err := tlsConn.Handshake(); err != nil {
 		return
 	}
-	peer, err := environment_runtime_transport.PeerIdentityFromTLSState(tlsConn.ConnectionState(), x509.ExtKeyUsageClientAuth)
+	peer, err := peertls.PeerIdentityFromTLSState(tlsConn.ConnectionState(), x509.ExtKeyUsageClientAuth)
 	if err != nil {
 		return
 	}
@@ -407,7 +407,7 @@ func TestMTLSHopRemovesCallerCredentials(t *testing.T) {
 
 func TestMTLSFailureRefusesWithoutSendingTheRequest(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,8 +34,8 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 				t.Fatal(err)
 			}
 			ca := transporttesting.NewCA(t)
-			serverConfig := ca.Issue(t, environment_runtime_transport.HistoryIngressURI)
-			serverTLS, err := serverConfig.WorkloadServerTLSConfig(environment_runtime_transport.HistoryIngressURI)
+			serverConfig := ca.Issue(t, peertls.HistoryIngressURI)
+			serverTLS, err := serverConfig.WorkloadServerTLSConfig(peertls.HistoryIngressURI)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -51,7 +51,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			t.Cleanup(server.Stop)
 			runtimeURI := leaf.URIs[0].String()
 			valid := ca.Issue(t, runtimeURI)
-			clientTLS, err := valid.ClientTLSConfig(environment_runtime_transport.HistoryIngressURI)
+			clientTLS, err := valid.ClientTLSConfig(peertls.HistoryIngressURI)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -121,7 +121,7 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 		t.Fatal(err)
 	}
 	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, environment_runtime_transport.HistoryIngressURI)
+	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
 	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
 		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
 		&authlistener.KubernetesBearerAuth{Audiences: []string{testAudience}},
@@ -130,7 +130,7 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := config.ServerCredentials(environment_runtime_transport.HistoryIngressURI)
+	serverCredentials, err := config.ServerCredentials(peertls.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,11 +147,11 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 	_, allowedToken := workload(t, app)
 	_, otherToken := workload(t, auth.Account{Namespace: testNamespace, Name: "other-writer"})
 	runtime := ca.Issue(t, leaf.URIs[0].String())
-	svidTLS, err := runtime.ClientTLSConfig(environment_runtime_transport.HistoryIngressURI)
+	svidTLS, err := runtime.ClientTLSConfig(peertls.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	backendTLS, err := (environment_runtime_transport.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: environment_runtime_transport.HistoryIngressURI}).TLSConfig()
+	backendTLS, err := (peertls.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: peertls.HistoryIngressURI}).TLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 		t.Fatal(err)
 	}
 	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, environment_runtime_transport.HistoryIngressURI)
+	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
 	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
 		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
 		&authlistener.KubernetesBearerAuth{Audiences: []string{testAudience}},
@@ -246,7 +246,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := config.ServerCredentials(environment_runtime_transport.HistoryIngressURI)
+	serverCredentials, err := config.ServerCredentials(peertls.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 	t.Cleanup(server.Stop)
 	client := func(t *testing.T, uri string) healthpb.HealthClient {
 		t.Helper()
-		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(environment_runtime_transport.HistoryIngressURI)
+		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(peertls.HistoryIngressURI)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -296,7 +296,7 @@ func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rul
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokenTLS, err := (&environment_runtime_transport.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: environment_runtime_transport.HistoryIngressURI}).TLSConfig()
+	tokenTLS, err := (&peertls.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: peertls.HistoryIngressURI}).TLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}

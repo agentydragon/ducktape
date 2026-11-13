@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/identity/auth/listener",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@org_golang_google_grpc//credentials",
     ],

@@ -40,7 +40,7 @@ from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Sett
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
-from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
+from agentplane.net.peertls.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box

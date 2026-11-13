@@ -6,7 +6,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -22,7 +22,7 @@ type ProxyRunner struct {
 	TokenFile string
 	Timeout   time.Duration
 	// GatewayTLS pins the Session Dispatcher server SVID without presenting a client certificate.
-	GatewayTLS *environment_runtime_transport.ClientTLS
+	GatewayTLS *peertls.ClientTLS
 	// Defaults to the per-Sandbox control Service when empty. Templates can also
 	// be a fixed target for host-process integration tests.
 	TargetTemplate string

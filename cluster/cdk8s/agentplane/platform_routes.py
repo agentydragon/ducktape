@@ -22,12 +22,7 @@ from agentplane.egress.platform_routes import (
     PlatformRouteTransport,
     TLSConnectRouteTransport,
 )
-from agentplane.environment_runtime_transport.config import (
-    EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
-    LLM_INGRESS_URI,
-    NOTIFICATIONS_URI,
-)
+from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI
 from cluster.cdk8s.agentplane import egress, history_service, llm_ingress, notifications, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef

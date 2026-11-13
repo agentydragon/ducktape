@@ -28,10 +28,10 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
@@ -955,7 +955,7 @@ func TestRealBinaryStartsWithSettingsFileAndExplicitSecret(t *testing.T) {
 	address := listener.Addr().String()
 	_ = listener.Close()
 	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	serverFiles := ca.Issue(t, peertls.LLMIngressURI)
 	rpcYAML := fmt.Sprintf("rpc: {listen_address: %q, tls: {cert_file: %q, key_file: %q}, auth: [{mode: kubernetes_bearer, audiences: [settings-file-audience]}]}\n", address, serverFiles.CertFile, serverFiles.KeyFile)
 	if err := os.WriteFile(settings, []byte(settingsYAML+rpcYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -996,7 +996,7 @@ func TestRealBinaryStartsWithSettingsFileAndExplicitSecret(t *testing.T) {
 		}
 	}()
 
-	verified := &environment_runtime_transport.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: environment_runtime_transport.LLMIngressURI}
+	verified := &peertls.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: peertls.LLMIngressURI}
 	clientTLS, err := verified.TLSConfig()
 	if err != nil {
 		t.Fatal(err)

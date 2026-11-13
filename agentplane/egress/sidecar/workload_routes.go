@@ -13,7 +13,7 @@ import (
 	"net/http/httputil"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 // A workload route names one HTTP origin the workload already uses. Only the
@@ -83,7 +83,7 @@ func (s *sidecar) dialTLSRoute(ctx context.Context, target string, security *tls
 	if err != nil {
 		return nil, err
 	}
-	secured, err := environment_runtime_transport.ClientTLSConnection(ctx, connection, security)
+	secured, err := peertls.ClientTLSConnection(ctx, connection, security)
 	if err != nil {
 		_ = connection.Close()
 		return nil, fmt.Errorf("destination TLS: %w", err)

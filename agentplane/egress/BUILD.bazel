@@ -140,7 +140,7 @@ py_test(
         ":sidecar_config",
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
-        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/net/peertls:config",
         "//agentplane/testing:tls",
         "//util:net",
         "@pypi//aiohttp",

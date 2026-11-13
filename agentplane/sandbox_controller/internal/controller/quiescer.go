@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -40,7 +40,7 @@ type Quiescer interface {
 // GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
 // control Service, which names the replica holding its runner connection.
 type GatewayQuiescer struct {
-	TLS *environment_runtime_transport.ClientTLS
+	TLS *peertls.ClientTLS
 	// Target is a template of `{sandbox}` and `{namespace}`, typically
 	// sandboxapi.ControlServiceTargetTemplate.
 	Target string

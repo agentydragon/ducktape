@@ -18,7 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"go.uber.org/zap"
 )
 

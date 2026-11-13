@@ -11,9 +11,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
@@ -35,34 +35,34 @@ const (
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	RunnerSecurity environment_runtime_transport.Security `mapstructure:"runner_security"`
-	Namespace      string                                 `mapstructure:"sandbox_namespace"`
+	RunnerSecurity peertls.Security `mapstructure:"runner_security"`
+	Namespace      string           `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace             string                                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL       string                                   `mapstructure:"-"`
-	PodName                     string                                   `mapstructure:"-"`
-	PodIP                       string                                   `mapstructure:"-"`
-	RunnerTokenFile             string                                   `mapstructure:"runner_token_file"`
-	Kubeconfig                  string                                   `mapstructure:"kubeconfig"`
-	KubernetesClientQPS         float32                                  `mapstructure:"kubernetes_client_qps"`
-	RPC                         listener.Config                          `mapstructure:"rpc"`
-	GatewayTLS                  *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls"`
-	ProxyPort                   int                                      `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate string                                   `mapstructure:"runner_control_target_template"`
-	DispatcherAudience          string                                   `mapstructure:"dispatcher_audience"`
-	GatewayAudience             string                                   `mapstructure:"gateway_audience"`
-	EnvironmentReaders          []auth.Account                           `mapstructure:"environment_readers"`
-	EnvironmentManagers         []auth.Account                           `mapstructure:"environment_managers"`
-	EnvironmentLaunchers        []auth.Account                           `mapstructure:"environment_launchers"`
-	DispatcherCallers           []auth.Account                           `mapstructure:"dispatcher_callers"`
-	Delegation                  *delegationConfig                        `mapstructure:"delegation"`
-	GatewayCallers              []auth.Account                           `mapstructure:"gateway_callers"`
-	WakeCallers                 []auth.Account                           `mapstructure:"wake_callers"`
-	OperatorCallers             []auth.Account                           `mapstructure:"operator_callers"`
-	ControllerAccount           *auth.Account                            `mapstructure:"sandbox_controller_account"`
-	QueueCap                    int                                      `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int                                      `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int                                      `mapstructure:"runner_request_timeout_seconds"`
+	PolicyNamespace             string             `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL       string             `mapstructure:"-"`
+	PodName                     string             `mapstructure:"-"`
+	PodIP                       string             `mapstructure:"-"`
+	RunnerTokenFile             string             `mapstructure:"runner_token_file"`
+	Kubeconfig                  string             `mapstructure:"kubeconfig"`
+	KubernetesClientQPS         float32            `mapstructure:"kubernetes_client_qps"`
+	RPC                         listener.Config    `mapstructure:"rpc"`
+	GatewayTLS                  *peertls.ClientTLS `mapstructure:"gateway_tls"`
+	ProxyPort                   int                `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate string             `mapstructure:"runner_control_target_template"`
+	DispatcherAudience          string             `mapstructure:"dispatcher_audience"`
+	GatewayAudience             string             `mapstructure:"gateway_audience"`
+	EnvironmentReaders          []auth.Account     `mapstructure:"environment_readers"`
+	EnvironmentManagers         []auth.Account     `mapstructure:"environment_managers"`
+	EnvironmentLaunchers        []auth.Account     `mapstructure:"environment_launchers"`
+	DispatcherCallers           []auth.Account     `mapstructure:"dispatcher_callers"`
+	Delegation                  *delegationConfig  `mapstructure:"delegation"`
+	GatewayCallers              []auth.Account     `mapstructure:"gateway_callers"`
+	WakeCallers                 []auth.Account     `mapstructure:"wake_callers"`
+	OperatorCallers             []auth.Account     `mapstructure:"operator_callers"`
+	ControllerAccount           *auth.Account      `mapstructure:"sandbox_controller_account"`
+	QueueCap                    int                `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds           int                `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds        int                `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
@@ -178,7 +178,7 @@ func (c *config) validate() error {
 	if err := c.GatewayTLS.Validate(); err != nil {
 		return fmt.Errorf("gateway_tls: %w", err)
 	}
-	if c.GatewayTLS.ServerURI != environment_runtime_transport.SessionDispatcherURI {
+	if c.GatewayTLS.ServerURI != peertls.SessionDispatcherURI {
 		return errors.New("gateway_tls.server_uri must identify the Session Dispatcher service")
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {

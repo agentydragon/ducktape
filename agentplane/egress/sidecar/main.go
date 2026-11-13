@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
 
@@ -56,7 +56,7 @@ func newSidecar(c config) (*sidecar, error) {
 // tlsProxyTransport dials the central proxy presenting the workload SVID.
 type tlsProxyTransport struct {
 	security *tls.Config
-	svid     environment_runtime_transport.Config
+	svid     peertls.Config
 }
 
 func (transport tlsProxyTransport) dial(ctx context.Context, address string) (net.Conn, error) {
@@ -66,7 +66,7 @@ func (transport tlsProxyTransport) dial(ctx context.Context, address string) (ne
 	if err != nil {
 		return nil, err
 	}
-	tlsConnection, err := environment_runtime_transport.ClientTLSConnection(dialContext, connection, transport.security)
+	tlsConnection, err := peertls.ClientTLSConnection(dialContext, connection, transport.security)
 	if err != nil {
 		_ = connection.Close()
 		return nil, err
@@ -80,12 +80,12 @@ type proxyHop struct {
 }
 
 func newProxyHop(config proxyConfig) (*proxyHop, error) {
-	client := environment_runtime_transport.Config{
+	client := peertls.Config{
 		CertFile: config.Transport.Auth.CertFile,
 		KeyFile:  config.Transport.Auth.KeyFile,
 		CAFile:   config.Transport.CAFile,
 	}
-	security, err := client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	security, err := client.ClientTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		return nil, fmt.Errorf("configure SPIFFE proxy authentication: %w", err)
 	}

@@ -14,12 +14,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -161,7 +161,7 @@ func newWorkloadIngressTestServer(
 ) (string, *http.Client) {
 	t.Helper()
 	ca := transporttesting.NewCA(t)
-	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 
 	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, identities)
@@ -190,11 +190,11 @@ func newWorkloadIngressTestServer(
 	}
 	t.Cleanup(handler.transport.CloseIdleConnections)
 
-	serverTLS, err := rpc.TLSConfig(environment_runtime_transport.LLMIngressURI)
+	serverTLS, err := rpc.TLSConfig(peertls.LLMIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	connState, err := peertls.ConfigureHTTPServerTLSExpiry(serverTLS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func newWorkloadIngressTestServer(
 	}()
 	t.Cleanup(func() { _ = server.Close() })
 
-	clientTLS, err := clientCredentials.ClientTLSConfig(environment_runtime_transport.LLMIngressURI)
+	clientTLS, err := clientCredentials.ClientTLSConfig(peertls.LLMIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}

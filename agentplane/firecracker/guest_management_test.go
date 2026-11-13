@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
 	"google.golang.org/grpc"

@@ -14,7 +14,7 @@ import grpc
 
 from agentplane.env.config import EnvironmentRuntimeControl
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
-from agentplane.environment_runtime_transport.config import MTLS, TLS, Insecure
+from agentplane.net.peertls.config import MTLS, TLS, Insecure
 from agentplane.proto import environment_runtime_state_pb2, identity_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS, CertificateAuthority, issue_workload_leaf, make_ca, write_ca

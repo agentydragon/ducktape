@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -187,7 +187,7 @@ func (s *checkedStream) CloseSend() error {
 	return err
 }
 
-func dialActions(target, tokenFile string, timeout time.Duration, tls *environment_runtime_transport.ClientTLS, caller *coreCaller) (*grpc.ClientConn, error) {
+func dialActions(target, tokenFile string, timeout time.Duration, tls *peertls.ClientTLS, caller *coreCaller) (*grpc.ClientConn, error) {
 	return workloadgrpc.DialDelegated(target, tokenFile, timeout, tls, workloadgrpc.ClientInterceptors{
 		Unary: caller.unary, Stream: caller.stream,
 	})

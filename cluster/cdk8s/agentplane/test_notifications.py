@@ -6,8 +6,8 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.environment_runtime_transport.config import ACTIONS_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.net.peertls.config import ACTIONS_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import (
     actions as action_service,
     notifications,

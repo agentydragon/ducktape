@@ -12,7 +12,7 @@ import (
 
 	"google.golang.org/grpc/credentials"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/go-viper/mapstructure/v2"
 )
 
@@ -202,7 +202,7 @@ func (c Config) tlsConfig(localURI string, publicRPCs bool) (*tls.Config, error)
 	if c.TLS == nil {
 		return nil, nil
 	}
-	files := environment_runtime_transport.Config{CertFile: c.TLS.CertFile, KeyFile: c.TLS.KeyFile}
+	files := peertls.Config{CertFile: c.TLS.CertFile, KeyFile: c.TLS.KeyFile}
 	for _, method := range c.Auth {
 		if spiffe, ok := method.(*SPIFFEAuth); ok && spiffe != nil {
 			files.CAFile = spiffe.CAFile
@@ -223,5 +223,5 @@ func (c Config) ServerCredentials(localURI string) (credentials.TransportCredent
 	if err != nil || config == nil {
 		return nil, err
 	}
-	return environment_runtime_transport.ServerCredentials(config)
+	return peertls.ServerCredentials(config)
 }

@@ -6,8 +6,8 @@ from typing import Annotated, ClassVar
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener
+from agentplane.net.peertls.config import ClientTLS
 from util.urls import HttpEndpointUrl
 
 TOKEN_AUDIENCE = "agentplane-notifications"

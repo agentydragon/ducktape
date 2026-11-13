@@ -1,12 +1,12 @@
-package environment_runtime_transport_test
+package peertls_test
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc/peer"
 )
 
@@ -16,7 +16,7 @@ func TestSecurityValidateRequiresKnownSerializedMode(t *testing.T) {
 		"unknown": `{"mode":"plaintext"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			var security environment_runtime_transport.Security
+			var security peertls.Security
 			if err := json.Unmarshal([]byte(input), &security); err != nil {
 				t.Fatal(err)
 			}
@@ -28,28 +28,28 @@ func TestSecurityValidateRequiresKnownSerializedMode(t *testing.T) {
 }
 
 func TestSecurityValidateRejectsMissingAndContradictoryTLS(t *testing.T) {
-	cases := map[string]environment_runtime_transport.Security{
-		"mtls without TLS": {Mode: environment_runtime_transport.MutualTLS},
-		"missing certificate": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+	cases := map[string]peertls.Security{
+		"mtls without TLS": {Mode: peertls.MutualTLS},
+		"missing certificate": {Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			KeyFile: "/etc/runner/tls.key",
 			CAFile:  "/etc/runner/ca.pem",
 		}},
-		"relative CA path": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+		"relative CA path": {Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			CertFile: "/etc/runner/tls.crt",
 			KeyFile:  "/etc/runner/tls.key",
 			CAFile:   "ca.pem",
 		}},
-		"relative client CA path": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+		"relative client CA path": {Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			CertFile:     "/etc/runner/tls.crt",
 			KeyFile:      "/etc/runner/tls.key",
 			CAFile:       "/etc/runner/ca.pem",
 			ClientCAFile: "client-ca.pem",
 		}},
-		"client CA with Workload API": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+		"client CA with Workload API": {Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			WorkloadAPISocket: "unix:///run/agentplane/workload.sock",
 			ClientCAFile:      "/etc/runner/client-ca.pem",
 		}},
-		"insecure with TLS": {Mode: environment_runtime_transport.Insecure, TLS: &environment_runtime_transport.Config{}},
+		"insecure with TLS": {Mode: peertls.Insecure, TLS: &peertls.Config{}},
 	}
 	for name, security := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -61,9 +61,9 @@ func TestSecurityValidateRejectsMissingAndContradictoryTLS(t *testing.T) {
 }
 
 func TestSecurityValidateAcceptsExplicitModes(t *testing.T) {
-	for name, security := range map[string]environment_runtime_transport.Security{
-		"insecure": {Mode: environment_runtime_transport.Insecure},
-		"mtls": {Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+	for name, security := range map[string]peertls.Security{
+		"insecure": {Mode: peertls.Insecure},
+		"mtls": {Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			CertFile: "/etc/runner/tls.crt",
 			KeyFile:  "/etc/runner/tls.key",
 			CAFile:   "/etc/runner/ca.pem",
@@ -78,11 +78,11 @@ func TestSecurityValidateAcceptsExplicitModes(t *testing.T) {
 }
 
 func TestSecurityMTLSMisconfigurationDoesNotFallBackToInsecure(t *testing.T) {
-	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
+	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	security := environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &environment_runtime_transport.Config{
+	security := peertls.Security{Mode: peertls.MutualTLS, TLS: &peertls.Config{
 		CertFile: "/tmp/runner-transport-test/missing.crt",
 		KeyFile:  "/tmp/runner-transport-test/missing.key",
 		CAFile:   "/tmp/runner-transport-test/missing-ca.pem",
@@ -90,13 +90,13 @@ func TestSecurityMTLSMisconfigurationDoesNotFallBackToInsecure(t *testing.T) {
 	if _, err := security.ClientCredentials(runnerURI); err == nil {
 		t.Fatal("ClientCredentials accepted missing mTLS files")
 	}
-	if _, err := security.ServerCredentials(environment_runtime_transport.GatewayURI); err == nil {
+	if _, err := security.ServerCredentials(peertls.GatewayURI); err == nil {
 		t.Fatal("ServerCredentials accepted missing mTLS files")
 	}
 }
 
 func TestSecurityInsecureUsesPlaintextCredentialsAndSkipsPeerAuthentication(t *testing.T) {
-	security := environment_runtime_transport.Security{Mode: environment_runtime_transport.Insecure}
+	security := peertls.Security{Mode: peertls.Insecure}
 	client, err := security.ClientCredentials("unused in insecure mode")
 	if err != nil {
 		t.Fatal(err)
@@ -119,23 +119,23 @@ func TestSecurityInsecureUsesPlaintextCredentialsAndSkipsPeerAuthentication(t *t
 
 func TestSecurityMTLSAuthorizesExactVerifiedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
+	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherEnvironmentRuntimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
+	otherEnvironmentRuntimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerTLS := ca.Issue(t, runnerURI)
-	gatewayTLS := ca.Issue(t, environment_runtime_transport.GatewayURI)
-	runnerSecurity := environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &runnerTLS}
-	gatewaySecurity := environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &gatewayTLS}
+	gatewayTLS := ca.Issue(t, peertls.GatewayURI)
+	runnerSecurity := peertls.Security{Mode: peertls.MutualTLS, TLS: &runnerTLS}
+	gatewaySecurity := peertls.Security{Mode: peertls.MutualTLS, TLS: &gatewayTLS}
 	clientCredentials, err := gatewaySecurity.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := runnerSecurity.ServerCredentials(environment_runtime_transport.GatewayURI)
+	serverCredentials, err := runnerSecurity.ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestSecurityMTLSAuthorizesExactVerifiedIdentity(t *testing.T) {
 	if err := gatewaySecurity.AuthorizePeer(clientContext, runnerURI); err != nil {
 		t.Fatalf("client rejected verified Runner identity: %v", err)
 	}
-	if err := runnerSecurity.AuthorizePeer(serverContext, environment_runtime_transport.GatewayURI); err != nil {
+	if err := runnerSecurity.AuthorizePeer(serverContext, peertls.GatewayURI); err != nil {
 		t.Fatalf("server rejected verified Gateway identity: %v", err)
 	}
 	if err := gatewaySecurity.AuthorizePeer(clientContext, otherEnvironmentRuntimeURI); err == nil {

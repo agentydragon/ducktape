@@ -14,10 +14,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
@@ -58,7 +58,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 		}
 	}
 	ca := transporttesting.NewCA(t)
-	serving := ca.IssueWithUsage(t, environment_runtime_transport.ActionsURI, x509.ExtKeyUsageServerAuth)
+	serving := ca.IssueWithUsage(t, peertls.ActionsURI, x509.ExtKeyUsageServerAuth)
 	service := startConfigured(t, kube.Config, &catalog.Catalog{}, func(c *config, _ *deps) {
 		c.RPC = listener.Config{
 			ListenAddress: "127.0.0.1:0",
@@ -80,7 +80,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The same TLS listener accepts a normal projected-token caller without a client certificate.
-	bearerCredentials, err := (&environment_runtime_transport.ClientTLS{CAFile: serving.CAFile, ServerURI: environment_runtime_transport.ActionsURI}).Credentials()
+	bearerCredentials, err := (&peertls.ClientTLS{CAFile: serving.CAFile, ServerURI: peertls.ActionsURI}).Credentials()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 	}
 	for i, workload := range []workloadauthtesting.Workload{owner, other} {
 		config := ca.Issue(t, workload.URI)
-		transportCredentials, err := config.ClientCredentials(environment_runtime_transport.ActionsURI)
+		transportCredentials, err := config.ClientCredentials(peertls.ActionsURI)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,12 +150,12 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 	// The native gRPC TLS server rejects these leaves before its ActionService
 	// interceptor can inspect a request or a forged bearer.
 	valid := ca.Issue(t, other.URI)
-	for name, leaf := range map[string]environment_runtime_transport.Config{
+	for name, leaf := range map[string]peertls.Config{
 		"forged":  transporttesting.NewCA(t).Issue(t, other.URI),
 		"expired": ca.IssueWithValidity(t, other.URI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
 	} {
 		t.Run(name, func(t *testing.T) {
-			security, err := valid.ClientTLSConfig(environment_runtime_transport.ActionsURI)
+			security, err := valid.ClientTLSConfig(peertls.ActionsURI)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -208,7 +208,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 	}
 	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, new(atomic.Bool)))+`}`)
 	ca := transporttesting.NewCA(t)
-	serving := ca.IssueWithUsage(t, environment_runtime_transport.ActionsURI, x509.ExtKeyUsageServerAuth)
+	serving := ca.IssueWithUsage(t, peertls.ActionsURI, x509.ExtKeyUsageServerAuth)
 	service := startConfigured(t, kube.Config, groups, func(c *config, _ *deps) {
 		c.RPC = listener.Config{
 			ListenAddress: "127.0.0.1:0",
@@ -233,7 +233,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	connect := func(workload workloadauthtesting.IdentityWorkload) action_servicepb.ActionServiceClient {
-		transportCredentials, err := ca.Issue(t, workload.URI).ClientCredentials(environment_runtime_transport.ActionsURI)
+		transportCredentials, err := ca.Issue(t, workload.URI).ClientCredentials(peertls.ActionsURI)
 		if err != nil {
 			t.Fatal(err)
 		}

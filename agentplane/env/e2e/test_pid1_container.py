@@ -29,8 +29,8 @@ from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.environment_runtime_transport.config import MTLS
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
+from agentplane.net.peertls.config import MTLS
 from agentplane.proto import session_pb2
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir

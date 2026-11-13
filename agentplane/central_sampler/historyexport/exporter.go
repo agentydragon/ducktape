@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -47,7 +47,7 @@ type exportChannels struct {
 	direct, delegated *grpc.ClientConn
 }
 
-func dialExportChannels(target, tokenFile string, tls *environment_runtime_transport.ClientTLS) (exportChannels, error) {
+func dialExportChannels(target, tokenFile string, tls *peertls.ClientTLS) (exportChannels, error) {
 	direct, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
 	if err != nil {
 		return exportChannels{}, err
@@ -92,7 +92,7 @@ const (
 	exportRetryMax     = 5 * time.Minute
 )
 
-func ExportSession(ctx context.Context, outbox Outbox, sessionID, target, tokenFile string, tls *environment_runtime_transport.ClientTLS) error {
+func ExportSession(ctx context.Context, outbox Outbox, sessionID, target, tokenFile string, tls *peertls.ClientTLS) error {
 	channels, err := dialExportChannels(target, tokenFile, tls)
 	if err != nil {
 		return err
@@ -310,7 +310,7 @@ func (q *exportQueue) processNext(ctx context.Context) bool {
 	return true
 }
 
-func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel string, hub *wakeups.Hub, tls *environment_runtime_transport.ClientTLS) error {
+func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel string, hub *wakeups.Hub, tls *peertls.ClientTLS) error {
 	changed, unsubscribe, err := hub.Subscribe(outboxChannel)
 	if err != nil {
 		return err

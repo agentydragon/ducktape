@@ -13,9 +13,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go/bridge",
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
-        "//agentplane/environment_runtime_transport",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/bearer",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",

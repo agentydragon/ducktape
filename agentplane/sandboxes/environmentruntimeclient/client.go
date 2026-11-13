@@ -8,8 +8,8 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/metadata"
 )
@@ -17,7 +17,7 @@ import (
 // Config describes one call through the Runner Gateway proxy. Every call owns a fresh connection so
 // DNS can resolve a new connection holder after a handoff.
 type Config struct {
-	TLS                     *environment_runtime_transport.ClientTLS
+	TLS                     *peertls.ClientTLS
 	Target                  string
 	TokenFile               string
 	Timeout                 time.Duration

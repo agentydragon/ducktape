@@ -10,8 +10,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -266,7 +266,7 @@ func TestSnapshotIsDetachedAndRejectsOversizedPayload(t *testing.T) {
 	}
 }
 
-func parseFixture(t *testing.T, ca *environmentruntimetransporttesting.CA, config environment_runtime_transport.Config) *workload.X509SVIDResponse {
+func parseFixture(t *testing.T, ca *environmentruntimetransporttesting.CA, config peertls.Config) *workload.X509SVIDResponse {
 	t.Helper()
 	response, err := ParsePEM(readFile(t, config.CertFile), readFile(t, config.KeyFile), readFile(t, ca.RootFile))
 	if err != nil {
@@ -275,7 +275,7 @@ func parseFixture(t *testing.T, ca *environmentruntimetransporttesting.CA, confi
 	return response
 }
 
-func issueRuntime(t *testing.T, ca *environmentruntimetransporttesting.CA, identity string) environment_runtime_transport.Config {
+func issueRuntime(t *testing.T, ca *environmentruntimetransporttesting.CA, identity string) peertls.Config {
 	t.Helper()
 	return ca.IssueWithUsage(t, identity, x509.ExtKeyUsageServerAuth)
 }

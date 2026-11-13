@@ -16,10 +16,10 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -146,11 +146,11 @@ func authoritySVIDClient(
 	t *testing.T,
 	address, workloadURI string,
 	ca *transporttesting.CA,
-	presented environment_runtime_transport.Config,
+	presented peertls.Config,
 ) dispatcherpb.SessionDispatcherClient {
 	t.Helper()
 	clientCredential := ca.Issue(t, workloadURI)
-	clientTLS, err := clientCredential.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	clientTLS, err := clientCredential.ClientTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,8 +227,8 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
 	methods := Methods(auth.AnySubject(svids))
 	ca := transporttesting.NewCA(t)
-	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
-	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	serverCredential := ca.Issue(t, peertls.SessionDispatcherURI)
+	serverTLS, err := serverCredential.WorkloadServerTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	t.Cleanup(server.Stop)
 
 	validOwnerLeaf := ca.Issue(t, owner.URI)
-	invalidLeaves := map[string]environment_runtime_transport.Config{
+	invalidLeaves := map[string]peertls.Config{
 		"forged":  transporttesting.NewCA(t).Issue(t, owner.URI),
 		"expired": ca.IssueWithValidity(t, owner.URI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
 	}
@@ -319,8 +319,8 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
 	methods := Methods(auth.AnySubject(svids))
 	ca := transporttesting.NewCA(t)
-	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
-	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	serverCredential := ca.Issue(t, peertls.SessionDispatcherURI)
+	serverTLS, err := serverCredential.WorkloadServerTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	t.Cleanup(server.Stop)
 
 	validOwnerLeaf := ca.Issue(t, owner.URI)
-	invalidLeaves := map[string]environment_runtime_transport.Config{
+	invalidLeaves := map[string]peertls.Config{
 		"forged":  transporttesting.NewCA(t).Issue(t, owner.URI),
 		"expired": ca.IssueWithValidity(t, owner.URI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
 	}

@@ -24,9 +24,9 @@ go_library(
     visibility = ["//agentplane/sandbox_controller/cmd:__pkg__"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
-        "//agentplane/environment_runtime_transport",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:session_go_proto",

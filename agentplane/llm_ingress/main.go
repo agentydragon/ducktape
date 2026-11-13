@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"google.golang.org/grpc"
@@ -103,14 +103,14 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return err
 	}
 	defer handler.transport.CloseIdleConnections()
-	tlsConfig, err := c.RPC.TLSConfig(environment_runtime_transport.LLMIngressURI)
+	tlsConfig, err := c.RPC.TLSConfig(peertls.LLMIngressURI)
 	if err != nil {
 		return err
 	}
 	if tlsConfig == nil {
 		return errors.New("rpc.tls is required")
 	}
-	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(tlsConfig)
+	connState, err := peertls.ConfigureHTTPServerTLSExpiry(tlsConfig)
 	if err != nil {
 		return err
 	}

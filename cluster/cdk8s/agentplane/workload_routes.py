@@ -1,7 +1,7 @@
 """HTTP origins whose Sandbox sidecar presents its SVID to the service itself."""
 
 from agentplane.egress.sidecar_config import WorkloadRoute
-from agentplane.environment_runtime_transport.config import ACTIONS_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import ACTIONS_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import actions, llm_ingress, runner_gateway, session_dispatcher
 
 

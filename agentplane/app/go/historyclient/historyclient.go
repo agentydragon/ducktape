@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -17,7 +17,7 @@ import (
 
 // Config pins this client's service address and rotating projected bearer token.
 type Config struct {
-	TLS       *environment_runtime_transport.ClientTLS
+	TLS       *peertls.ClientTLS
 	Target    string
 	TokenFile string
 	Timeout   time.Duration

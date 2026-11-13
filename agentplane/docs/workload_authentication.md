@@ -121,7 +121,7 @@ than a per-incarnation credential. Revocation is deleting the record, which Flux
 fresh ID, or a Flux prune.
 
 **Gotcha:** a running sidecar refuses a reloaded SVID whose URI differs from the first it loaded
-(`environment_runtime_transport` pins it), so after a record is recreated the workload regains
+(`peertls` pins it), so after a record is recreated the workload regains
 egress only on a rollout restart. Routine renewals keep the URI.
 
 ### How a verifier resolves a peer

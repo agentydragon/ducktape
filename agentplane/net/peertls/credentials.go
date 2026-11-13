@@ -1,6 +1,6 @@
-// Package environment_runtime_transport provides explicit transport security for connections
-// between the Runner and Runner Gateway.
-package environment_runtime_transport
+// Package peertls provides shared peer TLS security for Agentplane service connections,
+// with SPIFFE identity checks and expiry-aware credentials.
+package peertls
 
 import (
 	"context"

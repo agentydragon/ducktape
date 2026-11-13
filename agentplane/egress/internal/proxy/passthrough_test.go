@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 func TestPassthroughPreservesDestinationTLSWithoutPolicyOrCallerHeaders(t *testing.T) {

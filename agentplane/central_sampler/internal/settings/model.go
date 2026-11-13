@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
@@ -102,9 +102,9 @@ func (c ModelConfig) Compatible(other ModelConfig) bool {
 }
 
 type ConnectionConfig struct {
-	TLS     *environment_runtime_transport.ClientTLS `json:"tls,omitempty"`
-	BaseURL string                                   `json:"base_url"`
-	Auth    AuthConfig                               `json:"auth"`
+	TLS     *peertls.ClientTLS `json:"tls,omitempty"`
+	BaseURL string             `json:"base_url"`
+	Auth    AuthConfig         `json:"auth"`
 }
 
 // HTTPClient retains the provider client's policy while verifying the selected

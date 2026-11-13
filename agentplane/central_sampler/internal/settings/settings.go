@@ -6,42 +6,42 @@ import (
 	"io"
 	"os"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 type Settings struct {
-	GatewayTLS                           *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
-	HistoryTLS                           *environment_runtime_transport.ClientTLS `mapstructure:"history_tls" json:"history_tls,omitempty"`
-	Models                               map[string]ModelConfig                   `json:"models"`
-	Connections                          map[string]ConnectionConfig              `json:"connections"`
-	DatabaseURL                          string                                   `json:"database_url"`
-	Listen                               string                                   `json:"listen"`
-	Audience                             string                                   `json:"audience"`
-	AllowedAccounts                      []string                                 `json:"allowed_accounts"`
-	PlatformInstructions                 *string                                  `json:"platform_instructions,omitempty"`
-	CodeModeHost                         string                                   `json:"code_mode_host"`
-	ExecutorCodex                        string                                   `json:"executor_codex"`
-	Logs                                 string                                   `json:"logs"`
-	HistoryTarget                        string                                   `json:"history_target"`
-	HistoryTokenFile                     string                                   `json:"history_token_file"`
-	GatewayTarget                        string                                   `json:"gateway_target"`
-	GatewayTokenFile                     string                                   `json:"gateway_token_file"`
-	DirectExecutorTarget                 string                                   `json:"direct_executor_target"`
-	DirectExecutorInsecureLocaltest      bool                                     `json:"direct_executor_insecure_localtest"`
-	MaxLiveSessions                      int                                      `json:"max_live_sessions"`
-	ProviderResponseHeaderTimeoutSeconds *int                                     `json:"provider_response_header_timeout_seconds,omitempty"`
-	ProviderIdleTimeoutSeconds           *int                                     `json:"provider_idle_timeout_seconds,omitempty"`
-	TurnTimeoutSeconds                   *int                                     `json:"turn_timeout_seconds,omitempty"`
-	RPCTimeoutSeconds                    int                                      `json:"rpc_timeout_seconds"`
-	CodeModeObservationTimeoutSeconds    *int                                     `json:"code_mode_observation_timeout_seconds,omitempty"`
-	ExecutorInitializeTimeoutSeconds     *int                                     `json:"executor_initialize_timeout_seconds,omitempty"`
-	ExecutorReconnectTimeoutSeconds      *int                                     `json:"executor_reconnect_timeout_seconds,omitempty"`
-	ShutdownDrainSeconds                 *int                                     `json:"shutdown_drain_seconds,omitempty"`
-	ShutdownBudgetSeconds                *int                                     `json:"shutdown_budget_seconds,omitempty"`
-	LeaseSeconds                         int                                      `json:"lease_seconds"`
-	AutoCompactTokens                    *int                                     `json:"auto_compact_tokens"`
-	Kubeconfig                           string                                   `json:"kubeconfig"`
-	SetupTimeoutSeconds                  *int                                     `json:"setup_timeout_seconds,omitempty"`
+	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
+	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
+	Models                               map[string]ModelConfig      `json:"models"`
+	Connections                          map[string]ConnectionConfig `json:"connections"`
+	DatabaseURL                          string                      `json:"database_url"`
+	Listen                               string                      `json:"listen"`
+	Audience                             string                      `json:"audience"`
+	AllowedAccounts                      []string                    `json:"allowed_accounts"`
+	PlatformInstructions                 *string                     `json:"platform_instructions,omitempty"`
+	CodeModeHost                         string                      `json:"code_mode_host"`
+	ExecutorCodex                        string                      `json:"executor_codex"`
+	Logs                                 string                      `json:"logs"`
+	HistoryTarget                        string                      `json:"history_target"`
+	HistoryTokenFile                     string                      `json:"history_token_file"`
+	GatewayTarget                        string                      `json:"gateway_target"`
+	GatewayTokenFile                     string                      `json:"gateway_token_file"`
+	DirectExecutorTarget                 string                      `json:"direct_executor_target"`
+	DirectExecutorInsecureLocaltest      bool                        `json:"direct_executor_insecure_localtest"`
+	MaxLiveSessions                      int                         `json:"max_live_sessions"`
+	ProviderResponseHeaderTimeoutSeconds *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
+	ProviderIdleTimeoutSeconds           *int                        `json:"provider_idle_timeout_seconds,omitempty"`
+	TurnTimeoutSeconds                   *int                        `json:"turn_timeout_seconds,omitempty"`
+	RPCTimeoutSeconds                    int                         `json:"rpc_timeout_seconds"`
+	CodeModeObservationTimeoutSeconds    *int                        `json:"code_mode_observation_timeout_seconds,omitempty"`
+	ExecutorInitializeTimeoutSeconds     *int                        `json:"executor_initialize_timeout_seconds,omitempty"`
+	ExecutorReconnectTimeoutSeconds      *int                        `json:"executor_reconnect_timeout_seconds,omitempty"`
+	ShutdownDrainSeconds                 *int                        `json:"shutdown_drain_seconds,omitempty"`
+	ShutdownBudgetSeconds                *int                        `json:"shutdown_budget_seconds,omitempty"`
+	LeaseSeconds                         int                         `json:"lease_seconds"`
+	AutoCompactTokens                    *int                        `json:"auto_compact_tokens"`
+	Kubeconfig                           string                      `json:"kubeconfig"`
+	SetupTimeoutSeconds                  *int                        `json:"setup_timeout_seconds,omitempty"`
 }
 
 func LoadSettings(path string) (Settings, error) {

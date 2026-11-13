@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -188,7 +188,7 @@ func ParseSessionSpec(defaults *sessionpb.SessionSpec, fields map[string]any) (*
 
 // RunnerConfig configures per-call control Service connections.
 type RunnerConfig struct {
-	TLS            *environment_runtime_transport.ClientTLS
+	TLS            *peertls.ClientTLS
 	Namespace      string
 	TokenFile      string
 	Timeout        time.Duration

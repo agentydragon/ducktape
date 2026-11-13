@@ -11,8 +11,8 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, field_validator, model_validator
 
-from agentplane.environment_runtime_transport.config import ClientTLS, Security
 from agentplane.identity.auth.listener import Listener
+from agentplane.net.peertls.config import ClientTLS, Security
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]

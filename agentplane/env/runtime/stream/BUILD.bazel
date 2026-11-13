@@ -36,8 +36,8 @@ go_test(
     embed = [":stream"],
     race = "on",
     deps = [
-        "//agentplane/environment_runtime_transport",
-        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",

@@ -15,7 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import Settings as EgressSettings
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (

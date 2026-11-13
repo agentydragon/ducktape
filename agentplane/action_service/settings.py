@@ -13,8 +13,8 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
-from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.identity.auth.listener import Listener
+from agentplane.net.peertls.config import ClientTLS
 from agentplane.subjects import ServiceAccountRef
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
