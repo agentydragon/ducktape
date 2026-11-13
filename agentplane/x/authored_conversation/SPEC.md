@@ -50,6 +50,11 @@ their own messages and must supply the revision they read. Stale edits fail with
 concurrent writers cannot silently overwrite. Empty or oversized replacements fail as posts do.
 The model cannot choose a message's author. Chat mode exposes no conversation tools.
 
+The prompt guides the agent to edit recent messages for corrections or clarifications, and post new
+messages for additions or to advance the conversation. For messages far back in the conversation,
+it should post a new correction with enough context. This is conversational guidance, with no
+enforced recency cutoff.
+
 Edits are new information. Earlier tool results, model context and trace entries remain unchanged;
 editing never undoes or replays commands. An agent edit counts as a publication. An edit-only notice
 may be acknowledged by yielding without publishing; it does not erase an unanswered new post.
