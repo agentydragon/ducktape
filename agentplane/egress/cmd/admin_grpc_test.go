@@ -11,9 +11,9 @@ import (
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
-	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/admin"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"

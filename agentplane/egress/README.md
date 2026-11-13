@@ -37,10 +37,10 @@ The Go implementation is split into public boundary packages and `internal/` run
   watch periods for every kind; this package adds EgressCredentials and Secrets through
   Kubernetes-generated clients and shared informers from `client/`.
 - `internal/rules`: the `EgressRules` gRPC service, which projects the authenticated workload's effective rules.
-- `internal/decision` and `history`: admission records, and their bounded best-effort write to the shared
+- `internal/decision` and `internal/history`: admission records, and their bounded best-effort write to the shared
   PostgreSQL history; `internal/admin` serves that history, a change stream, readiness and liveness, and
   those reads again as the gRPC `EgressAdmin` and standard health services.
-- `history_migrations`: the Goose schema of that history (below), embedded in the proxy binary.
+- `internal/history/migrations`: the Goose schema of that history (below), embedded in the proxy binary.
 
 Also here:
 
@@ -244,7 +244,7 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 `Store.Recent` takes the newest `decision_history_size` rows (200 by default, at most
 1,000) inside the retention window and returns them oldest first.
 
-The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
+The schema is Goose SQL in `internal/history/migrations/history/`, tracked by `egress_goose_version`.
 TODO: a row names an Identity subject by name alone, as it does a ServiceAccount, so a recreated
 Identity of the same name shares its predecessor's history; a UID column is the additive fix.
 Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose; existing

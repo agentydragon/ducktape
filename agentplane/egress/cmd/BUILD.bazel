@@ -14,9 +14,9 @@ go_library(
     deps = [
         "//agentplane/egress/api/admin:egress_admin_go_proto",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
-        "//agentplane/egress/history",
-        "//agentplane/egress/history_migrations",
         "//agentplane/egress/internal/admin",
+        "//agentplane/egress/internal/history",
+        "//agentplane/egress/internal/history/migrations:history_migrations",
         "//agentplane/egress/internal/identity",
         "//agentplane/egress/internal/informer",
         "//agentplane/egress/internal/policy",
@@ -60,9 +60,9 @@ go_test(
     deps = [
         "//agentplane/egress/api/admin:egress_admin_go_proto",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
-        "//agentplane/egress/history",
         "//agentplane/egress/internal/admin",
         "//agentplane/egress/internal/decision",
+        "//agentplane/egress/internal/history",
         "//agentplane/egress/internal/identity",
         "//agentplane/egress/internal/policy",
         "//agentplane/egress/resources",

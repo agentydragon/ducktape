@@ -7,7 +7,7 @@ go_library(
         "log.go",
         "store.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/history",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/history",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/internal/decision",
@@ -44,8 +44,8 @@ go_test(
     embed = [":history"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/egress/history_migrations",
         "//agentplane/egress/internal/decision",
+        "//agentplane/egress/internal/history/migrations:history_migrations",
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_sethvargo_go_retry//:go-retry",
