@@ -330,6 +330,7 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/vm:configuration",
         "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:host_qemu",
         "//agentplane/system_tests/vm:supervision",
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",

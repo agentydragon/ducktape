@@ -524,6 +524,39 @@ def test_capture_stops_without_guest_shutdown_request(tmp_path: Path) -> None:
     assert not k3s.calls
 
 
+def test_active_turn_captures_two_predeadline_samples_for_its_vm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(host_qemu, "TURN_SAMPLE_AFTER_SECONDS", 0)
+    monkeypatch.setattr(host_qemu, "TURN_SAMPLE_GAP_SECONDS", 0.01)
+    monkeypatch.setattr(host_qemu, "POLL_SECONDS", 0.001)
+    monkeypatch.setattr(host_qemu, "_snapshot_host_qemu", lambda *_args: None)
+    for name in ("vm-2", "vm-3"):
+        serial = tmp_path / "serial" / f"systest_virt-launcher-{name}-abc_uid-{name}" / "vmi" / "serial.log"
+        serial.parent.mkdir(parents=True)
+        serial.write_bytes(b"guest ready\n")
+    k3s = _FakeK3s()
+    k3s.release.set()
+
+    with (
+        host_qemu.capture(k3s.kubectl, "systest", tmp_path),
+        host_qemu.observe_active_turn(tmp_path, "vm-2", "sandbox-uid-2"),
+    ):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            current = list((tmp_path / "host-qemu").glob("*/turn-*.txt"))
+            if len(current) == 2 and all("QEMU_RESULT info irq" in sample.read_text() for sample in current):
+                break
+            time.sleep(0.01)
+
+    samples = sorted((tmp_path / "host-qemu").glob("*/turn-*.txt"))
+    assert len(samples) == 2
+    assert {sample.parent.name for sample in samples} == {"systest_virt-launcher-vm-2-abc_uid-vm-2"}
+    assert all("QEMU_RESULT query-cpus-fast" in sample.read_text() for sample in samples)
+    assert all("sandbox_uid=sandbox-uid-2" in sample.read_text() for sample in samples)
+    assert not (tmp_path / "host-qemu" / "active-turns" / "vm-2").exists()
+
+
 def test_one_launcher_read_failure_does_not_stop_other_launcher_capture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

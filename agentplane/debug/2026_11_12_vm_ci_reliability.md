@@ -30,10 +30,23 @@ monotonic 86 seconds after Codex input. The case then hit its turn and outer
 deadlines. A host QEMU report collected near test timeout says the domain was
 `running`, but this does not establish guest progress. The retained evidence
 does not separate guest kernel sleep, lost wakeup, QEMU scheduling and blocked
-I/O. On recurrence, compare two QMP vCPU/register and host thread samples
-before the turn deadline, capture guest task stacks with SysRq, and correlate
-the last native process event with its persisted journal. A single late QMP
-snapshot cannot establish whether the guest was making progress.
+I/O. The turn wait ran from 22:19:10.042 to 22:24:10.074 UTC; the raw serial's
+last Runtime reconciliation was at 22:19:11.495. The retained persistent
+journal ends at 22:19:01, before the last serial line, so its absence of later
+records cannot establish when guest progress stopped. The late host sample at
+22:25:03 shows both vCPUs halted at that instant. A single QMP snapshot cannot
+establish whether they were making progress beforehand.
+
+The proposed suite collector marks the first VM turn by exact Sandbox name and
+UID, then takes two bounded samples at turn age 210 and 240 seconds if it is
+still pending. Each reuses the existing host-thread and QMP probes and records
+the launcher Pod UID in separate `turn-0` and `turn-1` artifacts. Normal turns
+under 210 seconds issue no new probes. The capture may itself wake QEMU; a
+passing instrumented run is validation of collection, not a measured reduction
+in stalls. On recurrence, compare the paired vCPU/register, APIC/IRQ and host
+thread state with the retained raw serial and native journal. If both samples
+still leave a guest scheduling or userspace ambiguity, capture guest SysRq
+task stacks before the turn deadline in a separate bounded experiment.
 
 The same head also had a BuildBuddy managed-kernel general protection fault
 followed by snapshot-pause and restore failures. Those happened outside the
