@@ -3929,7 +3929,8 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   open questions, this one included, are settled.
 - **`CENTRAL_SESSION_CREATION_CONTRACT` ([#15436](https://github.com/agentydragon/ducktape/pull/15436),
   recommendation A):** `central_sampler_v1` is retired in the cutover that adds the `central_sampler`
-  placement: `CentralSamplerV1Placement` in `proto/session.proto`, `placement.go`'s `CentralSampler`,
+  placement: `CentralSamplerV1Placement` in `proto/session.proto`,
+  `runner_gateway/dispatcher/internal/placement/placement.go`'s `CentralSampler`,
   the `central_sampler_v1` cases in `app/testing/client.py` and
   `runner_gateway/dispatcher/testing_client.py`, `central_sampler/testing.py` and
   `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with

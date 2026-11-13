@@ -343,8 +343,9 @@ func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
 			spec := &sessionpb.SessionSpec{}
 			// Only the Identity's own workload opens the Session here (a seed: in production a privileged
 			// caller does); the sender under test then queues input to it.
+			testPlacement(spec, sandboxName, sandboxUID)
 			if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID,
-				testPlacement(spec, sandboxName, sandboxUID), spec, nil, nil, SessionExecution{Identity: identity},
+				spec, nil, nil, SessionExecution{Identity: identity},
 				IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
 				t.Fatal("open the Identity-run Session:", err)
 			}

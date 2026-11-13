@@ -15,6 +15,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -494,7 +495,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		ctx, "Dispatcher CreateSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
-			attribute.String("sandbox.name", requestTarget(request).GetName()),
+			attribute.String("sandbox.name", placement.RequestTarget(request).GetName()),
 		),
 	)
 	defer func() { observability.End(span, resultErr) }()
@@ -522,12 +523,12 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		if err := row.authorizeRetry(caller); err != nil {
 			return nil, apiError(err)
 		}
-		placement, err := placementFromRequest(request)
+		sessionPlacement, err := placement.PlacementFromRequest(request)
 		if err != nil {
 			return nil, apiError(ErrSessionConflict)
 		}
-		target := requestTarget(request)
-		if err := row.matchRequest(target.GetName(), target.GetUid(), placement, request.GetSpec(), request.SetupScript); err != nil {
+		target := placement.RequestTarget(request)
+		if err := row.matchRequest(target.GetName(), target.GetUid(), sessionPlacement, request.GetSpec(), request.SetupScript); err != nil {
 			return nil, apiError(err)
 		}
 		session, err := DescribeSession(row)
@@ -539,11 +540,11 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if !errors.Is(err, ErrNotFound) {
 		return nil, apiError(err)
 	}
-	placement, err := placementFromRequest(request)
+	sessionPlacement, err := placement.PlacementFromRequest(request)
 	if err != nil {
 		return nil, err
 	}
-	target := requestTarget(request)
+	target := placement.RequestTarget(request)
 	current, err := s.sandbox(ctx, target.GetName())
 	if err != nil {
 		return nil, err
@@ -551,7 +552,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if current.UID != target.GetUid() {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
-	if err := ValidateRuntime(placement, request.SetupScript, s.CentralTarget); err != nil {
+	if err := ValidateRuntime(sessionPlacement, request.SetupScript, s.CentralTarget); err != nil {
 		return nil, err
 	}
 	// The Dispatcher is the authority for the Identity a Session executes as: the exact Identity its
@@ -574,7 +575,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity is incomplete")
 	}
-	row, err = s.Store.CreateSessionWithPlacementForCallerAndCheck(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
+	row, err = s.Store.createSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, sessionPlacement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
 			latest, err := s.sandbox(ctx, target.GetName())
 			if err != nil {

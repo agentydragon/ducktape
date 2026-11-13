@@ -1,4 +1,4 @@
-package dispatcher
+package placement
 
 import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -15,7 +15,7 @@ const (
 	CentralSampler    SessionPlacement = "central_sampler_v1"
 )
 
-func placementOf(spec *sessionpb.SessionSpec) SessionPlacement {
+func PlacementOf(spec *sessionpb.SessionSpec) SessionPlacement {
 	placement := spec.GetPlacement()
 	if placement == nil {
 		return ""
@@ -30,12 +30,12 @@ func placementOf(spec *sessionpb.SessionSpec) SessionPlacement {
 	}
 }
 
-func placementFromRequest(request *dispatcherpb.CreateSessionRequest) (SessionPlacement, error) {
+func PlacementFromRequest(request *dispatcherpb.CreateSessionRequest) (SessionPlacement, error) {
 	if request.GetSpec() == nil {
 		return "", status.Error(codes.InvalidArgument, "Session spec is required")
 	}
 	spec := request.GetSpec()
-	switch placementOf(spec) {
+	switch PlacementOf(spec) {
 	case EnvironmentHosted:
 		if !validExactEnvironment(spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()) ||
 			(spec.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE &&
@@ -61,15 +61,15 @@ func validExactEnvironment(target *sessionpb.ExactEnvironment) bool {
 	return err == nil
 }
 
-func requestTarget(request *dispatcherpb.CreateSessionRequest) *sessionpb.ExactEnvironment {
+func RequestTarget(request *dispatcherpb.CreateSessionRequest) *sessionpb.ExactEnvironment {
 	if request.GetSpec().GetPlacement().GetEnvironmentHosted() != nil {
 		return request.GetSpec().GetPlacement().GetEnvironmentHosted().GetEnvironment()
 	}
 	return request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 }
 
-func (p SessionPlacement) requiresReadyExecutor() bool { return p == EnvironmentHosted }
+func (p SessionPlacement) RequiresReadyExecutor() bool { return p == EnvironmentHosted }
 
-func (p SessionPlacement) matchesSpec(spec *sessionpb.SessionSpec) bool {
-	return p != "" && placementOf(spec) == p
+func (p SessionPlacement) MatchesSpec(spec *sessionpb.SessionSpec) bool {
+	return p != "" && PlacementOf(spec) == p
 }

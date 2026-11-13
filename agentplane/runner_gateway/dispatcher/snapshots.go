@@ -100,7 +100,7 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 	if row.EnvironmentDeletedAt != nil {
 		result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED
 	}
-	if !row.Placement.matchesSpec(row.Spec) {
+	if !row.Placement.MatchesSpec(row.Spec) {
 		return nil, fmt.Errorf("stored Session placement disagrees with its spec")
 	}
 	result.Placement = proto.Clone(row.Spec.GetPlacement()).(*sessionpb.SessionPlacement)

@@ -37,7 +37,7 @@ func seedIdentitySession(t *testing.T, store *Store, sandboxUID string, identity
 	t.Helper()
 	id := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
-	_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), id, "test-sandbox", sandboxUID,
+	_, err := store.createSessionWithPlacementForCaller(t.Context(), id, "test-sandbox", sandboxUID,
 		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}}, check)
@@ -95,7 +95,7 @@ func TestIdentityChangeSerializesWithSessionAdmissionAndPostLockRecheck(t *testi
 	go func() {
 		account := serviceAccountIdentityFor(caller, "test-account-uid")
 		spec := &sessionpb.SessionSpec{}
-		_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), uuid.NewString(), "test-sandbox", sandboxUID,
+		_, err := store.createSessionWithPlacementForCaller(t.Context(), uuid.NewString(), "test-sandbox", sandboxUID,
 			testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 			SessionExecution{Identity: old},
 			ServiceAccountCaller{ServiceAccountIdentity: account, Attribution: &AdmissionAttribution{Actor: account, EffectiveCaller: account}},
@@ -133,7 +133,7 @@ func TestSessionAdmissionBeforeIdentityChangeRefusesPatch(t *testing.T) {
 	go func() {
 		account := serviceAccountIdentityFor(caller, "test-account-uid")
 		spec := &sessionpb.SessionSpec{}
-		_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), id, "test-sandbox", sandboxUID,
+		_, err := store.createSessionWithPlacementForCaller(t.Context(), id, "test-sandbox", sandboxUID,
 			testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 			SessionExecution{Identity: old},
 			ServiceAccountCaller{ServiceAccountIdentity: account, Attribution: &AdmissionAttribution{Actor: account, EffectiveCaller: account}},
@@ -164,7 +164,7 @@ func TestIdentityChangeCheckDoesNotRejectExistingSessionReceipt(t *testing.T) {
 	id := seedIdentitySession(t, store, sandboxUID, identity, nil)
 	spec := &sessionpb.SessionSpec{}
 	checked := false
-	_, err := store.CreateSessionWithPlacementForCallerAndCheck(t.Context(), id, "test-sandbox", sandboxUID,
+	_, err := store.createSessionWithPlacementForCaller(t.Context(), id, "test-sandbox", sandboxUID,
 		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}},

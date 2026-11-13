@@ -275,8 +275,9 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 		t.Fatalf("ServiceAccount SVID created a Session: %v, want PermissionDenied", err)
 	}
 	identity := &identitypb.Identity{Name: "svid-session-owner", Uid: "00000000-0000-4000-8000-00000000a002"}
+	testPlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID)
 	if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
-		testPlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID), request.GetSpec(), nil, nil,
+		request.GetSpec(), nil, nil,
 		SessionExecution{Identity: identity}, IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed Identity-owned Session: %v", err)
 	}
@@ -636,16 +637,18 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	foreignCaller := IdentityCaller{Identity: foreign, Proof: IdentitySVID{}}
 	id, uid := uuid.NewString(), uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
+	testPlacement(spec, "transaction-sandbox", uid)
 	if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, "transaction-sandbox", uid,
-		testPlacement(spec, "transaction-sandbox", uid), spec, nil, nil, SessionExecution{Identity: owner}, ownerCaller); err != nil {
+		spec, nil, nil, SessionExecution{Identity: owner}, ownerCaller); err != nil {
 		t.Fatal(err)
 	}
 	// This is the transactional path after another opener wins the Session-ID lock,
 	// including when the API's initial read did not yet see that winning opening.
 	for _, name := range []string{"transaction-sandbox", "conflicting-sandbox"} {
 		conflictingSpec := &sessionpb.SessionSpec{}
+		testPlacement(conflictingSpec, name, uid)
 		if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, name, uid,
-			testPlacement(conflictingSpec, name, uid), conflictingSpec, nil, nil, SessionExecution{Identity: foreign}, foreignCaller); !errors.Is(err, ErrNotFound) {
+			conflictingSpec, nil, nil, SessionExecution{Identity: foreign}, foreignCaller); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("transaction exposed an existing opening to foreign Identity: %v", err)
 		}
 	}

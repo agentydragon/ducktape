@@ -141,7 +141,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	}}}}
 	seed := func(identity *identitypb.Identity) string {
 		sessionID := uuid.NewString()
-		if _, err := sessions.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID, dispatcher.EnvironmentHosted,
+		if _, err := sessions.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID,
 			spec, nil, nil, dispatcher.SessionExecution{Identity: identity},
 			dispatcher.IdentityCaller{Identity: identity, Proof: dispatcher.IdentitySVID{}}); err != nil {
 			t.Fatalf("seed Session: %v", err)

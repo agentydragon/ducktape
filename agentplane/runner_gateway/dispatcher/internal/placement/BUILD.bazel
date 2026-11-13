@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "placement",
+    srcs = ["placement.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement",
+    visibility = ["//agentplane/runner_gateway/dispatcher:__subpackages__"],
+    deps = [
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "placement_test",
+    srcs = ["placement_test.go"],
+    embed = [":placement"],
+    deps = [
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
