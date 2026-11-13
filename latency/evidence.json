@@ -78453,5 +78453,129 @@
       }
     ],
     "report_commit": "8032ec1140281be66ee934b69bb71b25f892be82"
+  },
+  "architecture_followup": {
+    "observed_at_utc": "2026-11-13T15:58:33Z",
+    "scope": "Supplemental critical-path and single-target sharding evidence. The backend-head population, source revision, denominators, distributions and feedback clocks in this report were not recollected.",
+    "source_commit": "5699e8758f04bdf8c5834f4be21d7bafb8fbd9702",
+    "required_workflow": {
+      "workflow_id": 43445505282,
+      "tested_merge_sha": "c8acb4008be54b34b1de5694145f546b156768a8",
+      "invocation": "826bd51a-bd7c-5275-9509-85bffa194597",
+      "workflow_created_to_last_required_seconds": 318,
+      "fresh_test_runner_rows": 54,
+      "completed_pass_rows": 54,
+      "test_runner_envelope_seconds": 111.221,
+      "fresh_k3s_actions": 0
+    },
+    "bridge_critical_path": {
+      "target": "//agentplane/app:test_bridge shard 2 of 4",
+      "action_seconds": 109.44,
+      "remote_process_fraction_percent": 98.31,
+      "remote_queue_fraction_percent": 0.06,
+      "conditional_app_fixture_cut_envelope_delta_seconds": 2.159,
+      "interpretation": "Bridge remains the tail after interval removal of the 27 TestRunner rows associated with 12 conditionally removed App labels in this single run. This interval subtraction is not a matched speedup estimate.",
+      "artifact": "critical-path-5699.json"
+    },
+    "pretest_gap": {
+      "workflow_invocation_to_first_test_runner_seconds_approx": 99.3,
+      "finding": "The Bazel profile reports one combined loading/analysis/build phase and does not separate its components or explain this interval; attributing the gap to a particular setup phase would be unsupported."
+    },
+    "bridge_sharding_probe": {
+      "source_commit": "a69a053dc490f06139393129ff0309e0dbc5d1f9",
+      "target": "//agentplane/app:test_bridge",
+      "run_order": [4, 8, 8, 4],
+      "all_runs_passed_same_24_case_set": true,
+      "runs": [
+        {
+          "shards": 4,
+          "bazel_elapsed_seconds": 152.384,
+          "critical_path_seconds": 139.78,
+          "fresh_physical_test_runner_actions": 4,
+          "junit_passed": 24,
+          "junit_failures": 0,
+          "bbr_invocation": "d8c6286f-dee8-4df3-aff1-c97bf79f0ebd",
+          "buildbuddy_invocation": "911c3936-8763-4c6a-9884-bff802dd9219"
+        },
+        {
+          "shards": 8,
+          "bazel_elapsed_seconds": 115.03,
+          "critical_path_seconds": 104.31,
+          "fresh_physical_test_runner_actions": 8,
+          "junit_passed": 24,
+          "junit_failures": 0,
+          "bbr_invocation": "c3a8f9fa-9fe5-4d9a-b67d-a8b8b4466ca9",
+          "buildbuddy_invocation": "1c31c295-844e-44de-b636-b256decf3bfa"
+        },
+        {
+          "shards": 8,
+          "bazel_elapsed_seconds": 88.687,
+          "critical_path_seconds": 78.76,
+          "fresh_physical_test_runner_actions": 8,
+          "junit_passed": 24,
+          "junit_failures": 0,
+          "bbr_invocation": "27c6cd15-dac4-4cca-b8b9-a30ee243b8e3",
+          "buildbuddy_invocation": "07bdc633-352e-44ca-949f-a0e67c40c996"
+        },
+        {
+          "shards": 4,
+          "bazel_elapsed_seconds": 118.862,
+          "critical_path_seconds": 108.06,
+          "fresh_physical_test_runner_actions": 4,
+          "junit_passed": 24,
+          "junit_failures": 0,
+          "bbr_invocation": "5eba07f0-649c-497a-ae3f-11a867a3a466",
+          "buildbuddy_invocation": "d3355107-dc22-4795-b931-e60e2a09568d"
+        }
+      ],
+      "arm_means": {
+        "shards_4_bazel_elapsed_seconds": 135.623,
+        "shards_8_bazel_elapsed_seconds": 101.8585,
+        "bazel_elapsed_reduction_percent": 24.9,
+        "shards_4_physical_envelope_seconds": 121.261408,
+        "shards_8_physical_envelope_seconds": 88.5261645,
+        "physical_envelope_reduction_percent": 27.0,
+        "shards_4_summed_cpu_seconds": 590.2905,
+        "shards_8_summed_cpu_seconds": 961.139,
+        "summed_cpu_increase_percent": 62.82
+      },
+      "decision": "Eight shards are enabled on the architecture branch as a scheduling candidate; no devel backport. Source 0a9acbf620a8aac16fee074812d58c8d63e603e1 passed all three required checks in 264s from earliest required workflow creation to last required result.",
+      "limits": "One target-only four-run ABBA, not a whole-CI saving. Eight shards used twice the concurrent workers and PostgreSQL starts; per-worker requests estimate 3 vCPU/7.5 GiB/10 GiB, giving estimated concurrent requests of 24 vCPU/60 GiB at eight versus 12 vCPU/30 GiB at four, not observed aggregate use. Observed per-action peak memory was about 1.20\u20131.25 GiB with queue around 0.06s; per-action peaks do not establish host saturation. Both shard settings sped up between their two observations. Later 0a9 required CI passed with eight fresh Bridge actions while other tests were cached, so it does not establish whole-CI saving.",
+      "artifact": "bridge-sharding-probe.json",
+      "platform_and_capacity": {
+        "same_linux_amd64_firecracker_platform_hash": true,
+        "estimated_per_worker_request": {
+          "vcpus": 3,
+          "memory_gib": 7.5,
+          "disk_gib": 10
+        },
+        "estimated_concurrent_requested_at_4_shards": {
+          "vcpus": 12,
+          "memory_gib": 30
+        },
+        "estimated_concurrent_requested_at_8_shards": {
+          "vcpus": 24,
+          "memory_gib": 60
+        },
+        "resource_estimates_are_not_observed_aggregate_usage": true,
+        "observed_per_action_peak_memory_gib_range": [1.2, 1.25],
+        "observed_queue_seconds_approx": 0.06
+      },
+      "required_ci_validation": {
+        "source_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+        "workflow_id": 43457244360,
+        "tested_merge_sha": "d723d23c7eada30dd8f5853547a5e5f66d9b2eb5",
+        "feedback_seconds": 264,
+        "test_invocation": "9478886b-9d97-5d14-8270-9ae969e1bb9d",
+        "fresh_bridge_actions": 8,
+        "junit_cases": 24,
+        "junit_failures": 0,
+        "junit_errors": 0,
+        "junit_skipped": 0,
+        "fresh_k3s_actions": 0,
+        "artifact": "../agentplane-test-architecture/required-ci-0a9-workflow.json",
+        "limit": "All other test results were cached. Prior a16af workflow had 65 fresh actions and a different last target, so 356s versus 264s is not a causal saving."
+      }
+    }
   }
 }

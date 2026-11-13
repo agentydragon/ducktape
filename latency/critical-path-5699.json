@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "scope": "read-only CI phase and current native test critical-path analysis; not a matched performance experiment",
+  "primary": {
+    "invocation_id": "826bd51a-bd7c-5275-9509-85bffa194597",
+    "invocation_url": "https://app.buildbuddy.io/invocation/826bd51a-bd7c-5275-9509-85bffa194597",
+    "workflow_run_id": "43445505282",
+    "tested_merge_sha": "c8acb4008be54b34b1de5694145f546b156768a8",
+    "tested_source_sha": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "command": "test //...",
+    "workflow_wall_seconds": 318,
+    "bazel_invocation_seconds": 223.375,
+    "action_count": 9951,
+    "test_runner_rows": {
+      "count": 54,
+      "stage_completed": 54,
+      "new_physical_link_type": 54,
+      "passed": 54,
+      "test_targets": 33
+    },
+    "test_runner_envelope": {
+      "start_utc": "2026-11-13T14:46:46.280562Z",
+      "end_utc": "2026-11-13T14:48:37.501242Z",
+      "seconds": 111.221
+    },
+    "profile": {
+      "profile_date_utc": "2026-11-13T14:44:54.853Z",
+      "evaluate_target_patterns_start_seconds": 12.364,
+      "combined_load_analyze_build_start_seconds": 12.514,
+      "combined_load_analyze_build_duration_seconds": 210.672,
+      "first_fresh_rbe_action_utc": "2026-11-13T14:46:15.847Z",
+      "first_test_runner_utc": "2026-11-13T14:46:46.281Z",
+      "invocation_created_utc": "2026-11-13T14:45:07Z",
+      "invocation_to_first_test_runner_seconds_approx": 99.3,
+      "attribution_limit": "The profile combines loading, analysis and execution; it does not attribute the pre-first-TestRunner interval to a specific phase."
+    },
+    "critical_path": {
+      "seconds": 112.69,
+      "top_test_runner": "//agentplane/app:test_bridge shard 2 of 4",
+      "top_action_seconds": 109.44,
+      "remote_process_fraction_percent": 98.31,
+      "remote_queue_fraction_percent": 0.06,
+      "critical_path_queue_fraction_percent": 0.06,
+      "input_files": 9642,
+      "input_bytes": 1961923135
+    },
+    "other_retained_test_runner_tails_seconds": {
+      "//agentplane/testing:test_grpc_native": 90.738,
+      "//agentplane/env/e2e:test_restart": 89.013,
+      "//agentplane/app:test_history_gateway": 84.569,
+      "//agentplane/app:test_turns": 83.415
+    },
+    "bridge_junit": {
+      "case_count": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "case_seconds_min": 5.08,
+      "case_seconds_median": 11.46,
+      "case_seconds_max": 32.29,
+      "shard_test_runner_seconds": {
+        "1_of_4": 107.6,
+        "2_of_4": 109.44,
+        "3_of_4": 99.8,
+        "4_of_4": 102.1
+      },
+      "junit_case_time_sums_by_shard_seconds": {
+        "1_of_4": 88.416,
+        "2_of_4": 86.617,
+        "3_of_4": 83.496,
+        "4_of_4": 84.503
+      },
+      "note": "JUnit case-time sums overlap across shards and are not wall time. TestRunner starts about 16s before the first pytest line in shard logs; no measured phase attribution is available."
+    },
+    "conditional_12_app_labels": {
+      "labels": [
+        "//agentplane/app:test_action_api",
+        "//agentplane/app:test_api",
+        "//agentplane/app:test_electric_chunk_compaction",
+        "//agentplane/app:test_electric_subset_window",
+        "//agentplane/app:test_electric_wal_recovery",
+        "//agentplane/app:test_live",
+        "//agentplane/app:test_native_facades",
+        "//agentplane/app:test_notifications_stream",
+        "//agentplane/app:test_thread_browser",
+        "//agentplane/app:test_thread_debug",
+        "//agentplane/app:test_thread_sync",
+        "//agentplane/app:test_thread_window_browser"
+      ],
+      "rows_in_current_run": 27,
+      "runner_envelope_without_these_rows_seconds": 109.062,
+      "observed_envelope_delta_seconds": 2.159,
+      "remaining_tail": "//agentplane/app:test_bridge shard 2 of 4",
+      "interpretation": "This is interval removal from one observed invocation, not a speedup estimate or a matched selection experiment."
+    },
+    "fixture_observation": {
+      "postgres_ready_seconds_per_bridge_shard": {
+        "minimum": 3.3,
+        "maximum": 3.8,
+        "shard_count": 4
+      },
+      "scope": "Session-scoped once per shard; the current four-shard target pays four starts, not one per test case.",
+      "other_scopes": "Kubernetes API server kubeconfig and DB templates are session scoped; Gateway, History, App, Sandbox, Runtime and per-test DB clone are function scoped for isolation. No evidence supports weakening these lifetimes."
+    }
+  },
+  "independent_selected_run": {
+    "invocation_id": "bf9c3742-47af-544f-a57c-5898e83164d8",
+    "invocation_url": "https://app.buildbuddy.io/invocation/bf9c3742-47af-544f-a57c-5898e83164d8",
+    "command": "test //agentplane/app:integration_fixtures and 43 more",
+    "source_sha_short": "b14e6c66",
+    "duration_seconds": 129.353,
+    "action_count": 920,
+    "use_limit": "Different source, target set and cache state; descriptive contrast only, not a control."
+  },
+  "proposed_falsifiable_probe": {
+    "target": "//agentplane/app:test_bridge",
+    "arms_in_order": [4, 8, 8, 4],
+    "source_commit": "a69a053dc490f06139393129ff0309e0dbc5d1f9",
+    "assertions_and_cases": "All 24 cases retained identically; only shard count varies.",
+    "required_measurements": [
+      "unique physical TestRunner execution IDs, stage/status/cache/link type",
+      "per-run TestRunner envelope and per-shard action interval/CPU/queue",
+      "PostgreSQL readiness per shard",
+      "JUnit case names/outcomes and cleanup failures"
+    ],
+    "decision_rule": "Compare the max shard/target tail and worker/queue costs. Do not adopt a new shard count unless the physical ABBA evidence shows a useful tail improvement without increased failure/cleanup or resource contention.",
+    "limits": "This is a single-target distribution experiment, not a complete CI saving claim. Other retained tails in the 5699 run were approximately 84.6-90.7s."
+  }
+}

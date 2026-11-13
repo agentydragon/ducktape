@@ -1,0 +1,521 @@
+diff --git a/cli/remotebazel/BUILD b/cli/remotebazel/BUILD
+index 60d4692df..c6a8bf8ff 100644
+--- a/cli/remotebazel/BUILD
++++ b/cli/remotebazel/BUILD
+@@ -61,6 +61,10 @@ go_test(
+         "//proto:build_event_stream_go_proto",
+         "//proto:buildbuddy_service_go_proto",
+         "//proto:eventlog_go_proto",
++        "//proto:execution_stats_go_proto",
++        "//proto:invocation_go_proto",
++        "//proto:remote_execution_go_proto",
++        "//proto:runner_go_proto",
+         "//server/testutil/testgit",
+         "//server/testutil/testshell",
+         "//server/util/lockingbuffer",
+@@ -69,6 +73,8 @@ go_test(
+         "@com_github_creack_pty//:pty",
+         "@com_github_stretchr_testify//assert",
+         "@com_github_stretchr_testify//require",
++        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+         "@org_golang_google_grpc//:grpc",
++        "@org_golang_google_protobuf//types/known/anypb",
+     ],
+ )
+diff --git a/cli/remotebazel/remotebazel.go b/cli/remotebazel/remotebazel.go
+index 18bf7a900..861c0353e 100644
+--- a/cli/remotebazel/remotebazel.go
++++ b/cli/remotebazel/remotebazel.go
+@@ -4,6 +4,7 @@ import (
+ 	"bytes"
+ 	"context"
+ 	"encoding/json"
++	"errors"
+ 	"flag"
+ 	"fmt"
+ 	"io"
+@@ -1210,11 +1211,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
+ 			}
+ 		}
+ 
+-		if latestErr == nil ||
+-			!rexec.Retryable(latestErr) ||
+-			status.IsPermissionDeniedError(latestErr) ||
+-			status.IsDeadlineExceededError(latestErr) ||
+-			ctx.Err() != nil {
++		if !shouldRetryRemoteRun(ctx, latestErr) {
+ 			retry = false
+ 		}
+ 
+@@ -1348,6 +1345,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
+ 	return exitCode, nil
+ }
+ 
++var errAcceptedRunOutcomeUnknown = errors.New("accepted remote run outcome is unknown")
++
++func shouldRetryRemoteRun(ctx context.Context, err error) bool {
++	return err != nil &&
++		rexec.Retryable(err) &&
++		!status.IsPermissionDeniedError(err) &&
++		!status.IsDeadlineExceededError(err) &&
++		ctx.Err() == nil &&
++		!errors.Is(err, errAcceptedRunOutcomeUnknown)
++}
++
+ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, execClient repb.ExecutionClient, req *rnpb.RunRequest) (*inpb.GetInvocationResponse, *repb.ExecuteResponse, error) {
+ 	var inRsp *inpb.GetInvocationResponse
+ 	var execRsp *repb.ExecuteResponse
+@@ -1358,10 +1366,12 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
+ 	}
+ 	iid := rsp.GetInvocationId()
+ 
+-	// If the remote bazel process is canceled or killed, cancel the remote run
+-	isInvocationRunning := true
++	// Cancel the remote run only when the local caller explicitly cancels or
++	// times out while the remote execution is still in progress. Losing the log
++	// observer is not a reason to cancel an accepted run.
++	executionFinished := false
+ 	defer func() {
+-		if !isInvocationRunning {
++		if executionFinished || ctx.Err() == nil {
+ 			return
+ 		}
+ 
+@@ -1376,81 +1386,114 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
+ 	}()
+ 
+ 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
++	var logErr error
+ 	if interactive {
+-		if err := streamLogs(ctx, bbClient, iid); err != nil {
+-			return nil, nil, status.WrapError(err, "streaming logs")
+-		}
++		logErr = streamLogs(ctx, bbClient, iid)
+ 	} else {
+-		if err := printLogs(ctx, bbClient, iid); err != nil {
+-			return nil, nil, status.WrapError(err, "streaming logs")
++		logErr = printLogs(ctx, bbClient, iid)
++	}
++	if logErr != nil {
++		if ctx.Err() != nil {
++			return nil, nil, status.WrapError(logErr, "streaming logs")
+ 		}
++
++		log.Warnf("Could not finish observing logs for accepted remote run %q; waiting for its execution result: %s", iid, logErr)
++		execRsp, err = waitForRunnerExecution(ctx, bbClient, execClient, iid)
++		if err != nil {
++			return nil, nil, fmt.Errorf("%w for invocation %q: waiting for execution after log-stream failure: %w", errAcceptedRunOutcomeUnknown, iid, err)
++		}
++		executionFinished = true
++
++		// The invocation read used after normal log completion can run in
++		// parallel with WaitExecution. After losing the log stream, wait for the
++		// same accepted execution to finish before fetching fresh invocation
++		// metadata so a stale in-progress record cannot be mistaken for a result.
++		inRsp, err = getRunnerInvocation(ctx, bbClient, iid)
++		if err != nil {
++			return nil, nil, fmt.Errorf("%w for invocation %q: fetching invocation after execution completed: %w", errAcceptedRunOutcomeUnknown, iid, err)
++		}
++		return inRsp, execRsp, nil
+ 	}
+-	isInvocationRunning = false
+ 
+ 	eg := errgroup.Group{}
+ 	eg.Go(func() error {
+ 		var err error
+-		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+-		if err != nil {
+-			return status.WrapErrorf(err, "get invocation %q", iid)
+-		}
+-		if len(inRsp.GetInvocation()) == 0 {
+-			return fmt.Errorf("invocation not found")
+-		}
+-		return nil
++		inRsp, err = getRunnerInvocation(ctx, bbClient, iid)
++		return err
+ 	})
+ 	eg.Go(func() error {
+-		execution, err := retry.Do(ctx, &retry.Options{
+-			InitialBackoff: 500 * time.Millisecond,
+-			MaxBackoff:     5 * time.Second,
+-			Multiplier:     2,
+-			// Failed attempts are expected here since we're polling for
+-			// existence.
+-			DontLogFailedAttempts: true,
+-		}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
+-			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+-				InvocationId: iid,
+-			}})
+-			if err != nil {
+-				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+-				return nil, fmt.Errorf("could not retrieve ci_runner execution: %w", err)
+-			}
+-			if len(execution.GetExecution()) == 0 {
+-				log.Debugf("ci_runner execution not found, retrying...: %s", err)
+-				return nil, fmt.Errorf("ci_runner execution not found")
+-			}
+-			return execution, nil
+-		})
+-		if err != nil {
+-			return err
+-		}
+-		executionID := execution.GetExecution()[0].GetExecutionId()
+-		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
+-			Name: executionID,
+-		})
+-		if err != nil {
+-			return fmt.Errorf("wait execution: %w", err)
++		var err error
++		execRsp, err = waitForRunnerExecution(ctx, bbClient, execClient, iid)
++		if err == nil {
++			executionFinished = true
+ 		}
+-		rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, waitExecutionStream, executionID))
+-		if err != nil {
+-			return fmt.Errorf("wait execution: %w", err)
+-		} else if rsp.Err != nil {
+-			return fmt.Errorf("wait execution: %w", rsp.Err)
+-		} else if rsp.ExecuteResponse.GetResult() == nil {
+-			return fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
+-		}
+-		execRsp = rsp.ExecuteResponse
+-		return nil
++		return err
+ 	})
+ 
+ 	err = eg.Wait()
+ 	if err != nil {
+-		return nil, nil, fmt.Errorf("wait for run result: %w", err)
++		return nil, nil, fmt.Errorf("%w for invocation %q: wait for run result: %w", errAcceptedRunOutcomeUnknown, iid, err)
+ 	}
++	executionFinished = true
+ 
+ 	return inRsp, execRsp, nil
+ }
+ 
++func getRunnerInvocation(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) (*inpb.GetInvocationResponse, error) {
++	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
++	if err != nil {
++		return nil, status.WrapErrorf(err, "get invocation %q", invocationID)
++	}
++	if len(inRsp.GetInvocation()) == 0 {
++		return nil, fmt.Errorf("invocation %q not found", invocationID)
++	}
++	return inRsp, nil
++}
++
++func waitForRunnerExecution(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, execClient repb.ExecutionClient, invocationID string) (*repb.ExecuteResponse, error) {
++	execution, err := retry.Do(ctx, &retry.Options{
++		InitialBackoff: 500 * time.Millisecond,
++		MaxBackoff:     5 * time.Second,
++		Multiplier:     2,
++		// Failed attempts are expected here since we're polling for existence.
++		DontLogFailedAttempts: true,
++	}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
++		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
++			InvocationId: invocationID,
++		}})
++		if err != nil {
++			log.Debugf("ci_runner execution not found, retrying...: %s", err)
++			return nil, fmt.Errorf("could not retrieve ci_runner execution: %w", err)
++		}
++		if len(execution.GetExecution()) == 0 {
++			log.Debugf("ci_runner execution not found, retrying...: no execution returned")
++			return nil, fmt.Errorf("ci_runner execution not found")
++		}
++		return execution, nil
++	})
++	if err != nil {
++		return nil, err
++	}
++	executionID := execution.GetExecution()[0].GetExecutionId()
++	waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
++		Name: executionID,
++	})
++	if err != nil {
++		return nil, fmt.Errorf("wait execution: %w", err)
++	}
++	rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, waitExecutionStream, executionID))
++	if err != nil {
++		return nil, fmt.Errorf("wait execution: %w", err)
++	}
++	if rsp.Err != nil {
++		return nil, fmt.Errorf("wait execution: %w", rsp.Err)
++	}
++	if rsp.ExecuteResponse.GetResult() == nil {
++		return nil, fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
++	}
++	return rsp.ExecuteResponse, nil
++}
++
+ func normalizeGRPCTarget(target string) string {
+ 	if strings.HasPrefix(target, "grpc://") || strings.HasPrefix(target, "grpcs://") {
+ 		return target
+diff --git a/cli/remotebazel/remotebazel_test.go b/cli/remotebazel/remotebazel_test.go
+index 0206ae32c..c0f44b884 100644
+--- a/cli/remotebazel/remotebazel_test.go
++++ b/cli/remotebazel/remotebazel_test.go
+@@ -12,11 +12,16 @@ import (
+ 	"testing"
+ 	"time"
+ 
++	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
+ 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
++	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
++	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
++	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
++	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+ 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+ 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+ 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+@@ -26,6 +31,7 @@ import (
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ 	"google.golang.org/grpc"
++	"google.golang.org/protobuf/types/known/anypb"
+ 
+ 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+ 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+@@ -525,6 +531,238 @@ func TestStreamLogs_ReconnectsAfterTransientStreamError(t *testing.T) {
+ 	require.NotContains(t, rendered, "Analyzing: 1")
+ }
+ 
++type remoteRunTestClient struct {
++	bbspb.BuildBuddyServiceClient
++
++	logs *scriptedBuildBuddyClient
++
++	runCalls                         int
++	cancelCalls                      int
++	getInvocationCalls               int
++	getInvocationErr                 error
++	getInvocationBeforeExecutionDone bool
++	getExecutionInvocationID         string
++	getExecutionResponse             *espb.GetExecutionResponse
++	getExecutionErr                  error
++	executionDone                    bool
++}
++
++func (c *remoteRunTestClient) Run(context.Context, *rnpb.RunRequest, ...grpc.CallOption) (*rnpb.RunResponse, error) {
++	c.runCalls++
++	return &rnpb.RunResponse{InvocationId: "runner-invocation"}, nil
++}
++
++func (c *remoteRunTestClient) GetEventLog(ctx context.Context, req *elpb.GetEventLogChunkRequest, opts ...grpc.CallOption) (bbspb.BuildBuddyService_GetEventLogClient, error) {
++	return c.logs.GetEventLog(ctx, req, opts...)
++}
++
++func (c *remoteRunTestClient) GetInvocation(_ context.Context, req *inpb.GetInvocationRequest, _ ...grpc.CallOption) (*inpb.GetInvocationResponse, error) {
++	c.getInvocationCalls++
++	if c.getInvocationErr != nil {
++		return nil, c.getInvocationErr
++	}
++	if !c.executionDone {
++		c.getInvocationBeforeExecutionDone = true
++	}
++	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{{
++		InvocationId: req.GetLookup().GetInvocationId(),
++		Success:      c.executionDone,
++	}}}, nil
++}
++
++func (c *remoteRunTestClient) GetExecution(_ context.Context, req *espb.GetExecutionRequest, _ ...grpc.CallOption) (*espb.GetExecutionResponse, error) {
++	c.getExecutionInvocationID = req.GetExecutionLookup().GetInvocationId()
++	if c.getExecutionErr != nil {
++		return nil, c.getExecutionErr
++	}
++	return c.getExecutionResponse, nil
++}
++
++func (c *remoteRunTestClient) CancelExecutions(context.Context, *inpb.CancelExecutionsRequest, ...grpc.CallOption) (*inpb.CancelExecutionsResponse, error) {
++	c.cancelCalls++
++	return &inpb.CancelExecutionsResponse{}, nil
++}
++
++type scriptedWaitExecutionClient struct {
++	repb.ExecutionClient
++
++	response      *repb.ExecuteResponse
++	err           error
++	requestedName string
++	onTerminal    func()
++}
++
++func (c *scriptedWaitExecutionClient) WaitExecution(_ context.Context, req *repb.WaitExecutionRequest, _ ...grpc.CallOption) (repb.Execution_WaitExecutionClient, error) {
++	c.requestedName = req.GetName()
++	if c.err != nil {
++		return nil, c.err
++	}
++	operation := &longrunningpb.Operation{Name: req.GetName(), Done: true}
++	if c.response != nil {
++		packedResponse, err := anypb.New(c.response)
++		if err != nil {
++			return nil, err
++		}
++		operation.Result = &longrunningpb.Operation_Response{Response: packedResponse}
++	}
++	return &scriptedWaitExecutionStream{
++		operation:  operation,
++		onTerminal: c.onTerminal,
++	}, nil
++}
++
++type scriptedWaitExecutionStream struct {
++	grpc.ClientStream
++
++	operation  *longrunningpb.Operation
++	onTerminal func()
++}
++
++func (s *scriptedWaitExecutionStream) Recv() (*longrunningpb.Operation, error) {
++	if s.onTerminal != nil {
++		s.onTerminal()
++	}
++	return s.operation, nil
++}
++
++func newRemoteRunTestClient(logErr error) *remoteRunTestClient {
++	var logScript []scriptedRecv
++	if logErr != nil {
++		logScript = []scriptedRecv{{err: logErr}}
++	}
++	return &remoteRunTestClient{
++		logs:                 &scriptedBuildBuddyClient{script: logScript},
++		getExecutionResponse: &espb.GetExecutionResponse{Execution: []*espb.Execution{{ExecutionId: "runner-execution"}}},
++	}
++}
++
++func newScriptedWaitExecutionClient(client *remoteRunTestClient, exitCode int32) *scriptedWaitExecutionClient {
++	return &scriptedWaitExecutionClient{
++		response: &repb.ExecuteResponse{Result: &repb.ActionResult{ExitCode: exitCode}},
++		onTerminal: func() {
++			client.executionDone = true
++		},
++	}
++}
++
++func TestAttemptRun_ReconcilesAcceptedRunAfterLogObserverError(t *testing.T) {
++	ctx := context.Background()
++	client := newRemoteRunTestClient(status.InternalError("RST_STREAM INTERNAL_ERROR"))
++	execClient := newScriptedWaitExecutionClient(client, 0)
++
++	inRsp, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.NoError(t, err)
++	require.Equal(t, 1, client.runCalls, "the accepted runner must not be resubmitted")
++	require.Zero(t, client.cancelCalls, "log observation failure must not cancel accepted work")
++	require.Equal(t, "runner-invocation", client.getExecutionInvocationID)
++	require.Equal(t, "runner-execution", execClient.requestedName, "reconciliation must wait for the execution attached to the accepted invocation")
++	require.Equal(t, 1, client.getInvocationCalls)
++	require.False(t, client.getInvocationBeforeExecutionDone, "fallback metadata must be fetched after terminal execution")
++	require.Equal(t, "runner-invocation", inRsp.GetInvocation()[0].GetInvocationId())
++	require.True(t, inRsp.GetInvocation()[0].GetSuccess())
++	require.EqualValues(t, 0, execRsp.GetResult().GetExitCode())
++}
++
++func TestAttemptRun_PreservesRemoteFailureAfterLogObserverError(t *testing.T) {
++	ctx := context.Background()
++	client := newRemoteRunTestClient(status.InternalError("RST_STREAM INTERNAL_ERROR"))
++	execClient := newScriptedWaitExecutionClient(client, 1)
++
++	_, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.NoError(t, err)
++	require.EqualValues(t, 1, execRsp.GetResult().GetExitCode(), "the caller must retain the real nonzero remote exit code")
++	require.Equal(t, 1, client.runCalls)
++	require.Zero(t, client.cancelCalls)
++}
++
++func TestAttemptRun_UnknownResultAfterLogObserverErrorDoesNotRetryOrCancel(t *testing.T) {
++	ctx := context.Background()
++	client := newRemoteRunTestClient(status.InternalError("RST_STREAM INTERNAL_ERROR"))
++	execClient := &scriptedWaitExecutionClient{err: status.InternalError("execution result unavailable")}
++
++	inRsp, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.ErrorIs(t, err, errAcceptedRunOutcomeUnknown)
++	require.Nil(t, inRsp)
++	require.Nil(t, execRsp)
++	require.False(t, shouldRetryRemoteRun(ctx, err), "an accepted run with unknown outcome must never be resubmitted")
++	require.Equal(t, 1, client.runCalls)
++	require.Zero(t, client.cancelCalls, "failure to observe the result is not user cancellation")
++}
++
++func TestAttemptRun_NormalLogCompletionWaitFailureDoesNotRetryAcceptedRun(t *testing.T) {
++	ctx := context.Background()
++	client := newRemoteRunTestClient(nil)
++	execClient := &scriptedWaitExecutionClient{err: status.InternalError("execution result unavailable")}
++	require.True(t, shouldRetryRemoteRun(ctx, execClient.err), "the same transient error is retryable before Run accepts an invocation")
++
++	inRsp, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.ErrorIs(t, err, errAcceptedRunOutcomeUnknown)
++	require.Nil(t, inRsp)
++	require.Nil(t, execRsp)
++	require.False(t, shouldRetryRemoteRun(ctx, err), "a result-read failure after Run acceptance must not resubmit the invocation")
++	require.Equal(t, 1, client.runCalls)
++	require.Equal(t, 1, client.getInvocationCalls, "the normal logs-complete path still reads invocation metadata")
++	require.Zero(t, client.cancelCalls, "an observer-side result-read failure is not user cancellation")
++}
++
++func TestAttemptRun_NormalLogCompletionInvocationReadFailureDoesNotRetryAcceptedRun(t *testing.T) {
++	ctx := context.Background()
++	client := newRemoteRunTestClient(nil)
++	client.getInvocationErr = status.InternalError("invocation result unavailable")
++	execClient := newScriptedWaitExecutionClient(client, 0)
++
++	inRsp, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.ErrorIs(t, err, errAcceptedRunOutcomeUnknown)
++	require.Nil(t, inRsp)
++	require.Nil(t, execRsp)
++	require.False(t, shouldRetryRemoteRun(ctx, err), "failed metadata read after Run acceptance must not submit another invocation")
++	require.Equal(t, 1, client.runCalls)
++	require.Equal(t, 1, client.getInvocationCalls)
++	require.Zero(t, client.cancelCalls)
++}
++
++func TestAttemptRun_MissingTerminalExecuteResponseDoesNotBecomeSuccess(t *testing.T) {
++	ctx := context.Background()
++	client := newRemoteRunTestClient(status.InternalError("RST_STREAM INTERNAL_ERROR"))
++	execClient := &scriptedWaitExecutionClient{
++		onTerminal: func() {
++			client.executionDone = true
++		},
++	}
++
++	inRsp, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.ErrorIs(t, err, errAcceptedRunOutcomeUnknown)
++	require.ErrorContains(t, err, "empty execute response")
++	require.Nil(t, inRsp)
++	require.Nil(t, execRsp)
++	require.False(t, shouldRetryRemoteRun(ctx, err), "a terminal operation without an ExecuteResponse must remain unknown, not green or replayed")
++	require.Equal(t, 1, client.runCalls)
++	require.Zero(t, client.cancelCalls)
++}
++
++func TestAttemptRun_ExplicitCancellationStillCancelsAcceptedRun(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	client := newRemoteRunTestClient(context.Canceled)
++	client.logs.script[0].hook = cancel
++	execClient := newScriptedWaitExecutionClient(client, 0)
++
++	inRsp, execRsp, err := attemptRun(ctx, client, execClient, &rnpb.RunRequest{})
++
++	require.Error(t, err)
++	require.Nil(t, inRsp)
++	require.Nil(t, execRsp)
++	require.Equal(t, 1, client.runCalls)
++	require.Equal(t, 1, client.cancelCalls, "explicit local cancellation must cancel the accepted runner once")
++	require.Empty(t, execClient.requestedName)
++}
++
+ func TestPrintLogs(t *testing.T) {
+ 	client := &scriptedBuildBuddyClient{
+ 		script: []scriptedRecv{

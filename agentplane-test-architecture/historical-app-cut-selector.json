@@ -1,0 +1,300 @@
+{
+  "first_remote_attempt": {
+    "archive_cas_digest": "/compressed-blobs/zstd/062ac49c07755fbd40114edd66f89d126acd4da6d317bd923e407f2b03a06aa0/27746",
+    "archive_sha256": "062ac49c07755fbd40114edd66f89d126acd4da6d317bd923e407f2b03a06aa0",
+    "duration_usec": 57855425,
+    "error": "git reported that the path exists on disk but not in the control-base tree. This path is an expected added file, absent from the base; the old payload incorrectly required rev-parse to succeed instead of treating the tree entry as absent.",
+    "exit_code": 128,
+    "failure_command": "scratch-text-rev-parse 2e57e488de52f287a3abeb3c019e5b5f1eb4d506:agentplane/env/runtime/debug/2026_11_12_obsolete_seal.md",
+    "invocation_created_at_usec": "1794586057340000",
+    "invocation_id": "c2f3cc56-f0bb-41d4-92c6-32ccc3ea3a0e",
+    "invocation_updated_at_usec": "1794586116180000",
+    "payload_sha256": "ce0d94bd1ea7fa101440e5040a962c0c2e9de3eac564fd6a530c8cbcfe03dcd6",
+    "preserved": true,
+    "status": "partial / exit 1 during materialization; selector queries were not reached",
+    "terminal_buildbuddy_status": "COMPLETE, bazelExitCode=Failed"
+  },
+  "payload": {
+    "checks": [
+      "python3 -m py_compile build_app_cut_payload.py",
+      "bash -n app-cut-selector.sh",
+      "REPLAY_STAGE_ONLY=1 REPLAY_SOURCE_ROOT=<pinned source clone> bash app-cut-selector.sh (complete; no Bazel queries/tests)"
+    ],
+    "initial_failed_payload_sha256": "ce0d94bd1ea7fa101440e5040a962c0c2e9de3eac564fd6a530c8cbcfe03dcd6",
+    "remote_command": "env -u REPLAY_STAGE_ONLY -u REPLAY_SOURCE_ROOT direnv exec . bbr --disable_retry=true --run_from_commit=5699e8758f04bdf8c5834fbe21d7bafb8fbd9702 --run_from_branch=agent/test-architecture-pivot --script=<contents of app-cut-selector.sh>",
+    "selector_only": "No selected-target bazel test or bazel build command/path; remote payload ran Bazel hashes, cquery/label queries, CI selection logic, and shutdowns only.",
+    "sha256": "3dcfe9b66c99aad4cd3cda3e6ed10e8f94c062ce1f65b9cf5903e03b11c83f24"
+  },
+  "preserved_scope_and_limits": {
+    "broad_73_path_generic_overlay": "REJECTED: preserved as stage-result.json; broad-overlay-review.json records rejection because generic merge-file --theirs staging did not audit historical path semantics. The reviewed screen uses only the 11-path App ownership overlay.",
+    "ci_speedup_claim": false,
+    "counts_as_one_of_30_qualified_historical_pairs": false,
+    "current_full_architecture_replay": false,
+    "runtime_coverage_qualification": false,
+    "selected_builds_executed": false,
+    "selected_tests_executed": false,
+    "stopping_condition": "One Runtime pair, selector-only, no further runs or pair batch."
+  },
+  "schema": "ducktape.historical_app_fixture_cut_selector_evidence.v1",
+  "scope": "One historical PR #15858 Runtime pair replayed with the isolated App fixture ownership subfeature from source 5699e875; selector-only, not a full a69 replay or test execution.",
+  "selector_result": {
+    "affected_target_counts": {
+      "candidate": 107,
+      "control": 119,
+      "net_removed": 12
+    },
+    "candidate_only_affected_non_test_target": [
+      "//agentplane/app/testing:runtime_fixtures"
+    ],
+    "candidate_only_post_filter_tests": [],
+    "ci_filter_line": ["test:ci --test_tag_filters=-live_openai_api,-manual"],
+    "comparison": {
+      "affected_targets_identical": false,
+      "candidate_only_affected_targets": [
+        "//agentplane/app/testing:runtime_fixtures"
+      ],
+      "candidate_only_manual_targets_excluded_by_selector": [],
+      "candidate_only_post_filter_test_labels": [],
+      "candidate_only_pre_ci_tag_filter_tests": [],
+      "control_only_affected_targets": [
+        "//agentplane/app:integration_fixtures",
+        "//agentplane/app:test_action_api",
+        "//agentplane/app:test_api",
+        "//agentplane/app:test_electric_chunk_compaction",
+        "//agentplane/app:test_electric_subset_window",
+        "//agentplane/app:test_electric_wal_recovery",
+        "//agentplane/app:test_live",
+        "//agentplane/app:test_native_facades",
+        "//agentplane/app:test_notifications_stream",
+        "//agentplane/app:test_thread_browser",
+        "//agentplane/app:test_thread_debug",
+        "//agentplane/app:test_thread_sync",
+        "//agentplane/app:test_thread_window_browser"
+      ],
+      "control_only_manual_targets_excluded_by_selector": [
+        "//agentplane/app:test_electric_window_traffic"
+      ],
+      "control_only_post_filter_test_labels": [
+        "//agentplane/app:test_action_api",
+        "//agentplane/app:test_api",
+        "//agentplane/app:test_electric_chunk_compaction",
+        "//agentplane/app:test_electric_subset_window",
+        "//agentplane/app:test_electric_wal_recovery",
+        "//agentplane/app:test_live",
+        "//agentplane/app:test_native_facades",
+        "//agentplane/app:test_notifications_stream",
+        "//agentplane/app:test_thread_browser",
+        "//agentplane/app:test_thread_debug",
+        "//agentplane/app:test_thread_sync",
+        "//agentplane/app:test_thread_window_browser"
+      ],
+      "control_only_pre_ci_tag_filter_tests": [
+        "//agentplane/app:test_action_api",
+        "//agentplane/app:test_api",
+        "//agentplane/app:test_electric_chunk_compaction",
+        "//agentplane/app:test_electric_subset_window",
+        "//agentplane/app:test_electric_wal_recovery",
+        "//agentplane/app:test_live",
+        "//agentplane/app:test_native_facades",
+        "//agentplane/app:test_notifications_stream",
+        "//agentplane/app:test_thread_browser",
+        "//agentplane/app:test_thread_debug",
+        "//agentplane/app:test_thread_sync",
+        "//agentplane/app:test_thread_window_browser"
+      ],
+      "manual_targets_remain_excluded_by_ci_selector": true,
+      "same_required_selection": false,
+      "test_labels_identical_after_ci_tag_filters": false,
+      "test_labels_identical_before_ci_tag_filters": false
+    },
+    "control_only_affected_non_test_target": [
+      "//agentplane/app:integration_fixtures"
+    ],
+    "control_only_manual_target_filtered": [
+      "//agentplane/app:test_electric_window_traffic"
+    ],
+    "control_only_post_filter_tests": [
+      "//agentplane/app:test_action_api",
+      "//agentplane/app:test_api",
+      "//agentplane/app:test_electric_chunk_compaction",
+      "//agentplane/app:test_electric_subset_window",
+      "//agentplane/app:test_electric_wal_recovery",
+      "//agentplane/app:test_live",
+      "//agentplane/app:test_native_facades",
+      "//agentplane/app:test_notifications_stream",
+      "//agentplane/app:test_thread_browser",
+      "//agentplane/app:test_thread_debug",
+      "//agentplane/app:test_thread_sync",
+      "//agentplane/app:test_thread_window_browser"
+    ],
+    "live_openai_exclusion": {
+      "candidate": ["//agentplane/system_tests/suites:test_real_model"],
+      "control": ["//agentplane/system_tests/suites:test_real_model"]
+    },
+    "manual_filter_kept_all_manual_targets_out_of_post_filter_test_sets": true,
+    "post_test_ci_tag_filter_test_counts": {
+      "candidate": 38,
+      "control": 50,
+      "removed": 12
+    },
+    "pre_test_ci_tag_filter_test_counts": {
+      "candidate": 39,
+      "control": 51,
+      "removed": 12
+    },
+    "retained_runtime_owner_tests": [
+      "//agentplane/app:test_bridge",
+      "//agentplane/app:test_history_gateway"
+    ]
+  },
+  "source": {
+    "candidate_branch": "agent/test-architecture-pivot",
+    "candidate_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "candidate_overlay_paths_sha256": "e506be9fb995e9ff1d7ec6544522242346e4f317be941323a6e0cfb86bc575d7",
+    "candidate_parent": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+    "historical_base_tree": "2e57e488de52f287a3abeb3c019e5b5f1eb4d506",
+    "historical_pr": 15858,
+    "historical_pr_head_identity_only": "b28fd61ca4b6084cc77382a82d66e147d5a07bfd",
+    "historical_tested_base": "fb3706895e3cfcabcb5d5eca7f7e7b855232ec41",
+    "historical_tested_merge": "875f848c59992b930ffe7305643bf9381a92af70",
+    "historical_tested_merge_tree": "1f252d984ad9a849d8d4842e4ff33e13436286a3",
+    "pair_delta_change_statuses": {
+      "agentplane/env/runtime/SPEC.md": "M",
+      "agentplane/env/runtime/debug/2026_11_12_obsolete_seal.md": "A",
+      "agentplane/env/runtime/session/admission.go": "M",
+      "agentplane/env/runtime/session/admission_cutoff_test.go": "M",
+      "agentplane/env/runtime/session/controller.go": "M",
+      "agentplane/env/runtime/session/lifecycle_test.go": "M",
+      "agentplane/env/runtime/session/session.go": "M"
+    },
+    "pair_delta_paths": [
+      "agentplane/env/runtime/SPEC.md",
+      "agentplane/env/runtime/debug/2026_11_12_obsolete_seal.md",
+      "agentplane/env/runtime/session/admission.go",
+      "agentplane/env/runtime/session/admission_cutoff_test.go",
+      "agentplane/env/runtime/session/controller.go",
+      "agentplane/env/runtime/session/lifecycle_test.go",
+      "agentplane/env/runtime/session/session.go"
+    ],
+    "pair_patch_sha256": "e848fd641f04f631029a5c70d48ad43ed7b7c7a3dde60f9d6efc41a527f73d4a"
+  },
+  "stage_only_validation": {
+    "app_test_function_ast": {
+      "all_equal": true,
+      "method": "Python ast.dump(FunctionDef, include_attributes=False), which includes decorators, compared on control/candidate base and tested-merge trees.",
+      "modules": {
+        "agentplane/app/test_bridge.py": {
+          "case_ast_sha256": {
+            "test_history_openings_give_a_session_the_app_did_not_start_a_thread": "1783ae6a46e002cfabac0391f9cd962db910270411dc9fb939e96a8287b44be0",
+            "test_open_and_inputs_reach_the_runner_while_history_lags": "a007c0dccbf42a15fab55ef87a0ad9c286bf39804b687cf6bd530c33548d90da",
+            "test_replica_commands_and_database_stream_survive_owner_replica_exit": "d084dcb8e2b6167eeb700434e80387e13634d1f5242d3852e709a7f5d2e72b45",
+            "test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it": "eb45853df1a7d1f009f888e2e0ca90ba5d179618b37feac1531c35f075d59cb9",
+            "test_stream_recovery_reports_the_content_the_model_receives": "c4d58a07b35689c61458e59c3ede04467963c7647c18c8cb94b42e3972e40aff",
+            "test_tool_recovery_reports_context_without_repeating_side_effects": "3f970f73addf86e5fd9534469473328e70a135be20d7a5832598684fc76cff3a"
+          },
+          "control_base_equals_candidate_base": true,
+          "control_tested_merge_equals_candidate_tested_merge": true,
+          "test_count": 6
+        },
+        "agentplane/app/test_history_gateway.py": {
+          "case_ast_sha256": {
+            "test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it": "5039f8f144e7f00f3e52dfd4158ac5b8f99fe4e57bec0b059f8abaf2c53989cc",
+            "test_production_bridge_reads_runner_history_across_gateway_restarts": "fae257f82beafb656107a3d723f30c42c348c09c1003138d34d67ddb3d3d00e3",
+            "test_runner_client_does_not_fall_back_after_gateway_stops": "d92217cdcf0056c9fb54280246fae85c4e23a0d90207a396ee373eb9254dcdb3"
+          },
+          "control_base_equals_candidate_base": true,
+          "control_tested_merge_equals_candidate_tested_merge": true,
+          "test_count": 3
+        },
+        "agentplane/app/test_live.py": {
+          "case_ast_sha256": {
+            "test_environment_thread_rpc_reports_history_unavailable": "2650c9a221de932632721f948d6a3c2c7b51d93b8fb2cb7b53ed2bbb2bb06310",
+            "test_generated_egress_watch_streams_decisions_and_rotates_token": "7750397a2d80bb470be472c6852cfa957afe554f48be8d7664f4ab191d7ccaea",
+            "test_the_streams_need_a_caller": "13653b90342ac03176e6c4fe967f3057a0138f52e6197d0abdb6075ce8cec123",
+            "test_thread_metadata_list_returns_newest_page_and_archived_count": "1c33ab55e638f899159816b8bf87a146c2c10fcb5ffa0102132c66e4b530edf2",
+            "test_thread_metadata_watch_follows_replica_commits": "319c39c589889032f94287ed83c129731b4645657419229f6ec5c398117c861a",
+            "test_thread_metadata_watch_reports_listener_loss_and_reconnect": "5d37bb2bfac906eaf0a65e7c9248d63f0a5693a49fc8bf6ccba22857de45fc5b"
+          },
+          "control_base_equals_candidate_base": true,
+          "control_tested_merge_equals_candidate_tested_merge": true,
+          "test_count": 6
+        },
+        "agentplane/app/test_thread_browser.py": {
+          "case_ast_sha256": {
+            "test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it": "4783014d28bb9f26b0b21f5d45c6423aaf23c6da3fb012985ef2cc619038eb8b",
+            "test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place": "cefd1579cebee99e9a66c3c52a3824ab289d1314c44012cb4bb8b7ac8d90a45e",
+            "test_ahead_snapshot_is_not_a_thread_or_effective_model": "9eaa68ed354f1824d2c12d4b9dff7cd9ff42d3da745858f506d077c4eafaf63e",
+            "test_an_unfoldable_suffix_stops_browser_without_replacing_verified_history": "3424c235ffb345fbdcaf32705a74e3246e2c4f85a242beeb94ab6c069a242c20",
+            "test_archived_thread_page_survives_deleted_sandbox_and_reload": "601a75394d62aa012eb5a8e8a9be081fe266c9972cc992ece6ac72ce2fce8fea",
+            "test_browser_replays_streams_and_reloads_one_exact_thread": "2c78fe4e2ec058b5eb81b3e15232025f6e9526f83d3c1a813226e1d360239572",
+            "test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input": "40e505e3296c5ea2aa00ff436923ba11f5724d0b620e246f55c0664a691a8b29",
+            "test_chronological_debug_is_lazy_paged_and_keeps_the_thread": "2e86b724420eeaaef7e68d4cf90e10d4982044827e41720a283f077307778ae0",
+            "test_electric_reconnects_unconfirmed_command_without_reloading": "b1a6abeaf53203cdd55410fe46d43a1a192d8a0f867b73fe29b2639ede01fef2",
+            "test_environment_identity_change_obeys_real_gateway_and_kubernetes_admission": "395cf09106cf6cfab5ccdcf3ce969ef9e2dd589d20b3989dae1dcd2b1d1d188d",
+            "test_failed_turn_preserves_confirmed_input_and_allows_another_turn": "5dac976655e8b05798fffeabd2ecaf26d928f2bfbaabf136f8d4f0dd8737d3d9",
+            "test_http_admission_ahead_of_replay_does_not_skip_earlier_events": "7042fa207111cf1b69413b99560cb2a5c754f2804a7232937fe61ac4978ffe28",
+            "test_lost_runner_receipt_reconciles_from_thread_without_retry": "3e220dbaafce34d89ae218346d97be622a24dceaf5bc401398b1b4d58b3e520b",
+            "test_opening_a_call_while_output_streams_in_keeps_it_collapsible": "51711f4e992757d5ccda355a5dc4bfb8c48a9b935e712d76dc324f4b209d0038",
+            "test_projected_browser_streams_runner_events_and_loads_evidence_lazily": "0f9f82936029d566a6fba24247053303c46acf05041508401e6d0be65d139913",
+            "test_projection_epoch_replacement_retires_old_requests_and_preserves_draft": "47478317346d6ba9dbb2a4af2f7578c067793a085631549a54a6f23a4eb39db5",
+            "test_reload_redelivers_an_unsaved_command_with_its_original_identity": "814d8ce3f6add65748df4439284a064356fa0377ac05b3bbda56b1ec3c072ea5",
+            "test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had": "e4f5d71a84aa9911dec1f4378ffc8210cb95b025ee8ad952aaa4224d9a862a2a",
+            "test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away": "7e50510e9bcfbaa5cf407abec6673f6296c3a30831a9c3c68e383b3d82582c25",
+            "test_settled_command_reason_survives_leaving_the_tail_and_reload": "7f838dd964a363d983b6314f0bed602b46588612c9c946e7055e3077914017a1",
+            "test_sidebar_receives_rename_and_archive_from_another_app_replica": "3ec1a927a41c36bc106912a91e1ed971e145facd27e340b3d4a526064898dacc",
+            "test_small_upward_scroll_stays_detached_when_tail_streams": "1843394ea25489a70eeddf86b35190afa187f315d2da07d20f30f115aa3e6e9a",
+            "test_streamed_admission_survives_a_lost_http_reply_and_reload": "f05f53f0648eee7a3318950b09cb0b2314f1817bd798a7eab1b3f9b820d3f6b6",
+            "test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail_visible": "4f22e57800f17275472eff77cb6237f7061b4d59e2f364ac83d2c3bb76f7f2ad",
+            "test_switching_threads_starts_at_each_threads_tail": "f0a43e1f6f19c85aa605f295990da1cfc9d51d191772167852b91a9edd8aafcf",
+            "test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stopped": "778759a4f44c4091ff9a8bb9a2bb8c6e91e872c14e280e95cb5701a14f69da15",
+            "test_the_history_is_not_settled_while_a_row_is_still_loading_its_text": "3dac323328b44a47e08010bbd9769827243be42f8ad61c90c8162f5decd94f6d",
+            "test_thread_follows_bottom_until_reader_scrolls_up": "40ffd5ca24ad041e10754a84692e154b162061eba24766bfa1c1e4f9a9e98d11",
+            "test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection": "9d3b7deb6bec06252dbccba7e7599002d1469b382d68b1dba9da1ccaea20cf1f",
+            "test_unconfirmed_command_retries_with_same_identity_then_reconciles": "2f3bd7d51821247d38d72676061231089bc0d150f102cde2a9876660fc669cd6",
+            "test_unknown_projection_failure_keeps_verified_history_and_stops_browser": "ca87bd33051688311b2c67eaef6413761b3ccc7009d3a2fbc14dc5c2f6f85324",
+            "test_unobserved_committed_admission_reconciles_once_after_reload": "1a2c17db8bb16c56947652653bfda793ed81cb256301d8349c9a8c76d3db290c"
+          },
+          "control_base_equals_candidate_base": true,
+          "control_tested_merge_equals_candidate_tested_merge": true,
+          "test_count": 32
+        }
+      },
+      "total_functions": 47
+    },
+    "change_status_audit": "Control and candidate pair diffs each have exactly the expected seven M/A/M/M/M/M/M paths. The added obsolete_seal Markdown file is absent from both pair bases and present with the same blob in both tested merges.",
+    "errors": [],
+    "overlay_path_count": 11,
+    "overlay_path_sha256": "e506be9fb995e9ff1d7ec6544522242346e4f317be941323a6e0cfb86bc575d7",
+    "pair_era_adaptations": "Retained the old runner_gateway py_library and restored the pair-era environment_runtime_transport import in both candidate trees; identical adaptation on pair base and tested merge.",
+    "reviewed_conflicts": [
+      {
+        "count": 1,
+        "path": "agentplane/app/testing/BUILD.bazel"
+      }
+    ],
+    "run_id": "app-cut-pair15858-20261113T161355Z-7",
+    "status": "complete",
+    "tree_ids": {
+      "candidate_base": "24d0f7d96354f65412ed33f98116fe453ab804cd",
+      "candidate_tested_merge": "434d959499362caf366e6b853cb70812b04e7d9f",
+      "control_base": "2e57e488de52f287a3abeb3c019e5b5f1eb4d506",
+      "control_tested_merge": "1f252d984ad9a849d8d4842e4ff33e13436286a3"
+    }
+  },
+  "successful_selector_attempt": {
+    "archive_cas_digest": "/compressed-blobs/zstd/2790278d31394276762a462565239c0163d58c8dc9147e1d23f5f72106f6a997/13441345",
+    "archive_sha256": "2790278d31394276762a462565239c0163d58c8dc9147e1d23f5f72106f6a997",
+    "completed_utc": "2026-11-13T16:21:31Z",
+    "duration_usec": 262157760,
+    "invocation_id": "a02076ae-283e-4889-83a2-aa44f2abc110",
+    "materialized_tree_ids": {
+      "candidate_base": "24d0f7d96354f65412ed33f98116fe453ab804cd",
+      "candidate_tested_merge": "434d959499362caf366e6b853cb70812b04e7d9f",
+      "control_base": "2e57e488de52f287a3abeb3c019e5b5f1eb4d506",
+      "control_tested_merge": "1f252d984ad9a849d8d4842e4ff33e13436286a3"
+    },
+    "source_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "started_utc": "2026-11-13T16:17:08Z",
+    "status": "COMPLETE, success=true, Bazel exit OK"
+  }
+}

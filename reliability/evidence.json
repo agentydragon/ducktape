@@ -4317,5 +4317,51 @@
       "This refreshed pre-dispatch baseline is not a matched post-fix effect estimate. The larger window and latest-head selection changed the population. Old all-PR/native/pool measurements retain original windows; simultaneous experiments report their overlap separately."
     ],
     "complete_cohort_evidence": "https://agentydragon.github.io/ducktape/latency/evidence.json"
+  },
+  "architecture_followup": {
+    "observed_at_utc": "2026-11-13T15:58:33Z",
+    "scope": "Selected observer-recovery, listener-race and post-merge measurement follow-up. The retained 5\u201312 November population, source pin, denominators and rates are unchanged.",
+    "outer_log_observer": {
+      "tracking_issue": "https://github.com/agentydragon/ducktape/issues/13270",
+      "related_inner_execution_issue": "https://github.com/agentydragon/ducktape/issues/16025",
+      "positive_invocation": "2e989892-aaf2-4f68-af7d-3f8da91d8ffd",
+      "positive_junit_cases": 38,
+      "positive_failures": 0,
+      "pre_patch_control_invocation": "c2260576-57a8-44e3-8b93-0354d4f5d44c",
+      "pre_patch_control_junit_cases": 1,
+      "pre_patch_expected_failures": 1,
+      "result": "Scratch-only BuildBuddy CLI patch recovers the same accepted execution after non-context log-observer failure, without resubmission; cancellation, nonzero remote exit and unknown terminal outcomes are tested.",
+      "shipping_and_proof_limit": "Hosted static Linux executable build and version/help smoke pass; release stamp is unknown because source is shallow without tags. No live BuildBuddy fault injection, installation, Ducktape package pin or release. Prefer an upstream fix and official numbered release through the existing artifact pipeline.",
+      "binary_build_artifact": "../agentplane-test-architecture/accepted-run-observer-binary-build.json"
+    },
+    "runtime_listener_race": {
+      "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16231",
+      "backport_pr": "https://github.com/agentydragon/ducktape/pull/16233",
+      "backport_state_at_observation": "OPEN; required checks green on head 241e9a6e5173f9ffe5f1691981478ec24dc4ff90",
+      "positive_invocation": "a9500358-00a7-4d25-8232-385da8155340",
+      "negative_old_allocator_invocation": "9d1cc189-37f1-49fa-ab93-758aad1ed737",
+      "current_head_source": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+      "outcome": "Four real shared-process cases pass while a competing default-loopback socket stays bound; restoring the old allocator fails actual Runtime startup. The natural port occupier remains unknown.",
+      "measurement_window": "The seven-day fresh physical-attempt window begins after merge. Track it with #16034; cached passes do not count as exposures."
+    },
+    "case_batch_and_pvc_followup": {
+      "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16034",
+      "measurement_window": "For each relevant merged change, collect seven complete UTC days of fresh physical attempts; retain cached, missing, cancelled, and failed outcomes separately.",
+      "limit": "The retained reliability population was not recollected by this selected follow-up."
+    },
+    "artifact": "../agentplane-test-architecture/accepted-run-observer-reconciliation.json",
+    "architecture_source_validation": {
+      "source_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+      "required_ci": "all three required checks passed",
+      "workflow_id": 43457244360,
+      "test_invocation": "9478886b-9d97-5d14-8270-9ae969e1bb9d",
+      "fresh_test_actions": 8,
+      "junit_cases": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "artifact": "../agentplane-test-architecture/required-ci-0a9-workflow.json",
+      "limit": "Only the Bridge target had fresh actions; other test results were cached. This does not refresh the recurrence population, establish a reliability improvement, or constitute a fresh full-system attempt."
+    }
   }
 }

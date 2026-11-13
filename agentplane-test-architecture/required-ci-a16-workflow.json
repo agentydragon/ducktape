@@ -1,0 +1,104 @@
+{
+  "scope": "Actual required CI validations of the ASGI ownership cut, not a matched before/after timing comparison.",
+  "arms": {
+    "main": {
+      "head_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+      "ci_synthetic_merge": "006d484ef9dd2e46dc920e097ccdc5a4343cc7c7",
+      "merge_parents": [
+        "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+        "a16af807fac240634e3b738ac0fff833180c1bba"
+      ],
+      "earliest_required_workflow_creation_utc": "2026-11-13T15:39:29Z",
+      "ci_workflow_creation_utc": "2026-11-13T15:39:29Z",
+      "last_required_check_completed_utc": "2026-11-13T15:45:25Z",
+      "required_feedback_seconds": 356.0,
+      "clock_limit": "Earliest required workflow creation proxies unavailable push time. This is gate feedback, not auto-merge eligibility.",
+      "required_checks": [
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-13T15:39:31Z",
+          "completedAt": "2026-11-13T15:45:25Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43454796804/job/131985981742"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-13T15:39:31Z",
+          "completedAt": "2026-11-13T15:40:58Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43454796799/job/131985981707"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-13T15:39:31Z",
+          "completedAt": "2026-11-13T15:40:40Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43454796791/job/131985981844"
+        }
+      ],
+      "test_invocation": "1b5e2185-e1be-5a85-9e30-83f667c5c5ca",
+      "test_duration_s": 264.931,
+      "test_command": "//...",
+      "physical_test_rows": 65,
+      "new_physical_actions": 65,
+      "merged_reused_references": 0,
+      "all_rows_unique_within_invocation": true,
+      "all_completed_successfully": true,
+      "fresh_k3s_actions": 0
+    },
+    "backport": {
+      "head_commit": "72d21496136f099964660b547cfcdb0b7d33ffcf",
+      "ci_synthetic_merge": "92707b1e346a5b474d1ed094d41f2230c84ef3ec",
+      "merge_parents": [
+        "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+        "72d21496136f099964660b547cfcdb0b7d33ffcf"
+      ],
+      "earliest_required_workflow_creation_utc": "2026-11-13T15:40:41Z",
+      "ci_workflow_creation_utc": "2026-11-13T15:40:41Z",
+      "last_required_check_completed_utc": "2026-11-13T15:45:05Z",
+      "required_feedback_seconds": 264.0,
+      "clock_limit": "Earliest required workflow creation proxies unavailable push time. This is gate feedback, not auto-merge eligibility.",
+      "required_checks": [
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-13T15:40:44Z",
+          "completedAt": "2026-11-13T15:45:05Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43455001464/job/131986685194"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-13T15:40:44Z",
+          "completedAt": "2026-11-13T15:42:08Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43455001369/job/131986684383"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "startedAt": "2026-11-13T15:40:44Z",
+          "completedAt": "2026-11-13T15:41:53Z",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43455001234/job/131986683570"
+        }
+      ],
+      "test_invocation": "ee2216de-2c70-5e27-b384-3320b69e562b",
+      "test_duration_s": 138.855,
+      "test_command": "//agentplane/app:integration_fixtures and 53 more",
+      "physical_test_rows": 46,
+      "new_physical_actions": 32,
+      "merged_reused_references": 14,
+      "all_rows_unique_within_invocation": true,
+      "all_completed_successfully": true,
+      "fresh_k3s_actions": 0
+    }
+  },
+  "shared_test_execution_ids": 14,
+  "unique_test_execution_ids_union": 97,
+  "merged_reference_definition": "BuildBuddy StoredInvocationLink.Type MERGED=2 means execution reused; these 14 references share physical IDs with the main run and are not 14 extra executions or cached-result-only records."
+}

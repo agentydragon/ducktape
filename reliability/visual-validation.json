@@ -1,525 +1,435 @@
 {
-  "schema_version": 4,
-  "report": "reliability",
-  "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-  "invocation_url": "https://app.buildbuddy.io/invocation/8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-  "target": "//x/ci_reports_preview:visual_test",
-  "status": "PASSED",
-  "validated_at_utc": "2026-11-13T04:21:33.332090+00:00",
-  "scope": "The uncached full visual target passed 12/12 on the frozen report candidate. Its eight report cases still match these final report publication bytes. An unrelated base update changed only the root index afterward, so the current root was checked in a separate uncached 4/4 navigation run; this composite proof does not claim one 12-case run against the updated root.",
-  "full_target_run": {
-    "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-    "invocation_url": "https://app.buildbuddy.io/invocation/8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-    "target": "//x/ci_reports_preview:visual_test",
-    "command": "env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url GIT_CONFIG_VALUE_0=https://github.com/agentydragon/ducktape.git direnv exec . bbr test //x/ci_reports_preview:visual_test --nocache_test_results",
-    "status": "PASSED",
-    "selected_test_cases": 12,
-    "passed_test_cases": 12,
-    "failed_test_cases": 0,
-    "runs": 1,
-    "shards": 1,
-    "attempts": 1,
-    "pytest_duration_seconds": 81.9,
-    "bazel_target_duration_seconds": 88.2,
-    "initial_root_index_sha256": "f4551f898685f95f028df2cacda0107e394d0e467ec3821c983f4598ee506d26",
-    "final_report_cases_retained": 8,
-    "test_log": "final-test.log"
+  "schema_version": 1,
+  "scope": "Iteration8 source0a9 architecture checkpoint, latency/reliability supplements and root report navigation. Source qualification is separate.",
+  "verified_at_utc": "2026-11-13T16:47:31.454997+00:00",
+  "invocation_url": "https://app.buildbuddy.io/invocation/7ad87baa-edf8-436f-95b7-e98b18d46aa5",
+  "target": "//x/ci_architecture_preview:test_report",
+  "prior_attempt": {
+    "invocation_url": "https://app.buildbuddy.io/invocation/d028653c-c89b-4851-850b-ab761463bcd3",
+    "result": "4 report-render cases failed before repair",
+    "cause": "Initial React data-null dereference in the added current-source row; repaired before the successful attempt. The preview also gained its missing root ci-lanes.js asset before retry."
   },
-  "final_root_navigation_run": {
-    "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
-    "invocation_url": "https://app.buildbuddy.io/invocation/9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
-    "target": "//x/ci_reports_preview:visual_test",
-    "command": "env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url GIT_CONFIG_VALUE_0=https://github.com/agentydragon/ducktape.git direnv exec . bbr test //x/ci_reports_preview:visual_test --nocache_test_results --test_arg=-k --test_arg=test_root_navigation_smoke",
-    "status": "PASSED",
-    "selected_test_cases": 4,
-    "passed_test_cases": 4,
-    "deselected_test_cases": 8,
-    "failed_test_cases": 0,
-    "runs": 1,
-    "shards": 1,
-    "attempts": 1,
-    "pytest_duration_seconds": 7.9,
-    "current_root_index_sha256": "f4ba1ad3d61a362e67d223463804bea080d83132317ea3a1216f6747dc738943",
-    "test_log": "root-test.log"
+  "native_result": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cached_results": 0,
+    "run": 1,
+    "shard": 1,
+    "attempt": 1,
+    "status": "PASSED"
   },
-  "report_case_count": 4,
-  "report_cases": [
-    {
-      "case_id": "test_ci_report_refresh[dark-mobile-reliability]",
-      "report": "reliability/index.html",
-      "theme": "dark",
-      "viewport": {
-        "height": 844,
-        "width": 390
-      },
-      "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "manifest_stamps": {},
-      "dispatch_work_card_count": 2,
-      "dispatch_expanded_panel_ids": [
-        "mantine-k21e11ggt-panel-reliability-cases",
-        "mantine-k21e11ggt-panel-reliability-landed"
-      ],
-      "ten_lane_count": 10,
-      "ten_lane_expanded_panel_ids": [
-        "mantine-ukl5nej6z-panel-lane-1",
-        "mantine-ukl5nej6z-panel-lane-2",
-        "mantine-ukl5nej6z-panel-lane-3",
-        "mantine-ukl5nej6z-panel-lane-4",
-        "mantine-ukl5nej6z-panel-lane-5",
-        "mantine-ukl5nej6z-panel-lane-6",
-        "mantine-ukl5nej6z-panel-lane-7",
-        "mantine-ukl5nej6z-panel-lane-8",
-        "mantine-ukl5nej6z-panel-lane-9",
-        "mantine-ukl5nej6z-panel-lane-10"
-      ],
-      "history_chart": "recent-vm-indexed-failures"
-    },
-    {
-      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
-      "report": "reliability/index.html",
-      "theme": "light",
-      "viewport": {
-        "height": 844,
-        "width": 390
-      },
-      "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "manifest_stamps": {},
-      "dispatch_work_card_count": 2,
-      "dispatch_expanded_panel_ids": [
-        "mantine-i4tz6d3nx-panel-reliability-cases",
-        "mantine-i4tz6d3nx-panel-reliability-landed"
-      ],
-      "ten_lane_count": 10,
-      "ten_lane_expanded_panel_ids": [
-        "mantine-7sub3cu2i-panel-lane-1",
-        "mantine-7sub3cu2i-panel-lane-2",
-        "mantine-7sub3cu2i-panel-lane-3",
-        "mantine-7sub3cu2i-panel-lane-4",
-        "mantine-7sub3cu2i-panel-lane-5",
-        "mantine-7sub3cu2i-panel-lane-6",
-        "mantine-7sub3cu2i-panel-lane-7",
-        "mantine-7sub3cu2i-panel-lane-8",
-        "mantine-7sub3cu2i-panel-lane-9",
-        "mantine-7sub3cu2i-panel-lane-10"
-      ],
-      "history_chart": "recent-vm-indexed-failures"
-    },
-    {
-      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
-      "report": "reliability/index.html",
-      "theme": "light",
-      "viewport": {
-        "height": 900,
-        "width": 1280
-      },
-      "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "manifest_stamps": {},
-      "dispatch_work_card_count": 2,
-      "dispatch_expanded_panel_ids": [
-        "mantine-3u6ak5hd7-panel-reliability-cases",
-        "mantine-3u6ak5hd7-panel-reliability-landed"
-      ],
-      "ten_lane_count": 10,
-      "ten_lane_expanded_panel_ids": [
-        "mantine-cjk4qv27b-panel-lane-1",
-        "mantine-cjk4qv27b-panel-lane-2",
-        "mantine-cjk4qv27b-panel-lane-3",
-        "mantine-cjk4qv27b-panel-lane-4",
-        "mantine-cjk4qv27b-panel-lane-5",
-        "mantine-cjk4qv27b-panel-lane-6",
-        "mantine-cjk4qv27b-panel-lane-7",
-        "mantine-cjk4qv27b-panel-lane-8",
-        "mantine-cjk4qv27b-panel-lane-9",
-        "mantine-cjk4qv27b-panel-lane-10"
-      ],
-      "history_chart": "recent-vm-indexed-failures"
-    },
-    {
-      "case_id": "test_ci_report_refresh[dark-desktop-reliability]",
-      "report": "reliability/index.html",
-      "theme": "dark",
-      "viewport": {
-        "height": 900,
-        "width": 1280
-      },
-      "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 28,
-      "manifest_stamps": {},
-      "dispatch_work_card_count": 2,
-      "dispatch_expanded_panel_ids": [
-        "mantine-31h6mcllf-panel-reliability-cases",
-        "mantine-31h6mcllf-panel-reliability-landed"
-      ],
-      "ten_lane_count": 10,
-      "ten_lane_expanded_panel_ids": [
-        "mantine-tdaiv1oxn-panel-lane-1",
-        "mantine-tdaiv1oxn-panel-lane-2",
-        "mantine-tdaiv1oxn-panel-lane-3",
-        "mantine-tdaiv1oxn-panel-lane-4",
-        "mantine-tdaiv1oxn-panel-lane-5",
-        "mantine-tdaiv1oxn-panel-lane-6",
-        "mantine-tdaiv1oxn-panel-lane-7",
-        "mantine-tdaiv1oxn-panel-lane-8",
-        "mantine-tdaiv1oxn-panel-lane-9",
-        "mantine-tdaiv1oxn-panel-lane-10"
-      ],
-      "history_chart": "recent-vm-indexed-failures"
-    }
-  ],
-  "publication_assets_equal_rendered_preview_bytes": true,
-  "asset_hash_method": "For each RBE diagnostic, SHA-256 of every packaged asset path was compared byte-for-byte with the final publication file. The rendered_asset_sha256 subset was independently compared with the same files. visual-validation.json is excluded from the test asset maps by design.",
-  "publication_asset_sha256": {
+  "physical_test_runner": {
+    "new_records": 1,
+    "stage": "COMPLETED",
+    "reported_reapi_code": 0,
+    "execution_id": "/uploads/1fb2cbc7-6c84-4f9e-9db8-ea85d8a03bfe/blobs/a284fe9281e2a7558b283e0295a12a775a3642666e56a210df501b6259f411f9/501"
+  },
+  "final_asset_sha256": {
     "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
-    "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
-    "reliability/evidence.json": "6b4330795e8090c69dab9db9bf9faac30833cd95d3545a82b7d69a68fe95dc8e",
-    "reliability/index.html": "547278a35337415db5fe03a90f5a5983592677ce8973cd54067ca8bb2cc7ef89",
-    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-  },
-  "rendered_asset_sha256": {
-    "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
+    "index.html": "be608424e0587f66583f2f5b22e0fee187c8780b9bca0bb9bbd056cae14e60dd",
+    "README.md": "54e63f071a8eaf0b93726012b6a21c471b8e435127649516cf1f279b7e1708d8",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
+    "latency/crd-ordering-spike.patch": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5",
+    "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
+    "latency/manifest.json": "fe23be14a63843e81c991a79f3040f7c3451f086d078288b2ece7a8ebaca22d3",
+    "latency/index.html": "eeec4dd1221b19d67c1d6f8a0a599b268bb9fdd0594158726e9f002376610b2e",
+    "latency/bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
+    "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
+    "latency/evidence.json": "5eff92fffa226d7940b73fd3737df022b3ec593495a828fc232cdb4b5c9292af",
+    "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
+    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a",
+    "reliability/manifest.json": "954ce4ba61d0dffc773cd21423f8e0335416d1419b879561d74691af2ca60a64",
+    "reliability/index.html": "dd7c56c562b97a4caafbfb46c55b3f8455d1cf20c193fb022e03278950b2273d",
     "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
-    "reliability/evidence.json": "6b4330795e8090c69dab9db9bf9faac30833cd95d3545a82b7d69a68fe95dc8e",
-    "reliability/index.html": "547278a35337415db5fe03a90f5a5983592677ce8973cd54067ca8bb2cc7ef89",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-  },
-  "final_root_publication_asset_sha256": {
+    "reliability/evidence.json": "00fe15e09562ca11fd2c25a6ce373dde3c249afda2a2797a951fc803c086e521",
     "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-    "index.html": "f4ba1ad3d61a362e67d223463804bea080d83132317ea3a1216f6747dc738943",
-    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+    "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
+    "agentplane-test-architecture/render-batching-candidate.patch": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb",
+    "agentplane-test-architecture/runtime-control-listener-repair.json": "38f72a255773273126db83d3828797ad6b4977525368869222dced67721ee8d5",
+    "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
+    "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
+    "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
+    "agentplane-test-architecture/required-ci-5699-workflow.json": "e37f5d2ea4daba1e41179d559dfe522512545164044c8502c9bd5c190f7bdeb0",
+    "agentplane-test-architecture/manifest.json": "c365f0663a2e83a6bd09566da6ef92ec6c17bfc4752bfad8f1db905f08095f18",
+    "agentplane-test-architecture/historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
+    "agentplane-test-architecture/historical-app-cut-stage.json": "4e416cb61566a4999cb595056e18e71cfe06dc1bb8606aa939b8f14ebe14e1fa",
+    "agentplane-test-architecture/asgi-mcp-ownership.json": "44b7a1ba7d6e8bf4e69f1b457ff0f786af9cbdbb5862416c83fefa10b6db210d",
+    "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
+    "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
+    "agentplane-test-architecture/index.html": "b825863c0eb2652f570c3f5c0d536942e55007b25c5ecffcb23216b4d035b066",
+    "agentplane-test-architecture/required-ci-135-workflow.json": "9d1e7378694fd384ba4bec4ff348a415da959490abfc11aa8d414bd7ef9ede0e",
+    "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
+    "agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
+    "agentplane-test-architecture/accepted-run-observer-reconciliation.json": "4242d59aa3711a74c9ea7a06b1b12bf225a1ecd10c05090058df74091684b1ab",
+    "agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
+    "agentplane-test-architecture/evidence.json": "90be76e1431b342b1adb481db90bb4447cb655318bbe74d800633deecf8b05e2",
+    "agentplane-test-architecture/selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2",
+    "agentplane-test-architecture/render-batching-rejected.json": "e7642fe4ab3ec96d2f51e6d7326ad173a439fbae4dca524a7667b29fea456efc",
+    "agentplane-test-architecture/accepted-run-observer-reconciliation.patch": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
+    "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
+    "agentplane-test-architecture/required-ci-a16-workflow.json": "8584a810536a43562cb1a94a427ce8ca7551e404d98ae79b8d82316ccc812f03",
+    "agentplane-test-architecture/app-fixture-ownership.json": "436f76dbc8053790f9a186981e17a2e32bbaa891469bb18e7258e29930328cb2",
+    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845"
   },
-  "final_root_rendered_asset_sha256": {
-    "index.html": "f4ba1ad3d61a362e67d223463804bea080d83132317ea3a1216f6747dc738943",
-    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-  },
-  "root_navigation_case_count": 4,
-  "root_navigation_cases": [
+  "cases": [
     {
-      "case_id": "test_root_navigation_smoke[light-desktop]",
-      "report": "index.html",
       "theme": "light",
       "viewport": {
-        "height": 900,
-        "width": 1280
+        "width": 390,
+        "height": 844
       },
       "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
       ],
-      "esm_module_count": 21,
-      "manifest_stamps": {
-        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
-        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
-      }
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 5,
+        "latency": 3,
+        "reliability": 3
+      },
+      "document_overflow": false,
+      "console_errors": [],
+      "failed_requests": []
     },
     {
-      "case_id": "test_root_navigation_smoke[dark-mobile]",
-      "report": "index.html",
       "theme": "dark",
       "viewport": {
-        "height": 844,
-        "width": 390
+        "width": 390,
+        "height": 844
       },
       "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
       ],
-      "esm_module_count": 21,
-      "manifest_stamps": {
-        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
-        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
-      }
-    },
-    {
-      "case_id": "test_root_navigation_smoke[dark-desktop]",
-      "report": "index.html",
-      "theme": "dark",
-      "viewport": {
-        "height": 900,
-        "width": 1280
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 5,
+        "latency": 3,
+        "reliability": 3
       },
-      "status": "passed",
-      "live_theme_change": true,
       "document_overflow": false,
-      "page_errors": [],
       "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "esm_module_count": 21,
-      "manifest_stamps": {
-        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
-        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
-      }
+      "failed_requests": []
     },
     {
-      "case_id": "test_root_navigation_smoke[light-mobile]",
-      "report": "index.html",
       "theme": "light",
       "viewport": {
-        "height": 844,
-        "width": 390
+        "width": 1280,
+        "height": 900
       },
       "status": "passed",
-      "live_theme_change": true,
-      "document_overflow": false,
-      "page_errors": [],
-      "console_errors": [],
-      "failed_requests": [],
-      "pinned_stylesheets": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
       ],
-      "esm_module_count": 21,
-      "manifest_stamps": {
-        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
-        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
-      }
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 2,
+        "latency": 2,
+        "reliability": 1
+      },
+      "document_overflow": false,
+      "console_errors": [],
+      "failed_requests": []
+    },
+    {
+      "theme": "dark",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "status": "passed",
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
+      ],
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 2,
+        "latency": 2,
+        "reliability": 1
+      },
+      "document_overflow": false,
+      "console_errors": [],
+      "failed_requests": []
     }
   ],
-  "root_navigation_reported_manifest_stamps": {
-    "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-    "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
-    "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
-    "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
+  "screenshots": {
+    "count": 68,
+    "cases": 4,
+    "coverage": "Root navigation, every viewport of all three added report sections, retained selectors, six expanded plan stages, and both CI-report failure disclosures.",
+    "artifact_paths": [
+      "test.outputs/test-outputs/files/be7c17cb1c780616e747e01e5f87b0a8ec27a4be825166b64d59cd5354cfae46.png",
+      "test.outputs/test-outputs/files/25e644978c536d8465d4065ad608cd35966df429d56dc1c6a4ea6e5f582f89da.png",
+      "test.outputs/test-outputs/files/f07d07f41d8cab569a9950aa668ea26e0794dd1ab41dc4681e935e4c24dd3f3c.png",
+      "test.outputs/test-outputs/files/8394d18f6adc56d4ce3c5ff750d94a2138498638f318a57a34647d3575fa1bd8.png",
+      "test.outputs/test-outputs/files/fca459cc2322137179272d1b7cceef1c510c5de9dd3cfcbed9c31107a575c828.png",
+      "test.outputs/test-outputs/files/aeca2d86ba595527ce94dd677d9d2224b996baac30ed293cd114aa104e477d5c.png",
+      "test.outputs/test-outputs/files/1f0a62495610eb4548d9cd9ee426e52be44da5c46fa1fc6513da2b22f4e2d0db.png",
+      "test.outputs/test-outputs/files/c7cd820bd851e5cc82624685c8d6d88131987b3cc5e40bd9e3d68873a157662b.png",
+      "test.outputs/test-outputs/files/5f7a261bca0d6f48c1c581899ecf377caf8bb70231e73082fa436804647b943e.png",
+      "test.outputs/test-outputs/files/904bc159d7e651c284bdd7396d6518ec6d4963b2fa94b5b5a573942aff00862c.png",
+      "test.outputs/test-outputs/files/daf8ec7dbedf98ecb18ae50e3f5641c08ecc1eb79060ec1c6453e914cca8a360.png",
+      "test.outputs/test-outputs/files/2e90227a2ae24f357bc19f3bdd901be6b6d9c1ba2a05972bba11009a87459a43.png",
+      "test.outputs/test-outputs/files/9f82c47967dec43f1066c8460f7f6027c8d5e1325dacd9cc18af8bf6566a8ad1.png",
+      "test.outputs/test-outputs/files/4e48a36aaccfa1d7185a3f1ab5a2969970f5e9189318f98986cb31edbe945192.png",
+      "test.outputs/test-outputs/files/a3f6b02c595a28d49862c75f851c1da057a98389e3a21cb6f02503243677c765.png",
+      "test.outputs/test-outputs/files/80ee6741658988067e9a84c8132b071061417b879992ac654a4047b82fdff475.png",
+      "test.outputs/test-outputs/files/4b8b803373f71f10e638329c4ccabf18ae059a021068803f39b5452dbc4862bd.png",
+      "test.outputs/test-outputs/files/5977ef66342d24ee771815f1e0d398ae1f1ebaba3d4f68756737cd2e9e34338d.png",
+      "test.outputs/test-outputs/files/f8d091fcc998bd198cfa38568f090acd7a337e178a3d68540086a75e194c14bf.png",
+      "test.outputs/test-outputs/files/d3079ab1aaacc2edd307700a9a39b466daae403537b9c567ac1958417e719ac6.png",
+      "test.outputs/test-outputs/files/dd5ac436f65b76f836e373ef7a6efc9f96a9c1d85f3a1e13d46f8c418ac8113b.png",
+      "test.outputs/test-outputs/files/9fdfeea6b1a0a9bbe68a16736032e265cf8692c2ec741652df73df2685ad67d3.png",
+      "test.outputs/test-outputs/files/5b83779991cd00adc97fb408ee2feab988c7da79a060140ea3a3f76f9dfaba20.png",
+      "test.outputs/test-outputs/files/9c61a4dfa7255313945d51d99e3e4ea0e667975cb8ac56118a3202fd5684af2e.png",
+      "test.outputs/test-outputs/files/50e65db415720a99ba16098470d305b53b544fd43f96a38b4f7a782beee814f8.png",
+      "test.outputs/test-outputs/files/49ed958245b02af965cd4bfdee370a07198782594fa2ba7c120c4fe181798198.png",
+      "test.outputs/test-outputs/files/04328ba166807b249f26eb75b23fd7387ffece91887840aba5e2a44405b28253.png",
+      "test.outputs/test-outputs/files/f964159b9e42db2a5125a267218ba92ca246b2fe9848925ed085601b6a20b984.png",
+      "test.outputs/test-outputs/files/02cdac29bdbd2b51f2a67dca3e909fc663213debd5975f70f993c51cb9627859.png",
+      "test.outputs/test-outputs/files/41a11a59074c8972eb1c53d951fefaf7b0f6687f4fda966f81f818340ae8ffc3.png",
+      "test.outputs/test-outputs/files/c27ca563fe8cfc8f873f2349f60af154a4743bf13e697a6d89485122a0ca5cee.png",
+      "test.outputs/test-outputs/files/7efabdda6c5008a85a0603736bb04c64c36bc814496eb8398b506f68927a2331.png",
+      "test.outputs/test-outputs/files/7fd0e389c4e2fbb0167e99d7f236a0610205df86b0602d9191307bac09c925df.png",
+      "test.outputs/test-outputs/files/888bf90d0d67b31efddf06d7a55884d3ba80332d69c928d2bc203cfe77603db6.png",
+      "test.outputs/test-outputs/files/0b357be06e0aa17bdd52908a33af149aace3103a93924e91f103d2f5d2a14956.png",
+      "test.outputs/test-outputs/files/06ff8c74483d15b1fdc309a423d036e2e9635331b9690b25d3b5fd144b736030.png",
+      "test.outputs/test-outputs/files/d46621bf80d86bd5af22dc60a8e7958015014bacee87999511a2705b764f52d0.png",
+      "test.outputs/test-outputs/files/c58ccb5cc529beed9a18bbf1a18cb4e50092c47db3e2781e5de7066d5eefb4c4.png",
+      "test.outputs/test-outputs/files/306b255577318f15e9c241113320742c5e979ee2c26877a8570e48cabbac92d9.png",
+      "test.outputs/test-outputs/files/af862531d87f331dbd7bde128d9da17d6f542ddad4aea29acdd2fb1ca6424576.png",
+      "test.outputs/test-outputs/files/a2675d6a41b7f77d9de3e08163d6928cd2ec5904e847bfaf1f4413a42ec43e49.png",
+      "test.outputs/test-outputs/files/4d2be22dfb5dafb797dc1ab5c9a2697b5d5a5e4310381f1d1a06c108f4a90fcc.png",
+      "test.outputs/test-outputs/files/45ca61ed044a1f778b0b9ef978a1fa41f42e3d6b8b179cab43dd727c08f62d1b.png",
+      "test.outputs/test-outputs/files/d626725e0db48e14eed68ece9b40ea7e876d65342c5624ac91c77f2feaa1272e.png",
+      "test.outputs/test-outputs/files/18baafbf45ddf97276af8e32eb47ceda75106c61c752701e09214358fdbf3388.png",
+      "test.outputs/test-outputs/files/a2e32eb97deb1164625df28274e02a83392ea811e8cd208aaaf48732eb150a0d.png",
+      "test.outputs/test-outputs/files/f5d715642f7117841684c6a6f9e36709d0bdfce39cd4646ce517e0d63f2e1e9b.png",
+      "test.outputs/test-outputs/files/a5482d09333f3369d36041aabcea9016679cacf424e9ccb9049e678127d3df08.png",
+      "test.outputs/test-outputs/files/5d7597b3b4dd91e147343028830c28572b445314db5fbd7105459fdf2eadbf12.png",
+      "test.outputs/test-outputs/files/3972629c9fc1323c802f08f2faf5c3a1a28db01025ecf0508bfeec886dadff5c.png",
+      "test.outputs/test-outputs/files/89ffedb442fa78e28ef219ad3fbf6914c1f2834c82f21787f301adb2d0335c40.png",
+      "test.outputs/test-outputs/files/d201d488ad4b080f1e788b3c197be2ed24fec6b64d6e40582b4315e014616891.png",
+      "test.outputs/test-outputs/files/12870ed736dcd81a6bd7a67d219f17e551f0b12fbac3f483f939c4d917cc9073.png",
+      "test.outputs/test-outputs/files/f04275e7394362668a8ad8486901e09097e1acdf23cb521333789d56c251fb84.png",
+      "test.outputs/test-outputs/files/cda45fc9cf8792b5f93ec9eb45f814c25747799c9ab54a2a16e3277092e1d43e.png",
+      "test.outputs/test-outputs/files/9f79d4af7859f6ddbbc76a684cb27bfe4d34332ff3bee84f1f6e70a907bc957c.png",
+      "test.outputs/test-outputs/files/2347586a7f50fb05692c72aac3752755f6852323e9c6c7ee86d8225364de6867.png",
+      "test.outputs/test-outputs/files/c638f78b0805b65a986a075d657f959029a9848379fa6c3e7519ae864019d21a.png",
+      "test.outputs/test-outputs/files/a87cea3cbe8e1678fd4ae383895db7d931eac9cac59b7169a8e6205a79886c9a.png",
+      "test.outputs/test-outputs/files/fd4ab279f98aebd8a4ab98642cd7189c30199da9bd46dacb603f9fcc89750cf3.png",
+      "test.outputs/test-outputs/files/9e54036273dc4c2db695d36e3ada1e8edfeae6926309525570c080a52b4b528b.png",
+      "test.outputs/test-outputs/files/559c2f0040284c285d1e75d024c7082dd16684cea25ff44094c635843b855b06.png",
+      "test.outputs/test-outputs/files/69b90fc04531863ae6093cc72a93e14b3162648ae2886643cfa285c2943676c5.png",
+      "test.outputs/test-outputs/files/8387c26d59431bb97414938ba128bb65eb3e79ae7c95266e8b3aa955ab2bddd6.png",
+      "test.outputs/test-outputs/files/112e64566828ea12bec94309dca8c32fe053b5f89dbc06b8e9297bd18b49e339.png",
+      "test.outputs/test-outputs/files/d92716c9f63a3151b1a0ca52a0726de92ef649e5d91c5023e96d28851c5d3172.png",
+      "test.outputs/test-outputs/files/c2c4a83ba93a140046654980e277960419e1f3dd772baabea0f6bfea73d57305.png",
+      "test.outputs/test-outputs/files/f7c17ea51e18539ee1c5836d4c8b7e4246aac5154e741be9fb318a5e1c8e26f4.png"
+    ]
   },
-  "report_checkpoints_reviewed": [
-    "overview",
-    "ten-lane-followups",
-    "ten-lane-followups-expanded",
-    "reliability-dispatch",
-    "reliability-dispatch-expanded",
-    "existing-vm-history-chart"
-  ],
-  "navigation_checkpoints_reviewed": ["overview", "live-theme-change"],
-  "checks": [
-    "Real pinned CDN stylesheets and ESM modules loaded; no failed network requests.",
-    "Initial light/dark theme and live color-scheme preference changes passed.",
-    "All report cases had no page errors, console errors, failed requests, or document overflow.",
-    "Both dispatch work cards and both expanded dispatch panels rendered.",
-    "Ten-lane table rendered with ten expandable evidence/next-measurement panels in each report case.",
-    "Existing populated latency/reliability charts and expanded table checkpoints remained available.",
-    "Four current root navigation cases passed with the final root index and the expected four main report cards/manifests."
-  ],
-  "manual_screenshot_review": "Reviewed desktop and mobile, light and dark overview captures for latency, reliability, and the current root navigation, plus representative ten-lane table and expanded-lane views, latency backend chart/table views, and reliability VM-history chart. Text, cards, charts, theme contrast, and the mobile scroll/expand cue were legible. The ten-lane table intentionally scrolls horizontally on narrow screens; the visible cue directs readers to scroll or expand a lane.",
-  "reviewed_screenshots": [
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
-      "checkpoint": "overview",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 1280,
-        "height": 900
+  "screenshot_review": {
+    "reviewer": "root",
+    "result": "Changed sections reviewed in desktop/mobile and light/dark; readable prose and labels, retained distinctions, tables contained within the page.",
+    "images": [
+      {
+        "case": "desktop-light",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/5b83779991cd00adc97fb408ee2feab988c7da79a060140ea3a3f76f9dfaba20.png"
       },
-      "sha256": "85d4370954a13c6a47e6194fe5450606f376a426349fd178b8706c1a6c0ee91e",
-      "test_output_relative_path": "files/c722fb82b6ca821cb4bb43803fbfa071aac474e154064d18ac37e02e5a5e34d7.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
-      "checkpoint": "overview",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 390,
-        "height": 844
+      {
+        "case": "desktop-light",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/4e48a36aaccfa1d7185a3f1ab5a2969970f5e9189318f98986cb31edbe945192.png"
       },
-      "sha256": "2eac028f27282fb5036767daa6d7e7fc0b31bb9ec975557e73237fc1be37bdeb",
-      "test_output_relative_path": "files/67c51afe8ff3d50e5403506bb001bf3047a82e3a094ebc15d310ffa2e2ae2ee4.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[dark-desktop-reliability]",
-      "checkpoint": "overview",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 1280,
-        "height": 900
+      {
+        "case": "desktop-light",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/af862531d87f331dbd7bde128d9da17d6f542ddad4aea29acdd2fb1ca6424576.png"
       },
-      "sha256": "e2a20a0ecf72760ad617c98133f831f81e1bf7205123954fabfbe499a765f287",
-      "test_output_relative_path": "files/d3557a4f28dfe87e44f06d464982be761971e94c792d5d44a65bc9c43b7f49ba.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[dark-mobile-reliability]",
-      "checkpoint": "overview",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 390,
-        "height": 844
+      {
+        "case": "desktop-light",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/fd4ab279f98aebd8a4ab98642cd7189c30199da9bd46dacb603f9fcc89750cf3.png"
       },
-      "sha256": "5139616c914b8bf3365f251161abc7aace926e902c9840033e2b76100de3aa82",
-      "test_output_relative_path": "files/2a4662005b815a5e2f06d9aaadce42a0f7ec724fd7f3e7cb7b572f9c33511b9a.png"
-    },
-    {
-      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
-      "case_id": "test_root_navigation_smoke[light-desktop]",
-      "checkpoint": "overview",
-      "title": "CI report navigation",
-      "viewport": {
-        "width": 1280,
-        "height": 900
+      {
+        "case": "desktop-light",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/d626725e0db48e14eed68ece9b40ea7e876d65342c5624ac91c77f2feaa1272e.png"
       },
-      "sha256": "0caad2063b55b4d118ab56b93890088a7bb2a6548411c0dc94884d92a92513fd",
-      "test_output_relative_path": "files/fbcdbf1da0c10f37cf7809d245812479849a2b6b136316266d09b46a3824f37c.png"
-    },
-    {
-      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
-      "case_id": "test_root_navigation_smoke[light-mobile]",
-      "checkpoint": "overview",
-      "title": "CI report navigation",
-      "viewport": {
-        "width": 390,
-        "height": 844
+      {
+        "case": "desktop-light",
+        "checkpoint": "root-navigation",
+        "artifact_path": "test.outputs/test-outputs/files/a87cea3cbe8e1678fd4ae383895db7d931eac9cac59b7169a8e6205a79886c9a.png"
       },
-      "sha256": "d60a2fe2b564427eebfe22089db0f38b63758d2a00221c32cb1e197921e1592b",
-      "test_output_relative_path": "files/b1c716ad9ba5e21ff8c10886c1a055afac13e592fe5f27973394c0e1aff60f61.png"
-    },
-    {
-      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
-      "case_id": "test_root_navigation_smoke[dark-desktop]",
-      "checkpoint": "overview",
-      "title": "CI report navigation",
-      "viewport": {
-        "width": 1280,
-        "height": 900
+      {
+        "case": "desktop-dark",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/06ff8c74483d15b1fdc309a423d036e2e9635331b9690b25d3b5fd144b736030.png"
       },
-      "sha256": "42972ceced5671f601464211d3cf9c3c912cea3cc4859ed37d35a891312140a6",
-      "test_output_relative_path": "files/4048f06e5616443ac8dc93d573036bbf2b1410e6e0a49d2d83872f452fe8ed25.png"
-    },
-    {
-      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
-      "case_id": "test_root_navigation_smoke[dark-mobile]",
-      "checkpoint": "overview",
-      "title": "CI report navigation",
-      "viewport": {
-        "width": 390,
-        "height": 844
+      {
+        "case": "desktop-dark",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/aeca2d86ba595527ce94dd677d9d2224b996baac30ed293cd114aa104e477d5c.png"
       },
-      "sha256": "78ade3905537b6ccf711a6385531f8251ab0e468933b9e32189d4d7fc4592da9",
-      "test_output_relative_path": "files/742bba3db296dc76ca99e065ac93f02848e67f5d4126f51a99e2d2e0c3e201e1.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
-      "checkpoint": "ten-lane-followups",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 1280,
-        "height": 900
+      {
+        "case": "desktop-dark",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/112e64566828ea12bec94309dca8c32fe053b5f89dbc06b8e9297bd18b49e339.png"
       },
-      "sha256": "9694f92641459e7ac391a4ffe68f79ae7e257cd20c5cfc9a8475f8e6e4fedda2",
-      "test_output_relative_path": "files/52cc67a6828d7e02a0bf9648f56c4d80530eb79f71f7238af5bb9d07b24b46db.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
-      "checkpoint": "ten-lane-followups",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 390,
-        "height": 844
+      {
+        "case": "desktop-dark",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/02cdac29bdbd2b51f2a67dca3e909fc663213debd5975f70f993c51cb9627859.png"
       },
-      "sha256": "7174270fd5775dc82a50af9b41b566a5bd6546cb00a58381ad2165fcf64f32b2",
-      "test_output_relative_path": "files/eef9abef04b9acb3c995c3741889d3d334b19a4f09324465d585286686cb659d.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
-      "checkpoint": "ten-lane-followups-expanded",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 390,
-        "height": 844
+      {
+        "case": "desktop-dark",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/41a11a59074c8972eb1c53d951fefaf7b0f6687f4fda966f81f818340ae8ffc3.png"
       },
-      "sha256": "b38ea5d87e7511be07cbf75b3c5b6496f047e7410e898927348fedf6c53e5d34",
-      "test_output_relative_path": "files/ff74a9fb00e7a38dd9b7626b88e1fece0c0c947783fc0359e0eebe4bccf8ee87.png"
-    },
-    {
-      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
-      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
-      "checkpoint": "existing-vm-history-chart",
-      "title": "CI reliability report",
-      "viewport": {
-        "width": 1152,
-        "height": 694
+      {
+        "case": "desktop-dark",
+        "checkpoint": "root-navigation",
+        "artifact_path": "test.outputs/test-outputs/files/c2c4a83ba93a140046654980e277960419e1f3dd772baabea0f6bfea73d57305.png"
       },
-      "sha256": "6809291a1cbc58f7313dfccea4bde1b1e7be01473ab5118d789997a616e29bf4",
-      "test_output_relative_path": "files/b33beea87772ecde95a42f1f29ffc73130478111ec5e75f651159b54279c9aef.png"
-    }
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/f04275e7394362668a8ad8486901e09097e1acdf23cb521333789d56c251fb84.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/2e90227a2ae24f357bc19f3bdd901be6b6d9c1ba2a05972bba11009a87459a43.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/f7c17ea51e18539ee1c5836d4c8b7e4246aac5154e741be9fb318a5e1c8e26f4.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-3",
+        "artifact_path": "test.outputs/test-outputs/files/49ed958245b02af965cd4bfdee370a07198782594fa2ba7c120c4fe181798198.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-4",
+        "artifact_path": "test.outputs/test-outputs/files/c58ccb5cc529beed9a18bbf1a18cb4e50092c47db3e2781e5de7066d5eefb4c4.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/306b255577318f15e9c241113320742c5e979ee2c26877a8570e48cabbac92d9.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/5977ef66342d24ee771815f1e0d398ae1f1ebaba3d4f68756737cd2e9e34338d.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "latency-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/4d2be22dfb5dafb797dc1ab5c9a2697b5d5a5e4310381f1d1a06c108f4a90fcc.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/c638f78b0805b65a986a075d657f959029a9848379fa6c3e7519ae864019d21a.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "reliability-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/dd5ac436f65b76f836e373ef7a6efc9f96a9c1d85f3a1e13d46f8c418ac8113b.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "reliability-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/9e54036273dc4c2db695d36e3ada1e8edfeae6926309525570c080a52b4b528b.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "root-navigation",
+        "artifact_path": "test.outputs/test-outputs/files/fca459cc2322137179272d1b7cceef1c510c5de9dd3cfcbed9c31107a575c828.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/cda45fc9cf8792b5f93ec9eb45f814c25747799c9ab54a2a16e3277092e1d43e.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/5f7a261bca0d6f48c1c581899ecf377caf8bb70231e73082fa436804647b943e.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/f07d07f41d8cab569a9950aa668ea26e0794dd1ab41dc4681e935e4c24dd3f3c.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-3",
+        "artifact_path": "test.outputs/test-outputs/files/a5482d09333f3369d36041aabcea9016679cacf424e9ccb9049e678127d3df08.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-4",
+        "artifact_path": "test.outputs/test-outputs/files/c27ca563fe8cfc8f873f2349f60af154a4743bf13e697a6d89485122a0ca5cee.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/a2675d6a41b7f77d9de3e08163d6928cd2ec5904e847bfaf1f4413a42ec43e49.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/8387c26d59431bb97414938ba128bb65eb3e79ae7c95266e8b3aa955ab2bddd6.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "latency-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/80ee6741658988067e9a84c8132b071061417b879992ac654a4047b82fdff475.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/9c61a4dfa7255313945d51d99e3e4ea0e667975cb8ac56118a3202fd5684af2e.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "reliability-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/0b357be06e0aa17bdd52908a33af149aace3103a93924e91f103d2f5d2a14956.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "reliability-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/8394d18f6adc56d4ce3c5ff750d94a2138498638f318a57a34647d3575fa1bd8.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "root-navigation",
+        "artifact_path": "test.outputs/test-outputs/files/9f79d4af7859f6ddbbc76a684cb27bfe4d34332ff3bee84f1f6e70a907bc957c.png"
+      }
+    ]
+  },
+  "limits": [
+    "Proof JSON excluded from asset hashes to avoid self-reference; all other packaged assets match final publication bytes.",
+    "Visual validation does not establish source-test coverage, a CI saving, or adoption qualification.",
+    "Other report manifests are packaged for root navigation only; their measurement populations were not refreshed."
   ]
 }

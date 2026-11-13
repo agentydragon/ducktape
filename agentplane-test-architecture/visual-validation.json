@@ -1,9 +1,14 @@
 {
   "schema_version": 1,
-  "scope": "Final iteration7 source5699 evidence snapshot and updated root report navigation; source implementation qualification is separate.",
-  "verified_at_utc": "2026-11-13T14:59:55.170969+00:00",
-  "invocation_url": "https://app.buildbuddy.io/invocation/f98f52bd-33d9-41a8-84d4-cf4e699a06e1",
+  "scope": "Iteration8 source0a9 architecture checkpoint, latency/reliability supplements and root report navigation. Source qualification is separate.",
+  "verified_at_utc": "2026-11-13T16:47:31.454997+00:00",
+  "invocation_url": "https://app.buildbuddy.io/invocation/7ad87baa-edf8-436f-95b7-e98b18d46aa5",
   "target": "//x/ci_architecture_preview:test_report",
+  "prior_attempt": {
+    "invocation_url": "https://app.buildbuddy.io/invocation/d028653c-c89b-4851-850b-ab761463bcd3",
+    "result": "4 report-render cases failed before repair",
+    "cause": "Initial React data-null dereference in the added current-source row; repaired before the successful attempt. The preview also gained its missing root ci-lanes.js asset before retry."
+  },
   "native_result": {
     "tests": 4,
     "failures": 0,
@@ -18,35 +23,58 @@
   "physical_test_runner": {
     "new_records": 1,
     "stage": "COMPLETED",
-    "reported_reapi_code": 0
+    "reported_reapi_code": 0,
+    "execution_id": "/uploads/1fb2cbc7-6c84-4f9e-9db8-ea85d8a03bfe/blobs/a284fe9281e2a7558b283e0295a12a775a3642666e56a210df501b6259f411f9/501"
   },
   "final_asset_sha256": {
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "index.html": "ec8e671b6eb4461c0158d1e9175092a61ad5fdc499279891ace659f54ef8faf2",
-    "README.md": "aa01d1e477b72275274fa2ba3877f78db09730725dd3ce9996caaebf28ec48d2",
-    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a",
-    "agentplane-test-architecture/app-fixture-ownership.json": "436f76dbc8053790f9a186981e17a2e32bbaa891469bb18e7258e29930328cb2",
-    "agentplane-test-architecture/render-batching-candidate.patch": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb",
-    "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
-    "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
-    "agentplane-test-architecture/required-ci-135-workflow.json": "9d1e7378694fd384ba4bec4ff348a415da959490abfc11aa8d414bd7ef9ede0e",
-    "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
-    "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
-    "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
-    "agentplane-test-architecture/manifest.json": "5924b812e6fb7ac5d5169deb70ab49e532a51820f2d291e2fde200f1b6c54304",
-    "agentplane-test-architecture/render-batching-rejected.json": "e7642fe4ab3ec96d2f51e6d7326ad173a439fbae4dca524a7667b29fea456efc",
-    "agentplane-test-architecture/index.html": "cac9af4c52dee897154364ff7e99a05a4f348224a8ba667edab41cf0cf77e374",
-    "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
-    "agentplane-test-architecture/runtime-control-listener-repair.json": "38f72a255773273126db83d3828797ad6b4977525368869222dced67721ee8d5",
-    "agentplane-test-architecture/evidence.json": "be4886dd859bf1cd47a92ee24155a3a97249ceecf81189bd76c3c15128944db1",
-    "agentplane-test-architecture/selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2",
-    "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
-    "agentplane-test-architecture/required-ci-5699-workflow.json": "e37f5d2ea4daba1e41179d559dfe522512545164044c8502c9bd5c190f7bdeb0",
-    "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
+    "index.html": "be608424e0587f66583f2f5b22e0fee187c8780b9bca0bb9bbd056cae14e60dd",
+    "README.md": "54e63f071a8eaf0b93726012b6a21c471b8e435127649516cf1f279b7e1708d8",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297"
+    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
+    "latency/crd-ordering-spike.patch": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5",
+    "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
+    "latency/manifest.json": "fe23be14a63843e81c991a79f3040f7c3451f086d078288b2ece7a8ebaca22d3",
+    "latency/index.html": "eeec4dd1221b19d67c1d6f8a0a599b268bb9fdd0594158726e9f002376610b2e",
+    "latency/bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
+    "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
+    "latency/evidence.json": "5eff92fffa226d7940b73fd3737df022b3ec593495a828fc232cdb4b5c9292af",
+    "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
+    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a",
+    "reliability/manifest.json": "954ce4ba61d0dffc773cd21423f8e0335416d1419b879561d74691af2ca60a64",
+    "reliability/index.html": "dd7c56c562b97a4caafbfb46c55b3f8455d1cf20c193fb022e03278950b2273d",
+    "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
+    "reliability/evidence.json": "00fe15e09562ca11fd2c25a6ce373dde3c249afda2a2797a951fc803c086e521",
+    "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+    "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
+    "agentplane-test-architecture/render-batching-candidate.patch": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb",
+    "agentplane-test-architecture/runtime-control-listener-repair.json": "38f72a255773273126db83d3828797ad6b4977525368869222dced67721ee8d5",
+    "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
+    "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
+    "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
+    "agentplane-test-architecture/required-ci-5699-workflow.json": "e37f5d2ea4daba1e41179d559dfe522512545164044c8502c9bd5c190f7bdeb0",
+    "agentplane-test-architecture/manifest.json": "c365f0663a2e83a6bd09566da6ef92ec6c17bfc4752bfad8f1db905f08095f18",
+    "agentplane-test-architecture/historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
+    "agentplane-test-architecture/historical-app-cut-stage.json": "4e416cb61566a4999cb595056e18e71cfe06dc1bb8606aa939b8f14ebe14e1fa",
+    "agentplane-test-architecture/asgi-mcp-ownership.json": "44b7a1ba7d6e8bf4e69f1b457ff0f786af9cbdbb5862416c83fefa10b6db210d",
+    "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
+    "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
+    "agentplane-test-architecture/index.html": "b825863c0eb2652f570c3f5c0d536942e55007b25c5ecffcb23216b4d035b066",
+    "agentplane-test-architecture/required-ci-135-workflow.json": "9d1e7378694fd384ba4bec4ff348a415da959490abfc11aa8d414bd7ef9ede0e",
+    "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
+    "agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
+    "agentplane-test-architecture/accepted-run-observer-reconciliation.json": "4242d59aa3711a74c9ea7a06b1b12bf225a1ecd10c05090058df74091684b1ab",
+    "agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
+    "agentplane-test-architecture/evidence.json": "90be76e1431b342b1adb481db90bb4447cb655318bbe74d800633deecf8b05e2",
+    "agentplane-test-architecture/selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2",
+    "agentplane-test-architecture/render-batching-rejected.json": "e7642fe4ab3ec96d2f51e6d7326ad173a439fbae4dca524a7667b29fea456efc",
+    "agentplane-test-architecture/accepted-run-observer-reconciliation.patch": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
+    "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
+    "agentplane-test-architecture/required-ci-a16-workflow.json": "8584a810536a43562cb1a94a427ce8ca7551e404d98ae79b8d82316ccc812f03",
+    "agentplane-test-architecture/app-fixture-ownership.json": "436f76dbc8053790f9a186981e17a2e32bbaa891469bb18e7258e29930328cb2",
+    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845"
   },
   "cases": [
     {
@@ -56,7 +84,17 @@
         "height": 844
       },
       "status": "passed",
-      "live_theme_change": true,
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
+      ],
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 5,
+        "latency": 3,
+        "reliability": 3
+      },
       "document_overflow": false,
       "console_errors": [],
       "failed_requests": []
@@ -68,7 +106,17 @@
         "height": 844
       },
       "status": "passed",
-      "live_theme_change": true,
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
+      ],
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 5,
+        "latency": 3,
+        "reliability": 3
+      },
       "document_overflow": false,
       "console_errors": [],
       "failed_requests": []
@@ -80,7 +128,17 @@
         "height": 900
       },
       "status": "passed",
-      "live_theme_change": true,
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
+      ],
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 2,
+        "latency": 2,
+        "reliability": 1
+      },
       "document_overflow": false,
       "console_errors": [],
       "failed_requests": []
@@ -92,159 +150,125 @@
         "height": 900
       },
       "status": "passed",
-      "live_theme_change": true,
+      "pages_checked": [
+        "agentplane-test-architecture",
+        "latency",
+        "reliability"
+      ],
+      "live_theme_change_each_page": true,
+      "section_capture_counts": {
+        "agentplane-test-architecture": 2,
+        "latency": 2,
+        "reliability": 1
+      },
       "document_overflow": false,
       "console_errors": [],
       "failed_requests": []
     }
   ],
   "screenshots": {
-    "count": 116,
+    "count": 68,
     "cases": 4,
-    "checkpoints_per_case": 29,
-    "coverage": "Root navigation, current requiredCI, Runtime selector, App ownership, listener repair, historical pair, renderer decision, native/guest contracts, retained historical progress,30-pair table,3selectors,6planstages.",
+    "coverage": "Root navigation, every viewport of all three added report sections, retained selectors, six expanded plan stages, and both CI-report failure disclosures.",
     "artifact_paths": [
-      "test.outputs/test-outputs/files/7d12d72dac81081da78bc7706a292fe8d5f78337f432ddcf3a6a3776ed8db09e.png",
-      "test.outputs/test-outputs/files/8f0b5f3f6f047d4aab6aea6b853a871288dfa28a65e56fba8d9b69f51eabbac7.png",
-      "test.outputs/test-outputs/files/a473c5d66195027937e6c0bdc58448d1d4058f2045b0829daecf70c64aa8c4e2.png",
-      "test.outputs/test-outputs/files/f49e0e727b041be8dbb0eaf089ff0c5fd7972d1636d7f97ea2d7ed36089913da.png",
-      "test.outputs/test-outputs/files/afc66f8fe1578464e16571fcc2e997bc9f506b78b684909b7d034fad9b65223e.png",
-      "test.outputs/test-outputs/files/d6946883dde884c97b6a324183e4edd7bfcc75b88a05b69390ddf5e14c45f0f8.png",
+      "test.outputs/test-outputs/files/be7c17cb1c780616e747e01e5f87b0a8ec27a4be825166b64d59cd5354cfae46.png",
+      "test.outputs/test-outputs/files/25e644978c536d8465d4065ad608cd35966df429d56dc1c6a4ea6e5f582f89da.png",
+      "test.outputs/test-outputs/files/f07d07f41d8cab569a9950aa668ea26e0794dd1ab41dc4681e935e4c24dd3f3c.png",
+      "test.outputs/test-outputs/files/8394d18f6adc56d4ce3c5ff750d94a2138498638f318a57a34647d3575fa1bd8.png",
       "test.outputs/test-outputs/files/fca459cc2322137179272d1b7cceef1c510c5de9dd3cfcbed9c31107a575c828.png",
-      "test.outputs/test-outputs/files/c8dc4702b3b1f922fcba07e5617d8b6f6b13b7831aa0fcb8822b54dbb08731f4.png",
-      "test.outputs/test-outputs/files/4f50542a4af13bc7da94daf6fd011f41147c5ff2d47e2fc8e4a875cdc3777201.png",
-      "test.outputs/test-outputs/files/377f7fb3d38ed2dbac1aebbcdc41ed780c6d2fefb771a4824c65d450bf022507.png",
-      "test.outputs/test-outputs/files/26591a57db3451a8295bb9b25c92547d4e254d1f887210d0f857bbcdc2f104cd.png",
-      "test.outputs/test-outputs/files/e0c99eca9077d4950b03e2e4a181f7805073234e9bde2b33d77c0199375b9774.png",
-      "test.outputs/test-outputs/files/c8f894b05c27966ea16ceaf332a6f39d94f886e34fce2d435caa742b39d69d71.png",
-      "test.outputs/test-outputs/files/8b96bb577f91a43daf72be4ad3ee99ed8c97ce158f5bdd6b3857c2f57075a594.png",
-      "test.outputs/test-outputs/files/e3388c7ab190eab909dbb560a0d44bdf6518e36792c0fe5682187c82e20e7aff.png",
-      "test.outputs/test-outputs/files/f16c2417936b298afa4104aab1df16e1707e6b4b6aa4526938442cfe41bbdd66.png",
-      "test.outputs/test-outputs/files/a4daba1a1fc654438a1fccbe7a339b0ef24cec85f57710058e093ac0270382c0.png",
-      "test.outputs/test-outputs/files/d4425d8cca1887f48ae1b472c6a75d0e2a7585e8088eb4c6d3d8391dea1f711a.png",
-      "test.outputs/test-outputs/files/ce729059c90092365143e48d6679073d66352e9ad5114f1553985db0b608ca1a.png",
-      "test.outputs/test-outputs/files/9ae0927fb14aa5c1bb3679a29780370bf107d04e7b72f44529c351fa13616d97.png",
-      "test.outputs/test-outputs/files/c92674386af13f64709854387148e8b2593994ae99d68419eb208d44713612e5.png",
-      "test.outputs/test-outputs/files/44e9ebc25d9e2d295c0ad316a560a64a4cfeba5c36270cfc274344d1a048c779.png",
-      "test.outputs/test-outputs/files/59a4dba81331c767a97b43cc5c387ad2bf7da9a3341e072df28c9e49d5a8cc5b.png",
-      "test.outputs/test-outputs/files/046c33577232d6ed9f306a2182ec652d75d40f858d95de5fc5a1e154061e8c0f.png",
-      "test.outputs/test-outputs/files/65709bc20e848fb5628d1a3040f8291fd9648189ef686d20b24fcfb071f6d4ed.png",
-      "test.outputs/test-outputs/files/bbeaee11eb2ca788b610360c27d52a810756bcccab4e1b491f28c01ff0847f2f.png",
-      "test.outputs/test-outputs/files/eac114736839ecc2e6dac7e043dda71becf3114074923f8ed2257bf1e3dee2fa.png",
-      "test.outputs/test-outputs/files/85fe3796756cbe5f51ac5d6dcf204d273c4f23416038528555616039dcb13c8d.png",
-      "test.outputs/test-outputs/files/37d5b9be6851161e3dd7c656b3ef97cf7822f24fd56c247602356bf1acce748d.png",
-      "test.outputs/test-outputs/files/08cf7e0500a084fcd5ea88218d3164bbc2cbc0d2f6777569302798578b68c28f.png",
-      "test.outputs/test-outputs/files/f98606f91d65ffc89b22b2e4079cb83c81e201d273bd8c57cbd8b212f6f6a0eb.png",
-      "test.outputs/test-outputs/files/ee8b64e71a7bd5a0d036e54f175b855d2009992422e749d3c5a1e1c95f05550a.png",
-      "test.outputs/test-outputs/files/25048968d71165db786b9b417a2f03679c0da21b19be7ce66cf44e6284d7628e.png",
-      "test.outputs/test-outputs/files/6c966a8f2580e7b0a8e6b0aa937323f345356456be1b469fcd50d7303aabedf7.png",
-      "test.outputs/test-outputs/files/f4d174856cb87cae3b6b349d0ea5e9bf8281c9dab38bcecdedb398debf7b976d.png",
-      "test.outputs/test-outputs/files/a7a440c78a47d8df85f0cb8aa109755e8a3ad740a0aa42bff7d711383374854f.png",
-      "test.outputs/test-outputs/files/246d159f52afb1877dba9af602c015fc5eeb70eeb71e9958e0fd99ea54e11d59.png",
-      "test.outputs/test-outputs/files/88299496d7b20b4d6fc2db1676fbf16f89730318537ae7ad3de029373920a9e1.png",
-      "test.outputs/test-outputs/files/ffc03151cad99d885895da212137b1a95ee5ca8b564df1a83c56c5c1ad4c07f4.png",
-      "test.outputs/test-outputs/files/d171e94d9e6dcdbb8413433d5bb5c4014aadcb0d62fbbc4368094677aba136f4.png",
-      "test.outputs/test-outputs/files/6a2cebe235d93684acb6309b28bc9cf9d401e7fec27e05c68338bfe2ac36c18c.png",
-      "test.outputs/test-outputs/files/3672a3244f1bcfda08ef3f817ca702b05cef8f85a6992b09e4ce660b12fbe6e5.png",
-      "test.outputs/test-outputs/files/5026a8e53532069422bfd26767cb264906a3f15a24c83754c38236b305c10fff.png",
-      "test.outputs/test-outputs/files/63b06561c2452a043461e1ec2fbe976512a00e186777b4c088caf7ed0db032d6.png",
-      "test.outputs/test-outputs/files/53eac4b6c678fca077dac06107a0fddd3e2e9135446a48c9a9c54cc51b97dc35.png",
-      "test.outputs/test-outputs/files/e8f79d1e4573162e506ba516585d4243aa31cab7f4f5f0d401d3514313e1c5cd.png",
-      "test.outputs/test-outputs/files/bbd7bf7d7d5b3c7008751c08d2049991caaf8985f00852842ebf17f9d7f0cd53.png",
-      "test.outputs/test-outputs/files/e4a4b5d6dfbdd11dad817ee487f5df701ea7a217dcc7d980b8f73e845a2f6d2e.png",
-      "test.outputs/test-outputs/files/5755ed4510e95c558ed425694c9fcf1017e224984858de53978e56e17e567532.png",
-      "test.outputs/test-outputs/files/fe4d0ea43247e27de5406edf73ee1318eddbf54e3259a9ffc25d2c56ac5a6646.png",
-      "test.outputs/test-outputs/files/4e25124b941a55928030ee2a6ff9612098a31124271ee9cad1147a996ef79004.png",
-      "test.outputs/test-outputs/files/d7ed5ef9b09f5ea6e84e4e83f827efff062f0211725acf0309858aabb5bd4bad.png",
-      "test.outputs/test-outputs/files/3a572c447200c7c5f7f688d5eefc1bceb4a69cae501706d9757e21954dd68d67.png",
-      "test.outputs/test-outputs/files/bf13092e3d6d549bcd178191061b683c25ed19153a2cca6742754e7def6a3e70.png",
-      "test.outputs/test-outputs/files/69ad36ac501a28b2520aeefda8e52cfec785277eb7e4adc71e2ed1d45defaabb.png",
-      "test.outputs/test-outputs/files/c6701c525ce83f5988f56c3909ff4510208c180e6e888550371fe14a1cd97a8c.png",
-      "test.outputs/test-outputs/files/c8bc28b7b785c38d4e778fffa866af991c8831e38a664671366b9be5c07ec39e.png",
-      "test.outputs/test-outputs/files/eb7dc7186bbc3cc863f9ff68a47c663fe96261c6e6ecbdbf04425572a2bcfb9a.png",
-      "test.outputs/test-outputs/files/0379b73f2803e3a60d5be0ab0592527619142a1067f4c290ec10074ec7721a96.png",
-      "test.outputs/test-outputs/files/f0e3badf3bc4455a1bd60bebcacf583b5e68d889ca7ea144027334ffdabf8020.png",
-      "test.outputs/test-outputs/files/21ccd1004e5af1a174c4ac83708010578dbe6fea79b47354ad0be83c6d44ae90.png",
-      "test.outputs/test-outputs/files/8c676ed92d2965c4f021a22ea6a8c1a5328d2d27c7baa5ad9bb8242d88ac81c6.png",
-      "test.outputs/test-outputs/files/07a5aa2561f995c2ae8f5b54b5796e5435484c46e4546bbc75b19ffaed9dfe52.png",
-      "test.outputs/test-outputs/files/096b08050f30124d2953b83952b23662e57c0c6f35f368272c6e1913f6383552.png",
-      "test.outputs/test-outputs/files/2d0b4e312df9af5df3884c46e3025181d524570c311b19289697ec2123351e6f.png",
-      "test.outputs/test-outputs/files/d2ab6dd548a9b20754b9ca6f84892772662c761711c1483ddd1333b4e13f6b78.png",
-      "test.outputs/test-outputs/files/0cda6c6c8a98dedea3a6b097d22e41834d768c7e9c2c8ed09c5a6bb207bf736f.png",
-      "test.outputs/test-outputs/files/b325c7b6e1274e8f307f72950b78d0a6f509015dc889c5c089718b811e47a4c8.png",
-      "test.outputs/test-outputs/files/fc0baf64e2da4d2a1c5d0d98ae2095365d8637103d7c5abf031c2a4fa98ae87b.png",
-      "test.outputs/test-outputs/files/a29c92e186227066df2c93810036e4b141922375a441223ab39668330fde9a09.png",
-      "test.outputs/test-outputs/files/d7edec4d522c7e358ceb54d1d0e75a33a38e08a2a33c88c8303cb96747f792b6.png",
-      "test.outputs/test-outputs/files/9916f85ad78cc3896901d466959508f12e55465ef609666ab0b7f3ac7df278df.png",
-      "test.outputs/test-outputs/files/a3684b81615d40e59a634e4f1ce60effa4066e80f1840418e0919bf1acb6930c.png",
-      "test.outputs/test-outputs/files/d09085952b61a01324c3c6c5dc61497d1d0a3815e29e311ed86e4b549134b5d4.png",
-      "test.outputs/test-outputs/files/84d99fd3f84e2676cc0c90565bb44209b3a827874a100e6261b51059fa8c97ef.png",
-      "test.outputs/test-outputs/files/a49c1b7302625c32e38430d7985b1aca05740e015d89f823bef109928fd692d6.png",
-      "test.outputs/test-outputs/files/0738c8d5db3a78570eaade4c4a49b73557be7c1282ca0a9bd452561b05a060e1.png",
-      "test.outputs/test-outputs/files/e870af1738804319ebe23ce553e6d5ed240782936ed35cf138132ba8b93116a7.png",
-      "test.outputs/test-outputs/files/9aaef4de960c2057539d531b4f5f592377e738651dc2d0cea4fc988f56b6fd15.png",
-      "test.outputs/test-outputs/files/d301c3242b28c0421de6c2c02c927b2bf947cdc9a347a42279fd7214f3e78ce1.png",
-      "test.outputs/test-outputs/files/03a7ab3d9334f61e0eece42b7bd040db8970efec33196c26660cd8b2f5f2504b.png",
-      "test.outputs/test-outputs/files/0708ade0c6eb443685d0902e40f4e9a8be3e9f37cc0fea8264775ec08e2056df.png",
-      "test.outputs/test-outputs/files/cc58eb135dd4d3056fb5476599bc14cb47eabfdf9fc52095c43e4458a1bb64fa.png",
-      "test.outputs/test-outputs/files/00b51514023312e38623f2737ce73665013a3632ad7a04e904da61a336f92deb.png",
-      "test.outputs/test-outputs/files/7ec94cc8b5b57d64b0c9b056fd3d8568b169faa738c25358d581e17a4548775f.png",
-      "test.outputs/test-outputs/files/284d39c0087e42327cf0e80507d327e70a65967b2916150d2f028ec0a177de09.png",
+      "test.outputs/test-outputs/files/aeca2d86ba595527ce94dd677d9d2224b996baac30ed293cd114aa104e477d5c.png",
+      "test.outputs/test-outputs/files/1f0a62495610eb4548d9cd9ee426e52be44da5c46fa1fc6513da2b22f4e2d0db.png",
+      "test.outputs/test-outputs/files/c7cd820bd851e5cc82624685c8d6d88131987b3cc5e40bd9e3d68873a157662b.png",
+      "test.outputs/test-outputs/files/5f7a261bca0d6f48c1c581899ecf377caf8bb70231e73082fa436804647b943e.png",
+      "test.outputs/test-outputs/files/904bc159d7e651c284bdd7396d6518ec6d4963b2fa94b5b5a573942aff00862c.png",
+      "test.outputs/test-outputs/files/daf8ec7dbedf98ecb18ae50e3f5641c08ecc1eb79060ec1c6453e914cca8a360.png",
+      "test.outputs/test-outputs/files/2e90227a2ae24f357bc19f3bdd901be6b6d9c1ba2a05972bba11009a87459a43.png",
+      "test.outputs/test-outputs/files/9f82c47967dec43f1066c8460f7f6027c8d5e1325dacd9cc18af8bf6566a8ad1.png",
+      "test.outputs/test-outputs/files/4e48a36aaccfa1d7185a3f1ab5a2969970f5e9189318f98986cb31edbe945192.png",
+      "test.outputs/test-outputs/files/a3f6b02c595a28d49862c75f851c1da057a98389e3a21cb6f02503243677c765.png",
+      "test.outputs/test-outputs/files/80ee6741658988067e9a84c8132b071061417b879992ac654a4047b82fdff475.png",
+      "test.outputs/test-outputs/files/4b8b803373f71f10e638329c4ccabf18ae059a021068803f39b5452dbc4862bd.png",
+      "test.outputs/test-outputs/files/5977ef66342d24ee771815f1e0d398ae1f1ebaba3d4f68756737cd2e9e34338d.png",
+      "test.outputs/test-outputs/files/f8d091fcc998bd198cfa38568f090acd7a337e178a3d68540086a75e194c14bf.png",
+      "test.outputs/test-outputs/files/d3079ab1aaacc2edd307700a9a39b466daae403537b9c567ac1958417e719ac6.png",
+      "test.outputs/test-outputs/files/dd5ac436f65b76f836e373ef7a6efc9f96a9c1d85f3a1e13d46f8c418ac8113b.png",
+      "test.outputs/test-outputs/files/9fdfeea6b1a0a9bbe68a16736032e265cf8692c2ec741652df73df2685ad67d3.png",
+      "test.outputs/test-outputs/files/5b83779991cd00adc97fb408ee2feab988c7da79a060140ea3a3f76f9dfaba20.png",
+      "test.outputs/test-outputs/files/9c61a4dfa7255313945d51d99e3e4ea0e667975cb8ac56118a3202fd5684af2e.png",
+      "test.outputs/test-outputs/files/50e65db415720a99ba16098470d305b53b544fd43f96a38b4f7a782beee814f8.png",
+      "test.outputs/test-outputs/files/49ed958245b02af965cd4bfdee370a07198782594fa2ba7c120c4fe181798198.png",
+      "test.outputs/test-outputs/files/04328ba166807b249f26eb75b23fd7387ffece91887840aba5e2a44405b28253.png",
+      "test.outputs/test-outputs/files/f964159b9e42db2a5125a267218ba92ca246b2fe9848925ed085601b6a20b984.png",
+      "test.outputs/test-outputs/files/02cdac29bdbd2b51f2a67dca3e909fc663213debd5975f70f993c51cb9627859.png",
+      "test.outputs/test-outputs/files/41a11a59074c8972eb1c53d951fefaf7b0f6687f4fda966f81f818340ae8ffc3.png",
+      "test.outputs/test-outputs/files/c27ca563fe8cfc8f873f2349f60af154a4743bf13e697a6d89485122a0ca5cee.png",
+      "test.outputs/test-outputs/files/7efabdda6c5008a85a0603736bb04c64c36bc814496eb8398b506f68927a2331.png",
+      "test.outputs/test-outputs/files/7fd0e389c4e2fbb0167e99d7f236a0610205df86b0602d9191307bac09c925df.png",
+      "test.outputs/test-outputs/files/888bf90d0d67b31efddf06d7a55884d3ba80332d69c928d2bc203cfe77603db6.png",
+      "test.outputs/test-outputs/files/0b357be06e0aa17bdd52908a33af149aace3103a93924e91f103d2f5d2a14956.png",
+      "test.outputs/test-outputs/files/06ff8c74483d15b1fdc309a423d036e2e9635331b9690b25d3b5fd144b736030.png",
+      "test.outputs/test-outputs/files/d46621bf80d86bd5af22dc60a8e7958015014bacee87999511a2705b764f52d0.png",
+      "test.outputs/test-outputs/files/c58ccb5cc529beed9a18bbf1a18cb4e50092c47db3e2781e5de7066d5eefb4c4.png",
+      "test.outputs/test-outputs/files/306b255577318f15e9c241113320742c5e979ee2c26877a8570e48cabbac92d9.png",
+      "test.outputs/test-outputs/files/af862531d87f331dbd7bde128d9da17d6f542ddad4aea29acdd2fb1ca6424576.png",
+      "test.outputs/test-outputs/files/a2675d6a41b7f77d9de3e08163d6928cd2ec5904e847bfaf1f4413a42ec43e49.png",
+      "test.outputs/test-outputs/files/4d2be22dfb5dafb797dc1ab5c9a2697b5d5a5e4310381f1d1a06c108f4a90fcc.png",
+      "test.outputs/test-outputs/files/45ca61ed044a1f778b0b9ef978a1fa41f42e3d6b8b179cab43dd727c08f62d1b.png",
+      "test.outputs/test-outputs/files/d626725e0db48e14eed68ece9b40ea7e876d65342c5624ac91c77f2feaa1272e.png",
+      "test.outputs/test-outputs/files/18baafbf45ddf97276af8e32eb47ceda75106c61c752701e09214358fdbf3388.png",
+      "test.outputs/test-outputs/files/a2e32eb97deb1164625df28274e02a83392ea811e8cd208aaaf48732eb150a0d.png",
+      "test.outputs/test-outputs/files/f5d715642f7117841684c6a6f9e36709d0bdfce39cd4646ce517e0d63f2e1e9b.png",
+      "test.outputs/test-outputs/files/a5482d09333f3369d36041aabcea9016679cacf424e9ccb9049e678127d3df08.png",
+      "test.outputs/test-outputs/files/5d7597b3b4dd91e147343028830c28572b445314db5fbd7105459fdf2eadbf12.png",
+      "test.outputs/test-outputs/files/3972629c9fc1323c802f08f2faf5c3a1a28db01025ecf0508bfeec886dadff5c.png",
+      "test.outputs/test-outputs/files/89ffedb442fa78e28ef219ad3fbf6914c1f2834c82f21787f301adb2d0335c40.png",
+      "test.outputs/test-outputs/files/d201d488ad4b080f1e788b3c197be2ed24fec6b64d6e40582b4315e014616891.png",
+      "test.outputs/test-outputs/files/12870ed736dcd81a6bd7a67d219f17e551f0b12fbac3f483f939c4d917cc9073.png",
+      "test.outputs/test-outputs/files/f04275e7394362668a8ad8486901e09097e1acdf23cb521333789d56c251fb84.png",
+      "test.outputs/test-outputs/files/cda45fc9cf8792b5f93ec9eb45f814c25747799c9ab54a2a16e3277092e1d43e.png",
       "test.outputs/test-outputs/files/9f79d4af7859f6ddbbc76a684cb27bfe4d34332ff3bee84f1f6e70a907bc957c.png",
-      "test.outputs/test-outputs/files/a15ba12b14f97c06383dadb4845908baefb967ee1385266318f60d487e9fa518.png",
-      "test.outputs/test-outputs/files/2d21027c3e272202d7daecb5c4b7e2fb7bc38cc28ab1e07307a93ae426c5afeb.png",
-      "test.outputs/test-outputs/files/226bb32dd65569682d1bea5c88141fa2f0c78796007509ea038305b389654a53.png",
-      "test.outputs/test-outputs/files/fd7deee90ae014a6dfb1b1a3eeb084a2536a6e926bce4342cf7b619e34d28b58.png",
-      "test.outputs/test-outputs/files/0ccf3def970ebf5475298974d7e2bf76d8d2ade8a612ed5de3a72cf5ba2c4eae.png",
-      "test.outputs/test-outputs/files/29929d7be7b3594d3ec3156dd404e0edd1e7d3d9259ceadf88fd5a899ea068e1.png",
+      "test.outputs/test-outputs/files/2347586a7f50fb05692c72aac3752755f6852323e9c6c7ee86d8225364de6867.png",
+      "test.outputs/test-outputs/files/c638f78b0805b65a986a075d657f959029a9848379fa6c3e7519ae864019d21a.png",
       "test.outputs/test-outputs/files/a87cea3cbe8e1678fd4ae383895db7d931eac9cac59b7169a8e6205a79886c9a.png",
-      "test.outputs/test-outputs/files/d71f53cc9afb7778b172f6927226a2a376ed1228e8a2105cc6e3e61f693bba58.png",
-      "test.outputs/test-outputs/files/db80229c60fc39cfcf07cd5cefd181b0f65a3078ea779c35a06a8a52f605c692.png",
-      "test.outputs/test-outputs/files/7e880ccf77834ba989a3a0c66ebac9a457c4c391a81a887b3dbfe8a47a133a02.png",
-      "test.outputs/test-outputs/files/05b366229edc3f744e412ab5fa931bce626d5509f20c50262998001c26a39865.png",
-      "test.outputs/test-outputs/files/38b934ee5060dbccac0bd128c031af2028dc2d892518a5580bfdad317d3fcd44.png",
-      "test.outputs/test-outputs/files/3d4c66bd6fceba5e46c5d3fb4a572589b4074aaf35f32eb9a9ef1e47f03608cd.png",
-      "test.outputs/test-outputs/files/d94ea8759aa00015f820640a264fd45d6703a715a03877c05130db1597b2bd36.png",
-      "test.outputs/test-outputs/files/c4c6ae8ee0555a1f797f28d55d1d082420d61814c10c84e620645b8f9fec44e6.png",
-      "test.outputs/test-outputs/files/227ff76d413c67dc12daa1a5b53f6a7490d1d678e49f1ee1bff96a7c36d407dd.png",
-      "test.outputs/test-outputs/files/d0e9e2b8e8b9dc8f7e834f01571698087f462a8085f6642d64101449d463bbbf.png",
-      "test.outputs/test-outputs/files/6a55b1d70c0fab0370760532253d47683d2c2c582768b823fb3918e9d92c1b72.png",
-      "test.outputs/test-outputs/files/c197a4ed71c44421215c64e8acfbe5cc49375be7531825fdaeebf49ef54c7fbe.png",
-      "test.outputs/test-outputs/files/759a261d1a5f0ad464df67d3c4b4ec1f54be08ca5c68bbe5d4250a55ebb6f0a7.png",
-      "test.outputs/test-outputs/files/eb7062ad74817e9a180d27f44d783258c3321e93211b5fd41e3dfccc057b4c16.png",
-      "test.outputs/test-outputs/files/1a0b2b7502c927f6b41da8bf7c06e0a50096d6104cb39ad31852eb2dbdf424c4.png",
-      "test.outputs/test-outputs/files/f0d2c4e971dfe5b8a2a84c16a0ac3243b06dcd7ce876d4976cd46553b391920b.png",
-      "test.outputs/test-outputs/files/94717b783a2cd547c93a0e13c6f9092bcdfe5bb75d0b9eefd1b9147680a523e9.png",
+      "test.outputs/test-outputs/files/fd4ab279f98aebd8a4ab98642cd7189c30199da9bd46dacb603f9fcc89750cf3.png",
+      "test.outputs/test-outputs/files/9e54036273dc4c2db695d36e3ada1e8edfeae6926309525570c080a52b4b528b.png",
+      "test.outputs/test-outputs/files/559c2f0040284c285d1e75d024c7082dd16684cea25ff44094c635843b855b06.png",
+      "test.outputs/test-outputs/files/69b90fc04531863ae6093cc72a93e14b3162648ae2886643cfa285c2943676c5.png",
+      "test.outputs/test-outputs/files/8387c26d59431bb97414938ba128bb65eb3e79ae7c95266e8b3aa955ab2bddd6.png",
+      "test.outputs/test-outputs/files/112e64566828ea12bec94309dca8c32fe053b5f89dbc06b8e9297bd18b49e339.png",
+      "test.outputs/test-outputs/files/d92716c9f63a3151b1a0ca52a0726de92ef649e5d91c5023e96d28851c5d3172.png",
       "test.outputs/test-outputs/files/c2c4a83ba93a140046654980e277960419e1f3dd772baabea0f6bfea73d57305.png",
-      "test.outputs/test-outputs/files/ddc6ceadc1871dc997d887b04239c90e613d13af2e4a941e6e8f6e42b0729c72.png",
-      "test.outputs/test-outputs/files/62d57c5a673bd36aa7f1cb8980944ed7b9e43016ef69d4ef7300cb408f2df5a2.png",
-      "test.outputs/test-outputs/files/2bccf5c42b9f3b8da2a4d3e717f5b4ba86cbf9dc9b905b9dfd3de9e6239f8b27.png",
-      "test.outputs/test-outputs/files/40f8426973690cd6c213c74ebaa9326d7fef3baea2dbdcd4fadcf169ec789188.png"
+      "test.outputs/test-outputs/files/f7c17ea51e18539ee1c5836d4c8b7e4246aac5154e741be9fb318a5e1c8e26f4.png"
     ]
   },
   "screenshot_review": {
     "reviewer": "root",
-    "result": "Eight final-run images inspected: changed report and root navigation at desktop/mobile in light/dark. Readable labels/prose and stable layout; wide tables scroll internally on mobile without document overflow.",
+    "result": "Changed sections reviewed in desktop/mobile and light/dark; readable prose and labels, retained distinctions, tables contained within the page.",
     "images": [
       {
-        "case": "mobile-light",
-        "checkpoint": "root-navigation",
-        "artifact_path": "test.outputs/test-outputs/files/fca459cc2322137179272d1b7cceef1c510c5de9dd3cfcbed9c31107a575c828.png"
+        "case": "desktop-light",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/5b83779991cd00adc97fb408ee2feab988c7da79a060140ea3a3f76f9dfaba20.png"
       },
       {
-        "case": "mobile-light",
-        "checkpoint": "iteration7-app-fixture-ownership-cut",
-        "artifact_path": "test.outputs/test-outputs/files/bbd7bf7d7d5b3c7008751c08d2049991caaf8985f00852842ebf17f9d7f0cd53.png"
+        "case": "desktop-light",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/4e48a36aaccfa1d7185a3f1ab5a2969970f5e9189318f98986cb31edbe945192.png"
       },
       {
-        "case": "desktop-dark",
-        "checkpoint": "iteration7-runtime-only-selector-comparison",
-        "artifact_path": "test.outputs/test-outputs/files/d2ab6dd548a9b20754b9ca6f84892772662c761711c1483ddd1333b4e13f6b78.png"
+        "case": "desktop-light",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/af862531d87f331dbd7bde128d9da17d6f542ddad4aea29acdd2fb1ca6424576.png"
       },
       {
-        "case": "mobile-dark",
-        "checkpoint": "root-navigation",
-        "artifact_path": "test.outputs/test-outputs/files/9f79d4af7859f6ddbbc76a684cb27bfe4d34332ff3bee84f1f6e70a907bc957c.png"
+        "case": "desktop-light",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/fd4ab279f98aebd8a4ab98642cd7189c30199da9bd46dacb603f9fcc89750cf3.png"
+      },
+      {
+        "case": "desktop-light",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/d626725e0db48e14eed68ece9b40ea7e876d65342c5624ac91c77f2feaa1272e.png"
       },
       {
         "case": "desktop-light",
@@ -252,25 +276,160 @@
         "artifact_path": "test.outputs/test-outputs/files/a87cea3cbe8e1678fd4ae383895db7d931eac9cac59b7169a8e6205a79886c9a.png"
       },
       {
-        "case": "mobile-dark",
-        "checkpoint": "iteration7-runtime-listener-race-repair",
-        "artifact_path": "test.outputs/test-outputs/files/db80229c60fc39cfcf07cd5cefd181b0f65a3078ea779c35a06a8a52f605c692.png"
+        "case": "desktop-dark",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/06ff8c74483d15b1fdc309a423d036e2e9635331b9690b25d3b5fd144b736030.png"
       },
       {
-        "case": "desktop-light",
-        "checkpoint": "iteration7-current-required-workflow",
-        "artifact_path": "test.outputs/test-outputs/files/d94ea8759aa00015f820640a264fd45d6703a715a03877c05130db1597b2bd36.png"
+        "case": "desktop-dark",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/aeca2d86ba595527ce94dd677d9d2224b996baac30ed293cd114aa104e477d5c.png"
+      },
+      {
+        "case": "desktop-dark",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/112e64566828ea12bec94309dca8c32fe053b5f89dbc06b8e9297bd18b49e339.png"
+      },
+      {
+        "case": "desktop-dark",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/02cdac29bdbd2b51f2a67dca3e909fc663213debd5975f70f993c51cb9627859.png"
+      },
+      {
+        "case": "desktop-dark",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/41a11a59074c8972eb1c53d951fefaf7b0f6687f4fda966f81f818340ae8ffc3.png"
       },
       {
         "case": "desktop-dark",
         "checkpoint": "root-navigation",
         "artifact_path": "test.outputs/test-outputs/files/c2c4a83ba93a140046654980e277960419e1f3dd772baabea0f6bfea73d57305.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/f04275e7394362668a8ad8486901e09097e1acdf23cb521333789d56c251fb84.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/2e90227a2ae24f357bc19f3bdd901be6b6d9c1ba2a05972bba11009a87459a43.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/f7c17ea51e18539ee1c5836d4c8b7e4246aac5154e741be9fb318a5e1c8e26f4.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-3",
+        "artifact_path": "test.outputs/test-outputs/files/49ed958245b02af965cd4bfdee370a07198782594fa2ba7c120c4fe181798198.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "agentplane-test-architecture-section-4",
+        "artifact_path": "test.outputs/test-outputs/files/c58ccb5cc529beed9a18bbf1a18cb4e50092c47db3e2781e5de7066d5eefb4c4.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/306b255577318f15e9c241113320742c5e979ee2c26877a8570e48cabbac92d9.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/5977ef66342d24ee771815f1e0d398ae1f1ebaba3d4f68756737cd2e9e34338d.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "latency-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/4d2be22dfb5dafb797dc1ab5c9a2697b5d5a5e4310381f1d1a06c108f4a90fcc.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/c638f78b0805b65a986a075d657f959029a9848379fa6c3e7519ae864019d21a.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "reliability-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/dd5ac436f65b76f836e373ef7a6efc9f96a9c1d85f3a1e13d46f8c418ac8113b.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "reliability-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/9e54036273dc4c2db695d36e3ada1e8edfeae6926309525570c080a52b4b528b.png"
+      },
+      {
+        "case": "mobile-light",
+        "checkpoint": "root-navigation",
+        "artifact_path": "test.outputs/test-outputs/files/fca459cc2322137179272d1b7cceef1c510c5de9dd3cfcbed9c31107a575c828.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/cda45fc9cf8792b5f93ec9eb45f814c25747799c9ab54a2a16e3277092e1d43e.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/5f7a261bca0d6f48c1c581899ecf377caf8bb70231e73082fa436804647b943e.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/f07d07f41d8cab569a9950aa668ea26e0794dd1ab41dc4681e935e4c24dd3f3c.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-3",
+        "artifact_path": "test.outputs/test-outputs/files/a5482d09333f3369d36041aabcea9016679cacf424e9ccb9049e678127d3df08.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "agentplane-test-architecture-section-4",
+        "artifact_path": "test.outputs/test-outputs/files/c27ca563fe8cfc8f873f2349f60af154a4743bf13e697a6d89485122a0ca5cee.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "latency-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/a2675d6a41b7f77d9de3e08163d6928cd2ec5904e847bfaf1f4413a42ec43e49.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "latency-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/8387c26d59431bb97414938ba128bb65eb3e79ae7c95266e8b3aa955ab2bddd6.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "latency-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/80ee6741658988067e9a84c8132b071061417b879992ac654a4047b82fdff475.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "reliability-section-0",
+        "artifact_path": "test.outputs/test-outputs/files/9c61a4dfa7255313945d51d99e3e4ea0e667975cb8ac56118a3202fd5684af2e.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "reliability-section-1",
+        "artifact_path": "test.outputs/test-outputs/files/0b357be06e0aa17bdd52908a33af149aace3103a93924e91f103d2f5d2a14956.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "reliability-section-2",
+        "artifact_path": "test.outputs/test-outputs/files/8394d18f6adc56d4ce3c5ff750d94a2138498638f318a57a34647d3575fa1bd8.png"
+      },
+      {
+        "case": "mobile-dark",
+        "checkpoint": "root-navigation",
+        "artifact_path": "test.outputs/test-outputs/files/9f79d4af7859f6ddbbc76a684cb27bfe4d34332ff3bee84f1f6e70a907bc957c.png"
       }
     ]
   },
   "limits": [
-    "Proof JSON excluded from asset hashes to avoid self-reference. All other packaged report/shared/navigation assets match final publication bytes.",
-    "Visual validation is not a measured CI speedup or source test-architecture qualification.",
-    "Other report manifests were packaged only to render unchanged root navigation metadata; their measurements were not refreshed."
+    "Proof JSON excluded from asset hashes to avoid self-reference; all other packaged assets match final publication bytes.",
+    "Visual validation does not establish source-test coverage, a CI saving, or adoption qualification.",
+    "Other report manifests are packaged for root navigation only; their measurement populations were not refreshed."
   ]
 }

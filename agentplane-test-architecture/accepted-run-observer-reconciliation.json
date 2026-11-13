@@ -1,0 +1,103 @@
+{
+  "purpose": "Scratch-only BuildBuddy CLI observer-loss recovery patch evidence for architecture review.",
+  "source": {
+    "repository": "https://github.com/buildbuddy-io/buildbuddy",
+    "base_commit": "f3508d33d1fbe0482d05ef9b0f0b9bbd7dac4962",
+    "tested_hosted_base": "4db6dd74f9a43bab0d0bf3ef7aceb42a05708438",
+    "hosted_tree_note": "bbr applied the complete local source-tree diff to the hosted base; logs showed the changed paths applied cleanly.",
+    "changed_files": [
+      "cli/remotebazel/BUILD",
+      "cli/remotebazel/remotebazel.go",
+      "cli/remotebazel/remotebazel_test.go"
+    ],
+    "sha256": {
+      "source.patch": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
+      "cli/remotebazel/BUILD": "d919554b68586e5e08a9a553eee0efaf579978bcc245687323c8b55c4c60c627",
+      "cli/remotebazel/remotebazel.go": "f86536ce6265a12d04544d62079da676756411b859618aed9f24777da2076e4b",
+      "cli/remotebazel/remotebazel_test.go": "09dd1f0894c8ef1a31a083ecebd2c0103de559dfeb9bfd37310fa602bf1f879e"
+    }
+  },
+  "behavior": {
+    "log_observer_error": "After Run returns an accepted invocation, a non-context log stream error does not cancel that run. The CLI waits on the execution associated with that same invocation, then reads fresh invocation metadata after terminal execution.",
+    "unknown_outcome": "Fallback or normal-path post-acceptance result-read errors retain their cause, carry errAcceptedRunOutcomeUnknown, and are not retried by the outer Run loop.",
+    "terminal_without_execute_response": "A terminal operation without ExecuteResponse remains an error/unknown outcome; it cannot become success or trigger a new Run.",
+    "preserved_behavior": "Real nonzero ExecuteResponse exit codes are returned. Explicit caller cancellation/deadline still cancels unfinished accepted work. Successful log streaming keeps the existing parallel metadata/execution reads."
+  },
+  "tests": [
+    "TestAttemptRun_ReconcilesAcceptedRunAfterLogObserverError",
+    "TestAttemptRun_PreservesRemoteFailureAfterLogObserverError",
+    "TestAttemptRun_UnknownResultAfterLogObserverErrorDoesNotRetryOrCancel",
+    "TestAttemptRun_NormalLogCompletionWaitFailureDoesNotRetryAcceptedRun",
+    "TestAttemptRun_NormalLogCompletionInvocationReadFailureDoesNotRetryAcceptedRun",
+    "TestAttemptRun_MissingTerminalExecuteResponseDoesNotBecomeSuccess",
+    "TestAttemptRun_ExplicitCancellationStillCancelsAcceptedRun"
+  ],
+  "positive_validation": {
+    "command": "bbr test --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --jobs=4 //cli/remotebazel:remotebazel_test",
+    "target": "//cli/remotebazel:remotebazel_test",
+    "outer_hosted_runner_invocation": "26bb0bee-6e6e-4001-959b-9b6427ebff36",
+    "inner_bazel_test_invocation": "2e989892-aaf2-4f68-af7d-3f8da91d8ffd",
+    "result": "PASSED",
+    "target_attempt": {
+      "run": 1,
+      "shard": 1,
+      "attempt": 1,
+      "status": "PASSED",
+      "strategy": "linux-sandbox",
+      "duration": "1.184s",
+      "cached": false
+    },
+    "junit": {
+      "cases": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "build_summary": "948 Bazel actions; 937 action-cache hits, 8 misses, 2 internal, 9 linux-sandbox; 15.179s elapsed.",
+    "execution_id_limit": "bbapi execution returned no rows; report one hosted TestRunner attempt, not a unique remote execution ID.",
+    "checks": ["gofmt on changed Go files", "git diff --check"]
+  },
+  "negative_control": {
+    "manifest": "negative-control/manifest.json",
+    "setup": "Pinned original remotebazel.go at the same source base; full original test file retained; only the added reconciliation test selected by Go test filter.",
+    "outer_hosted_runner_invocation": "2faa0cc6-e62e-4a90-bab4-24b800be3e3b",
+    "inner_bazel_test_invocation": "c2260576-57a8-44e3-8b93-0354d4f5d44c",
+    "result": "Expected regression: one selected case failed at the assertion receiving the original Internal RST_STREAM error; not a compile failure.",
+    "target_attempt": {
+      "run": 1,
+      "shard": 1,
+      "attempt": 1,
+      "status": "FAILED",
+      "strategy": "linux-sandbox",
+      "duration": "0.101s"
+    },
+    "junit": {
+      "cases": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "restoration": "All three final candidate files were restored from saved copies and their SHA256 values matched the green tested patch.",
+    "invalid_setup_note": "A separate earlier control setup compile failure removed an existing helper; it ran zero tests and is excluded from negative evidence."
+  },
+  "shipping_assessment": {
+    "current_downstream_path": "nix/artifact-pins.json pins bb to the upstream 5.0.500 Linux x86_64 release asset; nix/packages/bb.nix only copies that artifact into $out/bin/bb.",
+    "standard_release_constraint": "devinfra/ci/artifact_targets.json has no bb pin/release target. The release matrix derives assets from declared Bazel targets/BEP outputs, so the existing content-addressed pipeline cannot publish a patched bb binary without adding a real Bazel artifact target.",
+    "upstream_build_path": "The pinned upstream source defines //cli/cmd/bb. Its release-cli workflow builds it with bazelisk --stamp --compilation_mode=opt --strip=always and uploads a versioned Linux asset to the upstream release.",
+    "source_build_cost": "BuildBuddy is a Bzlmod module including apt, Go, Python, OCI, static, toolchain, and web dependency layers; go.mod requires Go 1.27.3. A downstream Bazel target would need to import and lock that module graph. A Nix Go-module build would be a new, unverified packaging path rather than a small pin update.",
+    "recommendation": "Prefer an upstream fix followed by the official BuildBuddy CLI release. Ducktape can then update the upstream URL/hash in nix/artifact-pins.json and package version in nix/packages/bb.nix. This is the smallest supportable route and avoids a second binary owner.",
+    "bounded_local_probe_if_urgent": "In an isolated BuildBuddy source checkout, apply this exact patch at the pinned commit and run the upstream release build command via bbr; verify the produced bb version and hash. Treat that as build feasibility only. Before shipping downstream, decide whether to maintain a source-built Nix derivation or import BuildBuddy as a Bazel dependency plus artifact_targets release target; neither currently exists or has been validated.",
+    "no_external_action": "No upstream issue/message/PR, fork, package pin change, repository wiring, binary release or installation was made. A separate hosted static build succeeded; see binary_build_evidence.",
+    "source_references": [
+      "Ducktape: nix/artifact-pins.json:7-9; nix/packages/bb.nix:6-15; nix/packages/default.nix:516; devinfra/ci/artifact_targets.json has no bb row; .github/actions/release-artifact/action.yml resolves the declared Bazel target output.",
+      "BuildBuddy: .github/workflows/release-cli.yaml:183-196; cli/cmd/bb/BUILD:10-51; MODULE.bazel:1-14; go.mod:1-4."
+    ]
+  },
+  "limits": [
+    "Tests use scripted gRPC clients. No live BuildBuddy service reset injection was run.",
+    "A static patched CLI was built and inspected separately; it remains uninstalled, unpackaged, unpinned and unreleased.",
+    "One passing target attempt and one targeted pre-fix failing attempt establish regression sensitivity, not a reliability rate.",
+    "RBE build action/cache counts are not a latency or end-to-end CI saving claim."
+  ],
+  "binary_build_evidence": "accepted-run-observer-binary-build.json"
+}

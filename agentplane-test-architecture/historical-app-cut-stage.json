@@ -1,0 +1,236 @@
+{
+  "app_cut_blobs_identical_between_pair_arms": true,
+  "app_cut_overlay_paths": [
+    "agentplane/app/BUILD.bazel",
+    "agentplane/app/integration_fixtures.py",
+    "agentplane/app/test_bridge.py",
+    "agentplane/app/test_history_gateway.py",
+    "agentplane/app/test_live.py",
+    "agentplane/app/test_thread_browser.py",
+    "agentplane/app/testing/BUILD.bazel",
+    "agentplane/app/testing/gateway_fixtures.py",
+    "agentplane/app/testing/runtime_fixtures.py",
+    "agentplane/runner_gateway/BUILD.bazel",
+    "agentplane/runner_gateway/conftest.py"
+  ],
+  "candidate_trees": {
+    "base": "24d0f7d96354f65412ed33f98116fe453ab804cd",
+    "tested_merge": "434d959499362caf366e6b853cb70812b04e7d9f"
+  },
+  "deferred": [
+    "actual CI selector query and pre/post-runtime-tag comparison require root review and explicit launch",
+    "no build or execution of candidate source",
+    "no full current-a69 architecture claim"
+  ],
+  "excluded_unrelated_source_paths": [
+    "agentplane/app/testing/runner_gateway.py",
+    "agentplane/env/e2e/BUILD.bazel",
+    "agentplane/env/e2e/test_codex_shared_process.py",
+    "agentplane/env/e2e/testing/gateway.py"
+  ],
+  "historical_pair_pytest_case_ast_hashes": {
+    "agentplane/app/test_bridge.py": {
+      "case_ast_sha256": {
+        "test_history_openings_give_a_session_the_app_did_not_start_a_thread": "e8bb62c52b37e13483d13cf1ee36e092aab08dcc1a7b39b2eb11b3c6dd584389",
+        "test_open_and_inputs_reach_the_runner_while_history_lags": "2f6a642003cfec3ffa16254463645c428e2e156199e40afd2b3169a18def331e",
+        "test_replica_commands_and_database_stream_survive_owner_replica_exit": "6bdd0deb5913c4c572111489be2ddb1ff3d057cc53fc680ac9e5db371e0f5c99",
+        "test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it": "b66c79c6d12b4a67ca2f55ab6e0ef319338dc6ecae6f19574b2776e336de51e8",
+        "test_stream_recovery_reports_the_content_the_model_receives": "af96a2f6edae4856f7495e4c5debb0a42cbd1d87cec8c526cd70b59124e88d17",
+        "test_tool_recovery_reports_context_without_repeating_side_effects": "1cd87c1fe97b85503f7fa108c8d2a571248834e2c538135c2698f499b9f1b609"
+      },
+      "control_base_equals_candidate_base": true,
+      "control_tested_merge_equals_candidate_tested_merge": true,
+      "test_functions": 6
+    },
+    "agentplane/app/test_history_gateway.py": {
+      "case_ast_sha256": {
+        "test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it": "c4299c9e051e0e3a357b629ed2b2350a4a85ea9935a67e3bbd334277da96fc9d",
+        "test_production_bridge_reads_runner_history_across_gateway_restarts": "403ed37b4bf82113b1966ec42053ddb803e75ab33ccfb4e52141b162a17af002",
+        "test_runner_client_does_not_fall_back_after_gateway_stops": "b2a4a8ee0d7215e8cd80ff599a3d26c93c232f6fea38f13b8bb4f48464074195"
+      },
+      "control_base_equals_candidate_base": true,
+      "control_tested_merge_equals_candidate_tested_merge": true,
+      "test_functions": 3
+    },
+    "agentplane/app/test_live.py": {
+      "case_ast_sha256": {
+        "test_environment_thread_rpc_reports_history_unavailable": "6302f026c8db8bd4a654146cb0fc3e090b1de0748bf52d7391c004af20209e93",
+        "test_generated_egress_watch_streams_decisions_and_rotates_token": "84171bdcb0fb3b1c9c723e514d5807a42da80a9117981002e0275f06329d1925",
+        "test_the_streams_need_a_caller": "e95d5b0d93a69842e30173917d57315c26aee58cf59340abfad19f567aea3882",
+        "test_thread_metadata_list_returns_newest_page_and_archived_count": "bc8472fed323d7385c78a6647de629ecce46c7e0a139536d9a31662a8f2b6c3b",
+        "test_thread_metadata_watch_follows_replica_commits": "c02e40c0c07892c427bbf2b74bd7964d1f34ab06b63738f3af2d1833ab98dd97",
+        "test_thread_metadata_watch_reports_listener_loss_and_reconnect": "9102913358431d2773a20374af4b2a108b08e8e2cd57a7f5cc0cb02d46945ec2"
+      },
+      "control_base_equals_candidate_base": true,
+      "control_tested_merge_equals_candidate_tested_merge": true,
+      "test_functions": 6
+    },
+    "agentplane/app/test_thread_browser.py": {
+      "case_ast_sha256": {
+        "test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it": "4215d1fec04869f7fac562099c655f3134ad8ec41e199fe127826e09d1132b35",
+        "test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place": "d8d5d0a75bb94f618f25c5a4c0621ce35a37ccb870cf1696c8b6b3725fd33d2e",
+        "test_ahead_snapshot_is_not_a_thread_or_effective_model": "6e8b34fafe503dc5fc7c98ca3c6a0b70429328c7d53becc4d9c658005f07e4bb",
+        "test_an_unfoldable_suffix_stops_browser_without_replacing_verified_history": "aadee15dac10f648c7c475766133971a3a98cd73dc58cb909616664fd3c76cb1",
+        "test_archived_thread_page_survives_deleted_sandbox_and_reload": "4921dc41bdc154ed0cb7ec0448f52d7d052e4dfeb4a20b148c9cac21d62f3d7d",
+        "test_browser_replays_streams_and_reloads_one_exact_thread": "e06895f1a965b4fd7190d0aa26f52e573d0d16b5e59fc7e38940286e232e5f6b",
+        "test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input": "39d0931af7cc9ab8d8abd25cfcd861778ce636f8164ad06f984ae84dddbd6a5c",
+        "test_chronological_debug_is_lazy_paged_and_keeps_the_thread": "0b3a4e9a68eebe4bab5a2bfcaf9d15063984d7fb06e53bd80f30541eb7a9afbd",
+        "test_electric_reconnects_unconfirmed_command_without_reloading": "3db983c45973eb16642901499ce7708276bc4ed92ddfd2c0b8424b2ccd741db5",
+        "test_environment_identity_change_obeys_real_gateway_and_kubernetes_admission": "11203dcfca93419aa8517d0f4397a455f5deb5be35b0ddcbf0b354937d7d4e71",
+        "test_failed_turn_preserves_confirmed_input_and_allows_another_turn": "0c76350e7c87d84ad62872e2e796f270988491922355fc70fc8a4e9b27242922",
+        "test_http_admission_ahead_of_replay_does_not_skip_earlier_events": "ed495f56b68e7f3db06c5a09c9ee6213516211665198962f332c92057bf98a38",
+        "test_lost_runner_receipt_reconciles_from_thread_without_retry": "5a6e2a611bef45151407b57c6aa536c7f7e5f598efad86bf73b046ade8bf0645",
+        "test_opening_a_call_while_output_streams_in_keeps_it_collapsible": "0589dd77f35ff8926c7608b630156805d39c15fb5f21b220730f1db0db0bd165",
+        "test_projected_browser_streams_runner_events_and_loads_evidence_lazily": "b01a30ea23472e751e326d73f8eba383f085fb1fa582ae5c9b327c8a5863ae20",
+        "test_projection_epoch_replacement_retires_old_requests_and_preserves_draft": "a6c514f23fc97bebcc5c7dc3c0a9c546cb7b01e699b427d9d22e3ff0a26cf03a",
+        "test_reload_redelivers_an_unsaved_command_with_its_original_identity": "5939c9f2e9e3afcce665c0714adedb6405ceb9d024c4b9b85168fff895e8d03a",
+        "test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had": "a1c50da2ee41c11a80460e05c5b9745a8ca57e9f7663658a2556e9c48b4b1e93",
+        "test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away": "257f976886b5e20cfe817960ed6b6bbce00670fe68cf573d549d2ab1b43b2e70",
+        "test_settled_command_reason_survives_leaving_the_tail_and_reload": "98d05681da89fc830b095304b407971aba6dd409fe95a1f77396362a1e1dfdf9",
+        "test_sidebar_receives_rename_and_archive_from_another_app_replica": "6a34032e0be38432160b9ac988ff9e492ef42f6d08ffe1021000e65f509cd3ed",
+        "test_small_upward_scroll_stays_detached_when_tail_streams": "dde78974f14ba69f0cd1a684544d74b70adaf7efd8427a7e3f74ddbe83a4e020",
+        "test_streamed_admission_survives_a_lost_http_reply_and_reload": "a088eec1596fe4318d0a7176bd8f62cce319c248acd87b0d54b6067cdf40b16e",
+        "test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail_visible": "c973f4d41bea22818cf9be3e9c833844b3fa74f8d1d7d95ba84f72e8b841a125",
+        "test_switching_threads_starts_at_each_threads_tail": "f305bb1eea95b7c33788f368c7dd41e041ff8937e6c29aecc7593a89aa696072",
+        "test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stopped": "6aafbd5861579ce5238f4fc0d98174606698754d86537802385cd745be391344",
+        "test_the_history_is_not_settled_while_a_row_is_still_loading_its_text": "589ca109b911c435acae06e32eca73b81959177134ba23f56710b879ba4fd62c",
+        "test_thread_follows_bottom_until_reader_scrolls_up": "b9cf1dcb8145506c7d9e548863d9610e761af83f37823366145d412b95f61cf6",
+        "test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection": "7bf2f67cd1a2088080725aa8ac9df8136095a3479860ad5d24d03de5549b2fbe",
+        "test_unconfirmed_command_retries_with_same_identity_then_reconciles": "b26fdec1cd85273dc760de0ed159dcb5d792be4a7aaa46a956417d6840e885f7",
+        "test_unknown_projection_failure_keeps_verified_history_and_stops_browser": "673135f30205501f0283aa9b833fd69e25c18623ef7cd21409f3c3d3116e8509",
+        "test_unobserved_committed_admission_reconciles_once_after_reload": "e672c1541014edfb82a1a62cc5d3c979fdf4628d12d005909273079aeb813eff"
+      },
+      "control_base_equals_candidate_base": true,
+      "control_tested_merge_equals_candidate_tested_merge": true,
+      "test_functions": 32
+    }
+  },
+  "pair": {
+    "base": "fb3706895e3cfcabcb5d5eca7f7e7b855232ec41",
+    "base_tree": "2e57e488de52f287a3abeb3c019e5b5f1eb4d506",
+    "changed_paths": [
+      "agentplane/env/runtime/SPEC.md",
+      "agentplane/env/runtime/debug/2026_11_12_obsolete_seal.md",
+      "agentplane/env/runtime/session/admission.go",
+      "agentplane/env/runtime/session/admission_cutoff_test.go",
+      "agentplane/env/runtime/session/controller.go",
+      "agentplane/env/runtime/session/lifecycle_test.go",
+      "agentplane/env/runtime/session/session.go"
+    ],
+    "head": "b28fd61ca4b6084cc77382a82d66e147d5a07bfd",
+    "patch_sha256": "e848fd641f04f631029a5c70d48ad43ed7b7c7a3dde60f9d6efc41a527f73d4a",
+    "pr": 15858,
+    "tested_merge": "875f848c59992b930ffe7305643bf9381a92af70",
+    "tested_merge_tree": "1f252d984ad9a849d8d4842e4ff33e13436286a3"
+  },
+  "pair_delta_preserved_exactly": true,
+  "pair_era_compatibility_adaptations": {
+    "compatibility_adaptations": {
+      "historical_transport_import": {
+        "path": "agentplane/app/testing/runtime_fixtures.py",
+        "reason": "pair-era module path is used for the same peer TLS config API in this historical tree; selector-only adaptation",
+        "replacement": "agentplane.environment_runtime_transport.config"
+      },
+      "legacy_target": {
+        "path": "agentplane/app/testing/BUILD.bazel",
+        "preserved_from_historical_blob": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+        "reason": "retain historical fixture API for unchanged pair-era consumers; current App test deps no longer reference it",
+        "target": "runner_gateway"
+      }
+    },
+    "operations": [
+      "agentplane/app/BUILD.bazel",
+      "agentplane/app/integration_fixtures.py",
+      "agentplane/app/test_bridge.py",
+      "agentplane/app/test_history_gateway.py",
+      "agentplane/app/test_live.py",
+      "agentplane/app/test_thread_browser.py",
+      "agentplane/app/testing/BUILD.bazel",
+      "agentplane/app/testing/gateway_fixtures.py",
+      "agentplane/app/testing/runtime_fixtures.py",
+      "agentplane/runner_gateway/BUILD.bazel",
+      "agentplane/runner_gateway/conftest.py"
+    ]
+  },
+  "pair_paths_unchanged": true,
+  "schema": "ducktape.historical_app_fixture_cut_selector_stage.v1",
+  "scope": "isolated App fixture graph-cut staging for historical-frequency/selectivity screen only; no Bazel query/build/test/remote launch; not full a69 replay or runtime coverage qualification; does not count toward 30 full-qualified pairs",
+  "source": {
+    "commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "feature_commit_only": true,
+    "parent": "135dba720768d9dfdb60a122145d9d23f9699dd0"
+  },
+  "source_commit_pytest_case_ast_hashes": {
+    "agentplane/app/test_bridge.py": {
+      "case_ast_sha256": {
+        "test_history_openings_give_a_session_the_app_did_not_start_a_thread": "e8bb62c52b37e13483d13cf1ee36e092aab08dcc1a7b39b2eb11b3c6dd584389",
+        "test_open_and_inputs_reach_the_runner_while_history_lags": "2f6a642003cfec3ffa16254463645c428e2e156199e40afd2b3169a18def331e",
+        "test_replica_commands_and_database_stream_survive_owner_replica_exit": "6bdd0deb5913c4c572111489be2ddb1ff3d057cc53fc680ac9e5db371e0f5c99",
+        "test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it": "b66c79c6d12b4a67ca2f55ab6e0ef319338dc6ecae6f19574b2776e336de51e8",
+        "test_stream_recovery_reports_the_content_the_model_receives": "af96a2f6edae4856f7495e4c5debb0a42cbd1d87cec8c526cd70b59124e88d17",
+        "test_tool_recovery_reports_context_without_repeating_side_effects": "1cd87c1fe97b85503f7fa108c8d2a571248834e2c538135c2698f499b9f1b609"
+      },
+      "source_parent_and_app_cut_case_ast_hashes_equal": true,
+      "test_functions": 6
+    },
+    "agentplane/app/test_history_gateway.py": {
+      "case_ast_sha256": {
+        "test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it": "c4299c9e051e0e3a357b629ed2b2350a4a85ea9935a67e3bbd334277da96fc9d",
+        "test_production_bridge_reads_runner_history_across_gateway_restarts": "403ed37b4bf82113b1966ec42053ddb803e75ab33ccfb4e52141b162a17af002",
+        "test_runner_client_does_not_fall_back_after_gateway_stops": "b2a4a8ee0d7215e8cd80ff599a3d26c93c232f6fea38f13b8bb4f48464074195"
+      },
+      "source_parent_and_app_cut_case_ast_hashes_equal": true,
+      "test_functions": 3
+    },
+    "agentplane/app/test_live.py": {
+      "case_ast_sha256": {
+        "test_environment_thread_rpc_reports_history_unavailable": "6302f026c8db8bd4a654146cb0fc3e090b1de0748bf52d7391c004af20209e93",
+        "test_generated_egress_watch_streams_decisions_and_rotates_token": "84171bdcb0fb3b1c9c723e514d5807a42da80a9117981002e0275f06329d1925",
+        "test_the_streams_need_a_caller": "e95d5b0d93a69842e30173917d57315c26aee58cf59340abfad19f567aea3882",
+        "test_thread_metadata_list_returns_newest_page_and_archived_count": "bc8472fed323d7385c78a6647de629ecce46c7e0a139536d9a31662a8f2b6c3b",
+        "test_thread_metadata_watch_follows_replica_commits": "c02e40c0c07892c427bbf2b74bd7964d1f34ab06b63738f3af2d1833ab98dd97",
+        "test_thread_metadata_watch_reports_listener_loss_and_reconnect": "89babd6c17f731b91c12cd109f118ca5ebf240521136bba7eddcc58f812c2b9d"
+      },
+      "source_parent_and_app_cut_case_ast_hashes_equal": true,
+      "test_functions": 6
+    },
+    "agentplane/app/test_thread_browser.py": {
+      "case_ast_sha256": {
+        "test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it": "4215d1fec04869f7fac562099c655f3134ad8ec41e199fe127826e09d1132b35",
+        "test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place": "d8d5d0a75bb94f618f25c5a4c0621ce35a37ccb870cf1696c8b6b3725fd33d2e",
+        "test_ahead_snapshot_is_not_a_thread_or_effective_model": "6e8b34fafe503dc5fc7c98ca3c6a0b70429328c7d53becc4d9c658005f07e4bb",
+        "test_an_unfoldable_suffix_stops_browser_without_replacing_verified_history": "aadee15dac10f648c7c475766133971a3a98cd73dc58cb909616664fd3c76cb1",
+        "test_archived_thread_page_survives_deleted_sandbox_and_reload": "4921dc41bdc154ed0cb7ec0448f52d7d052e4dfeb4a20b148c9cac21d62f3d7d",
+        "test_browser_replays_streams_and_reloads_one_exact_thread": "e06895f1a965b4fd7190d0aa26f52e573d0d16b5e59fc7e38940286e232e5f6b",
+        "test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input": "39d0931af7cc9ab8d8abd25cfcd861778ce636f8164ad06f984ae84dddbd6a5c",
+        "test_chronological_debug_is_lazy_paged_and_keeps_the_thread": "0b3a4e9a68eebe4bab5a2bfcaf9d15063984d7fb06e53bd80f30541eb7a9afbd",
+        "test_electric_reconnects_unconfirmed_command_without_reloading": "3db983c45973eb16642901499ce7708276bc4ed92ddfd2c0b8424b2ccd741db5",
+        "test_environment_identity_change_obeys_real_gateway_and_kubernetes_admission": "a707d13042fd3a624e5b8067b73b3a659ed7b69a982970d69e266a6dfd7b9163",
+        "test_failed_turn_preserves_confirmed_input_and_allows_another_turn": "0c76350e7c87d84ad62872e2e796f270988491922355fc70fc8a4e9b27242922",
+        "test_http_admission_ahead_of_replay_does_not_skip_earlier_events": "ed495f56b68e7f3db06c5a09c9ee6213516211665198962f332c92057bf98a38",
+        "test_lost_runner_receipt_reconciles_from_thread_without_retry": "5a6e2a611bef45151407b57c6aa536c7f7e5f598efad86bf73b046ade8bf0645",
+        "test_opening_a_call_while_output_streams_in_keeps_it_collapsible": "0589dd77f35ff8926c7608b630156805d39c15fb5f21b220730f1db0db0bd165",
+        "test_projected_browser_streams_runner_events_and_loads_evidence_lazily": "e642eb57ea6a04a749ff8ce4dbd3613ff3264d8b71f93bddaf13a08ec0c05620",
+        "test_projection_epoch_replacement_retires_old_requests_and_preserves_draft": "a6c514f23fc97bebcc5c7dc3c0a9c546cb7b01e699b427d9d22e3ff0a26cf03a",
+        "test_reload_redelivers_an_unsaved_command_with_its_original_identity": "5939c9f2e9e3afcce665c0714adedb6405ceb9d024c4b9b85168fff895e8d03a",
+        "test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had": "a1c50da2ee41c11a80460e05c5b9745a8ca57e9f7663658a2556e9c48b4b1e93",
+        "test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away": "257f976886b5e20cfe817960ed6b6bbce00670fe68cf573d549d2ab1b43b2e70",
+        "test_settled_command_reason_survives_leaving_the_tail_and_reload": "98d05681da89fc830b095304b407971aba6dd409fe95a1f77396362a1e1dfdf9",
+        "test_sidebar_receives_rename_and_archive_from_another_app_replica": "6a34032e0be38432160b9ac988ff9e492ef42f6d08ffe1021000e65f509cd3ed",
+        "test_small_upward_scroll_stays_detached_when_tail_streams": "dde78974f14ba69f0cd1a684544d74b70adaf7efd8427a7e3f74ddbe83a4e020",
+        "test_streamed_admission_survives_a_lost_http_reply_and_reload": "a088eec1596fe4318d0a7176bd8f62cce319c248acd87b0d54b6067cdf40b16e",
+        "test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail_visible": "c973f4d41bea22818cf9be3e9c833844b3fa74f8d1d7d95ba84f72e8b841a125",
+        "test_switching_threads_starts_at_each_threads_tail": "f305bb1eea95b7c33788f368c7dd41e041ff8937e6c29aecc7593a89aa696072",
+        "test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stopped": "6aafbd5861579ce5238f4fc0d98174606698754d86537802385cd745be391344",
+        "test_the_history_is_not_settled_while_a_row_is_still_loading_its_text": "589ca109b911c435acae06e32eca73b81959177134ba23f56710b879ba4fd62c",
+        "test_thread_follows_bottom_until_reader_scrolls_up": "d6946a939f2bc87395090612761d0f0968dc6641cc7e3181f3cf2795edcb536e",
+        "test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection": "7bf2f67cd1a2088080725aa8ac9df8136095a3479860ad5d24d03de5549b2fbe",
+        "test_unconfirmed_command_retries_with_same_identity_then_reconciles": "b26fdec1cd85273dc760de0ed159dcb5d792be4a7aaa46a956417d6840e885f7",
+        "test_unknown_projection_failure_keeps_verified_history_and_stops_browser": "673135f30205501f0283aa9b833fd69e25c18623ef7cd21409f3c3d3116e8509",
+        "test_unobserved_committed_admission_reconciles_once_after_reload": "e672c1541014edfb82a1a62cc5d3c979fdf4628d12d005909273079aeb813eff"
+      },
+      "source_parent_and_app_cut_case_ast_hashes_equal": true,
+      "test_functions": 32
+    }
+  }
+}
