@@ -1,0 +1,14 @@
+# Original home: packages/excalidraw/scene/Renderer.ts
+source_matches:
+  - match: |
+      var rendererImplementation = class {
+        constructor(scene) {
+          ANYTHING(this, "scene"),
+          ANYTHING(this, "getRenderableElements", ANYTHING),
+          this.scene = scene;
+        }
+        destroy() { STMT_LIST; }
+      };
+    bindings:
+      - local: rendererImplementation
+        name: Renderer
