@@ -27,7 +27,7 @@ form below is an explicit, named mapping to one `Identity`:
 
 1. **X.509 SVID over mTLS**, for in-cluster workloads: a `WorkloadCredential` names the Identity.
 2. **OAuth2 access tokens issued by the MCP edge's own authorization server**
-   (`mcp_edge/authserver`, dynamic client registration), for external MCP clients such as claude.ai:
+   (`mcp_edge/internal/authserver`, dynamic client registration), for external MCP clients such as claude.ai:
    a grant's Connection is bound to the Identity.
 3. **Kubernetes' own authentication**, only where a component talks to the Kubernetes API: as
    itself, through Flux, or as an account by the proxy's impersonation.

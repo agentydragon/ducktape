@@ -25,7 +25,7 @@ py_library(
 py_binary(
     name = "sdk_dcr_client_bin",
     testonly = True,
-    main_module = "agentplane.mcp_edge.authserver.sdk_dcr_client",
+    main_module = "agentplane.mcp_edge.internal.authserver.sdk_dcr_client",
     deps = [":sdk_dcr_client"],
 )
 
@@ -38,8 +38,8 @@ go_library(
         "tokens.go",
         "upstream.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver",
-    visibility = ["//agentplane:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver",
+    visibility = ["//agentplane/mcp_edge:__subpackages__"],
     deps = [
         "//agentplane/mcp_edge/internal/connections",
         "//agentplane/mcp_edge/internal/mcpserver",
@@ -67,7 +67,7 @@ go_test(
     data = [":sdk_dcr_client_bin"],
     embed = [":authserver"],
     tags = ["requires_docker"],
-    x_defs = {"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver.sdkDCRClientRlocation": "$(rlocationpath :sdk_dcr_client_bin)"},
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver.sdkDCRClientRlocation": "$(rlocationpath :sdk_dcr_client_bin)"},
     deps = [
         "//agentplane/identity/auth/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
