@@ -38,7 +38,7 @@ from util.testing.postgres import PostgresDatabaseTemplate
 
 # gazelle:include_dep @pypi//protobuf
 
-_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/history_service/history-service_/history-service"
+_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/history_service/cmd/history-service_/history-service"
 _DATABASE_URL_ENV = "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL"
 _CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 _GRACE_SECONDS = 10
