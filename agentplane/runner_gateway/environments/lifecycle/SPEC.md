@@ -48,8 +48,12 @@ reserved before patching and is keyed by effective caller namespace/name/UID (an
 manager's namespace, its name and UID), target Sandbox UID and next generation.
 
 `REQUESTED` means the desired running state and next wake generation were accepted. It does not mean
-the environment is ready. `ALREADY_RUNNING` means no wake mutation was needed. Quiescing and deleting
-targets are not resumed by the manager; the Controller owns the old incarnation's transition.
+the environment is ready. `ALREADY_RUNNING` means no wake mutation was needed. A current-generation
+idle suspension is resumable only after `StopStageStopped`; while its stop stage is incomplete, the
+manager returns a typed `FailedPrecondition` quiescing assessment without reserving wake budget or
+changing the Sandbox. A stale idle marker from an earlier generation does not block a newer accepted
+wake. Quiescing and deleting targets are not resumed by the manager; the Controller owns the old
+incarnation's transition.
 
 ## Assessments
 
