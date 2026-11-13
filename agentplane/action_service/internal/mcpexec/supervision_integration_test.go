@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

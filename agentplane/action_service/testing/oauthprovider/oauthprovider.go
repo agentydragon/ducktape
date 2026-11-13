@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 )
 
 const (

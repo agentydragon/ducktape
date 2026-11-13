@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 )
 
 // Linkages are the OAuth linkages operators made to MCP servers, which *linkage.Authority holds. Linking, refreshing
