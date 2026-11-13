@@ -272,28 +272,45 @@ py_library(
 )
 
 py_library(
-    name = "runner_gateway",
-    srcs = ["runner_gateway.py"],
+    name = "gateway_fixtures",
+    srcs = ["gateway_fixtures.py"],
     visibility = [
-        "//agentplane/app:__subpackages__",
+        "//agentplane/app:__pkg__",
         "//agentplane/runner_gateway:__pkg__",
     ],
     deps = [
         "//agentplane:subjects",
-        "//agentplane/env:config",
-        "//agentplane/env/e2e/testing:config",
-        "//agentplane/env/e2e/testing:failure_journal",
-        "//agentplane/env/e2e/testing:gateway",
-        "//agentplane/env/e2e/testing:process",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/testing:go_service",
-        "//agentplane/net/peertls:config",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//util/testing:postgres",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "runtime_fixtures",
+    srcs = ["runtime_fixtures.py"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/runner_gateway:__pkg__",
+    ],
+    deps = [
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/net/peertls:config",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
         "@pypi//pytest",
     ],
 )

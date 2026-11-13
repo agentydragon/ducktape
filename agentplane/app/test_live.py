@@ -17,9 +17,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
+from agentplane.app.testing.gateway_fixtures import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.app.testing.runner_gateway import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.egress.api.admin import egress_admin_pb2, egress_admin_pb2_grpc
 from agentplane.grpc.serving import serving
