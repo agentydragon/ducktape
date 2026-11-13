@@ -1,36 +1,24 @@
 {
   "status": "PASSED",
   "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/da2d88f3-f894-4a34-ae1b-55eeef5de9de",
+  "invocation": "https://app.buildbuddy.io/invocation/e22307b8-35d6-4a70-97f5-7c7f421f5d01",
   "case_count": 4,
-  "scope": "Latency pages, desktop/mobile, initial light/dark and preference change",
-  "reviewed_at_utc": "2026-11-12T23:28:33.519919+00:00",
+  "scope": "Agentplane backend report; desktop1280x900/mobile390x844, initial light/dark and live color preference change",
+  "reviewed_at_utc": "2026-11-13T00:16:12.564941+00:00",
+  "source_worktree_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
+  "source_scope": "Temporary preview target and report assets over source worktree; report content identity is verified by browser response and asset SHA256, not inferred from remote source metadata.",
   "tested_assets": [
     {
       "path": "latency/index.html",
-      "sha256": "333720f1870d7e9600cd1693139963587ae499641513c4eaf05f7e96e3053585"
+      "sha256": "bf81e2c4a1f74cabd1c7c4031ba2da558faeaadab3e262fb479cb5b25a9a24f1"
     },
     {
       "path": "latency/evidence.json",
-      "sha256": "4b76de2cc60dc9510906c196d352688de07a00d0d2ffa1b8a839392d5225d7d2"
+      "sha256": "c79ea9f519cab2dc7e865e4e7186bd7d2baede93096a0e29e23003add0cef4aa"
     },
     {
       "path": "latency/manifest.json",
-      "sha256": "e6ccad736e1024552be73d154e878069ff3edd8284c8970fae3c245f093cb4cd"
-    }
-  ],
-  "published_assets": [
-    {
-      "path": "latency/index.html",
-      "sha256": "333720f1870d7e9600cd1693139963587ae499641513c4eaf05f7e96e3053585"
-    },
-    {
-      "path": "latency/evidence.json",
-      "sha256": "4b76de2cc60dc9510906c196d352688de07a00d0d2ffa1b8a839392d5225d7d2"
-    },
-    {
-      "path": "latency/manifest.json",
-      "sha256": "936c5f27f37387af4037582f5b061baba38f6f8462da3f00c71a81f607d66184"
+      "sha256": "ba4962dbdf491650016872b37b64434bb859c5cdc1c71daac3cab47dc007e721"
     }
   ],
   "shared_assets": [
@@ -43,35 +31,34 @@
       "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     }
   ],
-  "manifest_note": "Publication manifest differs from tested manifest only by the visual-validation reference.",
+  "manifest_note": "Published manifest adds only the visual_validation reference after render verification; report and evidence bytes match the tested assets.",
   "checks": [
-    "Desktop and mobile",
-    "Initial light and dark schemes",
-    "Live browser color preference change",
-    "Real pinned CDN CSS and modules",
-    "Populated charts and expandable controls",
-    "No document overflow or page/console errors"
+    "Actual pinned Mantine CDN CSS and React/Mantine modules loaded successfully",
+    "Desktop/mobile; light/dark; live browser preference transition",
+    "Populated median/p90 chart and expanded exact-head table",
+    "No page errors, console errors, failed requests or horizontal document overflow",
+    "Manual screenshot review completed after correcting inline whitespace"
   ],
   "manually_reviewed_screenshots": [
     {
-      "case": "light-desktop-latency",
-      "checkpoint": "section-latency-nov12-later",
-      "sha256": "f0942a4d5fa068da103eea6be757920748a84f4bfd3fbb851504122ce661c79d"
+      "case": "light-mobile",
+      "checkpoint": "overview",
+      "sha256": "a4d76080e6df0e749e5c45de7f13cbe33501c2abb22d4904fb628a621422a112"
     },
     {
-      "case": "light-mobile-latency",
-      "checkpoint": "section-latency-nov12-later",
-      "sha256": "afa979c2d5527d9bb0495cdf3cde21d609944214eb6a6fd2f8a54e2f751a0a9e"
+      "case": "light-desktop",
+      "checkpoint": "backend-current",
+      "sha256": "11eba69b2caac7aa73b206ddcb5b453d3883b84017d003b7c5a105f41f6fc9e0"
     },
     {
-      "case": "dark-desktop-latency",
-      "checkpoint": "section-latency-nov12-later",
-      "sha256": "ee9966fde008edd48ce4694c426e8a2396209a08b1ecb85f62784a6c61ccdf19"
+      "case": "dark-desktop",
+      "checkpoint": "backend-current",
+      "sha256": "79b489e8f5b3bfeef46403f0947cf4b9d05b360e6d771048347e850a20bc4302"
     },
     {
-      "case": "dark-mobile-latency",
-      "checkpoint": "section-latency-nov12-later",
-      "sha256": "f077e1586fdca9a5582e6548fa81ca2d83c38df72b3764ac6950d25e17c1874d"
+      "case": "dark-mobile",
+      "checkpoint": "backend-current",
+      "sha256": "fc23dba0bf50764f0664a804a799c7198d1e08ed5da4f6d0bfe3f534428e81de"
     }
   ]
 }

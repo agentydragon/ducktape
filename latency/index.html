@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · current gates and system-test work</title>
+    <title>CI latency · Agentplane backend PR feedback</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -70,6 +70,7 @@
       const response = await fetch("./evidence.json");
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
+      const backend = evidence.backend_refresh;
       const data = evidence.latest_refresh;
       const followup = evidence.followup_refresh;
       const fmt = (s) =>
@@ -129,27 +130,216 @@
             <header>
               <${Anchor} href="../">Ducktape reports<//
               ><${Text} mt="md" c="dimmed"
-                >CI latency · 11–12 November cohort · selected follow-ups
-                through 2026-11-12 23:20 UTC<//
+                >${`CI latency · Agentplane backend · refreshed ${backend.observed_at_utc}`}<//
               ><${Title} order=${1} my="sm"
-                >Routine feedback is short; Agentplane still waits on test work
-                and recovery<//
+                >${`Agentplane backend CI: ${fmt(backend.summary.green_seconds.p50)} median, ${fmt(backend.summary.green_seconds.p90)} p90`}<//
               ><${Text} size="lg"
-                >The latest day green-head median
-                is${" "}<strong>2m55s</strong>. Matched Agentplane service heads
-                take${" "} <strong>10m03s median / 23m30s p90</strong>. Current
-                native examples spend minutes inside managed system-test
-                actions. Earlier actions queued for about 60ms, while a later
-                Pod control waited 536.8s. Prioritize the complete action graph
-                and establish why admission and result recovery diverged.<//
+                >Among ${backend.summary.green_seconds.n} green production
+                backend heads, the mean is${" "}
+                <strong>${fmt(backend.summary.green_seconds.mean)}</strong>.
+                These timings cover the required CI gates from the first
+                workflow creation for each exact head, including reruns.
+                Integration test execution dominates the inspected median case;
+                failure recovery extends the tail.<//
               ><${Text} mt="sm" size="sm" c="dimmed"
-                ><${ManifestStamp} src="./manifest.json" /><br />The cohort
-                below remains 11 Nov 07:20 → 12 Nov 07:20 UTC, with results
-                observed through 07:46:51 UTC. Nov 12 intervention results are a
-                supplement; no head population was recollected. The start is
-                workflow creation, not a recovered push timestamp.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />The backend
+                refresh below has its own population and window. Earlier all-PR
+                results and intervention experiments retain their original dates
+                and source revisions. Workflow creation is a proxy for push
+                time; review, conflicts, mergeability and agent notification
+                delivery are outside this clock.<//
               >
             </header>
+            <section id="backend-current">
+              <${Title} order=${2}
+                >Current backend PRs: scope and distribution<//
+              >
+              <${Text} my="sm">${backend.population_description}<//>
+              ${table(
+                [
+                  "Changed paths",
+                  "Heads",
+                  "Green / failed / cancelled / pending / missing",
+                  "Green mean",
+                  "Green median",
+                  "Green p90",
+                ],
+                backend.groups.map((g) => [
+                  g.name,
+                  g.n,
+                  `${g.outcomes.green || 0} / ${g.outcomes.failed || 0} / ${g.outcomes.cancelled || 0} / ${g.outcomes.pending || 0} / ${g.outcomes.missing || 0}`,
+                  fmt(g.green_seconds.mean),
+                  fmt(g.green_seconds.p50),
+                  fmt(g.green_seconds.p90),
+                ]),
+                900,
+              )}
+              <${Box}
+                mt="lg"
+                data-chart="backend-feedback"
+                role="img"
+                aria-label="Agentplane backend required-check median and p90, minutes, green exact heads only"
+              >
+                <${BarChart}
+                  h=${280}
+                  data=${backend.timing_groups
+                    .filter((g) => g.green_seconds.n)
+                    .map((g) => ({
+                      label: `${g.short_name} (n=${g.green_seconds.n})`,
+                      p50: g.green_seconds.p50 / 60,
+                      p90: g.green_seconds.p90 / 60,
+                    }))}
+                  dataKey="label"
+                  orientation="vertical"
+                  series=${[
+                    { name: "p50", label: "Median minutes", color: "blue.6" },
+                    { name: "p90", label: "p90 minutes", color: "orange.6" },
+                  ]}
+                  withLegend
+                  yAxisProps=${{ width: 140 }}
+                  valueFormatter=${(v) => `${n(v)} min`}
+                />
+              <//>
+              ${table(
+                [
+                  "Production backend, green heads",
+                  "n",
+                  "Mean",
+                  "Median",
+                  "p90",
+                  "Maximum",
+                ],
+                backend.timing_groups.map((g) => [
+                  g.name,
+                  g.green_seconds.n,
+                  fmt(g.green_seconds.mean),
+                  fmt(g.green_seconds.p50),
+                  fmt(g.green_seconds.p90),
+                  fmt(g.green_seconds.max),
+                ]),
+                750,
+              )}
+              <${Title} order=${3} mt="lg" mb="sm"
+                >Fast, typical and recovery examples<//
+              >
+              ${table(
+                [
+                  "Exact head / latest Bazel job",
+                  "Required gates",
+                  "Before latest job",
+                  "Assignment",
+                  "Runner setup",
+                  "Remote envelope",
+                  "Post",
+                ],
+                backend.cases.map((c) => [
+                  html`<${Anchor} href=${c.job_url}
+                      >#${c.pr}, attempt ${c.attempt}<//
+                    ><br /><code>${c.head_sha}</code>`,
+                  fmt(c.feedback_seconds),
+                  fmt(c.before_latest_job_seconds),
+                  fmt(c.assignment_seconds),
+                  fmt(c.setup_seconds),
+                  fmt(c.remote_seconds),
+                  fmt(c.post_seconds),
+                ]),
+                1050,
+              )}
+              <${Text} size="sm" my="sm">
+                PR #15493 took 1h55m40s across five Bazel attempts: four
+                failures followed by success. The latest successful job itself
+                took only 3m55s from creation. The earlier attempts and gaps
+                remain part of feedback for that head; gap durations do not
+                identify scheduler waiting or an operator cause. Retained logs
+                show two VM-suite timeouts, a guest supervision proof failure,
+                and a managed MicroVM restore failure. Those observed failure
+                classes have different owners; they are not evidence of a single
+                queue problem.
+              <//>
+              <${Text} size="sm" mt="sm">${backend.method}<//>
+              <${Accordion} mt="md" variant="contained" multiple=${true}>
+                <${Accordion.Item} value="backend-heads">
+                  <${Accordion.Control}
+                    >Exact backend heads and required-gate results<//
+                  >
+                  <${Accordion.Panel}>
+                    ${table(
+                      [
+                        "PR / exact head",
+                        "Change class",
+                        "Outcome",
+                        "Required-gate feedback",
+                        "Bazel attempts",
+                      ],
+                      backend.heads.map((h) => [
+                        html`<${Anchor} href=${`${gh}/pull/${h.pr}`}>#${h.pr}<//
+                          ><br /><code>${h.head_sha}</code>`,
+                        h.change_class,
+                        h.outcome,
+                        h.job_url
+                          ? html`<${Anchor} href=${h.job_url}
+                              >${fmt(h.feedback_seconds)}<//
+                            >`
+                          : fmt(h.feedback_seconds),
+                        h.bazel_attempts,
+                      ]),
+                      950,
+                    )}
+                  <//>
+                <//>
+                <${Accordion.Item} value="backend-method">
+                  <${Accordion.Control}>Selection, clock and uncertainty<//>
+                  <${Accordion.Panel}
+                    ><${Stack} gap="sm">
+                      ${backend.limits.map((s) => html`<${Text} size="sm">${s}<//>`)}
+                    <//><//
+                  >
+                <//>
+              <//>
+              <${Paper} withBorder p="md" mt="lg">
+                <${Title} order=${3}
+                  >A 10m03s backend head: execution, with little action
+                  queueing<//
+                >
+                <${Text} my="sm">
+                  The earlier cohort’s median service head,${" "}
+                  <${Anchor} href=${backend.case_audit.job_url}>PR #15687<//>,
+                  tested <code>${backend.case_audit.tested_commit}</code>. Its
+                  GitHub job used 32s setup and 565s for the remote test/build
+                  envelope. The${" "}
+                  <${Anchor} href=${backend.case_audit.invocation_url}
+                    >inner Bazel test invocation<//
+                  >${" "}took 486.427s, with a 456.57s dependency critical path;
+                  Pod testing contributed 414.47s. These are nested clocks.
+                <//>
+                <${Text} my="sm">
+                  The physical Pod action queued for 0.061s and executed for
+                  412.659s. Existing spans show 111.851s stack setup, a 237.408s
+                  window containing 21 integration cases in two slots, and
+                  29.995s cleanup. The longest case takes 81.449s and proves
+                  idle suspension and explicit resume, including the production
+                  one-minute minimum. Nested spans overlap; their sums are not a
+                  critical path. This is a linked Nov 11 case, not a population
+                  estimate for current scheduling.
+                <//>
+                <${Text} size="sm">
+                  Prioritize narrower real image inputs and matched full-graph
+                  measurements in${" "}
+                  <${Anchor} href=${`${gh}/pull/15214`}>#15214<//>, which
+                  remains open. Byte reductions have no established CI saving
+                  yet. Keep the existing scenario coverage and resource
+                  reservations. Earlier KVM and Pod experiments, recovery
+                  findings and their limits remain below.
+                <//>
+              <//>
+            </section>
+            <${Title} order=${2}>Earlier Nov 11–12 all-PR cohort<//>
+            <${Text} size="sm" c="dimmed">
+              Original window: 11 Nov 07:20 → 12 Nov 07:20 UTC; observed through
+              07:46:51 UTC. The broader service class below includes test-only
+              changes and is distinct from the production backend refresh above.
+              These retained counts and charts were not recollected.
+            <//>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}
               ><${Paper} p="lg" withBorder
                 ><${Text} c="dimmed">All required gates green<//
