@@ -147,9 +147,7 @@ def test_each_haku_workload_has_a_standing_record_as_the_haku_ui_identity(resour
 
 
 def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict[str, Any]]) -> None:
-    served = set(
-        _container_env(resources, "policy-controller")["AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_NAMESPACES"].split(",")
-    )
+    served = set(_settings(resources, "policy-controller-settings")["workload_namespaces"])
     for namespace in {record["metadata"]["namespace"] for record in _standing_records(resources)}:
         assert namespace in served
         granted = _granted(resources, namespace, ("agentplane-staging", "policy-controller"))

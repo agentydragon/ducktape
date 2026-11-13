@@ -1,61 +1,81 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
-const settingPrefix = "AGENTPLANE_POLICY_CONTROLLER_"
-
-// required is the environment of a deployment that sets every setting without a default.
-var required = map[string]string{
-	"POLICY_NAMESPACE":   "agentplane",
-	"SUBJECT_NAMESPACES": "agentplane",
-	"ACCOUNTS_NAMESPACE": "agentplane-accounts",
-}
-
-func setEnvironment(t *testing.T, environment map[string]string) {
-	t.Helper()
-	for name, value := range environment {
-		t.Setenv(settingPrefix+name, value)
+func requiredSettings() map[string]any {
+	return map[string]any{
+		"policy_namespace": "policies", "subject_namespaces": []string{"agents", "tools"},
+		"accounts_namespace": "accounts",
 	}
 }
 
-func TestEverySettingComesFromTheEnvironment(t *testing.T) {
-	setEnvironment(t, map[string]string{
-		"POLICY_NAMESPACE": "policies", "SUBJECT_NAMESPACES": "agents,tools", "ACCOUNTS_NAMESPACE": "accounts",
-		"METRICS_BIND_ADDRESS": ":9090", "HEALTH_PROBE_BIND_ADDRESS": ":9091",
-		"WRITER_ACCOUNTS": "policies/app",
-	})
+func settingsFile(t *testing.T, content string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(configFileEnv, path)
+}
+
+func writeSettings(t *testing.T, settings map[string]any) {
+	t.Helper()
+	content, err := yaml.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settingsFile(t, string(content))
+}
+
+func TestSettingsComeFromTheFile(t *testing.T) {
+	settings := requiredSettings()
+	settings["metrics_bind_address"] = ":9090"
+	settings["health_probe_bind_address"] = ":9091"
+	settings["grpc_bind_address"] = ":9092"
+	settings["grpc_audience"] = "custom-policy"
+	settings["reader_accounts"] = []string{"policies/reader"}
+	settings["writer_accounts"] = []string{"policies/app"}
+	writeSettings(t, settings)
+	// The old scalar and comma-separated allowlist overrides cannot change file values.
+	t.Setenv("AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE", "other")
+	t.Setenv("AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES", "other")
+	t.Setenv("AGENTPLANE_POLICY_CONTROLLER_WRITER_ACCOUNTS", "other/admin")
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) || c.AccountsNamespace != "accounts" ||
-		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || !slices.Equal(c.WriterAccounts, []string{"policies/app"}) {
+		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || c.GRPCBindAddress != ":9092" || c.GRPCAudience != "custom-policy" ||
+		!slices.Equal(c.ReaderAccounts, []string{"policies/reader"}) || !slices.Equal(c.WriterAccounts, []string{"policies/app"}) {
 		t.Fatalf("settings were not read: %+v", c)
 	}
 }
 
-func TestBindAddressesDefaultWhenUnset(t *testing.T) {
-	setEnvironment(t, required)
+func TestBindAddressesDefaultWhenOmitted(t *testing.T) {
+	writeSettings(t, requiredSettings())
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" {
+	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" || c.GRPCBindAddress != ":8082" || c.GRPCAudience != "agentplane-policy" {
 		t.Fatalf("defaults were lost: %+v", c)
 	}
 }
 
 func TestEachRequiredSettingIsRequired(t *testing.T) {
-	for omitted := range required {
+	for omitted := range requiredSettings() {
 		t.Run(omitted, func(t *testing.T) {
-			for name, value := range required {
-				if name != omitted {
-					t.Setenv(settingPrefix+name, value)
-				}
-			}
+			settings := requiredSettings()
+			delete(settings, omitted)
+			writeSettings(t, settings)
 			if _, err := loadConfig(); err == nil {
 				t.Fatalf("started without %s", omitted)
 			}
@@ -63,11 +83,12 @@ func TestEachRequiredSettingIsRequired(t *testing.T) {
 	}
 }
 
-func TestANamespaceNameThatCannotExistIsRefused(t *testing.T) {
-	for _, subjects := range []string{"agents,", "agents, tools", "Agents"} {
-		t.Run(subjects, func(t *testing.T) {
-			setEnvironment(t, required)
-			t.Setenv(settingPrefix+"SUBJECT_NAMESPACES", subjects)
+func TestInvalidNamespaceNamesAreRefused(t *testing.T) {
+	for _, subjects := range [][]string{{"agents", ""}, {"agents", " tools"}, {"Agents"}} {
+		t.Run(strings.Join(subjects, ","), func(t *testing.T) {
+			settings := requiredSettings()
+			settings["subject_namespaces"] = subjects
+			writeSettings(t, settings)
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("started with a namespace name that cannot exist")
 			}
@@ -76,26 +97,58 @@ func TestANamespaceNameThatCannotExistIsRefused(t *testing.T) {
 }
 
 func TestWorkloadIssuanceIsConfiguredWhole(t *testing.T) {
-	for name, environment := range map[string]map[string]string{
-		"an issuer without namespaces": {"WORKLOAD_ISSUER": "test-workload-issuer"},
-		"namespaces without an issuer": {"WORKLOAD_NAMESPACES": "agents"},
-		"an invalid namespace":         {"WORKLOAD_ISSUER": "test-workload-issuer", "WORKLOAD_NAMESPACES": "Agents"},
+	for name, extra := range map[string]map[string]any{
+		"an issuer without namespaces": {"workload_issuer": "test-workload-issuer"},
+		"namespaces without an issuer": {"workload_namespaces": []string{"agents"}},
+		"an invalid namespace":         {"workload_issuer": "test-workload-issuer", "workload_namespaces": []string{"Agents"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			setEnvironment(t, required)
-			setEnvironment(t, environment)
+			settings := requiredSettings()
+			for key, value := range extra {
+				settings[key] = value
+			}
+			writeSettings(t, settings)
 			if _, err := loadConfig(); err == nil {
-				t.Fatal("started with partial workload issuance settings")
+				t.Fatal("started with invalid workload issuance settings")
 			}
 		})
 	}
-	setEnvironment(t, required)
-	setEnvironment(t, map[string]string{"WORKLOAD_ISSUER": "test-workload-issuer", "WORKLOAD_NAMESPACES": "agents,tools"})
+	settings := requiredSettings()
+	settings["workload_issuer"] = "test-workload-issuer"
+	settings["workload_namespaces"] = []string{"agents", "tools"}
+	writeSettings(t, settings)
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.WorkloadIssuer != "test-workload-issuer" || !slices.Equal(c.WorkloadNamespaces, []string{"agents", "tools"}) {
 		t.Fatalf("workload issuance settings were not read: %+v", c)
+	}
+}
+
+func TestMissingOrUnreadableFileIsRefused(t *testing.T) {
+	for _, path := range []string{"", filepath.Join(t.TempDir(), "missing.yaml")} {
+		t.Run(path, func(t *testing.T) {
+			t.Setenv(configFileEnv, path)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("started without a readable settings file")
+			}
+		})
+	}
+}
+
+func TestInvalidSettingsFilesAreRefused(t *testing.T) {
+	for name, content := range map[string]string{
+		"empty":              "",
+		"unknown key":        "policy_namespace: policies\nsubject_namespaces: [agents]\naccounts_namespace: accounts\nunknown: value\n",
+		"multiple documents": "policy_namespace: policies\n---\naccounts_namespace: accounts\n",
+		"scalar list":        "policy_namespace: policies\nsubject_namespaces: agents,tools\naccounts_namespace: accounts\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			settingsFile(t, content)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("started with invalid settings file")
+			}
+		})
 	}
 }

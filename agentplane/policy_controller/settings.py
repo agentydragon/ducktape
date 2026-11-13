@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Set
-from typing import Self
+from typing import ClassVar, Self
 
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
-class Settings(BaseSettings):
-    """Fields are `AGENTPLANE_POLICY_CONTROLLER_*` environment variables; a set is written as its elements joined
-    by commas. Keep them in sync with the keys of `cmd/config.go`."""
+class Settings(BaseModel):
+    """Complete non-secret settings authored in the required YAML file."""
 
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_POLICY_CONTROLLER_")
+    config_file_env: ClassVar[str] = "AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE"
+    model_config = ConfigDict(extra="forbid")
 
     policy_namespace: str = Field(min_length=1, description="Namespace where the PolicySets and PolicyBindings live.")
     subject_namespaces: Set[str] = Field(
@@ -47,6 +46,10 @@ class Settings(BaseSettings):
         default_factory=frozenset,
         description="Namespaces whose WorkloadCredentials this controller issues; empty issues none.",
     )
+
+    @field_serializer("subject_namespaces", "reader_accounts", "writer_accounts", "workload_namespaces")
+    def sorted_names(self, names: Set[str]) -> list[str]:
+        return sorted(names)
 
     @model_validator(mode="after")
     def _workload_issuance_is_set_together(self) -> Self:

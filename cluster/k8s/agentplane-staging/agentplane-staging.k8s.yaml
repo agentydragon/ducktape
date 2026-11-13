@@ -10813,6 +10813,32 @@ spec:
       type: session_inbox_access
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: policy-controller-settings
+  namespace: agentplane-staging
+data:
+  config.yaml: |
+    policy_namespace: agentplane-staging
+    subject_namespaces:
+      - agentplane-staging
+    accounts_namespace: agentplane-staging-k8s-accounts
+    metrics_bind_address: :8080
+    health_probe_bind_address: :8081
+    grpc_bind_address: :8082
+    grpc_audience: agentplane-policy
+    reader_accounts:
+      - agentplane-staging/app
+    writer_accounts:
+      - agentplane-staging/app
+    workload_issuer: agentplane-workload
+    workload_namespaces:
+      - agentplane-staging
+      - haku-ci
+      - haku-sandbox
+immutable: false
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: policy-controller
@@ -10850,28 +10876,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_POLICY_CONTROLLER_ACCOUNTS_NAMESPACE
-              value: agentplane-staging-k8s-accounts
-            - name: AGENTPLANE_POLICY_CONTROLLER_METRICS_BIND_ADDRESS
-              value: :8080
-            - name: AGENTPLANE_POLICY_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
-              value: :8081
-            - name: AGENTPLANE_POLICY_CONTROLLER_GRPC_BIND_ADDRESS
-              value: :8082
-            - name: AGENTPLANE_POLICY_CONTROLLER_GRPC_AUDIENCE
-              value: agentplane-policy
-            - name: AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_ISSUER
-              value: agentplane-workload
-            - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
-              value: agentplane-staging
-            - name: AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_NAMESPACES
-              value: agentplane-staging,haku-ci,haku-sandbox
-            - name: AGENTPLANE_POLICY_CONTROLLER_READER_ACCOUNTS
-              value: agentplane-staging/app
-            - name: AGENTPLANE_POLICY_CONTROLLER_WRITER_ACCOUNTS
-              value: agentplane-staging/app
             - name: OTEL_SERVICE_NAME
               value: policy-controller
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -10884,6 +10888,8 @@ spec:
               value: http://alloy.monitoring.svc.cluster.local:4317
             - name: OTEL_TRACES_SAMPLER
               value: parentbased_always_on
+            - name: AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE
+              value: /etc/agentplane-policy-controller/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -10927,6 +10933,10 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-policy-controller
+              name: configmap-policy-controller-settings
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -10946,6 +10956,10 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: policy-controller-settings
+          name: configmap-policy-controller-settings
 ---
 apiVersion: v1
 kind: Service

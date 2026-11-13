@@ -20,7 +20,7 @@ go_library(
         "//agentplane/policy_controller/service",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
-        "@com_github_spf13_viper//:viper",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/labels",
@@ -48,4 +48,5 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":cmd_lib"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
 )

@@ -3,27 +3,31 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
-// config is the Policy Controller's deployment contract: each field's key names an
-// AGENTPLANE_POLICY_CONTROLLER_* environment variable, and a list is written as its elements joined by
-// commas. Keep the keys in sync with the fields of settings.py, which the Deployment is rendered from.
+const configFileEnv = "AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE"
+
+// config is the Policy Controller's complete non-secret deployment contract. The required YAML
+// file is authored through settings.py; service settings have no environment overrides.
 type config struct {
-	PolicyNamespace        string   `mapstructure:"policy_namespace"`
-	SubjectNamespaces      []string `mapstructure:"subject_namespaces"`
-	AccountsNamespace      string   `mapstructure:"accounts_namespace"`
-	MetricsBindAddress     string   `mapstructure:"metrics_bind_address"`
-	HealthProbeBindAddress string   `mapstructure:"health_probe_bind_address"`
-	GRPCBindAddress        string   `mapstructure:"grpc_bind_address"`
-	GRPCAudience           string   `mapstructure:"grpc_audience"`
-	ReaderAccounts         []string `mapstructure:"reader_accounts"`
-	WriterAccounts         []string `mapstructure:"writer_accounts"`
-	WorkloadIssuer         string   `mapstructure:"workload_issuer"`
-	WorkloadNamespaces     []string `mapstructure:"workload_namespaces"`
+	PolicyNamespace        string   `yaml:"policy_namespace"`
+	SubjectNamespaces      []string `yaml:"subject_namespaces"`
+	AccountsNamespace      string   `yaml:"accounts_namespace"`
+	MetricsBindAddress     string   `yaml:"metrics_bind_address"`
+	HealthProbeBindAddress string   `yaml:"health_probe_bind_address"`
+	GRPCBindAddress        string   `yaml:"grpc_bind_address"`
+	GRPCAudience           string   `yaml:"grpc_audience"`
+	ReaderAccounts         []string `yaml:"reader_accounts"`
+	WriterAccounts         []string `yaml:"writer_accounts"`
+	WorkloadIssuer         string   `yaml:"workload_issuer"`
+	WorkloadNamespaces     []string `yaml:"workload_namespaces"`
 }
 
 func defaultConfig() config {
@@ -31,13 +35,24 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
+	path := os.Getenv(configFileEnv)
+	if strings.TrimSpace(path) == "" {
+		return config{}, fmt.Errorf("%s is required", configFileEnv)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return config{}, errors.New("could not read Policy Controller settings file")
+	}
+	defer file.Close()
+
 	c := defaultConfig()
-	// Without ExperimentalBindStruct, Unmarshal reads an environment variable only for a bound key.
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct())
-	settings.SetEnvPrefix("AGENTPLANE_POLICY_CONTROLLER")
-	settings.AutomaticEnv()
-	if err := settings.UnmarshalExact(&c); err != nil {
+	decoder := yaml.NewDecoder(file)
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&c); err != nil {
 		return config{}, errors.New("invalid Policy Controller settings")
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return config{}, errors.New("Policy Controller settings file must contain one YAML document")
 	}
 	return c, c.validate()
 }
