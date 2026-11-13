@@ -59,9 +59,8 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":client",
-        "//agentplane/app/testing:runner_gateway",
-        "//agentplane/env/e2e/testing:failure_journal",
-        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/app/testing:gateway_fixtures",
+        "//agentplane/app/testing:runtime_fixtures",
         "//agentplane/env/e2e/testing:process",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",

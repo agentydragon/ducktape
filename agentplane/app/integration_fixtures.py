@@ -9,20 +9,17 @@ import pytest
 from python.runfiles import Runfiles
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.app.testing.runner_gateway import (
+from agentplane.app.testing.gateway_fixtures import (
     app_token_file,
     dispatcher_database_url,
     gateway_service,
-    runner,
     sandbox,
     sandbox_control,
     session_dispatcher,
 )
+from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.env.e2e.testing.failure_journal import pytest_runtest_makereport
-from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.fixtures import (
     history_on,
@@ -55,30 +52,21 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 __all__ = [
     "api_server",
     "app_token_file",
-    "config",
     "database_clones",
     "database_names",
     "dispatcher_database_url",
-    "endpoint",
     "gateway_service",
-    "harness",
     "history_on",
     "history_service",
     "kubeconfig",
-    "model",
     "postgres_admin_url",
     "postgres_container",
     "postgres_image",
-    "pytest_runtest_makereport",
-    "runner",
-    "runner_gateway",
     "sandbox",
     "sandbox_control",
     "service_database_template",
     "service_history_db_url",
     "session_dispatcher",
-    "spec",
-    "workspace",
 ]
 
 # gazelle:include_dep @pypi//psycopg

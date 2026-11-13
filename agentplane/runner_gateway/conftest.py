@@ -2,18 +2,26 @@
 
 import pytest
 
-from agentplane.app.testing.runner_gateway import (
+from agentplane.app.testing.gateway_fixtures import (
     app_token_file,
     dispatcher_database_url,
     gateway_service,
     history_writer_namespaces,
-    runner,
     sandbox,
     sandbox_control,
     session_dispatcher,
 )
-from agentplane.env.e2e.testing.failure_journal import pytest_runtest_makereport
-from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
+from agentplane.app.testing.runtime_fixtures import (
+    config,
+    endpoint,
+    harness,
+    model,
+    pytest_runtest_makereport,
+    runner,
+    runner_gateway,
+    spec,
+    workspace,
+)
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.history_service.testing.fixtures import (
     history_service,
