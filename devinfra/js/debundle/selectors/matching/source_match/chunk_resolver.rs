@@ -13,6 +13,7 @@
 //! under-resolves silently.
 
 use super::*;
+type Result<T> = std::result::Result<T, MatcherError>;
 
 /// Facts for a single top-level statement. Extracts from the borrowed item (one
 /// item being one root) — no per-call clone into a one-item `Module`, which on the
@@ -24,8 +25,8 @@ pub(crate) fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
 /// Facts for a needle statement: one that does not project to facts is an error,
 /// not an empty match set.
 fn needle_item_facts(item: &ModuleItem) -> Result<chunk_facts::ChunkFacts> {
-    item_facts(item)
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))
+    chunk_facts::extract_facts_items(std::slice::from_ref(item))
+        .map_err(|source| MatcherError::Invalid(SourceMatchError::Facts { source }))
 }
 
 fn needle_index(item: &ModuleItem) -> Result<selector_match::Index> {
@@ -234,7 +235,7 @@ fn matching_body_indices(
     let needle_index = selector_match::Index::build(needle_facts);
     let free = free_identifiers([&needle_index]);
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
-        .map_err(unsupported_error("source_match resolver"))?;
+        .map_err(unsupported_error)?;
     // Sound root-kind prefilter: when the needle root is a concrete kind, a
     // subject whose root kind differs is a guaranteed non-match (the `nkind !=
     // subject kind` gate in the matcher), so skip it without matching.
@@ -304,7 +305,7 @@ fn member_matches_var_declarator(
     let free = free_identifiers([&needle_index]);
     // Probe the needle once: an unsupported construct errors uniformly.
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
-        .map_err(unsupported_error("source_match resolver"))?;
+        .map_err(unsupported_error)?;
     // Which of the needle declarator's declared bindings is the target.
     let target_binding_idx = match &selector.target_binding {
         Some(target_binding) => {
@@ -318,14 +319,27 @@ fn member_matches_var_declarator(
                 .collect();
             match indices.as_slice() {
                 [single] => *single,
-                [] => bail!(
-                    "logical_module {request_id}: source_matches[].bindings local \
-                     `{target_binding}` is not declared by the selector source"
-                ),
-                _ => bail!(
-                    "logical_module {request_id}: source_matches[].bindings local \
-                     `{target_binding}` is ambiguous within the selector source"
-                ),
+                [] => {
+                    return Err(SourceMatchError::binding(
+                        request_id,
+                        selector,
+                        target_binding,
+                        BindingProblem::NotDeclared,
+                    )
+                    .into());
+                }
+                _ => {
+                    return Err(SourceMatchError::binding(
+                        request_id,
+                        selector,
+                        target_binding,
+                        BindingProblem::Ambiguous {
+                            index_kind: ProjectionIndexKind::StatementBinding,
+                            indices: indices.iter().map(|index| (0, *index)).collect(),
+                        },
+                    )
+                    .into());
+                }
             }
         }
         None => 0,
@@ -360,17 +374,16 @@ fn member_matches_var_declarator(
             .decls[subject.declarator_idx];
         let declared = declared_bindings_for_var_declarator(declarator);
         if selector.target_binding.is_none() && declared.len() != 1 {
-            bail!(
-                "logical_module {request_id}: source_match matched a declarator binding {} \
-                 names; needs a single-binding declarator or source_matches[].bindings \
-                 projection",
-                declared.len(),
-            );
+            return Err(SourceMatchError::MultipleBindings {
+                logical_module: request_id.to_string(),
+                body_index: subject.body_idx,
+                count: declared.len(),
+            }
+            .into());
         }
+
         let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
-            bail!(
-                "source_match resolver: target binding index out of range for matched declarator"
-            );
+            return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
         };
         matches.push(MemberBindingMatch {
             body_idx: subject.body_idx,
@@ -394,11 +407,10 @@ fn member_matches_declarator_hole(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "source_match resolver: declarator-hole member selector needs target_binding"
-        )
-    })?;
+    let target_binding = selector
+        .target_binding
+        .as_deref()
+        .ok_or_else(|| MatcherError::invariant(MatcherInvariant::MissingTarget))?;
     let mode = selector_mode(selector);
     if mode == selector_match::Mode::AlphaAll {
         // A raw free sibling name may resolve to the claimed binding in the
@@ -415,9 +427,9 @@ fn member_matches_declarator_hole(
             .into_iter()
             .map(|candidate| {
                 let matched = candidate.bindings.get(target_binding).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "source_match resolver: declarator-hole group omitted target `{target_binding}`"
-                    )
+                    MatcherError::invariant(MatcherInvariant::MissingGroupTarget {
+                        target: target_binding.to_string(),
+                    })
                 })?;
                 Ok(MemberBindingMatch {
                     body_idx: matched.body_idx,
@@ -428,11 +440,8 @@ fn member_matches_declarator_hole(
             .collect();
     }
 
-    let needle_var = item_var_decl(needle).ok_or_else(|| {
-        anyhow::anyhow!(
-            "source_match resolver: declarator-hole needle is not a variable declaration"
-        )
-    })?;
+    let needle_var = item_var_decl(needle)
+        .ok_or_else(|| MatcherError::invariant(MatcherInvariant::ExpectedVariableDeclaration))?;
     let (target_decl_idx, target_binding_idx) =
         selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
     let needle_index = needle_index(needle)?;
@@ -447,7 +456,7 @@ fn member_matches_declarator_hole(
         &[],
         &free,
     )
-    .map_err(unsupported_error("source_match resolver"))?;
+    .map_err(unsupported_error)?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     // The fixed (non-hole) declarators pin invariant tokens any matching source_unit
     // must carry, so the token index narrows the source_unit scan (the giant
@@ -478,23 +487,24 @@ fn member_matches_declarator_hole(
             continue;
         };
         let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
-            bail!(
-                "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] was \
-                 matched by a DECLARATORS hole, not a pinned declarator"
-            );
+            return Err(SourceMatchError::binding(
+                request_id,
+                selector,
+                target_binding,
+                BindingProblem::MatchedHole {
+                    hole: ProjectionHole::Declarators,
+                },
+            )
+            .into());
         };
         let Some(candidate_declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
-            bail!(
-                "source_match resolver: target binding aligned to a missing candidate declarator"
-            );
+            return Err(MatcherError::invariant(MatcherInvariant::MissingDeclarator));
         };
         let Some(binding) = declared_bindings_for_var_declarator(candidate_declarator)
             .into_iter()
             .nth(target_binding_idx)
         else {
-            bail!(
-                "source_match resolver: target binding index out of range for matched declarator"
-            );
+            return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
         };
         matches.push(MemberBindingMatch {
             body_idx,
@@ -528,23 +538,23 @@ fn member_matches_single_declarator_target_window(
         selector_mode(selector),
         &free_identifiers(&needle_indices),
     )
-    .map_err(unsupported_error("source_match resolver"))?;
+    .map_err(unsupported_error)?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for window in windows {
         let (target_body_idx, subject_decl_idx) = window.site;
         let Some(candidate_var) = item_var_decl(&chunk.module.body[target_body_idx]) else {
-            bail!("source_match resolver: matched window target is not a variable declaration");
+            return Err(MatcherError::invariant(
+                MatcherInvariant::ExpectedVariableDeclaration,
+            ));
         };
         let Some(declarator) = candidate_var.decls.get(subject_decl_idx) else {
-            bail!("source_match resolver: matched declarator index out of range");
+            return Err(MatcherError::invariant(MatcherInvariant::MissingDeclarator));
         };
         let Some(binding) = declared_bindings_for_var_declarator(declarator)
             .into_iter()
             .nth(target_binding_idx)
         else {
-            bail!(
-                "source_match resolver: target binding index out of range for matched declarator"
-            );
+            return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
         };
         matches.push(MemberBindingMatch {
             body_idx: target_body_idx,
@@ -568,11 +578,10 @@ fn member_matches_multi(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "source_match resolver: multi-statement member selector needs target_binding"
-        )
-    })?;
+    let target_binding = selector
+        .target_binding
+        .as_deref()
+        .ok_or_else(|| MatcherError::invariant(MatcherInvariant::MissingTarget))?;
     let (target_item_idx, target_binding_idx) =
         selector_binding_location(needles, request_id, selector, target_binding)?;
     // A single-declarator var-decl target is matched per-declarator within the
@@ -611,7 +620,7 @@ fn member_matches_multi(
         selector_mode(selector),
         &free,
     )
-    .map_err(unsupported_error("source_match resolver"))?;
+    .map_err(unsupported_error)?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for start in starts {
         let body_idx = start.site + target_item_idx;
@@ -648,11 +657,8 @@ fn group_matches_declarator_holes(
     selector: &AnonymousStatementSelector,
     exports_by_target: &BTreeMap<String, String>,
 ) -> Result<Vec<MemberBindingGroupMatch>> {
-    let needle_var = item_var_decl(needle).ok_or_else(|| {
-        anyhow::anyhow!(
-            "source_match resolver: declarator-hole group needle is not a variable declaration"
-        )
-    })?;
+    let needle_var = item_var_decl(needle)
+        .ok_or_else(|| MatcherError::invariant(MatcherInvariant::ExpectedVariableDeclaration))?;
     let target_locations: BTreeMap<String, (usize, usize)> = exports_by_target
         .keys()
         .map(|target| {
@@ -670,7 +676,7 @@ fn group_matches_declarator_holes(
         &[],
         &free,
     )
-    .map_err(unsupported_error("source_match resolver"))?;
+    .map_err(unsupported_error)?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind here (the alignment runs un-prebound), so an exact-mode needle may
     // require its pinned-declarator identifier spellings; `DECLARATORS`-hole
@@ -692,21 +698,24 @@ fn group_matches_declarator_holes(
         let mut resolved = BTreeMap::new();
         for (target, (target_decl_idx, target_binding_idx)) in &target_locations {
             let Some(Some(candidate_decl_idx)) = alignment.site.get(*target_decl_idx) else {
-                bail!(
-                    "logical_module {request_id}: source_matches[].bindings[`{target}`] was \
-                     matched by a DECLARATORS hole, not a pinned declarator"
-                );
+                return Err(SourceMatchError::binding(
+                    request_id,
+                    selector,
+                    target,
+                    BindingProblem::MatchedHole {
+                        hole: ProjectionHole::Declarators,
+                    },
+                )
+                .into());
             };
             let Some(declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
-                bail!(
-                    "source_match resolver: target `{target}` aligned to a missing candidate declarator"
-                );
+                return Err(MatcherError::invariant(MatcherInvariant::MissingDeclarator));
             };
             let Some(binding) = declared_bindings_for_var_declarator(declarator)
                 .into_iter()
                 .nth(*target_binding_idx)
             else {
-                bail!("source_match resolver: target `{target}` binding index out of range");
+                return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
             };
             resolved.insert(target.clone(), MatchedBinding { body_idx, binding });
         }
@@ -740,14 +749,23 @@ fn group_matches_single_declarator(
                 .collect();
             match indices.as_slice() {
                 [single] => Ok((target.clone(), *single)),
-                [] => bail!(
-                    "logical_module {request_id}: source_matches[].bindings[`{target}`] is not \
-                     declared by the selector source"
-                ),
-                _ => bail!(
-                    "logical_module {request_id}: source_matches[].bindings[`{target}`] is \
-                     ambiguous within the selector source"
-                ),
+                [] => Err(SourceMatchError::binding(
+                    request_id,
+                    selector,
+                    target,
+                    BindingProblem::NotDeclared,
+                )
+                .into()),
+                _ => Err(SourceMatchError::binding(
+                    request_id,
+                    selector,
+                    target,
+                    BindingProblem::Ambiguous {
+                        index_kind: ProjectionIndexKind::StatementBinding,
+                        indices: indices.iter().map(|index| (0, *index)).collect(),
+                    },
+                )
+                .into()),
             }
         })
         .collect::<Result<_>>()?;
@@ -757,7 +775,7 @@ fn group_matches_single_declarator(
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mode = selector_mode(selector);
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
-        .map_err(unsupported_error("source_match resolver"))?;
+        .map_err(unsupported_error)?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind (the declarator match is un-prebound); an exact-mode needle may
     // require its identifier spellings.
@@ -782,7 +800,7 @@ fn group_matches_single_declarator(
         let mut resolved = BTreeMap::new();
         for (target, target_binding_idx) in &target_binding_indices {
             let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
-                bail!("source_match resolver: target `{target}` binding index out of range");
+                return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
             };
             resolved.insert(
                 target.clone(),
@@ -824,13 +842,7 @@ fn candidate_target_binding(
         return declared_bindings(item)
             .into_iter()
             .nth(target_binding_idx)
-            .with_context(|| {
-                format!(
-                    "logical_module {request_id}: source_matches[].bindings[`{target}`] matched \
-                     top-level statement at body index {body_idx}, but that statement declares \
-                     too few bindings"
-                )
-            });
+            .ok_or_else(|| MatcherError::invariant(MatcherInvariant::MissingBinding));
     };
     let (target_decl_idx, declarator_binding_idx) =
         selector_var_declarator_binding_location(needle_var, request_id, selector, target)?;
@@ -841,24 +853,22 @@ fn candidate_target_binding(
         &[],
         free,
     )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: source_matches[].bindings[`{target}`] matched body \
-             index {body_idx}, but its declarators do not align with the selector's"
-        )
-    })?;
+    .ok_or_else(|| MatcherError::invariant(MatcherInvariant::DeclaratorAlignment))?;
     let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
-        bail!(
-            "logical_module {request_id}: source_matches[].bindings[`{target}`] was matched by a \
-             DECLARATORS hole, not a pinned declarator"
-        );
+        return Err(SourceMatchError::binding(
+            request_id,
+            selector,
+            target,
+            BindingProblem::MatchedHole {
+                hole: ProjectionHole::Declarators,
+            },
+        )
+        .into());
     };
     declared_bindings_for_var_declarator(&candidate_var.decls[*candidate_decl_idx])
         .into_iter()
         .nth(declarator_binding_idx)
-        .with_context(|| {
-            format!("source_match resolver: target `{target}` binding index out of range")
-        })
+        .ok_or_else(|| MatcherError::invariant(MatcherInvariant::MissingBinding))
 }
 
 /// Binding-group branch 3 — a general (multi-statement or non-var) needle: a
@@ -889,16 +899,21 @@ fn group_matches_general(
         selector_mode(selector),
         &free,
     )
-    .map_err(unsupported_error("source_match resolver"))?;
+    .map_err(unsupported_error)?;
     let mut matches = Vec::new();
     for alignment in alignments {
         let mut resolved = BTreeMap::new();
         for (target, (target_item_idx, target_binding_idx)) in &target_locations {
             let Some(Some(body_idx)) = alignment.site.get(*target_item_idx) else {
-                bail!(
-                    "logical_module {request_id}: source_matches[].bindings[`{target}`] was \
-                     matched by a STMT_LIST hole, not a pinned statement"
-                );
+                return Err(SourceMatchError::binding(
+                    request_id,
+                    selector,
+                    target,
+                    BindingProblem::MatchedHole {
+                        hole: ProjectionHole::StatementList,
+                    },
+                )
+                .into());
             };
             let binding = candidate_target_binding(
                 chunk,
@@ -989,13 +1004,14 @@ fn member_matches_single_statement(
                         free_bindings: matched.free_bindings,
                     }),
                     [] => {}
-                    multiple => bail!(
-                        "logical_module {request_id}: source_matches[] matched \
-                         top-level statement at body index {body_idx}, but that statement \
-                         declares {} bindings. Use a single-declarator selector or refine the \
-                         match.",
-                        multiple.len(),
-                    ),
+                    multiple => {
+                        return Err(SourceMatchError::MultipleBindings {
+                            logical_module: request_id.to_string(),
+                            body_index: body_idx,
+                            count: multiple.len(),
+                        }
+                        .into());
+                    }
                 }
             }
         }
@@ -1079,14 +1095,13 @@ impl ChunkResolver<'_> {
     ) -> Result<Vec<MemberBindingGroupMatch>> {
         let selector = parsed.selector();
         if selector.target_binding.is_some() {
-            bail!(
-                "source_match resolver: binding-group selector for {request_id} unexpectedly has \
-                 target_binding set"
-            );
+            return Err(MatcherError::invariant(
+                MatcherInvariant::UnexpectedGroupTarget,
+            ));
         }
         let needles = parsed.body();
         let [first, ..] = needles else {
-            bail!("logical_module {request_id}: source_matches[] parsed to zero statements");
+            return Err(SourceMatchError::claim(request_id, ClaimProblem::EmptySource).into());
         };
         // A sole declared claim keeps the member matcher's contextual
         // declarator projection. Its fixed-window path also preserves the
@@ -1171,7 +1186,7 @@ impl ChunkResolver<'_> {
             selector_mode(selector),
             &free,
         )
-        .map_err(unsupported_error("anonymous source_match resolver"))?
+        .map_err(unsupported_error)?
         .into_iter()
         .map(|matched| AnonymousGroupMatch {
             body_indices: (matched.site..=matched.site + target).collect(),
@@ -1213,8 +1228,13 @@ mod tests {
     }
 
     fn parse(selector: &AnonymousStatementSelector) -> ParsedSourceMatchSelector {
-        ParsedSourceMatchSelector::parse("test", "<test>".to_string(), selector, "source_match")
-            .expect("selector parses")
+        ParsedSourceMatchSelector::parse(
+            "test",
+            "<test>".to_string(),
+            selector,
+            SelectorField::SourceMatch,
+        )
+        .expect("selector parses")
     }
 
     /// The claimed binding of every member candidate, body-index ascending.

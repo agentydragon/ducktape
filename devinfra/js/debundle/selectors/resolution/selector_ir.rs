@@ -904,6 +904,29 @@ impl SelectorFactStore {
     }
 }
 
+/// Why a backend could not finish proving projected target support.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    thiserror::Error,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SolverStopReason {
+    #[error("CP-SAT returned UNKNOWN")]
+    CpSatUnknown,
+    #[error("CP-SAT stopped before proving complete target support")]
+    IncompleteTargetSupport,
+    #[error("the selector backend stopped before deciding")]
+    BackendStopped,
+}
+
 /// Solver output projected to materializer targets.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SolverResult {
@@ -938,13 +961,11 @@ pub enum ClaimOutcome {
     },
     /// The targets solved together with this one admit no joint assignment;
     /// which of them are at fault is not determined.
-    Unsatisfiable {
-        reason: String,
-    },
+    Unsatisfiable,
     /// The backend stopped (a time limit, or UNKNOWN) before proving the
     /// target's value unique or listing its alternatives.
     Undecided {
-        reason: String,
+        reason: SolverStopReason,
     },
 }
 

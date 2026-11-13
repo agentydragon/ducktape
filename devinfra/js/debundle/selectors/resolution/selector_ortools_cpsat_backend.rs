@@ -41,11 +41,32 @@ impl Default for CpSatSettings {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
-#[error("{name} must be {expected}, got `{value}`")]
+#[error("{name} must be {expected}, got `{value}`", name = .setting.environment_variable(), expected = .setting.expected())]
 pub struct InvalidSetting {
-    name: &'static str,
-    value: String,
-    expected: &'static str,
+    pub setting: CpSatSetting,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CpSatSetting {
+    SearchWorkers,
+    MaxTimeSeconds,
+}
+
+impl CpSatSetting {
+    pub fn environment_variable(self) -> &'static str {
+        match self {
+            Self::SearchWorkers => NUM_SEARCH_WORKERS_ENV,
+            Self::MaxTimeSeconds => MAX_TIME_SECONDS_ENV,
+        }
+    }
+
+    fn expected(self) -> &'static str {
+        match self {
+            Self::SearchWorkers => "a positive integer",
+            Self::MaxTimeSeconds => "a positive number",
+        }
+    }
 }
 
 impl CpSatSettings {
@@ -64,28 +85,26 @@ impl CpSatSettings {
     fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, InvalidSetting> {
         let lookup = |name| lookup(name).filter(|value| !value.is_empty());
         let mut settings = Self::default();
-        if let Some(value) = lookup(NUM_SEARCH_WORKERS_ENV) {
+        if let Some(value) = lookup(CpSatSetting::SearchWorkers.environment_variable()) {
             settings.num_search_workers = value
                 .parse::<i32>()
                 .ok()
                 .filter(|workers| *workers > 0)
                 .and_then(NonZeroI32::new)
                 .ok_or(InvalidSetting {
-                    name: NUM_SEARCH_WORKERS_ENV,
+                    setting: CpSatSetting::SearchWorkers,
                     value,
-                    expected: "a positive integer",
                 })?;
         }
-        if let Some(value) = lookup(MAX_TIME_SECONDS_ENV) {
+        if let Some(value) = lookup(CpSatSetting::MaxTimeSeconds.environment_variable()) {
             settings.max_time_seconds = Some(
                 value
                     .parse::<f64>()
                     .ok()
                     .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
                     .ok_or(InvalidSetting {
-                        name: MAX_TIME_SECONDS_ENV,
+                        setting: CpSatSetting::MaxTimeSeconds,
                         value,
-                        expected: "a positive number",
                     })?,
             );
         }
@@ -170,7 +189,7 @@ fn search_support(
             status: BackendSolveStatus::Unsatisfiable,
             assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
             assignments: Vec::new(),
-            diagnostic: None,
+            stop_reason: None,
             fixed_variables: BTreeSet::new(),
         },
         Finished::Complete { capped } => BackendSolveResult {
@@ -185,20 +204,17 @@ fn search_support(
                 BackendAssignmentCoverage::TargetSupportComplete
             },
             assignments: search.assignments(),
-            diagnostic: None,
+            stop_reason: None,
             fixed_variables: BTreeSet::new(),
         },
         Finished::Stopped => BackendSolveResult {
             status: BackendSolveStatus::Unknown,
             assignment_coverage: BackendAssignmentCoverage::Sample,
-            diagnostic: Some(
-                if search.rows.is_empty() {
-                    "CP-SAT returned UNKNOWN"
-                } else {
-                    "CP-SAT stopped before proving complete target support"
-                }
-                .to_string(),
-            ),
+            stop_reason: Some(if search.rows.is_empty() {
+                selector_ir::SolverStopReason::CpSatUnknown
+            } else {
+                selector_ir::SolverStopReason::IncompleteTargetSupport
+            }),
             assignments: search.assignments(),
             fixed_variables: search.proven_fixed.iter().copied().collect(),
         },

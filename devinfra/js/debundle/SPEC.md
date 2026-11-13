@@ -1301,6 +1301,21 @@ statement or else in the statement adjacent to it. A place with none is not
 listed there, and the report says when no place has one. JSON retains the
 anchor as a typed `{kind, value}` feature rather than a human label.
 
+An `invalid` outcome's `error` is a structured report with a `cause` discriminator
+and a human `message`. Parse errors retain the selector's source, field, logical
+module and every native parser diagnostic; a diagnostic's optional `range`
+contains source-relative byte offsets. Unsupported matcher/fact constructs,
+binding projections, ambiguous template references and invalid spec claims keep
+their own typed details. Native parser and matcher causes remain intact until
+report projection; human output includes complete causes and selector context.
+Unexpected operational failures propagate as command errors.
+
+An `undecided` outcome's `reason` is `cp_sat_unknown` when CP-SAT stops before
+finding its first assignment, `incomplete_target_support` when it stops during
+support enumeration, or `backend_stopped` when a backend supplies no more precise
+stop reason. These classifications do not change which already-proven fixed
+targets resolve.
+
 Each `nearest_unclaimed[].reason` is a tagged object with a `code` and the
 corresponding syntax evidence (declarator index and shapes, class member key,
 item category/kind, or uncovered declarator gap). Scores rank diagnostic

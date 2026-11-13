@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
+pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> MatchResult<()> {
     let mut collector = UnsupportedAnythingCollector::default();
     for item in items {
         item.visit_with(&mut collector);
@@ -10,25 +10,18 @@ pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
     }
     collector.positions.sort();
     collector.positions.dedup();
-    bail!(
-        "source_match `ANYTHING` is unsupported in {}. `ANYTHING` is anonymous \
-         sugar only for expression (`EXPR`), statement (`STMT`), pattern, \
-         variable-declarator-list (`DECLARATORS`), object-property-list, and \
-         class-member-list holes. \
-         Use typed holes when the position needs stronger diagnostics. \
-         Object property keys still need exact keys; use `key: ANYTHING` to wildcard a \
-         property value or `{{ ANYTHING }}` to skip arbitrary properties.",
-        collector.positions.join(", ")
-    )
+    Err(SourceMatchError::Anything {
+        positions: collector.positions,
+    })
 }
 
 #[derive(Default)]
 pub(crate) struct UnsupportedAnythingCollector {
-    positions: Vec<&'static str>,
+    positions: Vec<AnythingPosition>,
 }
 
 impl UnsupportedAnythingCollector {
-    fn push(&mut self, position: &'static str) {
+    fn push(&mut self, position: AnythingPosition) {
         self.positions.push(position);
     }
 }
@@ -81,7 +74,7 @@ impl Visit for UnsupportedAnythingCollector {
         if let ClassMember::ClassProp(prop) = member
             && prop_name_is_anything(&prop.key)
         {
-            self.push("a class member with an initializer");
+            self.push(AnythingPosition::ClassMemberInitializer);
             prop.value.visit_with(self);
             return;
         }
@@ -93,25 +86,25 @@ impl Visit for UnsupportedAnythingCollector {
             Prop::Shorthand(_) => {}
             Prop::KeyValue(prop) => {
                 if prop_name_is_anything(&prop.key) {
-                    self.push("an object property key");
+                    self.push(AnythingPosition::ObjectPropertyKey);
                 }
                 prop.value.visit_with(self);
             }
             Prop::Assign(prop) => {
                 if ident_is_anything(&prop.key) {
-                    self.push("an object assignment property key");
+                    self.push(AnythingPosition::ObjectAssignmentKey);
                 }
                 prop.value.visit_with(self);
             }
             Prop::Getter(prop) => {
                 if prop_name_is_anything(&prop.key) {
-                    self.push("an object getter key");
+                    self.push(AnythingPosition::ObjectGetterKey);
                 }
                 prop.function.body.visit_with(self);
             }
             Prop::Setter(prop) => {
                 if prop_name_is_anything(&prop.key) {
-                    self.push("an object setter key");
+                    self.push(AnythingPosition::ObjectSetterKey);
                 }
                 for param in &prop.function.params {
                     param.pat.visit_with(self);
@@ -120,7 +113,7 @@ impl Visit for UnsupportedAnythingCollector {
             }
             Prop::Method(prop) => {
                 if prop_name_is_anything(&prop.key) {
-                    self.push("an object method key");
+                    self.push(AnythingPosition::ObjectMethodKey);
                 }
                 prop.function.visit_with(self);
             }
@@ -129,7 +122,7 @@ impl Visit for UnsupportedAnythingCollector {
 
     fn visit_binding_ident(&mut self, ident: &BindingIdent) {
         if binding_ident_is_anything(ident) {
-            self.push("a binding identifier");
+            self.push(AnythingPosition::BindingIdentifier);
             ident.type_ann.visit_with(self);
             return;
         }
@@ -138,7 +131,7 @@ impl Visit for UnsupportedAnythingCollector {
 
     fn visit_ident(&mut self, ident: &Ident) {
         if ident_is_anything(ident) {
-            self.push("an identifier");
+            self.push(AnythingPosition::Identifier);
         }
     }
 }
@@ -148,10 +141,15 @@ pub fn parse_selector_module(
     file_label: String,
     match_source: &str,
     // Field path used only in the "did not parse as JS" message.
-    parse_label: &str,
-) -> Result<Module> {
-    let parsed = js_ast::parse_js_module_ast(&file_label, match_source).with_context(|| {
-        format!("logical_module {request_id}: {parse_label} did not parse as JS:\n{match_source}")
+    parse_label: SelectorField,
+) -> MatchResult<Module> {
+    let parsed = js_ast::parse_js_module_ast(&file_label, match_source).map_err(|source| {
+        SourceMatchError::Parse {
+            logical_module: request_id.to_string(),
+            field: parse_label,
+            match_source: match_source.to_string(),
+            source: std::sync::Arc::new(source),
+        }
     })?;
     validate_anything_holes(&parsed.body)?;
     Ok(parsed)
@@ -162,8 +160,8 @@ impl ParsedSourceMatchSelector {
         request_id: &str,
         file_label: String,
         selector: &AnonymousStatementSelector,
-        parse_label: &str,
-    ) -> Result<Self> {
+        parse_label: SelectorField,
+    ) -> MatchResult<Self> {
         let parsed =
             parse_selector_module(request_id, file_label, &selector.match_source, parse_label)?;
         Ok(Self::new(selector.clone(), parsed))

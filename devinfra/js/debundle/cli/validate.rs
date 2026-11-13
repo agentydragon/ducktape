@@ -30,8 +30,8 @@ use peel::OutputFormat;
 use pipeline::{RunOutput, TransformRunOptions, TransformSpecSource, run_transform};
 use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
-    Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport,
-    SelectorValidationCounts, Severity,
+    Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,
+    SelectorOutcome, SelectorOutcomeReport, SelectorValidationCounts, Severity,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -89,7 +89,7 @@ pub struct ValidateArgs {
 #[derive(Debug, Default, Serialize)]
 struct ValidateReport {
     #[serde(flatten)]
-    selectors: SelectorOutcomeReport,
+    selectors: SelectorOutcomeReport<InvalidSelectorReport>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     commuting_statements_diagnostics: Vec<CommutingStatementsDiagnostic>,
 }
@@ -112,7 +112,7 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     let report_only = args.report_only;
     let report = if args.source_only_requested() {
         ValidateReport {
-            selectors: js_ast::with_swc_globals(|| run_source_only_validate(&args))?,
+            selectors: js_ast::with_swc_globals(|| run_source_only_validate(&args))?.to_report(),
             commuting_statements_diagnostics: Vec::new(),
         }
     } else {
@@ -201,7 +201,7 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
     let keep_going = !args.transform.fail_fast;
     let pass = run_captured_pass(args.transform)?;
     let expected_chunks = &pass.expected_chunks;
-    let chunks: Vec<(String, SelectorOutcomeReport)> =
+    let chunks: Vec<(String, SelectorOutcomeReport<InvalidSelectorReport>)> =
         pass.chunk_reports(SELECTOR_DIAGNOSTICS_REPORT)?;
     let premise_diagnostics: Vec<(String, Vec<CommutingStatementsDiagnostic>)> =
         pass.chunk_reports(COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT)?;
@@ -246,7 +246,9 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
         report.outcomes.extend(chunk.outcomes);
         report.templates.extend(chunk.templates);
     }
-    report.outcomes.sort();
+    report
+        .outcomes
+        .sort_by(|left, right| left.identity().cmp(&right.identity()));
     report.templates.sort();
     let commuting_statements_diagnostics = premise_diagnostics
         .into_iter()
@@ -321,12 +323,6 @@ fn run_source_only_validate(args: &ValidateArgs) -> Result<SelectorOutcomeReport
     validate_modules_against_source(modules_root, &source_file, &chunk)
 }
 
-fn invalid(error: &impl std::fmt::Display) -> Outcome {
-    Outcome::Invalid {
-        error: format!("{error:#}"),
-    }
-}
-
 /// One `Invalid` record for a spec entry that could not become an entity.
 fn invalid_outcome(
     chunk: &str,
@@ -334,7 +330,7 @@ fn invalid_outcome(
     entity: Option<Entity>,
     selector_kind: SelectorKind,
     selector: Option<&AnonymousStatementSelector>,
-    error: &impl std::fmt::Display,
+    error: InvalidSelectorError,
 ) -> SelectorOutcome {
     SelectorOutcome {
         chunk: chunk.to_string(),
@@ -346,7 +342,7 @@ fn invalid_outcome(
         target_binding: selector.and_then(|selector| selector.target_binding.clone()),
         selector_preview: selector
             .map(|selector| source_match::source_match_preview(&selector.match_source)),
-        outcome: invalid(error),
+        outcome: Outcome::Invalid { error },
     }
 }
 
@@ -379,7 +375,7 @@ fn validate_modules_against_source(
                 None,
                 SelectorKind::Annotations,
                 None,
-                &error,
+                InvalidSelectorError::from_request_error(error)?,
             ));
         }
         let mut members = Vec::new();
@@ -405,7 +401,7 @@ fn validate_modules_against_source(
                         member.name.map(Entity::Export),
                         SelectorKind::UnparsedMember,
                         None,
-                        &error,
+                        error.into(),
                     ));
                 }
             }
@@ -425,7 +421,7 @@ fn validate_modules_against_source(
                         None,
                         SelectorKind::SourceMatches,
                         Some(&claim.source_match().selector()),
-                        &error,
+                        error.into(),
                     ));
                 }
             }
@@ -460,7 +456,7 @@ fn validate_modules_against_source(
                         entity,
                         SelectorKind::AnonymousStatement,
                         statement.selector().ok().as_ref(),
-                        &error,
+                        InvalidSelectorError::from_request_error(error)?,
                     ));
                 }
             }
@@ -478,7 +474,7 @@ fn validate_modules_against_source(
             outcomes.push(resolved.outcome);
         }
     }
-    outcomes.sort();
+    outcomes.sort_by(|left, right| left.identity().cmp(&right.identity()));
     let mut templates = resolution.templates;
     templates.sort();
     Ok(SelectorOutcomeReport {

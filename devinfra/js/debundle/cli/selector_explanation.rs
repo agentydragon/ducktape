@@ -71,7 +71,7 @@ pub(super) fn explain(config: &ExplanationConfig) -> Result<ExplanationReport> {
                 &selector.origin,
                 format!("<{}>", selector.origin),
                 &selector.selector(),
-                "source_match",
+                source_match::SelectorField::SourceMatch,
             )?;
             let external_identifiers = template_free_identifiers(&parsed);
             let mut result = explain_range(&parsed, selected, selector.kind);

@@ -281,8 +281,14 @@ fn name_exported_by_several_other_modules_is_invalid() {
     ));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let default_widget = find_outcome(&outcomes, "invalid", "DefaultWidget");
-    let error = default_widget["outcome"]["error"].as_str().unwrap();
-    assert!(error.starts_with("ambiguous_reference:"), "{error}");
+    let cause = &default_widget["outcome"]["error"];
+    assert_eq!(cause["cause"], "ambiguous_reference");
+    assert_eq!(cause["identifier"], "Widget");
+    assert_eq!(
+        cause["modules"],
+        serde_json::json!(["widgets/a", "widgets/b"])
+    );
+    let error = cause["message"].as_str().unwrap();
     for identifier in ["Widget", "widgets/a", "widgets/b"] {
         assert!(error.contains(identifier), "{identifier}: {error}");
     }

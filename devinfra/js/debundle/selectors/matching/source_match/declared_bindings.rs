@@ -64,59 +64,6 @@ pub(crate) fn target_binding_candidate_names(
         .collect()
 }
 
-/// A selector-local binding projection rejection: the shared prefix and the
-/// `:\n{match_source}` selector-source suffix are written once, with `problem`
-/// carrying the varying middle. Both the statement-level and declarator-level
-/// resolvers report through here.
-fn target_binding_error(
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-    target_binding: &str,
-    problem: &str,
-) -> anyhow::Error {
-    anyhow::anyhow!(
-        "logical_module {request_id}: source_matches[].bindings local `{target_binding}` \
-         {problem}:\n{match_source}",
-        match_source = selector.match_source,
-    )
-}
-
-/// The projected local binding names a binding the selector source never declares.
-fn target_binding_not_declared(
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-    target_binding: &str,
-) -> anyhow::Error {
-    target_binding_error(
-        request_id,
-        selector,
-        target_binding,
-        "is not declared by the selector source",
-    )
-}
-
-/// The projected local binding is declared more than once in the selector source.
-/// `index_kind` names what the reported `indices` count (e.g.
-/// `"statement/binding"`, `"declarator/binding"`), the only detail that varies
-/// between the resolvers.
-fn target_binding_ambiguous(
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-    target_binding: &str,
-    index_kind: &str,
-    indices: impl std::fmt::Debug,
-) -> anyhow::Error {
-    target_binding_error(
-        request_id,
-        selector,
-        target_binding,
-        &format!(
-            "is ambiguous within the selector source at {index_kind} indices \
-             {indices:?}. Refine the selector source"
-        ),
-    )
-}
-
 /// Locate the selector-local projected binding among the statements' declared
 /// bindings as `(statement index, declared-binding index)`, requiring it to be
 /// declared exactly once across the selector source.
@@ -125,7 +72,7 @@ pub(crate) fn selector_binding_location(
     request_id: &str,
     selector: &AnonymousStatementSelector,
     target_binding: &str,
-) -> Result<(usize, usize)> {
+) -> MatchResult<(usize, usize)> {
     let selector_binding_locations: Vec<(usize, usize)> = needles
         .iter()
         .enumerate()
@@ -139,17 +86,20 @@ pub(crate) fn selector_binding_location(
         .collect();
     match selector_binding_locations.as_slice() {
         [single] => Ok(*single),
-        [] => Err(target_binding_not_declared(
+        [] => Err(SourceMatchError::binding(
             request_id,
             selector,
             target_binding,
+            BindingProblem::NotDeclared,
         )),
-        multiple => Err(target_binding_ambiguous(
+        multiple => Err(SourceMatchError::binding(
             request_id,
             selector,
             target_binding,
-            "statement/binding",
-            multiple,
+            BindingProblem::Ambiguous {
+                index_kind: ProjectionIndexKind::StatementBinding,
+                indices: multiple.to_vec(),
+            },
         )),
     }
 }
@@ -162,7 +112,7 @@ pub(crate) fn selector_var_declarator_binding_location(
     request_id: &str,
     selector: &AnonymousStatementSelector,
     target_binding: &str,
-) -> Result<(usize, usize)> {
+) -> MatchResult<(usize, usize)> {
     let selector_binding_locations = needle_var
         .decls
         .iter()
@@ -179,17 +129,20 @@ pub(crate) fn selector_var_declarator_binding_location(
         .collect::<Vec<_>>();
     match selector_binding_locations.as_slice() {
         [single] => Ok(*single),
-        [] => Err(target_binding_not_declared(
+        [] => Err(SourceMatchError::binding(
             request_id,
             selector,
             target_binding,
+            BindingProblem::NotDeclared,
         )),
-        multiple => Err(target_binding_ambiguous(
+        multiple => Err(SourceMatchError::binding(
             request_id,
             selector,
             target_binding,
-            "declarator/binding",
-            multiple,
+            BindingProblem::Ambiguous {
+                index_kind: ProjectionIndexKind::DeclaratorBinding,
+                indices: multiple.to_vec(),
+            },
         )),
     }
 }

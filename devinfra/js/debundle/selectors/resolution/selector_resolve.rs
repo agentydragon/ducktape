@@ -27,8 +27,9 @@ use selector_ir::{
 use selector_ir_lowering::MemberSelectorProgramBuilder;
 use selector_outcome::{
     Candidate, ConflictSourceUnit, Differentiator, Entity, EntityRef, FreeIdentifier,
-    IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, OwnershipConflict,
-    Placement, ResolvedBy, SelectorKind, SelectorOutcome, TemplateIdentifiers,
+    IdentifierMeaning, InvalidSelectorError, MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome,
+    OwnershipConflict, Placement, ProjectionError, ResolvedBy, SelectorKind, SelectorOutcome,
+    TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
@@ -1059,7 +1060,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 match self.collect_anonymous(module_index, position) {
                     Ok(entity) => collected.push(entity),
                     Err(rejected) => {
-                        self.push_anonymous(module_index, position, rejected.outcome());
+                        self.push_anonymous(module_index, position, rejected.outcome()?);
                     }
                 }
             }
@@ -1073,7 +1074,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             match self.collect_group(module_index, group) {
                 Ok(entity) => collected.push(entity),
                 Err(rejected) => {
-                    let outcome = rejected.outcome();
+                    let outcome = rejected.outcome()?;
                     for member_index in members {
                         self.push_member(module_index, member_index, outcome.clone());
                     }
@@ -1083,7 +1084,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         for (module_index, member_index) in source_matches {
             match self.collect_member(module_index, member_index) {
                 Ok(entity) => collected.push(entity),
-                Err(rejected) => self.push_member(module_index, member_index, rejected.outcome()),
+                Err(rejected) => self.push_member(module_index, member_index, rejected.outcome()?),
             }
         }
         self.project_collected(collected)?;
@@ -1151,29 +1152,28 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .chunk
             .matcher()
             .anonymous_group_candidates(&self.ids[module_index], &statement.selector)
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+            .map_err(Rejection::matcher)?
             .into_iter()
             .map(|group| {
-                let body_idx = group.body_indices.last().with_context(
-                    || "anonymous source_match candidate has no final statement to claim",
-                )?;
+                let body_idx = group
+                    .body_indices
+                    .last()
+                    .ok_or(ProjectionError::EmptyAnonymousCandidate)?;
                 if group.body_indices.len() > 1
                     && places
                         .source_unit_by_body_and_binding
                         .keys()
                         .any(|(index, _)| index == body_idx)
                 {
-                    bail!(
-                        "anonymous source_match final statement at body index {body_idx} \
-                             declares a binding and cannot be claimed as anonymous"
-                    );
+                    return Err(ProjectionError::AnonymousDeclaresBinding {
+                        body_index: *body_idx,
+                    });
                 }
-                let source_unit = places.source_unit_by_body.get(body_idx).copied().with_context(|| {
-                    format!(
-                        "anonymous source_match final statement at body index {body_idx} does not \
-                         map to an assignable dependency graph node",
-                    )
-                })?;
+                let source_unit = places.source_unit_by_body.get(body_idx).copied().ok_or(
+                    ProjectionError::AnonymousSourceUnitMissing {
+                        body_index: *body_idx,
+                    },
+                )?;
                 Ok(CollectedRow {
                     places: vec![Place {
                         source_unit,
@@ -1182,8 +1182,8 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     free_bindings: group.free_bindings,
                 })
             })
-            .collect::<Result<Vec<_>>>()
-            .map_err(|error| Rejection::invalid(SOURCE_UNIT_MAPPING_ERROR, &error))?;
+            .collect::<Result<Vec<_>, ProjectionError>>()
+            .map_err(|error| Rejection::Invalid(error.into()))?;
         Ok(Collected {
             module_index,
             free: template_free_identifiers(&statement.selector),
@@ -1231,14 +1231,14 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let matched = if declared.is_empty() {
             matcher
                 .free_reference_candidates(logical_module, template)
-                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .map_err(Rejection::matcher)?
                 .into_iter()
                 .map(|free_bindings| Ok((BTreeMap::new(), free_bindings)))
-                .collect::<Result<Vec<_>>>()
+                .collect::<Result<Vec<_>, ProjectionError>>()
         } else {
             matcher
                 .member_group_candidates(logical_module, template, &declared)
-                .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+                .map_err(Rejection::matcher)?
                 .into_iter()
                 .map(|candidate| {
                     Ok((
@@ -1251,13 +1251,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                                     member_place(places, matched.body_idx, &matched.binding)?,
                                 ))
                             })
-                            .collect::<Result<BTreeMap<_, _>>>()?,
+                            .collect::<Result<BTreeMap<_, _>, ProjectionError>>()?,
                         candidate.free_bindings,
                     ))
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<Result<Vec<_>, ProjectionError>>()
         }
-        .map_err(|error| Rejection::invalid(SOURCE_UNIT_MAPPING_ERROR, &error))?;
+        .map_err(|error| Rejection::Invalid(error.into()))?;
         let mut rows = Vec::new();
         for (declared_places, free_bindings) in matched {
             let mut partial = vec![declared_places];
@@ -1338,7 +1338,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .chunk
             .matcher()
             .member_candidates(&self.ids[module_index], parsed)
-            .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
+            .map_err(Rejection::matcher)?
             .into_iter()
             .map(|matched| {
                 Ok(CollectedRow {
@@ -1346,8 +1346,8 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     free_bindings: matched.free_bindings,
                 })
             })
-            .collect::<Result<Vec<_>>>()
-            .map_err(|error| Rejection::invalid(SOURCE_UNIT_MAPPING_ERROR, &error))?;
+            .collect::<Result<Vec<_>, ProjectionError>>()
+            .map_err(|error| Rejection::Invalid(error.into()))?;
         Ok(Collected {
             module_index,
             free: template_free_identifiers(parsed),
@@ -1453,14 +1453,14 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         self.push_anonymous(
                             entity.module_index,
                             position,
-                            rejection.clone().outcome(),
+                            rejection.clone().outcome()?,
                         );
                     }
                     for member_index in entity.member_indices() {
                         self.push_member(
                             entity.module_index,
                             member_index,
-                            rejection.clone().outcome(),
+                            rejection.clone().outcome()?,
                         );
                     }
                 }
@@ -1845,7 +1845,7 @@ impl Projection {
                     binding: None,
                     resolved_by: how_resolved(&resolved_by, target),
                 },
-                Some(ClaimOutcome::Unsatisfiable { .. }) => unsatisfiable
+                Some(ClaimOutcome::Unsatisfiable) => unsatisfiable
                     .remove(&target)
                     .expect("every infeasible target has a group diagnostic"),
                 Some(outcome) => claim_outcome(module, outcome)?,
@@ -1881,7 +1881,7 @@ impl Projection {
                         resolved_by: how_resolved(&resolved_by, target),
                     }
                 }
-                Some(ClaimOutcome::Unsatisfiable { .. }) => unsatisfiable
+                Some(ClaimOutcome::Unsatisfiable) => unsatisfiable
                     .remove(&target)
                     .expect("every infeasible target has a group diagnostic"),
                 Some(outcome) => claim_outcome(module, outcome)?,
@@ -1919,7 +1919,7 @@ impl Projection {
         if !result
             .claims
             .iter()
-            .any(|claim| matches!(claim.outcome, ClaimOutcome::Unsatisfiable { .. }))
+            .any(|claim| matches!(claim.outcome, ClaimOutcome::Unsatisfiable))
         {
             return Ok(outcomes);
         }
@@ -1938,7 +1938,7 @@ impl Projection {
             if !group.iter().any(|target| {
                 matches!(
                     result.outcome_for(*target),
-                    Some(ClaimOutcome::Unsatisfiable { .. })
+                    Some(ClaimOutcome::Unsatisfiable)
                 )
             }) {
                 continue;
@@ -2009,7 +2009,7 @@ impl Projection {
             for target in group {
                 if matches!(
                     result.outcome_for(target),
-                    Some(ClaimOutcome::Unsatisfiable { .. })
+                    Some(ClaimOutcome::Unsatisfiable)
                 ) {
                     outcomes.insert(target, diagnostic.clone());
                 }
@@ -2124,11 +2124,6 @@ fn how_resolved(
         .unwrap_or(ResolvedBy::OwnSelector)
 }
 
-/// The prefix of an `invalid` outcome whose matcher failed.
-const MATCHER_ERROR: &str = "shape_matcher_error";
-/// The prefix of an `invalid` outcome whose match maps to no place.
-const SOURCE_UNIT_MAPPING_ERROR: &str = "projection_source_unit_mapping_error";
-
 /// Why a `source_match` was rejected before the solve.
 #[derive(Debug, Clone)]
 enum Rejection {
@@ -2136,19 +2131,16 @@ enum Rejection {
     /// Its matches all disagree with where these referenced entities are.
     Conflict(Vec<EntityRef>),
     TooBroad(usize),
-    Invalid(String),
+    Invalid(InvalidSelectorError),
+    Operational(source_match::MatcherError),
 }
 
 impl Rejection {
-    /// `error`'s first line, after `category`.
-    fn invalid(category: &str, error: &anyhow::Error) -> Self {
-        let message = error.to_string();
-        let first_line = message
-            .lines()
-            .map(str::trim)
-            .find(|line| !line.is_empty())
-            .unwrap_or(&message);
-        Self::Invalid(format!("{category}: {first_line}"))
+    fn matcher(error: source_match::MatcherError) -> Self {
+        match error {
+            source_match::MatcherError::Invalid(error) => Self::Invalid(error.into()),
+            source_match::MatcherError::Invariant { .. } => Self::Operational(error),
+        }
     }
 
     /// Cap distinct placements, not alternative free-name bindings for a place.
@@ -2166,13 +2158,14 @@ impl Rejection {
         }
     }
 
-    fn outcome(self) -> Outcome {
-        match self {
+    fn outcome(self) -> Result<Outcome> {
+        Ok(match self {
             Self::NoCandidates => Outcome::no_match(),
             Self::Conflict(with) => Outcome::Conflict { with },
             Self::TooBroad(count) => Outcome::too_broad(count),
             Self::Invalid(error) => Outcome::Invalid { error },
-        }
+            Self::Operational(error) => return Err(error.into()),
+        })
     }
 }
 
@@ -2208,11 +2201,12 @@ fn narrow_by_references(
                 references.push((name.clone(), module_index, referent));
             }
             Meaning::Ambiguous(exporters) => {
-                return Err(Rejection::Invalid(format!(
-                    "ambiguous_reference: template identifier `{name}` is exported by modules \
-                     {}; rename it in the template or rename one export",
-                    module_paths(modules, &exporters).join(", ")
-                )));
+                return Err(Rejection::Invalid(
+                    InvalidSelectorError::AmbiguousReference {
+                        identifier: name.clone(),
+                        modules: module_paths(modules, &exporters),
+                    },
+                ));
             }
             Meaning::Global => globals.push(name),
             Meaning::Wildcard => {}
@@ -2423,17 +2417,15 @@ fn member_place(
     places: &Places,
     body_idx: usize,
     matched: &source_match::ResolvedMemberBinding,
-) -> Result<Place> {
+) -> Result<Place, ProjectionError> {
     let binding = matched.binding_name.clone();
     let matched_source_unit = places
         .source_unit_by_body_and_binding
         .get(&(body_idx, binding.clone()))
         .copied()
-        .with_context(|| {
-            format!(
-                "source_match candidate at body index {body_idx} binding `{binding}` does not \
-                 map to a dependency graph node"
-            )
+        .ok_or_else(|| ProjectionError::BindingSourceUnitMissing {
+            body_index: body_idx,
+            binding: binding.clone(),
         })?;
     let source_unit = places
         .declarations
@@ -2564,7 +2556,7 @@ fn claim_candidate(module: &Module, claim: &ResolvedClaim) -> Result<Candidate> 
 fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
     Ok(match outcome {
         ClaimOutcome::NoMatch => Outcome::no_match(),
-        ClaimOutcome::Unsatisfiable { .. } => {
+        ClaimOutcome::Unsatisfiable => {
             unreachable!("infeasible groups are diagnosed with their projection")
         }
         ClaimOutcome::Ambiguous {
@@ -2577,9 +2569,7 @@ fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
                 .collect::<Result<_>>()?,
             *candidates_truncated,
         ),
-        ClaimOutcome::Undecided { reason } => Outcome::Undecided {
-            reason: reason.clone(),
-        },
+        ClaimOutcome::Undecided { reason } => Outcome::Undecided { reason: *reason },
         ClaimOutcome::Unique { .. } => {
             unreachable!("resolved claims are handled by the caller")
         }

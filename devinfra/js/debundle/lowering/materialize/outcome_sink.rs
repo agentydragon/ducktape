@@ -86,7 +86,7 @@ impl OutcomeSink {
             return None;
         }
         let mut outcomes = self.outcomes.clone();
-        outcomes.sort();
+        outcomes.sort_by(|left, right| left.identity().cmp(&right.identity()));
         let mut templates = self.templates.clone().unwrap_or_default();
         templates.sort();
         Some(SelectorOutcomeReport {
@@ -106,7 +106,7 @@ impl OutcomeSink {
         if failed.is_empty() {
             return Ok(());
         }
-        failed.sort();
+        failed.sort_by(|left, right| left.identity().cmp(&right.identity()));
         bail!(selector_outcome::SelectorFailure::KeepGoing(
             SelectorOutcomeReport {
                 outcomes: failed,

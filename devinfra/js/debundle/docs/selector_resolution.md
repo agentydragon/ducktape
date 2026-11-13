@@ -143,6 +143,15 @@ limit) before deciding the entity. The solver reports which projected variables
 it had proven fixed by then; an entity all of whose variables are among them
 still resolves.
 
+Invalid causes travel from selector parsing, fact extraction, shape matching and
+source-unit mapping as native typed errors. `Rejection` distinguishes semantic
+invalidity from matcher invariant failures, which propagate operationally. The
+solver keeps typed stop reasons through the constraint backend and selector IR.
+`SelectorOutcome::to_report` and the corresponding report/synthesis projections
+are the explicit serialization boundary: they preserve typed context and project
+foreign parser diagnostics to messages and optional byte ranges. Reading a saved
+report never reconstructs native parser errors from text.
+
 ## Template references
 
 Every template row, member or anonymous statement, carries `free_bindings`: the

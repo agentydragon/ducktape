@@ -3,7 +3,10 @@
 use analysis::facts::StructuralChunkSourceFacts;
 use analysis::{AnalysisAssumptions, KnownEffect};
 use anyhow::{Result, bail};
-use selector_outcome::SelectorKind;
+use selector_outcome::{
+    AnnotationField, BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding,
+    SelectorKind,
+};
 use selector_resolve::{
     AnonymousStatement, Chunk, Member, MemberSelector, Projection, Resolution, SpecModule,
 };
@@ -185,8 +188,8 @@ pub fn logical_requests_for_chunk(
                 &module.annotations,
                 &id,
             )?;
-            reject_duplicate_export_names("logical_module", &id, &members)?;
-            reject_duplicate_member_bindings("logical_module", &id, &members)?;
+            reject_duplicate_export_names(ClaimOperation::LogicalModule, &id, &members)?;
+            reject_duplicate_member_bindings(ClaimOperation::LogicalModule, &id, &members)?;
             let anonymous_statements = module
                 .anonymous_statements
                 .iter()
@@ -260,13 +263,13 @@ pub fn build_members(
                 // A solver-resolved member's public export name can't default to a
                 // binding name — the binding isn't known until the selector resolves
                 // — so `name:` is required.
-                _ => m.name.clone().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "logical_module {request_id}: {origin} requires `name:` because the \
-                         public export name cannot default to a binding name until the \
-                         selector is resolved"
-                    )
-                })?,
+                _ => m
+                    .name
+                    .clone()
+                    .ok_or_else(|| ClaimValidationError::MissingExportName {
+                        logical_module: request_id.to_string(),
+                        selector_kind: SelectorKind::from(&selected),
+                    })?,
             };
             let claim_origin = format!("{origin} as `{export_name}`");
             let selector = MemberSelector::Authored(selected);
@@ -338,17 +341,19 @@ fn apply_binding_annotations(
 
     for (export_name, annotation) in annotations {
         let Some(indices) = by_export_name.get(export_name) else {
-            bail!(
-                "logical_module {request_id}: annotations key `{export_name}` does not match \
-                 any member name or source_matches[].bindings name"
-            );
+            return Err(ClaimValidationError::UnknownAnnotation {
+                logical_module: request_id.to_string(),
+                export_name: export_name.clone(),
+            }
+            .into());
         };
         if indices.len() != 1 {
-            bail!(
-                "logical_module {request_id}: annotations key `{export_name}` is ambiguous \
-                 because that readable binding name is claimed {} times",
-                indices.len()
-            );
+            return Err(ClaimValidationError::AmbiguousAnnotation {
+                logical_module: request_id.to_string(),
+                export_name: export_name.clone(),
+                count: indices.len(),
+            }
+            .into());
         }
         merge_binding_annotation(
             request_id,
@@ -368,7 +373,7 @@ fn merge_binding_annotation(
 ) -> Result<()> {
     if annotation.purity != MemberPurity::Default {
         if request.purity != MemberPurity::Default && request.purity != annotation.purity {
-            bail_annotation_conflict(request_id, export_name, "purity")?;
+            bail_annotation_conflict(request_id, export_name, AnnotationField::Purity)?;
         }
         request.purity = annotation.purity;
     }
@@ -379,7 +384,7 @@ fn merge_binding_annotation(
         if request.initializer_purity != InitializerPurity::Default
             && request.initializer_purity != annotation.initializer_purity
         {
-            bail_annotation_conflict(request_id, export_name, "initializer_purity")?;
+            bail_annotation_conflict(request_id, export_name, AnnotationField::InitializerPurity)?;
         }
         request.initializer_purity = annotation.initializer_purity;
     }
@@ -389,21 +394,25 @@ fn merge_binding_annotation(
             .initializer_binding_effects
             .is_some_and(|existing| existing != effects)
         {
-            bail_annotation_conflict(request_id, export_name, "initializer_binding_effects")?;
+            bail_annotation_conflict(
+                request_id,
+                export_name,
+                AnnotationField::InitializerBindingEffects,
+            )?;
         }
         request.initializer_binding_effects = Some(effects);
     }
 
     if annotation.effect != MemberEffect::Default {
         if request.effect != MemberEffect::Default && request.effect != annotation.effect {
-            bail_annotation_conflict(request_id, export_name, "effect")?;
+            bail_annotation_conflict(request_id, export_name, AnnotationField::Effect)?;
         }
         request.effect = annotation.effect;
     }
 
     if !annotation.pure_members.is_empty() {
         if !request.pure_members.is_empty() && request.pure_members != annotation.pure_members {
-            bail_annotation_conflict(request_id, export_name, "pure_members")?;
+            bail_annotation_conflict(request_id, export_name, AnnotationField::PureMembers)?;
         }
         request.pure_members = annotation.pure_members.clone();
     }
@@ -412,7 +421,11 @@ fn merge_binding_annotation(
         if !request.no_sync_callback_members.is_empty()
             && request.no_sync_callback_members != annotation.no_sync_callback_members
         {
-            bail_annotation_conflict(request_id, export_name, "no_sync_callback_members")?;
+            bail_annotation_conflict(
+                request_id,
+                export_name,
+                AnnotationField::NoSyncCallbackMembers,
+            )?;
         }
         request.no_sync_callback_members = annotation.no_sync_callback_members.clone();
     }
@@ -421,7 +434,7 @@ fn merge_binding_annotation(
         if let Some(existing) = &request.comment
             && existing != comment
         {
-            bail_annotation_conflict(request_id, export_name, "comment")?;
+            bail_annotation_conflict(request_id, export_name, AnnotationField::Comment)?;
         }
         request.comment = Some(comment.clone());
     }
@@ -430,7 +443,7 @@ fn merge_binding_annotation(
         if let Some(existing) = &request.note
             && existing != note
         {
-            bail_annotation_conflict(request_id, export_name, "note")?;
+            bail_annotation_conflict(request_id, export_name, AnnotationField::Note)?;
         }
         request.note = Some(note.clone());
     }
@@ -438,11 +451,17 @@ fn merge_binding_annotation(
     Ok(())
 }
 
-fn bail_annotation_conflict(request_id: &str, export_name: &str, field: &str) -> Result<()> {
-    bail!(
-        "logical_module {request_id}: annotations.{export_name}.{field} conflicts with \
-         metadata already declared on the member"
-    )
+fn bail_annotation_conflict(
+    request_id: &str,
+    export_name: &str,
+    field: AnnotationField,
+) -> Result<()> {
+    Err(ClaimValidationError::AnnotationConflict {
+        logical_module: request_id.to_string(),
+        export_name: export_name.to_string(),
+        field,
+    }
+    .into())
 }
 
 pub fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffect> {
@@ -489,7 +508,12 @@ pub fn parse_anonymous_selector(
     description: impl Into<String>,
     selector: &spec::AnonymousStatementSelector,
 ) -> Result<ParsedSourceMatchSelector> {
-    ParsedSourceMatchSelector::parse(request_id, description.into(), selector, "source_match")
+    Ok(ParsedSourceMatchSelector::parse(
+        request_id,
+        description.into(),
+        selector,
+        source_match::SelectorField::SourceMatch,
+    )?)
 }
 
 /// Build a selector-engine anonymous statement from its authored index.
@@ -649,26 +673,39 @@ pub fn validate_logical_module_claims(
     annotations: &BTreeMap<String, spec::BindingAnnotation>,
 ) -> Result<()> {
     let members = build_members(members, source_matches, annotations, id)?;
-    reject_duplicate_export_names("logical_module", id, &members)?;
-    reject_duplicate_member_bindings("logical_module", id, &members)?;
+    reject_duplicate_export_names(ClaimOperation::LogicalModule, id, &members)?;
+    reject_duplicate_member_bindings(ClaimOperation::LogicalModule, id, &members)?;
     Ok(())
 }
 
 /// Reject repeated exported names in one logical-module request.
 pub fn reject_duplicate_export_names(
-    operation: &str,
+    operation: ClaimOperation,
     id: &str,
     members: &[MemberRequest],
 ) -> Result<()> {
-    reject_duplicate_field(operation, id, "exported logical names", members, |member| {
-        &member.export_name
-    })
+    let mut seen = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for member in members {
+        if !seen.insert(&member.export_name) {
+            names.insert(member.export_name.clone());
+        }
+    }
+    if names.is_empty() {
+        return Ok(());
+    }
+    Err(ClaimValidationError::DuplicateExports {
+        operation,
+        id: id.to_string(),
+        names: names.into_iter().collect(),
+    }
+    .into())
 }
 
 /// Reject duplicate source-binding claims whose binding spelling is known
 /// before selector resolution.
 pub fn reject_duplicate_member_bindings(
-    operation: &str,
+    operation: ClaimOperation,
     id: &str,
     members: &[MemberRequest],
 ) -> Result<()> {
@@ -689,42 +726,22 @@ pub fn reject_duplicate_member_bindings(
     if duplicates.is_empty() {
         return Ok(());
     }
-    let mut report = format!("{operation} {id} has duplicate source binding claims:");
-    for (binding, members) in duplicates {
-        report.push_str(&format!(
-            "\n- source binding `{binding}` claimed {} times:",
-            members.len()
-        ));
-        for member in members {
-            report.push_str(&format!(
-                "\n  - export `{}` ({})",
-                member.export_name, member.claim_origin
-            ));
-        }
+    Err(ClaimValidationError::DuplicateBindings {
+        operation,
+        id: id.to_string(),
+        claims: duplicates
+            .into_iter()
+            .map(|(binding, members)| DuplicateBinding {
+                binding,
+                claimants: members
+                    .iter()
+                    .map(|member| BindingClaimant {
+                        export_name: member.export_name.clone(),
+                        claim_origin: member.claim_origin.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
     }
-    bail!("{report}");
-}
-
-fn reject_duplicate_field(
-    operation: &str,
-    id: &str,
-    label: &str,
-    members: &[MemberRequest],
-    extract: impl Fn(&MemberRequest) -> &str,
-) -> Result<()> {
-    let mut seen = BTreeSet::new();
-    let mut duplicates = BTreeSet::new();
-    for member in members {
-        let value = extract(member);
-        if !seen.insert(value.to_string()) {
-            duplicates.insert(value.to_string());
-        }
-    }
-    if !duplicates.is_empty() {
-        bail!(
-            "{operation} {id} has duplicate {label}: {}",
-            duplicates.into_iter().collect::<Vec<_>>().join(", ")
-        );
-    }
-    Ok(())
+    .into())
 }
