@@ -27,6 +27,7 @@ class SidecarProcess:
         proxy: Proxy,
         workload_routes: Mapping[str, WorkloadRoute] = MappingProxyType({}),
         platform_routes: PlatformRoutes | None = None,
+        stderr: Path | None = None,
     ) -> None:
         self._proxy = proxy
         self._workload_routes = workload_routes
@@ -38,6 +39,7 @@ class SidecarProcess:
         self.process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._stderr: list[str] = []
+        self._stderr_path = stderr
         self._settings_dir = tempfile.TemporaryDirectory()
 
     async def __aenter__(self) -> SidecarProcess:
@@ -119,6 +121,11 @@ class SidecarProcess:
         return f"fd:{listener.socket.fileno()}"
 
     async def _capture_stderr(self, stream: asyncio.StreamReader) -> None:
+        if self._stderr_path is not None:
+            with self._stderr_path.open("wb") as log:
+                while line := await stream.readline():
+                    log.write(line)
+            return
         while line := await stream.readline():
             self._stderr.append(line.decode(errors="replace").rstrip())
 
@@ -167,4 +174,6 @@ class SidecarProcess:
             raise RuntimeError(f"Go sidecar exited with {returncode}: {self._logs()}")
 
     def _logs(self) -> str:
+        if self._stderr_path is not None:
+            return f"stderr artifact: {self._stderr_path}"
         return "\n".join(self._stderr)

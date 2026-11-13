@@ -104,7 +104,10 @@ go_binary(
     name = "notification-service",
     embed = [":main_lib"],
     pure = "on",
-    visibility = ["//agentplane/notification_service:__subpackages__"],
+    visibility = [
+        "//agentplane/notification_service:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
 )
 
 pkg_tar(

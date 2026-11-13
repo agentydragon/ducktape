@@ -38,7 +38,7 @@ from agentplane.native.codex.testing import frames, model_catalog, responses_sse
 from agentplane.native.codex.testing.model import MODEL as CODEX_MODEL
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI
+from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, NOTIFICATIONS_URI
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
@@ -49,6 +49,12 @@ from agentplane.system_tests.vm.guest_supervision_probe import VM_SUPERVISION_PR
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ModelRequest, Text
+from agentplane.x.direct_vm_boot.platform_services import (
+    CLI_PLATFORM_PROBE,
+    assert_credential_rotation_refuses_old_svid,
+    assert_platform_cli_output,
+    platform_services,
+)
 from agentplane.x.direct_vm_boot.runtime_guest import (
     authenticated_readiness,
     gateway_address,
@@ -252,6 +258,7 @@ async def _run_shell_turn(
 
 async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input(
     tmp_path: Path,
+    postgres_admin_url: str,
     api_server: KubernetesApiServer,
     sandbox: SandboxCluster,
     control: EnvironmentRuntimeControl,
@@ -283,7 +290,20 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
     container_name = f"agentplane-runtime-codex-session-{UUID(sandbox.uid).hex[:16]}"
     requested_command_ids = (str(uuid4()), str(uuid4()))
     assert len(set(requested_command_ids)) == 2
-    async with model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target:
+    async with (
+        platform_services(
+            postgres_admin_url=postgres_admin_url,
+            sandbox=sandbox,
+            ca=gateway_service.environment_runtime_ca,
+            directory=tmp_path / "platform",
+            notifications_server_uri=(
+                EGRESS_PROXY_URI
+                if os.environ.get("DIRECT_VM_NOTIFICATION_WRONG_SERVER_IDENTITY_CONTROL") == "1"
+                else NOTIFICATIONS_URI
+            ),
+        ) as platform,
+        model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target,
+    ):
         config = Configuration(
             version=2,
             state_dir="/state",
@@ -296,6 +316,10 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
             harness_environment=EnvironmentVariables(
                 values={
                     "OPENAI_API_KEY": launches.TOKEN,
+                    "AGENTPLANE_EGRESS_GRPC_URL": platform.guest_url,
+                    "AGENTPLANE_NOTIFICATIONS_GRPC_URL": platform.guest_url,
+                    "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
+                    "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
                     "HOME": "/state/home",
                     "NO_PROXY": "10.0.2.1,127.0.0.1,localhost",
                     "PATH": "/run/current-system/sw/bin:/run/agentplane/environment/bin",
@@ -384,7 +408,7 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
             assert memory_values == [str(executor_resources.memory_max_bytes)], first_output
             assert cpu_values == [f"{executor_resources.cpu_quota_micros} {CPU_QUOTA_PERIOD_MICROS}"], first_output
 
-            read_entries, _ = await _run_shell_turn(
+            read_entries, platform_output = await _run_shell_turn(
                 dispatcher=dispatcher,
                 history=history_service.reader,
                 model=model,
@@ -393,16 +417,18 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
                 input_text="Read the existing marker file and report its contents.",
                 command_id=requested_command_ids[1],
                 call_id=f"call_read_{session_id.hex}",
-                shell_command=f"cat '{marker_path}'",
+                shell_command=f"set -eu\ncat '{marker_path}'\n{CLI_PLATFORM_PROBE}",
                 expected_output=marker,
                 final_text="MARKER_READ",
             )
             assert write_entries
             assert read_entries
+            assert_platform_cli_output(platform_output, platform, sandbox)
             await assert_guest_setup_is_supervised(dispatcher, history_service.reader, spec)
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
             assert final_status.environment_runtime_boot_id == initial_status.environment_runtime_boot_id
+        await assert_credential_rotation_refuses_old_svid(platform, sandbox)
 
     serial = (outputs / "runtime.serial.log").read_text(errors="replace")
     runtime_records = [line for line in serial.splitlines() if '"logger":"environment-runtime-lifecycle"' in line]
