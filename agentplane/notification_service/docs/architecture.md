@@ -1,8 +1,8 @@
 # Notification Service internals
 
 Client-visible behavior belongs in the [API reference](api.md); deployment and recovery procedures
-belong in the [service README](../README.md). The store owns durable decisions and the worker
-coordinates source reads and notice delivery. The integration app is only a client.
+belong in the [service README](../README.md). The store owns durable inbox decisions. The source coordinator processes due subscriptions independently
+of the worker that delivers notices. The integration app is only a client.
 
 ## Package boundaries
 
@@ -14,9 +14,10 @@ model types without defining their vocabulary.
 
 `github/client` owns authenticated REST reads, pagination, response normalization and typed request
 errors. It depends on `model` and the shared `github/settings`, not on persistence or scheduling.
-The parent `github` package reconciles subscriptions and normalizes webhook deliveries; `webhook`
+The parent `github` package processes due subscriptions and normalizes webhook deliveries; `webhook`
 verifies signatures and handles HTTP ingress. `github/testing` provides the shared fake API used by
-client and provider tests. The `worker` package schedules inbox work and delivers notices.
+client and provider tests. The `sources` package dispatches durable source jobs by provider. The `worker` package delivers notices
+for committed entries and runs source-independent inbox retention; it has no GitHub dependency.
 
 Access, subject, check-run, commit-status and review reads have distinct store completion methods.
 Each validates its lease and access fences in the same transaction as its observations and wakeups.
@@ -36,9 +37,10 @@ of the raw GitHub receipt journal. Event identities survive inbox payload expiry
 One PostgreSQL LISTEN connection per replica distributes committed invalidations, never payloads.
 Workers drain durable state at startup and after reconnect. Inbox claims, source generations and
 fenced commits prevent stale workers from overwriting newer work. Listener loss fails readiness.
-Actions history is read through its API, not its database. GitHub refresh deadlines, provider
-backoff, delivery retries and retention remain durable or scheduled work even without new ingress.
-See [`worker`](../worker/worker.go), [`store`](../internal/store/store.go) and
+Actions history is read through its API, not its database. Pending GitHub retries and page continuations, provider backoff and delivery retries survive process
+restarts. Quiet GitHub subscriptions have no deadline: cache freshness is checked only when another
+event or explicit catch-up job needs the cached answer. Retention does not call GitHub.
+See [`sources`](../internal/sources/worker.go), [`worker`](../internal/worker/worker.go), [`store`](../internal/store/store.go) and
 [`wakeups`](../../postgres/wakeups).
 
 ## Notice delivery and history
@@ -52,7 +54,7 @@ History Service must reach the runner journal end before a command can be sent: 
 submission rather than hiding an admission. Replay verifies the last committed entry. Retries
 reuse the command ID; admission is not harness confirmation. Confirmation follows causal
 `origin_command_ids`, including coalesced inputs. Invalid runner history quarantines delivery
-until explicit retirement. See [`deliver.go`](../worker/deliver.go).
+until explicit retirement. See [`deliver.go`](../internal/worker/deliver.go).
 
 ## Shared GitHub state
 
@@ -86,16 +88,16 @@ base push, then a stale `false`/`dirty` after the base was restored, before `nul
 `Cache-Control: private, max-age=60`; the probe could not separate HTTP caching from computation
 lag. Hence the service validates a positive's test-merge parents against freshly read refs, reports
 a negative only as GitHub's answer at `observedAt`, rechecks negatives after 5, 15 and 45 seconds,
-and retries unverified positives on the same schedule then every 60 seconds. That schedule is a
-cost/latency choice, not a freshness guarantee.
+and gives UNKNOWN results four settling retries after 5, 15, 45 and 60 seconds. An exhausted
+result waits for a new event or explicit catch-up. These bounds are a cost/latency choice, not
+a freshness guarantee.
 
 ## Recovery acceptance
 
 The [GitHub service acceptance test](../acceptance_github_test.go) runs the configured HTTP API,
 background workers and PostgreSQL store against the shared fake GitHub API and fake Dispatcher and
-History peers. It establishes a quiet PR subscription, changes current GitHub facts without sending
-webhooks, advances persisted repair deadlines while stopped, and restarts the service. The workers
-must recover check-run, commit-status, review and lifecycle entries, dispatch a notice, reconcile its
+History peers. It establishes a quiet PR subscription, changes current GitHub facts, records a pending catch-up job while stopped, and restarts the service. The workers
+must process that job into check-run, commit-status, review and lifecycle entries, dispatch a notice, follow its
 History confirmation and serve the agent's contiguous acknowledgement. Later observations of the
 same facts must retain their identities without allocating duplicate inbox entries.
 

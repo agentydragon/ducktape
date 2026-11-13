@@ -13,8 +13,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -34,10 +34,10 @@ type Source struct {
 	Store   *store.Store
 }
 
-var _ worker.Provider = (*Source)(nil)
+var _ sources.Provider = (*Source)(nil)
 
 // Events returns the next page of the Action request's events after afterSequence, if owner submitted the
-// request, and otherwise fails with a *worker.ProviderError of kind access denied. The Action Service lets the
+// request, and otherwise fails with a *sources.ProviderError of kind access denied. The Action Service lets the
 // service read every account's requests, which must not become authority to follow another account's.
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
@@ -46,7 +46,7 @@ var _ worker.Provider = (*Source)(nil)
 // An Owner follows only the requests its exact Identity incarnation submitted.
 func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	if owner.Identity.Name == "" || owner.Identity.UID == "" {
-		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
+		return nil, &sources.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.U
 	owned := owner.Identity.Name != "" && owner.Identity.UID != "" &&
 		caller.GetName() == owner.Identity.Name && caller.GetUid() == owner.Identity.UID
 	if !owned {
-		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
+		return nil, &sources.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	if afterSequence < 0 || afterSequence > maxEventSequence {
 		return nil, validationFailure()
@@ -84,9 +84,9 @@ func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.U
 	return events, nil
 }
 
-// Reconcile reads the next page of events of the subscription's Action request, and records the ones it has not
+// Process reads the next page of events of the subscription's Action request, and records the ones it has not
 // recorded yet, so a long log takes several reads.
-func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
+func (s *Source) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
 	request, ok := due.Source.(model.ActionsSource)
 	if !ok || due.ActionsAfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
@@ -97,7 +97,7 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	}
 	err = s.Store.RecordActionEvents(ctx, claim, due, events)
 	if errors.Is(err, store.ErrActionHistoryGap) {
-		return &worker.ProviderError{Kind: store.FailureProcessingError, Message: "ConflictError"}
+		return &sources.ProviderError{Kind: store.FailureProcessingError, Message: "ConflictError"}
 	}
 	return err
 }
@@ -137,11 +137,11 @@ func rpcFailure(ctx context.Context, err error) error {
 	case codes.Canceled, codes.DeadlineExceeded, codes.Internal, codes.Unknown, codes.Unavailable:
 		kind, message = store.FailureUnavailable, "TransportError"
 	}
-	return &worker.ProviderError{Kind: kind, Message: message}
+	return &sources.ProviderError{Kind: kind, Message: message}
 }
 
 func validationFailure() error {
-	return &worker.ProviderError{Kind: store.FailureProcessingError, Message: "ValidationError"}
+	return &sources.ProviderError{Kind: store.FailureProcessingError, Message: "ValidationError"}
 }
 
 func validActionState(state action_servicepb.ActionState) bool {

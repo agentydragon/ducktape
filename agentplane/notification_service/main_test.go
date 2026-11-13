@@ -407,7 +407,7 @@ func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
 	if !errors.As(err, &stopped) {
 		t.Fatalf("serve returned %v, want a worker that stopped", err)
 	}
-	if strings.Contains(err.Error(), service.actionsToken) || !strings.Contains(err.Error(), "*worker.UnclassifiedProviderError") {
+	if strings.Contains(err.Error(), service.actionsToken) || !strings.Contains(err.Error(), "*sources.UnclassifiedProviderError") {
 		t.Errorf("the failure names the token path or not the source failure's type: %v", err)
 	}
 	if _, err := checkHealth(t, service.health, ""); err == nil {

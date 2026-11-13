@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,8 +32,8 @@ func TestFailureAnswersEachTypedErrorWithTheStatusCodeTheProtoNames(t *testing.T
 		{"cursor beyond the inbox", store.ErrCursorOutOfRange, codes.OutOfRange},
 		{"quota", &store.QuotaError{Quota: store.InboxesPerAccount, Limit: 64}, codes.ResourceExhausted},
 		{"GitHub provider off", errGitHubDisabled, codes.PermissionDenied},
-		{"source denied", &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "denied"}, codes.PermissionDenied},
-		{"source throttled", &worker.ProviderError{Kind: store.FailureRateLimited, Message: "throttled"}, codes.Unavailable},
+		{"source denied", &sources.ProviderError{Kind: store.FailureAccessDenied, Message: "denied"}, codes.PermissionDenied},
+		{"source throttled", &sources.ProviderError{Kind: store.FailureRateLimited, Message: "throttled"}, codes.Unavailable},
 		{"collaborator down", unavailable("runner", errors.New("dial secret-host")), codes.Unavailable},
 		{"database fault", errors.New("pq: password authentication failed for secret-user"), codes.Unavailable},
 	}

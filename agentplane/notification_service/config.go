@@ -39,10 +39,11 @@ type config struct {
 	OperatorReaderAccount string       `mapstructure:"operator_reader_account"`
 	Quotas                store.Quotas `mapstructure:"quotas"`
 	worker.Settings       `mapstructure:",squash"`
-	Actions               actionPeer    `mapstructure:"actions"`
-	RunnerGateway         runnerGateway `mapstructure:"runner_gateway"`
-	HistoryService        peer          `mapstructure:"history_service"`
-	SessionDispatcher     peer          `mapstructure:"session_dispatcher"`
+	GitHubRetention       settings.Retention `mapstructure:",squash"`
+	Actions               actionPeer         `mapstructure:"actions"`
+	RunnerGateway         runnerGateway      `mapstructure:"runner_gateway"`
+	HistoryService        peer               `mapstructure:"history_service"`
+	SessionDispatcher     peer               `mapstructure:"session_dispatcher"`
 	// GitHub is on when any of its settings is set.
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
@@ -127,9 +128,10 @@ func defaultConfig() config {
 		Quotas: store.Quotas{
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
 		},
-		Settings:      worker.DefaultSettings(),
-		Actions:       actionPeer{RequestTimeoutSeconds: 5},
-		RunnerGateway: runnerGateway{RequestTimeoutSeconds: 5},
+		Settings:        worker.DefaultSettings(),
+		GitHubRetention: settings.DefaultRetention(),
+		Actions:         actionPeer{RequestTimeoutSeconds: 5},
+		RunnerGateway:   runnerGateway{RequestTimeoutSeconds: 5},
 		// A delivery reads a page of a Session's entries, which can be large.
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
@@ -184,7 +186,7 @@ func loadConfig() (config, error) {
 	}
 	// Preserve absent (default seven days) versus explicit YAML null (retain indefinitely).
 	if value, exists := raw["github_delivery_retention_days"]; exists && value == nil {
-		c.GitHubDeliveryRetentionDays = nil
+		c.GitHubRetention.Days = nil
 	}
 	// Only these runtime credentials are read from environment variables; static settings never consult the process environment.
 	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
@@ -269,6 +271,9 @@ func (c *config) validate() error {
 		return fmt.Errorf("message_body_limit_bytes must be 1 to %d", store.MessageBodyCeiling)
 	}
 	if err := c.Settings.Validate(); err != nil {
+		return err
+	}
+	if err := c.GitHubRetention.Validate(); err != nil {
 		return err
 	}
 	if c.githubEnabled() {

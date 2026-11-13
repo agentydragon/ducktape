@@ -38,10 +38,11 @@ and base and retries pending checks; `github.subject.retryAt` shows the next ref
 the subscription and reading current state, you can end your turn while the service monitors it. This
 selector is available only for pull requests. Use real repository identifiers.
 
-Pull-request defaults continue to report completed `check_run` facts and all `status` facts. The service repairs
-current check-run and commit-status facts using `github.freshness_seconds` (default 600 seconds); worker scheduling,
-GitHub API failures, access errors and rate-limit backoff can extend the interval, and GitHub state propagation has
-no guaranteed settling time. An explicitly unfiltered `--event check_run` follows all observed check-run states.
+Pull-request defaults continue to report completed `check_run` facts and all `status` facts. Webhooks,
+subscription creation/renewal and specific pending/failed jobs trigger source work; successful subscriptions
+go idle. `github.freshness_seconds` bounds cached observations reused by pending work and does not schedule
+periodic reads. Missed webhooks need explicit redelivery or a later source trigger. An explicitly unfiltered
+`--event check_run` follows all observed check-run states.
 Explicit check-run action filters such as `--event check_run:created` select actual webhook actions only; repair
 does not invent or replay actions. A check run whose current state is completed may produce a completed fact for the default
 subscription even when its `created` webhook was missed, without claiming that the created action was recovered.
@@ -81,7 +82,7 @@ optional `appId` for the check's owning App, `name`, `status`, optional `conclus
 `startedAt` and `completedAt`, and `observedAt`. Check-run statuses are `queued`, `waiting`, `pending`, `requested`,
 `in_progress` and `completed`. A commit-status payload contains `repositoryId`, `sha`, `id`, `context`, `state`,
 `targetUrl`, optional `updatedAt` and `observedAt`; its states are `error`, `failure`, `pending` and `success`.
-The same generated identity deduplicates a normalized fact whether a webhook or periodic repair observes it first.
+The same generated identity deduplicates a normalized fact whether a webhook or targeted catch-up observes it first.
 
 Retained observations from before the native-resource split keep their original payload: commit statuses used
 `headSha`, `name`, `status` and `detailsUrl`, and either category could include `event`, `action` and `checkAppId`.

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 )
 
 // refreshFailed records a failed refresh on its shared row and returns the deferral that ends the reconcile until
@@ -49,19 +49,19 @@ func classify(err error) (refreshFailure, bool) {
 	case errors.As(err, &limited):
 		return refreshFailure{store.FailureRateLimited, err.Error(), time.Duration(limited.RetrySeconds) * time.Second}, true
 	case errors.As(err, &denied):
-		return refreshFailure{store.FailureAccessDenied, err.Error(), worker.DefaultRetry}, true
+		return refreshFailure{store.FailureAccessDenied, err.Error(), sources.DefaultRetry}, true
 	case errors.As(err, &changed):
-		return refreshFailure{store.FailureSourceChanged, err.Error(), worker.DefaultRetry}, true
+		return refreshFailure{store.FailureSourceChanged, err.Error(), sources.DefaultRetry}, true
 	case errors.As(err, &status):
 		kind := store.FailureProcessingError
 		if status.StatusCode >= 500 {
 			kind = store.FailureUnavailable
 		}
-		return refreshFailure{kind, err.Error(), worker.DefaultRetry}, true
+		return refreshFailure{kind, err.Error(), sources.DefaultRetry}, true
 	case errors.As(err, &transport):
-		return refreshFailure{store.FailureUnavailable, "GitHub request failed", worker.DefaultRetry}, true
+		return refreshFailure{store.FailureUnavailable, "GitHub request failed", sources.DefaultRetry}, true
 	case errors.As(err, &invalid):
-		return refreshFailure{store.FailureProcessingError, "GitHub returned an invalid response", worker.DefaultRetry}, true
+		return refreshFailure{store.FailureProcessingError, "GitHub returned an invalid response", sources.DefaultRetry}, true
 	}
 	return refreshFailure{}, false
 }

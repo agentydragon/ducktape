@@ -14,8 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Unverified positives keep polling with bounded backoff. Negative results have no parent proof;
-// recheck them three times before returning to the ordinary source freshness deadline.
+// UNKNOWN results get bounded settling reads. An exhausted result stays visible until an event invalidates it.
 var mergeabilityRetries = [...]time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second, time.Minute}
 
 // observePullRequest runs under the subject lease and access fences checked by CompleteSubject. Its event and
@@ -98,7 +97,10 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	}
 	pending := observation.State == model.GitHubPullRequestOpen && observation.Mergeability == model.GitHubMergeabilityUnknown
 	var recheckAt *time.Time
-	if pending || (observation.State == model.GitHubPullRequestOpen && observation.Mergeability == model.GitHubConflicting && attempt < 3) {
+	unknownRetryPending := pending && attempt < len(mergeabilityRetries)
+	conflictRetryPending := observation.State == model.GitHubPullRequestOpen &&
+		observation.Mergeability == model.GitHubConflicting && attempt < 3
+	if unknownRetryPending || conflictRetryPending {
 		next := at.Add(mergeabilityRetries[min(attempt, len(mergeabilityRetries)-1)])
 		recheckAt = &next
 		attempt = min(attempt+1, len(mergeabilityRetries))

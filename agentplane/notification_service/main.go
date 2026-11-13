@@ -30,6 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/rpc"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client" // Distinguish GitHub transport from the Kubernetes client.
@@ -223,9 +224,9 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 
 	inboxes := store.New(db, c.Quotas)
 	actionsSource := &actions.Source{Service: actionpb.NewActionServiceClient(actionsConnection), Store: inboxes}
-	// The providers are interfaces, so a disabled GitHub is a nil interface, not a nil *github.Provider.
+	// Source processing is independent of inbox delivery and the destination being online.
 	var githubAPI rpc.GitHub
-	var githubSource worker.Provider
+	providers := map[string]sources.Provider{"actions": actionsSource}
 	var webhookHandler http.Handler
 	if c.githubEnabled() {
 		githubClient, err := githubclient.New(c.GitHub)
@@ -233,7 +234,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 			return err
 		}
 		provider := github.NewProvider(githubClient, inboxes, c.GitHub)
-		githubAPI, githubSource = provider, provider
+		githubAPI, providers["github"] = provider, provider
 		webhookHandler = webhook.New(c.GitHub, inboxes)
 	}
 
@@ -271,7 +272,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 
 	// Each worker follows the commits on its own signal.
-	signals := make([]<-chan struct{}, workers)
+	signals := make([]<-chan struct{}, workers*2)
 	for i := range signals {
 		changes, unsubscribe, err := hub.Subscribe(store.WorkChannel)
 		if err != nil {
@@ -284,13 +285,21 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Store: inboxes, Namespace: c.Namespace, Sandboxes: sandboxes,
 		History:    history,
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
-		Actions:    actionsSource, GitHub: githubSource, Settings: c.Settings,
+		Settings:   c.Settings,
 	}
-	failed := make(chan error, workers+3)
+	sourceWorker := &sources.Worker{Store: inboxes, Providers: providers}
+	maintenance := github.Maintenance{Store: inboxes, Retention: c.GitHubRetention}
+	failed := make(chan error, workers*2+4)
 	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.
 	workContext, stopWorkers := context.WithCancel(context.WithoutCancel(ctx))
-	running := runWorkers(workContext, workers, failed, func(ctx context.Context, index int) error {
+	running := runWorkers(workContext, workers*2+1, failed, func(ctx context.Context, index int) error {
+		if index == workers*2 {
+			return maintenance.Run(ctx)
+		}
+		if index < workers {
+			return sourceWorker.Run(ctx, signals[index])
+		}
 		return inboxWorker.Run(ctx, signals[index])
 	})
 	defer running.Wait()

@@ -327,9 +327,9 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 	if got := len(g.read(t, g.inbox, GitHubDeliveryPageSize).Entries); got != 2 {
 		t.Errorf("%d entries after the first page, want 2", got)
 	}
-	// Nothing left to match: the next look is the scheduled repair, not another immediate one.
-	if next := g.subscriptionState(t, sub.ID).nextAttempt; !next.Valid || !next.Time.After(now()) {
-		t.Errorf("next attempt = %v, want the later repair", next)
+	// Nothing left to match: the successful subscription is idle until another trigger.
+	if next := g.subscriptionState(t, sub.ID).nextAttempt; next.Valid {
+		t.Errorf("next attempt = %v, want idle after the last page", next)
 	}
 }
 

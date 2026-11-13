@@ -68,6 +68,7 @@ go_library(
         "//agentplane/notification_service/api/notifications:notifications_go_proto",
         "//agentplane/notification_service/internal/inboxaccess",
         "//agentplane/notification_service/internal/rpc",
+        "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/sources/actions",
         "//agentplane/notification_service/internal/sources/github",
         "//agentplane/notification_service/internal/sources/github/client",

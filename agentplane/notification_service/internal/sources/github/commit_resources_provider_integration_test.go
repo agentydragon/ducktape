@@ -189,6 +189,9 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 			if view.Failure != nil || view.GitHub.Subject.Failure != nil {
 				t.Fatalf("resource failure escaped into subscription: %+v", view)
 			}
+			if failed.RetryAt == nil || view.NextSourceCheckAt == nil || !view.NextSourceCheckAt.Equal(*failed.RetryAt) {
+				t.Fatalf("next source check = %v, failed resource retry = %v; want the failed resource's explicit retry", view.NextSourceCheckAt, failed.RetryAt)
+			}
 		})
 	}
 }

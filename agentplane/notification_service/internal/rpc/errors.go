@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -60,7 +60,7 @@ func failure(ctx context.Context, err error) error {
 		refused      admissionRefused
 		quota        *store.QuotaError
 		limited      *client.RateLimitedError
-		providerErr  *worker.ProviderError
+		providerErr  *sources.ProviderError
 		notInstalled *client.NotInstalledError
 		suspended    *client.SuspendedError
 		access       *client.AccessError

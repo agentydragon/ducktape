@@ -45,8 +45,10 @@ type SourceFailure struct {
 
 // Subscription is a subscription as it is read back.
 type Subscription struct {
-	ID             uuid.UUID
-	InboxID        uuid.UUID
+	ID      uuid.UUID
+	InboxID uuid.UUID
+	// SourceProvider is the stored provider discriminator used to route source work.
+	SourceProvider string
 	Source         model.Source
 	IdempotencyKey string
 	// Version changes whenever the subscription does.
@@ -89,6 +91,7 @@ func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscri
 		return Subscription{}, err
 	}
 	subscription.Source = body.Source
+	subscription.SourceProvider = sourceProvider.String
 	subscription.ExpiresAt = subscription.ExpiresAt.UTC()
 	subscription.Expired = !subscription.ExpiresAt.After(viewedAt)
 	if nextAttempt.Valid {

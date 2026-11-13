@@ -219,7 +219,7 @@ func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testin
 	row := requireNotRetired(t, h, subscription)
 	requireEqual(t, row.deliveryError, ptr("DestinationRejectedError"))
 	requireEqual(t, h.sandboxes.lookupCount(), 0)
-	requireEqual(t, h.actions.callCount(), 0)
+	requireEqual(t, h.actions.callCount(), 1)
 }
 
 func TestAMatchingDestinationIsWorkedAndShowsNoError(t *testing.T) {
@@ -234,7 +234,7 @@ func TestAMatchingDestinationIsWorkedAndShowsNoError(t *testing.T) {
 	requireEqual(t, h.actions.callCount(), 1)
 }
 
-func TestWorkerDoesNotReadSourcesForUnknownOrChangedSessionOwner(t *testing.T) {
+func TestSourceReadsAndDeliveryCheckTheSessionOwnerIndependently(t *testing.T) {
 	for _, identity := range []*identitypb.Identity{nil, {Name: "test-identity", Uid: "replacement-identity-uid"}} {
 		name := "missing identity"
 		if identity != nil {
@@ -245,15 +245,15 @@ func TestWorkerDoesNotReadSourcesForUnknownOrChangedSessionOwner(t *testing.T) {
 			subscription := h.subscribe(t, "owner-uid")
 			h.dispatcher.identity = identity
 			h.step(t)
-			if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
-				t.Fatal("worked sources or delivered under an unproven owner")
+			if h.actions.callCount() != 1 || len(h.dispatcher.submitted()) != 0 {
+				t.Fatal("source work was coupled to delivery or delivered under an unproven owner")
 			}
 			requireNotRetired(t, h, subscription)
 		})
 	}
 }
 
-func TestWorkerDoesNotReadSourcesAfterSandboxIdentityReplacement(t *testing.T) {
+func TestSourceReadsContinueAfterSandboxIdentityReplacement(t *testing.T) {
 	h := newHarness(t, debounce(0, 0))
 	subscription := h.subscribe(t, "sandbox-identity-uid")
 	h.sandboxes.mu.Lock()
@@ -261,8 +261,8 @@ func TestWorkerDoesNotReadSourcesAfterSandboxIdentityReplacement(t *testing.T) {
 	h.sandboxes.mu.Unlock()
 
 	h.step(t)
-	if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
-		t.Fatal("worked sources or delivered after the Sandbox's same-named Identity was replaced")
+	if h.actions.callCount() != 1 || len(h.dispatcher.submitted()) != 0 {
+		t.Fatal("source work was coupled to destination identity or delivered after identity replacement")
 	}
 	requireNotRetired(t, h, subscription)
 	if got := h.row(t, subscription.InboxID).deliveryError; got == nil || *got != "OwnerMismatchError" {

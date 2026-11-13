@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
-var _ worker.Provider = (*Provider)(nil)
+var _ sources.Provider = (*Provider)(nil)
 
 // Provider is GitHub as a subscription source: it authorizes a source when a subscription is created, and reads a
 // due subscription's deliveries into its inbox.
@@ -35,21 +35,21 @@ func NewProvider(client *client.Client, st *store.Store, settings settings.Setti
 	}
 }
 
-// Reconcile reads the deliveries a due GitHub subscription is owed into the claimed inbox, one page at a time. It
+// Process reads the deliveries a due GitHub subscription is owed into the claimed inbox, one page at a time. It
 // refreshes the access the subscription was authorized under, and the subject, first; if GitHub cannot be asked
 // now, the source is deferred, and the cause shows on the shared row that failed rather than on the subscription.
-func (p *Provider) Reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
+func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
 	source, ok := due.Source.(model.GitHubSource)
 	if !ok || due.GitHubAccess == nil {
 		return fmt.Errorf("subscription %s is not a bound GitHub subscription", due.ID)
 	}
 	if due.GitHubAccess.AppID != p.appID {
-		return &worker.ProviderError{Kind: store.FailureSourceChanged, Message: "GitHub App changed; recreate the subscription"}
+		return &sources.ProviderError{Kind: store.FailureSourceChanged, Message: "GitHub App changed; recreate the subscription"}
 	}
 	err := p.reconcile(ctx, claim, due, source)
 	var deferred *store.RefreshDeferredError
 	if errors.As(err, &deferred) {
-		return &worker.ProviderDeferred{Until: deferred.Until}
+		return &sources.ProviderDeferred{Until: deferred.Until}
 	}
 	return err
 }
@@ -74,7 +74,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	if state.LastSuccessAt == nil {
 		return &store.RefreshDeferredError{Until: time.Now()}
 	}
-	repairAt := state.RepairAt
+	var retryAt *time.Time
 
 	// A commit of the subject in another repository is owed only under that repository's current grant.
 	grants, err := p.state.RevisionGrants(ctx, binding.AppID, subject)
@@ -87,7 +87,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		var deferred *store.RefreshDeferredError
 		if errors.As(err, &deferred) {
 			// The page is made again once the grant may be refreshed.
-			repairAt = earlier(repairAt, deferred.Until)
+			retryAt = earlierRetryAt(retryAt, &deferred.Until)
 			continue
 		}
 		if err != nil {
@@ -95,13 +95,11 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		}
 		fences = append(fences, fence)
 	}
-	for _, fence := range fences {
-		validUntil, err := p.state.ValidUntil(ctx, fence.Key)
-		if err != nil {
-			return err
-		}
-		repairAt = earlier(repairAt, validUntil)
+	repairAt, err := p.earliestFenceExpiry(ctx, fences)
+	if err != nil {
+		return err
 	}
+	retryAt = earlierRetryAt(retryAt, state.RetryAt)
 	for _, selection := range []struct {
 		event    model.EventName
 		selected bool
@@ -115,19 +113,19 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		key := store.GitHubCommitRefreshKey{
 			AppID: p.appID, InstallationID: base.Key.InstallationID, Subject: subject, Event: selection.event,
 		}
-		resourceRepair, err := p.refreshCommitResource(ctx, key, fences)
+		resourceRetry, err := p.refreshCommitResource(ctx, key, fences)
 		if err != nil {
 			return err
 		}
-		repairAt = earlier(repairAt, resourceRepair)
+		retryAt = earlierRetryAt(retryAt, resourceRetry)
 	}
 
 	if reviewsSelected(source) {
-		reviewRepair, err := p.refreshReviews(ctx, subject, base)
+		reviewRetry, err := p.refreshReviews(ctx, subject, base)
 		if err != nil {
 			return err
 		}
-		repairAt = earlier(repairAt, reviewRepair)
+		retryAt = earlierRetryAt(retryAt, reviewRetry)
 	}
 
 	deliveries, err := p.store.GitHubDeliveries(ctx, store.GitHubMatch{
@@ -142,13 +140,27 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	return p.store.RecordGitHub(ctx, claim, store.GitHubRecording{
 		SubscriptionID: due.ID, Version: due.Version, Generation: due.Generation,
 		Matched: deliveries, More: len(deliveries) == store.GitHubDeliveryPageSize,
-		Fences: fences, Subject: subject, SubjectGeneration: state.Generation, RepairAt: repairAt,
+		Fences: fences, Subject: subject, SubjectGeneration: state.Generation, RepairAt: repairAt, RetryAt: retryAt,
 	})
 }
 
-func earlier(a, b time.Time) time.Time {
-	if b.Before(a) {
-		return b
+func (p *Provider) earliestFenceExpiry(ctx context.Context, fences []store.GitHubAccessFence) (time.Time, error) {
+	var earliest time.Time
+	for _, fence := range fences {
+		validUntil, err := p.state.ValidUntil(ctx, fence.Key)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if earliest.IsZero() || validUntil.Before(earliest) {
+			earliest = validUntil
+		}
 	}
-	return a
+	return earliest, nil
+}
+
+func earlierRetryAt(a, b *time.Time) *time.Time {
+	if b == nil || (a != nil && !b.Before(*a)) {
+		return a
+	}
+	return b
 }
