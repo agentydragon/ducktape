@@ -1,21 +1,27 @@
-package centralsampler
+package rpc
 
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -26,6 +32,51 @@ type requestReadStream struct {
 	grpc.ServerStream
 	ctx       context.Context
 	responses []*samplerpb.ReadProviderRequestResponse
+}
+
+var rpcIntegrationDatabase *postgres.Database
+
+func TestMain(m *testing.M) {
+	migrate := func(ctx context.Context, db *sql.DB) error { return migrations.Up(ctx, db) }
+	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
+		rpcIntegrationDatabase = database
+		return m.Run()
+	}))
+}
+
+func newTestStore(t testing.TB) *sessionstore.Store {
+	t.Helper()
+	dsn := rpcIntegrationDatabase.Clone(t)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return sessionstore.New(db, 30*time.Second)
+}
+
+func openStoreSession(t *testing.T, store *sessionstore.Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
+	t.Helper()
+	if request.GetExecutionIdentity() == nil {
+		request.ExecutionIdentity = &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
+	}
+	if request.GetExecutor() == nil {
+		request.Executor = &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
+		}
+	}
+	if request.GetSpec() != nil && request.GetSpec().GetPlacement() == nil {
+		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: request.GetExecutor().GetTarget().GetName(), Uid: request.GetExecutor().GetTarget().GetUid()},
+		}}}
+	}
+	platformInstructions := "Fixture Agentplane platform guidance."
+	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
+}
+
+func providerAttemptTestPolicyPointer() *sessionstore.ProviderAttemptPolicy {
+	return &sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute}
 }
 
 func (s *requestReadStream) Context() context.Context { return s.ctx }
@@ -54,7 +105,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 
 	config := samplersettings.ModelConfig{
 		Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses,
-		ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectLite},
+		Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingJSON,
 	}
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	intent := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
@@ -74,7 +125,9 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	if err != nil {
 		t.Fatal(err)
 	}
-	equivalentJSON(t, stored.Body, wire)
+	if !bytes.Equal(stored.Body, wire) {
+		t.Fatal("stored request body differs from prepared request bytes")
+	}
 	if len(stored.Body) <= maxProviderRequestBodyChunkSize {
 		t.Fatalf("fixture body is %d bytes; want more than one chunk", len(stored.Body))
 	}

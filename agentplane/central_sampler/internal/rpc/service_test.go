@@ -1,7 +1,6 @@
-package centralsampler
+package rpc
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -12,21 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-type fixtureReviews struct {
-	uid, account string
-	failure      error
-}
-
-func (r fixtureReviews) Create(ctx context.Context, request *authenticationv1.TokenReview, options metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	if r.failure != nil {
-		return nil, r.failure
-	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{Authenticated: request.Spec.Token == "test-token", Audiences: request.Spec.Audiences, User: authenticationv1.UserInfo{Username: r.account, UID: r.uid, Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"test-pod"}, "authentication.kubernetes.io/pod-uid": {"test-pod-uid"}}}}}, nil
-}
 
 func TestAdmissionAuthenticatesAndAuthorizesAccountUID(t *testing.T) {
 	for _, c := range []struct {

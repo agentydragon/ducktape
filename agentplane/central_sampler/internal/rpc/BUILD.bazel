@@ -1,0 +1,87 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "rpc",
+    srcs = [
+        "provider_request_read.go",
+        "service.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/rpc",
+    visibility = ["//agentplane/central_sampler/cmd:__pkg__"],
+    deps = [
+        "//agentplane/central_sampler",
+        "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/sessionstore",
+        "//agentplane/central_sampler/internal/settings",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/providers/responses",
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/identity/auth",
+        "//agentplane/postgres/wakeups",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    size = "medium",
+    srcs = [
+        "service_test.go",
+        "test_helpers_test.go",
+    ],
+    embed = [":rpc"],
+    race = "on",
+    deps = [
+        "//agentplane/central_sampler/internal/sessionstore",
+        "//agentplane/central_sampler/internal/settings",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/providers/responses",
+        "//agentplane/identity/auth",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = [
+        "request_read_service_test.go",
+        "test_helpers_test.go",
+    ],
+    embed = [":rpc"],
+    race = "on",
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/sessionstore",
+        "//agentplane/central_sampler/internal/settings",
+        "//agentplane/central_sampler/migrations",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/providers/responses",
+        "//agentplane/identity/auth",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
