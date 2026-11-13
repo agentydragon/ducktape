@@ -11,6 +11,27 @@ package(
 # The experimental KVM variant under x/vm_kvm runs this file.
 exports_files(["test_vm.py"])
 
+# gazelle:ignore
+# k3s_suite supplies system_test_target, also imported directly by this manual experiment.
+k3s_suite(
+    name = "test_probe_cadence",
+    srcs = ["test_probe_cadence.py"],
+    stack = "pod",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:tracing",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:net",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 # Bazel-built Debian guest and production launcher on the dedicated KVM worker.
 k3s_suite(
     name = "test_firecracker",
