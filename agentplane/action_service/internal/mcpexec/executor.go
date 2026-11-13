@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/protobuf/types/known/timestamppb"

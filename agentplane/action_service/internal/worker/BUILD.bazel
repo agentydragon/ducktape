@@ -9,7 +9,7 @@ go_library(
         "lease.go",
         "worker.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/worker",
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/worker",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/internal/store",
