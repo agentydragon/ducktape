@@ -227,6 +227,11 @@ func (p *fakeCodeModePeer) close() error {
 
 func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
 	t.Helper()
+	return newFakeCodeModeManagerWithBudgets(t, 2*time.Second, 300*time.Second, acknowledge...)
+}
+
+func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +247,7 @@ func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost,
 	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	manager := NewCodeModeHost(context.Background(), samplersettings.Settings{CodeModeHost: binary, Logs: directory, RPCTimeoutSeconds: 2}, nil)
+	manager := &CodeModeHost{Manager: codemode.NewManager(context.Background(), binary, directory, rpcTimeout, observationTimeout)}
 	var mu sync.Mutex
 	var peers []*fakeCodeModePeer
 	go func() {
@@ -969,6 +974,7 @@ func advanceWithFakeOperation(
 }
 
 type fakeCodeOperationRequest struct {
+	request   json.RawMessage
 	id        int64
 	method    string
 	sessionID string
@@ -1001,7 +1007,7 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 				t.Fatal(err)
 			}
 			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
-				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID}
+				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID, request: envelope.Request}
 			}
 		case <-deadline:
 			t.Fatalf("session %q did not issue %s", sessionID, method)
@@ -1234,4 +1240,102 @@ func writeHostFrame(writer io.Writer, payload []byte) error {
 	}
 	_, err := io.Copy(writer, strings.NewReader(string(payload)))
 	return err
+}
+
+func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testing.T) {
+	for _, phase := range []string{"execute_ack", "execute_observation", "wait_observation"} {
+		t.Run(phase, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, peers := newFakeCodeModeManagerWithBudgets(t, 2*time.Second, 20*time.Millisecond)
+			manager.store = store
+			code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if phase == "wait_observation" {
+				if err := store.CellResult(t.Context(), owner, code.CellHandle("cell-fixture"), protocol.CellLive); err != nil {
+					t.Fatal(err)
+				}
+			}
+			peer := peers()[0]
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			execute := phase != "wait_observation"
+			var request codemode.Operation = codemode.WaitOperation{
+				SessionOperation: codemode.SessionOperation{Method: "session/wait", SessionID: code.ID()},
+				Request:          codemode.WaitRequest{CellID: "cell-fixture", YieldTimeMS: 9007199254740991},
+			}
+			method := "session/wait"
+			if execute {
+				method = "session/execute"
+				request = codemode.ExecuteOperation{
+					SessionOperation: codemode.SessionOperation{Method: method, SessionID: code.ID()},
+					Request:          codemode.ExecuteRequest{ToolCallID: "call-fixture", Source: "await new Promise(() => {})", YieldTimeMS: 9007199254740991},
+				}
+			}
+			finished := make(chan error, 1)
+			go func() { _, err := code.Request(ctx, request, execute); finished <- err }()
+			sent := receiveCodeOperationRequest(t, peer, code.ID(), method)
+			var wire struct {
+				Request struct {
+					YieldTimeMS int `json:"yield_time_ms"`
+				} `json:"request"`
+			}
+			if err := json.Unmarshal(sent.request, &wire); err != nil {
+				t.Fatal(err)
+			}
+			if wire.Request.YieldTimeMS != 20 {
+				t.Fatalf("forwarded yield=%d, want 20ms", wire.Request.YieldTimeMS)
+			}
+			if phase == "execute_observation" {
+				value, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "cell-fixture"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: &sent.id, Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			select {
+			case err := <-finished:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("request error=%v", err)
+				}
+				if ctx.Err() != nil {
+					t.Fatalf("caller expired: %v", ctx.Err())
+				}
+			case <-ctx.Done():
+				t.Fatal("request did not respect phase budget")
+			}
+			if phase != "execute_ack" {
+				state, err := store.ExecutionState(t.Context(), owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(state.Cells) != 1 || state.Cells[0].ID != code.CellHandle("cell-fixture") || state.Cells[0].Status != protocol.CellLive {
+					t.Fatalf("observation timeout changed live cell: %+v", state.Cells)
+				}
+			}
+			select {
+			case fields := <-peer.frames:
+				var signal struct {
+					Type string `json:"type"`
+					ID   int64  `json:"id"`
+				}
+				if err := json.Unmarshal(mustMarshalFields(t, fields), &signal); err != nil {
+					t.Fatal(err)
+				}
+				if signal.Type != "operation/cancel" || signal.ID != sent.id {
+					t.Fatalf("timeout signal=%+v", signal)
+				}
+			case <-ctx.Done():
+				t.Fatal("no cancellation signal")
+			}
+		})
+	}
 }

@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	defaultExecutorInitializeTimeoutSeconds = 30
-	defaultExecutorReconnectTimeoutSeconds  = 120
-	defaultShutdownDrainSeconds             = 40
-	defaultShutdownBudgetSeconds            = 55
-	maxExecutorInitializeTimeoutSeconds     = int64((1<<63 - 1) / int64(time.Second))
+	defaultCodeModeObservationTimeoutSeconds = 300
+	defaultExecutorInitializeTimeoutSeconds  = 30
+	defaultExecutorReconnectTimeoutSeconds   = 120
+	defaultShutdownDrainSeconds              = 40
+	defaultShutdownBudgetSeconds             = 55
+	maxExecutorInitializeTimeoutSeconds      = int64((1<<63 - 1) / int64(time.Second))
 )
 
 func (s Settings) Validate() error {
@@ -101,6 +102,13 @@ func (s Settings) Validate() error {
 	if s.MaxLiveSessions <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
+	observationSeconds := defaultCodeModeObservationTimeoutSeconds
+	if s.CodeModeObservationTimeoutSeconds != nil {
+		observationSeconds = *s.CodeModeObservationTimeoutSeconds
+	}
+	if observationSeconds <= 0 || int64(observationSeconds) > maxExecutorInitializeTimeoutSeconds-int64(s.RPCTimeoutSeconds) {
+		return errors.New("code_mode_observation_timeout_seconds must be positive and fit with rpc_timeout_seconds in time.Duration")
+	}
 	if s.ExecutorInitializeTimeoutSeconds != nil {
 		seconds := int64(*s.ExecutorInitializeTimeoutSeconds)
 		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
@@ -137,6 +145,14 @@ func (s Settings) Connection(model string) (ConnectionConfig, error) {
 		return ConnectionConfig{}, fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
 	}
 	return connection, nil
+}
+
+func (s Settings) CodeModeObservationTimeout() time.Duration {
+	seconds := defaultCodeModeObservationTimeoutSeconds
+	if s.CodeModeObservationTimeoutSeconds != nil {
+		seconds = *s.CodeModeObservationTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s Settings) ExecutorInitializeTimeout() time.Duration {

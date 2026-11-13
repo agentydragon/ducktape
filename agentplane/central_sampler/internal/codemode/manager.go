@@ -23,11 +23,12 @@ import (
 // Runtime shuts down; active Session bindings (and their lease owners and
 // Executors) are attached only while a sampler generation is running.
 type Manager struct {
-	binary       string
-	logs         string
-	hostLifetime context.Context
-	cancelHost   context.CancelFunc
-	rpcTimeout   time.Duration
+	binary             string
+	logs               string
+	hostLifetime       context.Context
+	cancelHost         context.CancelFunc
+	rpcTimeout         time.Duration
+	observationTimeout time.Duration
 
 	connectMu  sync.Mutex
 	mu         sync.Mutex
@@ -54,13 +55,13 @@ type codePending struct {
 	initial  chan codeReply
 }
 
-func NewManager(parent context.Context, binary, logs string, rpcTimeout time.Duration) *Manager {
+func NewManager(parent context.Context, binary, logs string, rpcTimeout, observationTimeout time.Duration) *Manager {
 	lifetime, cancel := context.WithCancel(parent)
 	return &Manager{
 		binary: binary, logs: logs,
 		hostLifetime: lifetime, cancelHost: cancel,
-		rpcTimeout: rpcTimeout,
-		pending:    map[int64]*codePending{}, active: map[string]*Session{}, delegates: map[int64]*Session{},
+		rpcTimeout: rpcTimeout, observationTimeout: observationTimeout,
+		pending: map[int64]*codePending{}, active: map[string]*Session{}, delegates: map[int64]*Session{},
 		sessionIDs: map[string]string{}, openedSessions: map[string]struct{}{},
 		writeGate:  make(chan struct{}, 1),
 		instanceID: uuid.NewString(),
