@@ -11,7 +11,7 @@ optional and unscheduled.
 The [Electric chart](../../cluster/cdk8s/agentplane/electric.py) pins Electric 1.8.1 and has one
 `Recreate` Pod. Every Pod would use the same `agentplane_history` replication stream ID, while its
 shape log and persistent state sit in a Pod-local `emptyDir`. The Service selects every Electric Pod.
-The [App proxy](../app/go/proxy/electric.go) forwards each authorized shape request to that one
+The [App proxy](../app/internal/proxy/electric.go) forwards each authorized shape request to that one
 Service URL; it has no stable per-thread Electric destination. The [browser client](../app/frontend/threads/electric_sync.tsx)
 holds a shape handle and offset, and handles `must-refetch` after a 409.
 

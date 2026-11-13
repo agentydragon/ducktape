@@ -17,8 +17,8 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/historydata"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

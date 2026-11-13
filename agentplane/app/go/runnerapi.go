@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"

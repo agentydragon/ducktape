@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

@@ -119,7 +119,7 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 - **Action Service:** Action authorization and Decisions, execution lifecycle, and canonical Action
   history.
 
-`app/go/threads/` owns only the app's Thread metadata and its browser-facing API. The browser combines
+`app/internal/threads/` owns only the app's Thread metadata and its browser-facing API. The browser combines
 that metadata with History Service summaries; it does not own Sandbox reconciliation or connect
 directly to runners. Thread identities do not travel in Runner control-stream metadata.
 

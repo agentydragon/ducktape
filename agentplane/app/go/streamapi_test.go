@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"

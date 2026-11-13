@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

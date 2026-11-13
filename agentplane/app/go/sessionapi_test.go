@@ -11,16 +11,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"google.golang.org/grpc"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"

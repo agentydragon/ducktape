@@ -14,11 +14,11 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
-	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
-	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/google/uuid"

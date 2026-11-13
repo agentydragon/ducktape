@@ -2,9 +2,9 @@ package main
 
 import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/app/go/status"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 )
 
 // appService implements the app-owned browser API in process. The HTTP gateway
