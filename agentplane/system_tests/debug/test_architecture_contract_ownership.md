@@ -80,6 +80,29 @@ separate stack because its disruption is part of the assertion.
 | `//agentplane/system_tests/suites/mcp:test_sampler_roll` — `test_sampler_roll_retains_active_turn_and_history_accepts_next_input` ([scenario](../scenarios/central_sampler.py#L1910))   | Force-replaces the sampler while a cell/process is live and executor remains. Abandon/reconcile ordering, retained prefix, one settlement, same executor side-effect marker and next input are asserted.               |
 | `//agentplane/system_tests/suites/mcp:test_history_outage` — `test_history_outage_backfills_completed_turn` ([scenario](../scenarios/central_sampler.py#L2233))                         | Scales only History to zero during active turn; verifies other Pods and runner endpoint stay fixed, sampler cursor advances, then History committed/folded cursors catch up contiguously and the next input completes. |
 
+## App integration fixture ownership
+
+The shared [`app/integration_fixtures.py`](../../app/integration_fixtures.py)
+composes the real App, History, Gateway, PostgreSQL and Kubernetes API server.
+Its [`gateway_fixtures.py`](../../app/testing/gateway_fixtures.py) support does
+not start Runtime. Tests that author History directly keep these real services
+without inheriting the production Runtime executable or harness inputs.
+
+The six `test_bridge` functions and three `test_history_gateway` functions additionally
+load [`runtime_fixtures.py`](../../app/testing/runtime_fixtures.py). They retain
+the actual Runtime, Dispatcher admission, harness/model exchange, restart and
+History recovery paths, including their native failure diagnostics. The split
+changes fixture and input ownership; it removes no App assertion or test case.
+
+The candidate graph leaves a Runtime executable path for exactly those two App
+test targets; the other 13 App tests have no such path. Twelve are ordinary
+CI-eligible targets; the thirteenth is the manual Electric traffic experiment.
+The focused [RBE run](https://app.buildbuddy.io/invocation/8efca746-a5cf-48d4-b215-cc62ab34a73e)
+passed all 42 cases: 24 bridge cases across four shards, six history-gateway
+cases, eight API cases and four action-API cases. This is fixture/graph
+validation, not a measured CI feedback reduction. Actual selector hashing and
+the full required workflow still have to qualify the new source.
+
 ## Native and owner proofs for the recovery matrix
 
 `//agentplane/x/native_contracts:test_recovery` is a manual four-case target;
