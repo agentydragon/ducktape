@@ -104,7 +104,9 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
         await expect(page.locator(".App-toolbar")).to_be_visible()
         undo = page.get_by_test_id("button-undo")
+        redo = page.get_by_test_id("button-redo")
         await expect(undo).to_be_disabled()
+        await expect(redo).to_be_disabled()
 
         # The tool is a visually hidden radio input; users click its label's icon.
         rectangle = page.get_by_test_id("toolbar-rectangle")
@@ -117,6 +119,12 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         await page.mouse.up()
         # Drawing records a history entry, which enables undo.
         await expect(undo).to_be_enabled()
+        await undo.click()
+        await expect(undo).to_be_disabled()
+        await expect(redo).to_be_enabled()
+        await redo.click()
+        await expect(undo).to_be_enabled()
+        await expect(redo).to_be_disabled()
 
         text_wrapping = await page.evaluate(
             """async () => {
