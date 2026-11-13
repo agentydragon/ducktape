@@ -13,7 +13,7 @@ from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Te
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-# The projection epoch the Go fold stamps its rows with (`FoldEpoch` in `projection/runner.go`).
+# The projection epoch the Go fold stamps its rows with (`FoldEpoch` in `internal/projection/runner.go`).
 FOLD_EPOCH = "history-v1"
 
 

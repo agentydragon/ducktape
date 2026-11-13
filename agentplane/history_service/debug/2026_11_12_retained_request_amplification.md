@@ -177,8 +177,8 @@ quadratic growth. Current Codex adapter code requests `excludeTurns` on resume.
 
 ## Thread projections
 
-The [projection writer](../projection/payloads.go) shares previous chunks when appending text,
-and [entity writes](../projection/recording.go) update the current entity row. Completion with
+The [projection writer](../internal/projection/payloads.go) shares previous chunks when appending text,
+and [entity writes](../internal/projection/recording.go) update the current entity row. Completion with
 the same text reuses the existing body. It does not retain a full thread snapshot per token.
 
 Measured projection payloads had 685,913 chunk rows, with 296,434,982 stored JSON-text bytes
@@ -244,7 +244,7 @@ actual retained body bytes.
 
 `thread_evidence` and `thread_native_link` occupy 200.1 and 220.9 MiB. All 1,431,194 native-link
 rows join an evidence row on their four shared key columns; evidence has 1,452,984 rows total.
-Their [writer](../projection/recording.go) inserts both representations for observations with
+Their [writer](../internal/projection/recording.go) inserts both representations for observations with
 native sources. These are metadata/reference costs, separate from repeated body content.
 
 ## Stopgap decision

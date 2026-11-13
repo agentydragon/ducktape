@@ -13,9 +13,9 @@ go_library(
     deps = [
         "//agentplane/grpc/streaming",
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/internal/projection",
         "//agentplane/history_service/internal/reads",
         "//agentplane/history_service/internal/storage",
-        "//agentplane/history_service/projection",
         "//agentplane/identity/auth/auth",
         "//agentplane/postgres/wakeups",
         "@com_github_google_uuid//:uuid",
@@ -40,9 +40,9 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/internal/projection",
         "//agentplane/history_service/internal/reads",
         "//agentplane/history_service/internal/storage",
-        "//agentplane/history_service/projection",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
         "//agentplane/identity/auth/auth",
