@@ -190,9 +190,11 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], data = [], env = {}, environment_tools_image = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
+    `data` and `env` add explicit fixture experiment inputs. `environment_tools_image`
+    substitutes a manual fixture image without changing the stack's image reference.
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
     `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
     """
@@ -215,9 +217,12 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("the Firecracker stack requires require_kvm = True")
     runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
     fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, runner_disk_image)
+    if environment_tools_image != None:
+        reference = fixture_images.pop("//agentplane/system_tests/deployment:environment_tools_harnesses_image")
+        fixture_images[environment_tools_image] = reference
     images = {"fixture": fixture_images, "pki": _PKI_IMAGES, "vm": {}, "guest": {}}
-    data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL, "//agentplane/crds"]
-    env = {
+    data = data + [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL, "//agentplane/crds"]
+    env = env | {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",

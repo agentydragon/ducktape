@@ -32,6 +32,74 @@ k3s_suite(
     ],
 )
 
+# gazelle:ignore
+# Same real harness-turn scenario; required suites keep their ordinary OCI packaging.
+k3s_suite(
+    name = "test_harness_packaging",
+    srcs = ["test_harness_artifact_mount.py"],
+    env = {"HARNESS_ARTIFACT_MOUNTS": "0"},
+    main = "test_harness_artifact_mount.py",
+    stack = "pod",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:session_instructions",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:net",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+k3s_suite(
+    name = "test_harness_artifacts",
+    srcs = ["test_harness_artifact_mount.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:codex_binary",
+        "@agentplane_codex_cli_linux_x64//:files",
+        "@claude_code_cli_linux_x64//:claude",
+    ],
+    env = {
+        "HARNESS_ARTIFACT_MOUNTS": "1",
+        "HARNESS_CLAUDE_RLOCATION": "$(rlocationpath @claude_code_cli_linux_x64//:claude)",
+        "HARNESS_CODEX_RLOCATION": "$(rlocationpath @agentplane_codex_cli_linux_x64//:codex_binary)",
+    },
+    environment_tools_image = "//agentplane/system_tests/deployment:environment_tools_artifact_probe_image",
+    main = "test_harness_artifact_mount.py",
+    stack = "pod",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:session_instructions",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:net",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 # Bazel-built Debian guest and production launcher on the dedicated KVM worker.
 k3s_suite(
     name = "test_firecracker",

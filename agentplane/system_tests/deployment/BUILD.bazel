@@ -118,6 +118,21 @@ oci_image(
     user = "1000:1000",
 )
 
+# Manual artifact-mount probe: preserve the ordinary tools and harness command links.
+oci_image(
+    name = "environment_tools_artifact_probe_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    tars = [
+        "//third_party/debian_slim:cacerts",
+        "@trixie_e2e//:flat",
+        ":runner_cli_link",
+        ":runner_claude_link",
+        ":runner_codex_link",
+        ":runner_kubectl",
+    ],
+    user = "1000:1000",
+)
+
 py_test(
     name = "test_render",
     # cdk8s/jsii startup dominates the one-case test on RBE; keep medium.
