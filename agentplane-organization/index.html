@@ -515,6 +515,7 @@
       ];
       function Source({ path, label }) {
         return html`<${Anchor}
+          style=${{ overflowWrap: "anywhere", wordBreak: "break-word", whiteSpace: "normal" }}
           href=${`https://github.com/agentydragon/ducktape/blob/${sourceSHA}/${path}`}
           >${label || path}<//
         >`;
