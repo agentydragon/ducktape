@@ -21,7 +21,8 @@ Staged API change: [action result discriminator rollout](docs/action_result_disc
 - `migrations/`: Alembic, applied at startup against CNPG
 - `frontend/`: `sync.js` (REST + WebSocket client, Zod-parsed), `use_casino.js` (state +
   mutations hook), one `.jsx` per view/game; bundled via `//devinfra/js:spa_bundle`.
-  `public/sw.js` is a kill-switch service worker; `main.jsx` unregisters legacy ones.
+  The bundle does not ship a service worker; `main.jsx` unregisters workers left by older
+  deployments.
 
 ## Auth
 

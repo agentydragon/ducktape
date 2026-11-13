@@ -52,8 +52,7 @@ class Settings(BaseSettings):
     frontend_dist_dir: Path | None = Field(
         default=None,
         description=(
-            "Directory containing the built frontend bundle (index.html, main.js, "
-            "sw.js, manifest.webmanifest, icon.svg). Defaults to `./frontend/dist` "
+            "Directory containing the built frontend bundle. Defaults to `./frontend/dist` "
             "next to this module; override for tests or alternate layouts."
         ),
     )
