@@ -31,7 +31,7 @@ bazel-repo-cache-<hash of MODULE.bazel + **/*.MODULE.bazel + MODULE.bazel.lock>
 - **Shared by default** — workflows using the action without `extra_hash` use the same key. Repository downloads are content-addressed, so a cache populated by one job can be reused by another.
 - **Optional `extra_hash`** — callers can append a caller-defined hash to specialize the key. The action combines the first 8 characters of the base and extra hashes; without `extra_hash`, it uses the first 16 characters of the base hash.
 - **`restore-keys: bazel-repo-cache-`** — on dependency changes, the previous cache is partially restored (content-addressable, so unchanged downloads are reused).
-- **Cache size** — each entry is about 2GB. Dependency changes and optional `extra_hash` values can create multiple keys, all counting toward the default 10GB per-repository cache quota.
+- **Cache size** — entries can be around 2GB. Dependency changes and optional `extra_hash` values can create multiple keys, all counting toward the default 10GB per-repository cache quota.
 
 ## Cache flow
 
