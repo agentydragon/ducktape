@@ -213,6 +213,8 @@ observation citing a chunk keeps that item's deltas. Dry runs use read-only tran
 eligible rows and `pg_column_size(payload)` bytes; those exclude row/index overhead and unused space.
 
 Apply commits one completion per transaction, with a 30-second deadline and a 1-second lock timeout.
+It checks eligibility in a read-only transaction before taking any write lease; ineligible or
+already settled completions leave the projector alone.
 It acquires the projection lease and locks the Session against appends. A changed prefix or a live
 projection lease stops that Session's pass; `--all` visits the other Sessions before exiting nonzero.
 Rerun after the Session quiets or the fold catches up. Earlier commits remain applied. Recorded

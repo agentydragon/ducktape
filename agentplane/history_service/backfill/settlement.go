@@ -70,8 +70,8 @@ func scanSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID) (scan, er
 	}
 }
 
-// RunSession uses bounded reads and one transaction per completion. Dry runs use read-only
-// transactions. Apply fences both ingress and the projector, and refuses a changed raw prefix.
+// RunSession uses bounded reads and one write transaction per eligible completion. Dry runs use
+// read-only transactions. Apply fences ingress and the projector, and refuses a changed raw prefix.
 // Restarting skips recorded settlements; no runner events or provider calls are replayed.
 func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool) (Result, error) {
 	found, err := scanSession(ctx, db, sessionID)
@@ -81,7 +81,11 @@ func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool
 	var total Result
 	for _, cursor := range found.completions {
 		itemCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		result, err := settleCompletion(itemCtx, db, sessionID, cursor, found, apply)
+		result, err := settleCompletion(itemCtx, db, sessionID, cursor, found, false)
+		if err == nil && apply && result.Items != 0 {
+			// Recheck under the write fences: eligibility may change after this read-only check.
+			result, err = settleCompletion(itemCtx, db, sessionID, cursor, found, true)
+		}
 		cancel()
 		if err != nil {
 			return total, fmt.Errorf("Session %s completion %d: %w", sessionID, cursor, err)
