@@ -41,6 +41,10 @@ fn claimed_modules_export_their_entry_points() {
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
+            "editor/packages/excalidraw/element/linearElementEditor.js",
+            &["LinearElementEditor"],
+        ),
+        (
             "editor/packages/excalidraw/store.js",
             &["Store", "CaptureUpdateAction", "getObservedAppState"],
         ),

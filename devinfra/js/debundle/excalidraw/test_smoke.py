@@ -378,5 +378,46 @@ async def test_store_and_changes(playwright_driver: Playwright, origin: str) -> 
         }
 
 
+async def test_linear_element_editor(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { LinearElementEditor } = await import('./editor/packages/excalidraw/element/linearElementEditor.js');
+                const line = {id: 'linear-editor', type: 'line', x: 10, y: 20,
+                              width: 20, height: 10, angle: 0, points: [[0, 0], [20, 10]]};
+                const elements = new Map([[line.id, line]]);
+                const editor = new LinearElementEditor(line);
+                const rounded = points => points.map(point => point.map(Math.round));
+                return {
+                    initial: [editor.elementId, editor.selectedPointsIndices, editor.isDragging,
+                              editor.pointerOffset, editor.startBindingElement, editor.endBindingElement],
+                    handleSize: LinearElementEditor.POINT_HANDLE_SIZE,
+                    lookup: [LinearElementEditor.getElement(line.id, elements) === line,
+                             LinearElementEditor.getElement('missing', elements)],
+                    global: LinearElementEditor.getPointsGlobalCoordinates(line, elements),
+                    rotated: rounded(LinearElementEditor.getPointsGlobalCoordinates({...line, angle: Math.PI}, elements)),
+                    normalized: LinearElementEditor.getNormalizedPoints({...line, points: [[5, -3], [25, 7]]}),
+                    equality: [LinearElementEditor.arePointsEqual(null, null),
+                               LinearElementEditor.arePointsEqual([0, 0], null),
+                               LinearElementEditor.arePointsEqual([2, 3], [2, 3])],
+                };
+            }"""
+        )
+        assert result == {
+            "initial": ["linear-editor", None, False, {"x": 0, "y": 0}, "keep", "keep"],
+            "handleSize": 10,
+            "lookup": [True, None],
+            "global": [[10, 20], [30, 30]],
+            "rotated": [[30, 30], [10, 20]],
+            "normalized": {"points": [[0, 0], [20, 10]], "x": 15, "y": 17},
+            "equality": [True, False, True],
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
