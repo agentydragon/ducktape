@@ -8,68 +8,42 @@ from pathlib import Path
 from uuid import UUID
 
 from openai import AsyncOpenAI, OpenAIError
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import DynamicCompleter, NestedCompleter
-from prompt_toolkit.patch_stdout import patch_stdout
 from pydantic import JsonValue, TypeAdapter
+from rich.console import Console, Group
+from rich.markdown import Markdown
+from rich.text import Text
 
 from agentplane.x.authored_conversation.agent import Agent, RunResult
 from agentplane.x.authored_conversation.settings import Settings
-from agentplane.x.authored_conversation.store import Author, Message, open_store
+from agentplane.x.authored_conversation.store import Message, open_store
 from agentplane.x.authored_conversation.trace import Trace, read_trace
+from agentplane.x.authored_conversation.tui import ConversationApp
 
 
 def display(message: Message) -> None:
     edited = "; edited" if message.revision > 1 else ""
-    print(f"[{message.author} {message.id} r{message.revision}{edited}] {message.body}", flush=True)
+    Console().print(
+        Group(Text(f"[{message.author} {message.id} r{message.revision}{edited}]", style="dim"), Markdown(message.body))
+    )
 
 
 HELP = (
-    "/thread  /edit <message-id>  /revisions <message-id>  /models  /trace\n"
+    "/thread  /edit <message-id> <expected-revision> <replacement text>\n"
+    "/revisions <message-id>  /models  /trace\n"
     "/reset-context  /continue  /wait  /quit\n"
-    "Enter sends; Up/Down recall input; Tab completes commands and message IDs.\n"
-    "In /edit: Enter adds a line, Esc then Enter saves, Ctrl+C cancels.\n"
-    "Scripted edit: /edit <message-id> <expected-revision> <replacement text>"
+    "Piped input uses one command or message per line."
 )
 
 
-async def read_input(reader: asyncio.StreamReader | PromptSession[str]) -> str | None:
-    if isinstance(reader, asyncio.StreamReader):
-        line = await reader.readline()
-        return line.decode().rstrip("\r\n") if line else None
-    while True:
-        try:
-            return await reader.prompt_async("you> ")
-        except KeyboardInterrupt:
-            print("[draft cancelled; /quit exits]", flush=True)
-        except EOFError:
-            return None
-
-
-async def edit_input(agent: Agent, reader: asyncio.StreamReader | PromptSession[str], command: str) -> Message | None:
+def edit_input(agent: Agent, command: str) -> Message:
     parts = command.split(maxsplit=3)
     if len(parts) == 4:
         return agent.edit(UUID(parts[1]), expected_revision=int(parts[2]), body=parts[3])
-    if len(parts) != 2 or not isinstance(reader, PromptSession):
-        raise ValueError("use /edit <message-id>, or /edit <message-id> <expected-revision> <replacement text>")
-    message = agent.store.get(UUID(parts[1]))
-    if message.author is not Author.HUMAN:
-        raise ValueError("participants can only edit their own messages")
-    editor: PromptSession[str] = PromptSession(input=reader.input, output=reader.output, multiline=True)
-    try:
-        body = await editor.prompt_async(
-            f"edit r{message.revision}> ",
-            default=message.body,
-            bottom_toolbar="Enter: new line | Esc, Enter: save | Ctrl+C: cancel",
-        )
-    except KeyboardInterrupt, EOFError:
-        print("[edit cancelled]", flush=True)
-        return None
-    return agent.edit(message.id, expected_revision=message.revision, body=body)
+    raise ValueError("use /edit <message-id> <expected-revision> <replacement text>")
 
 
-async def interact(agent: Agent, reader: asyncio.StreamReader | PromptSession[str], trace_path: Path) -> None:
-    reading: asyncio.Task[str | None] | None = asyncio.create_task(read_input(reader))
+async def interact(agent: Agent, reader: asyncio.StreamReader, trace_path: Path) -> None:
+    reading: asyncio.Task[bytes] | None = asyncio.create_task(reader.readline())
     running: asyncio.Task[RunResult] | None = None
     eof = False
     barrier = False
@@ -93,10 +67,10 @@ async def interact(agent: Agent, reader: asyncio.StreamReader | PromptSession[st
             if reading is not None and reading.done():
                 line = reading.result()
                 reading = None
-                if line is None:
+                if not line:
                     eof = True
                 else:
-                    text = line
+                    text = line.decode().rstrip("\r\n")
                     try:
                         match text:
                             case "/quit":
@@ -107,11 +81,9 @@ async def interact(agent: Agent, reader: asyncio.StreamReader | PromptSession[st
                             case "/help":
                                 print(HELP, flush=True)
                             case _ if text == "/edit" or text.startswith("/edit "):
-                                edited = await edit_input(agent, reader, text)
-                                if edited is not None:
-                                    display(edited)
-                                    if running is None:
-                                        running = start_run()
+                                display(edit_input(agent, text))
+                                if running is None:
+                                    running = start_run()
                             case _ if text.startswith("/revisions "):
                                 for revision in agent.store.revisions(UUID(text.split(maxsplit=1)[1])):
                                     print(f"[{revision.recorded_at.isoformat()}]", flush=True)
@@ -152,7 +124,7 @@ async def interact(agent: Agent, reader: asyncio.StreamReader | PromptSession[st
                 if agent.has_pending_input():
                     running = start_run()
             if reading is None and not eof and not barrier:
-                reading = asyncio.create_task(read_input(reader))
+                reading = asyncio.create_task(reader.readline())
 
 
 async def async_main(settings: Settings) -> None:
@@ -179,31 +151,10 @@ async def async_main(settings: Settings) -> None:
                 "tools": TypeAdapter(JsonValue).validate_python(agent.tools.schemas()),
             },
         )
-        print(f"[{settings.mode} mode; thread and trace in {settings.state_directory}]", flush=True)
         if sys.stdin.isatty() and sys.stdout.isatty():
-            session: PromptSession[str] = PromptSession(
-                completer=DynamicCompleter(
-                    lambda: NestedCompleter.from_nested_dict(
-                        {
-                            "/help": None,
-                            "/thread": None,
-                            "/trace": None,
-                            "/models": None,
-                            "/reset-context": None,
-                            "/continue": None,
-                            "/wait": None,
-                            "/quit": None,
-                            "/edit": {str(message.id) for message in store.messages(author=Author.HUMAN)},
-                            "/revisions": {str(message.id) for message in store.messages()},
-                        }
-                    )
-                ),
-                complete_while_typing=False,
-            )
-            print("[Enter sends; /help lists commands]", flush=True)
-            with patch_stdout():
-                await interact(agent, session, settings.state_directory / "trace.jsonl")
+            await ConversationApp(agent, settings.state_directory / "trace.jsonl").run_async()
         else:
+            print(f"[{settings.mode} mode; thread and trace in {settings.state_directory}]", flush=True)
             reader = asyncio.StreamReader()
             # Reopen rather than dup: connect_read_pipe sets O_NONBLOCK, and
             # stdin may share its open file description with stdout/stderr.

@@ -11,6 +11,17 @@ no native harness and no dependency on Agentplane's Session, History or notifica
   time. The thread displays the latest revision; past revisions remain readable.
   Explicit `post_message` and `edit_message` calls publish assistant messages in authored mode. Model text,
   reasoning and tool results remain diagnostic; they are never promoted into conversation text.
+- Terminal input/output opens a full-screen Textual app. Its Thread view renders the current
+  conversation on startup, updates edited messages in their original positions, and appends new
+  messages. Bodies render as Markdown with author/ID/revision headers. Background publication
+  preserves the active composer and edit draft. Stored bodies and editors retain Markdown source.
+- The separate Trace view lists diagnostic events and shows the selected event's complete JSON.
+  It reads newly appended events incrementally while open, follows the latest event when selected,
+  and preserves selection when the user is inspecting an older event. Diagnostic content does not
+  enter the Thread view. Active runs show a spinner, elapsed time and model-call number.
+- Redirected input/output uses the line-oriented CLI. Messages, `/thread` and `/revisions` use Rich
+  Markdown. `/trace` emits raw JSONL. Redirected output uses no terminal styles under normal color
+  settings.
 - Working context is in memory. Resetting it preserves the thread and trace. Authored mode starts
   again with instructions and notices, then reads the thread through tools. Chat mode can rebuild
   context from visible conversation messages. Neither mode restores or automatically replays work.
@@ -43,12 +54,13 @@ Edits are new information. Earlier tool results, model context and trace entries
 editing never undoes or replays commands. An agent edit counts as a publication. An edit-only notice
 may be acknowledged by yielding without publishing; it does not erase an unanswered new post.
 
-Interactive terminals use Prompt Toolkit for asynchronous prompts, input history, completion and
-background output. `/edit <id>` opens the human message's current body as a multiline draft. Enter
-inserts a newline, Esc followed by Enter saves, and Ctrl+C cancels without changing state. The version
-check uses the revision captured when the draft opened. Normal prompts use Enter to submit and
-Ctrl+C to cancel a draft. Piped input remains line-oriented and supports explicit-version edits.
-Reading terminal input does not make shared stdout/stderr nonblocking, including during `/trace`.
+In the full-screen app, Enter inserts a newline and Ctrl+S sends a new message. Edit opens a separate
+multiline source editor; Ctrl+S saves and Esc cancels, leaving the new-message composer intact. The
+version check uses the revision captured when the editor opened; a conflict leaves the edit draft
+open without overwriting newer state. Revisions opens past versions of either participant's message.
+F2/F3 switch Thread/Trace, F5 continues work, Ctrl+R resets idle context and Ctrl+Q cancels work
+and exits. Workers belong to the app and are cancelled on exit. Piped input supports explicit-version
+edits, EOF drains active work, and `/quit` cancels it.
 
 Opening a legacy state directory migrates it transactionally, retaining message IDs, authors,
 positions and exact bodies as revision 1. Legacy recording timestamps denote migration time.
