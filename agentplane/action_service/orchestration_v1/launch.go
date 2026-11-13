@@ -33,7 +33,7 @@ import (
 )
 
 // inboxAccessRule is the Notification Service's rule type for sends to Session inboxes
-// (notification_service/inboxaccess).
+// (notification_service/internal/inboxaccess).
 const inboxAccessRule = "session_inbox_access"
 
 // Launched is the result of launch_sandbox.
