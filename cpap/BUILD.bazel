@@ -70,16 +70,10 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("sync_image_bin"),
-    # Shared CA bundle so the C git binary can verify the Forgejo TLS cert; the apt
-    # :flat layer alone has no usable bundle. See //third_party/debian_slim:cacerts.
-    env = py_image_env(
-        binary_name = "sync_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
+    env = py_image_env(binary_name = "sync_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         "@trixie_cpap_sync//:flat",
-        "//third_party/debian_slim:cacerts",
         ":layers",
     ],
 )
