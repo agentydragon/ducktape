@@ -40,6 +40,10 @@ fn claimed_modules_export_their_entry_points() {
         ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
+            "main/packages/excalidraw/history.js",
+            &["History", "HistoryChangedEvent"],
+        ),
+        (
             "main/packages/excalidraw/components/ColorPicker/HotkeyLabel.js",
             &["HotkeyLabel"],
         ),
@@ -57,6 +61,12 @@ fn claimed_modules_export_their_entry_points() {
         &app,
         "editor/packages/excalidraw/element/textWrapping.js",
         &["var parseTokens =", "var Regex =", "var Break ="],
+        &[],
+    );
+    assert_module_source(
+        &app,
+        "main/packages/excalidraw/history.js",
+        &["var HistoryEntry ="],
         &[],
     );
 }

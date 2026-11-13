@@ -1,0 +1,80 @@
+# Original home: packages/excalidraw/history.ts
+source_matches:
+  - match: |
+      var selectedHistoryChangedEvent = class {
+        constructor(isUndoStackEmpty = !0, isRedoStackEmpty = !0) {
+          this.isUndoStackEmpty = isUndoStackEmpty,
+            this.isRedoStackEmpty = isRedoStackEmpty;
+        }
+      };
+    bindings:
+      - local: selectedHistoryChangedEvent
+        name: HistoryChangedEvent
+
+  - match: |
+      var selectedHistory = class historyImplementation {
+        ANYTHING;
+        get isUndoStackEmpty() {
+          return this.undoStack.length === 0;
+        }
+        get isRedoStackEmpty() {
+          return this.redoStack.length === 0;
+        }
+        clear() {
+          STMT_LIST;
+        }
+        record(ANYTHING, ANYTHING) {
+          STMT_LIST;
+        }
+        undo(ANYTHING, ANYTHING, ANYTHING) {
+          STMT_LIST;
+        }
+        redo(ANYTHING, ANYTHING, ANYTHING) {
+          STMT_LIST;
+        }
+        ANYTHING;
+        static pop(ANYTHING) {
+          STMT_LIST;
+        }
+        static push(ANYTHING, ANYTHING, ANYTHING) {
+          STMT_LIST;
+        }
+        ANYTHING;
+      };
+    bindings:
+      - local: selectedHistory
+        name: History
+
+  - match: |
+      var selectedHistoryEntry = class historyEntryImplementation {
+        constructor(appStateChange, elementsChange) {
+          this.appStateChange = appStateChange,
+            this.elementsChange = elementsChange;
+        }
+        static create(appStateChange, elementsChange) {
+          return new historyEntryImplementation(
+            appStateChange,
+            elementsChange,
+          );
+        }
+        inverse() {
+          return new historyEntryImplementation(
+            this.appStateChange.inverse(),
+            this.elementsChange.inverse(),
+          );
+        }
+        applyTo(ANYTHING, ANYTHING, ANYTHING) {
+          STMT_LIST;
+        }
+        applyLatestChanges(ANYTHING) {
+          STMT_LIST;
+        }
+        isEmpty() {
+          return (
+            this.appStateChange.isEmpty() && this.elementsChange.isEmpty()
+          );
+        }
+      };
+    bindings:
+      - local: selectedHistoryEntry
+        name: HistoryEntry

@@ -40,6 +40,9 @@ module it bundles. Every other chunk is `inline_in_entry`.
     implementation, Unicode regex builders and caches, and its internal helpers).
   - `main`: `packages/excalidraw/components/Card` (`Card`) and separate
     `packages/excalidraw/components/ColorPicker/{HotkeyLabel,PickerHeading}` modules.
+  - `main`: `packages/excalidraw/history` contains the complete original
+    `History`, `HistoryEntry` and `HistoryChangedEvent` classes, including
+    recording, inverse entries, undo/redo stacks and change notifications.
   - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
     source path and names for element classification, arrow/text bindings,
     frame variants and roundness rules.
@@ -63,7 +66,7 @@ from a test-owned server. The server serves `app/`, Excalidraw's fonts from
 the package (`app/index.html` sets `EXCALIDRAW_ASSET_PATH`), and the swapped
 packages from their Bazel package roots, through an import map it builds from
 `reports/vendor_swaps.json`. The test waits for the harness `load` marker and
-the toolbar, draws a rectangle, and asserts that undo becomes enabled, with no
+the toolbar, draws a rectangle, and exercises undo and redo, with no
 console or page errors, harness-recorded errors, or failed requests. It
 exercises only what startup and drawing load: no lazy locale, font-subsetting
 or file-system chunk. It also imports `textWrapping` through its original source
