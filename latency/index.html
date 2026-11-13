@@ -73,6 +73,7 @@
       const backend = evidence.backend_refresh;
       const data = evidence.latest_refresh;
       const followup = evidence.followup_refresh;
+      const recent = evidence.nov13_selected_followup;
       const fmt = (s) =>
         s == null
           ? "Unobserved"
@@ -258,6 +259,113 @@
                 delivery are outside this clock.<//
               >
             </header>
+            <${Paper} component="section" id="latest-graph" withBorder p="lg">
+              <${Stack} gap="sm">
+                <${Title} order=${2}>Latest selected graph experiments<//>
+                <${Text} size="sm" c="dimmed"
+                  >${`Supplement reviewed ${recent.reviewed_at_utc}; selected physical runs on 13 November UTC. The cohort distributions above retain their original windows and source revisions.`}<//
+                >
+                <${Text}>
+                  <${Anchor} href=${recent.fixture.pr_url}>Merged PR #15966<//
+                  >${" "} overlaps PodTemplate image import with CRDs and
+                  deployment startup, joining the import before tests create
+                  Sandboxes. A focused cold Pod pair reduced stack setup from
+                  140.131s to 125.428s; both runs passed 21 cases. That single
+                  pair does not measure a CI gate saving.
+                <//>
+                ${table(
+                  [
+                    "Selected Pod + MCP Actions + VM graph",
+                    "Control",
+                    "Fixture candidate",
+                  ],
+                  [
+                    ["Bazel elapsed", "492.125s", "519.987s"],
+                    ["JUnit cases passed", "27 / 27", "27 / 27"],
+                    ["Pod stack setup", "152.932s, cold", "149.724s, cold"],
+                    ["MCP Actions setup", "144.363s, cold", "172.264s, cold"],
+                    ["VM baseline", "cold", "warm"],
+                  ],
+                  680,
+                )}
+                <${Text} size="sm">
+                  <${Anchor} href=${recent.graph.control_invocation_url}
+                    >Control<//
+                  >${" "} and${" "}
+                  <${Anchor} href=${recent.graph.candidate_invocation_url}
+                    >candidate<//
+                  >${" "} used the same three labels and passed identical case
+                  sets (21 Pod, 5 MCP Actions, 1 VM). Their actual action inputs
+                  differed only in the intended fixture source. Different
+                  overlapping executor load and the VM cold/warm mismatch
+                  prevent a causal gate or compute-cost comparison. Pod finished
+                  last in both; the selected graph alone exceeded the
+                  four-minute objective. See the${" "}
+                  <${Anchor} href=${recent.graph.note_url}>graph evidence<//
+                  >${" "} and${" "}
+                  <${Anchor} href=${recent.graph.correction_pr_url}
+                    >compute-unit correction<//
+                  >: Pod and MCP Actions requested 4 CU each; VM requested 8 CU.
+                <//>
+                <${Text} size="sm">
+                  Per-suite images in${" "}
+                  <${Anchor} href=${recent.images.pr_url}>#15214<//>${" "} are
+                  open and ready for review with required checks green. The
+                  Codex-only image is 486.1 MB of OCI blobs versus 914.5 MB for
+                  the full image; the Pod variant is 798.9 MB. These are image
+                  inputs, not measured transfer savings. The observed smaller
+                  Pod image imported more slowly under different worker and load
+                  conditions, so its CI benefit remains unmeasured. The manual
+                  real-model suite was build-validated but not run.
+                <//>
+                <${Text} size="sm">
+                  A later warm-fixture Pod partition pair selected the same 27
+                  JUnit cases: 21 Pod cases split 5/9/7, 5 MCP Actions, and 1
+                  VM. The${" "}
+                  <${Anchor} href=${recent.pod_partition.control_invocation_url}
+                    >unsplit control<//
+                  >${" "} took 580.533s in Bazel; the${" "}
+                  <${Anchor}
+                    href=${recent.pod_partition.candidate_invocation_url}
+                    >partitioned candidate<//
+                  >${" "} took 357.487s. Its three Pod group processes finished
+                  in 220.075s, 255.994s, and 256.097s versus 387.428s for the
+                  unsplit Pod process; the VM finished last at about 314s in the
+                  candidate. Both selected graphs still exceeded 240s. Distinct
+                  warm fixtures each cleaned up, but partitioning created two
+                  extra stacks and the largest shared group could hold five
+                  Sandboxes at the node cap. The control had a failed VM
+                  execution followed by a successful new one, with its initiator
+                  unknown; load and run time also differed, and it overlapped
+                  the KVM pilot. Pod actions summed to 48.81 requested CU-min
+                  and 1976.706 observed CPU-seconds in the candidate versus
+                  25.83 CU-min and 1175.310 CPU-seconds in the control;
+                  requested CU-min is a capacity proxy, not billing. The${" "}
+                  <${Anchor} href=${recent.pod_partition.pr_url}
+                    >merged partition trial note<//
+                  >${" "} matches five common source files by CAS, without
+                  comparing full runfiles trees. This selected pair does not
+                  isolate a causal CI-gate improvement or capacity cost.
+                <//>
+                <${Text} size="sm">
+                  A separate same-source, uncached VM placement pilot in${" "}
+                  <${Anchor} href=${recent.vm_pilot.pr_url}>#15996<//>${" "}
+                  passed one ordinary Claude/Codex harness case on each path.
+                  Its KVM test action took 219.986s versus 346.448s on the
+                  managed TCG executor, with both requesting 4 CPU and 7 GiB;
+                  live KVM metrics confirmed that assignment, while managed
+                  actual resources were unobserved. The${" "}
+                  <${Anchor} href=${recent.vm_pilot.invocation_url}
+                    >selected invocation<//
+                  >${" "} took 396.977s overall. The managed fixture was cold,
+                  KVM image cache warmth is unknown, executor isolation and
+                  retention differ, and KVM queue timestamps were inverted. This
+                  selected pair cannot establish a causal improvement in the
+                  last CI gate, normal-load admission, or compute cost. The
+                  merged PR records the trial; required CI was not rerouted.
+                <//>
+              <//>
+            <//>
             <${ReliabilityWork} />
             <section id="backend-current">
               <${Title} order=${2}

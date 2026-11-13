@@ -1537,5 +1537,38 @@
       "pre_test_login_read_timeouts": 2,
       "unit": "Four failed required checks in the selected recovered-head audit; no fresh target exposure denominator."
     }
+  },
+  "nov13_selected_followup": {
+    "reviewed_at_utc": "2026-11-13T01:40:00Z",
+    "scope": "Selected fresh browser repetitions and status only; original mainline 5-12 Nov window, target statistics, and failed-attempt population were not recollected.",
+    "browser": {
+      "source_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+      "diagnostic_pr_url": "https://github.com/agentydragon/ducktape/pull/15913",
+      "note_url": "https://github.com/agentydragon/ducktape/blob/f98fd2a667169e02d0ae39a8fc721b2ad2cadd9d/agentplane/app/debug/2026_11_12_thread_window_projection_gap.md",
+      "followup_pr_url": "https://github.com/agentydragon/ducktape/pull/15959",
+      "invocation_url": "https://app.buildbuddy.io/invocation/17344c27-a61c-429e-8195-3f5613e47c75",
+      "target": "//agentplane/app:test_thread_window_browser",
+      "selected_case": "test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place",
+      "test_flags": [
+        "--noremote_accept_cached",
+        "--runs_per_test=5",
+        "--test_arg=-k",
+        "--test_arg=test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place"
+      ],
+      "selected_case_outcomes": {
+        "fresh_passes": 5,
+        "fresh_failures": 0,
+        "distinct_physical_test_executions": 5
+      },
+      "historical_failure_invocation_url": "https://app.buildbuddy.io/invocation/b48eb4c8-d3bc-54cb-be56-3b66759cc62c",
+      "diagnostic": "Merged bounded failure-only capture of direct-view, Electric, browser cursor and Chromium stream metadata; no user thread content published.",
+      "limits": "No naturally failing event after diagnostics; five selected passes neither refresh the historical tracker failure rate nor establish a runtime repair or root cause."
+    },
+    "fixture_coverage": {
+      "control_cases_passed": 27,
+      "candidate_cases_passed": 27,
+      "source_pr_url": "https://github.com/agentydragon/ducktape/pull/15976",
+      "limits": "Selected graph, one control/candidate pair; no failure-rate inference."
+    }
   }
 }

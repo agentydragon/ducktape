@@ -5,9 +5,9 @@
 report snapshots. The CI reports are:
 
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
-  [source and observation window](latency/manifest.json). Agentplane backend exact-head feedback includes a supplemental failed-attempt audit and dispatched VM/browser reliability work; earlier cohorts and experiments retain their original windows.
+  [source and observation window](latency/manifest.json). Agentplane backend exact-head feedback includes 13 November selected graph, Pod partition, and VM placement experiments, the merged fixture overlap, and the open per-suite image split. Earlier cohorts retain their original windows.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
-  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). A supplemental backend rerun audit tracks dispatched VM/browser repairs and distinguishes landed fixes from measured recurrence. The original mainline windows and rates remain unchanged.
+  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). A supplemental browser sample records five fresh passes without a recurrence or runtime diagnosis. The original mainline windows and rates remain unchanged.
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),
   [source and observation window](visual-reliability/manifest.json).
