@@ -42,6 +42,10 @@ module it bundles. Every other chunk is `inline_in_entry`.
   - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
     source path and names for element classification, arrow/text bindings,
     frame variants and roundness rules.
+  - `editor`: `packages/math/{point,vector,angle,utils}` restores the original
+    package paths and names for point geometry, vector arithmetic, angle
+    conversion, tolerances and rounding. Its emitted modules run under Node
+    without evaluating the browser entry.
 - **Vendor swaps**: whole-chunk `swap` of the default-only `vendor/clsx` and
   `vendor/roughjs` entry chunks, and a `partial_swap` of the shared clsx chunk,
   which rewrites the editor's and `main`'s imports to `"clsx"`. Its symbol key

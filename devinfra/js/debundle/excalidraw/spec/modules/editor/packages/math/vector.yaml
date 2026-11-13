@@ -1,0 +1,65 @@
+# Upstream owner: packages/math/vector.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      function vector(x, y, originX = 0, originY = 0) {
+        return [x - originX, y - originY];
+      }
+    bindings:
+      - vector
+  - match: |
+      function vectorFromPoint(point, origin = [0, 0]) {
+        return vector(
+          point[0] - origin[0],
+          point[1] - origin[1],
+        );
+      }
+    bindings:
+      - vectorFromPoint
+  - match: |
+      function vectorCross(a, b) {
+        return a[0] * b[1] - b[0] * a[1];
+      }
+      function vectorDot(a, b) {
+        return a[0] * b[0] + a[1] * b[1];
+      }
+      function vectorAdd(a, b) {
+        return [a[0] + b[0], a[1] + b[1]];
+      }
+      function vectorSubtract(start, end) {
+        return [start[0] - end[0], start[1] - end[1]];
+      }
+    bindings:
+      - vectorCross
+      - vectorDot
+      - vectorAdd
+      - vectorSubtract
+  - match: |
+      function vectorScale(v, scalar) {
+        return vector(v[0] * scalar, v[1] * scalar);
+      }
+    bindings:
+      - vectorScale
+  - match: |
+      function vectorMagnitudeSq(v) {
+        return v[0] * v[0] + v[1] * v[1];
+      }
+    bindings:
+      - vectorMagnitudeSq
+  - match: |
+      function vectorMagnitude(v) {
+        return Math.sqrt(vectorMagnitudeSq(v));
+      }
+    bindings:
+      - vectorMagnitude
+  - match: |
+      var vectorNormalize = (v) => {
+        let magnitude = vectorMagnitude(v);
+        return magnitude === 0
+          ? vector(0, 0)
+          : vector(
+              v[0] / magnitude,
+              v[1] / magnitude,
+            );
+      };
+    bindings:
+      - vectorNormalize

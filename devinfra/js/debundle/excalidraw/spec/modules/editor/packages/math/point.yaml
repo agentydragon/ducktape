@@ -1,0 +1,102 @@
+# Upstream owner: packages/math/point.ts (Excalidraw v0.18.1)
+source_matches:
+  # The constructor is generic by itself; the adjacent array converter calls
+  # that exact binding, distinguishing it from line/segment pair constructors.
+  - match: |
+      function pointFrom(x, y) {
+        return [x, y];
+      }
+      function pointFromArray(values) {
+        return values.length === 2
+          ? pointFrom(values[0], values[1])
+          : void 0;
+      }
+    bindings:
+      - pointFrom
+      - pointFromArray
+  - match: |
+      function pointFromVector(vector, offset = pointFrom(0, 0)) {
+        return pointFrom(
+          offset[0] + vector[0],
+          offset[1] + vector[1],
+        );
+      }
+    bindings:
+      - pointFromVector
+  - match: |
+      function isPoint(value) {
+        return Array.isArray(value) &&
+          value.length === 2 &&
+          typeof value[0] == "number" &&
+          !isNaN(value[0]) &&
+          typeof value[1] == "number" &&
+          !isNaN(value[1]);
+      }
+    bindings:
+      - isPoint
+  - match: |
+      function pointsEqual(a, b) {
+        let abs = Math.abs;
+        return abs(a[0] - b[0]) < 1e-4 &&
+          abs(a[1] - b[1]) < 1e-4;
+      }
+    bindings:
+      - pointsEqual
+  - match: |
+      function pointRotateRads([x, y], [centerX, centerY], angle) {
+        return pointFrom(
+          (x - centerX) * Math.cos(angle) -
+            (y - centerY) * Math.sin(angle) + centerX,
+          (x - centerX) * Math.sin(angle) +
+            (y - centerY) * Math.cos(angle) + centerY,
+        );
+      }
+    bindings:
+      - pointRotateRads
+  - match: |
+      function pointTranslate(point, vector = [0, 0]) {
+        return pointFrom(
+          point[0] + vector[0],
+          point[1] + vector[1],
+        );
+      }
+    bindings:
+      - pointTranslate
+  - match: |
+      function pointCenter(a, b) {
+        return pointFrom(
+          (a[0] + b[0]) / 2,
+          (a[1] + b[1]) / 2,
+        );
+      }
+    bindings:
+      - pointCenter
+  - match: |
+      function pointDistance(a, b) {
+        return Math.hypot(b[0] - a[0], b[1] - a[1]);
+      }
+    bindings:
+      - pointDistance
+  - match: |
+      function pointDistanceSq(a, b) {
+        let xDiff = b[0] - a[0], yDiff = b[1] - a[1];
+        return xDiff * xDiff + yDiff * yDiff;
+      }
+    bindings:
+      - pointDistanceSq
+  - match: |
+      var pointScaleFromOrigin = (point, center, multiplier) =>
+        pointTranslate(
+          center,
+          vectorScale(vectorFromPoint(point, center), multiplier),
+        );
+    bindings:
+      - pointScaleFromOrigin
+  - match: |
+      var isPointWithinBounds = (p, q, r) =>
+        q[0] <= Math.max(p[0], r[0]) &&
+        q[0] >= Math.min(p[0], r[0]) &&
+        q[1] <= Math.max(p[1], r[1]) &&
+        q[1] >= Math.min(p[1], r[1]);
+    bindings:
+      - isPointWithinBounds
