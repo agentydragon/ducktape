@@ -60,8 +60,8 @@ MCP/OAuth, browser, Pod, VM and Firecracker targets retain their coverage.
 ## Shorter real exhaustion deadline
 
 The budget scenario deliberately waits out the configured reconnect window before
-checking unknown remote effect, no replay, once-only mutation marker, original
-native session and successful next input. The production default is 120 seconds.
+checking unknown remote effect, no replay, once-only mutation marker, native
+session recovery and successful next input. The production default is 120 seconds.
 Only `central_budget` configures 45 seconds; full fixture equality after normalizing
 this one setting prevents an unrelated profile difference. The staging render
 still omits the override. The existing Go default/configuration test passed fresh
@@ -73,7 +73,9 @@ failed the original-session-resume assertion and cleanup reported an unsettled
 exchange. Its initial exhaustion occurred after 5.8 seconds; the following probe
 also exhausted against the old Gateway Pod address, while the retained EndpointSlice
 already listed the new Ready Pod. Pinned grpc-go v1.83.2 has a 30-second minimum
-DNS re-resolution interval in `internal/resolver/dns/dns_resolver.go`. The 45-second
+DNS re-resolution interval in
+[`internal/resolver/dns/dns_resolver.go`](https://github.com/grpc/grpc-go/blob/v1.83.2/internal/resolver/dns/dns_resolver.go#L46-L48).
+The 45-second
 candidate leaves room for that native transport behavior. No assertions, source
 scenario, retry count or overall test timeout were relaxed.
 
@@ -83,6 +85,12 @@ the existing Go test checks its default and configurability. The corrected 45-se
 trial [0d2e6499](https://app.buildbuddy.io/invocation/0d2e6499-e9a9-43ef-9ec2-d16c6ffd5ed8)
 passed the unchanged real budget scenario and both rendering targets. This is an explicit
 coverage tradeoff, not an identical-duration replacement or a flake-rate estimate.
+That run took 197.421 seconds physical execution (71.889 setup, 73.825 case,
+30.716 cleanup), 481.060 CPU seconds, with one uncached attempt and clean warm
+baseline. It exercised the scenario's existing definitive-session-loss branch:
+no automatic probe replay, a fresh replacement session, explicit marker verification
+and successful next input. It did not execute the alternative original-session
+resume branch; the source still requires that branch's assertions when resume occurs.
 
 ## Withdrawn Secret projection spike
 
