@@ -573,6 +573,9 @@ exits 1. The contract is
 `translation_validation.json` keeps exact gate/TV verdicts and category totals,
 with at most twenty deterministic examples per category. Each evidence field
 has `total`, `examples` and `truncated`; use totals for comparisons.
+
+### Residual atomic group report
+
 To inspect the atomic units that remain under the current assignment, including
 an ownership subset, request `debundle run --full-report residual-atomic-groups`.
 The per-chunk `residual_atomic_groups.json` lists every group containing a
@@ -590,6 +593,8 @@ Bazel with `full_reports = ["residual-atomic-groups"]`.
 Entry import and export declaration units may appear in this inventory as
 scaffolding; their presence does not suggest moving them out of the entry.
 
+### Other full reports
+
 `debundle run --full-report export-reentry` writes the original complete
 export-reentry schema as compact `export_reentry.full.json`. The default
 `export_reentry.json` has exact collection and site counts, at most twenty
@@ -597,7 +602,7 @@ deterministic examples per collection, and explicit truncation. The complete
 semantic report and staged payload still drive policy and checks. Full-file
 serialization and explicit flush finish before the summary; failures fail the
 run. Use `--full-report-chunk` to select sinks, independently of graph export.
-Bazel `full_reports = ["export-reentry"]` forwards the same request; both full
+Bazel `full_reports = ["export-reentry"]` forwards the same request; full
 report kinds can be requested together. See the
 [wire contract](wire_format.md#export-reentry-diagnostics).
 
