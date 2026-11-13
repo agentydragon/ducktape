@@ -38,14 +38,22 @@ def runfile(name: str) -> Path:
     return Path(path)
 
 
-def copy_guest_images(inputs: Path) -> None:
+def guest_image_bind_mounts(inputs: Path) -> list[tuple[Path, str]]:
+    mounts = []
     for environment_name, filename in (
         ("KERNEL_RLOCATION", "vmlinuz"),
         ("INITRAMFS_RLOCATION", "initramfs.cpio"),
         ("ROOT_IMAGE_RLOCATION", "root.img"),
         ("RUNNER_IMAGE_RLOCATION", "runner.img"),
     ):
-        shutil.copyfile(runfile(environment_name), inputs / filename)
+        source = runfile(environment_name)
+        if not source.is_file():
+            raise FileNotFoundError(f"guest image runfile is not a file: {source}")
+        # The parent /inputs mount contains these placeholders. Docker can then
+        # overlay each declared image file as its own read-only bind mount.
+        (inputs / filename).touch(exist_ok=True)
+        mounts.append((source, f"/inputs/{filename}"))
+    return mounts
 
 
 def gateway_address(uid: str) -> str:
@@ -274,12 +282,18 @@ def _runtime_guest_script() -> str:
 
 @asynccontextmanager
 async def runtime_guest_container(
-    *, container_name: str, inputs: Path, state: Path, outputs: Path, gateway_address: str
+    *,
+    container_name: str,
+    inputs: Path,
+    guest_image_mounts: list[tuple[Path, str]],
+    state: Path,
+    outputs: Path,
+    gateway_address: str,
 ) -> AsyncIterator[asyncio.Task[int]]:
     state_owner = await asyncio.to_thread(state.stat)
     artifacts = undeclared_outputs_dir()
     image = oci.load_oci_image(launcher_tools.LAYOUT_RLOCATION)
-    docker = await asyncio.create_subprocess_exec(
+    docker_args = [
         "docker",
         "run",
         "--name",
@@ -291,18 +305,25 @@ async def runtime_guest_container(
         f"{state}:/state",
         "--volume",
         f"{outputs}:/outputs",
-        "--env",
-        f"GATEWAY_ADDRESS={gateway_address}",
-        "--env",
-        f"STATE_HOST_UID={state_owner.st_uid}",
-        "--env",
-        f"STATE_HOST_GID={state_owner.st_gid}",
-        "--entrypoint=/bin/sh",
-        image,
-        "-ec",
-        _runtime_guest_script(),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    ]
+    for source, destination in guest_image_mounts:
+        docker_args.extend(["--mount", f"type=bind,source={source},target={destination},readonly"])
+    docker_args.extend(
+        [
+            "--env",
+            f"GATEWAY_ADDRESS={gateway_address}",
+            "--env",
+            f"STATE_HOST_UID={state_owner.st_uid}",
+            "--env",
+            f"STATE_HOST_GID={state_owner.st_gid}",
+            "--entrypoint=/bin/sh",
+            image,
+            "-ec",
+            _runtime_guest_script(),
+        ]
+    )
+    docker = await asyncio.create_subprocess_exec(
+        *docker_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     docker_done = asyncio.create_task(docker.wait())
     cleanup_failure: str | None = None

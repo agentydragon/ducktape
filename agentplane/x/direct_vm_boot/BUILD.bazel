@@ -194,6 +194,7 @@ py_test(
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_supervision_probe",
         "//agentplane/testing:claude_model",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:native_gateway_fixtures",

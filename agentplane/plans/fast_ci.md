@@ -94,6 +94,12 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   Eight shards lower mean selected-target elapsed by 24.9% while using 62.8% more
   measured worker CPU. The branch uses eight as a scheduling candidate; assess
   its mixed workload and busy-window cost before a devel backport.
+  A full-body bytecode A/B/B/A passes all 24 Bridge cases in every arm, with 32
+  NEW shard actions. Mean selected-target elapsed falls 9.840s and TestRunner CPU
+  14.2%, but cache/action states differ and the earlier cold compile required
+  4,202.992 CPU seconds. Keep bytecode collection unchanged until full-workload
+  exposure justifies that cost; preserve the screen in
+  `app/debug/2026_11_13_bridge_bytecode.md`.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -137,15 +143,25 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   PVC, executor operations and App acceptance remain separate.
   A separate manual `test_runtime_session` now drives the packaged Claude CLI
   through two real Shell turns, retaining a workspace nonce, original command IDs,
-  contiguous sourced History and one Runtime boot. Both healthy Runtime targets
-  pass after separating guest boot from authenticated-RPC readiness. The wrong-URI
+  contiguous sourced History and one Runtime boot. Its first turn also shares the
+  VM shell probe for UID, PID1, the Claude service cgroup and systemd denial. The
+  shared probe passes in a fresh direct Session, and the full deployed VM scenario
+  passes with the extracted assertions. Both healthy targets retain separate
+  guest-boot and authenticated-RPC readiness. The wrong-URI
   History control first proves a healthy service through a real mTLS Health.Check,
   then reaches the ordinary History assertion after Runtime rejects the SPIFFE URI.
-  The fixture disables executor resource enforcement and does not establish Codex,
+  The fixture disables executor resource enforcement; the cgroup probe establishes
+  placement only, not an executor budget. The target does not establish Codex,
   controller-issued credentials, KubeVirt, storage or App acceptance. Physical
   attempts, startup failures and the invalid first control are preserved in
   `system_tests/debug/test_architecture_guest_session.md`; this is feasibility,
-  not an end-to-end CI saving or gate promotion.
+  not an end-to-end CI saving or gate promotion. The latest full VM validation
+  preserves a managed action-VM kernel panic and automatic retry in #16222.
+  Read-only image binds replace eager copies in this manual launcher. A/B/B/A
+  passes both unchanged targets in all four arms; candidate action times and CPU
+  are lower, but first-arm input warming confounds transfer/command comparisons.
+  Inputs and deployment coverage are unchanged. Details and limits are in
+  `system_tests/debug/2026_11_13_guest_mounts.md`.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;

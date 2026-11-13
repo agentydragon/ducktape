@@ -28,8 +28,8 @@ from agentplane.system_tests.vm.configuration import RESOURCES
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.x.direct_vm_boot.runtime_guest import (
     authenticated_readiness,
-    copy_guest_images,
     gateway_address,
+    guest_image_bind_mounts,
     runtime_guest_container,
     sandbox_with_runtime_gateway,
     write_guest_inputs,
@@ -60,7 +60,7 @@ async def test_packaged_runtime_uses_authenticated_gateway_transport(
     inputs.mkdir()
     state.mkdir()
     outputs.mkdir()
-    copy_guest_images(inputs)
+    guest_image_mounts = guest_image_bind_mounts(inputs)
 
     # No Session is created, so Runtime never delivers through History ingress in this contract.
     unused_ingress = Endpoint(
@@ -92,7 +92,12 @@ async def test_packaged_runtime_uses_authenticated_gateway_transport(
     readiness: asyncio.Task[session_pb2.EnvironmentRuntimeStatus] | None = None
     readiness_error: Exception | None = None
     async with runtime_guest_container(
-        container_name=container_name, inputs=inputs, state=state, outputs=outputs, gateway_address=hostfwd_address
+        container_name=container_name,
+        inputs=inputs,
+        guest_image_mounts=guest_image_mounts,
+        state=state,
+        outputs=outputs,
+        gateway_address=hostfwd_address,
     ) as docker_done:
         readiness = asyncio.create_task(authenticated_readiness(gateway_service, client_token, api_server, sandbox))
         try:

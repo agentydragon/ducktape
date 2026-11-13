@@ -66,7 +66,35 @@ all required tests remain in place; both new Runtime targets remain manual.
 
 The direct guest now supplies a packaged-harness witness without the cluster
 stack. It has not established a complete-feedback saving, a reliable failure rate,
-or permission to replace those deployed guarantees. The next useful performance
-probe should measure whether copying all four read-only guest artifacts before
-QEMU needlessly forces input transfer: compare direct read-only mounts with the
-same tests, assertions, platform and cache exposure before changing the launcher.
+or permission to replace those deployed guarantees. The read-only mount comparison
+is complete and recorded separately in
+[the mount investigation](2026_11_13_guest_mounts.md): it retains the input closure
+and makes no CAS-transfer saving claim.
+
+## Shared guest supervision assertions
+
+The original deployed VM shell command and cgroup helper now live in
+`vm/guest_supervision_probe.py`, shared with the direct Claude Session. The pinned
+shell literal and cgroup-helper AST are unchanged. The direct first turn prints
+its exact nonce first, then proves UID 107, systemd PID1, the native Claude service
+under `agentplane-workloads.slice`, and denial of an unprivileged systemd restart.
+The second input retains its workspace marker and all original command/History
+assertions. Placement is not executor-budget acceptance.
+
+Fresh native invocation `a90059e6-cddf-459f-9928-fbd2d3c65ed1` passes both direct
+targets and the full deployed VM scenario: three final passing JUnit cases, no
+failures/errors/skips. Four NEW physical TestRunner records include a failed
+managed action-VM kernel execution followed by a passing VM retry, not four
+healthy attempts. The direct Gateway/Session process times are 87.316/153.659s;
+the failed VM process is 155.343s and its passing replacement is 525.032s.
+Selected Bazel elapsed is 722.499s. The Linux 5.15 scheduler panic and kernel-owner
+follow-up are retained in #16222 and
+[`devinfra/buildbuddy/debug/2026_11_02_scheduler_kernel_panic.md`](../../../devinfra/buildbuddy/debug/2026_11_02_scheduler_kernel_panic.md).
+
+Fresh negative `e0221969-ef36-4dc0-bc66-c8a7614445b3` executes the updated first
+Shell command, passes the real mTLS Health.Check preflight and authenticated
+Runtime readiness, then fails the ordinary History turn-completion assertion
+with empty entries after Runtime logs the unexpected History URI. It is one NEW
+expected failing case, no fixture error/skip; relay tasks stop, state ownership
+is restored and the container is removed. This retains the valid negative after
+both the launcher optimization and shared-probe extraction.
