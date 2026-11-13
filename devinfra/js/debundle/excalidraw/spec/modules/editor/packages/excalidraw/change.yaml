@@ -1,0 +1,40 @@
+# Original home: packages/excalidraw/change.ts
+source_matches:
+  - match: |
+      var deltaImplementation = class deltaClass {
+        ANYTHING;
+        static create(ANYTHING, ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; }
+        static calculate(ANYTHING, ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; }
+        static empty() { STMT_LIST; }
+        static isEmpty(ANYTHING) { STMT_LIST; }
+        ANYTHING;
+        static *distinctKeysIterator(ANYTHING, ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; }
+      };
+    bindings:
+      - local: deltaImplementation
+        name: Delta
+  - match: |
+      var appStateChangeImplementation = class appStateChangeClass {
+        ANYTHING;
+        static calculate(ANYTHING, ANYTHING) { STMT_LIST; }
+        static empty() { STMT_LIST; }
+        ANYTHING;
+        static convertToAppStateKey(ANYTHING) { STMT_LIST; }
+        ANYTHING;
+      };
+    bindings:
+      - local: appStateChangeImplementation
+        name: AppStateChange
+  - match: |
+      var elementsChangeImplementation = class elementsChangeClass {
+        ANYTHING;
+        static create(ANYTHING, ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; }
+        ANYTHING;
+        static calculate(ANYTHING, ANYTHING) { STMT_LIST; }
+        static empty() { STMT_LIST; }
+        ANYTHING;
+        static stripIrrelevantProps(ANYTHING) { STMT_LIST; }
+      };
+    bindings:
+      - local: elementsChangeImplementation
+        name: ElementsChange

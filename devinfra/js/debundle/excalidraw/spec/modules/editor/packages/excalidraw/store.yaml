@@ -1,0 +1,66 @@
+# Original home: packages/excalidraw/store.ts
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING, observedAppStateMarker = "__observedAppState", ANYTHING = ANYTHING;
+    bindings:
+      - local: observedAppStateMarker
+        name: hiddenObservedAppStateProp
+  - match: |
+      var ANYTHING = ANYTHING, captureActions = { IMMEDIATELY: "IMMEDIATELY", NEVER: "NEVER", EVENTUALLY: "EVENTUALLY" }, ANYTHING = ANYTHING;
+    bindings:
+      - local: captureActions
+        name: CaptureUpdateAction
+  - match: |
+      var incrementEvent = class {
+        constructor(elementsChange, appStateChange) {
+          this.elementsChange = elementsChange, this.appStateChange = appStateChange;
+        }
+      };
+    bindings:
+      - local: incrementEvent
+        name: StoreIncrementEvent
+  - match: |
+      var storeImplementation = class {
+        ANYTHING;
+        get snapshot() { STMT_LIST; }
+        set snapshot(value) { STMT_LIST; }
+        ANYTHING;
+      };
+    bindings:
+      - local: storeImplementation
+        name: Store
+  - match: |
+      var snapshotImplementation = class snapshotClass {
+        ANYTHING;
+        static empty() { STMT_LIST; }
+        isEmpty() { STMT_LIST; }
+        maybeClone(ANYTHING, ANYTHING) { STMT_LIST; }
+        maybeCreateAppStateSnapshot(ANYTHING) { STMT_LIST; }
+        ANYTHING;
+        createElementsSnapshot(ANYTHING) { STMT_LIST; }
+      };
+    bindings:
+      - local: snapshotImplementation
+        name: Snapshot
+  - match: |
+      var ANYTHING = ANYTHING, observedState = (appState) => {
+        let result = {
+          name: appState.name,
+          editingGroupId: appState.editingGroupId,
+          viewBackgroundColor: appState.viewBackgroundColor,
+          selectedElementIds: appState.selectedElementIds,
+          selectedGroupIds: appState.selectedGroupIds,
+          editingLinearElementId: appState.editingLinearElement?.elementId || null,
+          selectedLinearElementId: appState.selectedLinearElement?.elementId || null,
+          croppingElementId: appState.croppingElementId
+        };
+        return Reflect.defineProperty(result, marker, { value: !0, enumerable: !1 }), result;
+      }, ANYTHING = ANYTHING;
+    bindings:
+      - local: observedState
+        name: getObservedAppState
+  - match: |
+      var ANYTHING = ANYTHING, isObservedState = (appState) => !!Reflect.get(appState, marker), ANYTHING = ANYTHING;
+    bindings:
+      - local: isObservedState
+        name: isObservedAppState

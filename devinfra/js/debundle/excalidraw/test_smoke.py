@@ -307,5 +307,76 @@ async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
         }
 
 
+async def test_store_and_changes(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Store, getObservedAppState } = await import('./editor/packages/excalidraw/store.js');
+                const { AppStateChange, ElementsChange } = await import('./editor/packages/excalidraw/change.js');
+                const { getDefaultAppState } = await import('./editor/packages/excalidraw/appState.js');
+                const before = {...getDefaultAppState(), name: 'before'};
+                const after = {...before, name: 'after'};
+                const observed = getObservedAppState(before);
+                const appChange = AppStateChange.calculate(observed, getObservedAppState(after));
+                const [applied] = appChange.applyTo(before, new Map());
+                const [reversed] = appChange.inverse().applyTo(applied, new Map());
+
+                const store = new Store();
+                const events = [];
+                const detach = store.onStoreIncrementEmitter.on(event => events.push([
+                    event.elementsChange.isEmpty(), event.appStateChange.isEmpty()
+                ]));
+                store.shouldUpdateSnapshot();
+                store.commit(new Map(), before);
+                const originalSnapshot = store.snapshot;
+                store.shouldCaptureIncrement();
+                store.commit(undefined, {...before, width: before.width + 1});
+                const ignoredUnobservedChange = store.snapshot === originalSnapshot;
+                store.shouldCaptureIncrement();
+                store.commit(undefined, after);
+                const capturedName = store.snapshot.appState.name;
+                store.commit(undefined, before);
+                const ignoredUnscheduledChange = store.snapshot.appState.name === capturedName;
+                store.shouldCaptureIncrement();
+                store.commit(undefined, after);
+                detach();
+                store.clear();
+
+                const rectangle = {
+                    id: 'store-rectangle', type: 'rectangle', index: 'a0', x: 0, y: 0,
+                    width: 10, height: 10, angle: 0, isDeleted: false, groupIds: [],
+                    boundElements: null, frameId: null, version: 1, versionNonce: 1,
+                    seed: 1, updated: 1, locked: false, link: null
+                };
+                const moved = {...rectangle, x: 25, version: 2, versionNonce: 2};
+                const previousElements = new Map([[rectangle.id, rectangle]]);
+                const nextElements = new Map([[moved.id, moved]]);
+                const elementChange = ElementsChange.calculate(previousElements, nextElements);
+                const [appliedElements] = elementChange.applyTo(previousElements, nextElements);
+                const [reversedElements] = elementChange.inverse().applyTo(appliedElements, previousElements);
+                return {
+                    appChange: [appChange.isEmpty(), applied.name, reversed.name],
+                    marker: [Object.getOwnPropertyDescriptor(observed, '__observedAppState').enumerable,
+                             JSON.stringify(observed).includes('__observedAppState')],
+                    store: [ignoredUnobservedChange, capturedName, ignoredUnscheduledChange,
+                            events, store.snapshot.isEmpty()],
+                    elements: [elementChange.isEmpty(), appliedElements.get(rectangle.id).x,
+                               reversedElements.get(rectangle.id).x],
+                };
+            }"""
+        )
+        assert result == {
+            "appChange": [False, "after", "before"],
+            "marker": [False, False],
+            "store": [True, "after", True, [[True, False]], True],
+            "elements": [False, 25, 0],
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
