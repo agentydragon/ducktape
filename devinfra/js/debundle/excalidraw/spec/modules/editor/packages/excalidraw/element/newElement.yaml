@@ -84,3 +84,179 @@ source_matches:
     bindings:
       - local: selected
         name: newMagicFrameElement
+  - match: |
+      var selected = (element, metrics) => ({
+        x: element.textAlign === "center" ? metrics.width / 2
+          : element.textAlign === "right" ? metrics.width : 0,
+        y: element.verticalAlign === "middle" ? metrics.height / 2 : 0
+      });
+    bindings:
+      - local: selected
+        name: getTextElementPositionOffsets
+  - match: |
+      var selected = (opts) => ({
+        ..._newElementBase(opts.type, opts),
+        points: opts.points || [],
+        pressures: opts.pressures || [],
+        simulatePressure: opts.simulatePressure,
+        lastCommittedPoint: null
+      });
+    bindings:
+      - local: selected
+        name: newFreeDrawElement
+  - match: |
+      var selected = (opts) => ({
+        ..._newElementBase(opts.type, opts),
+        points: opts.points || [],
+        lastCommittedPoint: null,
+        startBinding: null,
+        endBinding: null,
+        startArrowhead: null,
+        endArrowhead: null
+      });
+    bindings:
+      - local: selected
+        name: newLinearElement
+  - match: |
+      var selected = (opts) => opts.elbowed ? {
+        ..._newElementBase(opts.type, opts),
+        points: opts.points || [],
+        lastCommittedPoint: null,
+        startBinding: null,
+        endBinding: null,
+        startArrowhead: opts.startArrowhead || null,
+        endArrowhead: opts.endArrowhead || null,
+        elbowed: !0,
+        fixedSegments: opts.fixedSegments || [],
+        startIsSpecial: !1,
+        endIsSpecial: !1
+      } : {
+        ..._newElementBase(opts.type, opts),
+        points: opts.points || [],
+        lastCommittedPoint: null,
+        startBinding: null,
+        endBinding: null,
+        startArrowhead: opts.startArrowhead || null,
+        endArrowhead: opts.endArrowhead || null,
+        elbowed: !1
+      };
+    bindings:
+      - local: selected
+        name: newArrowElement
+  - match: |
+      var selected = (opts) => ({
+        ..._newElementBase("image", opts),
+        strokeColor: "transparent",
+        status: opts.status ?? "pending",
+        fileId: opts.fileId ?? null,
+        scale: opts.scale ?? [1, 1],
+        crop: opts.crop ?? null
+      });
+    bindings:
+      - local: selected
+        name: newImageElement
+  - match: |
+      var selected = (value, depth = 0) => {
+        if (value == null || typeof value != "object") return value;
+        let objectType = Object.prototype.toString.call(value);
+        if (objectType === "[object Object]") {
+          STMT_LIST;
+        }
+        if (Array.isArray(value)) {
+          STMT_LIST;
+        }
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: _deepCopyElement
+  - match: |
+      var selected = (element) => _deepCopyElement(element);
+    bindings:
+      - local: selected
+        name: deepCopyElement
+  - match: |
+      var selected = (clonedObj, origId) => {
+        Object.defineProperty(clonedObj, origIdSymbol, {
+          value: origId, writable: !1, enumerable: !1
+        });
+      };
+    bindings:
+      - local: selected
+        name: __test__defineOrigId
+  - match: |
+      var selected = () => EXPR();
+    bindings:
+      - local: selected
+        name: regenerateId
+  - match: |
+      var selected = (editingGroupId, groupIdMap, element, overrides) => {
+        let copy = deepCopyElement(element);
+        return EXPR() && __test__defineOrigId(copy, element.id),
+          copy.id = regenerateId(), copy.boundElements = null,
+          copy.updated = EXPR(), copy.seed = EXPR(),
+          copy.groupIds = EXPR(copy.groupIds, editingGroupId, (groupId) => (
+            groupIdMap.has(groupId) || groupIdMap.set(groupId, regenerateId()),
+            groupIdMap.get(groupId)
+          )), overrides && (copy = Object.assign(copy, overrides)), copy;
+      };
+    bindings:
+      - local: selected
+        name: duplicateElement
+  - match: |
+      var selected = (elements, options) => {
+        let copies = [], originalMap = EXPR(elements), newIds = new Map(),
+          maybeGetNewId = (id) => {
+            if (newIds.has(id)) return newIds.get(id);
+            if (originalMap.has(id)) {
+              let newId = regenerateId();
+              return newIds.set(id, newId), newId;
+            }
+            return null;
+          }, groupIds = new Map();
+        for (let element of elements) {
+          let copy = _deepCopyElement(element);
+          STMT_LIST;
+        }
+        return copies;
+      };
+    bindings:
+      - local: selected
+        name: duplicateElements
+  - match: |
+      var selected = (element, elementsMap, nextText) => {
+        let { width: width, height: height } = EXPR(nextText, EXPR(element), element.lineHeight);
+        element.autoResize || (width = element.width);
+        let { textAlign: textAlign, verticalAlign: verticalAlign } = element, x, y;
+        STMT_LIST;
+        return {
+          width: width,
+          height: height,
+          x: Number.isFinite(x) ? x : element.x,
+          y: Number.isFinite(y) ? y : element.y
+        };
+      };
+    bindings:
+      - local: selected
+        name: getAdjustedDimensions
+  - match: |
+      var selected = (sides, x, y, angle, deltaX1, deltaY1, deltaX2, deltaY2) => {
+        let cos = Math.cos(angle), sin = Math.sin(angle);
+        return sides.e && sides.w ? x += deltaX1 + deltaX2 : EXPR,
+          SEQ_EXPRS, [x, y];
+      };
+    bindings:
+      - local: selected
+        name: adjustXYWithRotation
+  - match: |
+      var selected = (textElement, container, elementsMap, text = textElement.text) => {
+        if (textElement.isDeleted) return;
+        (container || !textElement.autoResize) &&
+          (text = wrapText(text, EXPR(textElement),
+            container ? EXPR(container, textElement) : textElement.width));
+        let dimensions = getAdjustedDimensions(textElement, elementsMap, text);
+        return { text: text, ...dimensions };
+      };
+    bindings:
+      - local: selected
+        name: refreshTextDimensions

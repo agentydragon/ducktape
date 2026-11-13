@@ -688,7 +688,7 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
                 const create = await import('./editor/packages/excalidraw/element/newElement.js');
                 const rectangle = create.newElement({id: 'constructed-rectangle', type: 'rectangle',
                     x: 10, y: 20, width: 30, height: 40, seed: 4, version: 3, versionNonce: 9, locked: true});
-                const ellipse = create._newElementBase('ellipse', {id: 'constructed-ellipse', x: 1, y: 2});
+                const ellipse = create.newElement({type: 'ellipse', id: 'constructed-ellipse', x: 1, y: 2});
                 const embeddable = create.newEmbeddableElement({id: 'constructed-embeddable', x: 3, y: 4});
                 const iframe = create.newIframeElement({id: 'constructed-iframe', x: 5, y: 6});
                 const frame = create.newFrameElement({id: 'constructed-frame', name: 'Frame', x: 7, y: 8});
@@ -724,6 +724,80 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
             "defaults": ["ellipse", 0, 0, [], None, None, 1, 0],
             "text": ["text", "hello        world\n界", "hello        world\n界", 3, 20, 1.2, None, True],
             "metrics": [True, True, True, True],
+        }
+
+
+async def test_element_copying_and_specialized_construction(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const create = await import('./editor/packages/excalidraw/element/newElement.js');
+                const opts = {x: 10, y: 20, width: 40, height: 30};
+                const free = create.newFreeDrawElement({...opts, type: 'freedraw',
+                    points: [[0, 0], [10, 5]], pressures: [0.2, 0.8], simulatePressure: false});
+                const line = create.newLinearElement({...opts, type: 'line'});
+                const arrow = create.newArrowElement({...opts, type: 'arrow', endArrowhead: 'triangle'});
+                const elbow = create.newArrowElement({...opts, type: 'arrow', elbowed: true,
+                    fixedSegments: [{index: 1, start: [0, 0], end: [10, 0]}]});
+                const image = create.newImageElement({...opts, strokeColor: 'red'});
+                const original = create.newElement({...opts, id: 'copy-source', type: 'rectangle', seed: 7,
+                    customData: {values: [1, {nested: true}], shape: {keep: true}}});
+                original.shape = {cache: true};
+                original.canvas = {cache: true};
+                const copied = create.deepCopyElement(original);
+                copied.customData.values[1].nested = false;
+                const single = create.duplicateElement(null, new Map(), original, {x: 100});
+                const frame = create.newFrameElement({...opts, id: 'source-frame'});
+                const box = create.newElement({...opts, type: 'rectangle', id: 'source-box',
+                    groupIds: ['source-group'], frameId: frame.id,
+                    boundElements: [{type: 'text', id: 'source-text'}, {type: 'arrow', id: 'missing'}]});
+                const text = create.newTextElement({...opts, id: 'source-text', text: 'bound',
+                    fontFamily: 3, fontSize: 20, lineHeight: 1.2, containerId: box.id,
+                    groupIds: ['source-group']});
+                const boundArrow = create.newArrowElement({...opts, type: 'arrow', id: 'source-arrow'});
+                boundArrow.startBinding = {elementId: box.id, focus: 0, gap: 1};
+                boundArrow.endBinding = {elementId: 'missing', focus: 0, gap: 1};
+                const originals = [frame, box, text, boundArrow];
+                const clones = create.duplicateElements(originals);
+                const resizedText = create.newTextElement({...opts, text: 'short', fontFamily: 3,
+                    fontSize: 20, lineHeight: 1.2, textAlign: 'center', verticalAlign: 'middle'});
+                const dimensions = create.refreshTextDimensions(resizedText, null, new Map(), 'a longer line');
+                return {
+                    free: [free.type, free.points, free.pressures, free.simulatePressure, free.lastCommittedPoint],
+                    line: [line.type, line.points, line.startBinding, line.endBinding, line.startArrowhead, line.endArrowhead],
+                    arrows: [arrow.elbowed, arrow.endArrowhead, elbow.elbowed, elbow.fixedSegments.length,
+                             elbow.startIsSpecial, elbow.endIsSpecial],
+                    image: [image.type, image.strokeColor, image.status, image.fileId, image.scale, image.crop],
+                    copied: [copied !== original, copied.id === original.id, copied.seed === original.seed,
+                             !('shape' in copied), !('canvas' in copied), copied.customData.shape.keep,
+                             original.customData.values[1].nested],
+                    single: [single.id !== original.id, single.x, single.boundElements, original.x],
+                    clones: [clones.every((element, index) => element.id !== originals[index].id),
+                             clones[1].frameId === clones[0].id, clones[2].containerId === clones[1].id,
+                             clones[1].boundElements.length === 1 && clones[1].boundElements[0].id === clones[2].id,
+                             clones[3].startBinding.elementId === clones[1].id, clones[3].endBinding,
+                             clones[1].groupIds[0] === clones[2].groupIds[0], clones[1].groupIds[0] !== 'source-group'],
+                    text: [dimensions.text, dimensions.width > resizedText.width,
+                           Math.abs(dimensions.x + dimensions.width / 2 - resizedText.x - resizedText.width / 2) < 1e-9,
+                           Math.abs(dimensions.y + dimensions.height / 2 - resizedText.y - resizedText.height / 2) < 1e-9,
+                           create.refreshTextDimensions({...resizedText, isDeleted: true}, null, new Map()) === undefined]
+                };
+            }"""
+        )
+        assert result == {
+            "free": ["freedraw", [[0, 0], [10, 5]], [0.2, 0.8], False, None],
+            "line": ["line", [], None, None, None, None],
+            "arrows": [False, "triangle", True, 1, False, False],
+            "image": ["image", "transparent", "pending", None, [1, 1], None],
+            "copied": [True, True, True, True, True, True, True],
+            "single": [True, 100, None, 10],
+            "clones": [True, True, True, True, True, None, True, True],
+            "text": ["a longer line", True, True, True, True],
         }
 
 
