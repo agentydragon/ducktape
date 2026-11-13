@@ -111,3 +111,36 @@ qualifying the expected failure:
 bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results \
   --test_env=DIRECT_VM_SESSION_WRONG_HISTORY_SERVER_IDENTITY_CONTROL=1
 ```
+
+## Packaged Codex Session and executor
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test_results
+```
+
+The Codex companion uses the same packaged guest and real Dispatcher, Gateway and History
+composition. The pinned Codex CLI handles two inputs against a scripted Responses endpoint. Its
+production VM executor writes a fresh nonce to the workspace, then reads that file on the next
+input. Assertions require the requested command and tool-call identities, completed native command
+frames with exit zero, two completed History turns, contiguous sourced events and the same Runtime
+boot ID.
+
+The first command checks UID 107, systemd as PID 1, denial of a privileged unit restart and membership
+in `agentplane-executors.slice`. It reads its actual leaf cgroup limits: 256 MiB memory and CPU quota
+200000/100000. These are configuration and placement checks; the deployed `test_vm_oom` acceptance
+still owns actual tool-OOM enforcement. The ordinary VM suite remains required.
+
+The state virtiofs daemon runs as 107:107, matching production's unprivileged daemon. Guest-root
+creation of private Codex state must therefore remain accessible to the native harness. The launcher
+keeps guest exits observable throughout both Session contracts and restores host ownership at
+cleanup. Failed contracts retain model-request, History, guest serial and container diagnostics in
+undeclared outputs.
+
+The opt-in executor control removes the executor configuration and its budget while retaining the
+ordinary executor slice and cgroup assertions:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test_results \
+  --runs_per_test=1 --flaky_test_attempts=1 \
+  --test_env=DIRECT_VM_CODEX_BYPASS_EXECUTOR_CONTROL=1
+```
