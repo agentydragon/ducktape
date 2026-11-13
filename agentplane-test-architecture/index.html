@@ -193,6 +193,7 @@
           Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
         const iteration4 = data?.iteration4;
         const iteration5 = data?.iteration5;
+        const iteration8 = data?.iteration8;
         const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
         const iteration5PairRows = (iteration5Cohort?.pairs || []).map(
@@ -847,12 +848,14 @@
             ><${Badge} color="blue"
               >Historical source91f CI:
               ${iteration5?.final_source_ci?.status || "Pending"}<//
-            ><${Badge} color="orange"
-              >Iteration 7 · ${iteration7?.current_status_label || "Loading"}<//
+            ><${Badge} color="teal"
+              >Iteration 8 ·
+              ${iteration8?.main_source?.current_head?.required_ci || "Loading"}
+              required CI<//
             ><//
           >
           <${Text} size="sm"
-            >${iteration7?.finding || data?.iteration6?.finding || iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
+            >${iteration8?.finding || iteration7?.finding || data?.iteration6?.finding || iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -862,7 +865,8 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration7", "Iteration 7 current evidence"],
+              ["iteration8", "Iteration 8 current evidence"],
+              ["iteration7", "Iteration 7 snapshot · 5699"],
               ["iteration6", "Iteration 6 evidence · 663"],
               ["iteration5", "Iteration 5 history"],
               ["iteration4", "Iteration 4 history"],
@@ -880,20 +884,120 @@
             )}
           <//>
           <${Alert} color="orange" title="Current architecture evidence">
-            ${iteration7?.finding || "Loading current source evidence…"}
+            ${iteration8?.finding || iteration7?.finding || "Loading current source evidence…"}
+          <//>
+          <${Section}
+            id="iteration8"
+            title="Iteration 8: current checks, import ownership, and the next measured candidate"
+          >
+            <${Title} order=${3}>Source and required-check state<//>
+            ${p("This supplement records the earlier a16af required-CI milestone, the independent ASGI ownership change, and the newer 8-shard Bridge candidate separately. The 0a9acbf source now passes all three required checks. Existing report windows and rates are retained below; the current devel test-selection policy has not changed.")}
+            <${Rows}
+              headers=${["Evidence", "Observed result", "Boundary"]}
+              rows=${[
+                [
+                  html`<${Anchor} href="required-ci-a16-workflow.json"
+                    >Main architecture head · a16af<//
+                  >`,
+                  "All three required checks passed. Workflow creation to last required result: 356s; 65 fresh TestRunner rows, all completed with status 0 and exit 0.",
+                  "This is the prior validated milestone. The newer 0a9acbf source passed all three required checks; it had eight fresh Bridge actions and cached other test results, so 356s versus 264s is not a matched saving.",
+                ],
+                [
+                  html`<${Anchor} href="asgi-mcp-ownership.json"
+                    >Independent ASGI ownership · PR #16235<//
+                  >`,
+                  "All three required checks passed on head 72d214; 14 focused cases also passed. The PR remains open.",
+                  "Different command, cache and workload from the main PR; workflow clocks are not a matched speed comparison.",
+                ],
+                [
+                  "Current Bridge8 source head",
+                  iteration8
+                    ? html`<${Anchor}
+                          href=${`${repo}/commit/${iteration8.main_source.current_head.commit}`}
+                          >${iteration8.main_source.current_head.commit}<//
+                        >
+                        ${" · required CI "}${iteration8.main_source.current_head.required_ci}`
+                    : "Loading source evidence…",
+                  html`Normal hooks and all three required checks passed.
+                    Workflow 43457244360 took 264s from earliest required
+                    workflow creation to last required result; its test
+                    invocation had eight fresh Bridge actions, 24 passing cases,
+                    and no fresh K3s actions.
+                    <${Anchor} href="required-ci-0a9-workflow.json"
+                      >Full workflow evidence<//
+                    >.`,
+                ],
+                [
+                  "Collection-only import profile",
+                  "Summed import self-time: 15.240s → 12.958s; MCP import records: 119 → 0. Both arms collected the same 24 tests; neither executed a case.",
+                  "One profile; worker and input-cache exposure differ, and profiling perturbs startup. No action-wall or complete-CI saving is attributed.",
+                ],
+                [
+                  html`<${Anchor} href="../latency/bridge-sharding-probe.json"
+                    >Bridge shard-count ABBA · a69<//
+                  >`,
+                  "Four uncached 4/8/8/4 runs passed the same 24 cases. Mean selected-target Bazel elapsed fell 24.90%; physical envelope fell 27.00%; summed action CPU rose 62.82%.",
+                  "Eight shards are enabled on the architecture branch as a scheduling candidate. Estimated concurrent requests double from 12 vCPU/30 GiB to 24 vCPU/60 GiB; this is not observed aggregate usage. No devel backport or whole-CI saving. The later 0a9 workflow had only eight fresh Bridge actions while other test results were cached.",
+                ],
+                [
+                  html`<${Anchor} href="historical-app-cut-selector.json"
+                    >Isolated historical App-cut pair<//
+                  >`,
+                  "Actual CI hashing on PR #15858 selects 119 → 107 affected targets and 50 → 38 runnable tests. Exactly 12 unrelated App tests disappear, both Runtime-owning App suites remain, and no test is added. Eleven overlay paths preserve the seven-path Runtime change and all 47 test-function ASTs including decorators.",
+                  "This is a selector-only comparison of one subfeature: no test bodies or selected builds ran, and it does not qualify a full architecture pair or a timing saving. An initial audit failure before querying is retained. The broader 73-path overlay was rejected for 18–21 pair-dependent conflicts, including authentication changes.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="accepted-run-observer-reconciliation.json"
+                    >BuildBuddy CLI observer-loss patch<//
+                  >`,
+                  "The patch passed 38 upstream tests; the selected pre-patch control failed at the original RST_STREAM assertion as expected. Its static Linux executable builds with upstream release flags and passes version/help smoke; the shallow source reports version unknown.",
+                  html`<${Anchor}
+                      href="accepted-run-observer-reconciliation.patch"
+                      >Archived source patch<//
+                    >
+                    · no live service reset, installation, package pin or
+                    release. See the
+                    <${Anchor} href="accepted-run-observer-binary-build.json"
+                      >binary build evidence<//
+                    >.`,
+                ],
+              ]}
+            />
+            ${p("Continue the architecture work against the same one-branch plan: preserve native owner contracts, focused real deployment acceptance and App/browser/MCP journeys. Keep unknown or sensitive changes broad. Repetitive fault × harness × platform moves remain disabled until qualified. Continue while the best remaining candidate can repay implementation, review and maintenance within about a quarter; stop only when it cannot and the two best probes fail to show worthwhile gain. Count developer waiting separately from total CI wall time.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor} href="required-ci-a16-workflow.json"
+                >a16af required-CI evidence<//
+              >
+              <${Anchor} href="required-ci-0a9-workflow.json"
+                >0a9 required-CI evidence<//
+              >
+              <${Anchor} href="asgi-mcp-ownership.json"
+                >ASGI source/profile/CAS evidence<//
+              >
+              <${Anchor} href="accepted-run-observer-reconciliation.patch"
+                >Archived CLI source patch<//
+              >
+              <${Anchor} href="accepted-run-observer-reconciliation.json"
+                >CLI test and shipping evidence<//
+              >
+              <${Anchor} href="historical-app-cut-selector.json"
+                >Historical App-cut selector evidence<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration7"
-            title="Iteration 7: fixture ownership, reproduced reliability repair and guest transport"
+            title="Iteration 7 snapshot: fixture ownership, reproduced reliability repair and guest transport"
           >
-            <${Title} order=${3}>Current source and required-check state<//>
+            <${Title} order=${3}>Source5699 and required-check snapshot<//>
             ${p(iteration7?.source_summary || "Loading current source and required-check status…")}
             <${Rows}
               headers=${["Evidence", "Observed result", "Boundary"]}
               rows=${[
                 [
                   html`<${Anchor} href="required-ci-5699-workflow.json"
-                    >Current required workflow · source5699<//
+                    >Required workflow · source5699<//
                   >`,
                   "All three required checks passed. Workflow creation to last required result: 318s (5m18s); 54 fresh physical TestRunner records, all completed with exit0 and REAPI status0.",
                   "No fresh K3s action in this workflow. Cached deployment results and one successful workflow do not establish a matched speedup or new deployment exposure.",

@@ -75,6 +75,7 @@
       const data = evidence.latest_refresh;
       const followup = evidence.followup_refresh;
       const recent = evidence.nov13_selected_followup;
+      const architectureFollowup = evidence.architecture_followup;
       const fmt = (s) =>
         s == null
           ? "Unobserved"
@@ -369,6 +370,105 @@
               <//>
             <//>
             <${ReliabilityWork} />
+            <${Paper}
+              component="section"
+              id="architecture-followup"
+              withBorder
+              p="lg"
+            >
+              <${Stack} gap="sm">
+                <${Title} order=${2}
+                  >Bridge critical path and shard-count probe<//
+                >
+                <${Text} size="sm" c="dimmed">
+                  Supplemental selected evidence, observed
+                  ${" "}${architectureFollowup.observed_at_utc}. The backend
+                  cohort windows, source revision and rate denominators above
+                  were not recollected.
+                <//>
+                <${Text}>
+                  In the 13 November source5699 full run, Bridge shard 2/4 was
+                  the critical TestRunner at 109.44s; 98.31% of its duration was
+                  remote process and 0.06% was queue. The invocation-to-
+                  first-TestRunner interval was about 99.3s. The Bazel profile
+                  combines loading, analysis and build, so that interval is
+                  still unclassified. Removing the 27 observed TestRunner
+                  intervals from 12 conditionally removed App labels shortened
+                  the one-run TestRunner envelope by 2.159s; this is interval
+                  arithmetic, not a matched speedup. ${" "}
+                  <${Anchor}
+                    href=${inv(architectureFollowup.required_workflow.invocation)}
+                    >Source5699 full invocation<//
+                  >
+                  ${" · "}
+                  <${Anchor} href="critical-path-5699.json"
+                    >Curated phase evidence<//
+                  >
+                <//>
+                <${Title} order=${3} mt="sm"
+                  >Same 24 Bridge cases at 4/8/8/4 shards<//
+                >
+                ${table(
+                  [
+                    "Run",
+                    "Bazel elapsed",
+                    "Critical path",
+                    "Fresh actions / cases",
+                    "BuildBuddy invocation",
+                  ],
+                  architectureFollowup.bridge_sharding_probe.runs.map(
+                    (run, index) => [
+                      `${index + 1} · ${run.shards} shards`,
+                      `${n(run.bazel_elapsed_seconds)}s`,
+                      `${n(run.critical_path_seconds)}s`,
+                      `${run.fresh_physical_test_runner_actions} NEW · ${run.junit_passed}/24 passed`,
+                      html`<${Anchor} href=${inv(run.buildbuddy_invocation)}
+                        >${run.buildbuddy_invocation.slice(0, 8)}<//
+                      >`,
+                    ],
+                  ),
+                  760,
+                )}
+                <${Text}>
+                  The paired means were
+                  ${architectureFollowup.bridge_sharding_probe.arm_means.shards_4_bazel_elapsed_seconds}s
+                  at four shards and
+                  ${architectureFollowup.bridge_sharding_probe.arm_means.shards_8_bazel_elapsed_seconds}s
+                  at eight shards, 24.90% lower selected-target elapsed at
+                  eight. Mean physical envelope fell from 121.261s to 88.526s
+                  (27.00%), while summed action CPU rose from 590.291s to
+                  961.139s (62.82%). Eight shards used eight concurrent workers
+                  and PostgreSQL starts rather than four. Summed per-action peak
+                  memory was about 9 GiB rather than 4.5 GiB; these sums are not
+                  simultaneous host-memory measurements. All runs used the same
+                  Linux/amd64 Firecracker platform hash and saw about 0.06s
+                  queue. Each worker was estimated to request 3 vCPU, 7.5 GiB
+                  RAM and a 10 GiB disk, so the concurrent request estimate
+                  rises from 12 vCPU/30 GiB to 24 vCPU/60 GiB. Those are request
+                  estimates, not observed aggregate usage; per-action peak
+                  memory was 1.20–1.25 GiB.
+                <//>
+                <${Text} size="sm" c="dimmed">
+                  Eight shards are enabled on the architecture branch as a
+                  scheduling candidate. The 0a9acbf source passed all three
+                  required checks with eight fresh Bridge actions and cached
+                  results for other tests. Its 264s feedback clock is not
+                  comparable as a saving to the earlier a16af 356s workflow,
+                  which had 65 fresh actions and a different last target. No
+                  whole-CI saving is claimed. Both shard settings sped up
+                  between their two runs, so worker and cache variability remain
+                  relevant. ${" "}
+                  <${Anchor} href="bridge-sharding-probe.json"
+                    >Four-run source/CAS record<//
+                  >
+                  ${" · "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/required-ci-0a9-workflow.json"
+                    >0a9 required-CI record<//
+                  >
+                <//>
+              <//>
+            <//>
             <section id="backend-current">
               <${Title} order=${2}
                 >Current backend PRs: scope and distribution<//

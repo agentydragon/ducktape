@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "purpose": "Scratch-only feasibility proof for building the accepted BuildBuddy CLI observer-recovery patch; no production package or pin changed.",
+  "source": {
+    "repository": "https://github.com/buildbuddy-io/buildbuddy",
+    "source_commit": "f3508d33d1fbe0482d05ef9b0f0b9bbd7dac4962",
+    "hosted_mirror_base_commit": "4db6dd74f9a43bab0d0bf3ef7aceb42a05708438",
+    "hosted_mirror_branch": "master",
+    "patch_sha256": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
+    "changed_patch_files": {
+      "cli/remotebazel/BUILD": "d919554b68586e5e08a9a553eee0efaf579978bcc245687323c8b55c4c60c627",
+      "cli/remotebazel/remotebazel.go": "f86536ce6265a12d04544d62079da676756411b859618aed9f24777da2076e4b",
+      "cli/remotebazel/remotebazel_test.go": "09dd1f0894c8ef1a31a083ecebd2c0103de559dfeb9bfd37310fa602bf1f879e"
+    },
+    "source_application": "The hosted runner fetched the exact mirror base commit and applied the local source snapshot diff and reviewed patch cleanly. It is not an upstream release tag build."
+  },
+  "prior_patch_validation": {
+    "target": "//cli/remotebazel:remotebazel_test",
+    "command": "bbr test --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --jobs=4 //cli/remotebazel:remotebazel_test",
+    "inner_invocation_id": "2e989892-aaf2-4f68-af7d-3f8da91d8ffd",
+    "hosted_runner_invocation_id": "26bb0bee-6e6e-4001-959b-9b6427ebff36",
+    "junit": { "cases": 38, "failures": 0, "errors": 0, "skipped": 0 },
+    "prepatch_negative_control": {
+      "inner_invocation_id": "c2260576-57a8-44e3-8b93-0354d4f5d44c",
+      "hosted_runner_invocation_id": "2faa0cc6-e62e-4a90-bab4-24b800be3e3b",
+      "result": "Expected failure at the observer-reset assertion with RST_STREAM INTERNAL_ERROR after restoring the pinned original remotebazel.go."
+    }
+  },
+  "builds": [
+    {
+      "kind": "initial_dynamic_build",
+      "target": "//cli/cmd/bb:bb",
+      "command": "bbr build //cli/cmd/bb --stamp --compilation_mode=opt --strip=always --remote_build_event_upload=all --remote_download_outputs=toplevel",
+      "bbr_invocation_id": "7e5ca78e-8972-483c-a675-8570ecb6a79c",
+      "hosted_runner_invocation_id": "d2c1def8-83b4-432a-ac72-580e37afcc03",
+      "status": "BUILT",
+      "elapsed_seconds": 189.657,
+      "critical_path_seconds": 60.44,
+      "bazel_processes": 3133,
+      "binary": {
+        "path": "buildbuddy/bb-out/bazel-out/k8-opt/bin/cli/cmd/bb/bb_/bb",
+        "sha256": "d77b0ea3e110c992cfec895c3a8f4eba2feefbe83d15df4c3699e52780830f67",
+        "size_bytes": 82439536,
+        "format": "Linux x86-64 ELF, dynamically linked"
+      },
+      "smoke": {
+        "version_cli": "unknown",
+        "help_exit_code": 0,
+        "help_build_exit_code": 0
+      }
+    },
+    {
+      "kind": "release_equivalent_linux_static_build",
+      "target": "//cli/cmd/bb:bb",
+      "command": "bbr build //cli/cmd/bb --stamp --compilation_mode=opt --strip=always --config=static --remote_build_event_upload=all --remote_download_outputs=toplevel",
+      "bbr_invocation_id": "eac1abd1-e5cd-476c-9475-ac63394cd4fa",
+      "hosted_runner_invocation_id": "8d74b936-db4a-4f5a-be94-db23a833af65",
+      "status": "BUILT",
+      "hosted_runner_started_at": "2026-11-13T16:22:30.650Z",
+      "hosted_runner_elapsed_seconds": 233.921,
+      "bazel_target_started_at": "2026-11-13T16:22:42.691Z",
+      "bazel_target_elapsed_seconds": 220.923,
+      "bazel_reported_elapsed_seconds": 232.902,
+      "critical_path_seconds": 55.89,
+      "bazel_processes": 4869,
+      "buildbuddy_cache": {
+        "action_cache_hits": 200,
+        "action_cache_misses": 4470,
+        "cas_cache_hits": 12,
+        "action_cache_uploads": 4470
+      },
+      "bazel": "9.3.1",
+      "go_toolchain_from_binary_build_info": "go1.27.3",
+      "go_build_settings": {
+        "GOOS": "linux",
+        "GOARCH": "amd64",
+        "CGO_ENABLED": "1",
+        "tags": ["static"],
+        "buildmode": "exe"
+      },
+      "binary": {
+        "path": "buildbuddy/bb-out/bazel-out/linux_x86_64_musl-opt/bin/cli/cmd/bb/bb_/bb",
+        "sha256": "af428e8979dfc9f57a942bc351437b576cbd521e223a2068d10182f7091a27d3",
+        "size_bytes": 82524144,
+        "format": "Linux x86-64 ELF, statically linked, stripped",
+        "buildbuddy_artifact": {
+          "target": "//cli/cmd/bb:bb",
+          "output_group": "default",
+          "path": "bazel-out/linux_x86_64_musl-opt/bin/cli/cmd/bb/bb_/bb",
+          "digest": "32bc01cdb91538a34a1063639b9a20f4ce32a009d8894a90b7d02d0fd58d7b36",
+          "digest_function": "BLAKE3",
+          "length_bytes": 82524144
+        }
+      },
+      "smoke": {
+        "binary_command_version_cli": "unknown",
+        "help_exit_code": 0,
+        "help_header": "[bb release unknown] [bazel release 9.3.1]"
+      }
+    }
+  ],
+  "limits": [
+    "The source checkout was shallow; upstream workspace status explicitly warned it could not find the highest version tag. The build is stamped but reports CLI version unknown. Do not present it as a numbered/released CLI.",
+    "The binary received local --version/help smoke only; there was no live BuildBuddy service fault injection or remote-run execution with this binary.",
+    "No binary was installed, published, pinned, or added to Ducktape's artifact pipeline. Existing Ducktape nix/packages/bb.nix copies a prebuilt artifact selected by nix/artifact-pins.json; a local source build is not yet a supported release path."
+  ],
+  "shipping_recommendation": "Lowest-maintenance path is to land the patch upstream, use BuildBuddy's existing release workflow for a tagged versioned CLI artifact, then update Ducktape's existing artifact URL/hash pin. The hosted static source build proves the upstream target is buildable, but creating a locally owned source-build/package pipeline would be a separate maintenance change."
+}

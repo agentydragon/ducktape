@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:49.914251+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "c9ccd435fa2e1f53e97a09e05b18aaa8d71e2609a24f95dc1c8088cbbe259c2e",
-  "evidence_sha256": "0c8f2fda78a96ca6312caa02ceff78b63bbc7406e646eb17729deb38c71772fc",
+  "report_sha256": "eeec4dd1221b19d67c1d6f8a0a599b268bb9fdd0594158726e9f002376610b2e",
+  "evidence_sha256": "5eff92fffa226d7940b73fd3737df022b3ec593495a828fc232cdb4b5c9292af",
   "evidence_schema_version": 3,
   "population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "feedback_clock": "Earliest exact-head PR workflow creation to latest successful completion of all three required gates; workflow creation proxies unavailable push timestamps. Not auto-merge eligibility.",
@@ -38,5 +38,13 @@
     "2026-11-13T03:03:35Z"
   ],
   "backend_population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
-  "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1"
+  "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
+  "architecture_followup_observed_at_utc": "2026-11-13T15:58:33Z",
+  "architecture_followup_source_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+  "architecture_followup_scope": "Selected Bridge 4/8/8/4 ABBA and later required-CI validation. Original backend population window, source revision, denominators and distributions remain unchanged.",
+  "architecture_followup_artifacts_sha256": {
+    "bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
+    "critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
+    "../agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171"
+  }
 }

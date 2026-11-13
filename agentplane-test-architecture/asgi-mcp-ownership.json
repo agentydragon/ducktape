@@ -1,0 +1,238 @@
+{
+  "scope": "Generic ASGI fixture ownership cut; one CPython import-profile comparison and focused behavior validation. No matched full-CI saving.",
+  "source": {
+    "main_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+    "parent_commit": "a69a053dc490f06139393129ff0309e0dbc5d1f9",
+    "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "independent_pr": 16235,
+    "independent_head": "72d21496136f099964660b547cfcdb0b7d33ffcf",
+    "validation_capture": "Dirty tracked patch and new test file auto-synced; remote logs show every file applied cleanly. Downloaded test-source hashes match. Commit hook later removed two trailing blank lines from asgi.py only.",
+    "function_body_and_decorators_unchanged": true,
+    "existing_mcp_case_moved_without_assertion_change": true
+  },
+  "focused_validation": {
+    "invocation": "cc694f7e-fb98-42b5-988a-a194802c3019",
+    "new_unique_physical_actions": 3,
+    "attempts_per_action": 1,
+    "status": "all COMPLETED; link type NEW; status0/exit0",
+    "junit": [
+      {
+        "target": "util_testing__test_asgi",
+        "cases": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "case_names": [
+          "test_the_app_answers_from_the_callers_event_loop",
+          "test_thread_helper_yields_its_ready_origin",
+          "test_exit_runs_the_apps_shutdown_and_stops_listening",
+          "test_a_server_that_fails_to_start_releases_its_socket",
+          "test_server_configuration_failure_releases_the_bound_socket",
+          "test_a_server_that_neither_starts_nor_exits_times_out_and_is_torn_down",
+          "test_cancelling_startup_releases_the_socket",
+          "test_thread_startup_timeout_cancels_the_app_and_joins_its_thread",
+          "test_cancelling_thread_startup_stops_the_app",
+          "test_wildcard_http_bind_requires_a_client_address",
+          "test_two_origins_can_be_used_to_build_mutually_configured_apps",
+          "test_sync_helper_yields_a_ready_origin"
+        ]
+      },
+      {
+        "target": "mcp_infra_testing__test_remote_server",
+        "cases": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "case_names": ["test_fastmcp_helper_yields_the_mcp_path"]
+      },
+      {
+        "target": "mcp_infra_testing__test_wedge_repro",
+        "cases": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "case_names": [
+          "test_follow_up_request_succeeds_after_mid_flight_cancellation"
+        ]
+      }
+    ],
+    "changed_libraries_explicitly_named": [
+      "//util/testing:asgi",
+      "//mcp_infra/testing:remote_server"
+    ]
+  },
+  "profile": {
+    "command": "bbr test --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --test_sharding_strategy=forced=1 --test_env=PYTHONPROFILEIMPORTTIME=1 --test_arg=--collect-only --test_arg=-q //agentplane/app:test_bridge",
+    "profiler": "CPython PYTHONPROFILEIMPORTTIME=1, self times only; cumulative import times overlap and are not summed",
+    "case_bodies_executed": 0,
+    "collected_case_sets_identical": true,
+    "arms": {
+      "control": {
+        "invocation": "33177f7f-88f3-4c54-866b-b54bdfc1a540",
+        "physical_actions": 1,
+        "execution_id": "/uploads/73a96eb6-e587-424d-bd40-83ff56b18e69/blobs/b2ca6b99277d8b778739d6053ffac3adc2750f1f7bb130523a26232ada0225d4/771",
+        "link_type": 1,
+        "stage": "COMPLETED",
+        "status": {},
+        "import_record_count": 2791,
+        "summed_import_self_s": 15.240427,
+        "mcp_import_count": 119,
+        "replication_process": [
+          {
+            "self_us": 11345,
+            "cumulative_us": 2438315,
+            "name": "agentplane.app.testing.replication_process",
+            "depth": 0
+          }
+        ],
+        "collection": ["24 tests collected in 0.56s"],
+        "fastmcp_profile_records": 91,
+        "profile_header_count": 1,
+        "collected_case_names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+        "execution_started_at_utc": "2026-11-13T15:31:28.775190Z",
+        "execution_completed_at_utc": "2026-11-13T15:32:00.401167Z",
+        "input_fetch_file_count": 4913,
+        "input_fetch_bytes": 1459588925,
+        "profile_log_sha256": "071c5d7d8214d5577f468f87938ff0ade91f227239ef17fa93a8651bcfd40bd7"
+      },
+      "candidate": {
+        "invocation": "d0e8746b-e6b8-4439-b81e-05f459484a1b",
+        "physical_actions": 1,
+        "execution_id": "/uploads/062459fa-71d3-4658-9adc-17c63099d846/blobs/d068fed37bc6fb61ec04a23e7edf832bbf3cf4eec364d8c4a2453842e20f1cf4/771",
+        "link_type": 1,
+        "stage": "COMPLETED",
+        "status": {},
+        "import_record_count": 2433,
+        "summed_import_self_s": 12.958018,
+        "mcp_import_count": 0,
+        "replication_process": [
+          {
+            "self_us": 13791,
+            "cumulative_us": 744110,
+            "name": "agentplane.app.testing.replication_process",
+            "depth": 0
+          }
+        ],
+        "collection": ["24 tests collected in 0.22s"],
+        "fastmcp_profile_records": 0,
+        "profile_header_count": 1,
+        "collected_case_names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+        "execution_started_at_utc": "2026-11-13T15:36:09.650715Z",
+        "execution_completed_at_utc": "2026-11-13T15:36:32.614565Z",
+        "input_fetch_file_count": 3,
+        "input_fetch_bytes": 46740,
+        "profile_log_sha256": "331abff444668329c13932e756a22079cc7f3d823338b56b5711e17ee08781c7"
+      }
+    },
+    "limits": [
+      "One comparison, no statistical reliability or latency claim.",
+      "Input-cache/worker conditions differ; do not attribute action wall or total CPU differences to this patch.",
+      "Import profiling perturbs startup; this does not measure ordinary required feedback."
+    ]
+  },
+  "followup": "Observe required CI for the new main and independent devel heads; follow later fresh App test exposures without counting collection-only runs as case executions.",
+  "required_ci": {
+    "scope": "Actual required CI validations of the ASGI ownership cut, not a matched before/after timing comparison.",
+    "arms": {
+      "main": {
+        "head_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+        "ci_synthetic_merge": "006d484ef9dd2e46dc920e097ccdc5a4343cc7c7",
+        "merge_parents": [
+          "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+          "a16af807fac240634e3b738ac0fff833180c1bba"
+        ],
+        "earliest_required_workflow_creation_utc": "2026-11-13T15:39:29Z",
+        "ci_workflow_creation_utc": "2026-11-13T15:39:29Z",
+        "last_required_check_completed_utc": "2026-11-13T15:45:25Z",
+        "required_feedback_seconds": 356.0,
+        "clock_limit": "Earliest required workflow creation proxies unavailable push time. This is gate feedback, not auto-merge eligibility.",
+        "required_checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2026-11-13T15:39:31Z",
+            "completedAt": "2026-11-13T15:45:25Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43454796804/job/131985981742"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2026-11-13T15:39:31Z",
+            "completedAt": "2026-11-13T15:40:58Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43454796799/job/131985981707"
+          },
+          {
+            "name": "Pre-commit checks",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2026-11-13T15:39:31Z",
+            "completedAt": "2026-11-13T15:40:40Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43454796791/job/131985981844"
+          }
+        ],
+        "test_invocation": "1b5e2185-e1be-5a85-9e30-83f667c5c5ca",
+        "test_duration_s": 264.931,
+        "test_command": "//...",
+        "physical_test_rows": 65,
+        "new_physical_actions": 65,
+        "merged_reused_references": 0,
+        "all_rows_unique_within_invocation": true,
+        "all_completed_successfully": true,
+        "fresh_k3s_actions": 0
+      },
+      "backport": {
+        "head_commit": "72d21496136f099964660b547cfcdb0b7d33ffcf",
+        "ci_synthetic_merge": "92707b1e346a5b474d1ed094d41f2230c84ef3ec",
+        "merge_parents": [
+          "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+          "72d21496136f099964660b547cfcdb0b7d33ffcf"
+        ],
+        "earliest_required_workflow_creation_utc": "2026-11-13T15:40:41Z",
+        "ci_workflow_creation_utc": "2026-11-13T15:40:41Z",
+        "last_required_check_completed_utc": "2026-11-13T15:45:05Z",
+        "required_feedback_seconds": 264.0,
+        "clock_limit": "Earliest required workflow creation proxies unavailable push time. This is gate feedback, not auto-merge eligibility.",
+        "required_checks": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2026-11-13T15:40:44Z",
+            "completedAt": "2026-11-13T15:45:05Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43455001464/job/131986685194"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2026-11-13T15:40:44Z",
+            "completedAt": "2026-11-13T15:42:08Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43455001369/job/131986684383"
+          },
+          {
+            "name": "Pre-commit checks",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2026-11-13T15:40:44Z",
+            "completedAt": "2026-11-13T15:41:53Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43455001234/job/131986683570"
+          }
+        ],
+        "test_invocation": "ee2216de-2c70-5e27-b384-3320b69e562b",
+        "test_duration_s": 138.855,
+        "test_command": "//agentplane/app:integration_fixtures and 53 more",
+        "physical_test_rows": 46,
+        "new_physical_actions": 32,
+        "merged_reused_references": 14,
+        "all_rows_unique_within_invocation": true,
+        "all_completed_successfully": true,
+        "fresh_k3s_actions": 0
+      }
+    },
+    "shared_test_execution_ids": 14,
+    "unique_test_execution_ids_union": 97,
+    "merged_reference_definition": "BuildBuddy StoredInvocationLink.Type MERGED=2 means execution reused; these 14 references share physical IDs with the main run and are not 14 extra executions or cached-result-only records."
+  }
+}

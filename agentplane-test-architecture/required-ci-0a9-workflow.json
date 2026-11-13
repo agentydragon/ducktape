@@ -1,0 +1,129 @@
+{
+  "scope": "Required CI at default eight-shard source; validation with cached other targets, not matched feedback saving.",
+  "source_head_commit": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+  "source_devel_commit": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+  "ci_synthetic_merge_commit": "d723d23c7eada30dd8f5853547a5e5f66d9b2eb5",
+  "merge_parents": [
+    "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "0a9acbf620a8aac16fee074812d58c8d63e603e1"
+  ],
+  "workflow_id": 43457244360,
+  "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43457244360",
+  "attempt": 1,
+  "earliest_required_workflow_created_utc": "2026-11-13T15:54:09Z",
+  "last_required_result_utc": "2026-11-13T15:58:33Z",
+  "required_feedback_seconds": 264.0,
+  "clock_limit": "Workflow creation proxies unavailable push time; not auto-merge eligibility.",
+  "required_checks": [
+    {
+      "name": "bazel-ci / Test & Build",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "startedAt": "2026-11-13T15:54:11Z",
+      "completedAt": "2026-11-13T15:58:33Z",
+      "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43457244360/job/131994497088"
+    },
+    {
+      "name": "Build artifacts + imports check",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "startedAt": "2026-11-13T15:54:11Z",
+      "completedAt": "2026-11-13T15:55:42Z",
+      "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43457244426/job/131994497749"
+    },
+    {
+      "name": "Pre-commit checks",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "startedAt": "2026-11-13T15:54:11Z",
+      "completedAt": "2026-11-13T15:55:15Z",
+      "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43457244639/job/131994497998"
+    }
+  ],
+  "test_invocation": "9478886b-9d97-5d14-8270-9ae969e1bb9d",
+  "test_invocation_duration_s": 181.842,
+  "physical_test_actions": 8,
+  "unique_new_completed_actions": 8,
+  "fresh_k3s_actions": 0,
+  "new_test_targets": ["//agentplane/app:test_bridge"],
+  "junit_cases": 24,
+  "junit_failures": 0,
+  "junit_errors": 0,
+  "junit_skipped": 0,
+  "junit": [
+    {
+      "file": "shard-1.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "8c4528b477db3e0a03afbe2c3e44bffcfc9234199f235870c1422844fdf5bad3"
+    },
+    {
+      "file": "shard-2.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "bf67de28c5b3f7aa085f1fa1b264ad2f064dfd5ca5d803b4d8c2410f974d9590"
+    },
+    {
+      "file": "shard-3.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "c5ae282b9cca53b71de68059820ceb2e6307ecf69e9e09be12713b7e344dfab7"
+    },
+    {
+      "file": "shard-4.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "253360bb491f150bea70ed460daacb3825ae2eb0e8a42e7d8bec3d04dad06749"
+    },
+    {
+      "file": "shard-5.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "757d9393db8df81bfd4f75c8d9cbe7d668dd77a7f0265a7fe450d551abf003a7"
+    },
+    {
+      "file": "shard-6.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "034e7b3d5e0dec35f827900ef900e9512c843538b75d6a5aec287e124dd83c97"
+    },
+    {
+      "file": "shard-7.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "67015b1fe87ef5425cc1ffe03c02a67e079cd33e3a8769f4c82b2a3ff47080b0"
+    },
+    {
+      "file": "shard-8.xml",
+      "cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "14d46c0d6ad10f15ba51166ac5003d572e72a60ee6dabbb90a3b538ddd46e479"
+    }
+  ],
+  "sorted_case_names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+  "physical_test_execution_envelope_s": 86.283744,
+  "total_worker_cpu_s": 766.302145,
+  "limits": [
+    "Other test results were cached; eight fresh Bridge actions do not constitute a fresh full-system exposure.",
+    "Previous a16 CI had 65 fresh actions and a different last target. 356s versus264s is not a causal saving.",
+    "Busy-window/four-PR-burst and complete-feedback qualification remain."
+  ],
+  "canonical_classname_case_hash_sha256": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+  "case_set_matches_all_four_abba_runs": true
+}

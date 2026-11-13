@@ -73,6 +73,7 @@
         throw new Error(`Evidence HTTP ${evidenceResponse.status}`);
       const evidence = await evidenceResponse.json();
       const followup = evidence.followup_refresh;
+      const architectureFollowup = evidence.architecture_followup;
 
       const pr = "https://github.com/agentydragon/ducktape/pull/15493";
       const run =
@@ -555,6 +556,94 @@
                 Chromium stream metadata and DOM cursor boundaries together.
                 Lane 9 records the candidate mechanism, its controlled
                 validation and the next natural-exposure measurement.
+              <//>
+            <//>
+          <//>
+          <${Stack}
+            component="section"
+            id="architecture-followup"
+            gap="md"
+            my="xl"
+          >
+            <${Title} order=${2}
+              >Current observer and listener recovery follow-up<//
+            >
+            <${Text} size="sm" c="dimmed">
+              ${`Selected evidence observed ${architectureFollowup.observed_at_utc}. The retained 5–12 November reliability population, source pin, denominators and rates remain unchanged.`}
+            <//>
+            <${Text}>
+              The architecture source 0a9acbf passed all three required checks;
+              eight fresh Bridge actions covered 24 passing cases while other
+              test results were cached. This validates that source workflow; it
+              does not refresh the recurrence population or establish a
+              reliability improvement. See the${" "}
+              <${Anchor}
+                href="../agentplane-test-architecture/required-ci-0a9-workflow.json"
+                >required-CI record<//
+              >.
+            <//>
+            <${Paper} withBorder p="md">
+              <${Stack} gap="sm">
+                <${Text} fw=${600}
+                  >Outer BuildBuddy log observer loss · #13270<//
+                >
+                <${Text}>
+                  A scratch-only CLI patch passed 38 upstream unit tests; one
+                  selected pre-patch control failed at the original RST_STREAM
+                  assertion as expected. After Run accepts work, non-context
+                  observer failure now reconciles that same execution and never
+                  resubmits it; explicit cancellation, remote nonzero exit and
+                  unknown outcomes remain covered. This is separate from inner
+                  Execute/WaitExecution recovery tracked in #16025.
+                <//>
+                <${Text} size="sm" c="dimmed">
+                  The static patched CLI executable builds and passes
+                  version/help smoke, with an unknown release stamp from the
+                  shallow source. No live BuildBuddy reset injection,
+                  installation, Ducktape package pin or release was done. The
+                  existing package consumes an upstream CLI artifact; the
+                  preferred shipping path is an upstream fix and official
+                  release. ${" "}
+                  <${Anchor} href="../agentplane-test-architecture/#iteration8"
+                    >Patch, tests and shipping evidence<//
+                  >
+                <//>
+              <//>
+            <//>
+            <${Paper} withBorder p="md">
+              <${Stack} gap="sm">
+                <${Text} fw=${600}>Runtime listener-port race · #16231<//>
+                <${Text}>
+                  Independent devel PR #16233 is open with all required checks
+                  green. The real-socket regression passes four existing
+                  shared-process cases with the repair; restoring the prior
+                  allocator fails actual Runtime startup. The natural
+                  port-occupying process remains unknown.
+                <//>
+                <${Text} size="sm" c="dimmed">
+                  Begin the seven-day fresh physical-attempt window after merge,
+                  recording only new actions and keeping cached, missing,
+                  cancelled and failed outcomes separate. Tracker: ${" "}
+                  <${Anchor}
+                    href=${architectureFollowup.runtime_listener_race.tracking_issue}
+                    >#16231<//
+                  >
+                  ${" · "}
+                  <${Anchor}
+                    href=${architectureFollowup.case_batch_and_pvc_followup.tracking_issue}
+                    >#16034<//
+                  >
+                <//>
+              <//>
+            <//>
+            <${Paper} withBorder p="md">
+              <${Text} fw=${600}>Case-batch and PVC measurement windows<//>
+              <${Text}>
+                The selected CaseBatch/PVC changes have their own post-merge
+                exposure windows. Use #16034 to record seven full UTC days of
+                fresh physical attempts for each relevant merge; cached passes
+                are not recurrence exposures. This selected update does not
+                refresh the historical failure-rate populations.
               <//>
             <//>
           <//>

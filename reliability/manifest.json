@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "547278a35337415db5fe03a90f5a5983592677ce8973cd54067ca8bb2cc7ef89",
-  "evidence_sha256": "6b4330795e8090c69dab9db9bf9faac30833cd95d3545a82b7d69a68fe95dc8e",
+  "report_sha256": "dd7c56c562b97a4caafbfb46c55b3f8455d1cf20c193fb022e03278950b2273d",
+  "evidence_sha256": "00fe15e09562ca11fd2c25a6ce373dde3c249afda2a2797a951fc803c086e521",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -34,5 +34,13 @@
   "backend_population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "population_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "population_scope": "Retained Nov 5\u201312 reliability population was not recollected. Fresh selected incidents/controls and backend feedback cohort are supplemental, with separate denominators and source pins.",
-  "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1"
+  "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
+  "architecture_followup_observed_at_utc": "2026-11-13T15:58:33Z",
+  "architecture_followup_source_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+  "architecture_followup_scope": "Selected observer-recovery, listener-race and source workflow context. Retained reliability population windows, source pins, denominators and rates remain unchanged; source workflow does not refresh the recurrence population.",
+  "architecture_followup_artifacts_sha256": {
+    "../agentplane-test-architecture/accepted-run-observer-reconciliation.json": "4242d59aa3711a74c9ea7a06b1b12bf225a1ecd10c05090058df74091684b1ab",
+    "../agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
+    "../agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152"
+  }
 }
