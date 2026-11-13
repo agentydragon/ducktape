@@ -92,6 +92,30 @@ func TestShutdownDrainTimeoutIsBoundedAndConfigurable(t *testing.T) {
 	}
 }
 
+func TestProviderLeasesCoverConfiguredPhasesAndDatabaseSlack(t *testing.T) {
+	settings := fixtureSettings()
+	if got, want := settings.ProviderAttemptLease(), 750*time.Second; got != want {
+		t.Fatalf("initial provider attempt lease=%s, want header + idle + three RPC intervals %s", got, want)
+	}
+	if got, want := settings.ProviderProgressLease(), 620*time.Second; got != want {
+		t.Fatalf("provider progress lease=%s, want idle + two RPC intervals %s", got, want)
+	}
+	settings.TurnTimeoutSeconds = 900
+	if got, want := settings.ProviderAttemptLease(), 900*time.Second; got != want {
+		t.Fatalf("initial provider attempt lease=%s, want the larger whole-turn timeout %s", got, want)
+	}
+}
+
+func TestSettingsRejectProviderPhaseLeaseOverflow(t *testing.T) {
+	settings := fixtureSettings()
+	halfMax := int(maxExecutorInitializeTimeoutSeconds / 2)
+	settings.ProviderResponseHeaderTimeoutSeconds = &halfMax
+	settings.ProviderIdleTimeoutSeconds = &halfMax
+	if err := settings.Validate(); err == nil || !strings.Contains(err.Error(), "three RPC journal slack intervals") {
+		t.Fatalf("provider lease overflow validation error=%v", err)
+	}
+}
+
 func TestExecutorInitializeTimeoutDefaultsIndependentlyAndCanBeConfigured(t *testing.T) {
 	settings := fixtureSettings()
 	if got := settings.ExecutorInitializeTimeout(); got != 30*time.Second {

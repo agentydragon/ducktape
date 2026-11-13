@@ -202,7 +202,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	request.Header.Set("x-api-key", credential)
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, protocol.ProviderContextError(ctx, err)
+		return nil, protocol.ProviderTransportError(ctx, err)
 	}
 	defer response.Body.Close()
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
@@ -218,7 +218,10 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, err := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
 		if err != nil {
-			return nil, protocol.ProviderContextError(ctx, err)
+			return nil, protocol.ProviderTransportError(ctx, err)
+		}
+		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
+			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("Anthropic returned HTTP %d", response.StatusCode), RetryAfter: protocol.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
 		}
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{
 			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
@@ -549,9 +552,9 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
-				return nil, protocol.ProviderContextError(ctx, readErr)
+				return nil, protocol.ProviderTransportError(ctx, readErr)
 			}
-			return nil, &protocol.UnknownEffectError{Reason: "Anthropic stream ended before message_stop; sampling outcome unknown"}
+			return nil, &protocol.ProviderTransientError{Cause: errors.New("Anthropic stream ended before message_stop")}
 		}
 	}
 }

@@ -42,8 +42,25 @@ func providerRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 	case protocol.APIStyleResponses:
 		headers = responses.Headers(config.Responses, kind == PendingIntentCompaction)
 	}
-	return IntentRequest{Kind: kind, ProviderRequest: &ProviderRequest{
+	request := IntentRequest{Kind: kind, ProviderRequest: &ProviderRequest{
 		API: config.API, Connection: config.Connection, ProviderModel: config.ProviderModel, Method: http.MethodPost,
 		URL: strings.TrimRight(connection.BaseURL, "/") + path, Headers: headers,
 	}}
+	if kind == PendingIntentCompaction {
+		request.ProjectionKey = providerProjectionKey(config)
+		if config.API == protocol.APIStyleAnthropicMessages && config.AnthropicMessages.Compaction != nil {
+			request.CompactionControl = &CompactionControl{
+				KeepRecentTurns:  config.AnthropicMessages.Compaction.KeepRecentTurns,
+				PerMessageEffort: config.AnthropicMessages.PerMessageEffort,
+			}
+		}
+	}
+	return request
+}
+
+func providerProjectionKey(config samplersettings.ModelConfig) requestProjectionKey {
+	if config.API == protocol.APIStyleResponses {
+		return requestProjectionKey(responsesProjectionVersion + string(config.Responses.Dialect) + "/" + string(config.ExecEncoding))
+	}
+	return anthropicProjectionKey
 }

@@ -132,7 +132,11 @@ func (r *Runtime) launchLocked(sessionID string) {
 		return
 	}
 	if task, exists := r.tasks[sessionID]; exists {
-		task.busy = true
+		// Provider backoff keeps a resident owner but reserves no execution capacity.
+		// Repeated work-scan hints must not crowd out a ready Session.
+		if !task.waitingProvider {
+			task.busy = true
+		}
 		task.signal()
 		return
 	}

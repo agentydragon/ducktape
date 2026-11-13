@@ -2,13 +2,23 @@ package centralsampler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error {
+	session, err := r.store.GetSessionForConversation(ctx, owner)
+	if err != nil {
+		return err
+	}
+	frontier, err := r.providerFrontier(ctx, owner, session)
+	if err != nil {
+		return err
+	}
+	if frontier != nil && frontier.Kind != PendingIntentCompaction {
+		return protocol.ErrPrecondition
+	}
 	state, err := r.store.ExecutionState(ctx, owner)
 	if err != nil {
 		return err
@@ -37,10 +47,6 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if adapter.API() != conversation.API {
 		return protocol.ErrPrecondition
 	}
-	session, err := r.store.GetSessionForConversation(ctx, owner)
-	if err != nil {
-		return err
-	}
 	environment, err := r.store.environmentContext(conversation, session)
 	if err != nil {
 		return err
@@ -55,39 +61,28 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	}
 	original := conversation.Context()
 	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model])
-	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare, runtimeProviderAttemptPolicy(r.settings.TurnTimeoutSeconds))
+	policy := runtimeProviderAttemptPolicy(r.settings)
+	var intentID string
+	var wire []byte
+	if frontier == nil {
+		intentID, wire, err = r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare, policy)
+	} else if frontier.RetrySuppressed == ProviderRetrySuppressionHostLoss {
+		intentID, wire, err = r.store.BeginCompactionAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, original, plan.Prepare, policy)
+	} else {
+		intentID, wire, err = r.store.BeginCompactionRetry(ctx, owner, frontier.IntentID, original, policy)
+	}
+	if err != nil {
+		return &deferredProviderError{cause: err}
+	}
+	result, err := r.sampleProvider(ctx, owner, session, intentID, adapter, &http.Client{}, wire, true)
 	if err != nil {
 		return err
-	}
-	identity, err := executionIdentity(session)
-	if err != nil {
-		return err
-	}
-	client, err := connection.HTTPClient(&http.Client{})
-	if err != nil {
-		return err
-	}
-	client = protocol.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
-	defer client.CloseIdleConnections()
-	providerCtx, providerHooks, stopProviderIdle := protocol.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), nil)
-	defer stopProviderIdle()
-	result, err := adapter.Sample(providerCtx, client, connection, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true, providerHooks)
-	if err != nil {
-		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}
 	replacement, err := plan.Apply(result)
 	if err != nil {
-		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
+		return r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	return r.store.FinishCompaction(ctx, owner, intentID, result.Audit, original, replacement)
-}
-
-func (r *Runtime) rejectKnownCompactionFailure(ctx context.Context, owner Owner, intentID string, err error) error {
-	var known *protocol.KnownFailureError
-	if errors.As(err, &known) {
-		if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {
-			return rejectErr
-		}
-	}
-	return err
+	return r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
+		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement)
+	})
 }

@@ -96,6 +96,39 @@ func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
 	}
 }
 
+func TestProviderRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Retry-After", "7")
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, `{"error":"fixture"}`)
+			}))
+			defer server.Close()
+			_, err := Sample(t.Context(), server.Client(), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, nil, nil, false, protocol.ProviderHooks{})
+			var transient *protocol.ProviderTransientError
+			if !errors.As(err, &transient) || transient.RetryAfter != 7*time.Second {
+				t.Fatalf("HTTP %d error=%v, want transient with Retry-After 7s", status, err)
+			}
+		})
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadRequest) }))
+	defer server.Close()
+	_, err := Sample(t.Context(), server.Client(), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, nil, nil, false, protocol.ProviderHooks{})
+	var known *protocol.KnownFailureError
+	if !errors.As(err, &known) {
+		t.Fatalf("HTTP 400 error=%v, want a permanent provider rejection", err)
+	}
+}
+
+func TestResponsesTruncatedStreamIsProviderTransient(t *testing.T) {
+	response, err := readStream(t.Context(), strings.NewReader("data: {\"type\":\"response.created\"}\n\n"), nil, protocol.ProviderHooks{})
+	var transient *protocol.ProviderTransientError
+	if response != nil || !errors.As(err, &transient) {
+		t.Fatalf("truncated Responses stream=%+v err=%v, want provider-transient failure", response, err)
+	}
+}
+
 func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T) {
 	// Observed through Antigravity behind LiteLLM's Responses API: item.done carries
 	// a reasoning summary, while completed rewrites it and adds an unstreamed message.

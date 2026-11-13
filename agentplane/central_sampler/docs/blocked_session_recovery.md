@@ -1,7 +1,9 @@
 # Recovering a blocked Session
 
-A blocked Session has an unresolved provider or compaction effect, lost JavaScript state, a required
-one-shot setup failure, or another live runtime handle that cannot safely continue. Ordinary
+A blocked Session has unresolved native effects, a required one-shot setup failure, or a live
+runtime handle whose cleanup cannot safely be confirmed. Provider sampling and compaction recover
+through bounded durable attempts; permanent or exhausted provider failure ends the command and
+leaves the Session available for the next input. Ordinary
 executor connection and operation uncertainty is settled at the nested tool boundary and does not
 by itself block the Session. The sampler never automatically replays a possibly accepted external
 operation.
@@ -14,8 +16,9 @@ next owner settles it before its next model step, in one transaction: every unre
 abandoned with `remote_outcome: unknown` and `automatic_replay: false`; live cells and nonterminal
 process handles become `abandoned`, keeping each handle's last cursor and retained output; the
 model tool call of a lost cell gets a failed output naming the nested calls with unknown outcome;
-a pending provider request is abandoned with `output_committed: false` and sampled again (its
-partial stream is not an external effect); the JavaScript epoch advances and a model-visible
+a pending provider request is abandoned with `output_committed: false` and continues within its
+original step and remaining attempt budget using fresh reset context (its partial stream is not
+an external effect); the JavaScript epoch advances and a model-visible
 notice lists what was abandoned. The `CODE_HOST_LOSS` boundary record names the previous and next
 host, the abandoned intents, cells and handles, and whether the Session was unblocked. The turn
 then continues and the model decides what to do. Work scans also select a Session that an earlier
@@ -25,10 +28,9 @@ Reconcile any possibly completed external effect before asking the model to repe
 is the model's only signal that a nested `exec_command` or `apply_patch` may have run.
 
 The rest of this document covers the state that still waits for an operator: a Session blocked on
-the host that still serves it (an uncommitted provider stream or compaction, an interrupt whose
-cleanup could not confirm every handle). It settles the same way once that host is replaced, or an
-operator recovers it earlier with `RecoverSession`, until `SAMPLER_INTENT_LEASES` (DAG section 5)
-replaces such blocks with leased attempts and backoff.
+the host that still serves it after an interrupt whose cleanup could not confirm every handle.
+It settles the same way once that host is replaced, or an operator recovers it earlier with
+`RecoverSession`. The same API also handles retained blocks from earlier sampler images.
 
 The Code Mode host binding is independent of executor reachability. Attaching JavaScript does not
 open an executor stream or prepare the workspace; the sampler acquires execution when a command,

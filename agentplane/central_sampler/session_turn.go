@@ -90,6 +90,19 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
+	if conversation.Stopped && conversation.Pending == nil {
+		return TurnInterrupted, nil
+	}
+	frontier, err := r.providerFrontier(ctx, owner, session)
+	if err != nil {
+		return "", err
+	}
+	if frontier != nil && frontier.Kind == PendingIntentCompaction {
+		if err := r.compact(ctx, owner, session.Model); err != nil {
+			return "", err
+		}
+		return TurnCompact, nil
+	}
 	config, configured := r.settings.Models[session.Model]
 	if !configured || conversation.API != config.API {
 		return "", protocol.ErrPrecondition
@@ -176,27 +189,29 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return TurnCell, nil
 	}
-	// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
-	// queue; this records a step's notify() outputs before its steering input (SPEC.md deviation).
-	drained, err := r.store.DrainNotifications(ctx, owner)
-	if err != nil {
-		return "", err
-	}
-	if drained {
-		return TurnNotification, nil
-	}
-	// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
-	// input waits here for the sampling request to finish, because a cut stream leaves its intent
-	// uncertain and blocks the Session (SPEC.md deviation); cutting needs a way to settle that intent.
-	steered, err := r.store.DrainSteeringInput(ctx, owner, session.ID)
-	if err != nil {
-		return "", err
-	}
-	if steered {
-		return TurnSteer, nil
-	}
-	if conversation.Transcript.TurnComplete() {
-		return TurnDone, nil
+	if frontier == nil {
+		// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
+		// queue; this records a step's notify() outputs before its steering input (SPEC.md deviation).
+		drained, err := r.store.DrainNotifications(ctx, owner)
+		if err != nil {
+			return "", err
+		}
+		if drained {
+			return TurnNotification, nil
+		}
+		// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
+		// input waits for the prepared provider step (including retries) to settle; cutting that
+		// step to prepare a new steering context remains a separate scheduling change.
+		steered, err := r.store.DrainSteeringInput(ctx, owner, session.ID)
+		if err != nil {
+			return "", err
+		}
+		if steered {
+			return TurnSteer, nil
+		}
+		if conversation.Transcript.TurnComplete() {
+			return TurnDone, nil
+		}
 	}
 	adapter, err := adapterFor(config)
 	if err != nil {
@@ -207,15 +222,17 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens)
 
-	if threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
+	if frontier == nil && threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
 		return TurnCompact, nil
 	}
-	conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
-	if err != nil {
-		return "", err
+	if frontier == nil || frontier.RetrySuppressed == ProviderRetrySuppressionHostLoss {
+		conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
+		if err != nil {
+			return "", &deferredProviderError{cause: err}
+		}
 	}
 
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
@@ -226,35 +243,23 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	client, err = connection.HTTPClient(client)
-	if err != nil {
-		return "", err
-	}
-	client = protocol.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
-	if connection.TLS != nil {
-		defer client.CloseIdleConnections()
-	}
 	preparation := adapter.Prepare(session, metadata)
 	request := providerRequestIntent(PendingIntentSampling, connection, config)
-	intentID, wire, err := r.store.Begin(ctx, owner, request, preparation, &ProviderAttemptPolicy{Budget: 3, Lease: time.Duration(r.settings.TurnTimeoutSeconds) * time.Second})
-	if err != nil {
-		return "", err
+	policy := runtimeProviderAttemptPolicy(r.settings)
+	var intentID string
+	var wire []byte
+	if frontier == nil {
+		intentID, wire, err = r.store.Begin(ctx, owner, request, preparation, &policy)
+	} else if frontier.RetrySuppressed == ProviderRetrySuppressionHostLoss {
+		intentID, wire, err = r.store.BeginSamplingAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, preparation, policy)
+	} else {
+		intentID, wire, err = r.store.BeginSamplingRetry(ctx, owner, frontier.IntentID, policy)
 	}
-	evidence := &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}
-	identity, err := executionIdentity(session)
 	if err != nil {
-		return "", err
+		return "", &deferredProviderError{cause: err}
 	}
-	providerCtx, providerHooks, stopProviderIdle := protocol.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), nil)
-	defer stopProviderIdle()
-	response, err := adapter.Sample(providerCtx, client, connection, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false, providerHooks)
+	response, err := r.sampleProvider(ctx, owner, session, intentID, adapter, client, wire, false)
 	if err != nil {
-		var known *protocol.KnownFailureError
-		if errors.As(err, &known) {
-			if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {
-				return "", rejectErr
-			}
-		}
 		return "", err
 	}
 	candidate, err := cloneNativeContext(conversation.Transcript)
@@ -273,12 +278,11 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	if err != nil {
 		failure := &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid native conversation continuation", "response": response.Audit, "error": err.Error()}}
-		if rejectErr := r.store.Reject(ctx, owner, intentID, failure); rejectErr != nil {
-			return "", rejectErr
-		}
-		return "", failure
+		return "", r.providerFailure(ctx, owner, session, intentID, failure)
 	}
-	if err := r.store.Finish(ctx, owner, intentID, response.Audit, response.Records, response.ContextTokens); err != nil {
+	if err := r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
+		return r.store.Finish(writeCtx, owner, intentID, response.Audit, response.Records, response.ContextTokens)
+	}); err != nil {
 		return "", err
 	}
 	return TurnSample, nil

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
@@ -182,6 +183,213 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 		leaseUntil.After(ownerLease) || retryAt.Valid {
 		t.Fatalf("backfilled attempt step=%s number=%d budget=%d command=%v lease=%s owner=%s retry=%v",
 			stepID, number, budget, migratedCommand, leaseUntil, ownerLease, retryAt)
+	}
+}
+
+func TestReadProviderFinishDistinguishesOpenAndCommittedIntent(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "provider-finish-readback"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.ReadProviderFinish(t.Context(), owner, intentID)
+	if err != nil || !state.Open || state.Completed {
+		t.Fatalf("open provider finish readback=%+v err=%v", state, err)
+	}
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	state, err = store.ReadProviderFinish(t.Context(), owner, intentID)
+	if err != nil || state.Open || !state.Completed {
+		t.Fatalf("committed provider finish readback=%+v err=%v", state, err)
+	}
+	for _, status := range []string{"rejected", "failed", "abandoned"} {
+		if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET result=jsonb_build_object('status',$2::text) WHERE id=$1`, intentID, status); err != nil {
+			t.Fatal(err)
+		}
+		state, err = store.ReadProviderFinish(t.Context(), owner, intentID)
+		if err != nil || state.Completed || state.Open || state.ResultStatus != status {
+			t.Fatalf("terminal provider result marker %q readback=%+v err=%v", status, state, err)
+		}
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReadProviderFinish(t.Context(), newOwner, intentID); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("readback accepted a prior owner generation: %v", err)
+	}
+}
+
+func TestProviderFinishDoesNotCommitAfterDurableInterrupt(t *testing.T) {
+	for _, kind := range []PendingIntentKind{PendingIntentSampling, PendingIntentCompaction} {
+		t.Run(string(kind), func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commandID := "provider-interrupt-" + string(kind)
+			admitProviderCommand(t, store, owner, session.ID, commandID, kind == PendingIntentCompaction)
+			request, prepare := providerAttemptTestRequest(kind)
+			var intentID string
+			var original protocol.Context
+			if kind == PendingIntentSampling {
+				intentID, _, err = store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+			} else {
+				conversation, readErr := store.Read(t.Context(), owner)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				original = conversation.Context()
+				intentID, _, err = store.BeginCompaction(t.Context(), owner, request, original, prepare, providerAttemptTestPolicy())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation); err != nil {
+				t.Fatal(err)
+			}
+			if kind == PendingIntentSampling {
+				err = store.Finish(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, nil, nil)
+			} else {
+				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original)
+			}
+			var interrupt InterruptPendingError
+			if !errors.As(err, &interrupt) {
+				t.Fatalf("provider Finish after durable interrupt=%v, want interrupt fence", err)
+			}
+			state, err := store.ReadProviderFinish(t.Context(), owner, intentID)
+			if err != nil || !state.Open || state.Completed {
+				t.Fatalf("interrupted provider intent readback=%+v err=%v", state, err)
+			}
+		})
+	}
+}
+
+func TestCheckRecoveryAllowsOldProviderIntentButBlocksOldNativeIntent(t *testing.T) {
+	store := newTestStore(t)
+	providerSession := openSessionForStore(t, store, "")
+	providerOwner, err := store.Claim(t.Context(), providerSession.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitProviderCommand(t, store, providerOwner, providerSession.ID, "old-provider-command", false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	providerIntent, _, err := store.Begin(t.Context(), providerOwner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, providerSession.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	newProviderOwner, err := store.Claim(t.Context(), providerSession.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CheckRecovery(t.Context(), newProviderOwner); err != nil {
+		t.Fatalf("new owner was blocked by read-only provider intent %s: %v", providerIntent, err)
+	}
+	current, err := store.CurrentProviderAttempt(t.Context(), newProviderOwner, providerSession.ID)
+	if err != nil || current == nil || current.IntentID != providerIntent || current.Generation != providerOwner.Generation {
+		t.Fatalf("old-generation provider intent=%+v err=%v", current, err)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), newProviderOwner, providerIntent, ProviderAttemptFailure{
+		Class: ProviderAttemptTransient, Reason: "previous owner ended before provider completion", RetryAfter: time.Second,
+	}); err != nil {
+		t.Fatalf("current owner could not fence and settle the old provider request: %v", err)
+	}
+	setProviderRetryDueNow(t, store, providerIntent)
+	newIntent, _, err := store.BeginSamplingRetry(t.Context(), newProviderOwner, providerIntent, providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatalf("current owner could not continue the same bounded provider step: %v", err)
+	}
+	next, err := store.CurrentProviderAttempt(t.Context(), newProviderOwner, providerSession.ID)
+	if err != nil || next == nil || next.IntentID != newIntent || next.Number != 2 || next.StepID != providerIntent {
+		t.Fatalf("recovered provider attempt=%+v err=%v", next, err)
+	}
+
+	nativeSession := openSessionForStore(t, store, "")
+	nativeOwner, err := store.Claim(t.Context(), nativeSession.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitProviderCommand(t, store, nativeOwner, nativeSession.ID, "old-native-command", false)
+	nativeIntent, _, err := store.Begin(t.Context(), nativeOwner, IntentRequest{Kind: PendingIntentCell}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, nativeSession.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	newNativeOwner, err := store.Claim(t.Context(), nativeSession.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unknown *protocol.UnknownEffectError
+	if err := store.CheckRecovery(t.Context(), newNativeOwner); !errors.As(err, &unknown) {
+		t.Fatalf("new owner was allowed through old native effect %s: %v", nativeIntent, err)
+	}
+}
+
+func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "provider-permanent-failure"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
+		Class: ProviderAttemptTransient, Reason: "first response was unavailable", RetryAfter: time.Second,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(t.Context(), owner, "unrelated-live-cell", protocol.CellLive); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailProviderCommand(t.Context(), owner, session.ID, commandID, intentID, "provider route changed before retry"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Blocked || got.ActiveCommand != nil || got.ActiveTurn != nil {
+		t.Fatalf("provider failure stranded the Session: %+v", got)
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil || len(state.Cells) != 1 || state.Cells[0].ID != "unrelated-live-cell" {
+		t.Fatalf("unrelated live cell state=%+v err=%v", state, err)
+	}
+	var outcome int32
+	var failureReason sql.NullString
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT outcome,failure_reason FROM sampler_command WHERE session_id=$1 AND id=$2`, session.ID, commandID).
+		Scan(&outcome, &failureReason); err != nil || samplerpb.CommandOutcome(outcome) != samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED ||
+		!failureReason.Valid || failureReason.String != "provider route changed before retry" {
+		t.Fatalf("failed provider command outcome=%s reason=%v err=%v", samplerpb.CommandOutcome(outcome), failureReason, err)
+	}
+	var retryDue bool
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_retry_not_before IS NOT NULL FROM sampler_intent WHERE id=$1`, intentID).Scan(&retryDue); err != nil || retryDue {
+		t.Fatalf("provider retry due remained after command failure: due=%v err=%v", retryDue, err)
 	}
 }
 
@@ -508,5 +716,114 @@ func TestProviderAttemptAbandonedByHostLossKeepsRecoveryFrontier(t *testing.T) {
 	}
 	if resultValue["provider_retry_suppressed"] != string(ProviderRetrySuppressionHostLoss) || resultValue["provider_completion_unknown"] != true || resultValue["output_committed"] != false {
 		t.Fatalf("host-loss result=%v", resultValue)
+	}
+}
+
+func TestProviderHostLossSuccessorsPreserveFiniteLineageAndUseFreshContext(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		kind    PendingIntentKind
+		abandon bool
+	}{
+		{name: "sampling after transient abandonment", kind: PendingIntentSampling, abandon: true},
+		{name: "compaction after unresolved attempt", kind: PendingIntentCompaction},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
+				t.Fatal(err)
+			}
+			commandID := "host-loss-successor-" + string(tc.kind)
+			admitProviderCommand(t, store, owner, session.ID, commandID, tc.kind == PendingIntentCompaction)
+			request, prepare := providerAttemptTestRequest(tc.kind)
+			var initialID string
+			var initialWire []byte
+			var original protocol.Context
+			if tc.kind == PendingIntentSampling {
+				initialID, initialWire, err = store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+			} else {
+				read, readErr := store.Read(t.Context(), owner)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				original = read.Context()
+				initialID, initialWire, err = store.BeginCompaction(t.Context(), owner, request, original, prepare, providerAttemptTestPolicy())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.abandon {
+				if err := store.AbandonProviderAttempt(t.Context(), owner, initialID, ProviderAttemptFailure{
+					Class: ProviderAttemptTransient, Reason: "provider stream stalled", RetryAfter: time.Second,
+				}); err != nil {
+					t.Fatal(err)
+				}
+				setProviderRetryDueNow(t, store, initialID)
+			}
+			changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, "00000000-0000-4000-8000-000000000002", protocol.ExecEncodingFreeform)
+			if err != nil || !changed {
+				t.Fatalf("host loss changed=%v err=%v", changed, err)
+			}
+			current, err := store.Read(t.Context(), owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var successorID string
+			var freshWire []byte
+			if tc.kind == PendingIntentSampling {
+				successorID, freshWire, err = store.BeginSamplingAfterHostLoss(t.Context(), owner, session.ID, initialID, request, prepare, providerAttemptTestPolicy())
+			} else {
+				successorID, freshWire, err = store.BeginCompactionAfterHostLoss(t.Context(), owner, session.ID, initialID, request, current.Context(), prepare, providerAttemptTestPolicy())
+			}
+			if err != nil {
+				t.Fatalf("prepare fresh-context host-loss successor: %v", err)
+			}
+			if successorID == initialID || len(freshWire) == 0 || bytes.Equal(initialWire, freshWire) {
+				t.Fatalf("host-loss successor reused predecessor request: id_reused=%v wire_changed=%v", successorID == initialID, !bytes.Equal(initialWire, freshWire))
+			}
+			attempt, err := store.CurrentProviderAttempt(t.Context(), owner, session.ID)
+			if err != nil || attempt == nil || attempt.IntentID != successorID || attempt.PreviousID != initialID ||
+				attempt.StepID != initialID || attempt.Number != 2 || attempt.Budget != 3 || attempt.CommandID != commandID {
+				t.Fatalf("host-loss successor lineage=%+v err=%v", attempt, err)
+			}
+			if attempt.ProviderRequest == nil || attempt.ProviderRequest.SourceNativeContextID != current.nativeContextID() {
+				t.Fatalf("successor source context id=%+v, current=%s", attempt.ProviderRequest, current.nativeContextID())
+			}
+			control, err := current.contextControl(current.Context())
+			if err != nil || !sameJSONValue(attempt.ProviderRequest.SourceControl, control) {
+				t.Fatalf("successor source control differs from the post-notice context: err=%v", err)
+			}
+		})
+	}
+}
+
+func TestProviderHostLossDoesNotResetExhaustedBudget(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "host-loss-exhausted-budget"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	policy := ProviderAttemptPolicy{Budget: 1, Lease: time.Minute}
+	initialID, _, err := store.Begin(t.Context(), owner, request, prepare, &policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReconcileCodeHostLoss(t.Context(), owner, "00000000-0000-4000-8000-000000000002", protocol.ExecEncodingFreeform); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.BeginSamplingAfterHostLoss(t.Context(), owner, session.ID, initialID, request, prepare, policy); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("host loss reset an exhausted provider budget: %v", err)
 	}
 }

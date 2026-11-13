@@ -30,10 +30,11 @@ type Runtime struct {
 }
 
 type residentSession struct {
-	// owner and busy are guarded by Runtime.mu; wake carries no authoritative work.
-	wake  chan struct{}
-	owner *Owner
-	busy  bool
+	// These fields are guarded by Runtime.mu; wake carries no authoritative work.
+	wake            chan struct{}
+	owner           *Owner
+	busy            bool
+	waitingProvider bool
 }
 
 func (s *residentSession) signal() {

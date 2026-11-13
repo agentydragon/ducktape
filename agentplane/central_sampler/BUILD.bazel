@@ -171,6 +171,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
@@ -272,6 +273,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],
 )
@@ -336,6 +338,7 @@ go_library(
         "provider_attempt.go",
         "provider_dispatch.go",
         "provider_evidence.go",
+        "provider_recovery_runtime.go",
         "provider_request_read.go",
         "request_plan.go",
         "runtime.go",
@@ -356,6 +359,8 @@ go_library(
         "store_intents.go",
         "store_leases.go",
         "store_processes.go",
+        "store_provider_command.go",
+        "store_provider_recovery.go",
         "store_recovery.go",
         "store_sessions.go",
         "tool_invocation.go",
@@ -431,6 +436,10 @@ go_test(
         "native_context_test.go",
         "notification_test.go",
         "provider_attempt_test.go",
+        "provider_compaction_control_test.go",
+        "provider_compaction_recovery_test.go",
+        "provider_finish_runtime_test.go",
+        "provider_recovery_runtime_test.go",
         "request_plan_test.go",
         "request_read_service_test.go",
         "runtime_lifecycle_test.go",
