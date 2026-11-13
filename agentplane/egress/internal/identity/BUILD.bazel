@@ -7,10 +7,10 @@ go_library(
         "identity.go",
         "svid.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/identity",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/identity",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
-        "//agentplane/egress/decision",
+        "//agentplane/egress/internal/decision",
         "//agentplane/identity/auth/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/resolver",

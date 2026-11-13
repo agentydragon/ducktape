@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )

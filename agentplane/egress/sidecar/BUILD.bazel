@@ -14,7 +14,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/sidecar",
     visibility = ["//agentplane/egress:__pkg__"],
     deps = [
-        "//agentplane/egress/identity",
+        "//agentplane/egress/internal/identity",
         "//agentplane/environment_runtime_transport",
         "//agentplane/identity/auth/listener",
         "//agentplane/net/httpconnect",

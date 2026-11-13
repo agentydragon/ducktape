@@ -15,30 +15,30 @@ bbr test //agentplane/egress/...
 
 ## Layout
 
-One Go package per concern:
+The Go implementation is split into public boundary packages and `internal/` runtime packages:
 
 - `cmd`: the `egress-proxy` entry point and its settings.
-- `proxy`: CONNECT tunnels intercepted with a forged leaf, and plain HTTP proxying, on `net/http`.
+- `internal/proxy`: CONNECT tunnels intercepted with a forged leaf, and plain HTTP proxying, on `net/http`.
   Every request passes identity, policy, credential and address checks before anything is dialed.
   One forward listener on port 8888 authenticates workload SVIDs.
-- `identity`: resolves each request's SVID to its live `WorkloadCredential`; its required Identity
+- `internal/identity`: resolves each request's SVID to its live `WorkloadCredential`; its required Identity
   subject is the policy subject.
-- `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
+- `internal/policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
   placeholder directs it to, and substitution. The bindings and their egress rules are a
   `../policy/reader` index. No I/O.
-- `presentation`: one parse per declared target, shared by detection and substitution — where a
+- `internal/presentation`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
 - `resources`: the boundary types of `EgressCredential`, the egress rules of a `PolicySet`, and Secrets
   as read off the API server; the derivation of a credential's placeholder from its name.
-- `upstream`: the admitted host resolved by the proxy, refused when it points anywhere not globally
+- `internal/upstream`: the admitted host resolved by the proxy, refused when it points anywhere not globally
   reachable, and pinned so the dial goes to the address checked.
-- `informer`: list-and-watch of those kinds into each replica's `Index`. `../policy/reader` watches
+- `internal/informer`: list-and-watch of those kinds into each replica's `Index`. `../policy/reader` watches
   the PolicySets and PolicyBindings, keeps the `EgressReady` condition on each binding, and bounds
   watch periods for every kind; this package adds EgressCredentials and Secrets through
   Kubernetes-generated clients and shared informers from `client/`.
-- `rules`: the `EgressRules` gRPC service, which projects the authenticated workload's effective rules.
-- `decision` and `history`: admission records, and their bounded best-effort write to the shared
-  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and
+- `internal/rules`: the `EgressRules` gRPC service, which projects the authenticated workload's effective rules.
+- `internal/decision` and `history`: admission records, and their bounded best-effort write to the shared
+  PostgreSQL history; `internal/admin` serves that history, a change stream, readiness and liveness, and
   those reads again as the gRPC `EgressAdmin` and standard health services.
 - `history_migrations`: the Goose schema of that history (below), embedded in the proxy binary.
 

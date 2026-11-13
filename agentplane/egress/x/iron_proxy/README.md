@@ -4,7 +4,7 @@ Executable comparisons against the current [central proxy](../../README.md).
 [Findings and remaining gaps](findings.md) are the decision document.
 
 ```bash
-bbr test //agentplane/egress/x/iron_proxy/... //agentplane/egress/proxy:proxy_test
+bbr test //agentplane/egress/x/iron_proxy/... //agentplane/egress/internal/proxy:proxy_test
 ```
 
 - `comparison_test` imports the pinned Iron packages and characterizes the original transport.

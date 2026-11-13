@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"

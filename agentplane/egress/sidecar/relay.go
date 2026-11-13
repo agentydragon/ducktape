@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/identity"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
