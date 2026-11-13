@@ -5,12 +5,13 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 )
 
 type liveHost struct {
 	code           *CodeMode
-	executor       *Executor
+	executor       *executor.Executor
 	closeTransport func() error
 	closeOnce      sync.Once
 	closeErr       error

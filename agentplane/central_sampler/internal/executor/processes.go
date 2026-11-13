@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/google/uuid"
@@ -115,7 +116,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	var after *uint64
 	observed := outputbuffer.New(outputbuffer.MaxBytes)
 	for {
-		changed := e.processChanges()
+		changed := e.ProcessChanges()
 		pageCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		result, err := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: 1000, ObservedOutput: observed})
 		cancel()
@@ -166,7 +167,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	}
 	process, err := e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
 	if errors.Is(err, protocol.ErrMissing) {
-		return nil, &toolError{fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
 	}
 	if err != nil {
 		return nil, err
@@ -180,21 +181,21 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	// Revalidate under the lock: the number may have been released and reused meanwhile.
 	process, err = e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
 	if errors.Is(err, protocol.ErrMissing) {
-		return nil, &toolError{fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
 	}
 	if err != nil {
 		return nil, err
 	}
 	if process.Status != protocol.ProcessRunning && process.Status != protocol.ProcessExitedUnread {
 		if process.Status == protocol.ProcessAbandoned {
-			return nil, &toolError{fmt.Sprintf("write_stdin failed: process %d has an unknown remote outcome and its handle is abandoned; no input was sent", plan.sessionID)}
+			return nil, &toolcontract.Rejection{Message: fmt.Sprintf("write_stdin failed: process %d has an unknown remote outcome and its handle is abandoned; no input was sent", plan.sessionID)}
 		}
-		return nil, &toolError{fmt.Sprintf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)}
 	}
 	if plan.chars != "" {
 		if !process.TTY {
 			if plan.chars != interruptInput {
-				return nil, &toolError{"write_stdin failed: " + stdinClosedMessage}
+				return nil, &toolcontract.Rejection{Message: "write_stdin failed: " + stdinClosedMessage}
 			}
 			if process.Status == protocol.ProcessRunning && process.ExitCode == nil {
 				if err := e.dispatchInput(ctx, func() error {
@@ -212,7 +213,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 					return err
 				}
 				if result.Status != "accepted" {
-					return &toolError{"write_stdin failed: " + writeToStdinFailedMessage}
+					return &toolcontract.Rejection{Message: "write_stdin failed: " + writeToStdinFailedMessage}
 				}
 				return nil
 			}); err != nil {
@@ -270,7 +271,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		return &processObservation{output: output, exitCode: exitCode, wallTime: time.Since(start).Seconds()}, nil
 	}
 	for {
-		changed := e.processChanges()
+		changed := e.ProcessChanges()
 		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
 		attemptTimeout := time.Duration(waitMS+eRPCSlackMS) * time.Millisecond
 		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(attemptTimeout))
@@ -383,7 +384,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			var fence *executorIncarnationFenceError
 			if errors.As(rpcErr, &fence) && fence.method == executorMethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)
-				var toolFailure *toolError
+				var toolFailure *toolcontract.Rejection
 				if !errors.As(handled, &toolFailure) {
 					lock.Unlock()
 					return progressed, handled
@@ -395,7 +396,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			var rejected *executorRejectedError
 			if errors.As(rpcErr, &rejected) && rejected.method == executorMethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)
-				var toolFailure *toolError
+				var toolFailure *toolcontract.Rejection
 				if !errors.As(handled, &toolFailure) {
 					lock.Unlock()
 					return progressed, handled
@@ -411,7 +412,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 					transport.afterSequence = row.AfterSequence
 				}
 				handled := e.outcomeToolError(ctx, rpcErr)
-				var toolOutcome *toolOutcomeError
+				var toolOutcome *ToolOutcomeError
 				if !errors.As(handled, &toolOutcome) {
 					lock.Unlock()
 					return progressed, handled
@@ -422,7 +423,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			var failureSource executionFailureSource
 			if errors.As(rpcErr, &failureSource) {
 				handled := e.outcomeToolError(ctx, rpcErr)
-				var toolOutcome *toolOutcomeError
+				var toolOutcome *ToolOutcomeError
 				if !errors.As(handled, &toolOutcome) {
 					lock.Unlock()
 					return progressed, handled
@@ -454,7 +455,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			}
 			handled := e.outcomeToolError(ctx, failure)
 			lock.Unlock()
-			if !errors.As(handled, new(*toolOutcomeError)) {
+			if !errors.As(handled, new(*ToolOutcomeError)) {
 				return progressed, handled
 			}
 			return true, nil
@@ -480,7 +481,8 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 	return progressed, nil
 }
 
-func (e *Executor) stopDispatch() {
+// StopDispatch prevents new process mutations from being dispatched.
+func (e *Executor) StopDispatch() {
 	e.dispatchMu.Lock()
 	e.stopping = true
 	e.dispatchMu.Unlock()
@@ -539,7 +541,8 @@ func (e *Executor) processLock(id string) *sync.Mutex {
 // processChanges broadcasts executor stream changes to foreground readers and the idle driver.
 // The channel is replaced after every change, so a subscriber can take a snapshot before reading
 // and cannot miss a notification that races that read.
-func (e *Executor) processChanges() <-chan struct{} {
+// ProcessChanges returns a coalesced wakeup channel; Store cursors remain authoritative.
+func (e *Executor) ProcessChanges() <-chan struct{} {
 	e.processChangesMu.Lock()
 	defer e.processChangesMu.Unlock()
 	if e.processChanged == nil {

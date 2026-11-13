@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"bytes"
@@ -206,13 +206,13 @@ func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T)
 	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
 	executor.workspacePrepared = false
 	_, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run","expected_incarnation_uid":"stale-incarnation"}`))
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("exec error=%v, want structured stale-incarnation tool rejection", err)
 	}
 	var message map[string]any
-	if err := json.Unmarshal([]byte(outcome.toolError.message), &message); err != nil {
-		t.Fatalf("decode model-facing execution fence facts: %v; message=%q", err, outcome.toolError.message)
+	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
+		t.Fatalf("decode model-facing execution fence facts: %v; message=%q", err, outcome.Error())
 	}
 	if message["current_incarnation_uid"] != "current-incarnation" || message["remote_outcome"] != "not_dispatched" || message["request_outcome"] != "not_dispatched" || message["method"] != "initialize" {
 		t.Fatalf("unexpected stale fence message facts: %+v", message)
@@ -347,13 +347,13 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
 	executor.environment = map[string]string{}
 	_, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo started once","yield_time_ms":250,"expected_incarnation_uid":"original"}`))
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("exec error=%v, want structured process/read fence", err)
 	}
-	toolEvidence, ok := outcome.evidence.(executionFailureEvidence)
+	toolEvidence, ok := outcome.Evidence().(executionFailureEvidence)
 	if !ok {
-		t.Fatalf("process/read fence evidence has type %T, want executionFailureEvidence", outcome.evidence)
+		t.Fatalf("process/read fence evidence has type %T, want executionFailureEvidence", outcome.Evidence())
 	}
 	if toolEvidence.CurrentIncarnationUID != "current-incarnation" || toolEvidence.RemoteOutcome != sessionstore.NestedUnknown ||
 		toolEvidence.RequestOutcome == nil || *toolEvidence.RequestOutcome != sessionstore.NestedNotDispatched ||
@@ -364,8 +364,8 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 		t.Fatalf("process/read fence tool evidence lost typed facts: %+v", toolEvidence)
 	}
 	var message map[string]any
-	if err := json.Unmarshal([]byte(outcome.toolError.message), &message); err != nil {
-		t.Fatalf("decode model-facing process/read facts: %v; message=%q", err, outcome.toolError.message)
+	if err := json.Unmarshal([]byte(outcome.Error()), &message); err != nil {
+		t.Fatalf("decode model-facing process/read facts: %v; message=%q", err, outcome.Error())
 	}
 	if starts != 1 || reads != 2 {
 		t.Fatalf("fenced call started %d processes and made %d reads, want one start and two reads with no replay", starts, reads)
@@ -664,13 +664,13 @@ func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t 
 	executor := newFakeExecutor(t, store, owner, client)
 	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
 	_, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run","expected_incarnation_uid":"candidate"}`))
-	var outcome *toolOutcomeError
-	if !errors.As(err, &outcome) || strings.Contains(outcome.toolError.message, "current_incarnation_uid") || strings.Contains(outcome.toolError.message, "candidate") {
+	var outcome *ToolOutcomeError
+	if !errors.As(err, &outcome) || strings.Contains(outcome.Error(), "current_incarnation_uid") || strings.Contains(outcome.Error(), "candidate") {
 		t.Fatalf("authorization failure leaked or accepted incarnation UID: %v", err)
 	}
-	evidence, ok := outcome.evidence.(executionFailureEvidence)
+	evidence, ok := outcome.Evidence().(executionFailureEvidence)
 	if !ok {
-		t.Fatalf("authorization failure evidence has type %T, want executionFailureEvidence", outcome.evidence)
+		t.Fatalf("authorization failure evidence has type %T, want executionFailureEvidence", outcome.Evidence())
 	}
 	if evidence.CurrentIncarnationUID != "" {
 		t.Fatalf("authorization failure evidence leaked current UID: %+v", evidence)

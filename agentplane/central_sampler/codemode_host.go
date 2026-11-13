@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -26,7 +28,7 @@ func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, 
 	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store: store}
 }
 
-func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner sessionstore.Owner, executor *Executor) (*CodeMode, error) {
+func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner sessionstore.Owner, executor *executor.Executor) (*CodeMode, error) {
 	if executor == nil {
 		return nil, errors.New("code-mode executor is required")
 	}
@@ -99,26 +101,26 @@ func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, requ
 		return empty, empty, err
 	}
 	result, err := r.executor.Invoke(ctx, invocation.ToolName.Name, invocation.Input)
-	var rejected *toolError
+	var rejected *toolcontract.Rejection
 	if errors.As(err, &rejected) {
 		// A known rejection settles the nested intent before rejecting the host promise.
-		var evidence any = map[string]any{"error": rejected.message}
-		var outcome *toolOutcomeError
+		var evidence any = map[string]any{"error": rejected.Message}
+		var outcome *executor.ToolOutcomeError
 		if errors.As(err, &outcome) {
-			evidence = outcome.evidence
+			evidence = outcome.Evidence()
 		}
 		if err := r.store.FinishNested(ctx, r.owner, intent, evidence); err != nil {
 			return empty, empty, err
 		}
-		reply := codemode.DelegateResult{Status: "error", Message: rejected.message}
+		reply := codemode.DelegateResult{Status: "error", Message: rejected.Message}
 		return reply, reply, nil
 	}
 	if err != nil {
 		return empty, empty, err
 	}
 	var evidence map[string]any
-	if viewed, ok := result.(*viewImageResult); ok {
-		evidence = viewed.evidence()
+	if viewed, ok := result.(*executor.ViewImageResult); ok {
+		evidence = viewed.Evidence()
 	} else if evidence, err = protocol.Object(result); err != nil {
 		return empty, empty, err
 	}

@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/google/uuid"
 )
 
@@ -38,14 +39,14 @@ type viewImageInput struct {
 
 // Codex rust-v0.162.1 core/src/tools/handlers/view_image.rs ViewImageOutput::code_mode_result.
 // The image URL holds the file's bytes unchanged; observe prepares images the cell emits.
-type viewImageResult struct {
+type ViewImageResult struct {
 	ImageURL string `json:"image_url"`
 	Detail   string `json:"detail"`
 }
 
-// evidence journals a digest instead of the data URL, which the conversation retains if the
+// Evidence journals a digest instead of the data URL, which the conversation retains if the
 // cell emits it.
-func (r *viewImageResult) evidence() map[string]any {
+func (r *ViewImageResult) Evidence() map[string]any {
 	return map[string]any{"image_url": omittedDataURL(r.ImageURL), "detail": r.Detail}
 }
 
@@ -55,7 +56,7 @@ func omittedDataURL(url string) string {
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/view_image.rs ViewImageHandler::handle_call.
-func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*viewImageResult, error) {
+func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*ViewImageResult, error) {
 	var args viewImageInput
 	if err := decodeFunctionArguments("view_image", arguments, &args); err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*v
 		return nil, missingField("path")
 	}
 	if args.Detail != nil && *args.Detail != "high" && *args.Detail != "original" {
-		return nil, &toolError{fmt.Sprintf(
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf(
 			"view_image.detail only supports `high` or `original`; omit `detail` for default high resized behavior, got `%s`", *args.Detail,
 		)}
 	}
@@ -74,29 +75,29 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*v
 	}
 	metadata, err := executorRPC[executorFSMetadata](ctx, e, executorMethodFSGetMetadata, executorFSGetMetadata{Path: fileURI(path)})
 	if rejected := (*executorRejectedError)(nil); errors.As(err, &rejected) {
-		return nil, &toolError{fmt.Sprintf("unable to locate image at `%s`: %s", path, rejected.message)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to locate image at `%s`: %s", path, rejected.message)}
 	} else if err != nil {
 		return nil, err
 	}
 	if !metadata.IsFile {
-		return nil, &toolError{fmt.Sprintf("image path `%s` is not a file", path)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("image path `%s` is not a file", path)}
 	}
 	if metadata.Size > maxViewImageBytes {
-		return nil, &toolError{fmt.Sprintf("image at `%s` is %d bytes; view_image reads at most %d bytes", path, metadata.Size, maxViewImageBytes)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("image at `%s` is %d bytes; view_image reads at most %d bytes", path, metadata.Size, maxViewImageBytes)}
 	}
 	data, err := e.readFile(ctx, path)
 	if rejected := (*executorRejectedError)(nil); errors.As(err, &rejected) {
-		return nil, &toolError{fmt.Sprintf("unable to read image at `%s`: %s", path, rejected.message)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to read image at `%s`: %s", path, rejected.message)}
 	} else if err != nil {
 		return nil, err
 	}
 	// Reject non-images before their bytes reach the cell; valid bytes pass through unchanged.
 	// internal/promptimage registers upstream's decoder set.
 	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
-		return nil, &toolError{viewImageInvalidMessage}
+		return nil, &toolcontract.Rejection{Message: viewImageInvalidMessage}
 	}
 	// Original detail needs model support the sampler cannot see; upstream then returns high.
-	return &viewImageResult{ImageURL: "data:application/octet-stream;base64," + base64.StdEncoding.EncodeToString(data), Detail: "high"}, nil
+	return &ViewImageResult{ImageURL: "data:application/octet-stream;base64," + base64.StdEncoding.EncodeToString(data), Detail: "high"}, nil
 }
 
 // readFile streams a file through fs/open and fs/readBlock, journaling block digests rather than
@@ -132,7 +133,7 @@ func (e *Executor) readBlocks(ctx context.Context, handle string) ([]byte, error
 		}
 		data = append(data, block.Chunk...)
 		if len(data) > maxViewImageBytes {
-			return nil, &toolError{fmt.Sprintf("image grew past %d bytes while being read", maxViewImageBytes)}
+			return nil, &toolcontract.Rejection{Message: fmt.Sprintf("image grew past %d bytes while being read", maxViewImageBytes)}
 		}
 		if block.EOF {
 			return data, nil

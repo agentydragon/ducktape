@@ -4,6 +4,7 @@ go_library(
     name = "toolcontract",
     srcs = [
         "description.go",
+        "rejection.go",
         "sampler_tools.go",
         "tool_protocol.go",
     ],

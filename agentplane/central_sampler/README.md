@@ -21,6 +21,8 @@ connection to the Runner and does not create the logical Session.
 The shared child process, wire framing, request routing and logical-session lifecycle live in
 `internal/codemode`. The sampler binds each session to its lease-fenced journal and delegated tool
 handler; model tool adaptation, nested executor intents and result evidence remain sampler-owned.
+The concrete Runner adapter, including session handshake/rebind, process and file RPCs, cursor
+reconciliation and execution evidence, lives in `internal/executor`.
 
 The service, sampling loop and persistence are implemented in Go. History export lives in the
 `historyexport` package and reaches sampler state through its durable outbox interface. The
@@ -176,12 +178,15 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 ## Verification
 
 Run `//agentplane/central_sampler:central_sampler_unit_test` for the remaining runtime unit tests
-without starting PostgreSQL. `//agentplane/central_sampler:central_sampler_test` runs the runtime,
-RPC and executor integration cases; `//agentplane/central_sampler/internal/sessionstore:sessionstore_test`
-runs Store, recovery, outbox and migration-adoption cases. Leaf packages have colocated test targets;
-`bbr test //agentplane/central_sampler/...` includes them in the Go and automated acceptance sweep.
-`//agentplane/history_service/internal/ingress:integration_test` additionally checks real sampler
-export and History projection across recovery. The integration targets use real PostgreSQL,
+without starting PostgreSQL. `//agentplane/central_sampler:central_sampler_test` runs runtime and
+provider integration cases. `//agentplane/central_sampler/internal/executor:executor_test` covers
+Runner session/resume, cursor, image and no-replay behavior;
+`//agentplane/central_sampler/internal/sessionstore:sessionstore_test` covers Store, recovery,
+outbox and migration adoption. RPC auth/status and request-streaming tests live in
+`//agentplane/central_sampler/internal/rpc:unit_test` and `:integration_test`.
+Leaf packages have colocated test targets; `bbr test //agentplane/central_sampler/...` includes them
+in the Go and automated acceptance sweep. `//agentplane/history_service/internal/ingress:integration_test`
+additionally checks real sampler export and History projection across recovery. Integration targets use real PostgreSQL,
 pinned upstream host/executor processes, authenticated Gateway/History and scripted provider wire
 fixtures. Scripted acceptance does not establish live provider or subscription compatibility.
 Responses Lite compaction uses Codex's remote-v2 beta protocol. Anthropic uses native server-side

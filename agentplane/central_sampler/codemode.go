@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
@@ -25,7 +26,7 @@ type CodeMode struct {
 	*codemode.Session
 	store    *sessionstore.Store
 	owner    sessionstore.Owner
-	executor *Executor
+	executor *executor.Executor
 }
 
 func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([]protocol.ContentPart, error) {
@@ -33,7 +34,7 @@ func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([
 	if err != nil {
 		// Codex's FunctionCallError::RespondToModel returns input errors to the model;
 		// they do not stop the turn or abandon unrelated live cells and processes.
-		var inputError *toolError
+		var inputError *toolcontract.Rejection
 		if errors.As(err, &inputError) {
 			return []protocol.ContentPart{{Type: "input_text", Text: "Error: " + inputError.Error()}}, nil
 		}
@@ -87,11 +88,11 @@ func (r *CodeMode) prepareCall(ctx context.Context, call protocol.ToolInvocation
 		return r.prepareWait(ctx, call.Input)
 	}
 	if call.Name != "exec" || call.Encoding != protocol.ExecEncodingFreeform {
-		return preparedCall{}, &toolError{fmt.Sprintf("unsupported model tool %q (%s)", call.Name, call.Encoding)}
+		return preparedCall{}, &toolcontract.Rejection{Message: fmt.Sprintf("unsupported model tool %q (%s)", call.Name, call.Encoding)}
 	}
 	source, err := toolcontract.ParseExecSource(call.Input)
 	if err != nil {
-		return preparedCall{}, &toolError{err.Error()}
+		return preparedCall{}, &toolcontract.Rejection{Message: err.Error()}
 	}
 	return r.prepareExecute(call.CallID, source)
 }
@@ -117,7 +118,7 @@ func (r *CodeMode) prepareExecute(callID string, source toolcontract.ExecSource)
 func (r *CodeMode) prepareJSONCall(ctx context.Context, call protocol.ToolInvocation) (preparedCall, error) {
 	parsed, err := toolcontract.ParseJSONExecInput(call.Input)
 	if err != nil {
-		return preparedCall{}, &toolError{err.Error()}
+		return preparedCall{}, &toolcontract.Rejection{Message: err.Error()}
 	}
 	if parsed.Wait != nil {
 		return r.prepareWaitArguments(ctx, *parsed.Wait)
@@ -128,7 +129,7 @@ func (r *CodeMode) prepareJSONCall(ctx context.Context, call protocol.ToolInvoca
 func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall, error) {
 	arguments, err := toolcontract.ParseWaitArguments(input)
 	if err != nil {
-		return preparedCall{}, &toolError{err.Error()}
+		return preparedCall{}, &toolcontract.Rejection{Message: err.Error()}
 	}
 	return r.prepareWaitArguments(ctx, arguments)
 }
@@ -147,11 +148,11 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments toolcontr
 		}
 	}
 	if !known {
-		return preparedCall{}, &toolError{"wait requires a known live cell_id; process session_id is not accepted"}
+		return preparedCall{}, &toolcontract.Rejection{Message: "wait requires a known live cell_id; process session_id is not accepted"}
 	}
 	nativeID, err := r.NativeCell(cellID)
 	if err != nil {
-		return preparedCall{}, &toolError{err.Error()}
+		return preparedCall{}, &toolcontract.Rejection{Message: err.Error()}
 	}
 	session := codemode.SessionOperation{Method: "session/wait", SessionID: r.ID()}
 	if arguments.Terminate {
