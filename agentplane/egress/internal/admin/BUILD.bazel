@@ -8,7 +8,7 @@ go_library(
         "grpc_health.go",
         "windows.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/admin",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/admin",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/api/admin:egress_admin_go_proto",
