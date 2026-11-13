@@ -21,7 +21,7 @@ import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRigh
 
 import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
-import { linkedSyncDescription, Metric, Money, money, periodLabels, time } from "./spend_display";
+import { calendarDate, linkedSyncDescription, Metric, Money, money, periodLabels, time } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay } from "./rule_display";
 import type { AllowancePeriodId, RuleKind, TransactionPeriodId } from "./types";
 
@@ -754,7 +754,7 @@ export function TransactionsPage({
                         }}
                         style={{ cursor: "pointer" }}
                       >
-                        <Table.Td style={{ whiteSpace: "nowrap" }}>{row.transaction.date}</Table.Td>
+                        <Table.Td style={{ whiteSpace: "nowrap" }}>{calendarDate(row.transaction.date)}</Table.Td>
                         <Table.Td>
                           <Group gap="xs" wrap="nowrap">
                             <Box c="dimmed" aria-hidden="true">
@@ -827,7 +827,7 @@ export function TransactionsPage({
                           </Group>
                           <Group gap="xs">
                             <Text size="xs" c="dimmed">
-                              {row.transaction.date} · {row.transaction.account_label}
+                              {calendarDate(row.transaction.date)} · {row.transaction.account_label}
                             </Text>
                             {row.transaction.pending && (
                               <Badge size="xs" variant="light" color="yellow">

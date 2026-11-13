@@ -13,7 +13,7 @@ import {
 } from "chart.js";
 import type { AllowanceView, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
-import { money } from "./spend_display";
+import { calendarDate, money } from "./spend_display";
 import type { EstimatePeriodId } from "./types";
 
 Chart.register(
@@ -96,11 +96,7 @@ export function SpendingHistoryChart({
       amounts.set(row.transaction.date, day);
     }
 
-    const dayLabels = dates.map((date) =>
-      new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(
-        new Date(`${date}T00:00:00Z`)
-      )
-    );
+    const dayLabels = dates.map((date) => calendarDate(date));
     const orderedCategories = [...categories.entries()].sort((left, right) => right[1].total - left[1].total);
     const leashDailyMinorUnits = allowance.daily_reference_minor_units;
     const totalMinorUnits = orderedCategories.reduce((total, [, category]) => total + category.total, 0);

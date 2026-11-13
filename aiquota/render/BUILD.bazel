@@ -10,6 +10,7 @@ py_library(
         "//aiquota:models",
         "//aiquota:pace",
         "//aiquota:peak_windows",
+        "//util:date_presentation_py",
     ],
 )
 
@@ -73,6 +74,7 @@ py_test(
     data = [
         "__snapshots__/test_human.ambr",
         "//aiquota/testing:fixtures",
+        "//util/presentation_vectors:date_policy_vectors.json",
     ],
     uses_syrupy = True,
     deps = [
@@ -81,6 +83,7 @@ py_test(
         ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
+        "//aiquota:peak_windows",
         "//aiquota/testing:quota_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

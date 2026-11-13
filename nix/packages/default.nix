@@ -291,11 +291,13 @@ let
     inherit artifacts lib python314Packages;
     claudeApi = ducktape-claude-api;
     networkMonitor = ducktape-network-monitor;
+    ducktapeUtil = ducktape-util;
   };
 
   plaid-spend-desktop = pkgs.callPackage ./plaid-spend-desktop.nix {
     inherit artifacts lib python314Packages;
     networkMonitor = ducktape-network-monitor;
+    ducktapeUtil = ducktape-util;
   };
 
   mkBinaryArtifact =
