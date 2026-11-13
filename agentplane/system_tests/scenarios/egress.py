@@ -379,8 +379,8 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     refused = await _decision_for(cluster, client, view.target.name, view.target.uid, host)
     assert refused.outcome == Decision.OUTCOME_DENY, f"an unbound sandbox was admitted: {refused!r}"
 
-    # The app's grant route needs an operator login, which this agent-token suite does not hold, so
-    # the binding is written as an operator would with kubectl, owned by the Sandbox.
+    # Exercise a live Kubernetes policy update; app grant authorization has its own
+    # acceptance. The binding is owned by this exact Sandbox incarnation.
     await _kubectl_create_binding(cluster, view, runtime_grant.POLICY_SET)
     # Observe the read-only request, not one replica's acknowledgement of the binding.
     with tracer.start_as_current_span(
@@ -393,6 +393,13 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
                 admitted = await _decision_for(cluster, client, view.target.name, view.target.uid, host, after=after)
                 assert admitted.outcome == Decision.OUTCOME_ALLOW, f"{admitted!r}\n{turn.transcript}"
                 assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
+
+    current = await client.get_environment(view.target)
+    assert current.target.uid == view.target.uid
+    assert current.kubernetes_diagnostics.HasField("pod")
+    assert current.kubernetes_diagnostics.pod.uid == view.kubernetes_diagnostics.pod.uid, (
+        "the live policy grant must take effect without replacing the running Pod"
+    )
 
 
 def _owned_by(*sandboxes: environment_service_pb2.EnvironmentDescriptor) -> list[dict[str, str]]:
