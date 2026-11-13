@@ -59,17 +59,21 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(existing.Configuration, previous); err != nil {
 				return err
 			}
-			incoming := request
+			// Compare the same known-field projection on both sides. Retried requests from
+			// pre-cutover Dispatchers can still carry the now-reserved execution_principal
+			// field as unknown wire data; ignore it for idempotency without rewriting the
+			// retained configuration bytes.
+			incoming := &samplerpb.CreateSessionRequest{}
+			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(wire, incoming); err != nil {
+				return err
+			}
 			if previous.GetExecutionIdentity() == nil && request.GetExecutionIdentity() != nil {
 				return ErrConflict
 			}
 			if previous.GetExecutionIdentity() != nil && request.GetExecutionIdentity() == nil {
 				// Older retrying Dispatchers may omit the additive Identity field. Compare as if it were present,
 				// while leaving the already retained configuration untouched.
-				incoming = proto.Clone(request).(*samplerpb.CreateSessionRequest)
-				if request.GetExecutionIdentity() == nil {
-					incoming.ExecutionIdentity = cloneExecutionIdentity(previous.GetExecutionIdentity())
-				}
+				incoming.ExecutionIdentity = cloneExecutionIdentity(previous.GetExecutionIdentity())
 			}
 			if !proto.Equal(previous, incoming) {
 				return ErrConflict

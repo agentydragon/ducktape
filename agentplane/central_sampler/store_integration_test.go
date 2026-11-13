@@ -25,6 +25,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -2242,6 +2243,60 @@ func TestStoreRequiresIdentityForNewSessionAndDoesNotBackfillRetainedSession(t *
 	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, legacyConfiguration) {
 		t.Fatalf("legacy configuration changed after retry: equal=%t err=%v", bytes.Equal(retained, legacyConfiguration), err)
 	}
+}
+
+func TestStoreRetryIgnoresRetiredExecutionPrincipalWithoutRewritingLegacyConfiguration(t *testing.T) {
+	store := newTestStore(t)
+	target := &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "retired-principal-sandbox", Uid: "retired-principal-sandbox-uid"}
+	request := &samplerpb.CreateSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec: &sessionpb.SessionSpec{
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: target.GetName(), Uid: target.GetUid()},
+			}}},
+			Cwd: "/fixture", Model: "fixture-model",
+		},
+		Executor: &identitypb.SandboxDestination{
+			Owner: &identitypb.ServiceAccount{Namespace: target.GetNamespace(), Name: "executor"}, Target: target,
+		},
+		ExecutionIdentity: fixtureExecutionIdentity(),
+	}
+	opened, err := store.CreateSession(t.Context(), request, "fixture-owner-uid", protocol.APIStyleResponses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	legacyRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	legacyRetry.ExecutionIdentity = nil
+	legacyRetry.ProtoReflect().SetUnknown(retiredExecutionPrincipalWire())
+	legacyConfiguration, err := proto.MarshalOptions{Deterministic: true}.Marshal(legacyRetry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", opened.ID, legacyConfiguration); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.CreateSession(t.Context(), legacyRetry, "fixture-owner-uid", protocol.APIStyleResponses, nil); err != nil {
+		t.Fatalf("retired ServiceAccount principal prevented an idempotent old retry: %v", err)
+	}
+	var retained []byte
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT configuration FROM sampler_session WHERE id=$1", opened.ID).Scan(&retained); err != nil || !bytes.Equal(retained, legacyConfiguration) {
+		t.Fatalf("retry rewrote retained legacy configuration: equal=%t err=%v", bytes.Equal(retained, legacyConfiguration), err)
+	}
+}
+
+func retiredExecutionPrincipalWire() []byte {
+	account := protowire.AppendTag(nil, 1, protowire.BytesType)
+	account = protowire.AppendString(account, "legacy-namespace")
+	account = protowire.AppendTag(account, 2, protowire.BytesType)
+	account = protowire.AppendString(account, "legacy-executor")
+	principal := protowire.AppendTag(nil, 1, protowire.BytesType)
+	principal = protowire.AppendBytes(principal, account)
+	principal = protowire.AppendTag(principal, 2, protowire.BytesType)
+	principal = protowire.AppendString(principal, "legacy-service-account-uid")
+	field := protowire.AppendTag(nil, 6, protowire.BytesType)
+	return protowire.AppendBytes(field, principal)
 }
 
 func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
