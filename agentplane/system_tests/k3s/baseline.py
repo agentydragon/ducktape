@@ -608,8 +608,12 @@ class K3s:
         # Sweep after imports consume half the starting headroom. Native filesystem
         # checks avoid per-image CRI round trips.
         prune_below_bytes = filesystem.f_bavail * filesystem.f_frsize // 2
+        usable = self._usable_images(images)
         for image, layout in images.items():
-            with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}):
+            with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}) as span:
+                span.set_attribute("image.import.skipped", image in usable)
+                if image in usable:
+                    continue
                 index = json.loads((layout / "index.json").read_text())
                 for descriptor in index["manifests"]:
                     descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
@@ -625,6 +629,55 @@ class K3s:
         # Retargeting to a fully cached version can also leave an old alias, without growing
         # the store during the group. Reclaim those aliases before yielding to the fixture.
         self.prune_unused_images()
+
+    @tracer.start_as_current_span("system_test.images.check_usable")
+    def _usable_images(self, images: dict[str, Path]) -> set[str]:
+        # Filter in containerd, then let its native platform content and snapshotter checks
+        # establish usability. Quiet output is an explicit list-of-ready-references API,
+        # rather than the human table whose columns vary across containerd releases.
+        filters = []
+        config_ids = {}
+        for image, layout in images.items():
+            manifests = json.loads((layout / "index.json").read_text())["manifests"]
+            if len(manifests) == 1:
+                algorithm, digest = manifests[0]["digest"].split(":", 1)
+                manifest = json.loads((layout / "blobs" / algorithm / digest).read_text())
+                if "config" not in manifest:
+                    continue
+                config_ids[image] = manifest["config"]["digest"]
+                filters.append(
+                    f"name=={json.dumps(image)},target.digest=={manifests[0]['digest']},"
+                    'labels."io.cri-containerd.pinned"==pinned'
+                )
+        if not filters:
+            return set()
+        ready = set(
+            run(
+                str(self.binary),
+                "ctr",
+                "--address",
+                CONTAINERD_SOCKET,
+                "-n",
+                "k8s.io",
+                "images",
+                "check",
+                "--quiet",
+                "--snapshotter",
+                "overlayfs",
+                *filters,
+                stdout_only=True,
+            ).splitlines()
+        )
+        # The CRI plugin observes imports asynchronously. Its cached pin must also be
+        # published before a future Sandbox can rely on the registry-less local tag.
+        pinned = {
+            tag
+            for image in json.loads(self.crictl("images", "-o", "json"))["images"]
+            if image.get("pinned")
+            for tag in image.get("repoTags", [])
+            if image["id"] == config_ids.get(tag)
+        }
+        return ready & pinned
 
     def _stored_blobs(self) -> set[str]:
         """The OCI layout paths (`blobs/sha256/<hex>`) of the blobs containerd holds."""
