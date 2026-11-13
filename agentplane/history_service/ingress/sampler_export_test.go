@@ -364,12 +364,8 @@ func exportSamplerHistoryThrough(t *testing.T, f samplerExportFixture, sessionID
 	// History forward so a broken exporter cannot leave this test looping.
 	const eventsPerExportQuantum = 16 * 16
 	maxQuanta := int((sourceCursor+eventsPerExportQuantum-1)/eventsPerExportQuantum) + 1
+	var retainedCursor uint64
 	for quantum := 0; quantum < maxQuanta; quantum++ {
-		page, err := f.history.ReadPage(t.Context(), id, 0, 1000)
-		if err != nil {
-			t.Fatal(err)
-		}
-		retainedCursor := page.GetLastCursor()
 		if retainedCursor == sourceCursor {
 			return
 		}
@@ -391,6 +387,7 @@ func exportSamplerHistoryThrough(t *testing.T, f samplerExportFixture, sessionID
 		if after.GetLastCursor() <= retainedCursor {
 			t.Fatalf("sampler export quantum %d made no History progress: cursor %d", quantum+1, retainedCursor)
 		}
+		retainedCursor = after.GetLastCursor()
 	}
 	page, err := f.history.ReadPage(t.Context(), id, 0, 1000)
 	if err != nil {
