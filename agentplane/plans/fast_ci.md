@@ -58,8 +58,13 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   process unavailability with retained-cursor replay. All four manual contracts
   passed in 25 fresh actions (100 case exposures, 25 per contract); these are not
   100 independent trials or low-flake-rate proof. Discarding the journal and
-  disabling its collision guard both fail the intended assertions. Actual Dispatcher
-  loss of a Runtime admission reply, History crash recovery and the remaining
+  disabling its collision guard both fail the intended assertions. A separate
+  manual admission-reply-loss target now observes the actual Dispatcher retry:
+  a test-only Runtime interceptor discards one successful admission response as
+  `UNAVAILABLE`, then the real journal returns the same receipt. One submission
+  causes two handler calls and one History admission; fresh next input completes.
+  Rejecting a valid identical-command journal replay fails the contract. This models a post-handler
+  error, not a raw socket reset. History crash recovery and the remaining
   security/ownership matrix still need composed evidence before gate promotion.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
@@ -81,10 +86,18 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   A separate manual VM boot candidate exercises the real guest, issued SVID and
   authenticated app/Gateway/Runtime status. It does not replace the existing VM
   harness, systemd, cgroup, egress, notification or post-operation credential checks.
-  The full existing VM fixture also omits its unused MCP edge image/deployment;
+  The full existing VM and Firecracker fixtures also omit their unused MCP edge image/deployment;
   every retained rendered resource and scenario assertion is unchanged. Its full
-  real VM scenario passes; this proves retained behavior and graph selectivity,
+  real VM scenario and both Firecracker cases pass; this proves retained behavior and graph selectivity,
   not a matched timing improvement.
+  A separate app-free direct-boot experiment now starts the current kernel,
+  initramfs, root and Runtime disk through pinned QEMU/virtiofsd on managed RBE.
+  Its test-only systemd service proves PID1, cgroup v2, seven real mounts, a fresh
+  nonce written through virtiofs and orderly poweroff. Empty configuration ISOs
+  mean Runtime health and authenticated requests are outside this contract.
+  Keep it manual; the wrong-config-serial control must fail guest readiness.
+  This isolates generic guest packaging from K3s/KubeVirt acceptance without
+  asserting that the broader deployment scenarios are redundant.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
@@ -124,6 +137,19 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   best-effort diagnostics. The real archive round trip is verified. Four selected
   graph launches preserve an automatic infrastructure re-execution and a VM
   fixture teardown error; this is neither 30 PR pairs nor a qualified speedup.
+  The historical replay cohort now resolves 30 distinct tested base/head pairs
+  from job-log source SHAs, matching BuildBuddy commit metadata and immutable
+  merge parents. It retains failed/cancelled heads and all 40 workflow attempts.
+  This prepares replay inputs; the candidate/control graphs have not been run
+  on those pairs. Current PR API bases are recorded separately from tested bases.
+  Required CI at d717 also queued its Firecracker action for 310.328s while all
+  three registered compatible workers were occupied at the configured maximum.
+  Removing only that queue has 153.499s of conditional test-tail headroom before
+  VM becomes last. Compare narrower validated KVM ownership with bounded
+  horizontal capacity under burst load; account for registration, cache,
+  host/SSD eligibility and recurring reservations. An idle-floor change alone
+  cannot remove this saturated-window wait; do not add VM traffic to that pool
+  without capacity evidence. See the iteration 4 investigation for provenance.
 - **P6, adoption:** make reviewable milestone commits on the existing branch/PR.
   Change a gate boundary only after the evidence below supports that boundary.
   Revert that selection change on an escaped contract or reliability regression.
@@ -149,8 +175,8 @@ their negative evidence and follow-up triggers rather than manufacturing more wo
 - Assign every unique assertion to a retained witness. Review historical fixes and
   seeded defects: lost journal, duplicate admission, stale incarnation, wrong issuer,
   History cursor gap, unauthorized delegation and browser reconnect. Negative
-  controls reject the defect; healthy positive controls pass. The pilot alone does
-  not establish this matrix or isolated Runtime deduplication.
+  controls reject the defect; healthy positive controls pass. The native cases alone do
+  not establish the complete matrix or platform equivalence.
 - Initial speed screen: >=25% lower median complete required feedback with p90 no
   more than 5% worse across the matched sample. Include pre-commit and artifact/import
   checks, rerun-inclusive time and failed/cancelled heads; do not infer savings by

@@ -1,0 +1,88 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/erofs:defs.bzl", "erofs_image")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
+load("//devinfra/python:defs.bzl", "py_test")
+
+# gazelle:resolve py agentplane.x.direct_vm_boot.launcher_tools //agentplane/x/direct_vm_boot:launcher_tools
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:private"],
+)
+
+oci_layout_py(
+    name = "launcher_tools",
+    testonly = True,
+    image = "@kubevirt_virt_launcher_linux_amd64//:kubevirt_virt_launcher_linux_amd64",
+)
+
+pkg_files(
+    name = "direct_vm_boot_probe_bin_file",
+    srcs = ["direct_vm_boot_probe"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"direct_vm_boot_probe": "agentplane-direct-vm-boot-probe"},
+)
+
+pkg_tar(
+    name = "direct_vm_boot_probe_bin",
+    srcs = [":direct_vm_boot_probe_bin_file"],
+    package_dir = "/usr/sbin",
+)
+
+pkg_tar(
+    name = "direct_vm_boot_probe_systemd",
+    srcs = ["agentplane-direct-vm-boot-probe.service"],
+    mode = "0644",
+    package_dir = "/etc/systemd/system",
+    symlinks = {
+        "multi-user.target.wants/agentplane-direct-vm-boot-probe.service": "../agentplane-direct-vm-boot-probe.service",
+    },
+)
+
+pkg_tar(
+    name = "direct_vm_boot_probe_root_tar",
+    testonly = True,
+    deps = [
+        ":direct_vm_boot_probe_bin",
+        ":direct_vm_boot_probe_systemd",
+        "//agentplane/system_tests/vm/guest:root_tar",
+    ],
+)
+
+erofs_image(
+    name = "direct_vm_boot_probe_root_erofs",
+    testonly = True,
+    out = "direct-vm-boot-probe-root.img",
+    compress_lz4 = True,
+    tar = ":direct_vm_boot_probe_root_tar",
+    volume_label = "guest",
+)
+
+py_test(
+    name = "test_guest_boot",
+    size = "medium",
+    srcs = ["test_guest_boot.py"],
+    data = [
+        ":direct_vm_boot_probe_root_erofs",
+        "//agentplane/system_tests/vm:test_runner_disk_erofs",
+        "//agentplane/system_tests/vm/guest:initramfs.cpio",
+        "//agentplane/system_tests/vm/guest:vmlinuz",
+    ],
+    env = {
+        "INITRAMFS_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:initramfs.cpio)",
+        "KERNEL_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:vmlinuz)",
+        "ROOT_IMAGE_RLOCATION": "$(rlocationpath :direct_vm_boot_probe_root_erofs)",
+        "RUNNER_IMAGE_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm:test_runner_disk_erofs)",
+    },
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/x/direct_vm_boot:launcher_tools",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)

@@ -5,6 +5,7 @@ Runtime in its PID1 container, PostgreSQL, and the existing envtest Kubernetes A
 
 ```sh
 bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results
+bbr test //agentplane/x/native_contracts:test_admission_reply_loss --nocache_test_results
 ```
 
 The four Claude cases exercise:
@@ -24,9 +25,16 @@ The four Claude cases exercise:
 
 These complement owner tests, including Runtime journal/admission, the native adapter restart
 matrix, Gateway incarnation fencing, History ingress ordering and service authorization. Direct
-Runtime retry is distinct from the still-unimplemented composed case in which Dispatcher's actual
-worker loses a real Runtime admission reply and retries it. Suspending History tests unavailability;
-it does not establish a History process restart, database failover or packaged Deployment rollout.
+Runtime retry is distinct from the separate admission-reply-loss contract: one Dispatcher
+submission causes two authenticated Runtime handler calls, equal real admission responses and
+one History admission, followed by a successful next input. It uses the same Runtime and CLI
+startup code in a test-only binary whose interceptor returns `UNAVAILABLE` after the first real
+handler commits. The four recovery cases retain the production executable. The fault models a
+discarded admission response, not a socket reset. A later Dispatcher receipt replay must cause
+no third Runtime call. Rejecting a valid journal replay as a conflict makes this contract fail.
+
+Suspending History tests unavailability; it does not establish a History process restart,
+database failover or packaged Deployment rollout.
 
 The provider and model configuration are scripted. API requests, TokenReview, workload
 certificates, service transports, databases and the pinned native harness are real. Sandbox,
@@ -48,5 +56,5 @@ bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results \
 ```
 
 Measured native action time is composition feasibility evidence. Complete-CI savings and low
-flake rates require the pinned graph comparisons and exposure defined in
-[`fast_ci.md`](../../plans/fast_ci.md).
+flake rates require the pinned graph comparisons and exposure tracked in
+[#16099](https://github.com/agentydragon/ducktape/issues/16099).

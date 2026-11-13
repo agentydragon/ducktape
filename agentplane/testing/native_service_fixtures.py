@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpoint
 from agentplane.env.e2e.testing import launches
@@ -52,6 +53,7 @@ __all__ = [
     "postgres_admin_url",
     "postgres_container",
     "postgres_image",
+    "runtime_binary",
     "runtime_client",
     "sandbox",
     "service_database_template",
@@ -64,6 +66,12 @@ __all__ = [
 CLIENT = ServiceAccountRef(namespace="test-contract-client", name="client")
 DISPATCHER_AUDIENCE = "test-contract-dispatcher"
 GATEWAY_AUDIENCE = "test-contract-gateway"
+
+
+@pytest.fixture
+def runtime_binary() -> Path:
+    """The production Runtime executable unless a test module overrides this fixture."""
+    return Runfiles.CreateOrRaise().root() / launches.RUNTIME_BINARY
 
 
 @pytest.fixture
@@ -174,12 +182,15 @@ async def start_runtime(
     gateway_service: GatewayProcess,
     client_token: Path,
     sandbox: SandboxCluster,
+    runtime_binary: Path,
     tmp_path: Path,
 ) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
     environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
     remote = gateway_service.gateway_client(client_token, request_timeout_s=2)
     async with model_config() as model_endpoint, AsyncExitStack() as processes:
-        command = launches.command(config, control=control, ingress=ingress, model_config_target=model_endpoint)
+        command = launches.command(
+            config, control=control, ingress=ingress, model_config_target=model_endpoint, runner_binary=runtime_binary
+        )
 
         async def stop(process: RunnerProcess) -> None:
             try:

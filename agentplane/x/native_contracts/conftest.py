@@ -22,6 +22,7 @@ from agentplane.testing.native_service_fixtures import (
     postgres_admin_url,
     postgres_container,
     postgres_image,
+    runtime_binary,
     runtime_client,
     sandbox,
     service_database_template,

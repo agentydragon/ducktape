@@ -150,6 +150,7 @@ py_library(
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

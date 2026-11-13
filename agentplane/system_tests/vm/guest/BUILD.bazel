@@ -49,6 +49,12 @@ genrule(
         "$(execpath initramfs.cpio)",
     ]),
     tools = [":boot_files_bin"],
+    visibility = [
+        "//agentplane/system_tests/firecracker/guest:__pkg__",
+        "//agentplane/system_tests/firecracker/kernel:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
 )
 
 # KubeVirt's kernel boot container: qemu reads the kernel and initramfs as uid 107.
@@ -320,6 +326,12 @@ pkg_tar(
 
 pkg_tar(
     name = "root_tar",
+    visibility = [
+        "//agentplane/system_tests/firecracker/guest:__pkg__",
+        "//agentplane/system_tests/firecracker/kernel:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = [
         ":root_tar_base",
         ":root_var_links",

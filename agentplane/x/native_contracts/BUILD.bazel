@@ -57,3 +57,42 @@ py_test(
         "@pypi//tenacity",
     ],
 )
+
+py_test(
+    name = "test_admission_reply_loss",
+    size = "medium",
+    srcs = ["test_admission_reply_loss.py"],
+    data = [
+        "//agentplane/env/runtime/cmd:admission-reply-loss-test-environment-runtime",
+        "@claude_code_cli_linux_x64//:claude",
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:events",
+        "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:scripted_model",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
