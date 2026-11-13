@@ -253,7 +253,7 @@ fn full_report_selection_errors_remain_failures() {
         write_validate_fixture_spec(FixtureOpts::new("export const value = 7;\n", vec![]));
     for (flags, diagnostic) in [
         (vec!["--full-report-chunk", "static/app"], "--full-report"),
-        (vec!["--full-report", "unknown"], "unknown full report"),
+        (vec!["--full-report", "unknown"], "invalid value"),
         (
             vec![
                 "--full-report",
