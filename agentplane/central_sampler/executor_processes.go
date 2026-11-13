@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/google/uuid"
 )
@@ -510,7 +511,7 @@ func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 			lock.Unlock()
 			if readErr == nil && result.exited {
 				outcomes[process.ID] = map[string]any{"exit_observed": true, "result": map[string]any{
-					"output": lossyUTF8(result.output.WithOmissionMarker()), "exit_code": result.exitCode,
+					"output": tooloutput.LossyUTF8(result.output.WithOmissionMarker()), "exit_code": result.exitCode,
 				}}
 				if err := e.store.FinishNested(ctx, e.owner, intent, outcomes[process.ID].(map[string]any)); err != nil {
 					return outcomes, err

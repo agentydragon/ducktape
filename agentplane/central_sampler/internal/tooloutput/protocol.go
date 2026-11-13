@@ -1,23 +1,24 @@
-package centralsampler
+package tooloutput
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-type codeObservationKind string
+// ObservationKind identifies one code-mode runtime result variant.
+type ObservationKind string
 
 const (
-	codeYielded    codeObservationKind = "Yielded"
-	codeTerminated codeObservationKind = "Terminated"
-	codeResult     codeObservationKind = "Result"
+	ObservationYielded    ObservationKind = "Yielded"
+	ObservationTerminated ObservationKind = "Terminated"
+	ObservationResult     ObservationKind = "Result"
 )
 
-type codeCellOutput struct {
+// CellResult is the decoded result of one code-mode cell observation.
+type CellResult struct {
 	CellID       string            `json:"cell_id"`
 	ContentItems []json.RawMessage `json:"content_items"`
 	ErrorText    *string           `json:"error_text"`
@@ -25,12 +26,13 @@ type codeCellOutput struct {
 	CodeModeHostDurationNS *uint64 `json:"code_mode_host_duration_ns"`
 }
 
-type codeObservation struct {
-	Kind codeObservationKind
-	Cell codeCellOutput
+// Observation combines the code-mode result variant with its concrete cell data.
+type Observation struct {
+	Kind ObservationKind
+	Cell CellResult
 }
 
-func (o *codeObservation) UnmarshalJSON(data []byte) error {
+func (o *Observation) UnmarshalJSON(data []byte) error {
 	var variants map[string]json.RawMessage
 	if err := protocol.DecodeObject(data, &variants); err != nil {
 		return err
@@ -39,9 +41,9 @@ func (o *codeObservation) UnmarshalJSON(data []byte) error {
 		return errors.New("code-mode observation must have exactly one variant")
 	}
 	for kind, raw := range variants {
-		o.Kind = codeObservationKind(kind)
+		o.Kind = ObservationKind(kind)
 		switch o.Kind {
-		case codeYielded, codeTerminated, codeResult:
+		case ObservationYielded, ObservationTerminated, ObservationResult:
 		default:
 			return fmt.Errorf("unsupported code-mode observation %q", kind)
 		}
@@ -55,28 +57,32 @@ func (o *codeObservation) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func decodeWaitObservation(raw json.RawMessage) (codeObservation, error) {
-	var reply codemode.HostResponse
+// DecodeWaitObservation decodes the pinned host response for a completed wait operation.
+func DecodeWaitObservation(raw json.RawMessage) (Observation, error) {
+	var reply struct {
+		Type    string          `json:"type"`
+		Outcome json.RawMessage `json:"outcome"`
+	}
 	if err := protocol.DecodeObject(raw, &reply); err != nil {
-		return codeObservation{}, err
+		return Observation{}, err
 	}
 	if reply.Type != "wait/completed" {
-		return codeObservation{}, fmt.Errorf("unexpected code-mode wait response %q", reply.Type)
+		return Observation{}, fmt.Errorf("unexpected code-mode wait response %q", reply.Type)
 	}
 	var outcome map[string]json.RawMessage
 	if err := protocol.DecodeObject(reply.Outcome, &outcome); err != nil {
-		return codeObservation{}, err
+		return Observation{}, err
 	}
 	if len(outcome) != 1 {
-		return codeObservation{}, errors.New("code-mode wait requires exactly one outcome")
+		return Observation{}, errors.New("code-mode wait requires exactly one outcome")
 	}
 	for kind, value := range outcome {
 		if kind != "LiveCell" && kind != "MissingCell" {
-			return codeObservation{}, fmt.Errorf("unsupported code-mode wait outcome %q", kind)
+			return Observation{}, fmt.Errorf("unsupported code-mode wait outcome %q", kind)
 		}
-		var observation codeObservation
+		var observation Observation
 		if err := protocol.DecodeObject(value, &observation); err != nil {
-			return codeObservation{}, err
+			return Observation{}, err
 		}
 		return observation, nil
 	}

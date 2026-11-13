@@ -1,4 +1,4 @@
-package centralsampler
+package tooloutput
 
 import (
 	"encoding/json"
@@ -13,18 +13,18 @@ import (
 // Codex rust-v0.162.1 utils/string/src/truncate.rs APPROX_BYTES_PER_TOKEN.
 const approxBytesPerToken = 4
 
-// cellOutput renders an exec or wait result like Codex rust-v0.162.1
+// RenderCellOutput renders an exec or wait result like Codex rust-v0.162.1
 // core/src/tools/code_mode/mod.rs handle_runtime_response and output.rs CodeModeToolOutput: the
 // script error joins the content items, the token budget truncates them, then the status header
 // goes first. cellHandle is the model-facing cell ID.
-func cellOutput(observation codeObservation, cellHandle string, maxTokens *int, wallTime time.Duration) ([]protocol.ContentPart, error) {
+func RenderCellOutput(observation Observation, cellHandle string, maxTokens int, wallTime time.Duration) ([]protocol.ContentPart, error) {
 	var status string
 	switch observation.Kind {
-	case codeYielded:
+	case ObservationYielded:
 		status = "Script running with cell ID " + cellHandle
-	case codeTerminated:
+	case ObservationTerminated:
 		status = "Script terminated"
-	case codeResult:
+	case ObservationResult:
 		status = "Script completed"
 		if observation.Cell.ErrorText != nil {
 			status = "Script failed"
@@ -40,14 +40,10 @@ func cellOutput(observation codeObservation, cellHandle string, maxTokens *int, 
 		}
 		items = append(items, item)
 	}
-	if observation.Kind == codeResult && observation.Cell.ErrorText != nil {
+	if observation.Kind == ObservationResult && observation.Cell.ErrorText != nil {
 		items = append(items, protocol.ContentPart{Type: "input_text", Text: "Script error:\n" + *observation.Cell.ErrorText})
 	}
-	budget := defaultCodeModeMaxOutputTokens
-	if maxTokens != nil {
-		budget = *maxTokens
-	}
-	items, err := truncateCodeModeResult(items, budget)
+	items, err := truncateCodeModeResult(items, maxTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +79,7 @@ func formattedTruncateTextItems(items []protocol.ContentPart, maxTokens int) []p
 	}
 	// formatted_truncate_text
 	text := fmt.Sprintf("Warning: truncated output (original token count: %d)\nTotal output lines: %d\n\n%s",
-		approxTokenCount(combined), countLines(combined), truncateMiddleWithTokenBudget(combined, maxTokens))
+		approxTokenCount(combined), countLines(combined), TruncateTextWithTokenBudget(combined, maxTokens))
 	return []protocol.ContentPart{{Type: "input_text", Text: text}}
 }
 
@@ -108,7 +104,7 @@ func truncateOutputItems(items []protocol.ContentPart, maxTokens int) ([]protoco
 				out = append(out, protocol.ContentPart{Type: "input_text", Text: item.Text})
 				remaining -= cost
 			} else {
-				if snippet := truncateMiddleWithTokenBudget(item.Text, remaining); snippet == "" {
+				if snippet := TruncateTextWithTokenBudget(item.Text, remaining); snippet == "" {
 					omittedText++
 				} else {
 					out = append(out, protocol.ContentPart{Type: "input_text", Text: snippet})
@@ -156,7 +152,8 @@ func countLines(text string) int {
 
 // Codex rust-v0.162.1 utils/string/src/truncate.rs truncate_middle_with_token_budget (string
 // result only) via truncate_with_byte_estimate with use_tokens.
-func truncateMiddleWithTokenBudget(text string, maxTokens int) string {
+// TruncateTextWithTokenBudget applies Codex middle truncation to text.
+func TruncateTextWithTokenBudget(text string, maxTokens int) string {
 	if text == "" {
 		return ""
 	}

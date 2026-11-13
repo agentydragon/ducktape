@@ -1,4 +1,4 @@
-package centralsampler
+package tooloutput
 
 import (
 	"encoding/json"
@@ -55,20 +55,20 @@ func TestTruncateCodeModeResultKeepsImagesAndBudgetsText(t *testing.T) {
 func TestCellOutputPutsStatusHeaderFirst(t *testing.T) {
 	failure := "boom"
 	for _, tc := range []struct {
-		kind   codeObservationKind
+		kind   ObservationKind
 		error  *string
 		status string
 		last   string
 	}{
-		{codeYielded, nil, "Script running with cell ID session:7", "partial"},
-		{codeTerminated, nil, "Script terminated", "partial"},
-		{codeResult, nil, "Script completed", "partial"},
-		{codeResult, &failure, "Script failed", "Script error:\nboom"},
+		{ObservationYielded, nil, "Script running with cell ID session:7", "partial"},
+		{ObservationTerminated, nil, "Script terminated", "partial"},
+		{ObservationResult, nil, "Script completed", "partial"},
+		{ObservationResult, &failure, "Script failed", "Script error:\nboom"},
 	} {
-		observation := codeObservation{Kind: tc.kind, Cell: codeCellOutput{
+		observation := Observation{Kind: tc.kind, Cell: CellResult{
 			CellID: "7", ContentItems: []json.RawMessage{json.RawMessage(`{"type":"input_text","text":"partial"}`)}, ErrorText: tc.error,
 		}}
-		items, err := cellOutput(observation, "session:7", nil, 1250*time.Millisecond)
+		items, err := RenderCellOutput(observation, "session:7", 10_000, 1250*time.Millisecond)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,8 +91,8 @@ func TestTruncateMiddleWithTokenBudgetMatchesUpstream(t *testing.T) {
 		{"é中😀é", 1, "é…2 tokens truncated…é"},
 		{"😀😀😀", 1, "…2 tokens truncated…"},
 	} {
-		if got := truncateMiddleWithTokenBudget(tc.input, tc.maxTokens); got != tc.want {
-			t.Errorf("truncateMiddleWithTokenBudget(%q, %d)=%q, want %q", tc.input, tc.maxTokens, got, tc.want)
+		if got := TruncateTextWithTokenBudget(tc.input, tc.maxTokens); got != tc.want {
+			t.Errorf("TruncateTextWithTokenBudget(%q, %d)=%q, want %q", tc.input, tc.maxTokens, got, tc.want)
 		}
 	}
 }
