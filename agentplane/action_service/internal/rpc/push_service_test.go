@@ -1,4 +1,4 @@
-package api
+package rpc
 
 import (
 	"crypto/ecdh"

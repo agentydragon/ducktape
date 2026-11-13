@@ -21,7 +21,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
@@ -32,6 +31,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
@@ -332,12 +332,12 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 
 // gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount, or, by
 // SVID, its Identity of the policy namespace.
-func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
+func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.tokenAudience(), c.CallerServiceAccountNamespaces)
 	if err != nil {
 		return nil, err
 	}
-	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
+	options := rpc.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
 	if c.ConnectionDelegationActor != nil {
 		scheme := runtime.NewScheme()
 		if err := policyapi.AddToScheme(scheme); err != nil {
@@ -368,7 +368,7 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 			return nil, err
 		}
 	}
-	return api.NewGate(options), nil
+	return rpc.NewGate(options), nil
 }
 
 // actionConnectionDelegation grants the MCP edge only the Action calls needed to serve a Connection. The actor's
@@ -558,14 +558,14 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Health})
-	actionAPI := api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
+	actionAPI := rpc.NewService(requests, hub, c.ActionGroups, admission, policy, rpc.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, rpc.NewOperatorService(requests, hub, admission, linkages))
 	// The callback is public: its single-use state, not a bearer, authorizes completion.
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))
-	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
+	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, rpc.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
 	working, drain := context.WithCancel(ctx)
 	var supervising sync.WaitGroup
 	for _, executor := range supervisors {

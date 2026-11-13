@@ -38,6 +38,6 @@ exports_files(
     ["golden.json"],
     visibility = [
         "//agentplane/action_service:__pkg__",
-        "//agentplane/action_service/api:__pkg__",
+        "//agentplane/action_service/internal/rpc:__pkg__",
     ],
 )

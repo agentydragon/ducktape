@@ -305,8 +305,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//agentplane/app:test_settings`: application Settings environment parsing and OIDC source coexistence.
 - `//agentplane/action_service:config_test`: Go service Settings and catalog validation.
 - `//agentplane/action_service:integration_test`: Go startup, workload and MCP execution, and OAuth edge composition.
-- `//agentplane/app:test_action_api`, `//agentplane/action_service/api:unit_test`, and
-  `//agentplane/action_service/api:integration_test`: signed app-federation flows, Go operator-token
+- `//agentplane/app:test_action_api`, `//agentplane/action_service/internal/rpc:unit_test`, and
+  `//agentplane/action_service/internal/rpc:integration_test`: signed app-federation flows, Go operator-token
   claim verification, and operator-only Action Service admission.
 - `//util:test_oidc_principal`, `//agentplane/app/internal/federation:unit_test`, and
   `//agentplane/app/internal/auth:session_integration_test`: strict shared verification, independently
@@ -356,9 +356,9 @@ view as the submitting caller.
 - `//agentplane/app:test_auth_routes`: server-side PKCE/state, stable subject, idle and absolute
   expiry, logout and strict same-origin mutations, rejected signed login claims/signatures, state/nonce mismatch, handle
   rotation and callback replay, alongside the existing Kubernetes caller boundary.
-- `//agentplane/action_service/api:unit_test` verifies signed operator-token claims, including
+- `//agentplane/action_service/internal/rpc:unit_test` verifies signed operator-token claims, including
   arbitrary subjects and rejected issuer/audience/azp/expiry/subject/signature combinations;
-  `//agentplane/action_service/api:integration_test` verifies operator-only HTTP and RPC admission.
+  `//agentplane/action_service/internal/rpc:integration_test` verifies operator-only HTTP and RPC admission.
 - `//agentplane/action_service/internal/store:store_integration_test` preserves nested credential-looking
   arguments and results identically for owner, operator, and service-reader projections; the API
   integration tests cover each principal's read scope and shared receipt.

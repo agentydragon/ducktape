@@ -126,7 +126,6 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
-        "//agentplane/action_service/api",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
@@ -137,6 +136,7 @@ go_library(
         "//agentplane/action_service/internal/linkage",
         "//agentplane/action_service/internal/mcpexec",
         "//agentplane/action_service/internal/push",
+        "//agentplane/action_service/internal/rpc",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/internal/worker",
         "//agentplane/action_service/migrations",
@@ -211,10 +211,10 @@ go_test(
     srcs = ["config_test.go"],
     embed = [":main_lib"],
     deps = [
-        "//agentplane/action_service/api",
         "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/linkage",
         "//agentplane/action_service/internal/push",
+        "//agentplane/action_service/internal/rpc",
         "//agentplane/identity/auth",
         "//agentplane/testing/configtest",
     ],
