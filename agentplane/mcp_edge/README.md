@@ -1,7 +1,7 @@
 # MCP edge
 
 The standalone `mcp-edge` binary is the external MCP endpoint and Connection/OAuth authority. It
-owns its PostgreSQL schema, serves the operator [`ConnectionService`](connection_service.proto)
+owns its PostgreSQL schema, serves the operator [`ConnectionService`](api/connection/connection_service.proto)
 over gRPC and HTTP/JSON, and, when OAuth is configured, serves `/mcp` and the OAuth protocol routes.
 It calls the Action Service over gRPC with its own projected workload token and a method-scoped,
 Connection-backed Identity delegation.

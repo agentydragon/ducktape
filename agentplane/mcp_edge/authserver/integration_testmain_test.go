@@ -29,7 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth/auth" // its name, auth, is go-sdk's
-	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"

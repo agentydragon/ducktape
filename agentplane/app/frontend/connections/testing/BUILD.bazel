@@ -13,7 +13,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/mcp_edge/api/connection:connection_service_pb",
         "//agentplane/proto:identity_pb",
     ],
 )

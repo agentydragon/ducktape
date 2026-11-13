@@ -23,7 +23,7 @@ import {
   type Connection,
   type DecideConnectionEnrollmentResponse,
   type PreviewConnectionEnrollmentResponse,
-} from "../../../mcp_edge/connection_service_pb";
+} from "../../../mcp_edge/api/connection/connection_service_pb";
 import { Verdict } from "../../../action_service/action_service_pb";
 import type { Identity } from "../../../proto/identity_pb";
 

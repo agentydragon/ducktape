@@ -28,7 +28,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
 # gazelle:resolve py agentplane.action_service.action_service_pb2_grpc //agentplane/action_service:action_service_pb2_grpc
 # gazelle:resolve py agentplane.action_service.operator_action_service_pb2 //agentplane/action_service:operator_action_service_pb2
-# gazelle:resolve py agentplane.mcp_edge.connection_service_pb2 //agentplane/mcp_edge:connection_service_pb2
+# gazelle:resolve py agentplane.mcp_edge.api.connection.connection_service_pb2 //agentplane/mcp_edge/api/connection:connection_service_pb2
 # gazelle:resolve py agentplane.notification_service.api.notifications.notifications_pb2 //agentplane/notification_service/api/notifications:notifications_pb2
 # gazelle:resolve py agentplane.notification_service.api.notifications.notifications_pb2_grpc //agentplane/notification_service/api/notifications:notifications_pb2_grpc
 # gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential

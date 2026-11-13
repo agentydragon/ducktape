@@ -460,7 +460,7 @@ py_library(
     srcs = ["mcp_connection.py"],
     deps = [
         ":operator_login",
-        "//agentplane/mcp_edge:connection_service_pb2",
+        "//agentplane/mcp_edge/api/connection:connection_service_pb2",
         "//agentplane/proto:identity_pb2",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

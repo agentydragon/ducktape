@@ -11,7 +11,7 @@ from google.protobuf.json_format import ParseDict
 from more_itertools import one
 
 from agentplane.app.testing.client import Client
-from agentplane.mcp_edge import connection_service_pb2
+from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster

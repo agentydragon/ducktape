@@ -29,7 +29,7 @@ Console's being the one to retire, not two systems that happen to resemble each 
 ## External Connections
 
 External MCP Connections are owned by [`mcp_edge/connections`](../mcp_edge/connections/); the
-generated [`ConnectionService`](../mcp_edge/connection_service.proto) defines its operator API.
+generated [`ConnectionService`](../mcp_edge/api/connection/connection_service.proto) defines its operator API.
 Consent can select only a ServiceAccount in the current labeled Action callers view. The MCP edge
 resolves a Connection grant to its currently bound ServiceAccount before admitting a bearer.
 ActionRequests use that ServiceAccount as the caller and do not record Connection or grant
@@ -84,7 +84,7 @@ an active grant; reconnect also revokes the Connection's previous grants. Grant 
 issuance share the code-exchange transaction. See the
 [enrollment store](../mcp_edge/connections/enrollments.go),
 [authorization store](../mcp_edge/connections/authorizations.go),
-[consent API](../mcp_edge/connection_service.proto), and
+[consent API](../mcp_edge/api/connection/connection_service.proto), and
 [OAuth code exchange](../mcp_edge/authserver/tokens.go).
 
 ## Caller UID provenance
@@ -207,7 +207,7 @@ Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client
 `upstream_client_secret_file`, `upstream_subject`, and `approving_operator` in the optional `oauth`
 settings. See the edge's [Go OAuth configuration](../mcp_edge/config.go), the
 [authorization server](../mcp_edge/authserver/authserver.go), and the
-[ConnectionService contract](../mcp_edge/connection_service.proto).
+[ConnectionService contract](../mcp_edge/api/connection/connection_service.proto).
 
 | Tool                         | Use                                                                                                                                                            |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |

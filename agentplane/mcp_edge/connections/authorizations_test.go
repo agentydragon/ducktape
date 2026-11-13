@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/google/uuid"
 )
 
