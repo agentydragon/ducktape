@@ -2,9 +2,10 @@
 
 The single TLS-tail split has equivalent selected scenario coverage, but no measured
 full-CI speedup. This continues [the full-graph investigation](four_minute_system_test_graph.md).
-Required CI and the original Pod target remain unchanged. The new control action
-is still pending at the observation below; this note does not claim a completed
-matched comparison.
+Required CI and the original Pod target remain unchanged. The original control
+and both split actions passed, with equivalent JUnit case sets and completed
+fresh-fixture cleanup. The control has an unresolved progress/attempt timeline
+anomaly, so this is not a causal speedup or total-cost comparison.
 
 ## Independent collection
 
@@ -190,24 +191,85 @@ after physical completion; those values must not be interpreted as a nine-minute
 physical wedge. Direct `WaitExecution` and original ExecuteResponse clocks
 established the completed 430.477s action.
 
-### Control observation boundary
+### Recovered control and returned-record comparison
 
-At 23:44:51 UTC, the control's outer observer had failed with
-`Internal: stream closed with task still claimed`; its inner invocation is
-`DISCONNECTED`. The original accepted TestRunner operation was not resubmitted.
-A direct read-only `WaitExecution` at 23:43:04 confirmed the same operation
-`EXECUTING`, with a recent `EXECUTING_COMMAND` heartbeat. Its timestamp is a
-progress-publication time, not command start. A further bounded CLI attachment
-at 23:46 confirmed nonterminal execution; its local observer deadline did not
-cancel the remote operation. The provider exposed no live stdout/stderr stream
-names, and active worker/start clocks were unavailable. Cached result/JUnit
-remained unavailable when checked. Queue, process duration, scenario outcomes
-and cleanup of this control remain unknown until original artifacts arrive.
+The continuous read-only `WaitExecution` reader returned the original control's
+terminal `COMPLETED`, `result_present=true`, `status_code=0`, `exit_code=0`.
+Its original JUnit records 21 passes and no failures, errors or skips. Comparing
+JUnit case-name multisets confirms `control = main + TLS`, with disjoint split
+sets. All three returned fixtures were warm, certified cleanup complete, and
+have distinct namespace, PostgreSQL Pod, root certificate/Secret and collector
+namespace UIDs. The [machine-readable evidence](pod_split_controlled_experiment.results.json)
+retains the returned records, exact operation names and JUnit digests.
 
-Both full Bazel gate verdicts are unavailable. A completed control would support
-only a scoped start-to-last-TestRunner and aggregate cost comparison, with the
-recorded ordering, provider load and warm-baseline limitations. The four-minute
-objective remains unmet by the observed split arrangement. Another reverse pair
-or a complete required-graph trial should run only if the control changes the
-near-term implementation decision; none has been submitted. Larger case
-partitions, fixture reuse and combined exact-input readiness remain unvalidated.
+| Returned record      |  Process |    Setup | Case envelope | Cleanup | Observed CPU | Requested execution CU-minutes |
+| -------------------- | -------: | -------: | ------------: | ------: | -----------: | -----------------------------: |
+| Split main           | 430.477s | 112.542s |      248.954s | 34.134s |    1189.115s |                          28.70 |
+| Split TLS            | 171.751s |  92.911s |       23.608s | 29.253s |     421.315s |                          11.45 |
+| Control final record | 469.744s | 116.576s |      263.375s | 38.458s |    1317.766s |                          31.32 |
+
+The split records sum to 602.227 process seconds, 1610.430 CPU seconds and
+40.15 requested execution CU-minutes. The returned control record is not proven
+to include all work under its scheduled execution, so these numbers do not rank
+total cost. Requested CU-time is four times returned process wall time, not
+observed billing. The recorded last TestRunner worker completion was 469.46s
+from split Bazel start and 1330.74s from control Bazel start. Both full Bazel
+invocations disconnected; neither number is a recovered complete gate verdict
+or an attributed improvement.
+
+The control's TLS case took 16.181s and ended 14.601s before the last case,
+`every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event`.
+It had no observed post-other-case TLS tail, while the older controls had 67.9s
+and 16.7s tails. Case duration and position in the limiting path are unstable.
+
+### Progress/attempt timeline anomaly
+
+The control's outer observer failed with
+`Internal: stream closed with task still claimed`; its inner invocation remains
+`DISCONNECTED`. The agent did not resubmit or cancel the original operation.
+Before completion, a direct read-only `WaitExecution` snapshot at
+23:43:04.409595541 UTC returned the same exact operation and matching action
+digest, `EXECUTING`, with an `EXECUTING_COMMAND` progress timestamp of
+23:42:10.886849668 UTC. That timestamp is a publication heartbeat, not command
+start; live stdout/stderr stream names and worker clocks were absent.
+
+The successful terminal response instead records queued time 23:33:08.606655703,
+worker start 23:46:40.677287035, command span 23:46:41.173521517 to
+23:54:30.917787143, and worker completion 23:54:31.890726351 UTC. Its
+`workerQueuedTimestamp` is 23:46:40.634616416. The final VM log begins with a
+Firecracker start/snapshot load at 23:46:41; its usage timeline begins 23:46:51,
+JUnit begins 23:47:08 and OTel setup begins 23:47:09. Those independent outputs
+corroborate this final record's chronology. They do not assign the earlier
+23:42 heartbeat to that record.
+
+Consequently the 812.071s queued-to-final-worker-start span cannot be called
+pure waiting, and 469.744s cannot be assumed to cover every physical attempt.
+The final `GetExecution` response exposes one scheduled execution row, not an
+attempt history. The inspected upstream
+[`Execution` schema](https://github.com/buildbuddy-io/buildbuddy/blob/879c2cdfc08b7d432394c3eea7b2fd6e41328cbf/proto/execution_stats.proto#L73-L114)
+explicitly says the response and row reflect the latest attempt after an
+internal retry. This permits replacement but does not prove a retry happened
+here. The returned metadata supplies final worker/executor/runner IDs and
+`taskNumber=1`, but no prior attempt or lease IDs. The only returned server log
+is the final VM log. Retry, retained progress and clock-domain explanations
+remain unresolved without provider attempt/lease history; no cause is asserted.
+
+### Decision and stopping condition
+
+Do not enable this single-tail arrangement in required CI from this pair.
+Its early 36.50s action start still led to a 469.46s last returned TestRunner
+completion in the observed run. Duplicated setup is real in the returned
+records, the selected TLS case has no stable tail, and the control's earlier
+progress cannot be reconciled with its final record. A reverse-order pair
+would sample more variance without resolving the missing provider history or
+showing this arrangement reaches four minutes. No reverse pair or full required
+graph trial was submitted.
+
+This does not reject larger partitions or fixture reuse. A broader case split
+must preserve the runner-pair/Sandbox capacity invariant above and account for
+duplicated stacks, realistic concurrent admission and fresh state. A combined
+fixture/input-readiness design and the remaining MCP/VM paths still need a
+separate bounded experiment. The current follow-up ends with equivalent
+coverage, independently matching tested inputs, passing original action
+artifacts, and a precise provider-visibility boundary; it claims no full-CI
+speedup or total-cost ranking.
