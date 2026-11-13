@@ -1,4 +1,4 @@
-package store
+package state
 
 import (
 	"errors"
@@ -7,41 +7,22 @@ import (
 	"testing"
 	"time"
 
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/lib/pq"
 )
 
-func requireDeferred(t *testing.T, err error) *githubstate.RefreshDeferredError {
-	t.Helper()
-	var deferred *githubstate.RefreshDeferredError
-	if !errors.As(err, &deferred) {
-		t.Fatalf("error = %v, want *githubstate.RefreshDeferredError", err)
-	}
-	return deferred
-}
-
-func (g githubFixture) status(t *testing.T, sub githubSubscription) githubstate.Status {
-	t.Helper()
-	status := g.get(t, sub.ID).GitHub
-	if status == nil {
-		t.Fatal("a GitHub subscription has no GitHub status")
-	}
-	return *status
-}
-
 func TestRefreshOfASharedRowIsSingleFlight(t *testing.T) {
-	for name, key := range map[string]func(githubFixture, githubSubscription) githubstate.RefreshKey{
-		"access":  func(g githubFixture, _ githubSubscription) githubstate.RefreshKey { return g.access() },
-		"subject": func(_ githubFixture, sub githubSubscription) githubstate.RefreshKey { return sub.Subject },
+	for name, key := range map[string]func(fixture, SubjectKey) RefreshKey{
+		"access":  func(g fixture, _ SubjectKey) RefreshKey { return g.access() },
+		"subject": func(_ fixture, subject SubjectKey) RefreshKey { return subject },
 	} {
 		t.Run(name, func(t *testing.T) {
-			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
-			row := key(g, sub)
+			g := newFixture(t)
+			subject := g.subject(t, 7)
+			row := key(g, subject)
 
 			var wg sync.WaitGroup
-			leases := make([]*githubstate.RefreshLease, 8)
+			leases := make([]*RefreshLease, 8)
 			errs := make([]error, len(leases))
 			for i := range leases {
 				wg.Add(1)
@@ -68,15 +49,15 @@ func TestRefreshOfASharedRowIsSingleFlight(t *testing.T) {
 }
 
 func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
-	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	g := newFixture(t)
+	subject := g.subject(t, 7)
 	key := g.access()
 
 	old, err := g.state.Acquire(t.Context(), key)
 	if err != nil || old == nil {
 		t.Fatalf("lease = %v, %v", old, err)
 	}
-	claimUntil := *g.status(t, sub).Access[0].RefreshingUntil
+	claimUntil := *g.status(t, subject).Access[0].RefreshingUntil
 	if deferred := requireDeferredAcquire(t, g, key); !deferred.Until.Equal(claimUntil) {
 		t.Errorf("deferred until %v, want the lease's end, %v", deferred.Until, claimUntil)
 	}
@@ -86,10 +67,10 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("lease after the first expired = %v, %v", lease, err)
 	}
-	requireDeferred(t, completeEmptyRefresh(t.Context(), g.state, *old))
+	requireDeferred(t, g.state.CompleteAccess(t.Context(), *old, nil))
 	_, err = g.state.Fail(t.Context(), *old, model.FailureUnavailable, "stale failure", time.Minute)
 	requireDeferred(t, err)
-	if status := g.status(t, sub); status.Access[0].Failure != nil || status.Access[0].CurrentlyValid {
+	if status := g.status(t, subject); status.Access[0].Failure != nil || status.Access[0].CurrentlyValid {
 		t.Errorf("the replaced holder changed the grant: %+v", status.Access[0])
 	}
 
@@ -98,7 +79,7 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial := g.status(t, sub).Access[0]
+	initial := g.status(t, subject).Access[0]
 	if initial.RetryAt == nil || !initial.RetryAt.Equal(until) || initial.CurrentlyValid || initial.Failure == nil {
 		t.Errorf("status after the failure = %+v, want a retry at %v and no valid grant", initial, until)
 	}
@@ -114,7 +95,7 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if _, err := g.state.Fail(t.Context(), *lease, model.FailureRateLimited, "still limited", 2*time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	again := g.status(t, sub).Access[0]
+	again := g.status(t, subject).Access[0]
 	if !again.Failure.Since.Equal(initial.Failure.Since) || again.Failure.ObservedAt.Before(initial.Failure.ObservedAt) {
 		t.Errorf("failure %+v after %+v, want the same episode, observed again", again.Failure, initial.Failure)
 	}
@@ -126,7 +107,7 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if _, err := g.state.Fail(t.Context(), *lease, model.FailureUnavailable, "now unavailable", 2*time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if other := g.status(t, sub).Access[0]; other.Failure.Kind != model.FailureUnavailable || !other.Failure.Since.After(initial.Failure.Since) {
+	if other := g.status(t, subject).Access[0]; other.Failure.Kind != model.FailureUnavailable || !other.Failure.Since.After(initial.Failure.Since) {
 		t.Errorf("failure %+v, want a new episode of another kind", other.Failure)
 	}
 
@@ -135,44 +116,29 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("lease after the third backoff = %v, %v", lease, err)
 	}
-	if err := completeEmptyRefresh(t.Context(), g.state, *lease); err != nil {
+	if err := g.state.CompleteAccess(t.Context(), *lease, nil); err != nil {
 		t.Fatal(err)
 	}
-	healed := g.status(t, sub).Access[0]
+	healed := g.status(t, subject).Access[0]
 	if !healed.CurrentlyValid || healed.Failure != nil || healed.RetryAt != nil || healed.RefreshingUntil != nil {
 		t.Errorf("status after success = %+v, want a valid grant without failure", healed)
 	}
-	if subscription := g.get(t, sub.ID); subscription.Failure != nil || subscription.LastSuccessAt != nil {
-		t.Errorf("subscription %+v took on the shared grant's state", subscription)
-	}
-	if entries := g.read(t, g.inbox, 0).Entries; len(entries) != 0 {
-		t.Errorf("%d entries from refreshing", len(entries))
-	}
-}
-
-func requireDeferredAcquire(t *testing.T, g githubFixture, key githubstate.RefreshKey) *githubstate.RefreshDeferredError {
-	t.Helper()
-	lease, err := g.state.Acquire(t.Context(), key)
-	if lease != nil {
-		t.Fatalf("got lease %+v, want it deferred", lease)
-	}
-	return requireDeferred(t, err)
 }
 
 func TestFreshRowsAreNotLeasedUntilTheyAreStale(t *testing.T) {
-	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	g := newFixture(t)
+	subject := g.subject(t, 7)
 	base := g.validate(t, g.access())
-	g.refreshSubject(t, sub.Subject, base)
+	g.refreshSubject(t, subject, base)
 
-	for name, key := range map[string]githubstate.RefreshKey{"access": g.access(), "subject": sub.Subject} {
+	for name, key := range map[string]RefreshKey{"access": g.access(), "subject": subject} {
 		if lease, err := g.state.Acquire(t.Context(), key); err != nil || lease != nil {
 			t.Errorf("%s: lease = %v, %v, want none while fresh", name, lease, err)
 		}
 	}
 	g.exec(t, `UPDATE github_repository_access SET valid_until = now() - interval '1 second' WHERE app_id = $1`, g.app)
 	g.exec(t, `UPDATE github_subject SET last_success_at = now() - $2::interval WHERE repository_id = $1`, g.repository, "11 minutes")
-	for name, key := range map[string]githubstate.RefreshKey{"access": g.access(), "subject": sub.Subject} {
+	for name, key := range map[string]RefreshKey{"access": g.access(), "subject": subject} {
 		if lease, err := g.state.Acquire(t.Context(), key); err != nil || lease == nil {
 			t.Errorf("%s: lease = %v, %v, want one once stale", name, lease, err)
 		}
@@ -180,31 +146,31 @@ func TestFreshRowsAreNotLeasedUntilTheyAreStale(t *testing.T) {
 }
 
 func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
-	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	g := newFixture(t)
+	subject := g.subject(t, 7)
 	base := g.validate(t, g.access())
-	lease, err := g.state.Acquire(t.Context(), sub.Subject)
+	lease, err := g.state.Acquire(t.Context(), subject)
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
 
-	g.deliver(t, "installation", withAction("suspend"))
+	g.invalidateInstallation(t)
 
 	// The subject's lease died with the installation's event, and the fence it read under is no longer good.
-	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{base}, githubstate.SubjectObservation{}))
-	lease, err = g.state.Acquire(t.Context(), sub.Subject)
+	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []AccessFence{base}, SubjectObservation{}))
+	lease, err = g.state.Acquire(t.Context(), subject)
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
-	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{base}, githubstate.SubjectObservation{Revisions: []model.GitHubHeadRevision{{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}}}))
+	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []AccessFence{base}, SubjectObservation{Revisions: []model.GitHubHeadRevision{{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}}}))
 	if got := g.count(t, `SELECT count(*) FROM github_subject_revision WHERE repository_id = $1`, g.repository); got != 0 {
 		t.Errorf("%d revisions recorded under a stale fence, want none", got)
 	}
 }
 
 func TestSuccessfulAccessRefreshRenamesTheRepository(t *testing.T) {
-	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	g := newFixture(t)
+	subject := g.subject(t, 7)
 	lease, err := g.state.Acquire(t.Context(), g.access())
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
@@ -214,21 +180,17 @@ func TestSuccessfulAccessRefreshRenamesTheRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if name := g.repositoryName(t, g.repository); name != renamed {
-		t.Errorf("repository named %q, want %q", name, renamed)
+	if name, err := g.state.RepositoryName(t.Context(), g.repository); err != nil || name != renamed {
+		t.Errorf("repository name = %q, %v, want %q", name, err, renamed)
 	}
-	// The repository subscribed to is the numeric one: the name it was asked for is what was stored.
-	if source := g.get(t, sub.ID).Source.(model.GitHubSource); source.Repository != testRepositoryName {
-		t.Errorf("subscription follows %q, want the name it was created with", source.Repository)
-	}
-	if !g.status(t, sub).Access[0].CurrentlyValid {
+	if !g.status(t, subject).Access[0].CurrentlyValid {
 		t.Error("the grant is not valid after the refresh")
 	}
 }
 
 func TestSharedFailureFieldsAreConstrained(t *testing.T) {
-	g := newGitHubFixture(t)
-	g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	g := newFixture(t)
+	g.subject(t, 7)
 	for _, row := range []struct {
 		table, where string
 		arg          int64
@@ -251,52 +213,11 @@ func TestSharedFailureFieldsAreConstrained(t *testing.T) {
 	}
 }
 
-func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.T) {
-	g := newGitHubFixture(t)
-	source := g.source(model.PullRequestSubject{Number: 7})
-	first, second := g.follow(t, source, "first"), g.follow(t, source, "second")
-	lease, err := g.state.Acquire(t.Context(), g.access())
-	if err != nil || lease == nil {
-		t.Fatalf("lease = %v, %v", lease, err)
-	}
-	if _, err := g.state.Fail(t.Context(), *lease, model.FailureRateLimited, "limited", time.Minute); err != nil {
-		t.Fatal(err)
-	}
-
-	listed, err := g.ListSubscriptions(t.Context(), g.incarnation(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 2 || listed[0].GitHub == nil || listed[1].GitHub == nil {
-		t.Fatalf("listed %+v, want both subscriptions with a GitHub status", listed)
-	}
-	requireEqual(t, listed[0].GitHub, listed[1].GitHub)
-	if kind := listed[0].GitHub.Access[0].Failure.Kind; kind != model.FailureRateLimited {
-		t.Errorf("failure kind = %q, want %q", kind, model.FailureRateLimited)
-	}
-	for _, subscription := range listed {
-		if subscription.Failure != nil || subscription.LastSuccessAt != nil || subscription.RetryAt != nil {
-			t.Errorf("subscription %s took on the shared failure: %+v", subscription.ID, subscription)
-		}
-	}
-	for _, sub := range []githubSubscription{first, second} {
-		if state := g.subscriptionState(t, sub.ID); state.errorKind.Valid {
-			t.Errorf("subscription row %s records error kind %q", sub.ID, state.errorKind.String)
-		}
-	}
-	if got := g.count(t, `SELECT count(*) FROM github_repository_access WHERE app_id = $1`, g.app); got != 1 {
-		t.Errorf("%d access rows, want the one both share", got)
-	}
-	if page := g.read(t, g.inbox, 0); page.Inbox.LastCursor != 0 || len(page.Entries) != 0 || page.Notice != nil {
-		t.Errorf("page %+v, want an untouched inbox", page)
-	}
-}
-
 func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
-	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
-	status := g.status(t, sub)
-	if len(status.Access) != 1 || status.Access[0].Key != g.access() || status.Subject.Key != sub.Subject {
+	g := newFixture(t)
+	subject := g.subject(t, 7)
+	status := g.status(t, subject)
+	if len(status.Access) != 1 || status.Access[0].Key != g.access() || status.Subject.Key != subject {
 		t.Fatalf("status = %+v, want the repository's grant and the subject", status)
 	}
 	if status.Access[0].CurrentlyValid || status.Access[0].LastSuccessAt != nil || status.Access[0].CheckedAt != nil || status.Access[0].ValidUntil != nil {
@@ -307,19 +228,19 @@ func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
 	fork := g.grant(t, g.installation+1, forkRepository)
 	// A grant on a repository that holds no revision of the subject is not the subject's.
 	g.grant(t, g.installation+2, g.fork(2000))
-	g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: forkRepository, SHA: commitA})
+	g.addRevisions(t, subject, model.GitHubHeadRevision{Repository: forkRepository, SHA: commitA})
 	g.validate(t, g.access())
 	forkLease, err := g.state.Acquire(t.Context(), fork)
 	if err != nil || forkLease == nil {
 		t.Fatalf("lease = %v, %v", forkLease, err)
 	}
 
-	status = g.status(t, sub)
-	var keys []githubstate.AccessKey
+	status = g.status(t, subject)
+	var keys []AccessKey
 	for _, access := range status.Access {
 		keys = append(keys, access.Key)
 	}
-	if want := []githubstate.AccessKey{g.access(), fork}; !slices.Equal(keys, want) {
+	if want := []AccessKey{g.access(), fork}; !slices.Equal(keys, want) {
 		t.Fatalf("grants = %+v, want %+v in repository order", keys, want)
 	}
 	base, forked := status.Access[0], status.Access[1]
@@ -331,7 +252,7 @@ func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
 	}
 
 	// A subject's failure is projected with when it will be tried again, and ends with the next success.
-	subjectLease, err := g.state.Acquire(t.Context(), sub.Subject)
+	subjectLease, err := g.state.Acquire(t.Context(), subject)
 	if err != nil || subjectLease == nil {
 		t.Fatalf("lease = %v, %v", subjectLease, err)
 	}
@@ -339,13 +260,13 @@ func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failed := g.status(t, sub).Subject
+	failed := g.status(t, subject).Subject
 	if failed.Failure == nil || failed.Failure.Kind != model.FailureAccessDenied || failed.RetryAt == nil || !failed.RetryAt.Equal(until) {
 		t.Errorf("failed subject reads as %+v, want a retry at %v", failed, until)
 	}
 	g.exec(t, `UPDATE github_subject SET next_attempt = now() WHERE repository_id = $1`, g.repository)
-	g.refreshSubject(t, sub.Subject, g.validate(t, g.access()))
-	if healed := g.status(t, sub).Subject; healed.Failure != nil || healed.RetryAt != nil || healed.LastSuccessAt == nil {
+	g.refreshSubject(t, subject, g.validate(t, g.access()))
+	if healed := g.status(t, subject).Subject; healed.Failure != nil || healed.RetryAt != nil || healed.LastSuccessAt == nil {
 		t.Errorf("recovered subject reads as %+v", healed)
 	}
 }
