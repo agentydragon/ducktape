@@ -302,7 +302,7 @@ func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, 
 	defer server.Close()
 	if api == protocol.APIStyleResponses {
 		response, err := responses.Sample(t.Context(), server.Client(), server.URL, "Bearer fixture-key", []byte(`{}`),
-			responses.Config{Dialect: responses.DialectStandard}, evidence, nil, false)
+			responses.Config{Dialect: responses.DialectStandard}, evidence, nil, false, protocol.ProviderHooks{})
 		if err != nil {
 			return nil, err
 		}
@@ -320,7 +320,7 @@ func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, 
 		return &samplerRecoveryResult{Audit: response.Audit(), Records: records, ContextTokens: response.Terminal.TotalTokens()}, nil
 	}
 	response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key",
-		anthropic.Config{MaxTokens: 1024}, []byte(`{}`), evidence, false)
+		anthropic.Config{MaxTokens: 1024}, []byte(`{}`), evidence, false, protocol.ProviderHooks{})
 	if err != nil {
 		return nil, err
 	}
