@@ -12,7 +12,7 @@ from uuid import uuid4
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.central_sampler import sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_pb2_grpc
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient

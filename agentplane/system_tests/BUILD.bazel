@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-# gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
+# gazelle:resolve py agentplane.central_sampler.api.sampler_pb2_grpc //agentplane/central_sampler/api:sampler_pb2_grpc
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
 package(

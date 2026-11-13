@@ -14,7 +14,7 @@ import (
 
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"

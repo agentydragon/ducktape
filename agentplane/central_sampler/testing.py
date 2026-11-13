@@ -16,7 +16,7 @@ from pydantic import SecretStr
 from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
 
-from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import ClientTLS

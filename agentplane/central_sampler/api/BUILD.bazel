@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "sampler_proto",
+    srcs = ["sampler.proto"],
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_proto",
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:identity_proto",
+        "//agentplane/proto:session_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "sampler_pb2",
+    deps = [":sampler_proto"],
+)
+
+py_grpc_service_library(
+    name = "sampler_pb2_grpc",
+    proto = ":sampler_proto",
+    py_proto = ":sampler_pb2",
+)
+
+go_proto_library(
+    name = "sampler_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb",
+    proto = ":sampler_proto",
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+    ],
+)

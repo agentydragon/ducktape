@@ -7,7 +7,7 @@ go_library(
     srcs = ["exporter.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport",
     deps = [
-        "//agentplane/central_sampler:sampler_go_proto",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
@@ -27,7 +27,7 @@ go_test(
     embed = [":historyexport"],
     race = "on",
     deps = [
-        "//agentplane/central_sampler:sampler_go_proto",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:session_go_proto",

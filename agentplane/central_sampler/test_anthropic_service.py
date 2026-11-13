@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from agentplane.central_sampler import sampler_pb2
+from agentplane.central_sampler.api import sampler_pb2
 from agentplane.central_sampler.settings import (
     AnthropicCompactionConfig,
     AnthropicMessagesConfig,

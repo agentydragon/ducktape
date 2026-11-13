@@ -26,7 +26,7 @@ The service, sampling loop and persistence are implemented in Go. History export
 `historyexport` package and reaches sampler state through its durable outbox interface. The
 JavaScript host is the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
 
-[The API](sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
+[The API](api/sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
 recovery and evidence.
 
 The sampler is a service Agentplane owns rather than upstream Codex's app-server moved out of the

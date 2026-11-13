@@ -32,7 +32,7 @@ go_library(
     deps = [
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
-        "//agentplane/central_sampler:sampler_go_proto",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
@@ -289,7 +289,7 @@ go_test(
     embed = [":dispatcher"],
     deps = [
         ":session_dispatcher_go_proto",
-        "//agentplane/central_sampler:sampler_go_proto",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
