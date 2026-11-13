@@ -15,6 +15,11 @@ containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a t
 with VM Sandboxes ([measurements](../k3s/debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 The stack pins its imported OCI images in containerd's CRI metadata. Kubelet image GC can otherwise
 delete an image before a later Sandbox uses it; these fixture-local tags cannot be pulled from a registry.
+Before opening an import transaction, the stack checks the exact OCI manifest target, native
+platform content and overlayfs unpacked state, plus the CRI pin on the expected config ID.
+Only a matching usable single-manifest image skips import; indexes keep the ordinary import path.
+The `system_test.images.check_usable` span records this check, and each import span records
+`image.import.skipped`. This does not infer usability from retained blobs.
 At import-group boundaries, the stack removes untagged, unpinned CRI images
 that no container uses. Named caches stay warm, including k3s's own images. Before importing, it also
 removes unused fixture-local images (`git.allegedly.works/ducktape-ci/…`) the target's manifest does
