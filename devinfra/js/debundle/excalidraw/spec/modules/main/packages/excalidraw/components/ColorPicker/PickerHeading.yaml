@@ -1,0 +1,8 @@
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        PickerHeading = ({ children: ANYTHING }) =>
+          ANYTHING("div", { className: "color-picker__heading", ANYTHING }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - PickerHeading

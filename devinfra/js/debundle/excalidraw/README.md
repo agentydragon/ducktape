@@ -29,11 +29,16 @@ module it bundles. Every other chunk is `inline_in_entry`.
 
 - **Modules**, each claimed by a source-anchored selector (property names,
   self-emitted strings and class names; no minified-name pins):
-  - `editor`: `app_state/defaults` (`getDefaultAppState`), `data/blob`
-    (`blobToArrayBuffer`), `element/text_wrapping` (`isSingleCharacter`,
-    `satisfiesWordInvariant`);
-  - `main`: `components/card` (`Card`), `components/color_picker/labels`
-    (`HotkeyLabel`, `PickerHeading`).
+  - Paths below each chunk mirror the original
+    [`v0.18.1` source tree](https://github.com/excalidraw/excalidraw/tree/v0.18.1/packages),
+    including package boundaries and case. Chunk directories describe the input
+    bundle; paths inside them describe the upstream source homes.
+  - `editor`: `packages/excalidraw/appState` (`getDefaultAppState`),
+    `packages/excalidraw/data/blob` (`blobToArrayBuffer`), and
+    `packages/excalidraw/element/textWrapping` (the complete wrapping/tokenizing
+    implementation, Unicode regex builders and caches, and its internal helpers).
+  - `main`: `packages/excalidraw/components/Card` (`Card`) and separate
+    `packages/excalidraw/components/ColorPicker/{HotkeyLabel,PickerHeading}` modules.
 - **Vendor swaps**: whole-chunk `swap` of the default-only `vendor/clsx` and
   `vendor/roughjs` entry chunks, and a `partial_swap` of the shared clsx chunk,
   which rewrites the editor's and `main`'s imports to `"clsx"`. Its symbol key
@@ -53,7 +58,9 @@ packages from their Bazel package roots, through an import map it builds from
 the toolbar, draws a rectangle, and asserts that undo becomes enabled, with no
 console or page errors, harness-recorded errors, or failed requests. It
 exercises only what startup and drawing load: no lazy locale, font-subsetting
-or file-system chunk.
+or file-system chunk. It also imports `textWrapping` through its original source
+path and exercises word wrapping, Unicode normalization, joined emojis and CJK
+detection.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the

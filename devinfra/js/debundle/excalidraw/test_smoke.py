@@ -118,6 +118,30 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         # Drawing records a history entry, which enables undo.
         await expect(undo).to_be_enabled()
 
+        text_wrapping = await page.evaluate(
+            """async () => {
+                const { parseTokens, containsCJK, wrapText } = await import(
+                    './editor/packages/excalidraw/element/textWrapping.js'
+                );
+                const context = document.createElement('canvas').getContext('2d');
+                context.font = '20px monospace';
+                return {
+                    latin: parseTokens('hello-world'),
+                    emoji: parseTokens('👨‍👩‍👧‍👦🇨🇿'),
+                    composed: parseTokens('c\\u030cて\\u3099'),
+                    cjk: [containsCJK('hello'), containsCJK('hello界')],
+                    wrapped: wrapText('ab cd', context.font, context.measureText('ab').width + 0.1),
+                };
+            }"""
+        )
+        assert text_wrapping == {
+            "latin": ["hello-", "world"],
+            "emoji": ["👨‍👩‍👧‍👦", "🇨🇿"],
+            "composed": ["č", "で"],
+            "cjk": [False, True],
+            "wrapped": "ab\ncd",
+        }
+
         await page.wait_for_load_state("networkidle")
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
         assert console_errors == []

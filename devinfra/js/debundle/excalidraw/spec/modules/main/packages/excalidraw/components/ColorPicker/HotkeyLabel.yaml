@@ -6,10 +6,3 @@ source_matches:
         ANYTHING = ANYTHING;
     bindings:
       - HotkeyLabel
-  - match: |
-      var ANYTHING = ANYTHING,
-        PickerHeading = ({ children: ANYTHING }) =>
-          ANYTHING("div", { className: "color-picker__heading", ANYTHING }),
-        ANYTHING = ANYTHING;
-    bindings:
-      - PickerHeading
