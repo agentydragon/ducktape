@@ -48,6 +48,17 @@ class CaseBatch:
                 # The matching pytest item re-raises this after its owned cleanup completes.
                 error = caught
                 span.set_status(Status(StatusCode.ERROR, str(caught)))
+            except BaseExceptionGroup as caught:
+                # TaskGroup preserves pytest control outcomes as BaseException leaves. Record
+                # groups made only of case failures, but let cancellation and process-control
+                # exceptions continue through the task group.
+                _, unhandled = caught.split(
+                    (Exception, pytest.fail.Exception, pytest.skip.Exception, pytest.xfail.Exception)
+                )
+                if unhandled is not None:
+                    raise
+                error = caught
+                span.set_status(Status(StatusCode.ERROR, str(caught)))
         assert isinstance(span, ReadableSpan)
         assert span.start_time is not None
         assert span.end_time is not None
@@ -86,7 +97,7 @@ class CaseBatch:
         async def drive() -> None:
             try:
                 await batch._run(cases, limit=limit, exclusive=exclusive)
-            except Exception as error:
+            except (Exception, BaseExceptionGroup) as error:
                 # An internal driver error must wake every result waiter as well as
                 # propagate at fixture teardown; otherwise pytest waits until timeout.
                 for future in batch._results.values():
