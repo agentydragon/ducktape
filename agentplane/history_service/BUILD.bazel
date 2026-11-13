@@ -65,6 +65,7 @@ py_test(
 go_library(
     name = "main_lib",
     srcs = [
+        "compact_history.go",
         "config.go",
         "main.go",
         "settle_history.go",

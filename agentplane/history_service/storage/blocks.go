@@ -84,23 +84,23 @@ func decodeBlock(payload []byte) ([]*eventlogpb.EventEntry, error) {
 	return block.Entries, nil
 }
 
-func insertBlock(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) error {
+func insertBlock(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (int, error) {
 	payload, err := encodeBlock(entries)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	cursors, sizes := make([]int64, len(entries)), make([]int64, len(entries))
 	kind := observationNumber(entries[0])
 	for index, entry := range entries {
 		if observationNumber(entry) != kind {
-			return fmt.Errorf("event block mixes observation kinds")
+			return 0, fmt.Errorf("event block mixes observation kinds")
 		}
 		cursors[index], sizes[index] = int64(entry.GetCursor()), int64(proto.Size(entry))
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO session_event_block
 		(session_id,first_cursor,last_cursor,kind,cursors,sizes,payload) VALUES($1,$2,$3,$4,$5,$6,$7)`,
 		sessionID, cursors[0], cursors[len(cursors)-1], kind, pq.Array(cursors), pq.Array(sizes), payload)
-	return err
+	return len(payload), err
 }
 
 // compactEvents seeks only the partial index of eligible new writes. Oversized frames and entries
@@ -142,7 +142,7 @@ func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) error {
 					break
 				}
 			}
-			if err := insertBlock(ctx, tx, sessionID, entries); err != nil {
+			if _, err := insertBlock(ctx, tx, sessionID, entries); err != nil {
 				return err
 			}
 			cursors := make([]int64, len(entries))
@@ -442,7 +442,7 @@ func deleteEventRanges(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, ran
 			return err
 		}
 		if len(block.entries) > 0 {
-			if err := insertBlock(ctx, tx, sessionID, block.entries); err != nil {
+			if _, err := insertBlock(ctx, tx, sessionID, block.entries); err != nil {
 				return err
 			}
 		}

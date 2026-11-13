@@ -1,0 +1,55 @@
+# Manual maintenance only; this file is not included in Flux.
+# Use an image containing compact-history after all serving readers support migration 16.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: history-compaction-
+  namespace: agentplane-staging
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: history-service
+    spec:
+      serviceAccountName: history-service
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: compact-history
+          image: git.allegedly.works/ducktape-ci/agentplane-history-service:replace-with-deployed-image
+          args:
+            - compact-history
+            - --session
+            - "91e0ad22-4ae2-45b0-a499-f617d54eb9ca"
+            - --dry-run
+          env:
+            - name: AGENTPLANE_HISTORY_SERVICE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-sandbox-service
+                  key: uri
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

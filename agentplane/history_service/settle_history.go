@@ -13,29 +13,29 @@ import (
 	"github.com/google/uuid"
 )
 
-type settlementOptions struct {
+type historyMaintenanceOptions struct {
 	session uuid.UUID
 	all     bool
 	apply   bool
 }
 
-func parseSettlementOptions(args []string) (settlementOptions, error) {
-	flags := flag.NewFlagSet("settle-history", flag.ContinueOnError)
+func parseHistoryMaintenanceOptions(command string, args []string) (historyMaintenanceOptions, error) {
+	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	session := flags.String("session", "", "one retained Session UUID")
 	all := flags.Bool("all", false, "scan every retained Session")
-	apply := flags.Bool("apply", false, "commit eligible settlements")
-	dryRun := flags.Bool("dry-run", false, "report eligible settlements without writes")
+	apply := flags.Bool("apply", false, "commit changes")
+	dryRun := flags.Bool("dry-run", false, "preview without writes")
 	if err := flags.Parse(args); err != nil {
-		return settlementOptions{}, err
+		return historyMaintenanceOptions{}, err
 	}
 	if flags.NArg() != 0 || *apply == *dryRun || *all == (*session != "") {
-		return settlementOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
+		return historyMaintenanceOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
 	}
-	options := settlementOptions{all: *all, apply: *apply}
+	options := historyMaintenanceOptions{all: *all, apply: *apply}
 	if !*all {
 		id, err := uuid.Parse(*session)
 		if err != nil || id == uuid.Nil {
-			return settlementOptions{}, errors.New("session must be a nonzero UUID")
+			return historyMaintenanceOptions{}, errors.New("session must be a nonzero UUID")
 		}
 		options.session = id
 	}
@@ -43,7 +43,7 @@ func parseSettlementOptions(args []string) (settlementOptions, error) {
 }
 
 func runSettleHistory(ctx context.Context, args []string) error {
-	options, err := parseSettlementOptions(args)
+	options, err := parseHistoryMaintenanceOptions("settle-history", args)
 	if err != nil {
 		return err
 	}
