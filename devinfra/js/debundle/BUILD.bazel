@@ -1070,6 +1070,7 @@ rust_library(
         "@crates//:regex",
         "@crates//:serde",
         "@crates//:serde_yaml",
+        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",

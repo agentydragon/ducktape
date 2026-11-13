@@ -865,6 +865,21 @@ export { actual, other };
         &module_file,
         &format!("members:\n  - name: {EXPORT}\n    selector: {{ binding: {{ name: actual }} }}\n"),
     );
+    let original_module = fs::read_to_string(&module_file).unwrap();
+    let preview = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            &format!("{MODULE}:{EXPORT}"),
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(parse_stdout_json(&preview)["action"], "dry_run");
+    assert_eq!(fs::read_to_string(&module_file).unwrap(), original_module);
+
     let out = run_synthesize_selectors(
         &modules,
         &[
@@ -878,6 +893,7 @@ export { actual, other };
         ],
     );
     let report = parse_stdout_json(&out);
+    assert_eq!(report["action"], "applied");
     assert_eq!(report["summary"]["changed_candidates"], 1, "{report:#}");
 
     let module: serde_yaml::Value =

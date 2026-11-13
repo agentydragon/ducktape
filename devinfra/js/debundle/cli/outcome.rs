@@ -91,7 +91,7 @@ impl GateOutcome {
 }
 
 /// The shared outcome core. Verb-specific outcome structs embed this
-/// via `#[serde(flatten)]` so all five mutating verbs share one JSON
+/// via `#[serde(flatten)]` so mutating verbs share one JSON
 /// schema family.
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationOutcome {
