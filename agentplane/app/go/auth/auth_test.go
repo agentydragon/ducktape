@@ -83,6 +83,53 @@ func TestOIDCDiscoveryIsDeferredUntilLogin(t *testing.T) {
 	}
 }
 
+func TestAuthTraceIdentifiesBlockedDiscoveryWithoutLoggingCredentials(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		http.Error(w, "provider unavailable", http.StatusServiceUnavailable)
+	}))
+	defer provider.Close()
+	a, err := New(Config{
+		OIDC: &OIDCConfig{
+			Issuer: provider.URL, ClientID: "client", ClientSecret: "private-client-secret",
+			SessionSecret: "private-session-secret", PublicBaseURL: "https://agentplane.test",
+		},
+		Database: new(sql.DB), HTTPClient: provider.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&log, nil)))
+	defer slog.SetDefault(original)
+	r := httptest.NewRequest(http.MethodGet, "/auth/login?code=private-code", nil)
+	r.Header.Set("X-Agentplane-Auth-Trace", "0123456789abcdef0123456789abcdef")
+	r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, &RequestSession{}))
+	done := make(chan struct{})
+	go func() {
+		a.login(httptest.NewRecorder(), r)
+		close(done)
+	}()
+	<-entered
+	if !strings.Contains(log.String(), `"phase":"discovery_started"`) || strings.Contains(log.String(), `"phase":"discovery_finished"`) {
+		t.Errorf("blocked discovery trace = %s", log.String())
+	}
+	close(release)
+	<-done
+	if !strings.Contains(log.String(), `"phase":"discovery_finished"`) {
+		t.Fatalf("completed discovery trace = %s", log.String())
+	}
+	for _, secret := range []string{"private-code", "private-client-secret", "private-session-secret"} {
+		if strings.Contains(log.String(), secret) {
+			t.Fatalf("auth trace leaked %q: %s", secret, log.String())
+		}
+	}
+}
+
 func TestCallbackRejectsInvalidLoginAttempt(t *testing.T) {
 	valid := loginAttempt{Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(time.Minute)}
 	for _, tc := range []struct {

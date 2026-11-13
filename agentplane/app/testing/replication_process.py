@@ -6,7 +6,8 @@ import os
 import signal
 import socket
 import ssl
-from collections.abc import AsyncIterator, Callable
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -22,6 +23,7 @@ import uvicorn
 import yaml
 from playwright.async_api import Page
 from python.runfiles import Runfiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -121,12 +123,44 @@ class AppProcess:
     async def authenticate(self) -> None:
         assert self.public_url is not None
         assert self.login_ca is not None
-        async with httpx.AsyncClient(verify=self.login_ca, follow_redirects=True) as login:
-            await login.get(self.public_url + "/auth/login")
-            response = await login.get(self.public_url + "/auth/me")
-            response.raise_for_status()
-            assert response.json()["username"] == "test-operator", response.text
-            self.cookies = login.cookies
+        trace_id = uuid4().hex
+        trace_path = undeclared_outputs_dir() / f"auth-login-{trace_id}.jsonl"
+
+        def record(phase: str, request: httpx.Request, status: int | None = None) -> None:
+            # Paths identify the redirect hop without retaining codes, states, or cookies.
+            entry = {
+                "time_ns": time.time_ns(),
+                "phase": phase,
+                "method": request.method,
+                "host": request.url.host,
+                "path": request.url.path,
+                "status": status,
+            }
+            with trace_path.open("a") as output:
+                output.write(json.dumps(entry) + "\n")
+
+        async def request_hook(request: httpx.Request) -> None:
+            record("request", request)
+
+        async def response_hook(response: httpx.Response) -> None:
+            record("response_headers", response.request, response.status_code)
+
+        async with httpx.AsyncClient(
+            verify=self.login_ca,
+            follow_redirects=True,
+            headers={"X-Agentplane-Auth-Trace": trace_id},
+            event_hooks={"request": [request_hook], "response": [response_hook]},
+        ) as login:
+            try:
+                await login.get(self.public_url + "/auth/login")
+                response = await login.get(self.public_url + "/auth/me")
+                response.raise_for_status()
+                assert response.json()["username"] == "test-operator", response.text
+                self.cookies = login.cookies
+            except Exception:
+                with trace_path.open("a") as output:
+                    output.write(json.dumps({"time_ns": time.time_ns(), "phase": "failed"}) + "\n")
+                raise
 
     async def login(self, page: Page) -> None:
         """Install the cookie obtained through the real OIDC authorization-code exchange."""
@@ -345,6 +379,41 @@ async def oidc_provider(
             expected_exchange_client_id=provider_options.expected_exchange_client_id,
             on_client_assertion=provider_options.client_assertions.append,
         )
+        provider_trace = undeclared_outputs_dir() / f"oidc-provider-{uuid4().hex}.jsonl"
+
+        async def trace_provider(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+            trace_id = request.headers.get("X-Agentplane-Auth-Trace")
+            path = request.url.path
+            with provider_trace.open("a") as output:
+                output.write(
+                    json.dumps({"time_ns": time.time_ns(), "phase": "request", "trace_id": trace_id, "path": path})
+                    + "\n"
+                )
+            try:
+                response = await call_next(request)
+                with provider_trace.open("a") as output:
+                    output.write(
+                        json.dumps(
+                            {
+                                "time_ns": time.time_ns(),
+                                "phase": "response_headers",
+                                "trace_id": trace_id,
+                                "path": path,
+                                "status": response.status_code,
+                            }
+                        )
+                        + "\n"
+                    )
+                return response
+            except Exception:
+                with provider_trace.open("a") as output:
+                    output.write(
+                        json.dumps({"time_ns": time.time_ns(), "phase": "failed", "trace_id": trace_id, "path": path})
+                        + "\n"
+                    )
+                raise
+
+        app.add_middleware(BaseHTTPMiddleware, dispatch=trace_provider)
         token_path = "/application/o/token/" if provider_options.authentik_compatible else "/token"
         token_route = next(route for route in app.routes if isinstance(route, Route) and route.path == token_path)
         issue_token = token_route.endpoint
