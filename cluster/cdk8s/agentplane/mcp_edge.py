@@ -160,8 +160,9 @@ class McpEdge(Construct):
         self._add_rbac(workload.account)
 
     def _add_rbac(self, account: ServiceAccount) -> None:
-        if self.env.mcp_edge.oauth_secret_name is None:
-            return
+        # ConnectionService is registered even without OAuth, and its Identity informer is a
+        # readiness dependency in every deployment. Keep this read-only role unconditional;
+        # OAuth-specific secrets and projected tokens remain conditional above.
         namespace = self.env.namespace
         role = Role(
             self,

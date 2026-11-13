@@ -70,6 +70,23 @@ def test_action_client_metadata_route_targets_mcp_edge(staging_manifests: list[d
     assert backend["port"] == edge.port.number
 
 
+def test_mcp_edge_identity_reader_role_exists_without_oauth(scratch_app: App) -> None:
+    env = replace(staging.ENV, mcp_edge=replace(staging.ENV.mcp_edge, oauth_secret_name=None))
+    chart = Chart(scratch_app, "mcp-edge", disable_resource_name_hashes=True)
+    mcp_edge.McpEdge(chart, "mcp-edge", env, database_url=EnvValue.from_value("postgres://unused"))
+
+    documents = Cdk8sTesting.synth(chart)
+    role = one(doc for doc in documents if doc["kind"] == "Role" and doc["metadata"]["name"] == mcp_edge.NAME)
+    assert role["metadata"]["namespace"] == env.namespace
+    assert role["rules"] == [
+        {"apiGroups": ["agentplane.allegedly.works"], "resources": ["identities"], "verbs": ["get", "list", "watch"]}
+    ]
+    binding = one(doc for doc in documents if doc["kind"] == "RoleBinding" and doc["metadata"]["name"] == mcp_edge.NAME)
+    assert binding["metadata"]["namespace"] == env.namespace
+    assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": mcp_edge.NAME}
+    assert binding["subjects"] == [{"kind": "ServiceAccount", "name": mcp_edge.NAME, "namespace": env.namespace}]
+
+
 def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]]) -> None:
     service = one(
         doc for doc in staging_manifests if doc["kind"] == "Service" and doc["metadata"]["name"] == actions.NAME
