@@ -15,8 +15,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 )
 
 func merged(base, extra map[string]any) map[string]any {
