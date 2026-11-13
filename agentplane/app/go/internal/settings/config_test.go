@@ -1,4 +1,4 @@
-package main
+package settings
 
 import (
 	"os"
@@ -118,7 +118,7 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 	t.Run("path required", func(t *testing.T) {
 		t.Setenv("AGENTPLANE_CONFIG_FILE", "")
-		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "AGENTPLANE_CONFIG_FILE is required") {
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "AGENTPLANE_CONFIG_FILE is required") {
 			t.Fatalf("missing config path error = %v", err)
 		}
 	})
@@ -126,7 +126,7 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		writeConfig(t, validSettingsYAML)
 		t.Setenv("AGENTPLANE_LISTEN_ADDRESS", "127.0.0.1:9999")
 		t.Setenv("AGENTPLANE_TOKEN_SUBJECTS", `[]`)
-		c, err := loadConfig()
+		c, err := Load()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +162,7 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			writeConfig(t, test.yaml)
-			if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), test.want) {
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("load error = %v, want %q", err, test.want)
 			}
 		})
@@ -180,7 +180,7 @@ func TestLoadConfigReadsOIDCStaticSettingsFromFileAndSecretInputs(t *testing.T) 
 	// Former static values are ignored; the file is authoritative.
 	t.Setenv("AGENTPLANE_OIDC_ISSUER", "https://ignored.example.test")
 	t.Setenv("AGENTPLANE_OIDC_TOKEN_RENEW_BEFORE_SECONDS", "0")
-	c, err := loadConfig()
+	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestLoadConfigReadsOIDCStaticSettingsFromFileAndSecretInputs(t *testing.T) 
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c, err = loadConfig()
+	c, err = Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestLoadConfigReadsOIDCStaticSettingsFromFileAndSecretInputs(t *testing.T) 
 
 func TestLoadConfigRetainsCaseSensitivePresetNames(t *testing.T) {
 	writeConfig(t, validSettingsYAML)
-	c, err := loadConfig()
+	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}

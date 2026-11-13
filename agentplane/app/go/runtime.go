@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -56,7 +57,7 @@ const systemStatusTimeout = 5 * time.Second
 
 // run owns process dependencies and their shutdown. Each API call continues to use the
 // repository's generated Kubernetes, gRPC, and protobuf APIs; the process adds only composition.
-func run(ctx context.Context, config Config) error {
+func run(ctx context.Context, config settings.Config) error {
 	logger := slog.Default()
 	shutdownTracing, err := observability.Init(ctx, "agentplane-app")
 	if err != nil {
@@ -380,7 +381,7 @@ func postgresDriverURL(value string) string {
 	return strings.Replace(value, "postgresql+asyncpg://", "postgres://", 1)
 }
 
-func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
+func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
 	probes := make([]status.Probe, 0, 7)
 	connections := make([]*grpc.ClientConn, 0, 5)
 	dialHealth := func(name, target string, tls *peertls.ClientTLS) error {
@@ -468,7 +469,7 @@ type processWorker struct {
 	run  func(context.Context) error
 }
 
-func serve(ctx context.Context, config Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
+func serve(ctx context.Context, config settings.Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
 	listener, err := netlistener.Open(config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)

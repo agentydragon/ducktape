@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"google.golang.org/grpc"
@@ -190,7 +191,7 @@ func sessionGatewayError(_ context.Context, _ *gatewayruntime.ServeMux, _ gatewa
 	_ = json.NewEncoder(w).Encode(map[string]any{"code": int32(st.Code()), "message": st.Message(), "detail": st.Message()})
 }
 
-func sessionDefaults(config Config, sandbox *environmentpb.EnvironmentDescriptor, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
+func sessionDefaults(config settings.Config, sandbox *environmentpb.EnvironmentDescriptor, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {
 	defaults := &sessionpb.SessionSpec{}
 	var setupScript *string
 	if presetName := sandbox.GetConfiguration().GetPreset(); presetName != "" {

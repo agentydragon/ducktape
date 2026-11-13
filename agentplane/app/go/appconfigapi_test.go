@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"google.golang.org/grpc"
@@ -26,7 +27,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		t.Fatal(err)
 	}
 
-	config := Config{
+	config := settings.Config{
 		Models: runtimeconfig.ModelCatalog{
 			Models: []runtimeconfig.ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
 			Harnesses: map[string][]string{
@@ -34,24 +35,23 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 				"HARNESS_CLAUDE": {},
 			},
 		},
-		FrontendConfig: FrontendConfig{
-			TraceSearch: &TraceSearchSettings{
+		FrontendConfig: settings.FrontendConfig{
+			TraceSearch: &settings.TraceSearchSettings{
 				GrafanaBaseURL: "https://grafana.example.test/", TempoDatasourceUID: "fixture-tempo", DeploymentEnvironment: "fixture",
 			},
-			LangfuseSearch: &LangfuseSearchSettings{
+			LangfuseSearch: &settings.LangfuseSearchSettings{
 				BaseURL: "https://langfuse.example.test/", ProjectID: "fixture-project",
 				SessionMetadataKey: "session", SandboxNamespaceMetadataKey: "namespace",
 				SandboxServiceAccountMetadataKey: "account",
 			},
 		},
-		ThreadPresets: map[string]ThreadPreset{
+		ThreadPresets: map[string]settings.ThreadPreset{
 			"default": {Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/workspace", Instructions: "", SetupScript: ""},
 		},
-		SandboxPresets: map[string]SandboxPreset{
+		SandboxPresets: map[string]settings.SandboxPreset{
 			"work": {Title: "Work", Template: "linux", PolicySets: []string{}, InboxTags: []string{"team"}, ThreadPreset: "default"},
 		},
-		sandboxPresetOrder: []string{"work"},
-		NewSandboxDefaults: NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: appConfigInt64Pointer(900)},
+		NewSandboxDefaults: settings.NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: appConfigInt64Pointer(900)},
 	}
 	server := NewHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{names: []string{"alpha", "zeta"}}
