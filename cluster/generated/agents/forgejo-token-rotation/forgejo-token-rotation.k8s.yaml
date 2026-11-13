@@ -164,6 +164,8 @@ spec:
               env:
                 - name: SSL_CERT_FILE
                   value: /var/run/public-web-pki/ca-certificates.crt
+                - name: GIT_SSL_CAINFO
+                  value: /var/run/public-web-pki/ca-certificates.crt
               image: git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset
               name: rotate
               resources:
