@@ -3,14 +3,19 @@
 import asyncio
 import os
 import stat
+import threading
 from pathlib import Path
+from typing import Any
 
+import aiohttp
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s
+from kubernetes_asyncio.client.exceptions import ApiException
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.vm import block_storage
 from agentplane.system_tests.vm.block_storage import CLAIM_CAPACITY, STORAGE_CLASS, BlockStorage
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 
@@ -103,6 +108,154 @@ async def test_concurrent_claims_and_replacement_have_independent_retained_devic
                 for volume in volumes
             }
         assert all(not path.exists() or path.read_text().strip() != backing for path, backing in backing_files.items())
+
+
+@pytest.mark.parametrize(
+    "transient_error",
+    [TimeoutError("injected PVC list deadline"), aiohttp.ClientConnectionError("injected PVC list disconnect")],
+    ids=["deadline", "transport"],
+)
+async def test_transient_claim_list_error_recovers_without_reprovisioning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transient_error: Exception
+) -> None:
+    async with kubernetes_apiserver() as server:
+        core = k8s.CoreV1Api(server.api)
+        await core.create_namespace(k8s.V1Namespace(metadata=k8s.V1ObjectMeta(name="workspace-test")))
+        cluster = Cluster(kubeconfig=server.kubeconfig, namespace="workspace-test", kubectl_command=("unused-kubectl",))
+        claims = await asyncio.gather(
+            core.create_namespaced_persistent_volume_claim(cluster.namespace, workspace_claim("first")),
+            core.create_namespaced_persistent_volume_claim(cluster.namespace, workspace_claim("second")),
+        )
+
+        list_calls = 0
+        storage_class_creates = 0
+        volume_creates = 0
+        attach_calls = 0
+        failed_list = threading.Event()
+        recovered_list = threading.Event()
+        original_list = k8s.CoreV1Api.list_namespaced_persistent_volume_claim
+        original_create_storage_class = k8s.StorageV1Api.create_storage_class
+        original_create_volume = k8s.CoreV1Api.create_persistent_volume
+        original_attach = block_storage._LoopDevice.attach
+
+        async def fail_second_list(self: k8s.CoreV1Api, *args: Any, **kwargs: Any):
+            nonlocal list_calls
+            list_calls += 1
+            if list_calls == 2:
+                failed_list.set()
+                raise transient_error
+            result = await original_list(self, *args, **kwargs)
+            if list_calls >= 3:
+                recovered_list.set()
+            return result
+
+        async def count_storage_class_creates(self: k8s.StorageV1Api, *args: Any, **kwargs: Any):
+            nonlocal storage_class_creates
+            storage_class_creates += 1
+            return await original_create_storage_class(self, *args, **kwargs)
+
+        async def count_volume_creates(self: k8s.CoreV1Api, *args: Any, **kwargs: Any):
+            nonlocal volume_creates
+            volume_creates += 1
+            return await original_create_volume(self, *args, **kwargs)
+
+        def count_attaches(backing_file: Path):
+            nonlocal attach_calls
+            attach_calls += 1
+            return original_attach(backing_file)
+
+        monkeypatch.setattr(k8s.CoreV1Api, "list_namespaced_persistent_volume_claim", fail_second_list)
+        monkeypatch.setattr(k8s.StorageV1Api, "create_storage_class", count_storage_class_creates)
+        monkeypatch.setattr(k8s.CoreV1Api, "create_persistent_volume", count_volume_creates)
+        monkeypatch.setattr(block_storage._LoopDevice, "attach", count_attaches)
+
+        with BlockStorage(tmp_path) as storage, storage.provisioning(cluster, node_name="test-node"):
+            volumes = await wait_for_volumes(core, 2)
+            assert await asyncio.to_thread(failed_list.wait, 5)
+            assert await asyncio.to_thread(recovered_list.wait, 5)
+            assert {volume.spec.claim_ref.uid for volume in volumes} == {claim.metadata.uid for claim in claims}
+            assert storage_class_creates == 1
+            assert volume_creates == 2
+            assert attach_calls == 2
+            assert len(storage.devices) == 2
+
+
+async def test_claim_list_retry_exhaustion_and_stop_preserve_control_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    async with kubernetes_apiserver() as server:
+        core = k8s.CoreV1Api(server.api)
+        attempts: list[TimeoutError] = []
+
+        async def timeout_list(self: k8s.CoreV1Api, _namespace: str, **_kwargs: Any):
+            error = TimeoutError(f"injected PVC list timeout {len(attempts) + 1}")
+            attempts.append(error)
+            raise error
+
+        monkeypatch.setattr(k8s.CoreV1Api, "list_namespaced_persistent_volume_claim", timeout_list)
+        stopped = threading.Event()
+        with pytest.raises(TimeoutError) as caught:
+            await block_storage._list_claims(core, "workspace-test", stopped)
+
+        assert len(attempts) == block_storage._CLAIM_LIST_ATTEMPTS
+        assert caught.value is attempts[-1]
+
+        stopped.set()
+        assert await block_storage._list_claims(core, "workspace-test", stopped) is None
+        assert len(attempts) == block_storage._CLAIM_LIST_ATTEMPTS
+
+        stop_after_error_calls = 0
+        stopped.clear()
+
+        async def timeout_and_stop(self: k8s.CoreV1Api, _namespace: str, **_kwargs: Any):
+            nonlocal stop_after_error_calls
+            stop_after_error_calls += 1
+            stopped.set()
+            raise TimeoutError("injected PVC list timeout during stop")
+
+        monkeypatch.setattr(k8s.CoreV1Api, "list_namespaced_persistent_volume_claim", timeout_and_stop)
+        assert await block_storage._list_claims(core, "workspace-test", stopped) is None
+        assert stop_after_error_calls == 1
+
+        started = asyncio.Event()
+        cancellation_calls = 0
+        stopped.clear()
+
+        async def hanging_list(self: k8s.CoreV1Api, _namespace: str, **_kwargs: Any):
+            nonlocal cancellation_calls
+            cancellation_calls += 1
+            started.set()
+            await asyncio.Future()
+
+        monkeypatch.setattr(k8s.CoreV1Api, "list_namespaced_persistent_volume_claim", hanging_list)
+        task = asyncio.create_task(block_storage._list_claims(core, "workspace-test", stopped))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert cancellation_calls == 1
+
+
+async def test_forbidden_claim_list_is_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with kubernetes_apiserver() as server:
+        core = k8s.CoreV1Api(server.api)
+        await core.create_namespace(k8s.V1Namespace(metadata=k8s.V1ObjectMeta(name="workspace-test")))
+        cluster = Cluster(kubeconfig=server.kubeconfig, namespace="workspace-test", kubectl_command=("unused-kubectl",))
+        list_calls = 0
+
+        async def forbidden_list(self: k8s.CoreV1Api, *args: Any, **kwargs: Any):
+            nonlocal list_calls
+            list_calls += 1
+            raise ApiException(status=403, reason="Forbidden")
+
+        monkeypatch.setattr(k8s.CoreV1Api, "list_namespaced_persistent_volume_claim", forbidden_list)
+        with (
+            BlockStorage(tmp_path) as storage,
+            pytest.raises(ApiException) as caught,
+            storage.provisioning(cluster, node_name="test-node"),
+        ):
+            pytest.fail("provisioner swallowed a forbidden PVC list")
+
+        assert caught.value.status == 403
+        assert list_calls == 1
 
 
 async def test_worker_failure_reaches_the_fixture_owner(tmp_path: Path) -> None:

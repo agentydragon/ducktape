@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import fcntl
+import logging
 import os
 import stat
 import struct
@@ -19,8 +20,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import aiohttp
 from kubernetes_asyncio import client as k8s
-from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import (
+    AsyncRetrying,
+    Retrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    stop_after_delay,
+    wait_fixed,
+)
 
 from agentplane.system_tests.driver.cluster import Cluster
 
@@ -38,6 +48,34 @@ _LO_FLAGS_OFFSET = 52
 _ATTACH_ATTEMPTS = 8
 _DETACH_TIMEOUT_SECONDS = 30.0
 _DETACH_POLL_SECONDS = 0.1
+_CLAIM_LIST_ATTEMPTS = 3
+_CLAIM_LIST_RETRY_SECONDS = 0.1
+_TRANSIENT_CLAIM_LIST_ERRORS = (TimeoutError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError)
+
+logger = logging.getLogger(__name__)
+
+
+async def _list_claims(
+    core: k8s.CoreV1Api, namespace: str, stopped: threading.Event
+) -> k8s.V1PersistentVolumeClaimList | None:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_attempt(_CLAIM_LIST_ATTEMPTS),
+        wait=wait_fixed(_CLAIM_LIST_RETRY_SECONDS),
+        retry=retry_if_exception_type(_TRANSIENT_CLAIM_LIST_ERRORS),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    ):
+        with attempt:
+            if stopped.is_set():
+                return None
+            try:
+                return await core.list_namespaced_persistent_volume_claim(namespace, _request_timeout=10)
+            except _TRANSIENT_CLAIM_LIST_ERRORS as error:
+                if stopped.is_set():
+                    logger.warning("PVC list failed after stop was requested; leaving reader: %r", error)
+                    return None
+                raise
+    raise AssertionError("PVC list retry loop exited without a result")
 
 
 @dataclass
@@ -171,7 +209,9 @@ class BlockStorage:
                 while not stopped.is_set():
                     # The disposable namespace has only a handful of claims. Relisting also
                     # handles claim replacement without watch reconnect/resourceVersion state.
-                    claims = await core.list_namespaced_persistent_volume_claim(cluster.namespace, _request_timeout=10)
+                    claims = await _list_claims(core, cluster.namespace, stopped)
+                    if claims is None:
+                        break
                     for claim in claims.items:
                         if (
                             claim.spec.storage_class_name != STORAGE_CLASS
