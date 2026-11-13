@@ -50,6 +50,18 @@ With `run --reports-only`, `--out-root` is also a shared input and must name
 that same reports destination. The standalone projector applies the same mode
 resolution.
 
+## Selector-synthesis rejection reports
+
+Selector synthesis retains semantic skip reasons as tagged `snake_case` data:
+binding identities and declaration counts, unrepresentable declarations, exact
+or normalized proof rejections, and anonymous-statement resolver outcomes.
+Proof rejections keep the expected binding/body index and the shared resolver's
+typed outcome, including candidates. Codemod candidate `reason` and
+propose-commutations `no_unique_selector.detail` carry these records; consumers
+read their tags and payloads. Human output uses an explicit explanation adapter.
+Unexpected parsing, I/O or resolver operation failures propagate as command
+errors and are not reported as semantic skips.
+
 ## Diagnostic ownership
 
 Analysis and source-claim libraries return facts and record typed diagnostics in

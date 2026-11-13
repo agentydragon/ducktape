@@ -1041,6 +1041,7 @@ rust_library(
         "selectors/authoring/selector_codemod.rs",
         "selectors/authoring/selector_minimizer_proptest.rs",
         "selectors/authoring/source_input.rs",
+        "selectors/authoring/synthesis_failure.rs",
     ],
     crate_root = "selectors/authoring/selector_codemod.rs",
     edition = "2024",

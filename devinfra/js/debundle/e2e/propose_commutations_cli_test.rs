@@ -662,7 +662,15 @@ fn duplicated_anonymous_endpoint_is_reported_without_a_selector() {
     for candidate in rejected_candidates {
         assert_eq!(candidate["reason"], "no_unique_selector", "{candidate:#}");
         assert_ne!(candidate["endpoint"], beta, "{candidate:#}");
-        assert!(candidate["detail"].is_string(), "{candidate:#}");
+        assert_eq!(candidate["detail"]["kind"], "synthesis", "{candidate:#}");
+        assert_eq!(
+            candidate["detail"]["reason"]["kind"], "anonymous_statement_not_unique",
+            "{candidate:#}"
+        );
+        assert_eq!(
+            candidate["detail"]["reason"]["outcome"]["outcome"]["kind"], "ambiguous",
+            "{candidate:#}"
+        );
         let pair = [candidate["a"].as_str(), candidate["b"].as_str()];
         assert!(pair.contains(&Some(beta)), "{candidate:#}");
     }

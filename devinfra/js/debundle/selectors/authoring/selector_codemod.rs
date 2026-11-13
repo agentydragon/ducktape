@@ -10,6 +10,10 @@
 //! declarator gaps for non-target siblings, then prove it with the selector
 //! resolve every command uses: the selector must resolve on its own selector.
 
+#[path = "synthesis_failure.rs"]
+pub mod synthesis_failure;
+use synthesis_failure::{ProofError, ProofFailure, SynthesisSkipReason};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -118,7 +122,7 @@ pub struct SelectorCodemodCandidate {
     /// Extra ranked candidates beyond the primary, when `--candidates N > 1`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alternatives: Vec<SelectorAlternative>,
-    pub reason: Option<String>,
+    pub reason: Option<SynthesisSkipReason>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -183,14 +187,14 @@ pub fn synthesize_residual_claims_for_modules(
             }
             let mut claims = Vec::new();
             for (decl_idx, members) in groups {
-                let synthesized = match synthesize_simplest_selector_for_group(
-                    &index, decl_idx, &members, 1,
-                )? {
-                    GroupSelectorOutcome::Synthesized(synthesized) => synthesized,
-                    GroupSelectorOutcome::Skipped(reason) => bail!(
-                        "no uniquely proven structural selector for declaration {decl_idx}: {reason}"
-                    ),
-                };
+                let synthesized =
+                    match synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1)? {
+                        GroupSelectorOutcome::Synthesized(synthesized) => synthesized,
+                        GroupSelectorOutcome::Skipped(reason) => bail!(
+                            "no uniquely proven structural selector for declaration {decl_idx}: {}",
+                            reason.explanation()
+                        ),
+                    };
                 let mut claim_bindings = Vec::new();
                 for target in synthesized.target_bindings {
                     if target.selector_local == target.runtime_binding
@@ -245,7 +249,7 @@ pub enum SourceUnitSelectorSynthesis {
     /// No uniquely proven selector; `reason` is the nearest miss (the
     /// minimizer's rejection, or the shared resolve's non-resolved outcome).
     Skipped {
-        reason: String,
+        reason: SynthesisSkipReason,
     },
 }
 
@@ -295,9 +299,9 @@ fn synthesize_declared_binding_selector(
         .unwrap_or_default();
     let [decl_idx] = decl_indices else {
         return Ok(SourceUnitSelectorSynthesis::Skipped {
-            reason: match decl_indices.len() {
-                0 => format!("binding `{binding}` is not declared in the source chunk"),
-                n => format!("binding `{binding}` is declared in {n} source declarations"),
+            reason: SynthesisSkipReason::BindingDeclarationCount {
+                binding: binding.to_owned(),
+                count: decl_indices.len(),
             },
         });
     };
@@ -390,10 +394,10 @@ fn synthesize_anonymous_statement_selector(
             },
         )),
         _ => Ok(SourceUnitSelectorSynthesis::Skipped {
-            reason: format!(
-                "the exact statement does not select body index {body_index} alone: {}",
-                outcome.render_line()
-            ),
+            reason: SynthesisSkipReason::AnonymousStatementNotUnique {
+                body_index,
+                outcome: Box::new(outcome.clone()),
+            },
         }),
     }
 }
@@ -694,9 +698,9 @@ fn rewrite_name_bindings_to_source_match(
             .cloned()
             .unwrap_or_default();
         let [decl_idx] = decl_indices.as_slice() else {
-            let reason = match decl_indices.len() {
-                0 => format!("binding `{binding_name}` is not declared in source chunk"),
-                n => format!("binding `{binding_name}` is declared in {n} source declarations"),
+            let reason = SynthesisSkipReason::BindingDeclarationCount {
+                binding: binding_name.clone(),
+                count: decl_indices.len(),
             };
             candidates.push(skipped_candidate(
                 module,
@@ -757,13 +761,7 @@ fn rewrite_name_bindings_to_source_match(
                             reason,
                         ))
                     }
-                    Err(err) => candidates.push(skipped_candidate(
-                        module,
-                        file,
-                        only_member[0].member_index,
-                        Some(only_member[0].export_name.clone()),
-                        format!("{err:#}"),
-                    )),
+                    Err(error) => return Err(error),
                 }
             }
             continue;
@@ -787,17 +785,7 @@ fn rewrite_name_bindings_to_source_match(
                     ));
                 }
             }
-            Err(err) => {
-                for member in group_members {
-                    candidates.push(skipped_candidate(
-                        module,
-                        file,
-                        member.member_index,
-                        Some(member.export_name),
-                        format!("{err:#}"),
-                    ));
-                }
-            }
+            Err(error) => return Err(error),
         }
     }
 
@@ -1259,7 +1247,7 @@ impl IndexedDeclaration {
 /// relaxation produces a proving selector.
 enum GroupSelectorOutcome {
     Synthesized(SynthesizedSelectorGroup),
-    Skipped(String),
+    Skipped(SynthesisSkipReason),
 }
 
 fn synthesize_simplest_selector_for_group(
@@ -1317,9 +1305,11 @@ fn synthesize_simplest_selector_for_group(
         }
     }
     if let Err(error) = prove_synthesized_selector(index, decl, &targets, &match_source) {
-        return Ok(GroupSelectorOutcome::Skipped(format!(
-            "the synthesized selector stopped proving after normalization: {error:#}"
-        )));
+        return Ok(GroupSelectorOutcome::Skipped(
+            SynthesisSkipReason::NormalizationRejected {
+                failure: ProofFailure::from_error(error)?,
+            },
+        ));
     };
     let rewritten_holes = specialized.rewritten_holes;
 
@@ -1599,7 +1589,7 @@ fn prove_synthesized_selector(
     match_source: &str,
 ) -> Result<()> {
     if targets.is_empty() {
-        bail!("selector synthesis group has no targets");
+        bail!(ProofError(ProofFailure::EmptyTargets));
     }
     let members = targets
         .iter()
@@ -1632,23 +1622,19 @@ fn prove_synthesized_selector(
                 first_body_index = first_body_index.min(*body_index)
             }
             _ => {
-                return Err(anyhow::Error::new(
-                    selector_outcome::SelectorFailure::Single(Box::new(outcome.clone())),
-                ))
-                .with_context(|| {
-                    format!(
-                        "synthesized selector does not prove `{}` as `{}`",
-                        target.runtime_binding, target.export_name
-                    )
-                });
+                bail!(ProofError(ProofFailure::TargetNotProven {
+                    binding: target.runtime_binding.clone(),
+                    export_name: target.export_name.clone(),
+                    outcome: Box::new(outcome.clone())
+                }));
             }
         }
     }
     if first_body_index != decl.body_idx {
-        bail!(
-            "synthesized selector matched body index {first_body_index} instead of intended {}",
-            decl.body_idx
-        );
+        bail!(ProofError(ProofFailure::WrongBodyIndex {
+            actual: first_body_index,
+            expected: decl.body_idx
+        }));
     }
     Ok(())
 }
@@ -1813,7 +1799,7 @@ fn skipped_candidate(
     file: &Path,
     member_index: usize,
     export_name: Option<String>,
-    reason: impl Into<String>,
+    reason: SynthesisSkipReason,
 ) -> SelectorCodemodCandidate {
     SelectorCodemodCandidate {
         module: module.to_string(),
@@ -1830,7 +1816,7 @@ fn skipped_candidate(
         rewritten_holes: Vec::new(),
         replacement_count: 0,
         alternatives: Vec::new(),
-        reason: Some(reason.into()),
+        reason: Some(reason),
     }
 }
 
@@ -1946,7 +1932,11 @@ pub fn render_selector_codemod_text(report: &SelectorCodemodReport, out: &mut St
                     candidate.module,
                     candidate.member_index,
                     readable,
-                    candidate.reason.as_deref().unwrap_or("unknown reason")
+                    candidate
+                        .reason
+                        .as_ref()
+                        .expect("skipped candidates retain a reason")
+                        .explanation()
                 ));
             }
         }

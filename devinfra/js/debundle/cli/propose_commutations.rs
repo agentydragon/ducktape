@@ -12,6 +12,7 @@
 //! own contradiction and unused checks validate it.
 
 use analysis_model::DepKind;
+use selector_codemod::synthesis_failure::SynthesisSkipReason;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -262,7 +263,10 @@ pub enum RejectionReason {
     /// The graph predates retained verdicts; regenerate it.
     VerdictNotRecorded { edge: String },
     /// No selector proves `endpoint` alone; `detail` is the nearest miss.
-    NoUniqueSelector { endpoint: String, detail: String },
+    NoUniqueSelector {
+        endpoint: String,
+        detail: EndpointSelectorFailure,
+    },
     /// `cycles.json` and `dependency_graph.json.gz` disagree.
     CutEdgeNotInGraph,
 }
@@ -474,7 +478,38 @@ impl RankedCandidate {
 }
 
 /// An endpoint's selector and how it was made, or why it has none.
-type EndpointSelector = Result<(SourceUnitSelector, SelectorOrigin), String>;
+type EndpointSelector = Result<(SourceUnitSelector, SelectorOrigin), EndpointSelectorFailure>;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EndpointSelectorFailure {
+    OutsideParsedSource {
+        source_unit: String,
+        statement_ordinal: usize,
+    },
+    WrongBodyIndex {
+        actual: usize,
+        expected: Option<usize>,
+    },
+    Synthesis {
+        reason: SynthesisSkipReason,
+    },
+}
+
+fn endpoint_failure_text(failure: &EndpointSelectorFailure) -> String {
+    match failure {
+        EndpointSelectorFailure::OutsideParsedSource {
+            source_unit,
+            statement_ordinal,
+        } => format!(
+            "source unit {source_unit} ordinal {statement_ordinal} is outside the parsed source; regenerate the dependency graph"
+        ),
+        EndpointSelectorFailure::WrongBodyIndex { actual, expected } => format!(
+            "the synthesized selector proves body index {actual} but the source unit is body index {expected:?}"
+        ),
+        EndpointSelectorFailure::Synthesis { reason } => reason.explanation().to_string(),
+    }
+}
 
 /// How an endpoint will be written.
 enum EndpointPlan {
@@ -890,7 +925,7 @@ impl<'a> Analysis<'a> {
         PairVerdict::Inertable(inerted)
     }
 
-    fn endpoint_plan(&self, node_index: usize) -> Result<EndpointPlan, String> {
+    fn endpoint_plan(&self, node_index: usize) -> Result<EndpointPlan, EndpointSelectorFailure> {
         let node = self.node(node_index);
         if let Some(binding) = node.declared_bindings.first() {
             let member = self.authored_modules.and_then(|authored| {
@@ -910,10 +945,10 @@ impl<'a> Analysis<'a> {
             });
         }
         let body_index = self.body_indices[node_index].ok_or_else(|| {
-            format!(
-                "source unit {} ordinal {} is outside the parsed source; regenerate the dependency graph",
-                node.id, node.statement_ordinal.0
-            )
+            EndpointSelectorFailure::OutsideParsedSource {
+                source_unit: node.id.clone(),
+                statement_ordinal: node.statement_ordinal.0,
+            }
         })?;
         Ok(EndpointPlan::Synthesize(
             SourceUnitSelectorRequest::AnonymousStatement { body_index },
@@ -1128,11 +1163,15 @@ impl<'a> Analysis<'a> {
                         SelectorOrigin::SynthesizedSourceMatch,
                     ))
                 }
-                SourceUnitSelectorSynthesis::Synthesized(selector) => Err(format!(
-                    "the synthesized selector proves body index {} but the source unit is body index {:?}",
-                    selector.body_index, self.body_indices[node_index]
-                )),
-                SourceUnitSelectorSynthesis::Skipped { reason } => Err(reason),
+                SourceUnitSelectorSynthesis::Synthesized(selector) => {
+                    Err(EndpointSelectorFailure::WrongBodyIndex {
+                        actual: selector.body_index,
+                        expected: self.body_indices[node_index],
+                    })
+                }
+                SourceUnitSelectorSynthesis::Skipped { reason } => {
+                    Err(EndpointSelectorFailure::Synthesis { reason })
+                }
             },
         };
         selectors.insert(node_index, selector.clone());
@@ -1636,7 +1675,10 @@ fn rejection_text(reason: &RejectionReason) -> String {
             format!("{edge} has no retained premise verdict; regenerate the graph")
         }
         RejectionReason::NoUniqueSelector { endpoint, detail } => {
-            format!("no unique selector for {endpoint}: {detail}")
+            format!(
+                "no unique selector for {endpoint}: {}",
+                endpoint_failure_text(detail)
+            )
         }
         RejectionReason::CutEdgeNotInGraph => {
             "the cut edge matches no graph edge; regenerate both reports".to_owned()
