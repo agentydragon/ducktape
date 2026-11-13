@@ -47,11 +47,9 @@ history holds the original full design rationale. The **actionable build checkli
   sketch in <plans/information_trust_tiers.md>, which supersedes the retired zone experiment in
   `archive/2026_08_multi_agent.md`. The reframing it turns on: the trust level belongs to the
   **model provider**, not the agent, since everything in an agent's context reaches its provider —
-  so the thing to label is the corpus, and the enforcement points (mounted workspace, reflected
-  credential, LiteLLM route, egress perimeter) are ones this deployment already has per zone. Two
-  findings worth knowing before picking it up: an information-flow classifier must run on local
-  GPUs or it discloses the content to the party it is deciding about, and the first workloads need
-  no classifier at all because they **delegate a capability, not a corpus**.
+  so the thing to label is the corpus. The replacement runtime must enforce access to workspaces,
+  credentials, provider routes and communication. A classifier must run with a provider authorized
+  for the content it sees; the first workloads can instead **delegate a capability, not a corpus**.
 
 ## Future: letting Haku take some actions itself (permission-elevation tokens)
 
