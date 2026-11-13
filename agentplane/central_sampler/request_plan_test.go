@@ -1,6 +1,7 @@
 package centralsampler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -145,13 +146,13 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	}
 	// A replacement context has not seen the snapshot, even though the transcript has.
 	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque-summary"}})
-	if err := store.transaction(t.Context(), func(tx *sql.Tx) error {
-		current, err := lockOwner(t.Context(), tx, owner)
+	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+		current, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
 		current.ActiveContext = replacement
-		return updateConversation(t.Context(), tx, current)
+		return updateConversation(ctx, tx, current)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,13 +165,13 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	}
 	// The opaque summary may mention handles even when none remain now. A fresh
 	// active context therefore needs an explicit empty snapshot as well.
-	if err := store.transaction(t.Context(), func(tx *sql.Tx) error {
-		current, err := lockOwner(t.Context(), tx, owner)
+	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+		current, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
 		current.ActiveContext = responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "another-summary"}})
-		return updateConversation(t.Context(), tx, current)
+		return updateConversation(ctx, tx, current)
 	}); err != nil {
 		t.Fatal(err)
 	}

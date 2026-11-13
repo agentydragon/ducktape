@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
@@ -36,7 +37,7 @@ func newTestStoreWithDSN(t testing.TB) (*Store, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return New(db), dsn
+	return New(db, 30*time.Second), dsn
 }
 
 func newTestStore(t testing.TB) *Store {

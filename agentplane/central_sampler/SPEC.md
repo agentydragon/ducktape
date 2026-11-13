@@ -616,6 +616,8 @@ Transport
 bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
 usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
 at 64 MiB per response; received bytes are recorded before parsing, including incomplete SSE tails.
+Database operations are bounded by `rpc_timeout_seconds` and the caller's earlier cancellation or
+deadline. Expiry does not establish the outcome of a dispatched effect.
 A received executor response gets a bounded evidence and outcome journal window independent of the
 RPC deadline; each write still checks the owner lease. A DB write failure prevents further effect
 dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits

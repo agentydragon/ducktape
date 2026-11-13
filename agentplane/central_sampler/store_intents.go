@@ -25,7 +25,7 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, p
 	id := uuid.NewString()
 	var wire []byte
 	var conversation *Conversation
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		conversation, err = lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -92,7 +92,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -132,7 +132,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	if failure == nil {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -215,7 +215,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 	}
 	id := uuid.NewString()
 	var wire []byte
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -285,7 +285,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -381,7 +381,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 	if err != nil {
 		return "", err
 	}
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -411,7 +411,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

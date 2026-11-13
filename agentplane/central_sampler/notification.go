@@ -24,7 +24,7 @@ const notificationTokenLimit = 12000
 // QueueNotification durably queues a non-empty notify() text for the active turn. It returns
 // protocol.ErrPrecondition when no turn is active; upstream then reports "no active turn" to the host.
 func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cellID, text string) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -45,6 +45,8 @@ func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cell
 // DrainNotifications appends queued notify() outputs to the transcript. The caller must have
 // recorded every output of the current step first.
 func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	// Skip decoding the transcript on the common path; a later insert waits for the next drain point.
 	var queued bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_notification WHERE conversation_id=$1)`,
@@ -52,7 +54,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 		return false, err
 	}
 	drained := false
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

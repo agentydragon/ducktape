@@ -191,7 +191,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err := centralsampler.Migrate(ctx, samplerDB); err != nil {
 		t.Fatal(err)
 	}
-	samplerStore := centralsampler.New(samplerDB)
+	samplerStore := centralsampler.New(samplerDB, 30*time.Second)
 
 	account := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
 	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})

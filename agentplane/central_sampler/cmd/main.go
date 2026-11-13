@@ -72,7 +72,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if err != nil {
 		return err
 	}
-	store := centralsampler.New(db)
+	store := centralsampler.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
 	hub, err := wakeups.Listen(ctx, databaseURL, centralsampler.OutboxChannel, centralsampler.WorkChannel)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package centralsampler
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -24,11 +25,68 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
+
+func TestStoreOperationsExpireBeforeTheirCallerWhenBlockedOnDatabaseLocks(t *testing.T) {
+	for _, scenario := range []struct {
+		name string
+		lock string
+		call func(context.Context, *Store, *Session) error
+	}{
+		{
+			name: "transaction", lock: "SELECT id FROM sampler_conversation WHERE id=$1 FOR UPDATE",
+			call: func(ctx context.Context, store *Store, session *Session) error {
+				_, err := store.Claim(ctx, session.ConversationID, time.Minute)
+				return err
+			},
+		},
+		{
+			name: "read", lock: "LOCK TABLE sampler_session IN ACCESS EXCLUSIVE MODE",
+			call: func(ctx context.Context, store *Store, session *Session) error {
+				_, err := store.GetSession(ctx, session.ID, "")
+				return err
+			},
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			tx, err := store.DB().BeginTx(t.Context(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			var args []any
+			if scenario.name == "transaction" {
+				args = []any{session.ConversationID}
+			}
+			if _, err := tx.ExecContext(t.Context(), scenario.lock, args...); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			err = scenario.call(ctx, New(store.DB(), 100*time.Millisecond), session)
+			var cancelled *pq.Error
+			if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &cancelled) && cancelled.Code == "57014") {
+				t.Fatalf("database operation error=%v, want deadline cancellation", err)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("operation consumed its caller's longer budget: %v", ctx.Err())
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			if err := scenario.call(ctx, store, session); err != nil {
+				t.Fatalf("operation failed after releasing the database lock: %v", err)
+			}
+		})
+	}
+}
 
 func fixtureExecutionIdentity() *identitypb.Identity {
 	return &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
@@ -475,7 +533,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	conversation.ActiveContext = conversation.Context()
-	if err := store.transaction(t.Context(), func(tx *sql.Tx) error { return updateConversation(t.Context(), tx, conversation) }); err != nil {
+	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error { return updateConversation(ctx, tx, conversation) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1874,15 +1932,15 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.transaction(t.Context(), func(tx *sql.Tx) error {
-		conversation, err := lockOwner(t.Context(), tx, owner)
+	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
 		if err := conversation.Transcript.AppendRecords([]json.RawMessage{json.RawMessage(`{"type":"reasoning","provider_id":9007199254740993}`)}); err != nil {
 			return err
 		}
-		return updateConversation(t.Context(), tx, conversation)
+		return updateConversation(ctx, tx, conversation)
 	}); err != nil {
 		t.Fatal(err)
 	}

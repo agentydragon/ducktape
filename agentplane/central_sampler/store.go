@@ -31,17 +31,22 @@ type rowScanner interface {
 
 // Store owns the central sampler's durable conversation, Session and evidence records.
 type Store struct {
-	db *sql.DB
+	db               *sql.DB
+	operationTimeout time.Duration
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
 
-func New(db *sql.DB) *Store { return &Store{db: db, now: time.Now} }
+func New(db *sql.DB, operationTimeout time.Duration) *Store {
+	return &Store{db: db, operationTimeout: operationTimeout, now: time.Now}
+}
 
 func (s *Store) DB() *sql.DB { return s.db }
 
-func (s *Store) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, f)
+func (s *Store) transaction(ctx context.Context, f func(context.Context, *sql.Tx) error) error {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error { return f(ctx, tx) })
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {
