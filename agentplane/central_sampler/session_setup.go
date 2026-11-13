@@ -33,7 +33,7 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 	if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 		return false, err
 	}
-	setupCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
+	setupCtx, cancel := context.WithTimeout(ctx, r.settings.SetupTimeout())
 	defer cancel()
 	executor, closeTransport, err := r.newExecutor(setupCtx, r.store, owner, session, r.settings)
 	if err != nil {

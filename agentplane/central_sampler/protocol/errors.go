@@ -93,7 +93,7 @@ const (
 	ProviderTimeoutSemanticIdle   ProviderTimeoutPhase = "semantic_idle"
 )
 
-// ProviderPhaseTimeoutError distinguishes a provider phase budget from the turn deadline.
+// ProviderPhaseTimeoutError identifies an expired provider phase budget.
 type ProviderPhaseTimeoutError struct {
 	Phase   ProviderTimeoutPhase
 	Timeout time.Duration

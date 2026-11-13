@@ -147,8 +147,8 @@ normal use exposes a concrete regression. First such regression, 2026-11-10: thr
 (#15439, #15440) cost every central Session its exec-server session and wedged one on a lost
 JavaScript host. Source fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the
 automatic settlement of host loss (#15455) merged on 2026-11-10. This records source status only;
-post-rollout acceptance is not established here. The remaining operator-only blocks are
-`SAMPLER_INTENT_LEASES`; the executor's survival across control-plane rolls is
+post-rollout acceptance is not established here. Provider attempt recovery and remaining native cleanup blocks follow the
+[sampler contract](../central_sampler/SPEC.md#runtime-and-effects); the executor's survival across control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
 | Lane          | Next reviewable outcome                                                                                            | Prerequisite / stopping point                                     |
@@ -1303,30 +1303,6 @@ provider-visible inline tools from nested code-mode tools and the existing Actio
 Exit when selected: tool additions/removals reach model input and runtime consistently, retain the
 cached prefix where supported, survive restart, and preserve execution authorization plus
 thinking/compaction validity. No worker or priority is assigned.
-
-### `SAMPLER_INTENT_LEASES` — sampling attempts are leased; a lapsed lease is reconciled, never a block
-
-**Decision; operator direction, 2026-11-10.** The sampler's owner lease (claim, generation, owner
-token, heartbeat; [SPEC](../central_sampler/SPEC.md#runtime-and-effects)) answers "is anyone holding
-this Session?", and `sampler_intent` records each effect in flight. Nothing answers "is anyone
-sampling this turn?": a block is a terminal decision the owner writes, so a Session whose owner is
-alive but could not continue (a provider stream failure mid-turn, an unconfirmed interrupt) waits
-for a human, even when nothing holds it and a retry would be safe. The automatic settlement in
-[#15455](https://github.com/agentydragon/ducktape/pull/15455) covers only a lost owner or host.
-
-Target: each sampling attempt takes a lease on its intent ("I am sampling this turn, until T"). The
-owner renews while the provider streams or the cell runs; on failure it releases with a reason and a
-backoff, never a terminal block; a draining owner stops renewing. One reconciliation rule, "an open
-turn whose intent lease has lapsed", reclaims by kind: a provider sample with nothing committed is
-resampled; an executor operation is settled as unknown outcome and never replayed; a lost cell is
-abandoned with the model-visible notice. "Operator-only" survives as a visible exhausted retry
-budget with its reason, so a Session never silently waits on a person. The drain's special handling
-of live work and #15455's work scan become instances of this rule. Keep the fenced owner writes and
-the no-replay rule for uncertain external effects.
-
-**Exit:** a reviewed lease and reconciliation contract (lease duration, renewal, backoff and budget
-per intent kind, what the app shows), then the implementation replacing the block paths in
-`central_sampler/store.go` and `runtime.go`.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
 
@@ -3714,24 +3690,6 @@ flowchart LR
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
 
-- **`SAMPLER_TURN_RECONCILIATION`** (operator, 2026-11-11): the central sampler drives a turn as one
-  long-running loop under a single `turn_timeout_seconds` context (3600 on staging,
-  `runtime.go` `execute`). Thread `0702a8cc` hit it at exactly 3600 s on 2026-11-11: the deadline
-  cancelled a statement mid-sample (`pq: canceling statement due to user request`), the sampling
-  intent kept no result, and the Session blocked on an "unresolved outcome" needing manual
-  recovery. A slow local model can legitimately run one turn for hours. Direction: replace the loop
-  with a reconciliation loop over durable state. Each step reads the conversation, its pending
-  intent and live executor state, performs the next step (sample, run a tool call, settle a result)
-  and persists it, so a restart or lease handoff mid-turn resumes at the next step with nothing
-  lost. Liveness comes from progress, not a turn deadline: connect and stream-idle timeouts on
-  provider calls, the tools' own limits, and short per-statement database timeouts independent of
-  any turn. An optional per-Session or per-model turn budget, if wanted, ends the turn cleanly at a
-  step boundary with an ordinary result. A sampling or compaction intent cancelled before its
-  result is stored has no external effects beyond cost: record it abandoned and continue, never
-  block the Session on it (the unknown-effect block is for executor intents). Failure settlement
-  runs on a context that is not already cancelled. **Exit:** a decided design and the PRs it
-  implies; a test where a turn outlives any former timeout and survives a sampler restart
-  mid-sample.
 - **`SAMPLER_STABLE_PROVIDER_PREFIX`**: a sampler rollout must not break the request prefix an
   existing conversation already sent. #15591 edited the `write_stdin` schema text inside the
   sampler's `exec` tool, and Anthropic then rejected every older Thread's signed thinking ("The

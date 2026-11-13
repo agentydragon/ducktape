@@ -268,12 +268,20 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		}
 	}()
 	var activeCommand *string
+	var timedCommand string
+	var turnDeadline time.Time
 	var reconciled <-chan struct{}
 	drainContinued := false
 	client := &http.Client{}
 	for {
 		if ctx.Err() != nil {
 			return activeCommand, ctx.Err()
+		}
+		if !held {
+			if !r.acquireExecution(ctx, task) {
+				return activeCommand, ctx.Err()
+			}
+			held = true
 		}
 		if live != nil && live.code.Err() != nil {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -413,7 +421,17 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		if release, err := r.drainReleases(ctx, sessionID, owner, activeCommand, &drainContinued); err != nil || release {
 			return activeCommand, err
 		}
-		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
+		var turnCtx context.Context
+		var cancel context.CancelFunc
+		if seconds := r.settings.TurnTimeoutSeconds; seconds != nil {
+			if timedCommand != command.ID {
+				timedCommand = command.ID
+				turnDeadline = time.Now().Add(time.Duration(*seconds) * time.Second)
+			}
+			turnCtx, cancel = context.WithDeadline(ctx, turnDeadline)
+		} else {
+			turnCtx, cancel = context.WithCancel(ctx)
+		}
 		var result TurnResult
 		if payload.GetCompact() != nil {
 			conversation, readErr := r.store.Read(turnCtx, owner)
@@ -485,8 +503,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 				}
 			}
 		}
-		cancel()
 		if errors.Is(err, errProviderCommandFailed) {
+			cancel()
 			activeCommand = nil
 			continue
 		}
@@ -496,17 +514,27 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			r.mu.Unlock()
 			r.releaseExecution(task)
 			held = false
-			if waitErr := r.waitProviderRecovery(ctx, owner, sessionID, task, live); waitErr != nil {
-				return activeCommand, waitErr
-			}
+			err = r.waitProviderRecovery(turnCtx, owner, sessionID, task, live)
 			r.mu.Lock()
 			task.waitingProvider = false
 			r.mu.Unlock()
-			if !r.acquireExecution(ctx, task) {
-				return activeCommand, nil
+			if err == nil {
+				cancel()
+				continue
 			}
-			held = true
-			continue
+		}
+		expired := errors.Is(turnCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+		cancel()
+		if expired && err != nil {
+			settled, settleErr := r.failExpiredProviderCommand(ctx, owner, sessionID, command.ID)
+			if settleErr != nil {
+				return activeCommand, &deferredProviderError{cause: settleErr}
+			}
+			if settled {
+				activeCommand = nil
+				continue
+			}
+			return activeCommand, context.DeadlineExceeded
 		}
 		if err != nil {
 			return activeCommand, err
@@ -528,4 +556,35 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			live = nil
 		}
 	}
+}
+
+// A configured turn limit stops provider work after the call has joined. Settle that safe
+// provider-only failure; native work still follows FailExecution's uncertainty checks.
+func (r *Runtime) failExpiredProviderCommand(ctx context.Context, owner Owner, sessionID, commandID string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
+	defer cancel()
+	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, sessionID)
+	if err != nil {
+		return false, err
+	}
+	const reason = "configured turn time limit exceeded"
+	if attempt != nil {
+		if attempt.CommandID != commandID {
+			return false, protocol.ErrPrecondition
+		}
+		if err := r.store.AbandonProviderAttempt(ctx, owner, attempt.IntentID, ProviderAttemptFailure{
+			Class: ProviderAttemptPermanent, Reason: reason,
+		}); err != nil {
+			return false, err
+		}
+	} else {
+		attempt, err = r.store.ProviderRecoveryFrontier(ctx, owner, sessionID)
+		if err != nil || attempt == nil {
+			return false, err
+		}
+		if attempt.CommandID != commandID {
+			return false, protocol.ErrPrecondition
+		}
+	}
+	return true, r.store.FailProviderCommand(ctx, owner, sessionID, commandID, attempt.IntentID, reason)
 }

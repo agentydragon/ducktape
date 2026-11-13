@@ -100,7 +100,7 @@ recorded. Only a validated semantic event that is durably recorded resets it: no
 function-argument, and custom-tool-input deltas; first valid item-added/item-done transitions for a
 real item identity; and valid message start or finish transitions. SSE comments, keep-alives, ping
 events, empty deltas, duplicate item transitions and unknown event types do not. Sampling and
-compaction use the same budgets. These phase budgets do not replace the whole-turn timeout.
+compaction use the same budgets. A turn has no elapsed deadline while it keeps making progress.
 
 An attempted executor-session initialization or reconnect is recorded as its own intent. If it fails,
 the requested nested operation is returned as a catchable JavaScript tool error when it was not
@@ -380,6 +380,14 @@ continuation preserves image, audio, compaction and reasoning data and numeric p
 Provider requests ask for `reasoning.summary: "auto"`, as wrapped Codex does for Agentplane's model
 routes; summary text streams to History as the reasoning item's text, its parts joined by newlines.
 Compaction requests carry the same summary and context but no effort.
+
+Agent turns have no elapsed-time deadline by default. Optional `turn_timeout_seconds` sets a positive
+elapsed-time limit while a driver serves a command, including provider retries and backoff; a new
+owner starts a fresh limit. Expiry cancels active work, settles provider-only failure and preserves
+uncertain executor effects for reconciliation. Provider phase budgets, durable attempt budgets,
+database operation limits and native observation limits still bound each step. Shutdown and explicit
+interruption also cancel active work. Setup scripts have a separate `setup_timeout_seconds` limit
+(3600 seconds when omitted); setup policy and Session ownership leases do not set the turn limit.
 
 Database-clock leases and generations fence stale sampler writes. They cannot atomically fence an
 external shell effect: a dispatched operation with no observed result is uncertain. The persisted
@@ -779,7 +787,7 @@ lease only after its event evidence is durable. Initial leases cover response-he
 budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
-attempt count and budget. The elapsed turn deadline remains until its separate retirement.
+attempt count and budget. There is no elapsed turn deadline.
 
 Before sampling, the first snapshot of model-visible execution handles and subsequent changes
 append as native notices, after the

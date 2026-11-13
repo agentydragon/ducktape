@@ -160,7 +160,6 @@ def settings(
         direct_executor_target=executor_target,
         direct_executor_insecure_localtest=executor_target is not None,
         max_live_sessions=2,
-        turn_timeout_seconds=40,
         rpc_timeout_seconds=10,
         lease_seconds=60,
     )

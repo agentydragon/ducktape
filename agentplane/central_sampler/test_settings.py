@@ -32,7 +32,6 @@ def settings_data() -> dict[str, Any]:
         "executor_codex": "codex",
         "logs": Path("/fixture/logs"),
         "max_live_sessions": 1,
-        "turn_timeout_seconds": 3600,
         "rpc_timeout_seconds": 30,
         "lease_seconds": 60,
         "gateway_target": "gateway.invalid",
@@ -57,6 +56,21 @@ def test_provider_phase_budgets_are_optional_and_independent() -> None:
 def test_provider_phase_budgets_must_be_positive(field: str, seconds: int) -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({**settings_data(), field: seconds})
+
+
+def test_turn_timeout_is_optional_and_configurable() -> None:
+    settings = Settings(**settings_data())
+    assert settings.turn_timeout_seconds is None
+    assert "turn_timeout_seconds" not in settings.model_dump(mode="json", exclude_none=True)
+
+    configured = Settings.model_validate({**settings_data(), "turn_timeout_seconds": 120})
+    assert configured.turn_timeout_seconds == 120
+
+
+@pytest.mark.parametrize("seconds", [0, -1, MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1])
+def test_turn_timeout_must_be_positive_and_fit_in_duration(seconds: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**settings_data(), "turn_timeout_seconds": seconds})
 
 
 if __name__ == "__main__":
