@@ -11,6 +11,9 @@ from crossplane_deploymentruntimeconfig_crds.io.crossplane.pkg import (
     DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpec,
     DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainers,
     DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersEnv,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersVolumeMounts,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecVolumes,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecVolumesConfigMap,
     DeploymentRuntimeConfigSpecServiceAccountTemplate,
     DeploymentRuntimeConfigSpecServiceAccountTemplateMetadata,
 )
@@ -53,7 +56,15 @@ def chart(app: App) -> Chart:
                             containers=[
                                 DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainers(
                                     name="package-runtime",
+                                    volume_mounts=[
+                                        DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersVolumeMounts(
+                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                        )
+                                    ],
                                     env=[
+                                        DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersEnv(
+                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        ),
                                         DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainersEnv(
                                             name="WATCH_NAMESPACE", value=NAMESPACE
                                         ),
@@ -65,7 +76,15 @@ def chart(app: App) -> Chart:
                                         ),
                                     ],
                                 )
-                            ]
+                            ],
+                            volumes=[
+                                DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecVolumes(
+                                    name="public-web-pki",
+                                    config_map=DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecVolumesConfigMap(
+                                        name="public-web-pki"
+                                    ),
+                                )
+                            ],
                         )
                     ),
                 )
@@ -87,7 +106,11 @@ def chart(app: App) -> Chart:
 
 
 def resources(
-    chart: Chart, directory: RenderedDirectory, litellm_provider: Kustomization, litellm: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    litellm_provider: Kustomization,
+    litellm: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -104,6 +127,6 @@ def resources(
                 failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(litellm_provider, litellm),
+        depends_on=flux_kustomization_depends_on_many(litellm_provider, litellm, cert_manager_environment),
         description="Install the BuildBuddy provider after Crossplane and its registry credentials are ready.",
     )

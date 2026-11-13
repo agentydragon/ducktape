@@ -4489,6 +4489,8 @@ spec:
       namespace: ducktape-flux
     - name: litellm
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: pkg.crossplane.io/v1
       current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')

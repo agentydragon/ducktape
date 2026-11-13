@@ -10,6 +10,8 @@ spec:
         spec:
           containers:
             - env:
+                - name: SSL_CERT_FILE
+                  value: /var/run/public-web-pki/ca-certificates.crt
                 - name: WATCH_NAMESPACE
                   value: litellm
                 - name: WATCH_SECRET
@@ -17,6 +19,14 @@ spec:
                 - name: CREDENTIAL_SECRET
                   value: buildbuddy-crossplane-provider-credentials
               name: package-runtime
+              volumeMounts:
+                - mountPath: /var/run/public-web-pki
+                  name: public-web-pki
+                  readOnly: true
+          volumes:
+            - configMap:
+                name: public-web-pki
+              name: public-web-pki
   serviceAccountTemplate:
     metadata:
       name: provider-buildbuddy
