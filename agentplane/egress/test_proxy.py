@@ -130,7 +130,6 @@ def replica_settings(
     *,
     api_config: Path,
     ca: tuple[Path, Path],
-    database_url: str,
     svid_cert: tuple[Path, Path],
     svid_ca_file: Path,
     upstream_ca_file: Path | None = None,
@@ -150,7 +149,6 @@ def replica_settings(
             tls=listener.TLS(cert_file=svid_cert[0], key_file=svid_cert[1]),
             auth=[listener.SPIFFEAuth(ca_file=svid_ca_file)],
         ),
-        database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
     )
 
@@ -431,12 +429,11 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
         settings = replica_settings(
             api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
-            database_url=history_db_url,
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
             svid_cert=svid_server,
             svid_ca_file=write_ca(runtime_ca, tmp_path, "runtime")[0],
         )
-        async with go_replica(settings, directory=tmp_path, tunnel_rules=True) as running:
+        async with go_replica(settings, database_url=history_db_url, directory=tmp_path, tunnel_rules=True) as running:
             yield Egress(
                 replica=running,
                 client_tls=client_tls,
@@ -1078,21 +1075,15 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             client_contexts.append(context)
         first_tls, second_tls = client_contexts
         settings = [
-            replica_settings(
-                api_config=api_config,
-                ca=(cert, key),
-                database_url=history_db_url,
-                svid_cert=server_certificate,
-                svid_ca_file=cert,
-            )
+            replica_settings(api_config=api_config, ca=(cert, key), svid_cert=server_certificate, svid_ca_file=cert)
             for api_config in (
                 first_api.kubeconfig,
                 await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml", via=second_path),
             )
         ]
         async with (
-            go_replica(settings[0], directory=tmp_path) as first,
-            go_replica(settings[1], directory=tmp_path) as second,
+            go_replica(settings[0], database_url=history_db_url, directory=tmp_path) as first,
+            go_replica(settings[1], database_url=history_db_url, directory=tmp_path) as second,
             aiohttp.ClientSession() as client,
         ):
 

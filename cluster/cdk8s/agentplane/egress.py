@@ -51,7 +51,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from agentplane.crd_group import GROUP
-from agentplane.egress.settings import Settings
+from agentplane.egress.settings import APIServer, Settings
 from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.subjects import ServiceAccountRef
@@ -80,7 +80,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, In
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
@@ -547,39 +546,45 @@ class Egress(Construct):
             issuer_ref=cluster_ca.WORKLOAD_ISSUER,
         )
 
-        # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-        content = {
-            "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
-            "admin_grpc_audience": ADMIN_GRPC_AUDIENCE,
-            "admin_grpc_callers": [
+        settings = Settings(
+            rules_namespace=env.namespace,
+            credentials_namespace=env.egress.credentials_namespace,
+            allowed_service_account_namespaces=frozenset((env.namespace, *env.egress.external_workload_namespaces)),
+            admin_grpc_audience=ADMIN_GRPC_AUDIENCE,
+            admin_grpc_callers=[
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
+            ca_cert=Path("/etc/agentplane-egress/ca/tls.crt"),
+            ca_key=Path("/etc/agentplane-egress/ca/tls.key"),
+            upstream_ca_file=Path(f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}"),
             # Where kubernetesServiceAccount credentials impersonate, with the proxy's own bearer. What
             # it may impersonate there is kubernetes_accounts.py's Role, not this.
-            "local_api_server": {"host": KUBERNETES_HOST, "port": 443, "token_file": _API_SERVER_TOKEN_FILE},
-            "tls_passthrough_targets": [
+            local_api_server=APIServer(host=KUBERNETES_HOST, port=443, token_file=Path(_API_SERVER_TOKEN_FILE)),
+            tls_passthrough_targets=[
                 f"{service.fqdn}:{service.port.number}" for service in (self.admin, *tls_passthrough_services)
             ],
-            "forward": Listener(
+            forward=Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
                 tls=TLS(
                     cert_file=Path("/etc/agentplane-egress/svid/tls.crt"),
                     key_file=Path("/etc/agentplane-egress/svid/tls.key"),
                 ),
                 auth=[SPIFFEAuth(ca_file=Path(_SVID_CA_FILE))],
-            ).model_dump(mode="json", exclude_none=True),
-        }
-        settings = SettingsFile(
+            ),
+            admin_listen_address=f"0.0.0.0:{self.admin.pod_port}",
+            log_levels={},
+        )
+        settings_file = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-go-settings", namespace=env.namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(settings),
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
             # can mount inside a read-only ConfigMap volume.
             path="/etc/agentplane-egress/settings/settings.yaml",
         )
-        workload = self._add_workload(settings)
+        workload = self._add_workload(settings_file)
         self._add_rbac(workload.account)
         Service(
             self,
@@ -744,19 +749,6 @@ class Egress(Construct):
             name="svid-ca",
         )
 
-        values: dict[str, object] = {
-            "rules_namespace": self.env.namespace,
-            "credentials_namespace": self.env.egress.credentials_namespace,
-            "admin_listen_address": f"0.0.0.0:{self.admin.pod_port}",
-            "ca_cert": "/etc/agentplane-egress/ca/tls.crt",
-            "ca_key": "/etc/agentplane-egress/ca/tls.key",
-            "upstream_ca_file": f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
-        }
-        setting_env = {
-            env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
-            for field, value in values.items()
-        }
-
         zones = self.env.egress.zones
         extra_ports = [self.admin.container_port()]
         workload = add_service_workload(
@@ -765,7 +757,7 @@ class Egress(Construct):
             serves=[self.proxy],
             container="proxy",
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
-            env_variables={**setting_env, env_name(Settings, "database_url"): self.database_url, **self.container_env},
+            env_variables={Settings.database_url_env: self.database_url, **self.container_env},
             extra_ports=extra_ports,
             readiness=tls_grpc_probe(
                 port=self.admin.pod_port,

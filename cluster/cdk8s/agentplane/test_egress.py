@@ -81,10 +81,20 @@ def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: li
     settings_mount = one(mount for mount in proxy["volumeMounts"] if mount["mountPath"] == str(settings_path.parent))
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == settings_mount["name"])
     assert settings_volume["configMap"]["name"] == "egress-go-settings"
-    assert settings_path.name in _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]
+    settings_document = _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"][settings_path.name]
+    assert settings_document
     assert "args" not in proxy
-    assert proxy_env["AGENTPLANE_EGRESS_RULES_NAMESPACE"]["value"] == staging.ENV.namespace
-    config = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
+        EgressSettings.config_file_env,
+        EgressSettings.database_url_env,
+    }
+    database = proxy_env[EgressSettings.database_url_env]["valueFrom"]["secretKeyRef"]
+    assert database == {"name": "postgres-egress", "key": "uri"}
+    config = yaml.safe_load(settings_document)
+    assert config["rules_namespace"] == staging.ENV.namespace
+    assert sorted(config["allowed_service_account_namespaces"]) == sorted(
+        [staging.ENV.namespace, *staging.ENV.egress.external_workload_namespaces]
+    )
     assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
     assert config["admin_grpc_callers"] == [f"{staging.ENV.namespace}/app"]
 
@@ -118,6 +128,8 @@ def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list
     assert PROXY_PORT in ports
     assert admin(staging.ENV.namespace).pod_port in ports
     settings = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert settings["rules_namespace"] == staging.ENV.namespace
+    assert "AGENTPLANE_EGRESS_RULES_NAMESPACE" not in {variable["name"] for variable in proxy["env"]}
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe"}
     api = admin(staging.ENV.namespace)

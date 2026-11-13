@@ -16,6 +16,7 @@ from python.runfiles import Runfiles
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
+from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -167,6 +168,16 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert egress_config["forward"]["listen_address"] == "0.0.0.0:8888"
+    assert egress_config["rules_namespace"] == NAMESPACE
+    proxy_env = {entry["name"]: entry for entry in proxy["env"]}
+    assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
+        EgressSettings.config_file_env,
+        EgressSettings.database_url_env,
+    }
+    assert proxy_env[EgressSettings.database_url_env]["valueFrom"]["secretKeyRef"] == {
+        "name": "postgres-egress",
+        "key": "uri",
+    }
     proxy_certificate = _resource(docs, "Certificate", "agentplane-egress-proxy")["spec"]
     assert proxy_certificate["uris"] == ["spiffe://agentplane/egress-proxy"]
     assert proxy_certificate["dnsNames"] == [f"egress-admin.{NAMESPACE}.svc.cluster.local"]

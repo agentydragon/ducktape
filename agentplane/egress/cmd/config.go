@@ -3,21 +3,26 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
-const settingPrefix = "AGENTPLANE_EGRESS_"
+const (
+	configFileEnv  = "AGENTPLANE_EGRESS_CONFIG_FILE"
+	databaseURLEnv = "AGENTPLANE_EGRESS_DATABASE_URL"
+)
 
-// config is the proxy's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
-// settings. Lists and maps are file-only. Viper loads the settings.
+// config is the proxy's complete, non-secret deployment contract. It comes from the required
+// YAML file named by configFileEnv. DatabaseURL is supplied separately from a Secret-backed
+// environment variable and is deliberately excluded from the file decoder.
 //
 // The gRPC listener serves rules and health, and the admin API beside them when
 // admin_grpc_audience, the audience of the bearer its callers send, and admin_grpc_callers, the
@@ -26,28 +31,26 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // local_api_server is where kubernetesServiceAccount credentials naming the `local` API server act,
 // and the token file holding the proxy's own bearer for it; unset, those credentials are unavailable.
 type config struct {
-	RulesNamespace                  string          `mapstructure:"rules_namespace"`
-	CredentialsNamespace            string          `mapstructure:"credentials_namespace"`
-	AllowedServiceAccountNamespaces []string        `mapstructure:"allowed_service_account_namespaces"`
-	Forward                         listener.Config `mapstructure:"forward"`
-	TLSPassthroughTargets           []string        `mapstructure:"tls_passthrough_targets"`
-	AdminListenAddress              string          `mapstructure:"admin_listen_address"`
-	AdminGRPCAudience               string          `mapstructure:"admin_grpc_audience"`
-	AdminGRPCCallers                []string        `mapstructure:"admin_grpc_callers"`
-	CACert                          string          `mapstructure:"ca_cert"`
-	CAKey                           string          `mapstructure:"ca_key"`
-	UpstreamCAFile                  string          `mapstructure:"upstream_ca_file"`
-	// CLEANUP(added 2026-11-12): remove after staging egress-go-settings is observed without this key.
-	ProjectedTokenAudiences []string          `mapstructure:"projected_token_audiences"`
-	Kubeconfig              string            `mapstructure:"kubeconfig"`
-	LogLevels               map[string]string `mapstructure:"log_levels"`
-	DatabaseURL             string            `mapstructure:"database_url"`
-	DecisionHistorySize     int               `mapstructure:"decision_history_size"`
-	DecisionRetentionDays   int               `mapstructure:"decision_retention_days"`
-	DecisionQueueSize       int               `mapstructure:"decision_queue_size"`
-	DecisionBatchSize       int               `mapstructure:"decision_batch_size"`
-	ExemptNetworks          []netip.Prefix    `mapstructure:"exempt_networks"`
-	LocalAPIServer          *apiServerConfig  `mapstructure:"local_api_server"`
+	RulesNamespace                  string            `mapstructure:"rules_namespace"`
+	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
+	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
+	Forward                         listener.Config   `mapstructure:"forward"`
+	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
+	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
+	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
+	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
+	CACert                          string            `mapstructure:"ca_cert"`
+	CAKey                           string            `mapstructure:"ca_key"`
+	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
+	Kubeconfig                      string            `mapstructure:"kubeconfig"`
+	LogLevels                       map[string]string `mapstructure:"log_levels"`
+	DatabaseURL                     string            `mapstructure:"-"`
+	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
+	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
+	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
+	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
+	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
+	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
 }
 
 // apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
@@ -66,36 +69,43 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
+	path, ok := os.LookupEnv(configFileEnv)
+	if !ok || strings.TrimSpace(path) == "" {
+		return config{}, fmt.Errorf("%s is required", configFileEnv)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return config{}, fmt.Errorf("open egress settings file: %w", err)
+	}
+	defer file.Close()
+
 	c := defaultConfig()
-	settings := viper.New()
-	settings.SetEnvPrefix("AGENTPLANE_EGRESS")
-	for _, key := range []string{
-		"rules_namespace",
-		"credentials_namespace",
-		"admin_listen_address",
-		"admin_grpc_audience",
-		"ca_cert",
-		"ca_key",
-		"upstream_ca_file",
-		"kubeconfig",
-		"database_url",
-		"decision_history_size",
-		"decision_retention_days",
-		"decision_queue_size",
-		"decision_batch_size",
-	} {
-		settings.MustBindEnv(key)
+	decoder := yaml.NewDecoder(file)
+	var settings map[string]any
+	if err := decoder.Decode(&settings); err != nil {
+		return config{}, fmt.Errorf("decode egress settings file: %w", err)
 	}
-	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
-		settings.SetConfigFile(path)
-		settings.SetConfigType("yaml")
-		if err := settings.ReadInConfig(); err != nil {
-			return config{}, errors.New("could not read egress settings file")
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return config{}, fmt.Errorf("decode egress settings file: %w", err)
 		}
+		return config{}, errors.New("egress settings file must contain one YAML document")
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(listener.AuthenticationDecodeHook, mapstructure.TextUnmarshallerHookFunc()))); err != nil {
-		return config{}, errors.New("invalid egress settings")
+	settingsDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &c, TagName: "mapstructure", ErrorUnused: true,
+		MatchName: func(mapKey, fieldName string) bool { return mapKey == fieldName },
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
+		),
+	})
+	if err != nil {
+		return config{}, fmt.Errorf("prepare egress settings decoder: %w", err)
 	}
+	if err := settingsDecoder.Decode(settings); err != nil {
+		return config{}, fmt.Errorf("decode egress settings file: %w", err)
+	}
+	c.DatabaseURL = os.Getenv(databaseURLEnv)
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
@@ -116,7 +126,7 @@ func (c *config) validate() error {
 		{"ca_key", c.CAKey},
 		{"database_url", c.DatabaseURL},
 	} {
-		if required.value == "" {
+		if strings.TrimSpace(required.value) == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
 	}

@@ -50,7 +50,7 @@ const (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_EGRESS_DATABASE_URL", historymigrations.Up); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLEnv, historymigrations.Up); handled {
 		if err != nil {
 			slog.Error("Egress migration failed", "error", err)
 			os.Exit(1)
