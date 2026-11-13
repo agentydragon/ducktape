@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service/store:__pkg__"])
+
+go_library(
+    name = "entry",
+    srcs = [
+        "event_identity_runtime.go",
+        "event_identity_storage.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry",
+    deps = [
+        "//agentplane/notification_service/internal/storagecodec",
+        "//agentplane/notification_service/model",
+        "@com_github_google_uuid//:uuid",
+    ],
+)

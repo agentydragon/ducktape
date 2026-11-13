@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry"
 	"github.com/google/uuid"
 )
 
@@ -316,7 +317,7 @@ func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := insertEntry(t.Context(), tx, g.inbox, 1, event, delivery.Payload, time.Now().UTC()); err != nil {
+	if err := entrystorage.Insert(t.Context(), tx, g.inbox, 1, event, delivery.Payload, time.Now().UTC()); err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -276,7 +277,7 @@ func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead f
 
 func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+eventIdentityReadColumns+`,
+		`SELECT cursor, `+entrystorage.ReadColumns+`,
 			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+storagecodec.EntryContentReadColumns+` FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inbox.ID, after, limit)
@@ -287,16 +288,16 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 	var entries []Entry
 	for rows.Next() {
 		var entry Entry
-		var identity eventIdentityRead
+		var identity entrystorage.IdentityRow
 		var payload []byte
 		var content storagecodec.EntryContentStorage
-		destinations := append([]any{&entry.Cursor}, identity.destinations()...)
+		destinations := append([]any{&entry.Cursor}, identity.Destinations()...)
 		destinations = append(destinations, &payload)
 		destinations = append(destinations, content.Destinations()...)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		if entry.Event, err = identity.event(); err != nil {
+		if entry.Event, err = identity.Event(); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
 		entry.Payload, err = storagecodec.EntryPayloadFromRead(entry.Event, payload, content)
@@ -407,7 +408,7 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
 func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload json.RawMessage) error {
-	cursor, found, err := eventIdentityLookup(ctx, tx, inboxID, event)
+	cursor, found, err := entrystorage.LookupIdentity(ctx, tx, inboxID, event)
 	if err != nil {
 		return err
 	}
@@ -425,7 +426,7 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, inboxID, cursor); err != nil {
 			return err
 		}
-		if err := insertEntry(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {
+		if err := entrystorage.Insert(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {
 			return err
 		}
 	}

@@ -1,4 +1,4 @@
-package store
+package entry
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// eventIdentityLookup uses the indexed relational source key, including for expired payloads.
-func eventIdentityLookup(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event model.EventIdentity) (int64, bool, error) {
+// LookupIdentity uses the indexed relational source key, including for expired payloads.
+func LookupIdentity(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event model.EventIdentity) (int64, bool, error) {
 	switch event := event.(type) {
 	case model.ActionsEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry

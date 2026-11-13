@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -292,7 +293,7 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+eventIdentityReadColumns+`,
+		`SELECT cursor, `+entrystorage.ReadColumns+`,
 			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentSummaryReadColumns+`, created_at FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
@@ -303,18 +304,18 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 	var summaries []EntrySummary
 	for rows.Next() {
 		var cursor int64
-		var identityRead eventIdentityRead
+		var identityRead entrystorage.IdentityRow
 		var payload []byte
 		var content storagecodec.EntryContentStorage
 		var createdAt time.Time
-		destinations := append([]any{&cursor}, identityRead.destinations()...)
+		destinations := append([]any{&cursor}, identityRead.Destinations()...)
 		destinations = append(destinations, &payload)
 		destinations = append(destinations, content.Destinations()...)
 		destinations = append(destinations, &createdAt)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		identity, err := identityRead.event()
+		identity, err := identityRead.Event()
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
