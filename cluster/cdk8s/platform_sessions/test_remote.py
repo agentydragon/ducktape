@@ -44,12 +44,14 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         == 1
     )
     for instance, connection in connections.items():
-        name = f"platform-sessions-{instance}"
+        name = remote._provider_name(instance)
         provider = resource("Deployment", instance)["spec"]
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
         expected_image = remote._provider_image(instance)
         assert provider_pod["containers"][0]["image"] == f"{remote.REGISTRY}/{expected_image}:unset"
+        args = provider_pod["containers"][0]["args"]
+        assert ("--route-grants" in args) == (instance not in {"blueshield", "myquest"})
         assert provider_pod["nodeSelector"]["topology.kubernetes.io/zone"] == "hil-ovh"
         claims = [
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
@@ -71,10 +73,27 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         monitor = resource("PodMonitor", instance)["spec"]
         assert monitor["selector"]["matchLabels"] == service["selector"]
         assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
-        if instance == "quest":
-            assert monitor["selector"]["matchLabels"] == {"app": "platform-sessions-quest"}
+        if instance == "quest-scheduler":
+            assert monitor["selector"]["matchLabels"] == {"app": "platform-sessions-quest-scheduler"}
             assert {endpoint["port"] for endpoint in monitor["podMetricsEndpoints"]} == {"metrics", "quest-metrics"}
         assert "metrics" in {p["name"] for p in provider_pod["containers"][0]["ports"]}
+
+
+def test_scheduler_has_one_owner_of_state(scratch_app: App) -> None:
+    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
+    deployments = [item for item in objects if item["kind"] == "Deployment"]
+    owners = [
+        item
+        for item in deployments
+        if any(
+            volume.get("persistentVolumeClaim", {}).get("claimName") == "platform-sessions-quest-scheduler-piraeus"
+            for volume in item["spec"]["template"]["spec"]["volumes"]
+        )
+    ]
+    assert [item["metadata"]["name"] for item in owners] == ["quest-scheduler"]
+    assert remote.CONFIG.data is not None
+    integration = json.loads(remote.CONFIG.data["quest-scheduler-integration.json"])["integrations"][0]
+    assert integration["state_dir"] == "/data/session/quest-scheduler"
 
 
 def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: App) -> None:
@@ -85,7 +104,7 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
 
     assert config.RECORD_UPSTREAM_TRAFFIC
     for instance in remote.PROVIDERS:
-        name = f"platform-sessions-{instance}"
+        name = remote._provider_name(instance)
         pod = resource("Deployment", instance)["spec"]["template"]["spec"]
         containers = {container["name"]: container for container in pod["containers"]}
         assert set(containers) == {"provider"}
@@ -111,7 +130,7 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
 def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App) -> None:
     objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
     for instance in remote.PROVIDERS:
-        name = f"platform-sessions-{instance}"
+        name = remote._provider_name(instance)
         pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == instance)[
             "spec"
         ]["template"]["spec"]

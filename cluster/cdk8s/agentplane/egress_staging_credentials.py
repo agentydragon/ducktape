@@ -66,7 +66,7 @@ HAKU_MAILBOX_POLICY = "haku-mailbox"
 GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
-QUEST_READ_POLICY = "quest-read"
+QUEST_SCHEDULER_READ_POLICY = "quest-scheduler-read"
 THRIVE_READ_POLICY = "thrive-read"
 PLATFORM_SESSIONS_API = ServiceRef(
     name="platform-sessions",
@@ -100,7 +100,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _aiquota_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
-    _quest_read(construct, namespace=namespace)
+    _quest_scheduler_read(construct, namespace=namespace)
     _thrive_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -118,7 +118,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
             authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.
             activitywatch.READ.egress(),  # _activitywatch_read: bearer read sidecar.
             AIQUOTA_SERVICE.egress(),  # _aiquota_read: public Gateway and internal Service routes.
-            PLATFORM_SESSIONS_API.egress(),  # _quest_read: public Gateway's read-only API backend.
+            PLATFORM_SESSIONS_API.egress(),  # _quest_scheduler_read: public Gateway's read-only API backend.
             clickhouse.HTTP.egress(),  # _aiquota_read: typed history.
             mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
             plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
@@ -597,57 +597,57 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
     )
 
 
-def _quest_read(scope: Construct, *, namespace: str) -> None:
+def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
     # ESO mints this read-only bearer in platform-sessions; Reflector copies it into the
     # isolated credentials namespace. No Quest account session reaches the sandbox.
     _credential(
         scope,
-        QUEST_READ_POLICY,
+        QUEST_SCHEDULER_READ_POLICY,
         namespace=namespace,
-        credential=QUEST_READ_POLICY,
+        credential=QUEST_SCHEDULER_READ_POLICY,
         description=(
             "Quest scheduling, account, and insurance lookup API. "
-            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest. "
+            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest-scheduler. "
             "The bearer is substituted only for the listed lookup paths."
         ),
-        secret="platform-sessions-quest-bearer",
+        secret="platform-sessions-quest-scheduler-bearer",
         key="token",
         target=_BEARER,
     )
     add_egress_policy(
         scope,
-        "egresspolicy-quest-read",
-        metadata=ApiObjectMetadata(name=QUEST_READ_POLICY, namespace=namespace),
+        "egresspolicy-quest-scheduler-read",
+        metadata=ApiObjectMetadata(name=QUEST_SCHEDULER_READ_POLICY, namespace=namespace),
         rules=[
             _rule(
-                QUEST_READ_POLICY,
+                QUEST_SCHEDULER_READ_POLICY,
                 "platform-sessions.allegedly.works",
                 method=PolicySetSpecRulesMethods.GET,
                 paths=[
-                    "/proxy/quest/guest/getReasons/*",
-                    "/proxy/quest/guest/getPscDetails/*",
-                    "/proxy/quest/api/getInsuranceProfile",
-                    "/proxy/quest/guest/getTokenBasicInfoAPI/*",
-                    "/proxy/quest/guest/getEncounterInfo/appointment",
-                    "/proxy/quest/guest/getEncounterInfo/demographics",
-                    "/proxy/quest/guest/getEncounterInfo/insurance",
-                    "/proxy/quest/guest/getEncounterInfo/secondaryInsurance",
-                    "/proxy/quest/guest/getPayorList/*",
-                    "/proxy/quest/guest/getAppointment/*",
+                    "/proxy/quest-scheduler/guest/getReasons/*",
+                    "/proxy/quest-scheduler/guest/getPscDetails/*",
+                    "/proxy/quest-scheduler/api/getInsuranceProfile",
+                    "/proxy/quest-scheduler/guest/getTokenBasicInfoAPI/*",
+                    "/proxy/quest-scheduler/guest/getEncounterInfo/appointment",
+                    "/proxy/quest-scheduler/guest/getEncounterInfo/demographics",
+                    "/proxy/quest-scheduler/guest/getEncounterInfo/insurance",
+                    "/proxy/quest-scheduler/guest/getEncounterInfo/secondaryInsurance",
+                    "/proxy/quest-scheduler/guest/getPayorList/*",
+                    "/proxy/quest-scheduler/guest/getAppointment/*",
                 ],
             ),
             # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
             _rule(
-                QUEST_READ_POLICY,
+                QUEST_SCHEDULER_READ_POLICY,
                 "platform-sessions.allegedly.works",
                 method=PolicySetSpecRulesMethods.POST,
                 paths=[
-                    "/proxy/quest/guest/getPscsWithAvailability",
-                    "/proxy/quest/api/getOpenEorders",
-                    "/proxy/quest/api/getUserDemographics",
-                    "/proxy/quest/guest/examoneEligibility",
-                    "/proxy/quest/guest/verifyInsurance/V2",
-                    "/proxy/quest/guest/getPricing",
+                    "/proxy/quest-scheduler/guest/getPscsWithAvailability",
+                    "/proxy/quest-scheduler/api/getOpenEorders",
+                    "/proxy/quest-scheduler/api/getUserDemographics",
+                    "/proxy/quest-scheduler/guest/examoneEligibility",
+                    "/proxy/quest-scheduler/guest/verifyInsurance/V2",
+                    "/proxy/quest-scheduler/guest/getPricing",
                 ],
             ),
         ],

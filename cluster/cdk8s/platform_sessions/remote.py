@@ -50,7 +50,16 @@ GATEWAY = "platform-sessions-gateway"
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
-BEARER_FILES = ("owner", "aiquota", "quest", "thrive-scraper", "thrive-read", "chatgpt-read", "blueshield-read")
+BEARER_FILES = (
+    "owner",
+    "aiquota",
+    "quest-scheduler",
+    "myquest-read",
+    "thrive-scraper",
+    "thrive-read",
+    "chatgpt-read",
+    "blueshield-read",
+)
 _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
 _GATEWAY_DNS = f"gateway.{NAMESPACE}.svc"
 _TRUST = "/var/run/provider-trust/ca.crt"
@@ -414,7 +423,9 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 "/var/run/provider-tls/tls.key",
             ]
             + (
-                [] if instance == "blueshield" else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
+                []
+                if instance in {"blueshield", "myquest"}
+                else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
             ),
             env=[k8s.EnvVar(name="HOME", value="/tmp"), *recorder_env],
             ports=[
@@ -422,7 +433,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 k8s.ContainerPort(name="grpc", container_port=8444),
                 k8s.ContainerPort(name="metrics", container_port=9091),
             ]
-            + ([k8s.ContainerPort(name="quest-metrics", container_port=9090)] if instance == "quest" else []),
+            + ([k8s.ContainerPort(name="quest-metrics", container_port=9090)] if instance == "quest-scheduler" else []),
             readiness_probe=provider_health,
             liveness_probe=provider_health,
             resources=_resources(),
@@ -468,7 +479,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
         + (
             [PodMonitorSpecPodMetricsEndpoints(port="quest-metrics", path="/metrics", interval="1m")]
-            if instance == "quest"
+            if instance == "quest-scheduler"
             else []
         ),
     )

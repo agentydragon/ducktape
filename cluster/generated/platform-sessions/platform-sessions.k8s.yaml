@@ -208,7 +208,7 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: platform-sessions-quest-bearer
+  name: platform-sessions-quest-scheduler-bearer
   namespace: platform-sessions
 spec:
   allowRepeat: true
@@ -220,7 +220,7 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: platform-sessions-quest-bearer
+  name: platform-sessions-quest-scheduler-bearer
   namespace: platform-sessions
 spec:
   dataFrom:
@@ -228,13 +228,13 @@ spec:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
-          name: platform-sessions-quest-bearer
+          name: platform-sessions-quest-scheduler-bearer
   refreshPolicy: CreatedOnce
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
     immutable: true
-    name: platform-sessions-quest-bearer
+    name: platform-sessions-quest-scheduler-bearer
     template:
       data:
         token: "{{ .password }}"
@@ -244,6 +244,41 @@ spec:
           reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: agentplane-staging-egress-credentials
           reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
           reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: agentplane-staging-egress-credentials
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-myquest-read-bearer
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-myquest-read-bearer
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-myquest-read-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-myquest-read-bearer
+    template:
+      data:
+        token: "{{ .password }}"
       type: Opaque
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
