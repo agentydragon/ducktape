@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 from pathlib import Path
 
 from tabulate import tabulate
@@ -30,7 +29,7 @@ from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.series import IssuerId, parse_level_series_key
 
 
-async def _run(argv: list[str] | None) -> int:
+async def _run(argv: list[str] | None) -> None:
     parser = argparse.ArgumentParser(description="Run calibration against live prediction markets for a config.")
     parser.add_argument("config", type=Path, help="Path to augur config.yaml")
     parser.add_argument("--preset", default=None, help="Preset id (default = config default)")
@@ -158,12 +157,10 @@ async def _run(argv: list[str] | None) -> int:
         print(f"\nCOMPANY VALUATION FAN [{issuer}] (p5 / p50 / p95)")
         print(tabulate(val_rows, headers=["month", "p5", "p50", "p95"]))
 
-    return 0
 
-
-def main(argv: list[str] | None = None) -> int:
-    return asyncio.run(_run(argv))
+def main(argv: list[str] | None = None) -> None:
+    asyncio.run(_run(argv))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
