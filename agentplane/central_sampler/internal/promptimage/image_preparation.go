@@ -1,4 +1,4 @@
-package centralsampler
+package promptimage
 
 import (
 	"bytes"
@@ -58,7 +58,7 @@ func (e *imagePreparationError) Error() string {
 
 func (e *imagePreparationError) Unwrap() error { return e.err }
 
-// prepareOutputImages replaces each inline input_image with its prompt-prepared form, or with
+// PrepareOutputImages replaces each inline input_image with its prompt-prepared form, or with
 // upstream's placeholder text when it cannot be prepared.
 //
 // TODO: Consider upstream's attachment store (core/src/image_preparation.rs prepare_image uploads
@@ -66,7 +66,7 @@ func (e *imagePreparationError) Unwrap() error { return e.err }
 // provider request and every sampling intent's journaled body carries their full base64 again.
 // The 32 MiB view_image cap (view_image.go) also differs from upstream, which has none and
 // fails only at the 64 MiB WebSocket message or code-mode frame bounds.
-func prepareOutputImages(parts []protocol.ContentPart) ([]protocol.ContentPart, error) {
+func PrepareOutputImages(parts []protocol.ContentPart) ([]protocol.ContentPart, error) {
 	for index, part := range parts {
 		if part.Type != "input_image" {
 			continue

@@ -1,4 +1,4 @@
-package centralsampler
+package promptimage
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"strings"
@@ -51,6 +52,8 @@ func encodedImage(t *testing.T, width, height int, encode func(*bytes.Buffer, im
 
 func encodePNG(buffer *bytes.Buffer, img image.Image) error { return png.Encode(buffer, img) }
 
+func encodeGIF(buffer *bytes.Buffer, img image.Image) error { return gif.Encode(buffer, img, nil) }
+
 func encodeJPEG(buffer *bytes.Buffer, img image.Image) error { return jpeg.Encode(buffer, img, nil) }
 
 func imagePart(t *testing.T, fields map[string]any) protocol.ContentPart {
@@ -69,7 +72,7 @@ func dataURL(mime string, data []byte) string {
 func TestPrepareOutputImagesResizesAndRelabels(t *testing.T) {
 	oversized := encodedImage(t, 3000, 1000, encodePNG)
 	small := encodedImage(t, 64, 32, encodeJPEG)
-	parts, err := prepareOutputImages([]protocol.ContentPart{
+	parts, err := PrepareOutputImages([]protocol.ContentPart{
 		imagePart(t, map[string]any{"type": "input_image", "image_url": dataURL("application/octet-stream", oversized), "detail": "high"}),
 		imagePart(t, map[string]any{"type": "input_image", "image_url": dataURL("application/octet-stream", small)}),
 		imagePart(t, map[string]any{"type": "input_image", "file_id": "file-test"}),
@@ -113,6 +116,41 @@ func TestPrepareOutputImagesResizesAndRelabels(t *testing.T) {
 	}
 }
 
+func TestPrepareOutputImagesSupportsGIFAndWebP(t *testing.T) {
+	gifData := encodedImage(t, 4, 2, encodeGIF)
+	webpData, err := base64.StdEncoding.DecodeString("UklGRhwAAABXRUJQVlA4TA8AAAAvAUAAAAcQ9Y/+ByKi/wEA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts, err := PrepareOutputImages([]protocol.ContentPart{
+		imagePart(t, map[string]any{"type": "input_image", "image_url": dataURL("image/gif", gifData)}),
+		imagePart(t, map[string]any{"type": "input_image", "image_url": dataURL("image/webp", webpData)}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, wantMIME := range []string{"image/png", "image/webp"} {
+		var prepared struct {
+			ImageURL string `json:"image_url"`
+		}
+		if err := json.Unmarshal(parts[index].Raw, &prepared); err != nil {
+			t.Fatal(err)
+		}
+		prefix := "data:" + wantMIME + ";base64,"
+		encoded, found := strings.CutPrefix(prepared.ImageURL, prefix)
+		if !found {
+			t.Fatalf("prepared image URL = %q, want MIME %s", prepared.ImageURL, wantMIME)
+		}
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 1 && !bytes.Equal(data, webpData) {
+			t.Fatal("an in-bounds WebP image must keep its bytes")
+		}
+	}
+}
+
 func TestPrepareOutputImagesReplacesUnpreparableImages(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -125,7 +163,7 @@ func TestPrepareOutputImagesReplacesUnpreparableImages(t *testing.T) {
 		{"not base64", map[string]any{"type": "input_image", "image_url": "data:image/png,raw"}, imageProcessingErrorPlaceholder},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			parts, err := prepareOutputImages([]protocol.ContentPart{imagePart(t, tc.part)})
+			parts, err := PrepareOutputImages([]protocol.ContentPart{imagePart(t, tc.part)})
 			if err != nil {
 				t.Fatal(err)
 			}

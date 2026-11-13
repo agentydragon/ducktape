@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
+
+go_library(
+    name = "promptimage",
+    srcs = ["image_preparation.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage",
+    deps = [
+        "//agentplane/central_sampler/protocol",
+        "@org_golang_x_image//draw",
+        "@org_golang_x_image//webp",
+    ],
+)
+
+go_test(
+    name = "promptimage_test",
+    size = "small",
+    srcs = ["image_preparation_test.go"],
+    embed = [":promptimage"],
+    race = "on",
+    deps = ["//agentplane/central_sampler/protocol"],
+)
