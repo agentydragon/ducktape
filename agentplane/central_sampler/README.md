@@ -26,6 +26,12 @@ The service, sampling loop and persistence are implemented in Go. History export
 `historyexport` package and reaches sampler state through its durable outbox interface. The
 JavaScript host is the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
 
+`internal/sessionstore` owns durable Session state, transactions, request preparation and recovery.
+The runtime supplies a concrete provider-request recipe; the Store prepares and commits it under
+the existing ownership and context fences before the runtime performs network I/O. History's
+integration tests use the sampler-owned `testing/exportfixture` source without importing Store
+internals.
+
 [The API](api/sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
 recovery and evidence.
 
@@ -169,11 +175,13 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 
 ## Verification
 
-Run `//agentplane/central_sampler:central_sampler_unit_test` for image preparation, settings and
-code-mode Go tests without starting PostgreSQL. The existing
-`//agentplane/central_sampler:central_sampler_test` target initializes PostgreSQL and runs the
-service, exporter and executor integration cases. Run both targets for the full Go test sweep. The
-integration targets use real PostgreSQL,
+Run `//agentplane/central_sampler:central_sampler_unit_test` for the remaining runtime unit tests
+without starting PostgreSQL. `//agentplane/central_sampler:central_sampler_test` runs the runtime,
+RPC and executor integration cases; `//agentplane/central_sampler/internal/sessionstore:sessionstore_test`
+runs Store, recovery, outbox and migration-adoption cases. Leaf packages have colocated test targets;
+`bbr test //agentplane/central_sampler/...` includes them in the Go and automated acceptance sweep.
+`//agentplane/history_service/internal/ingress:integration_test` additionally checks real sampler
+export and History projection across recovery. The integration targets use real PostgreSQL,
 pinned upstream host/executor processes, authenticated Gateway/History and scripted provider wire
 fixtures. Scripted acceptance does not establish live provider or subscription compatibility.
 Responses Lite compaction uses Codex's remote-v2 beta protocol. Anthropic uses native server-side
