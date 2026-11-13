@@ -1,31 +1,525 @@
 {
-  "schema_version": 3,
-  "invocation_id": "aea9bc14-11fe-4e87-9354-ae99fba5aa69",
-  "invocation_url": "https://app.buildbuddy.io/invocation/aea9bc14-11fe-4e87-9354-ae99fba5aa69",
+  "schema_version": 4,
+  "report": "reliability",
+  "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+  "invocation_url": "https://app.buildbuddy.io/invocation/8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
   "target": "//x/ci_reports_preview:visual_test",
   "status": "PASSED",
-  "validated_at_utc": "2026-11-13T02:15:15.324973+00:00",
-  "scope": "Current CI-report supplements and shared navigation; 12/12 cases: latency, reliability and root at 1280x900 and 390x844 in light and dark. Browser ran on RBE with real CDN assets and live color-scheme change.",
-  "publication_assets_equal_preview_bytes": true,
+  "validated_at_utc": "2026-11-13T04:21:33.332090+00:00",
+  "scope": "The uncached full visual target passed 12/12 on the frozen report candidate. Its eight report cases still match these final report publication bytes. An unrelated base update changed only the root index afterward, so the current root was checked in a separate uncached 4/4 navigation run; this composite proof does not claim one 12-case run against the updated root.",
+  "full_target_run": {
+    "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+    "invocation_url": "https://app.buildbuddy.io/invocation/8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+    "target": "//x/ci_reports_preview:visual_test",
+    "command": "env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url GIT_CONFIG_VALUE_0=https://github.com/agentydragon/ducktape.git direnv exec . bbr test //x/ci_reports_preview:visual_test --nocache_test_results",
+    "status": "PASSED",
+    "selected_test_cases": 12,
+    "passed_test_cases": 12,
+    "failed_test_cases": 0,
+    "runs": 1,
+    "shards": 1,
+    "attempts": 1,
+    "pytest_duration_seconds": 81.9,
+    "bazel_target_duration_seconds": 88.2,
+    "initial_root_index_sha256": "f4551f898685f95f028df2cacda0107e394d0e467ec3821c983f4598ee506d26",
+    "final_report_cases_retained": 8,
+    "test_log": "final-test.log"
+  },
+  "final_root_navigation_run": {
+    "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
+    "invocation_url": "https://app.buildbuddy.io/invocation/9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
+    "target": "//x/ci_reports_preview:visual_test",
+    "command": "env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url GIT_CONFIG_VALUE_0=https://github.com/agentydragon/ducktape.git direnv exec . bbr test //x/ci_reports_preview:visual_test --nocache_test_results --test_arg=-k --test_arg=test_root_navigation_smoke",
+    "status": "PASSED",
+    "selected_test_cases": 4,
+    "passed_test_cases": 4,
+    "deselected_test_cases": 8,
+    "failed_test_cases": 0,
+    "runs": 1,
+    "shards": 1,
+    "attempts": 1,
+    "pytest_duration_seconds": 7.9,
+    "current_root_index_sha256": "f4ba1ad3d61a362e67d223463804bea080d83132317ea3a1216f6747dc738943",
+    "test_log": "root-test.log"
+  },
+  "report_case_count": 4,
+  "report_cases": [
+    {
+      "case_id": "test_ci_report_refresh[dark-mobile-reliability]",
+      "report": "reliability/index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 28,
+      "manifest_stamps": {},
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-k21e11ggt-panel-reliability-cases",
+        "mantine-k21e11ggt-panel-reliability-landed"
+      ],
+      "ten_lane_count": 10,
+      "ten_lane_expanded_panel_ids": [
+        "mantine-ukl5nej6z-panel-lane-1",
+        "mantine-ukl5nej6z-panel-lane-2",
+        "mantine-ukl5nej6z-panel-lane-3",
+        "mantine-ukl5nej6z-panel-lane-4",
+        "mantine-ukl5nej6z-panel-lane-5",
+        "mantine-ukl5nej6z-panel-lane-6",
+        "mantine-ukl5nej6z-panel-lane-7",
+        "mantine-ukl5nej6z-panel-lane-8",
+        "mantine-ukl5nej6z-panel-lane-9",
+        "mantine-ukl5nej6z-panel-lane-10"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
+    },
+    {
+      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
+      "report": "reliability/index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 28,
+      "manifest_stamps": {},
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-i4tz6d3nx-panel-reliability-cases",
+        "mantine-i4tz6d3nx-panel-reliability-landed"
+      ],
+      "ten_lane_count": 10,
+      "ten_lane_expanded_panel_ids": [
+        "mantine-7sub3cu2i-panel-lane-1",
+        "mantine-7sub3cu2i-panel-lane-2",
+        "mantine-7sub3cu2i-panel-lane-3",
+        "mantine-7sub3cu2i-panel-lane-4",
+        "mantine-7sub3cu2i-panel-lane-5",
+        "mantine-7sub3cu2i-panel-lane-6",
+        "mantine-7sub3cu2i-panel-lane-7",
+        "mantine-7sub3cu2i-panel-lane-8",
+        "mantine-7sub3cu2i-panel-lane-9",
+        "mantine-7sub3cu2i-panel-lane-10"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
+    },
+    {
+      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
+      "report": "reliability/index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 28,
+      "manifest_stamps": {},
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-3u6ak5hd7-panel-reliability-cases",
+        "mantine-3u6ak5hd7-panel-reliability-landed"
+      ],
+      "ten_lane_count": 10,
+      "ten_lane_expanded_panel_ids": [
+        "mantine-cjk4qv27b-panel-lane-1",
+        "mantine-cjk4qv27b-panel-lane-2",
+        "mantine-cjk4qv27b-panel-lane-3",
+        "mantine-cjk4qv27b-panel-lane-4",
+        "mantine-cjk4qv27b-panel-lane-5",
+        "mantine-cjk4qv27b-panel-lane-6",
+        "mantine-cjk4qv27b-panel-lane-7",
+        "mantine-cjk4qv27b-panel-lane-8",
+        "mantine-cjk4qv27b-panel-lane-9",
+        "mantine-cjk4qv27b-panel-lane-10"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
+    },
+    {
+      "case_id": "test_ci_report_refresh[dark-desktop-reliability]",
+      "report": "reliability/index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 28,
+      "manifest_stamps": {},
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-31h6mcllf-panel-reliability-cases",
+        "mantine-31h6mcllf-panel-reliability-landed"
+      ],
+      "ten_lane_count": 10,
+      "ten_lane_expanded_panel_ids": [
+        "mantine-tdaiv1oxn-panel-lane-1",
+        "mantine-tdaiv1oxn-panel-lane-2",
+        "mantine-tdaiv1oxn-panel-lane-3",
+        "mantine-tdaiv1oxn-panel-lane-4",
+        "mantine-tdaiv1oxn-panel-lane-5",
+        "mantine-tdaiv1oxn-panel-lane-6",
+        "mantine-tdaiv1oxn-panel-lane-7",
+        "mantine-tdaiv1oxn-panel-lane-8",
+        "mantine-tdaiv1oxn-panel-lane-9",
+        "mantine-tdaiv1oxn-panel-lane-10"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
+    }
+  ],
+  "publication_assets_equal_rendered_preview_bytes": true,
+  "asset_hash_method": "For each RBE diagnostic, SHA-256 of every packaged asset path was compared byte-for-byte with the final publication file. The rendered_asset_sha256 subset was independently compared with the same files. visual-validation.json is excluded from the test asset maps by design.",
   "publication_asset_sha256": {
-    "index.html": "9fd3bd1ea183570cebd6b7ab6f8b8b5dc802a2dcc165cb76a53973bcdfca1e9b",
-    "latency/manifest.json": "b69155bb3825d7fa3e2dbbb6d88f35f00eb17ddb1792a80b32fc030a49f2dfad",
+    "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
     "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
-    "reliability/evidence.json": "e72975c0cbf15b9bdeb46cf3678766fbbfeb433ac8f31f12933eec67e48a5a7a",
-    "reliability/index.html": "b630343646b00756862bf208f9ce086c2a652a7ddbcd17d493c75e28b4c35c8a",
-    "reliability/manifest.json": "89ee835585c377701b18ec7e39ce95e1865675c9259b41e5a85c08a5ccbb75a5",
+    "reliability/evidence.json": "6b4330795e8090c69dab9db9bf9faac30833cd95d3545a82b7d69a68fe95dc8e",
+    "reliability/index.html": "547278a35337415db5fe03a90f5a5983592677ce8973cd54067ca8bb2cc7ef89",
+    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
   },
+  "rendered_asset_sha256": {
+    "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
+    "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
+    "reliability/evidence.json": "6b4330795e8090c69dab9db9bf9faac30833cd95d3545a82b7d69a68fe95dc8e",
+    "reliability/index.html": "547278a35337415db5fe03a90f5a5983592677ce8973cd54067ca8bb2cc7ef89",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+  },
+  "final_root_publication_asset_sha256": {
+    "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+    "index.html": "f4ba1ad3d61a362e67d223463804bea080d83132317ea3a1216f6747dc738943",
+    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+  },
+  "final_root_rendered_asset_sha256": {
+    "index.html": "f4ba1ad3d61a362e67d223463804bea080d83132317ea3a1216f6747dc738943",
+    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+  },
+  "root_navigation_case_count": 4,
+  "root_navigation_cases": [
+    {
+      "case_id": "test_root_navigation_smoke[light-desktop]",
+      "report": "index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 21,
+      "manifest_stamps": {
+        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
+        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
+      }
+    },
+    {
+      "case_id": "test_root_navigation_smoke[dark-mobile]",
+      "report": "index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 21,
+      "manifest_stamps": {
+        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
+        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
+      }
+    },
+    {
+      "case_id": "test_root_navigation_smoke[dark-desktop]",
+      "report": "index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 21,
+      "manifest_stamps": {
+        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
+        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
+      }
+    },
+    {
+      "case_id": "test_root_navigation_smoke[light-mobile]",
+      "report": "index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "page_errors": [],
+      "console_errors": [],
+      "failed_requests": [],
+      "pinned_stylesheets": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "esm_module_count": 21,
+      "manifest_stamps": {
+        "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+        "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
+        "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
+      }
+    }
+  ],
+  "root_navigation_reported_manifest_stamps": {
+    "latency/manifest.json": "Window 2026-11-10T00:00:00Z → 2026-11-13T03:03:35Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+    "reliability/manifest.json": "Window 2026-11-05T07:20:00Z → 2026-11-12T07:20:00Z · devel 4415ac2544 · published 2026-11-13T03:43Z",
+    "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z · devel 5720cbd391",
+    "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z · devel 69f35d736d"
+  },
   "report_checkpoints_reviewed": [
-    "first-screen",
-    "latest-finding",
-    "browser-diagnosis"
+    "overview",
+    "ten-lane-followups",
+    "ten-lane-followups-expanded",
+    "reliability-dispatch",
+    "reliability-dispatch-expanded",
+    "existing-vm-history-chart"
   ],
-  "navigation_checkpoints_reviewed": [
-    "ci-navigation",
-    "reliability-navigation"
+  "navigation_checkpoints_reviewed": ["overview", "live-theme-change"],
+  "checks": [
+    "Real pinned CDN stylesheets and ESM modules loaded; no failed network requests.",
+    "Initial light/dark theme and live color-scheme preference changes passed.",
+    "All report cases had no page errors, console errors, failed requests, or document overflow.",
+    "Both dispatch work cards and both expanded dispatch panels rendered.",
+    "Ten-lane table rendered with ten expandable evidence/next-measurement panels in each report case.",
+    "Existing populated latency/reliability charts and expanded table checkpoints remained available.",
+    "Four current root navigation cases passed with the final root index and the expected four main report cards/manifests."
   ],
-  "manual_screenshot_review": "Readability, link spacing, section continuity, color contrast and horizontal document overflow checked in desktop/mobile light/dark. Mobile graph table is horizontally scrollable; desktop shows all columns.",
-  "prior_snapshot_validation_invocation_url": "https://app.buildbuddy.io/invocation/4c6b0c69-be45-49f1-8ca3-6bb7a3e97e2d"
+  "manual_screenshot_review": "Reviewed desktop and mobile, light and dark overview captures for latency, reliability, and the current root navigation, plus representative ten-lane table and expanded-lane views, latency backend chart/table views, and reliability VM-history chart. Text, cards, charts, theme contrast, and the mobile scroll/expand cue were legible. The ten-lane table intentionally scrolls horizontally on narrow screens; the visible cue directs readers to scroll or expand a lane.",
+  "reviewed_screenshots": [
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "overview",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "85d4370954a13c6a47e6194fe5450606f376a426349fd178b8706c1a6c0ee91e",
+      "test_output_relative_path": "files/c722fb82b6ca821cb4bb43803fbfa071aac474e154064d18ac37e02e5a5e34d7.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "overview",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "2eac028f27282fb5036767daa6d7e7fc0b31bb9ec975557e73237fc1be37bdeb",
+      "test_output_relative_path": "files/67c51afe8ff3d50e5403506bb001bf3047a82e3a094ebc15d310ffa2e2ae2ee4.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[dark-desktop-reliability]",
+      "checkpoint": "overview",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "e2a20a0ecf72760ad617c98133f831f81e1bf7205123954fabfbe499a765f287",
+      "test_output_relative_path": "files/d3557a4f28dfe87e44f06d464982be761971e94c792d5d44a65bc9c43b7f49ba.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[dark-mobile-reliability]",
+      "checkpoint": "overview",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "5139616c914b8bf3365f251161abc7aace926e902c9840033e2b76100de3aa82",
+      "test_output_relative_path": "files/2a4662005b815a5e2f06d9aaadce42a0f7ec724fd7f3e7cb7b572f9c33511b9a.png"
+    },
+    {
+      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
+      "case_id": "test_root_navigation_smoke[light-desktop]",
+      "checkpoint": "overview",
+      "title": "CI report navigation",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "0caad2063b55b4d118ab56b93890088a7bb2a6548411c0dc94884d92a92513fd",
+      "test_output_relative_path": "files/fbcdbf1da0c10f37cf7809d245812479849a2b6b136316266d09b46a3824f37c.png"
+    },
+    {
+      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
+      "case_id": "test_root_navigation_smoke[light-mobile]",
+      "checkpoint": "overview",
+      "title": "CI report navigation",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "d60a2fe2b564427eebfe22089db0f38b63758d2a00221c32cb1e197921e1592b",
+      "test_output_relative_path": "files/b1c716ad9ba5e21ff8c10886c1a055afac13e592fe5f27973394c0e1aff60f61.png"
+    },
+    {
+      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
+      "case_id": "test_root_navigation_smoke[dark-desktop]",
+      "checkpoint": "overview",
+      "title": "CI report navigation",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "42972ceced5671f601464211d3cf9c3c912cea3cc4859ed37d35a891312140a6",
+      "test_output_relative_path": "files/4048f06e5616443ac8dc93d573036bbf2b1410e6e0a49d2d83872f452fe8ed25.png"
+    },
+    {
+      "invocation_id": "9d39e28f-e257-4d0d-9ae4-eeb4e9ae872e",
+      "case_id": "test_root_navigation_smoke[dark-mobile]",
+      "checkpoint": "overview",
+      "title": "CI report navigation",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "78ade3905537b6ccf711a6385531f8251ab0e468933b9e32189d4d7fc4592da9",
+      "test_output_relative_path": "files/742bba3db296dc76ca99e065ac93f02848e67f5d4126f51a99e2d2e0c3e201e1.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "ten-lane-followups",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "sha256": "9694f92641459e7ac391a4ffe68f79ae7e257cd20c5cfc9a8475f8e6e4fedda2",
+      "test_output_relative_path": "files/52cc67a6828d7e02a0bf9648f56c4d80530eb79f71f7238af5bb9d07b24b46db.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "ten-lane-followups",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "7174270fd5775dc82a50af9b41b566a5bd6546cb00a58381ad2165fcf64f32b2",
+      "test_output_relative_path": "files/eef9abef04b9acb3c995c3741889d3d334b19a4f09324465d585286686cb659d.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "ten-lane-followups-expanded",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "b38ea5d87e7511be07cbf75b3c5b6496f047e7410e898927348fedf6c53e5d34",
+      "test_output_relative_path": "files/ff74a9fb00e7a38dd9b7626b88e1fece0c0c947783fc0359e0eebe4bccf8ee87.png"
+    },
+    {
+      "invocation_id": "8340c3c0-8d04-43f3-9bd4-e8d9a73a9ef9",
+      "case_id": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "existing-vm-history-chart",
+      "title": "CI reliability report",
+      "viewport": {
+        "width": 1152,
+        "height": 694
+      },
+      "sha256": "6809291a1cbc58f7313dfccea4bde1b1e7be01473ab5118d789997a616e29bf4",
+      "test_output_relative_path": "files/b33beea87772ecde95a42f1f29ffc73130478111ec5e75f651159b54279c9aef.png"
+    }
+  ]
 }

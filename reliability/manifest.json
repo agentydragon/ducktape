@@ -1,12 +1,12 @@
 {
-  "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
+  "source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
   "window_start_utc": "2026-11-05T07:20:00Z",
   "window_end_utc": "2026-11-12T07:20:00Z",
-  "published_at_utc": "2026-11-13T02:12:48.179572+00:00",
+  "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "bf7f219f091b33071b5bdfeebf42b930d20f6ebe",
-  "report_sha256": "b630343646b00756862bf208f9ce086c2a652a7ddbcd17d493c75e28b4c35c8a",
-  "evidence_sha256": "e72975c0cbf15b9bdeb46cf3678766fbbfeb433ac8f31f12933eec67e48a5a7a",
+  "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
+  "report_sha256": "547278a35337415db5fe03a90f5a5983592677ce8973cd54067ca8bb2cc7ef89",
+  "evidence_sha256": "6b4330795e8090c69dab9db9bf9faac30833cd95d3545a82b7d69a68fe95dc8e",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -21,5 +21,18 @@
   ],
   "nov13_selected_followup_reviewed_at_utc": "2026-11-13T01:40:00Z",
   "nov13_selected_followup_source_devel_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
-  "nov13_selected_followup_scope": "Selected physical experiments and PR status; original cohort windows, source pins, denominators and rates unchanged."
+  "nov13_selected_followup_scope": "Selected physical experiments and PR status; original cohort windows, source pins, denominators and rates unchanged.",
+  "dispatch10_reviewed_at_utc": "2026-11-13T03:47:21.763839+00:00",
+  "dispatch10_source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+  "dispatch10_scope": "Selected ten-lane experiments with individual source/CAS pins and observation times. See dispatch10.experiments and pr_states; no end-to-end improvement attributed.",
+  "backend_collection_started_at_utc": "2026-11-13T03:03:35Z",
+  "backend_observed_at_utc": "2026-11-13T03:04:30.559122+00:00",
+  "backend_population_window_utc": [
+    "2026-11-10T00:00:00Z",
+    "2026-11-13T03:03:35Z"
+  ],
+  "backend_population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
+  "population_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
+  "population_scope": "Retained Nov 5\u201312 reliability population was not recollected. Fresh selected incidents/controls and backend feedback cohort are supplemental, with separate denominators and source pins.",
+  "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1"
 }

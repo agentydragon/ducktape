@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ducktape CI reliability · 12 November 2026</title>
+    <title>CI reliability · Agentplane backend</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -64,6 +64,7 @@
         Text,
         Title,
       } from "@mantine/core";
+      import { CiLanes } from "../ci-lanes.js";
       import { html, mount } from "../report.js";
       import { DailyVmChart } from "./charts.js";
 
@@ -391,7 +392,7 @@
           id="reliability-dispatch"
           gap="md"
         >
-          <${Title} order=${2}>Priority 1: VM and browser reliability<//>
+          <${Title} order=${2}>Earlier Nov 10–12 backend rerun audit<//>
           <${Text}
             >22 of 102 green production-backend heads needed multiple Bazel
             attempts. Those heads account for 47.5% of summed feedback time:
@@ -498,7 +499,10 @@
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
         >
-          <${Title} order=${1}>Backend reruns: VM work and browser diagnosis<//>
+          <${Title} order=${1}
+            >CI reliability: fresh incidents and recovery controls<//
+          >
+          <${CiLanes} data=${evidence.dispatch10} />
           <${Paper}
             component="section"
             id="latest-browser"
@@ -508,13 +512,21 @@
           >
             <${Stack} gap="sm">
               <${Title} order=${2}
-                >Browser projection: five fresh passes, cause still open<//
+                >Browser projection: new recurrence and targeted candidate<//
+              >
+              <${Text} fw=${600}
+                >${evidence.dispatch10.lanes.find((lane) => lane.id === 9).observed}<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16033"
+                >Lane 9: current candidate, evidence and next fresh-exposure
+                measurement<//
               >
               <${Text} size="sm" c="dimmed"
                 >${`Supplement reviewed ${evidence.nov13_selected_followup.reviewed_at_utc}; the original 5–12 November mainline window and target statistics below were not recollected.`}<//
               >
               <${Text}>
-                Five distinct, uncached RBE executions of the exact
+                Earlier, five distinct, uncached RBE executions of the exact
                 growing-thread scenario passed on devel${" "}
                 <${Anchor}
                   href=${`https://github.com/agentydragon/ducktape/commit/${evidence.nov13_selected_followup.browser.source_commit}`}
@@ -527,8 +539,9 @@
                 <${Anchor}
                   href=${evidence.nov13_selected_followup.browser.note_url}
                   >investigation note<//
-                >. The earlier cursor-334 failure remains unexplained; this
-                selected sample is not a refreshed failure rate or proof of a
+                >. That five-run sample did not identify a failure mechanism.
+                The new natural recurrence and targeted candidate are tracked
+                above; this is not a refreshed fleet failure rate or proof of a
                 runtime repair.
               <//>
               <${Text} size="sm">
@@ -538,10 +551,10 @@
                 >${" "} captures bounded cursor and entity-stream metadata when
                 the assertion fails, without publishing thread content. None of
                 these five passing executions exercised that failure path. The
-                next useful observation is a natural failure with direct view,
-                fresh Electric snapshot, Chromium stream metadata, and browser
-                cursor captured together; then locate the stalled boundary
-                before changing runtime delivery.
+                new natural recurrence supplied direct view, fresh Electric,
+                Chromium stream metadata and DOM cursor boundaries together.
+                Lane 9 records the candidate mechanism, its controlled
+                validation and the next natural-exposure measurement.
               <//>
             <//>
           <//>
