@@ -3,7 +3,7 @@ import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Te
 import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
-import { ActionState } from "../../action_service/action_service_pb";
+import { ActionState } from "../../action_service/api/contracts/action_service_pb";
 import {
   GitHubEventName,
   NoticeWaitReason,

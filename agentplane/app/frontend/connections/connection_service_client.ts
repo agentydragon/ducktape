@@ -24,7 +24,7 @@ import {
   type DecideConnectionEnrollmentResponse,
   type PreviewConnectionEnrollmentResponse,
 } from "../../../mcp_edge/api/connection/connection_service_pb";
-import { Verdict } from "../../../action_service/action_service_pb";
+import { Verdict } from "../../../action_service/api/contracts/action_service_pb";
 import type { Identity } from "../../../proto/identity_pb";
 
 const OPERATOR = "/upstream/connections/v1/operator";

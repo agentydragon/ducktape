@@ -1,12 +1,7 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -133,125 +128,6 @@ py_test(
     ],
 )
 
-proto_library(
-    name = "action_service_proto",
-    srcs = ["action_service.proto"],
-    deps = [
-        "//agentplane/proto:environment_lifecycle_proto",
-        "//agentplane/proto:identity_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/rpc:code_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:struct_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "action_service_pb2",
-    deps = [
-        ":action_service_proto",
-        "@googleapis//google/rpc:code_proto",
-    ],
-)
-
-py_grpc_service_library(
-    name = "action_service_pb2_grpc",
-    async_only = True,
-    proto = ":action_service_proto",
-    py_proto = ":action_service_pb2",
-)
-
-go_proto_library(
-    name = "action_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb",
-    proto = ":action_service_proto",
-    deps = [
-        "//agentplane/proto:environment_lifecycle_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-        "@org_golang_google_genproto_googleapis_rpc//code",
-    ],
-)
-
-ts_proto_library(
-    name = "action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":action_service_proto",
-    protoc_gen_options = {"rewrite_imports": "./google/rpc/*_pb.js:./agentplane/proto"},
-    deps = [
-        "//agentplane/proto:code_pb",
-        "//agentplane/proto:environment_lifecycle_pb",
-        "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
-    ],
-)
-
-proto_library(
-    name = "operator_action_service_proto",
-    srcs = ["operator_action_service.proto"],
-    deps = [
-        ":action_service_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "operator_action_service_pb2",
-    deps = [":operator_action_service_proto"],
-)
-
-go_proto_library(
-    name = "operator_action_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb",
-    proto = ":operator_action_service_proto",
-    deps = [
-        ":action_service_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
-)
-
-ts_proto_library(
-    name = "operator_action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":operator_action_service_proto",
-    deps = [
-        ":action_service_pb",
-        "//google/api:annotations_pb",
-    ],
-)
-
-proto_library(
-    name = "linkage_service_proto",
-    srcs = ["linkage_service.proto"],
-    deps = [":operator_action_service_proto"],
-)
-
-go_proto_library(
-    name = "linkage_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb",
-    proto = ":linkage_service_proto",
-    deps = [":operator_action_service_go_proto"],
-)
-
 go_library(
     name = "main_lib",
     srcs = [
@@ -260,9 +136,9 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
-        ":action_service_go_proto",
-        ":linkage_service_go_proto",
-        ":operator_action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/action_service/catalog",
@@ -387,9 +263,9 @@ go_test(
     embed = [":main_lib"],
     tags = ["requires_docker"],
     deps = [
-        ":action_service_go_proto",
-        ":linkage_service_go_proto",
-        ":operator_action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/action_service/callers",
         "//agentplane/action_service/catalog",

@@ -2,7 +2,11 @@
 import { describe, expect, it } from "vitest";
 import { create } from "@bufbuild/protobuf";
 
-import { ActionIdentitySchema, ActionState, type ActionIdentity } from "../../../../action_service/action_service_pb";
+import {
+  ActionIdentitySchema,
+  ActionState,
+  type ActionIdentity,
+} from "../../../../action_service/api/contracts/action_service_pb";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
 import { executionResult } from "../presentation";

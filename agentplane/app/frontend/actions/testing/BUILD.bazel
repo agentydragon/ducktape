@@ -13,8 +13,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
     ],
 )
 
@@ -32,8 +32,8 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:query",
         "//agentplane/app/frontend/actions:action_client",

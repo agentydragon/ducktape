@@ -7,7 +7,7 @@ import { TimeAgo } from "../time_ago";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
 import { JsonBlock } from "../text_block";
 import { RawSwitch } from "../raw_switch";
-import type { ActionRequest } from "../../../action_service/action_service_pb";
+import type { ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
 import {
   renderActionCall,

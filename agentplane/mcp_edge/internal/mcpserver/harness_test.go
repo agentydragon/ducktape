@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
 // callerHeader is how the test's core client tells the fake core which caller a call's context carried, standing in

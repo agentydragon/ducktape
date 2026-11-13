@@ -23,7 +23,7 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.action_service import action_service_pb2
+from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.fake_action_service import FakeActionService, served_action_service
 from agentplane.app.testing.replication_process import AppProcess, OIDCProviderOptions, SandboxesAccess, app_process
 from agentplane.history_service.client import HistoryServiceClient

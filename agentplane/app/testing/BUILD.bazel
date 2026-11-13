@@ -17,8 +17,8 @@ py_library(
     name = "fake_action_service",
     srcs = ["fake_action_service.py"],
     deps = [
-        "//agentplane/action_service:action_service_pb2",
-        "//agentplane/action_service:action_service_pb2_grpc",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
+        "//agentplane/action_service/api/contracts:action_service_pb2_grpc",
         "//agentplane/grpc:serving",
         "@pypi//grpcio",
         "@pypi//protobuf",

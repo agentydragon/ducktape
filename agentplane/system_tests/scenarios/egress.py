@@ -34,7 +34,7 @@ from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.action_service import action_service_pb2
+from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config

@@ -34,7 +34,7 @@ import {
   Verdict,
   type ActionRequest,
   type Decision,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import {
   actionArguments,
   actionIdentity,

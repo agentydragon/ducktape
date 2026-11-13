@@ -1,4 +1,4 @@
-import type { ActionRequest } from "../../../../action_service/action_service_pb";
+import type { ActionRequest } from "../../../../action_service/api/contracts/action_service_pb";
 import { actionIdentity } from "../presentation";
 import { createBranchNotification } from "./github/create_branch";
 import { createPullRequestNotification } from "./github/create_pull_request";

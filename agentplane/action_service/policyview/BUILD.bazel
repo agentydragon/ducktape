@@ -7,7 +7,7 @@ go_library(
     srcs = ["view.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/policyview",
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/policies",
@@ -26,7 +26,7 @@ go_test(
     embed = [":policyview"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/informer",
         "//agentplane/policy/api/v1alpha1",
         "@org_golang_google_protobuf//encoding/protojson",

@@ -405,7 +405,7 @@ The generated client calls `ActionService.GetActionRequest` for one receipt,
 waiting. The watch starts with the current receipt, emits changes until `WatchUntil` holds, and ends
 when the client deadline expires. A failed watch can be reopened by request ID without missing a state
 change. The proto is the source for the gRPC API and its HTTP/JSON facade
-([Action Service spec](../action_service/SPEC.md), [proto](../action_service/action_service.proto)).
+([Action Service spec](../action_service/SPEC.md), [proto](../action_service/api/contracts/action_service.proto)).
 
 At the Go service cutover, refresh the runner image/CLI in every existing Sandbox before it resumes.
 Older CLI binaries call the removed HTTP receipt wait parameters and emit the legacy JSON field and enum

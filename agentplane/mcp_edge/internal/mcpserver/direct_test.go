@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
 // directCatalog offers test-mcp/alpha as a direct tool; test-mcp/internal is an Action that is not one.

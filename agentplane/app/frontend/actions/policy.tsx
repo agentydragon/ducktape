@@ -6,7 +6,7 @@ import {
   GetActionPolicyResponseSchema,
   type CallerActionPolicy,
   type EffectivePolicy,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import { CodeBlock } from "../../../../util/frontend/code_block";
 import { followWatch } from "../watch_stream";
 

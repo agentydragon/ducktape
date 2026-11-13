@@ -12,7 +12,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/connections",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/streaming",
         "//agentplane/identity/auth/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
@@ -42,7 +42,7 @@ go_test(
     embed = [":connections"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/facade",
         "//agentplane/identity/auth/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",

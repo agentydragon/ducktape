@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package agentplane.action_service;
 
-import "agentplane/action_service/operator_action_service.proto";
+import "agentplane/action_service/api/contracts/operator_action_service.proto";
 
 service LinkageService {
   // Completes a single-use OAuth flow. The unguessable state is the capability authorizing the callback; neither an

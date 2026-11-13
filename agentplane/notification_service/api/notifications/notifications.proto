@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package agentplane.notification_service;
 
-import "agentplane/action_service/action_service.proto";
+import "agentplane/action_service/api/contracts/action_service.proto";
 import "agentplane/proto/identity.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";

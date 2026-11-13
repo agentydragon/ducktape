@@ -20,8 +20,8 @@ import {
   type ActionGroup,
   type ActionRequest,
   type ListActionRequestHistoryResponse,
-} from "../../../../action_service/action_service_pb";
-import type { McpServerLinkage } from "../../../../action_service/operator_action_service_pb";
+} from "../../../../action_service/api/contracts/action_service_pb";
+import type { McpServerLinkage } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import {
   actionGroupUpsertProtoJson,
   actionGroupsSnapshotCompleteProtoJson,

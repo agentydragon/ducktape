@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
 const testRequestID = "00000000-0000-0000-0000-0000000000a1"

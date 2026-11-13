@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
 // The views below are what the tools answer: the core's records under the tool schemas' snake_case names and

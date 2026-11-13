@@ -17,7 +17,7 @@ import {
   ExecutorKind,
   type ActionGroup,
   type ActionRequest,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { IdentitySchema } from "../../../proto/identity_pb";

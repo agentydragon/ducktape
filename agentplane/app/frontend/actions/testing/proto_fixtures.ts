@@ -12,14 +12,14 @@ import {
   type ActionGroup,
   type ActionRequest,
   type ListActionRequestHistoryResponse,
-} from "../../../../action_service/action_service_pb";
+} from "../../../../action_service/api/contracts/action_service_pb";
 import {
   DecideActionRequestResponseSchema,
   DisconnectMcpServerResponseSchema,
   StartMcpServerLinkageResponseSchema,
   WatchMcpServersResponseSchema,
   type McpServerLinkage,
-} from "../../../../action_service/operator_action_service_pb";
+} from "../../../../action_service/api/contracts/operator_action_service_pb";
 
 export function actionStateProtoJson(value: ActionState): string {
   const json = toJson(ListActionRequestsRequestSchema, create(ListActionRequestsRequestSchema, { state: [value] }));

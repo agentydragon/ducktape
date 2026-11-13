@@ -10,13 +10,13 @@ import {
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   McpServerLinkageSchema,
   type McpServerLinkage,
-} from "../../../action_service/operator_action_service_pb";
+} from "../../../action_service/api/contracts/operator_action_service_pb";
 import { McpServers } from "./mcp_servers";
 
 const LINKAGES = "/upstream/actions/v1/operator/mcp-servers:watch";

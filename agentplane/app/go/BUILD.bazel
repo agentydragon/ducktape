@@ -24,9 +24,9 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go",
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/action_service:linkage_service_go_proto",
-        "//agentplane/action_service:operator_action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/go/auth",
@@ -125,8 +125,8 @@ go_test(
     srcs = ["action_facade_test.go"],
     embed = [":main_lib"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/action_service:operator_action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/app/go/proxy",
         "//agentplane/environments/v1:environment_service_go_proto",
@@ -261,7 +261,7 @@ go_test(
     srcs = ["operatorapi_test.go"],
     embed = [":main_lib"],
     deps = [
-        "//agentplane/action_service:linkage_service_go_proto",
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
         "//agentplane/app/go/auth",
         "//agentplane/proto:identity_go_proto",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

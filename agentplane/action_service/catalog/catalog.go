@@ -16,7 +16,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"gopkg.in/yaml.v3"
 )
 

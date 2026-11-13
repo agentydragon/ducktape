@@ -4,7 +4,11 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { create, toJson } from "@bufbuild/protobuf";
 
-import { ActionIdentitySchema, ActionRequestSchema, ActionState } from "../../../action_service/action_service_pb";
+import {
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ActionState,
+} from "../../../action_service/api/contracts/action_service_pb";
 import { IdentitySchema } from "../../../proto/identity_pb";
 import { STALE_AFTER_MS, streamRegistry } from "../stream_status";
 import { actionCaller, timestampText } from "./presentation";

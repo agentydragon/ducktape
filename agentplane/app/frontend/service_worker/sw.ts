@@ -1,4 +1,4 @@
-import { ActionState, Verdict, type ActionRequest } from "../../../action_service/action_service_pb";
+import { ActionState, Verdict, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { decideActionById, listActionRequests } from "../actions/client";
 import { actionIdentity } from "../actions/presentation";
 import { formatActionNotification } from "../actions/notifications";
