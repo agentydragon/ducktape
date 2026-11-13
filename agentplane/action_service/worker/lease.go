@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 )
 
 // Lease is an Executor's hold on the one Execution it runs: the lease its claim granted.

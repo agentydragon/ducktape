@@ -1,6 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane/action_service:__subpackages__"])
+package(default_visibility = [
+    "//agentplane/action_service:__pkg__",
+    "//agentplane/action_service:__subpackages__",
+])
 
 go_library(
     name = "store",
@@ -16,7 +19,7 @@ go_library(
         "storage_values.go",
         "store.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/store",
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/store",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/postgres",

@@ -135,7 +135,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
-        "//agentplane/action_service/store",
+        "//agentplane/action_service/internal/store",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
@@ -158,7 +158,7 @@ go_test(
     embed = [":policies"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/action_service/store",
+        "//agentplane/action_service/internal/store",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",

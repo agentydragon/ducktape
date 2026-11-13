@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

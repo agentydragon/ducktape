@@ -7,9 +7,9 @@ import (
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

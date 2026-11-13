@@ -14,9 +14,9 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"

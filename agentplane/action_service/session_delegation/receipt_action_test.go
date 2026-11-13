@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	store "github.com/agentydragon/ducktape/agentplane/action_service/store"
+	store "github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"

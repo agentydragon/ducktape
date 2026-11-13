@@ -359,7 +359,7 @@ view as the submitting caller.
 - `//agentplane/action_service/api:unit_test` verifies signed operator-token claims, including
   arbitrary subjects and rejected issuer/audience/azp/expiry/subject/signature combinations;
   `//agentplane/action_service/api:integration_test` verifies operator-only HTTP and RPC admission.
-- `//agentplane/action_service/store:store_integration_test` preserves nested credential-looking
+- `//agentplane/action_service/internal/store:store_integration_test` preserves nested credential-looking
   arguments and results identically for owner, operator, and service-reader projections; the API
   integration tests cover each principal's read scope and shared receipt.
 

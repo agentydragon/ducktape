@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

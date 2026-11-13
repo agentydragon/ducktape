@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
