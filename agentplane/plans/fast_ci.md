@@ -281,6 +281,30 @@ implementation failures and remaining controls are in
 
 P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
 graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.
+
+The first historical-population A/B/B/A screen at `376f8ae` now passes all four
+arms: 562 fresh physical test launches, exact retained Pod/unchanged-case
+identities and no failures, errors, skips or retries. Native invocation elapsed
+averages 442.484s for the full Pod/VM composition and 365.475s for the candidate
+(17.4% lower), with 5.4% more reported CPU and one unknown CPU record per arm.
+This is not complete required feedback or a branch-versus-devel saving.
+Importantly, the smaller VM body does not shorten measured case work: 171.775s
+full versus 173.669s candidate. Both full baselines were cold while both candidate
+VM baselines were warm, dominating the apparent VM process reduction. Do not
+promote that witness as a speed optimization.
+
+The next architecture spike separates a single real deployed VM platform witness
+from duplicate model turns. It must retain issuer/Pod binding, authenticated
+Runtime readiness, workspace execution and real CLI routing; both packaged guest
+contracts retain harness setup/fence, two-turn and History ownership. Private
+kernel, launcher, mounts and supervision need explicit ownership and seeded
+controls before any gate changes. The deployed witness and MCP Services nearly
+tie in the warm candidate, with Pod next; measure the combined graph rather than
+extrapolating an isolated improvement. The existing importer draft #15126 remains
+unproven and should be revisited only through a repaired matched benchmark.
+See [`test_architecture_iteration7.md`](../system_tests/debug/test_architecture_iteration7.md)
+for the complete screen, cache limits and next experiment.
+
 Iteration evidence and the remaining coverage boundaries are recorded in
 [`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
 The next implementation screen and its coverage/measurement limits are in
