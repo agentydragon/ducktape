@@ -89,10 +89,6 @@ py_library(
 py_library(
     name = "launches",
     srcs = ["launches.py"],
-    data = [
-        "@agentplane_codex_cli_linux_x64//:files",  # keep: native executable selected by the test launch
-        "@claude_code_cli_linux_x64//:claude",  # keep: native executable selected by the test launch
-    ],
     deps = [
         ":config",
         "//agentplane/env:config",

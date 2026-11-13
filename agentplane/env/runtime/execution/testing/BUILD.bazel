@@ -7,6 +7,7 @@ py_library(
     srcs = ["codex_exec_server_container.py"],
     data = [
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",  # keep: companion process launched by the fixture
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex process mounted by the fixture
     ],
     visibility = [
         "//agentplane/central_sampler:__pkg__",
