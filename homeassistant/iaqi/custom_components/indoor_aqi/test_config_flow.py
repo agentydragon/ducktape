@@ -13,15 +13,15 @@ if TYPE_CHECKING:
 DOMAIN = "indoor_aqi"
 
 
-async def _init_config_flow(hass: HomeAssistant, source: str | None = None, data: dict | None = None):
-    """Initialize a configuration flow with the given source and data."""
+async def _init_config_flow(hass: HomeAssistant, data: dict | None = None):
+    """Initialize the YAML import configuration flow with the given data."""
     # Import inside function to avoid loading HA modules before
     # pytest_homeassistant_custom_component can patch them
     from homeassistant import config_entries  # noqa: PLC0415
 
-    if source is None:
-        source = config_entries.SOURCE_IMPORT
-    return await hass.config_entries.flow.async_init(DOMAIN, context={"source": source}, data=data)
+    return await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=data
+    )
 
 
 async def test_import_flow(hass: HomeAssistant):
