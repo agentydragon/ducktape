@@ -27,6 +27,7 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import runner_credentials
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm.guest_logs import check_boot, systemd_supervision_passed
+from agentplane.system_tests.vm.host_qemu import observe_active_turn
 from agentplane.system_tests.vm.supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
@@ -191,7 +192,10 @@ async def vm_sandbox_turn(
         agent = await session_setup_is_supervised(
             client, dispatcher, view.target.name, view.target.uid, harness, offered_model
         )
-    with tracer.start_as_current_span("system_test.turn"):
+    with (
+        tracer.start_as_current_span("system_test.turn"),
+        observe_active_turn(undeclared_outputs_dir() / "vm-artifacts", view.target.name, view.target.uid),
+    ):
         turn, _, _ = await scripted_turn_with_admission_and_history(
             client,
             agent,

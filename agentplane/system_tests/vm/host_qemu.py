@@ -37,6 +37,8 @@ VIRTIOFSD_TIMELINE_WAIT_SECONDS = 600.0
 VIRTIOFSD_TIMELINE_MAX_BYTES = 512 * 1024
 VIRTIOFSD_TIMELINE_TARGET = "virtiofsd-timeline-target.json"
 POLL_SECONDS = 0.1
+TURN_SAMPLE_AFTER_SECONDS = 210.0
+TURN_SAMPLE_GAP_SECONDS = 30.0
 
 LIBVIRT_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
 QEMU_PROBES = (
@@ -832,6 +834,7 @@ def _take_sample(
     stop: threading.Event,
     *,
     phase: str = "shutdown",
+    sandbox_uid: str | None = None,
 ) -> None:
     pod_uid = _launcher_pod_uid(launcher, namespace)
     pod = launcher.name.removeprefix(f"{namespace}_").rsplit("_", 1)[0]
@@ -841,7 +844,7 @@ def _take_sample(
     with path.open("w") as output:
         output.write(
             f"HOST_QEMU_SNAPSHOT phase={phase} timestamp={datetime.now(UTC).isoformat(timespec='milliseconds')}\n"
-            f"launcher={launcher.name} pod={pod} pod_uid={pod_uid}\n"
+            f"launcher={launcher.name} pod={pod} pod_uid={pod_uid} sandbox_uid={sandbox_uid}\n"
             "QMP is read-only but may wake QEMU's main loop or vCPUs.\n"
         )
         if phase == "shutdown":
@@ -870,12 +873,41 @@ def snapshot_pending(kubectl: Kubectl, namespace: str, artifact_root: Path) -> N
             _record_collector_error(artifact_root / "host-qemu" / launcher.name, error)
 
 
+@contextmanager
+def observe_active_turn(artifact_root: Path, sandbox_name: str, sandbox_uid: str) -> Iterator[None]:
+    """Mark one VM turn for bounded pre-deadline host and vCPU snapshots."""
+    marker = artifact_root / "host-qemu" / "active-turns" / sandbox_name
+    pending = marker.with_name(f"{marker.name}.pending")
+    marked = False
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text(sandbox_uid)
+        pending.replace(marker)
+        marked = True
+    except OSError:
+        logger.exception("Could not mark VM turn for host-QEMU capture")
+        try:
+            pending.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Could not clear incomplete VM turn capture marker")
+    try:
+        yield
+    finally:
+        if marked:
+            try:
+                marker.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Could not clear VM turn host-QEMU capture marker")
+
+
 def _observe(kubectl: Kubectl, namespace: str, artifact_root: Path, stop: threading.Event) -> None:
     serial_root = artifact_root / "serial"
     observed_at: dict[Path, float] = {}
     samples: dict[Path, int] = {}
     next_sample_at: dict[Path, float] = {}
     completed: set[Path] = set()
+    turn_samples: dict[Path, int] = {}
+    next_turn_sample_at: dict[Path, float] = {}
 
     while not stop.is_set():
         for launcher in _namespace_launchers(serial_root, namespace, stop):
@@ -892,6 +924,38 @@ def _observe(kubectl: Kubectl, namespace: str, artifact_root: Path, stop: thread
             if proof:
                 completed.add(launcher)
                 continue
+            pod = launcher.name.removeprefix(f"{namespace}_").rsplit("_", 1)[0]
+            sandbox_name = pod.removeprefix("virt-launcher-").rsplit("-", 1)[0]
+            marker = artifact_root / "host-qemu" / "active-turns" / sandbox_name
+            try:
+                turn_age = time.time() - marker.stat().st_mtime
+            except FileNotFoundError:
+                turn_age = 0.0
+            except OSError as error:
+                _record_collector_error(artifact_root / "host-qemu" / launcher.name, error)
+                turn_age = 0.0
+            turn_count = turn_samples.get(launcher, 0)
+            due = (
+                turn_age >= TURN_SAMPLE_AFTER_SECONDS
+                if turn_count == 0
+                else time.monotonic() >= next_turn_sample_at[launcher]
+            )
+            if turn_count < 2 and due and marker.exists():
+                turn_samples[launcher] = turn_count + 1
+                try:
+                    _take_sample(
+                        kubectl,
+                        namespace,
+                        launcher,
+                        artifact_root,
+                        turn_count,
+                        stop,
+                        phase="turn",
+                        sandbox_uid=marker.read_text(),
+                    )
+                except Exception as error:
+                    _record_collector_error(artifact_root / "host-qemu" / launcher.name, error)
+                next_turn_sample_at[launcher] = time.monotonic() + TURN_SAMPLE_GAP_SECONDS
             if not requested:
                 continue
 
