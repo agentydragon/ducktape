@@ -9,7 +9,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver"
 )
 
 var sdkDCRClientRlocation string
