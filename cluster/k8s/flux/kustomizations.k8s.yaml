@@ -4609,6 +4609,8 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
     - name: external-secrets-operator

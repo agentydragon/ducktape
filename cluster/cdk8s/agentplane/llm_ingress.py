@@ -12,6 +12,7 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    EnvValue,
     MemoryResources,
     Role,
     RoleBinding,
@@ -106,18 +107,23 @@ class LlmIngress(Construct):
             annotations={
                 "configmap.reloader.stakater.com/reload": ",".join(
                     config_map
-                    for config_map in (f"{_NAME}-settings", None if catalog_map is None else catalog_map.name)
+                    for config_map in (
+                        f"{_NAME}-settings",
+                        "public-web-pki",
+                        None if catalog_map is None else catalog_map.name,
+                    )
                     if config_map is not None
                 ),
                 "secret.reloader.stakater.com/reload": env.llm_ingress.litellm_key_secret_name,
             },
             env_variables={
+                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
                 # The only real model credential in this service; runners never mount it.
                 Settings.litellm_key_env: SecretRef(
                     namespace=env.namespace, name=env.llm_ingress.litellm_key_secret_name
                 )
                 .key("api-key")
-                .env_value(self, "litellm-key-secret")
+                .env_value(self, "litellm-key-secret"),
             },
             readiness=tls_grpc_probe(
                 port=self.service.pod_port,
@@ -142,6 +148,12 @@ class LlmIngress(Construct):
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
+        )
+        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
+        workload.container.mount(
+            "/var/run/public-web-pki",
+            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
+            read_only=True,
         )
         # Backend callers retain their Pod-bound TokenReview credentials. The
         # proxy tunnels Sandbox TLS and asserts no caller identity.

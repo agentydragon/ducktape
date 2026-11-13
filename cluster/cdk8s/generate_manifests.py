@@ -1959,6 +1959,7 @@ def generate_manifests(root: Path) -> None:
         agentplane_staging_health_checks,
         agentplane_crds_kustomization,
         cert_manager_trust_kustomization,
+        cert_manager_environment_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         kyverno_kustomization,

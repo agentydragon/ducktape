@@ -1069,6 +1069,7 @@ def agentplane_staging(
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     cert_manager_trust: Kustomization,
+    cert_manager_environment: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
@@ -1129,6 +1130,7 @@ def agentplane_staging(
         depends_on=flux_kustomization_depends_on_many(
             agentplane_crds,
             cert_manager_trust,
+            cert_manager_environment,
             cnpg,
             external_secrets_operator,
             kyverno,
