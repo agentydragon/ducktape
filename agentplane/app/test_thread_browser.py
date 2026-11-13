@@ -842,6 +842,11 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         assert summary_box["y"] <= label_box["y"] <= summary_box["y"] + summary_box["height"] - label_box["height"]
         assert not any("/frames?" in url for url in requests)
         await frame_summary.click()
+        # CodeBlock mounts its editor when the frame enters the viewport. Scroll the stable
+        # observation row: scrolling the placeholder can race its replacement by CodeMirror.
+        observation = first_card.locator(f'[data-evidence-observation="{observed.cursor}"]')
+        await expect(observation.locator(".ui-code-block-placeholder, .ui-code-block")).to_be_visible()
+        await observation.scroll_into_view_if_needed()
         frame = first_card.locator(".ui-code-block")
         await expect(frame).to_contain_text("test-text-delta")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
@@ -1174,7 +1179,10 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
             item_started=event_pb2.ItemStarted(item_id="test-scroll-tail", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
         )
     )
-    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="Test tail seed")))
+    tail_seed = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="Test tail seed"))
+    )
+    await expect_projected_cursor(page, tail_seed.cursor)
     await expect(page.get_by_text("Test tail seed", exact=True)).to_have_count(1)
     await page.wait_for_function(
         """() => {
