@@ -1,0 +1,29 @@
+# Withings scale — trend view only.
+#
+# The integration itself is NOT here and cannot be: `withings` is a config_flow
+# OAuth integration, so its credentials and config entry live in `.storage/`
+# (see config-as-code.md § What must stay in .storage/). The UI steps are in
+# <../../withings_setup.md>.
+#
+# What this file adds is the presentation constraint: the raw per-weigh-in number
+# is a dread object, so what gets surfaced is a 7-day mean, not today's reading.
+# Deliberately nothing is added to dashboard_rai.yaml — the trend sensor exists
+# to be queried, not to be walked past.
+
+sensor:
+  - platform: statistics
+    # TODO(withings-entity): replace once the integration is authorised and the
+    # real entity id is known — it is derived from the Withings profile name, so
+    # it cannot be predicted before setup. Until then this logs an unknown-source
+    # warning and produces nothing.
+    entity_id: sensor.withings_weight
+    name: "Weight, 7-day mean"
+    unique_id: rai_weight_trend_7d
+    state_characteristic: average_timeless
+    max_age:
+      days: 7
+    # Weigh-ins are irregular and gaps of over a week are expected. Without this
+    # the sensor goes unavailable the moment the window empties, which reads as a
+    # broken sensor rather than as "no recent data".
+    keep_last_sample: true
+    precision: 1
