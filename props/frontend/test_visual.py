@@ -1,5 +1,7 @@
 """Render fixture states with explicit Python readiness and capture."""
 
+import re
+
 import pytest
 import pytest_bazel
 from playwright.async_api import Locator, expect
@@ -87,6 +89,19 @@ async def test_llm_request_anthropic(visual: VisualHarness) -> None:
         code = shot.locator(".ui-code-block .cm-content")
         await expect(code).to_have_count(2)
         await view.capture("LLMRequestsAnthropicResponse", target=sections.nth(1))
+
+
+async def test_snapshot_cluster_run_link(visual: VisualHarness) -> None:
+    run_id = "12345678-90ab-cdef-1234-567890abcdef"
+    async with visual.open(query={"page": "SnapshotDetailClusterRunLink"}, viewport=Viewport()) as view:
+        shot = view.page.locator("#shot")
+        await shot.get_by_role("tab", name=re.compile("Clusters")).click()
+        await shot.get_by_role("button", name=re.compile("hashing-issues")).click()
+        run_link = shot.get_by_role("link", name="12345678")
+        await expect(run_link).to_have_attribute("href", f"#/runs/{run_id}")
+        await expect(run_link).to_have_attribute("title", run_id)
+        await expect(run_link).to_have_class(re.compile(r"font-mono.*underline"))
+        await view.capture("SnapshotClusterRunLink", target=shot)
 
 
 if __name__ == "__main__":

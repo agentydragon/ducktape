@@ -135,6 +135,7 @@ ts_library(
         "//props/frontend/src/components/stats:CreditBadge",
         "//props/frontend/src/components/stats:OccurrenceStats",
         "//props/frontend/src/lib:OccurrenceLink",
+        "//props/frontend/src/lib:RunIdLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",

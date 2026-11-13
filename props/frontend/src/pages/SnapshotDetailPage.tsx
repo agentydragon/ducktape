@@ -25,7 +25,7 @@ import FileTree from "../components/FileTree";
 import FileViewer from "../components/FileViewer";
 import OccurrenceStats from "../components/stats/OccurrenceStats";
 import CreditBadge from "../components/stats/CreditBadge";
-import type { FileTreeResponse, SnapshotDetailResponse } from "../lib/schema";
+import type { ClustersListResponse, FileTreeResponse, SnapshotDetailResponse } from "../lib/schema";
 import {
   fetchOccurrenceStats,
   fetchSnapshotClusters,
@@ -34,15 +34,17 @@ import {
   fetchSnapshotTree,
 } from "../lib/api/client";
 import { formatLocationAnchor } from "../lib/formatters";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { toast } from "../lib/toast";
 import OccurrenceLink from "../lib/OccurrenceLink";
 import { snapshotDetailQueryKey } from "../lib/queryKeys";
+import RunIdLink from "../lib/RunIdLink";
 
 interface Props {
   slug: string;
   initialSnapshot?: SnapshotDetailResponse;
   initialTree?: FileTreeResponse;
+  initialClusters?: ClustersListResponse;
 }
 
 type ActiveTab = "files" | "tps" | "fps" | "clusters" | "stats";
@@ -66,7 +68,7 @@ function splitColor(split: string): string {
   }
 }
 
-export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree }: Props) {
+export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree, initialClusters }: Props) {
   const [searchParams] = useSearchParams();
   const parts = slug.split("/");
   const snapshotSlug = parts.slice(0, 2).join("/");
@@ -109,6 +111,7 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
     queryKey: ["props", "snapshot-clusters", snapshotSlug],
     queryFn: ({ signal }) => fetchSnapshotClusters(snapshotSlug, signal),
     enabled: auxiliaryQueriesEnabled,
+    initialData: initialClusters,
   });
   const occurrenceStats = useMemo(() => occurrenceStatsQuery.data?.occurrences ?? [], [occurrenceStatsQuery.data]);
   const clusters = useMemo(() => clustersQuery.data?.clusters ?? [], [clustersQuery.data]);
@@ -506,12 +509,7 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
                                       p="sm"
                                     >
                                       <Group gap="xs">
-                                        <Link
-                                          to={`/runs/${member.critique_run_id}`}
-                                          style={{ fontFamily: "monospace" }}
-                                        >
-                                          {member.critique_run_id.slice(0, 8)}
-                                        </Link>
+                                        <RunIdLink id={member.critique_run_id} />
                                         <Text c="dimmed">/</Text>
                                         <Code>{member.critique_issue_id}</Code>
                                       </Group>
