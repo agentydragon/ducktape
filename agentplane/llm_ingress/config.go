@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"regexp"
@@ -10,13 +12,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel/baggage"
+	"gopkg.in/yaml.v3"
 )
 
 const (
-	settingPrefix = "AGENTPLANE_LLM_INGRESS_"
-	configFileEnv = settingPrefix + "CONFIG_FILE"
+	configFileEnv = "AGENTPLANE_LLM_INGRESS_CONFIG_FILE"
+	liteLLMKeyEnv = "AGENTPLANE_LLM_INGRESS_LITELLM_KEY"
 )
 
 type verifiedClaim string
@@ -82,7 +84,7 @@ type config struct {
 	Attribution           attributionConfig `mapstructure:"attribution"`
 	CodexModelCatalogFile string            `mapstructure:"codex_model_catalog_file"`
 	LiteLLMURL            string            `mapstructure:"litellm_url"`
-	LiteLLMKey            string            `mapstructure:"litellm_key"`
+	LiteLLMKey            string            `mapstructure:"-"`
 	LogLevels             map[string]string `mapstructure:"log_levels"`
 	RPC                   listener.Config   `mapstructure:"rpc"`
 	Kubeconfig            string            `mapstructure:"kubeconfig"`
@@ -90,36 +92,48 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		LogLevels: map[string]string{},
+		Attribution: defaultAttribution(), LogLevels: map[string]string{},
 	}
 }
 
 func loadConfig() (config, error) {
+	path, ok := os.LookupEnv(configFileEnv)
+	if !ok || strings.TrimSpace(path) == "" {
+		return config{}, fmt.Errorf("%s is required", configFileEnv)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return config{}, fmt.Errorf("open LLM ingress settings file: %w", err)
+	}
+	defer file.Close()
+
 	c := defaultConfig()
-	settings := viper.New()
-	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
-	for _, key := range []string{
-		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key",
-		"kubeconfig", "policy_namespace",
-	} {
-		settings.MustBindEnv(key)
+	yamlDecoder := yaml.NewDecoder(file)
+	var settings map[string]any
+	if err := yamlDecoder.Decode(&settings); err != nil {
+		return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)
 	}
-	if path := os.Getenv(configFileEnv); path != "" {
-		settings.SetConfigFile(path)
-		settings.SetConfigType("yaml")
-		if err := settings.ReadInConfig(); err != nil {
-			return config{}, errors.New("could not read ingress settings file")
+	var extra any
+	if err := yamlDecoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)
 		}
+		return config{}, errors.New("LLM ingress settings file must contain one YAML document")
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
-		mapstructure.StringToSliceHookFunc(","),
-		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
-	))); err != nil {
-		return config{}, errors.New("invalid ingress settings")
+	settingsDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &c, TagName: "mapstructure", ErrorUnused: true,
+		MatchName: func(mapKey, fieldName string) bool { return mapKey == fieldName },
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
+		),
+	})
+	if err != nil {
+		return config{}, fmt.Errorf("prepare LLM ingress settings decoder: %w", err)
 	}
-	if !settings.InConfig("attribution") {
-		c.Attribution = defaultAttribution()
+	if err := settingsDecoder.Decode(settings); err != nil {
+		return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)
 	}
+	c.LiteLLMKey = os.Getenv(liteLLMKeyEnv)
 	if err := validateConfig(&c); err != nil {
 		return config{}, err
 	}

@@ -20,6 +20,7 @@ from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -40,6 +41,8 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
 )
 from util.settings_contract import env_name
+
+_TEST_LOCAL_MODEL = LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000")
 
 _MCP = McpInputs(
     dex_ca_cert="dex-ca\n",
@@ -70,7 +73,7 @@ def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
         RuntimeInputs(
             ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
         ),
-        LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
+        _TEST_LOCAL_MODEL,
         _MCP,
         None,
     )
@@ -694,7 +697,22 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
         "history": history_service.RUNNER_INGRESS_AUDIENCE,
     }
 
+    llm_pod = _resource(docs, "Deployment", "llm-ingress")["spec"]["template"]["spec"]
+    llm_container = llm_pod["containers"][0]
+    llm_env = {entry["name"]: entry for entry in llm_container["env"]}
+    assert {name for name in llm_env if name.startswith("AGENTPLANE_LLM_INGRESS_")} == {
+        LlmIngressSettings.config_file_env,
+        LlmIngressSettings.litellm_key_env,
+    }
+    assert llm_env[LlmIngressSettings.litellm_key_env]["valueFrom"]["secretKeyRef"]["key"] == "api-key"
     llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+    assert llm_config["allowed_service_account_namespaces"] == [NAMESPACE]
+    assert llm_config["policy_namespace"] == NAMESPACE
+    assert llm_config["central_sampler_identity_callers"] is False
+    assert llm_config["token_audience"] == WORKLOAD_TOKEN_AUDIENCE
+    assert AnyHttpUrl(llm_config["litellm_url"]) == AnyHttpUrl(_TEST_LOCAL_MODEL.url)
+    assert llm_config["log_levels"] == {}
+    assert "litellm_key" not in llm_config
     assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     assert gateway_config["central_sampler"]["target"] == central_sampler.target(NAMESPACE)

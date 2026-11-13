@@ -1187,10 +1187,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE
-              value: agentplane-egress
-            - name: AGENTPLANE_LLM_INGRESS_LITELLM_URL
-              value: http://litellm.litellm.svc.cluster.local:4000
             - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
               valueFrom:
                 secretKeyRef:
@@ -1445,6 +1441,8 @@ data:
     policy_namespace: agentplane-staging
     central_sampler_accounts:
       - agentplane-staging/central-sampler
+    central_sampler_identity_callers: false
+    token_audience: agentplane-egress
     log_llm_requests: true
     models: []
     attribution:
@@ -1477,6 +1475,8 @@ data:
         - key: litellm.metadata.spend_logs_metadata.agentplane.identity_uid
           source: identity_uid
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
+    litellm_url: http://litellm.litellm.svc.cluster.local:4000/
+    log_levels: {}
     rpc:
       listen_address: 0.0.0.0:8080
       tls:

@@ -3,26 +3,30 @@
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, SecretStr, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
-from util.yaml_file_settings import YamlFileSettings
 
 
-class Settings(YamlFileSettings):
-    """Fields are YAML keys; scalar fields also accept `AGENTPLANE_LLM_INGRESS_*` environment overrides."""
+class Settings(BaseModel):
+    """Static deployment settings rendered to YAML, with one explicit runtime Secret input."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_LLM_INGRESS_CONFIG_FILE"
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_LLM_INGRESS_")
+    litellm_key_env: ClassVar[str] = "AGENTPLANE_LLM_INGRESS_LITELLM_KEY"
+    model_config = ConfigDict(extra="forbid")
 
     allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,
         description="Namespaces whose Sandbox SVIDs or backend ServiceAccount bearers may authenticate here.",
     )
+
+    @field_serializer("allowed_service_account_namespaces")
+    def sort_allowed_service_account_namespaces(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
     policy_namespace: str = Field(
         min_length=1,
         description=(
@@ -33,6 +37,14 @@ class Settings(YamlFileSettings):
     central_sampler_accounts: frozenset[str] = Field(
         default_factory=frozenset,
         description="Trusted namespace/name sampler producers allowed to attribute public Session IDs.",
+    )
+
+    @field_serializer("central_sampler_accounts")
+    def sort_central_sampler_accounts(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
+    central_sampler_identity_callers: bool = Field(
+        default=False, description="Whether trusted central samplers may act as delegating actors for an Identity."
     )
     token_audience: str = Field(min_length=1, description="Accepted projected-token audience.")
     log_llm_requests: bool = Field(
@@ -58,7 +70,6 @@ class Settings(YamlFileSettings):
         ),
     )
     litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
-    litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
     log_levels: LogLevels
     rpc: Listener
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
