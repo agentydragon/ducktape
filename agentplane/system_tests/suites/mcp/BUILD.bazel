@@ -95,7 +95,7 @@ k3s_suite(
 k3s_suite(
     name = "test_gateway_budget",
     srcs = ["test_gateway_budget.py"],
-    stack = "central",
+    stack = "central_budget",
     deps = [
         ":conftest",
         "//:conftest",
