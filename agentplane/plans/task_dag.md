@@ -3934,7 +3934,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
 - **`SESSION_IDENTITY_AUTHZ` (design, not started):** the Sandbox-anchored ownership checks at the
-  `TODO(SESSION_IDENTITY_AUTHZ)` sites (`notification_service/api/messages.go`,
+  `TODO(SESSION_IDENTITY_AUTHZ)` sites (`notification_service/internal/rpc/messages.go`,
   `notification_service/internal/store/store.go`, `history_service/internal/storage/store.go`) are replaced by
   Identity-keyed ones.
 - **`HISTORY_DATABASE_RENAME`** (below): deferred by the operator, and takes the name

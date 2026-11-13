@@ -1,9 +1,9 @@
-// Package api serves the Notification Service's gRPC API.
+// Package rpc serves the Notification Service's gRPC API.
 //
 // Methods admits every RPC's caller before it runs, by a bearer reviewed on that call
 // (agentplane/docs/grpc_services.md) or a workload SVID. A workload acts for its own ServiceAccount or Identity and
 // only on what that owns.
-package api
+package rpc
 
 import (
 	"context"

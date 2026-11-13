@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
 go_library(
-    name = "api",
+    name = "rpc",
     srcs = [
         "errors.go",
         "messages.go",
@@ -17,7 +17,7 @@ go_library(
         "views.go",
         "watch.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/api",
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/rpc",
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
@@ -65,7 +65,7 @@ go_test(
         "send_test.go",
         "views_test.go",
     ],
-    embed = [":api"],
+    embed = [":rpc"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
@@ -100,7 +100,7 @@ go_test(
         "operator_test.go",
         "watch_test.go",
     ],
-    embed = [":api"],
+    embed = [":rpc"],
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",

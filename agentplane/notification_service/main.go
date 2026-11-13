@@ -28,11 +28,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
@@ -224,7 +224,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	inboxes := store.New(db, c.Quotas)
 	actionsSource := &actions.Source{Service: actionpb.NewActionServiceClient(actionsConnection), Store: inboxes}
 	// The providers are interfaces, so a disabled GitHub is a nil interface, not a nil *github.Provider.
-	var githubAPI api.GitHub
+	var githubAPI rpc.GitHub
 	var githubSource worker.Provider
 	var webhookHandler http.Handler
 	if c.githubEnabled() {
@@ -237,9 +237,9 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		webhookHandler = webhook.New(c.GitHub, inboxes)
 	}
 
-	options := api.Options{
+	options := rpc.Options{
 		Store: inboxes, Wakeups: hub, Namespace: c.Namespace, Sandboxes: sandboxes,
-		Runner: &api.ProxyRunner{
+		Runner: &rpc.ProxyRunner{
 			TokenFile: c.RunnerGateway.TokenFile, Timeout: seconds(c.RunnerGateway.RequestTimeoutSeconds),
 			TargetTemplate: c.RunnerGateway.ControlTarget, TLS: c.RunnerGateway.TLS,
 		},
@@ -254,7 +254,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	health := probes.New(db, hub)
 	methods := auth.HealthMethods()
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, api.Methods(options, callers))
+	maps.Copy(methods, rpc.Methods(options, callers))
 	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
 	security, err := c.RPC.ServerCredentials(environment_runtime_transport.NotificationsURI)
 	if err != nil {
@@ -264,7 +264,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		serverOptions = append(serverOptions, grpc.Creds(security))
 	}
 	grpcServer := grpc.NewServer(serverOptions...)
-	notifications := api.NewNotifications(options)
+	notifications := rpc.NewNotifications(options)
 	notificationspb.RegisterNotificationsServer(grpcServer, notifications)
 	healthpb.RegisterHealthServer(grpcServer, health)
 	routes := newRoutes(webhookHandler)
