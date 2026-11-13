@@ -3934,7 +3934,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
 - **`SESSION_IDENTITY_AUTHZ` (design, not started):** the Sandbox-anchored ownership checks at the
   `TODO(SESSION_IDENTITY_AUTHZ)` sites (`notification_service/api/messages.go`,
-  `notification_service/store/store.go`, `history_service/storage/store.go`) are replaced by
+  `notification_service/internal/store/store.go`, `history_service/storage/store.go`) are replaced by
   Identity-keyed ones.
 - **`HISTORY_DATABASE_RENAME`** (below): deferred by the operator, and takes the name
   `HISTORY_SERVICE_RENAME` (section 8) decides.

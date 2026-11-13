@@ -3,8 +3,8 @@ package github
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 func (p *Provider) readCheckRuns(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]model.GitHubCheckRun, error) {

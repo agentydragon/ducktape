@@ -6,8 +6,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/google/go-github/v88/github"
 )
 

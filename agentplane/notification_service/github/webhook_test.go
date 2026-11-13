@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing" // Shared fake API server; avoids colliding with Go testing.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
 )
@@ -19,7 +19,7 @@ import (
 var notificationGoldenRlocation string
 
 // The vectors are what the retired Python service stored for the webhook bodies it accepted, and why it refused the
-// others (`store/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
+// others (`internal/store/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
 type deliveryVectors struct {
 	Deliveries []struct {
 		Name       string    `json:"name"`

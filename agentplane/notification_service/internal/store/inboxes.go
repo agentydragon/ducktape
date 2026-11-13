@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry"
+	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"

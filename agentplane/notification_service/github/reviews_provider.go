@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 func reviewsSelected(source model.GitHubSource) bool {

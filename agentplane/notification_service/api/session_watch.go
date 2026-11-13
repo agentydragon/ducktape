@@ -8,9 +8,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

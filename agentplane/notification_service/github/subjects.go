@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 // refreshSubject refreshes the subject unless it is fresh or another refresh holds it: the commits it is at, in

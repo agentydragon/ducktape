@@ -7,8 +7,8 @@ go_library(
     srcs = ["session.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity",
     deps = [
+        "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/model",
-        "//agentplane/notification_service/store",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
     ],

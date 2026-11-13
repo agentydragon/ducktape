@@ -37,7 +37,7 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 BODY = "Test message: the change is ready for review."
-# What a notice's user message starts with, before its JSON (agentplane/notification_service/store/notices.go).
+# What a notice's user message starts with, before its JSON (agentplane/notification_service/internal/store/notices.go).
 NOTICE_PREFIX = "Agentplane inbox notice: "
 
 

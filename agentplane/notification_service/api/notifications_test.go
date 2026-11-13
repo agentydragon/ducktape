@@ -10,9 +10,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/google/uuid"
 )
 

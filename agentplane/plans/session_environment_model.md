@@ -600,7 +600,7 @@ a gap against the selected lifetime direction.
 ### Decision: Session and inbox lifetimes after environment deletion
 
 The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime
-together. The Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/store/claims.go)
+together. The Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/internal/store/claims.go)
 after confirming a missing or replaced destination, independently of Dispatcher's retained Session
 row. An inbox can therefore still retire when its environment disappears.
 

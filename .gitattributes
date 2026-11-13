@@ -161,7 +161,7 @@ cluster/k8s/activitywatch/kustomization.yaml linguist-generated=true
 agentplane/history_service/threadfold/golden.json linguist-generated=true
 
 # Golden vectors the retired Python Notification Service generated; the Go store tests hold the store to them.
-agentplane/notification_service/store/golden.json linguist-generated=true
+agentplane/notification_service/internal/store/golden.json linguist-generated=true
 
 # Golden vectors the Python Action Service generates; test_golden checks the exact output.
 agentplane/action_service/store/golden.json linguist-generated=true

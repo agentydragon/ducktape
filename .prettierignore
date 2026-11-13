@@ -37,7 +37,7 @@ cluster/k8s/ssh-mcp/kustomization.yaml
 agentplane/history_service/threadfold/golden.json
 
 # The retired Python Notification Service generated these golden vectors; the Go store tests hold the store to them.
-agentplane/notification_service/store/golden.json
+agentplane/notification_service/internal/store/golden.json
 
 # The Python Action Service generates these golden vectors; test_golden checks exact output.
 agentplane/action_service/store/golden.json

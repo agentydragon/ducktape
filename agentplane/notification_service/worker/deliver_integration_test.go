@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
