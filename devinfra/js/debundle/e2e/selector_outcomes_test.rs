@@ -323,10 +323,10 @@ fn ambiguous_lists_each_candidates_differentiator() {
     assert_eq!(
         any["outcome"]["differentiators"],
         json!([
-            {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"first\""},
-            {"candidate_body_index": 1, "anchor_body_index": 1, "anchor": "string literal \"second\""},
-            {"candidate_body_index": 3, "anchor_body_index": 2, "anchor": "string literal \"gamma-marker\""},
-            {"candidate_body_index": 4, "anchor_body_index": 3, "anchor": "string literal \"same\""},
+            {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "first"}},
+            {"candidate_body_index": 1, "anchor_body_index": 1, "anchor": {"kind": "string_literal", "value": "second"}},
+            {"candidate_body_index": 3, "anchor_body_index": 2, "anchor": {"kind": "string_literal", "value": "gamma-marker"}},
+            {"candidate_body_index": 4, "anchor_body_index": 3, "anchor": {"kind": "string_literal", "value": "same"}},
         ]),
         "{any:#}"
     );

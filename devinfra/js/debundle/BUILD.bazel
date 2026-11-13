@@ -183,6 +183,17 @@ rust_test(
 )
 
 rust_library(
+    name = "source_mismatch",
+    srcs = ["selectors/diagnostics/source_mismatch.rs"],
+    crate_root = "selectors/diagnostics/source_mismatch.rs",
+    edition = "2024",
+    deps = [
+        ":source_match_holes",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
     name = "source_match",
     srcs = glob(["selectors/matching/source_match/*.rs"]),
     crate_root = "selectors/matching/source_match/mod.rs",
@@ -193,6 +204,7 @@ rust_library(
         ":js_ast",
         ":selector_match",
         ":source_match_holes",
+        ":source_mismatch",
         ":spec",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -216,6 +228,7 @@ rust_library(
     deps = [
         ":source_match_holes",
         "@crates//:roaring",
+        "@crates//:serde",
         "@crates//:strum",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -322,6 +335,8 @@ rust_library(
     crate_root = "selectors/resolution/selector_outcome.rs",
     edition = "2024",
     deps = [
+        ":selector_candidate_index",
+        ":source_mismatch",
         ":spec",
         "@crates//:serde",
         "@crates//:strum",

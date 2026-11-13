@@ -6,13 +6,15 @@
 use std::collections::BTreeSet;
 
 use roaring::RoaringBitmap;
+use serde::{Deserialize, Serialize};
 use source_match_holes::{
     CASE_REST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, anything_hole_name, hole_name_for,
 };
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TopLevelKind {
     ImportDeclaration,
     FunctionDeclaration,
@@ -26,7 +28,10 @@ pub enum TopLevelKind {
     ModuleDeclaration,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum VarKind {
     Var,
@@ -34,7 +39,10 @@ pub enum VarKind {
     Const,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display, Serialize, Deserialize,
+)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SelectorFeature {
     #[strum(to_string = "top-level kind {0:?}")]
     TopLevelKind(TopLevelKind),

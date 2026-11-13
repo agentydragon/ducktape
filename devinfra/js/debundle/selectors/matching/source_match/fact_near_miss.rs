@@ -10,15 +10,16 @@
 //! label scan is a diagnostic heuristic, not a second matching algorithm.
 //! Exact and near-miss body-debt scans reuse the same projected indices.
 //!
-//! Declarator labels and the candidate's declared bindings are rendered by the
-//! pure-AST helpers in this module (`render_var_declarator_label`) and
-//! `declared_bindings` — they walk the candidate/needle item, which the fact model
-//! also carries node-for-node. The reason strings are pinned by the golden
-//! `fact_near_miss_golden_per_variant` test (one input per reachable variant).
+//! Candidate syntax is captured as typed evidence while the AST is available.
+//! The human rendering adapter is exercised by `fact_near_miss_golden_per_variant`.
 
 use super::*;
 use chunk_facts::{NodeId, NodeKind};
 use selector_match::{Index, Mode};
+use source_mismatch::{
+    ClassMemberKey, DeclarationKind, DeclaratorGap, DeclaratorShape, ExpressionShape, ItemCategory,
+    ItemKind, MemberKey, MismatchReason, PinnedDeclarator,
+};
 
 /// The exact-match top-level alignments of a parsed selector body against a chunk
 /// body, over the fact model — the same `Vec<Vec<Option<usize>>>` shape the
@@ -53,96 +54,73 @@ fn item_indices(body: &[ModuleItem]) -> Vec<Index> {
         .collect()
 }
 
-/// A scored "first structural divergence" between a non-matching candidate and the
-/// selector needle. `score` is a fixed per-variant ranking heuristic (higher =
-/// structurally closer); `reason` is the human-readable divergence string.
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct MismatchReason {
-    pub(crate) score: usize,
-    pub(crate) reason: String,
-}
-
-/// One-line label for a variable declarator (or `DECLARATORS_*` hole), used in the
-/// declarator-alignment near-miss reasons. Pure over the AST declarator — the fact
-/// model carries the same data node-for-node (see module docs), so reusing it
-/// keeps the rendered leaves identical to the historical AST path.
-fn render_var_declarator_label(declarator: &VarDeclarator) -> String {
+/// Capture syntax evidence while the parsed source is available. Human labels
+/// are composed later by the diagnostic presentation adapter.
+fn declarator_shape(declarator: &VarDeclarator) -> DeclaratorShape {
     if let Some(hole_name) = declarator_list_hole_name(declarator) {
-        return format!("`{hole_name}`");
+        return DeclaratorShape::Hole {
+            name: hole_name.to_owned(),
+        };
     }
-    let bindings = binding_targets::binding_name_strings(&declarator.name);
-    let binding_label = if bindings.is_empty() {
-        "<pattern>".to_string()
-    } else {
-        bindings.join("/")
-    };
-    match declarator.init.as_deref() {
-        Some(init) => format!("`{binding_label} = {}`", expr_shape_label(init)),
-        None => format!("`{binding_label}`"),
+    DeclaratorShape::Binding {
+        names: binding_targets::binding_name_strings(&declarator.name),
+        initializer: declarator.init.as_deref().map(expression_shape),
     }
 }
 
-fn render_var_declarator_labels(labels: &[String]) -> String {
-    const MAX_LABELS: usize = 10;
-    if labels.is_empty() {
-        return "<none>".to_string();
-    }
-    let mut rendered = labels.iter().take(MAX_LABELS).cloned().collect::<Vec<_>>();
-    if labels.len() > MAX_LABELS {
-        rendered.push(format!("... +{} more", labels.len() - MAX_LABELS));
-    }
-    rendered.join(", ")
-}
-
-/// A coarse shape label for an initializer expression — enough to disambiguate
-/// near-miss candidates without rendering the full subtree.
-fn expr_shape_label(expr: &Expr) -> String {
+fn expression_shape(expr: &Expr) -> ExpressionShape {
     if string_literal_regex_pattern(expr).is_some() {
-        return format!("{STRING_LITERAL_REGEX_PREDICATE}(...)");
+        return ExpressionShape::StringLiteralRegexPredicate;
     }
     match expr {
-        Expr::Ident(ident) => ident.sym.to_string(),
-        Expr::Lit(lit) => lit_shape_label(lit),
-        Expr::Call(call) => format!("{}(...)", callee_shape_label(&call.callee)),
-        Expr::New(new) => format!("new {}(...)", expr_shape_label(&new.callee)),
-        Expr::Member(member) => member_expr_shape_label(member),
-        Expr::Object(_) => "{...}".to_string(),
-        Expr::Array(_) => "[...]".to_string(),
-        Expr::Arrow(_) => "(...) => ...".to_string(),
-        Expr::Fn(_) => "function(...)".to_string(),
-        Expr::Class(_) => "class {...}".to_string(),
-        Expr::Tpl(_) => "`...`".to_string(),
-        Expr::TaggedTpl(tagged) => format!("{} `...`", expr_shape_label(&tagged.tag)),
-        _ => "expression".to_string(),
-    }
-}
-
-fn callee_shape_label(callee: &Callee) -> String {
-    match callee {
-        Callee::Super(_) => "super".to_string(),
-        Callee::Import(_) => "import".to_string(),
-        Callee::Expr(expr) => expr_shape_label(expr),
-    }
-}
-
-fn member_expr_shape_label(member: &MemberExpr) -> String {
-    let obj = expr_shape_label(&member.obj);
-    match &member.prop {
-        MemberProp::Ident(prop) => format!("{obj}.{}", prop.sym),
-        MemberProp::PrivateName(prop) => format!("{obj}.#{}", prop.name),
-        MemberProp::Computed(_) => format!("{obj}[...]"),
-    }
-}
-
-fn lit_shape_label(lit: &Lit) -> String {
-    match lit {
-        Lit::Str(str_) => format!("\"{}\"", str_.value.to_string_lossy()),
-        Lit::Bool(bool_) => bool_.value.to_string(),
-        Lit::Null(_) => "null".to_string(),
-        Lit::Num(num) => num.value.to_string(),
-        Lit::BigInt(_) => "0n".to_string(),
-        Lit::Regex(_) => "/.../".to_string(),
-        Lit::JSXText(_) => "jsx-text".to_string(),
+        Expr::Ident(ident) => ExpressionShape::Identifier {
+            name: ident.sym.to_string(),
+        },
+        Expr::Lit(lit) => match lit {
+            Lit::Str(value) => ExpressionShape::String {
+                value: value.value.to_string_lossy().into_owned(),
+            },
+            Lit::Bool(value) => ExpressionShape::Boolean { value: value.value },
+            Lit::Null(_) => ExpressionShape::Null,
+            Lit::Num(value) => ExpressionShape::Number {
+                value: value.value.to_string(),
+            },
+            Lit::BigInt(_) => ExpressionShape::BigInt,
+            Lit::Regex(_) => ExpressionShape::Regex,
+            Lit::JSXText(_) => ExpressionShape::JsxText,
+        },
+        Expr::Call(call) => ExpressionShape::Call {
+            callee: Box::new(match &call.callee {
+                Callee::Super(_) => ExpressionShape::Super,
+                Callee::Import(_) => ExpressionShape::Import,
+                Callee::Expr(expr) => expression_shape(expr),
+            }),
+        },
+        Expr::New(new) => ExpressionShape::New {
+            callee: Box::new(expression_shape(&new.callee)),
+        },
+        Expr::Member(member) => ExpressionShape::Member {
+            object: Box::new(expression_shape(&member.obj)),
+            property: match &member.prop {
+                MemberProp::Ident(prop) => MemberKey::Named {
+                    name: prop.sym.to_string(),
+                },
+                MemberProp::PrivateName(prop) => MemberKey::Private {
+                    name: prop.name.to_string(),
+                },
+                MemberProp::Computed(_) => MemberKey::Computed,
+            },
+        },
+        Expr::Object(_) => ExpressionShape::Object,
+        Expr::Array(_) => ExpressionShape::Array,
+        Expr::Arrow(_) => ExpressionShape::Arrow,
+        Expr::Fn(_) => ExpressionShape::Function,
+        Expr::Class(_) => ExpressionShape::Class,
+        Expr::Tpl(_) => ExpressionShape::Template,
+        Expr::TaggedTpl(tagged) => ExpressionShape::TaggedTemplate {
+            tag: Box::new(expression_shape(&tagged.tag)),
+        },
+        _ => ExpressionShape::Expression,
     }
 }
 
@@ -154,25 +132,24 @@ fn first_var_declarator_hole_placement_mismatch_reason(
     needle: &VarDecl,
     candidate: &VarDecl,
     matches: &[(usize, usize)],
-) -> String {
+) -> DeclaratorGap {
     let Some(&(first_needle_idx, first_candidate_idx)) = matches.first() else {
-        return "pinned declarators matched in order, but DECLARATORS_* hole placement differed"
-            .to_string();
+        return DeclaratorGap::NoPins;
     };
     if first_candidate_idx > 0 && !has_declarator_hole_before(needle, first_needle_idx) {
         let skipped = candidate
             .decls
             .iter()
             .take(first_candidate_idx)
-            .map(render_var_declarator_label)
+            .map(declarator_shape)
             .collect::<Vec<_>>();
-        return format!(
-            "candidate has unmatched leading declarator(s) before selector declarator \
-             #{first_needle_idx} {}: {}. Add a `DECLARATORS_* = null` pseudo-declarator \
-             before the first pinned declarator.",
-            render_var_declarator_label(&needle.decls[first_needle_idx]),
-            render_var_declarator_labels(&skipped),
-        );
+        return DeclaratorGap::Leading {
+            before: PinnedDeclarator {
+                index: first_needle_idx,
+                declaration: declarator_shape(&needle.decls[first_needle_idx]),
+            },
+            unmatched: skipped,
+        };
     }
 
     for pair in matches.windows(2) {
@@ -190,21 +167,23 @@ fn first_var_declarator_hole_placement_mismatch_reason(
         }
         let skipped = candidate.decls[gap_start..right_candidate_idx]
             .iter()
-            .map(render_var_declarator_label)
+            .map(declarator_shape)
             .collect::<Vec<_>>();
-        return format!(
-            "candidate has unmatched declarator(s) between selector declarator \
-             #{left_needle_idx} {} and #{right_needle_idx} {}: {}. Add a \
-             `DECLARATORS_* = null` pseudo-declarator between those pinned declarators.",
-            render_var_declarator_label(&needle.decls[left_needle_idx]),
-            render_var_declarator_label(&needle.decls[right_needle_idx]),
-            render_var_declarator_labels(&skipped),
-        );
+        return DeclaratorGap::Between {
+            left: PinnedDeclarator {
+                index: left_needle_idx,
+                declaration: declarator_shape(&needle.decls[left_needle_idx]),
+            },
+            right: PinnedDeclarator {
+                index: right_needle_idx,
+                declaration: declarator_shape(&needle.decls[right_needle_idx]),
+            },
+            unmatched: skipped,
+        };
     }
 
     let Some(&(last_needle_idx, last_candidate_idx)) = matches.last() else {
-        return "pinned declarators matched in order, but DECLARATORS_* hole placement differed"
-            .to_string();
+        return DeclaratorGap::NoPins;
     };
     if last_candidate_idx + 1 < candidate.decls.len()
         && !has_declarator_hole_after(needle, last_needle_idx)
@@ -213,21 +192,18 @@ fn first_var_declarator_hole_placement_mismatch_reason(
             .decls
             .iter()
             .skip(last_candidate_idx + 1)
-            .map(render_var_declarator_label)
+            .map(declarator_shape)
             .collect::<Vec<_>>();
-        return format!(
-            "candidate has unmatched trailing declarator(s) after selector declarator \
-             #{last_needle_idx} {}: {}. Add a `DECLARATORS_* = null` pseudo-declarator \
-             after the last pinned declarator.",
-            render_var_declarator_label(&needle.decls[last_needle_idx]),
-            render_var_declarator_labels(&skipped),
-        );
+        return DeclaratorGap::Trailing {
+            after: PinnedDeclarator {
+                index: last_needle_idx,
+                declaration: declarator_shape(&needle.decls[last_needle_idx]),
+            },
+            unmatched: skipped,
+        };
     }
 
-    "pinned declarators matched in order, but DECLARATORS_* hole placement differed. \
-Check that each unrelated sibling declarator is covered by a hole before, after, or \
-between pinned declarators."
-        .to_string()
+    DeclaratorGap::Unlocalized
 }
 
 fn has_declarator_hole_before(needle: &VarDecl, needle_idx: usize) -> bool {
@@ -397,7 +373,7 @@ fn near_misses_among<I: std::borrow::Borrow<Index>>(
         else {
             continue;
         };
-        if reason.score < min_score {
+        if reason.score() < min_score {
             continue;
         }
         near_misses.push(SourceMatchNearMiss {
@@ -406,8 +382,8 @@ fn near_misses_among<I: std::borrow::Borrow<Index>>(
                 .into_iter()
                 .map(|binding| binding.binding_name)
                 .collect(),
-            score: reason.score,
-            reason: reason.reason,
+            score: reason.score(),
+            reason,
         });
     }
     near_misses.sort_by(|left, right| {
@@ -449,8 +425,8 @@ pub(crate) fn fact_first_mismatch_reason(
     let nkind = needle_index.node_kind(nroot);
     let ckind = candidate_index.node_kind(croot);
     let reason = match (
-        module_decl_kind_label(nkind).is_some(),
-        module_decl_kind_label(ckind).is_some(),
+        module_decl_kind(nkind).is_some(),
+        module_decl_kind(ckind).is_some(),
     ) {
         (false, false) | (true, true) => first_item_divergence(
             needle,
@@ -461,81 +437,63 @@ pub(crate) fn fact_first_mismatch_reason(
             croot,
             mode,
         )?,
-        _ => MismatchReason {
-            score: 1,
-            reason: format!(
-                "top-level item kind differs: selector is {}, candidate is {}",
-                module_item_kind_label(nkind),
-                module_item_kind_label(ckind),
-            ),
+        _ => MismatchReason::TopLevelItemKind {
+            selector: item_category(nkind),
+            candidate: item_category(ckind),
         },
     };
     Ok(Some(reason))
 }
 
-/// Top-level item-kind label: "module declaration" or "statement". Everything the
-/// extractor projects at top level besides a module declaration is a statement,
-/// so this is the `(Stmt, ModuleDecl)` split `module_item_kind` reports.
-fn module_item_kind_label(kind: NodeKind) -> &'static str {
-    if module_decl_kind_label(kind).is_some() {
-        "module declaration"
+/// Project fact kinds into diagnostic evidence without composing human labels.
+fn item_category(kind: NodeKind) -> ItemCategory {
+    if module_decl_kind(kind).is_some() {
+        ItemCategory::ModuleDeclaration
     } else {
-        "statement"
+        ItemCategory::Statement
     }
 }
 
-/// Module-declaration kind label, or `None` for a statement kind. The fact
-/// extractor only projects the JS (non-TS) module declarations; a TS-only variant
-/// would fail extraction upstream, so it cannot reach here.
-fn module_decl_kind_label(kind: NodeKind) -> Option<&'static str> {
+fn module_decl_kind(kind: NodeKind) -> Option<ItemKind> {
     Some(match kind {
-        NodeKind::Import => "import",
-        NodeKind::ExportDecl => "export declaration",
-        NodeKind::ExportNamed => "named export",
-        NodeKind::ExportDefaultDecl => "default declaration export",
-        NodeKind::ExportDefault => "default expression export",
-        NodeKind::ExportAll => "export all",
+        NodeKind::Import => ItemKind::Import,
+        NodeKind::ExportDecl => ItemKind::ExportDeclaration,
+        NodeKind::ExportNamed => ItemKind::NamedExport,
+        NodeKind::ExportDefaultDecl => ItemKind::DefaultDeclarationExport,
+        NodeKind::ExportDefault => ItemKind::DefaultExpressionExport,
+        NodeKind::ExportAll => ItemKind::ExportAll,
         _ => return None,
     })
 }
 
-/// Statement-kind label. The extractor projects a declaration statement as its
-/// inner declaration node directly, so `ClassDecl`/`FnDecl`/`VarDecl` map to
-/// `"declaration"` (the `Stmt::Decl` label); every other statement node
-/// (`ExprStmt` and the control-flow kinds) maps to its own label.
-fn stmt_kind_label(kind: NodeKind) -> &'static str {
+fn statement_kind(kind: NodeKind) -> ItemKind {
     match kind {
-        NodeKind::Block => "block",
-        NodeKind::Empty => "empty",
-        NodeKind::Debugger => "debugger",
-        NodeKind::Return => "return",
-        NodeKind::Labeled => "labeled",
-        NodeKind::Break => "break",
-        NodeKind::Continue => "continue",
-        NodeKind::If => "if",
-        NodeKind::Switch => "switch",
-        NodeKind::Throw => "throw",
-        NodeKind::Try => "try",
-        NodeKind::While => "while",
-        NodeKind::DoWhile => "do while",
-        NodeKind::For => "for",
-        NodeKind::ForIn => "for in",
-        NodeKind::ForOf => "for of",
-        _ if decl_kind_label(kind).is_some() => "declaration",
-        // `ExprStmt` and any other statement node.
-        _ => "expression",
+        NodeKind::Block => ItemKind::Block,
+        NodeKind::Empty => ItemKind::Empty,
+        NodeKind::Debugger => ItemKind::Debugger,
+        NodeKind::Return => ItemKind::Return,
+        NodeKind::Labeled => ItemKind::Labeled,
+        NodeKind::Break => ItemKind::Break,
+        NodeKind::Continue => ItemKind::Continue,
+        NodeKind::If => ItemKind::If,
+        NodeKind::Switch => ItemKind::Switch,
+        NodeKind::Throw => ItemKind::Throw,
+        NodeKind::Try => ItemKind::Try,
+        NodeKind::While => ItemKind::While,
+        NodeKind::DoWhile => ItemKind::DoWhile,
+        NodeKind::For => ItemKind::For,
+        NodeKind::ForIn => ItemKind::ForIn,
+        NodeKind::ForOf => ItemKind::ForOf,
+        _ if declaration_kind(kind).is_some() => ItemKind::Declaration,
+        _ => ItemKind::Expression,
     }
 }
 
-/// Declaration-kind label (class / function / variable), or `None` for a kind
-/// that is not one of the fact root kinds the extractor uses for a `Stmt::Decl`
-/// (the kinds `first_decl_divergence` dispatches on). At top level the extractor
-/// projects a declaration statement as its inner declaration node directly.
-fn decl_kind_label(kind: NodeKind) -> Option<&'static str> {
+fn declaration_kind(kind: NodeKind) -> Option<DeclarationKind> {
     Some(match kind {
-        NodeKind::ClassDecl => "class",
-        NodeKind::FnDecl => "function",
-        NodeKind::VarDecl => "variable",
+        NodeKind::ClassDecl => DeclarationKind::Class,
+        NodeKind::FnDecl => DeclarationKind::Function,
+        NodeKind::VarDecl => DeclarationKind::Variable,
         _ => return None,
     })
 }
@@ -558,7 +516,7 @@ fn first_item_divergence(
             export_decl_inner(candidate),
             candidate_index.children(croot)[0],
         ))
-    } else if decl_kind_label(nkind).is_some() && decl_kind_label(ckind).is_some() {
+    } else if declaration_kind(nkind).is_some() && declaration_kind(ckind).is_some() {
         Some((
             stmt_decl_inner(needle),
             nroot,
@@ -580,22 +538,16 @@ fn first_item_divergence(
         );
     }
     // The caller only compares items of one category, so both kinds share it.
-    let category = module_item_kind_label(nkind);
-    let label = |kind| module_decl_kind_label(kind).unwrap_or_else(|| stmt_kind_label(kind));
+    let category = item_category(nkind);
+    let label = |kind| module_decl_kind(kind).unwrap_or_else(|| statement_kind(kind));
     Ok(if nkind != ckind {
-        MismatchReason {
-            score: 10,
-            reason: format!(
-                "{category} kind differs: selector is {}, candidate is {}",
-                label(nkind),
-                label(ckind)
-            ),
+        MismatchReason::ItemKind {
+            category,
+            selector: label(nkind),
+            candidate: label(ckind),
         }
     } else {
-        MismatchReason {
-            score: 20,
-            reason: format!("{category} shape differs"),
-        }
+        MismatchReason::ItemShape { category }
     })
 }
 
@@ -614,7 +566,7 @@ fn first_decl_divergence(
 ) -> Result<MismatchReason> {
     let nkind = needle_index.node_kind(nroot);
     let ckind = candidate_index.node_kind(croot);
-    let (Some(nlabel), Some(clabel)) = (decl_kind_label(nkind), decl_kind_label(ckind)) else {
+    let (Some(nlabel), Some(clabel)) = (declaration_kind(nkind), declaration_kind(ckind)) else {
         panic!("fact near-miss: non-declaration kinds {nkind:?}/{ckind:?}");
     };
     let alpha = mode == Mode::AlphaAll;
@@ -623,13 +575,10 @@ fn first_decl_divergence(
             let nname = needle_index.ident(needle_index.children(nroot)[0]);
             let cname = candidate_index.ident(candidate_index.children(croot)[0]);
             if !alpha && nname != cname {
-                MismatchReason {
-                    score: 40,
-                    reason: format!(
-                        "{nlabel} name differs: selector `{}`, candidate `{}`",
-                        nname.unwrap_or_default(),
-                        cname.unwrap_or_default()
-                    ),
+                MismatchReason::DeclarationName {
+                    kind: nlabel,
+                    selector: nname.map(str::to_owned),
+                    candidate: cname.map(str::to_owned),
                 }
             } else if nkind == NodeKind::ClassDecl {
                 first_class_divergence(
@@ -640,10 +589,7 @@ fn first_decl_divergence(
                     mode,
                 )?
             } else {
-                MismatchReason {
-                    score: 35,
-                    reason: "function signature or body differs".to_string(),
-                }
+                MismatchReason::FunctionSignatureOrBody
             }
         }
         (NodeKind::VarDecl, NodeKind::VarDecl) => first_var_decl_divergence(
@@ -655,16 +601,11 @@ fn first_decl_divergence(
             croot,
             mode,
         )?,
-        _ if nkind != ckind => MismatchReason {
-            score: 30,
-            reason: format!(
-                "declaration kind differs: selector is {nlabel}, candidate is {clabel}"
-            ),
+        _ if nkind != ckind => MismatchReason::DeclarationKind {
+            selector: nlabel,
+            candidate: clabel,
         },
-        _ => MismatchReason {
-            score: 35,
-            reason: "declaration shape differs".to_string(),
-        },
+        _ => MismatchReason::DeclarationShape,
     })
 }
 
@@ -683,13 +624,9 @@ fn first_var_decl_divergence(
     let nkeyword = needle_index.operator(nroot);
     let ckeyword = candidate_index.operator(croot);
     if nkeyword != ckeyword {
-        return Ok(MismatchReason {
-            score: 45,
-            reason: format!(
-                "variable declaration kind differs: selector is {}, candidate is {}",
-                nkeyword.unwrap_or_default(),
-                ckeyword.unwrap_or_default(),
-            ),
+        return Ok(MismatchReason::VariableKind {
+            selector: nkeyword.map(str::to_owned),
+            candidate: ckeyword.map(str::to_owned),
         });
     }
     // Declarator alignment over facts (wrapper symmetry + keyword already hold at
@@ -705,10 +642,7 @@ fn first_var_decl_divergence(
     .map_err(unsupported_error("fact near-miss"))?
     .is_some();
     if aligns {
-        return Ok(MismatchReason {
-            score: 35,
-            reason: "variable declaration shape differs".to_string(),
-        });
+        return Ok(MismatchReason::VariableShape);
     }
     let ndecls = needle_index.children(nroot);
     let cdecls = candidate_index.children(croot);
@@ -735,15 +669,12 @@ fn first_var_decl_divergence(
             cdecls,
             mode,
         )?
-        .unwrap_or_else(|| {
-            format!(
-                "variable declarators differ: selector has {} declarator(s), candidate has {}",
-                ndecls.len(),
-                cdecls.len(),
-            )
+        .unwrap_or(MismatchReason::VariableCount {
+            selector_count: ndecls.len(),
+            candidate_count: cdecls.len(),
         })
     };
-    Ok(MismatchReason { score: 55, reason })
+    Ok(reason)
 }
 
 /// Without declarator run holes, the matcher aligns declarators by position.
@@ -759,7 +690,7 @@ fn first_aligned_var_declarator_divergence(
     candidate_index: &Index,
     cdecls: &[NodeId],
     mode: Mode,
-) -> Result<Option<String>> {
+) -> Result<Option<MismatchReason>> {
     if ndecls.len() != cdecls.len() {
         return Ok(None);
     }
@@ -775,11 +706,11 @@ fn first_aligned_var_declarator_divergence(
         )
         .map_err(unsupported_error("fact near-miss"))?
         {
-            return Ok(Some(format!(
-                "variable declarator #{index} differs: selector {}, candidate {}",
-                render_var_declarator_label(&needle_var.decls[index]),
-                render_var_declarator_label(&candidate_var.decls[index]),
-            )));
+            return Ok(Some(MismatchReason::VariableDeclarator {
+                index,
+                selector: declarator_shape(&needle_var.decls[index]),
+                candidate: declarator_shape(&candidate_var.decls[index]),
+            }));
         }
     }
     Ok(None)
@@ -788,9 +719,8 @@ fn first_aligned_var_declarator_divergence(
 /// For a declarator-hole needle: which pin failed to place, or (if all pins
 /// placed) which hole-placement gap is unmatched. The alignment decision is
 /// fact-derived (the threaded-`Bindings` greedy scan
-/// [`selector_match::pinned_declarator_matches_in_order`]); declarator *labels*
-/// reuse the pure-AST `render_var_declarator_label` over the candidate/needle
-/// `VarDeclarator`s (the fact model carries the same data — see module docs). The
+/// [`selector_match::pinned_declarator_matches_in_order`]); syntax evidence comes
+/// from the corresponding candidate/needle `VarDeclarator`s. The
 /// needle's AST declarators line up 1:1 with the fact declarator children, both
 /// in source order, so a fact `(needle_idx, _)` indexes `needle_var.decls`.
 fn first_pinned_var_declarator_divergence(
@@ -801,7 +731,7 @@ fn first_pinned_var_declarator_divergence(
     candidate_index: &Index,
     cdecls: &[NodeId],
     mode: Mode,
-) -> Result<String> {
+) -> Result<MismatchReason> {
     let matches = selector_match::pinned_declarator_matches_in_order(
         needle_index,
         ndecls,
@@ -830,26 +760,23 @@ fn first_pinned_var_declarator_divergence(
             .decls
             .iter()
             .skip(candidate_start)
-            .map(render_var_declarator_label)
+            .map(declarator_shape)
             .collect::<Vec<_>>();
-        let remaining_hint = if remaining.is_empty() {
-            "no candidate declarators remain".to_string()
-        } else {
-            format!(
-                "remaining candidate declarators: {}",
-                render_var_declarator_labels(&remaining)
-            )
-        };
-        return Ok(format!(
-            "selector pinned declarator #{needle_idx} {} was not found in order ({remaining_hint})",
-            render_var_declarator_label(&needle_var.decls[needle_idx]),
-        ));
+        return Ok(MismatchReason::PinnedDeclaratorMissing {
+            selector: PinnedDeclarator {
+                index: needle_idx,
+                declaration: declarator_shape(&needle_var.decls[needle_idx]),
+            },
+            remaining,
+        });
     }
-    Ok(first_var_declarator_hole_placement_mismatch_reason(
-        needle_var,
-        candidate_var,
-        &matches,
-    ))
+    Ok(MismatchReason::DeclaratorHolePlacement {
+        gap: first_var_declarator_hole_placement_mismatch_reason(
+            needle_var,
+            candidate_var,
+            &matches,
+        ),
+    })
 }
 
 /// The in-order class-member scan over facts. For each pinned (non-rest, labeled)
@@ -871,14 +798,12 @@ fn first_class_divergence(
         if selector_match::is_class_rest_member(needle_index, nmember) {
             continue;
         }
-        let Some(needle_label) = fact_class_member_label(needle_index, nmember) else {
+        let Some(needle_label) = fact_class_member_key(needle_index, nmember) else {
             continue;
         };
         let mut found_label = false;
         for (candidate_idx, &cmember) in cmembers.iter().enumerate().skip(candidate_start) {
-            if fact_class_member_label(candidate_index, cmember).as_deref()
-                != Some(needle_label.as_str())
-            {
+            if fact_class_member_key(candidate_index, cmember).as_ref() != Some(&needle_label) {
                 continue;
             }
             found_label = true;
@@ -893,28 +818,19 @@ fn first_class_divergence(
             )
             .map_err(unsupported_error("fact near-miss"))?
             {
-                return Ok(MismatchReason {
-                    score: 65,
-                    reason: format!(
-                        "class member `{needle_label}` matched by name, but its signature or body differs"
-                    ),
+                return Ok(MismatchReason::ClassMemberBody {
+                    member: needle_label,
                 });
             }
             break;
         }
         if !found_label {
-            return Ok(MismatchReason {
-                score: 70,
-                reason: format!(
-                    "selector class pinned member `{needle_label}` was not found in the candidate class body in order"
-                ),
+            return Ok(MismatchReason::ClassMemberMissing {
+                member: needle_label,
             });
         }
     }
-    Ok(MismatchReason {
-        score: 45,
-        reason: "class heritage, decorators, or member order differs".to_string(),
-    })
+    Ok(MismatchReason::ClassStructure)
 }
 
 /// Label for a class member key. A `Class` member fact node is a
@@ -923,13 +839,13 @@ fn first_class_divergence(
 /// `prop_name` (a computed key projects to a `ComputedKey` node with no
 /// `prop_name`, labeled `<computed>`). Private and auto-accessor members are not
 /// projected by the extractor, so they never reach the near-miss path.
-fn fact_class_member_label(index: &Index, member: NodeId) -> Option<String> {
+fn fact_class_member_key(index: &Index, member: NodeId) -> Option<ClassMemberKey> {
     match index.node_kind(member) {
-        NodeKind::Constructor => Some("constructor".to_string()),
-        NodeKind::StaticBlock => Some("static block".to_string()),
+        NodeKind::Constructor => Some(ClassMemberKey::Constructor),
+        NodeKind::StaticBlock => Some(ClassMemberKey::StaticBlock),
         NodeKind::Method | NodeKind::ClassProp => {
             let &key = index.children(member).first()?;
-            fact_prop_name_label(index, key)
+            fact_prop_name_key(index, key)
         }
         _ => None,
     }
@@ -938,10 +854,12 @@ fn fact_class_member_label(index: &Index, member: NodeId) -> Option<String> {
 /// Property-name label for a class-member key node: a `PropName` node carries the
 /// (ident/string/number) name as a `prop_name` fact; a `ComputedKey` node carries
 /// none and labels `<computed>`.
-fn fact_prop_name_label(index: &Index, key: NodeId) -> Option<String> {
+fn fact_prop_name_key(index: &Index, key: NodeId) -> Option<ClassMemberKey> {
     match index.node_kind(key) {
-        NodeKind::PropName => index.prop_name(key).map(str::to_string),
-        NodeKind::ComputedKey => Some("<computed>".to_string()),
+        NodeKind::PropName => index.prop_name(key).map(|name| ClassMemberKey::Named {
+            name: name.to_owned(),
+        }),
+        NodeKind::ComputedKey => Some(ClassMemberKey::Computed),
         _ => None,
     }
 }
@@ -1036,14 +954,20 @@ mod tests {
         });
 
         assert_eq!(
-            fact_reason.reason, case.expected_reason,
+            fact_reason.display().to_string(),
+            case.expected_reason,
             "[{}] fact near-miss reason changed; needle {:?} vs {:?}",
-            case.variant, case.needle_src, case.candidate_src,
+            case.variant,
+            case.needle_src,
+            case.candidate_src,
         );
         assert_eq!(
-            fact_reason.score, case.expected_score,
+            fact_reason.score(),
+            case.expected_score,
             "[{}] expected score {} for this variant, got reason {:?}",
-            case.variant, case.expected_score, fact_reason.reason,
+            case.variant,
+            case.expected_score,
+            fact_reason,
         );
     }
 

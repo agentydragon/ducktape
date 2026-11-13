@@ -151,7 +151,7 @@ pub struct NearMiss {
     /// The bindings it declares.
     pub bindings: Vec<String>,
     pub score: usize,
-    pub reason: String,
+    pub reason: source_mismatch::MismatchReason,
 }
 
 impl NearMiss {
@@ -169,7 +169,9 @@ impl NearMiss {
         };
         format!(
             "body[{}]{declares} (score {}): {}",
-            self.body_index, self.score, self.reason
+            self.body_index,
+            self.score,
+            self.reason.display()
         )
     }
 }
@@ -183,7 +185,7 @@ pub struct Differentiator {
     /// The statement the anchor is in: the candidate itself, or the one just
     /// before or after it when the candidate has none.
     pub anchor_body_index: usize,
-    pub anchor: String,
+    pub anchor: selector_candidate_index::SelectorFeature,
 }
 
 impl Differentiator {

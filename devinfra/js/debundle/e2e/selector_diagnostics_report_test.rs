@@ -57,16 +57,15 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
     assert_eq!(ambiguous["outcome"]["truncated"], false);
     let differentiators = ambiguous["outcome"]["differentiators"].as_array().unwrap();
     assert_eq!(differentiators.len(), 2, "{ambiguous:#}");
-    for (differentiator, (candidate_body_index, anchor_body_index, token)) in differentiators
-        .iter()
-        .zip([(1, 0, ".trim"), (2, 1, "\"shared\"")])
+    for (differentiator, (candidate_body_index, anchor_body_index, feature)) in
+        differentiators.iter().zip([
+            (1, 0, json!({"kind": "member_property", "value": "trim"})),
+            (2, 1, json!({"kind": "string_literal", "value": "shared"})),
+        ])
     {
         assert_eq!(differentiator["candidate_body_index"], candidate_body_index);
         assert_eq!(differentiator["anchor_body_index"], anchor_body_index);
-        assert!(
-            differentiator["anchor"].as_str().unwrap().contains(token),
-            "{differentiator:#}"
-        );
+        assert_eq!(differentiator["anchor"], feature, "{differentiator:#}");
     }
 
     let duplicate = outcomes

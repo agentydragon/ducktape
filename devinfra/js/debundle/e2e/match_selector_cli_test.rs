@@ -174,8 +174,32 @@ fn no_match_identifies_the_first_differing_declarator() {
     assert_eq!(outcome(&report)["kind"], "no_match", "{report:#}");
     assert_eq!(
         outcome(&report)["nearest_unclaimed"][0]["reason"],
-        "variable declarator #1 differs: selector `second = 4`, candidate `b = 2`",
+        serde_json::json!({
+            "code": "variable_declarator",
+            "index": 1,
+            "selector": {"kind": "binding", "names": ["second"], "initializer": {"kind": "number", "value": "4"}},
+            "candidate": {"kind": "binding", "names": ["b"], "initializer": {"kind": "number", "value": "2"}}
+        }),
         "{report:#}"
+    );
+    let text = Command::new(debundler_path())
+        .args(["spec", "match-selector", "--source-file"])
+        .arg(&source)
+        .args([
+            "--match",
+            "const first = 1, second = 4;",
+            "--target-binding",
+            "second",
+            "--no-slack",
+            "--format",
+            "text",
+        ])
+        .output()
+        .unwrap();
+    let output = String::from_utf8(text.stdout).unwrap();
+    assert!(
+        output.contains("variable declarator #1 differs: selector `second = 4`, candidate `b = 2`"),
+        "{output}"
     );
 }
 
@@ -214,8 +238,8 @@ fn ambiguous_match_lists_candidates_in_body_order() {
             ],
             "truncated": false,
             "differentiators": [
-                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"left\""},
-                {"candidate_body_index": 2, "anchor_body_index": 2, "anchor": "string literal \"right\""},
+                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "left"}},
+                {"candidate_body_index": 2, "anchor_body_index": 2, "anchor": {"kind": "string_literal", "value": "right"}},
             ],
         }),
         "{report:#}"

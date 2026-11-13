@@ -1268,7 +1268,14 @@ An `ambiguous` outcome's `differentiators` give each listed place that has one
 a stable anchor the other listed places lack: a literal, object key, class
 member, member-path call, declaration kind or arity, in the place's own
 statement or else in the statement adjacent to it. A place with none is not
-listed there, and the report says when no place has one.
+listed there, and the report says when no place has one. JSON retains the
+anchor as a typed `{kind, value}` feature rather than a human label.
+
+Each `nearest_unclaimed[].reason` is a tagged object with a `code` and the
+corresponding syntax evidence (declarator index and shapes, class member key,
+item category/kind, or uncovered declarator gap). Scores rank diagnostic
+similarity only. Human output renders the same evidence at presentation time;
+serde does not render reason text.
 
 A contradiction affects only its group of interacting entities. Every member
 reports `unsatisfiable`, with `group` naming the group's first entity as a

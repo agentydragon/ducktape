@@ -925,7 +925,10 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
                 };
                 out.push_str(&format!(
                     "      score={} body={} declared=[{}] {}\n",
-                    near.score, near.body_idx, declared, near.reason,
+                    near.score,
+                    near.body_idx,
+                    declared,
+                    near.reason.display(),
                 ));
             }
         }
