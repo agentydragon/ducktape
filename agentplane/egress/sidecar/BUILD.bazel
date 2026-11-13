@@ -36,7 +36,10 @@ go_binary(
     name = "egress-sidecar",
     embed = [":runtime"],
     pure = "on",
-    visibility = ["//agentplane/egress:__pkg__"],
+    visibility = [
+        "//agentplane/egress:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
 )
 
 go_test(
