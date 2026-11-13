@@ -149,7 +149,9 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
 
 
 async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(playwright_driver, frozen_now_ms=None) as context:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
         page = await context.new_page()
         await page.goto(origin)
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
