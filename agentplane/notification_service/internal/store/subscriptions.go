@@ -224,17 +224,7 @@ func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *Gi
 //
 // access is the repository access a GitHub subscription was authorized under, which the caller has just read from
 // GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
-func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body model.Subscribe, access *GitHubAccessKey, ownerUID string) (Subscription, error) {
-	return s.subscribe(ctx, AccountOwner{Account: owner, AccountUID: ownerUID, SandboxUID: body.DestinationRef.UID}, body, access)
-}
-
-// SubscribeAsIdentity is Subscribe for a Session the Session authority recorded as executing as owner
-// alone, with no ServiceAccount: the inbox it creates is owned by that Identity incarnation.
-func (s *Store) SubscribeAsIdentity(ctx context.Context, owner model.Identity, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
-	return s.subscribe(ctx, IdentityOwner{Identity: owner, SandboxUID: body.DestinationRef.UID}, body, access)
-}
-
-func (s *Store) subscribe(ctx context.Context, owner Owner, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
+func (s *Store) Subscribe(ctx context.Context, owner Owner, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
 	if err := body.Validate(); err != nil {
 		return Subscription{}, err
 	}

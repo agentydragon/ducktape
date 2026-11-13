@@ -59,8 +59,9 @@ func TestInboxDestinationContractRejectsNullEmptyAndOutOfRangeKeys(t *testing.T)
 		t.Run(test.caseName, func(t *testing.T) {
 			_, err := db.ExecContext(ctx, `INSERT INTO inbox (
 				id, owner_namespace, owner_name, destination_key, destination_namespace, destination_name, destination_uid,
-				session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-				VALUES ($1, 'destination-contract-test', 'owner', $2, $3, $4, $5, 'session', 0, 0, 0, 0, false, now(), now(), now())`,
+				session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+				owner_identity_name, owner_identity_uid)
+				VALUES ($1, 'destination-contract-test', 'owner', $2, $3, $4, $5, 'session', 0, 0, 0, 0, false, now(), now(), now(), 'identity', 'identity-uid')`,
 				uuid.New(), test.caseName, test.namespace, test.destinationName, test.uid)
 			var postgresError *pq.Error
 			if !errors.As(err, &postgresError) {

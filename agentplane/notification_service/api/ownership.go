@@ -16,9 +16,8 @@ type workload struct {
 	sandbox model.DestinationRef
 }
 
-// currentWorkload is the caller's owner for its current Sandbox incarnation. A ServiceAccount caller
-// runs in the Sandbox of its own name; an Identity caller in the Sandbox controlling its workload
-// credential. Either fails with errSandboxMissing when that Sandbox is gone.
+// currentWorkload is the exact Identity owner for the Sandbox controlling its credential.
+// A missing Sandbox fails with errSandboxMissing; ServiceAccounts are not inbox owners.
 func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 	caller, err := s.admittedActor(ctx)
 	if err != nil {
@@ -30,7 +29,7 @@ func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 		if err != nil {
 			return workload{}, err
 		}
-		owner := store.IdentityOwner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
+		owner := store.Owner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
 		runsAs, err := s.sandboxRunsAs(ctx, view, owner)
 		if err != nil {
 			return workload{}, err

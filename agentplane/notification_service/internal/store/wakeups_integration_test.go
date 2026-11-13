@@ -69,7 +69,7 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	reused := creation
 	reused.LifetimeDays = 30
 	check("a refused creation", false, func() {
-		if _, err := f.Subscribe(t.Context(), f.owner, reused, nil, "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
+		if _, err := f.Subscribe(t.Context(), f.incarnation(), reused, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Error(err)
 		}
 	})

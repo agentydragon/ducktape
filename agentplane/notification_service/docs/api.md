@@ -11,9 +11,9 @@ The route and JSON examples below describe the App browser facade; agents use th
 which calls native gRPC directly. Sandbox calls present the Runner SVID through the service-owned TLS
 listener and opaque proxy tunnel. The service verifies the certificate chain, explicit clientAuth EKU and
 validity, then checks that the leaf names the live Sandbox and its current accepted runner credential.
-It resolves the principal to that Sandbox's controlled ServiceAccount namespace, name and UID; caller
-headers cannot select another account. Backend workloads retain Pod-bound ServiceAccount tokens with
-the configured audience. Owner authority and resource authorization are unchanged. Subscription creation
+It resolves the principal to the credential's exact live Identity name and UID; caller
+headers cannot select another Identity. Backend workloads retain Pod-bound ServiceAccount tokens with
+the configured audience. Component tokens do not confer inbox ownership. Subscription creation
 addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
 It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
@@ -24,13 +24,12 @@ An absent Dispatcher Session is `NOT_FOUND`; an unavailable lookup is `UNAVAILAB
 cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
 service resolves the Session placement and checks the sender's scoped grant against its exact Sandbox.
 Inbox and subscription IDs identify subsequent operations.
-The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
-recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
-A ServiceAccount recreated under the same name also sees none of its predecessor's inboxes,
-subscriptions or sent-message receipts. Missing original owner UIDs stay inaccessible to workloads
-unless the exact Dispatcher Session establishes them; retained operator reads remain available.
-Action sources require a nonempty recorded `caller_uid` matching the inbox owner. Missing Action
-provenance refuses new subscriptions and stops source reads without discarding retained entries.
+The caller's inboxes and subscriptions must match its exact Identity name and UID and the Sandbox
+incarnation controlling its credential. Recreating either object under the same name grants no access
+to the predecessor's inboxes. New inboxes require exact Dispatcher Session ownership at creation.
+The database requires a complete Identity owner; legacy ownerless and ServiceAccount-owned inboxes
+were deleted from staging. Operator diagnostic reads remain available for Identity-owned inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
+ServiceAccount ownership refuses new subscriptions and source reads without discarding retained entries.
 The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
 Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
 retained History data remain subject to their current retention rules. A missing or replaced
@@ -46,7 +45,7 @@ for the exact original Sandbox UID. Unknown or inconsistent owner identity pause
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
-- `GET /v1/inboxes`: the account's qualified session inboxes.
+- `GET /v1/inboxes`: the Identity's qualified session inboxes.
 - `GET /v1/sessions/{session_id}/inbox/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
   metadata, and the latest notice's admission/confirmation state. The configured app account may inspect
   retained entries by Session ID through its authenticated operator facade, including after the original
@@ -59,7 +58,7 @@ for the exact original Sandbox UID. Unknown or inconsistent owner identity pause
 - `POST /v1/messages`, `GET /v1/messages/{id}`: send a message to a Session's inbox, and follow one the caller
   sent ([Messages](#messages)).
 
-`idempotency_key` is caller-chosen and unique within an inbox (owning ServiceAccount, qualified sandbox
+`idempotency_key` is caller-chosen and unique within an inbox (owning Identity, qualified Sandbox
 incarnation, and runner session), not across the entire sandbox. The server-generated subscription `id`
 is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
@@ -153,7 +152,7 @@ A send names only the Session ID. The service resolves its Dispatcher Session an
 a missing Session record or replaced Sandbox returns `NOT_FOUND`, and a Session without a usable placement returns `UNAVAILABLE`.
 A suspended Sandbox accepts messages; its
 notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
-service. The inbox belongs to the Sandbox ServiceAccount for that Session. Creating a recipient inbox
+service. The inbox belongs to the Session's exact recorded Identity. Creating a recipient inbox
 requires retained Session history whose Sandbox namespace, name and nonempty immutable UID all match the
 current Sandbox; missing history, a missing History UID, or a different Sandbox incarnation returns
 `NOT_FOUND`. This prevents a Session written by a deleted predecessor from opening an inbox for a new

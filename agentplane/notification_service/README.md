@@ -19,34 +19,20 @@ Sessions created only through Runtime have no Dispatcher Session and cannot crea
 receive new messages. Message sends also resolve the Session, then evaluate the sender's current
 scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
 intact through the placement migration.
-Inbox ownership pins the reviewed ServiceAccount UID as well as the Sandbox UID. A recreated
-ServiceAccount cannot read or mutate its predecessor's inboxes, subscriptions or sent-message receipts.
-An unknown inbox owner UID is established only from the Dispatcher Session's recorded execution identity
-and exact placement; current same-name accounts and History Sandbox references are insufficient.
-Unproven inboxes retain their contents and operator read access. Workers pause source reads and notices
-until the Session proves the original owner; an Action source also requires its recorded `caller_uid`.
-An unknown or different sender UID cannot reuse a previously accepted message key.
+Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session, together with the
+exact destination Sandbox UID. Workloads can read and mutate only inboxes with that owner and Sandbox
+incarnation. A same-name replacement Identity or Sandbox cannot inherit an inbox. New inboxes require
+proven Session ownership at creation, and the database requires a complete Identity owner. Legacy
+ownerless and ServiceAccount-owned inboxes were deleted from staging; the service has no legacy owner
+representation or backfill path. An Action source additionally requires the
+request's exact `caller_identity`; retained ServiceAccount caller attribution grants no source access.
 
-An inbox is also owned by the Identity incarnation the Dispatcher recorded its Session as executing as
-(`Session.identity`), established from the Session authority when a subscription or message opens the inbox,
-when a worker delivers to it, or when the ServiceAccount owner is reconciled; it is immutable once set. A Sandbox
-SVID whose WorkloadCredential names an Identity (resolved in `namespace`, which also holds the policy objects the
-service watches) reads, acknowledges and retires the inboxes and manages the subscriptions of its Sandbox that
-are established for its Identity incarnation; the Sandbox is the credential's controller owner.
-
-An Identity caller also subscribes and messages, by the conservative analogue of the ServiceAccount rules
-(`SESSION_IDENTITY_AUTHZ` in [the task DAG](../plans/task_dag.md) decides the lasting design). It subscribes only
-a Session the Dispatcher recorded as executing as its Identity incarnation alone, placed in the Sandbox that
-controls its credential, to an Action request that incarnation submitted (`ActionRequest.caller_identity`). Its
-send is granted by a `session_inbox_access` rule bound to its Identity, fenced on the live Identity's UID; the
-message records the Identity incarnation, which alone reads it back, and recipients see it as from the name of
-the Sandbox it was sent from. A message to an Identity-run Session goes to the inbox its Identity owns, and only
-while the destination Sandbox's `spec.identity` still names that Identity.
-A Session the Dispatcher recorded as executing as an Identity alone (an Identity-run Sandbox, which has no
-managed ServiceAccount) has an inbox owned by that Identity incarnation and no ServiceAccount; its
-`owner_namespace` and `owner_name` still name the destination Sandbox, so inbox keys and the per-account inbox
-quota stay per Sandbox. Workers deliver to it while the Session's recorded Identity is the inbox's, and treat a
-different one as an owner mismatch.
+Identity callers subscribe to Sessions recorded as executing as their exact Identity and placed in the
+Sandbox controlling their credential. Message sends use the sender's current `session_inbox_access`
+grant, or the existing same-Identity rule. Component ServiceAccount senders retain their explicit grants
+and sent-message receipt access. Accepted sender attribution, payloads, cursors and runner receipts stay
+intact. Historical `owner_namespace` and `owner_name` columns name the destination Sandbox for new inboxes,
+so the existing inbox quota remains per Sandbox incarnation.
 
 For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
 subscriptions active. Workers continue reconciling subscription sources and store unread
@@ -72,8 +58,7 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener.
 Egress routes workload gRPC through an opaque central-proxy CONNECT. Notification verifies the
 certificate chain, explicit clientAuth EKU, expiry, current Sandbox UID and accepted credential ID,
-then resolves the Sandbox's controlled
-ServiceAccount UID. Caller headers cannot select another account. Native gRPC uses this resolver,
+then resolves the credential's exact live Identity name and UID. Caller headers cannot select another Identity. Native gRPC uses this resolver,
 and watch revalidation repeats the live lookup. Backend/operator callers use the same listener
 with their audience-scoped tokens and existing authorization.
 

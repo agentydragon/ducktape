@@ -188,7 +188,7 @@ lanes below remain dispatchable in the order that makes the remaining cutover sm
 
 | Lane                                  | Current outcome                                                   | Remaining boundary                                                                       |
 | ------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Session execution                     | #15903 and native child #15929 are in flight                      | Identity-only execution and inbox ownership; retained data and component provenance stay |
+| Session execution                     | #15903 and native child #15929 are in flight                      | Identity-only execution and inbox ownership; component provenance stays                  |
 | MCP                                   | #15932 is in flight                                               | Exact live Identity consent/delegation; legacy Connection needs explicit operator rebind |
 | Shared delegation and standing grants | Separate implementation branches listed under `IDENTITY_CUTOVER`  | Remove workload ServiceAccount authority independently of the optional UI catalog        |
 | Lifecycle authority                   | `ENVIRONMENT_RULE_TYPE_DESIGN` then `ENVIRONMENT_LIFECYCLE_RULES` | Explicit lifecycle grants; Identity `CreateSession` stays denied during this contraction |
@@ -3450,18 +3450,19 @@ implementations, not a completed rollout.
 - History authorizes workload reads by recorded Identity; later writer or feed snapshots cannot
   adopt a legacy Session. Component writers and explicit direct component readers retain their
   ServiceAccount authentication and attribution.
-- Notification owners pin the Session's Identity and destination Sandbox UIDs. Legacy ownerless or
-  ServiceAccount-owned inboxes remain stored and operator-readable, but cannot be read or managed
-  by a workload, claimed for delivery, or assigned an owner from a later Session snapshot. Internal
-  component message senders and their durable receipts remain ServiceAccount-attributed.
+- Notification owners pin the Session's Identity and destination Sandbox UIDs. On 2026-11-12 the
+  operator approved deleting legacy Notification inboxes and their dependent rows from staging, the
+  only deployed instance. That deletion is complete; #15929 removes their legacy representation and
+  requires Identity owner columns. Internal component message senders and their durable receipts
+  remain ServiceAccount-attributed.
 - [#15945](https://github.com/agentydragon/ducktape/pull/15945) landed additive Identity actor storage
   for Action events. Keep that expanded schema and Identity-capable readers when such events exist.
 
 **Exit:** the Session and Notification implementations land with composed system checks passing;
 no active workload authorization or Session execution path uses a ServiceAccount principal.
 Reserved wire tags, inert historical SQL fields, actor/creator/writer/sender provenance and direct
-component allowlists are outside that removal. Preserve retained history, inbox data, workspaces,
-receipts and unknown outcomes; never infer an owner from a current same-name Identity or replay an
+component allowlists are outside that removal. Preserve retained history, Identity-owned inbox data,
+workspaces, receipts and unknown outcomes; never infer an owner from a current same-name Identity or replay an
 uncertain mutation. Identity `CreateSession` remains denied pending `SESSION_SUBAGENT_DELEGATION`.
 
 ### `IDENTITY_CLEANUP_REFERENCE_DECISION` — decide cleanup reference guarantees

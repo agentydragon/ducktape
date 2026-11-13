@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"slices"
 	"strings"
@@ -45,7 +44,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	// The Action Service was asked, as the caller, whether it may follow the request.
 	source := request.GetSource().GetActions()
 	owner := model.Identity{Name: server.identity.GetName(), UID: server.identity.GetUid()}
-	if got := server.actions.asked(); len(got) != 1 || got[0].owner.(store.IdentityOwner).Identity != owner ||
+	if got := server.actions.asked(); len(got) != 1 || got[0].owner.Identity != owner ||
 		got[0].requestID != uuid.MustParse(source.GetRequestId()) || got[0].afterSequence != 0 {
 		t.Errorf("Action Service asked %v, want %v's request %s", got, owner, source.GetRequestId())
 	}
@@ -91,7 +90,7 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	identity := model.Identity{Name: s.identity.GetName(), UID: s.identity.GetUid()}
-	previous, err := s.store.SubscribeAsIdentity(t.Context(), identity, model.Subscribe{
+	previous, err := s.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: sandboxUID}, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
 		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
 	}, nil)
@@ -661,43 +660,6 @@ func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) 
 	}
 }
 
-func TestLegacyInboxIsRetainedButNotAdoptedByTheSandboxIdentity(t *testing.T) {
-	server := newServer(t)
-	request := createRequest("legacy-owner")
-	source, err := sourceBody(request.GetSource())
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := server.store.Subscribe(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, model.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
-		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
-	}, nil, accountUID(t, sandboxName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	server.exec(t, `UPDATE inbox SET owner_uid = NULL, owner_identity_name = NULL, owner_identity_uid = NULL WHERE id = $1`, legacy.InboxID)
-
-	inboxes, err := server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
-	if err != nil || len(inboxes.GetInboxes()) != 0 {
-		t.Fatalf("Identity inboxes = %v, %v; legacy row must remain unowned", inboxes, err)
-	}
-	_, err = server.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
-
-	var ownerUID, identityName, identityUID sql.NullString
-	if err := server.db.QueryRowContext(t.Context(), `SELECT owner_uid, owner_identity_name, owner_identity_uid FROM inbox WHERE id = $1`, legacy.InboxID).
-		Scan(&ownerUID, &identityName, &identityUID); err != nil {
-		t.Fatal(err)
-	}
-	if ownerUID.Valid || identityName.Valid || identityUID.Valid {
-		t.Fatalf("legacy attribution was adopted: owner UID %v, Identity %v/%v", ownerUID, identityName, identityUID)
-	}
-	page, err := server.client.ReadInbox(bearing(t, operatorToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	if err != nil || page.GetInbox().GetId() != legacy.InboxID.String() {
-		t.Fatalf("retained operator view = %v, %v", page, err)
-	}
-}
-
 // A subscription's inbox is also owned by the Identity the Session authority recorded the Session as
 // executing as, so the Sandbox's runner keeps it once it runs as that Identity.
 func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *testing.T) {
@@ -710,7 +672,7 @@ func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *test
 	}
 	owned := func(uid string) []store.Inbox {
 		t.Helper()
-		inboxes, err := server.store.ListInboxes(t.Context(), store.IdentityOwner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
+		inboxes, err := server.store.ListInboxes(t.Context(), store.Owner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -753,7 +715,7 @@ func TestReplacementSandboxExecutionIdentityCannotAccessOrCreateIdentityInbox(t 
 	if len(server.actions.asked()) != askedActions {
 		t.Fatal("Action source was read after the live Sandbox changed Identity")
 	}
-	retained, err := server.store.ListInboxes(t.Context(), store.IdentityOwner{Identity: owner, SandboxUID: sandboxUID})
+	retained, err := server.store.ListInboxes(t.Context(), store.Owner{Identity: owner, SandboxUID: sandboxUID})
 	if err != nil || len(retained) != 1 || retained[0].ID.String() != subscription.GetInboxId() {
 		t.Fatalf("retained former Identity inbox = %v, %v", retained, err)
 	}

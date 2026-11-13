@@ -6,7 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 )
 
@@ -29,23 +28,14 @@ type Claim struct {
 	// Inbox is the inbox as it was when claimed. Its counters move on, so anything that matters is read again
 	// by a fenced call.
 	Inbox
-	Owner model.ServiceAccount
-	held  lease.Lease
+	held lease.Lease
 	// staleCheckAt is the next check of an unavailable destination, as it was when claimed.
 	staleCheckAt *time.Time
 }
 
-// Holder is the inbox's owner as the claim proved it: its ServiceAccount incarnation once established,
-// else its Identity incarnation once established, else its ServiceAccount with no UID, which owns nothing.
+// Holder is the Identity and Sandbox incarnation persisted on the claimed inbox.
 func (c Claim) Holder() Owner {
-	switch {
-	case c.OwnerUID != nil:
-		return AccountOwner{Account: c.Owner, AccountUID: *c.OwnerUID, SandboxUID: c.DestinationRef.UID}
-	case c.OwnerIdentity != nil:
-		return IdentityOwner{Identity: *c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
-	default:
-		return AccountOwner{Account: c.Owner, SandboxUID: c.DestinationRef.UID}
-	}
+	return Owner{Identity: c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
 }
 
 // heldInbox is the claimed inbox as a fenced call reads it, locked for update.
@@ -62,10 +52,10 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 		var found Claim
 		var staleCheckAt sql.NullTime
 		inbox, err := scanInbox(tx.QueryRowContext(ctx, `
-			SELECT `+inboxColumns+`, owner_namespace, owner_name, stale_check_at FROM inbox
+			SELECT `+inboxColumns+`, stale_check_at FROM inbox
 			WHERE NOT retired AND next_attempt <= now() AND claim_until <= now()
 			ORDER BY next_attempt LIMIT 1 FOR UPDATE SKIP LOCKED`),
-			&found.Owner.Namespace, &found.Owner.Name, &staleCheckAt)
+			&staleCheckAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

@@ -46,10 +46,11 @@ func (f fixture) insertPythonInbox(t *testing.T) (inboxID uuid.UUID, acknowledge
 	ref := f.body("first").DestinationRef
 	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
-		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'test-session', $8, $9, 0, 0, false, now(), now(), now(), 'test-account-uid')`,
+		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+		owner_identity_name, owner_identity_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'test-session', $8, $9, 0, 0, false, now(), now(), now(), $10, $11)`,
 		inboxID, f.owner.Namespace, f.owner.Name, model.DestinationKey(ref, "test-session"),
-		ref.Namespace, ref.Name, ref.UID, through, acknowledged)
+		ref.Namespace, ref.Name, ref.UID, through, acknowledged, f.identity.Name, f.identity.UID)
 	return inboxID, acknowledged, through, text
 }
 

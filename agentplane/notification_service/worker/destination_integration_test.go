@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
@@ -207,7 +206,7 @@ func TestAFailedFirstLookupDoesNotStartStaleConfirmation(t *testing.T) {
 
 func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription, err := h.store.SubscribeAsIdentity(t.Context(), testOwner, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
 	}, nil)
@@ -271,38 +270,6 @@ func TestWorkerDoesNotReadSourcesAfterSandboxIdentityReplacement(t *testing.T) {
 	}
 }
 
-func TestWorkerRetainsAnOwnerlessLegacyInboxWithoutReadingSources(t *testing.T) {
-	h := newHarness(t, debounce(0, 0))
-	subscription := h.subscribe(t, "legacy-owner")
-	h.exec(t, `UPDATE inbox SET owner_identity_name = NULL, owner_identity_uid = NULL WHERE id = $1`, subscription.InboxID)
-	h.step(t)
-	if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
-		t.Fatal("an unowned legacy inbox reached a source or runner")
-	}
-	row := h.row(t, subscription.InboxID)
-	if row.retired {
-		t.Fatal("the retained legacy inbox was retired")
-	}
-	if row.lastCursor != 0 {
-		t.Fatalf("legacy inbox cursor changed: %d", row.lastCursor)
-	}
-	if got := row.deliveryError; got == nil || *got != "OwnerMismatchError" {
-		t.Fatalf("delivery error = %v, want OwnerMismatchError", got)
-	}
-	var ownerUID, identityName, identityUID sql.NullString
-	if err := h.db.QueryRowContext(t.Context(), `SELECT owner_uid, owner_identity_name, owner_identity_uid FROM inbox WHERE id = $1`, subscription.InboxID).
-		Scan(&ownerUID, &identityName, &identityUID); err != nil {
-		t.Fatal(err)
-	}
-	if ownerUID.Valid || identityName.Valid || identityUID.Valid {
-		t.Fatalf("legacy ownership changed: account UID %v, Identity %v/%v", ownerUID, identityName, identityUID)
-	}
-	inboxes, err := h.store.ListInboxes(t.Context(), testIncarnation)
-	if err != nil || len(inboxes) != 0 {
-		t.Fatalf("Identity inboxes = %v, %v; legacy inbox must not be adopted", inboxes, err)
-	}
-}
-
 // An inbox whose Session the Dispatcher recorded as executing as an Identity alone, its Sandbox having
 // no ServiceAccount, is that Identity incarnation's: its notices are delivered, and a same-named
 // successor recorded for the Session is an owner mismatch.
@@ -310,7 +277,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h := newHarness(t, debounce(0, 300))
 	identity := model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
-	subscription, err := h.store.SubscribeAsIdentity(t.Context(), identity, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",
 		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
 	}, nil)
@@ -321,7 +288,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h.addEvents(t, subscription, 1, 2)
 
 	h.step(t)
-	page, err := h.store.Read(t.Context(), store.IdentityOwner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
+	page, err := h.store.Read(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
 	if err != nil || page.Notice == nil || !page.Notice.Attempted || len(h.dispatcher.submitted()) != 1 {
 		t.Fatalf("the Identity's inbox %+v (%v), submitted %d; want one attempted notice", page, err, len(h.dispatcher.submitted()))
 	}

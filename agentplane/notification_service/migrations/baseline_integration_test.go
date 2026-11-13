@@ -57,14 +57,14 @@ func newStore(db *sql.DB) *store.Store {
 	return store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 }
 
-func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (model.ServiceAccount, store.Subscription) {
+func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (store.Owner, store.Subscription) {
 	t.Helper()
-	owner := model.ServiceAccount{Namespace: "notifications-test", Name: "adoption"}
+	owner := store.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}, SandboxUID: "adoption-uid"}
 	subscription, err := newStore(db).Subscribe(t.Context(), owner, model.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: owner.Namespace, Name: owner.Name, UID: "adoption-uid"},
+		DestinationRef: model.DestinationRef{Namespace: "notifications-test", Name: "adoption", UID: owner.SandboxUID},
 		SessionID:      sessionID, IdempotencyKey: "adoption-subscription",
 		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
-	}, nil, "test-account-uid")
+	}, nil)
 	if err != nil {
 		t.Fatal("seed subscription:", err)
 	}
@@ -74,7 +74,7 @@ func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (model.Service
 func TestFreshBaselineSupportsNotificationStore(t *testing.T) {
 	db := cloneDatabase(t)
 	owner, subscription := seedSubscription(t, db, "fresh-session")
-	inboxes, err := newStore(db).ListInboxes(t.Context(), store.AccountOwner{Account: owner, AccountUID: "test-account-uid", SandboxUID: "adoption-uid"})
+	inboxes, err := newStore(db).ListInboxes(t.Context(), owner)
 	if err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
 		t.Fatalf("fresh inboxes = %+v, error %v", inboxes, err)
 	}
