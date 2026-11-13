@@ -1240,28 +1240,68 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     ).events
                 )
 
-            async with await endpoint.next() as exchange:
-                resumed = [
-                    item
-                    for item in exchange.request.body["input"]
-                    if item["type"] == "function_call_output" and item["call_id"] == "json-resume"
-                ]
-                assert len(resumed) == 1
-                if dialect == "lite":
-                    assert isinstance(resumed[0]["output"], list)
-                    resumed_text = "\n".join(part["text"] for part in resumed[0]["output"])
-                else:
-                    assert isinstance(resumed[0]["output"], str)
-                    resumed_text = resumed[0]["output"]
-                assert "Script completed" in resumed_text
-                assert 'quoted argument: "value"' in resumed_text
-                assert "json-shell-output" in resumed_text
-                await exchange.send(
-                    *response_stream(
-                        [FunctionCall("json-error", "exec", {"code": 'throw new Error("recoverable script error");'})],
-                        model="test-model",
-                    ).events
-                )
+            resume_outputs = []
+            cell_completed = False
+            max_resumes = 5
+            for resume_number in range(1, max_resumes + 1):
+                resume_call_id = "json-resume" if resume_number == 1 else f"json-resume-{resume_number}"
+                async with await endpoint.next() as exchange:
+                    resumed = [
+                        item
+                        for item in exchange.request.body["input"]
+                        if item["type"] == "function_call_output" and item["call_id"] == resume_call_id
+                    ]
+                    assert len(resumed) == 1
+                    if dialect == "lite":
+                        assert isinstance(resumed[0]["output"], list)
+                        resumed_text = "\n".join(part["text"] for part in resumed[0]["output"])
+                    else:
+                        assert isinstance(resumed[0]["output"], str)
+                        resumed_text = resumed[0]["output"]
+                    resume_outputs.append(resumed_text)
+
+                    if resumed_text.startswith("Script completed\n"):
+                        cell_completed = True
+                        combined_resume_output = "\n".join(resume_outputs)
+                        assert 'quoted argument: "value"' in combined_resume_output
+                        assert "json-shell-output" in combined_resume_output
+                        await exchange.send(
+                            *response_stream(
+                                [
+                                    FunctionCall(
+                                        "json-error", "exec", {"code": 'throw new Error("recoverable script error");'}
+                                    )
+                                ],
+                                model="test-model",
+                            ).events
+                        )
+                    else:
+                        next_cell_id = re.search(r"Script running with cell ID ([A-Za-z0-9_:-]+)", resumed_text)
+                        assert next_cell_id is not None, f"unexpected resume output: {resumed_text}"
+                        if resume_number < max_resumes:
+                            await exchange.send(
+                                *response_stream(
+                                    [
+                                        FunctionCall(
+                                            f"json-resume-{resume_number + 1}",
+                                            "exec",
+                                            {
+                                                "cell_id": next_cell_id[1],
+                                                "yield_time_ms": 1000,
+                                                "max_output_tokens": 1000,
+                                            },
+                                        )
+                                    ],
+                                    model="test-model",
+                                ).events
+                            )
+
+                if cell_completed:
+                    break
+
+            combined_resume_output = "\n".join(resume_outputs)
+            assert cell_completed, f"cell did not complete after {max_resumes} resumes: {combined_resume_output}"
+            assert "Script completed" in combined_resume_output
 
             async with await endpoint.next() as exchange:
                 failed = [
