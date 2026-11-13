@@ -1,0 +1,3 @@
+members:
+  - selector: { binding: { name: input } }
+  - selector: { binding: { name: double } }

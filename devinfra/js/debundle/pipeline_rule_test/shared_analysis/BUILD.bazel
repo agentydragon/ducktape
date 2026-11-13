@@ -1,0 +1,39 @@
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/js/debundle/pipeline_rule_test:__pkg__"],
+)
+
+filegroup(
+    name = "source",
+    srcs = [
+        "js-files.txt",
+        "source/main.js",
+    ],
+)
+
+debundle_analysis(
+    name = "analysis",
+    spec_tree_inputs = glob(["a/**/*.yaml"]),
+    tree_config = "config.yaml",
+    tree_modules = "a",
+    tree_source_root = ":source",
+    tree_vendor_marks = "vendor_marks.yaml",
+)
+
+[
+    debundle_apply(
+        name = name,
+        analysis = ":analysis",
+        spec_tree_inputs = glob([name + "/**/*.yaml"]),
+        tree_config = "config.yaml",
+        tree_modules = name,
+        tree_source_root = ":source",
+        tree_vendor_marks = "vendor_marks.yaml",
+    )
+    for name in [
+        "a",
+        "b",
+    ]
+]

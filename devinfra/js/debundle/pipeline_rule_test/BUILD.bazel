@@ -1,6 +1,6 @@
-load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 load("//devinfra/python:defs.bzl", "py_test")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "pipeline_report_flags_test", "product_family_test")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "pipeline_report_flags_test", "shared_analysis_test")
 
 package(default_testonly = True)
 
@@ -22,8 +22,8 @@ filegroup(
     ],
 )
 
-debundle_pipeline(
-    name = "jsonl_default",
+debundle_analysis(
+    name = "analysis",
     input_data = [":source"],
     spec_tree_inputs = [":spec"],
     tags = ["manual"],
@@ -33,8 +33,21 @@ debundle_pipeline(
     tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
-debundle_pipeline(
+debundle_apply(
+    name = "jsonl_default",
+    analysis = ":analysis",
+    input_data = [":source"],
+    spec_tree_inputs = [":spec"],
+    tags = ["manual"],
+    tree_config = "fixture/config.yaml",
+    tree_modules = "fixture/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "fixture/vendor_marks.yaml",
+)
+
+debundle_apply(
     name = "jsonl_readable_default",
+    analysis = ":analysis",
     emit_on_rejection = True,
     input_data = [":source"],
     spec_tree_inputs = [":spec"],
@@ -46,12 +59,11 @@ debundle_pipeline(
     tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
-debundle_pipeline(
+debundle_analysis(
     name = "thread_limited",
     analysis_threads = 2,
     input_data = [":source"],
     spec_tree_inputs = [":spec"],
-    split_dependency_graphs = True,
     tags = ["manual"],
     tree_config = "fixture/config.yaml",
     tree_modules = "fixture/modules",
@@ -65,8 +77,9 @@ analysis_threads_action_test(
 )
 
 [
-    debundle_pipeline(
+    debundle_apply(
         name = name,
+        analysis = ":analysis",
         effect_conflicts_chunks = chunks,
         effect_conflicts_jsonl = export,
         emit_on_rejection = readable,
@@ -131,8 +144,9 @@ pipeline_report_flags_test(
 )
 
 [
-    debundle_pipeline(
+    debundle_apply(
         name = name,
+        analysis = ":analysis",
         emit_on_rejection = readable,
         full_report_chunks = chunks,
         full_reports = kinds,
@@ -189,61 +203,28 @@ pipeline_report_flags_test(
     target_under_test = ":full_reentry",
 )
 
-product_family_test(
-    name = "product_family_test",
-    analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_analysis",
-    graphs = "//devinfra/js/debundle/pipeline_rule_test/product:product_graphs",
-    passing = "//devinfra/js/debundle/pipeline_rule_test/product:product_passing",
-    readable = "//devinfra/js/debundle/pipeline_rule_test/product:product_readable",
-    residual_baseline = "//devinfra/js/debundle/pipeline_rule_test/product:product_residual_baseline",
-    residual_baseline_analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_residual_baseline_analysis",
-    target_under_test = "//devinfra/js/debundle/pipeline_rule_test/product:product",
-)
-
-product_family_test(
-    name = "product_shared_baseline_test",
-    analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_analysis",
-    graphs = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_graphs",
-    residual_baseline = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_residual_baseline",
-    residual_baseline_analysis = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline_residual_baseline_analysis",
-    residual_baseline_reuses_analysis = True,
-    target_under_test = "//devinfra/js/debundle/pipeline_rule_test/product:product_shared_baseline",
-)
-
-# Declared targets and launcher arguments, as Bazel sees them after expansion.
-genquery(
-    name = "product_targets",
-    expression = "//devinfra/js/debundle/pipeline_rule_test/product:all",
-    opts = ["--output=xml"],
-    # Exactly the expected family: an undeclared target fails the query, a
-    # missing one fails analysis. Launcher helpers are in their launchers' closure.
-    scope = ["//devinfra/js/debundle/pipeline_rule_test/product:" + name for name in [
-        "product",
-        "product_analysis",
-        "product_graphs",
-        "product_readable",
-        "product_passing",
-        "product_residual_baseline",
-        "product_residual_baseline_analysis",
-        "product_cli",
-        "product_cli_worker",
-        "product_cli_lazy",
-        "product_shared_baseline",
-        "product_shared_baseline_analysis",
-        "product_shared_baseline_graphs",
-        "product_shared_baseline_residual_baseline",
-        "product_shared_baseline_residual_baseline_analysis",
-        "product_minimal",
-        "product_minimal_analysis",
-        "product_minimal_graphs",
-    ]],
+shared_analysis_test(
+    name = "shared_analysis_test",
+    target_under_test = "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:analysis",
+    variants = [
+        "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:a",
+        "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:b",
+    ],
 )
 
 py_test(
-    name = "test_debundle_product",
-    srcs = ["test_debundle_product.py"],
-    data = [":product_targets"],
-    env = {"PRODUCT_TARGETS": "$(rlocationpath :product_targets)"},
+    name = "shared_analysis_behavior_test",
+    srcs = ["shared_analysis_behavior_test.py"],
+    data = [
+        "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:a",
+        "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:b",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "OUTPUT_A": "$(rlocationpath //devinfra/js/debundle/pipeline_rule_test/shared_analysis:a)",
+        "OUTPUT_B": "$(rlocationpath //devinfra/js/debundle/pipeline_rule_test/shared_analysis:b)",
+        "NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+    },
     deps = [
         "//:conftest",
         "@pypi//pytest",
@@ -263,9 +244,8 @@ test_suite(
         ":full_report_filtered_test",
         ":full_report_test",
         ":identity_inputs_test",
-        ":product_family_test",
-        ":product_shared_baseline_test",
         ":readable_test",
-        ":test_debundle_product",
+        ":shared_analysis_behavior_test",
+        ":shared_analysis_test",
     ],
 )

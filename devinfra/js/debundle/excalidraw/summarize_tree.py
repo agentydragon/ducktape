@@ -13,7 +13,7 @@ from pathlib import Path
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out-dir", type=Path, required=True, help="The `debundle_pipeline` output tree.")
+    parser.add_argument("--out-dir", type=Path, required=True, help="The `debundle_apply` output tree.")
     parser.add_argument("--summary", type=Path, required=True)
     args = parser.parse_args()
 

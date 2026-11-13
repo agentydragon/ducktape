@@ -320,21 +320,22 @@ package, spec and ownership-subset inputs for native replay. Requesting it alone
 selects their producers. The `analysis` and `debundler` groups supply the
 matching analysis artifacts and executable.
 
-The public `debundle_pipeline` rule accepts an explicit `analysis` file or
-filegroup containing exactly one `.analysis` artifact. That target registers
-only emission and optional graph-export actions and forwards the supplied
-`analysis` output group. Saved-analysis engine, source and projection checks,
-assignment gates and translation validation remain mandatory. Each consumer
-declares its complete current inputs. Tree config and vendor marks accept source
-or generated file labels; module YAML inputs remain declared in `spec_tree_inputs`.
+The public `debundle_analysis` rule registers projection and source-analysis
+actions only. It returns a typed provider containing the canonical projection and
+saved facts. Every `debundle_apply` requires that direct analysis target and
+registers only assignment, gates, translation validation, emission, and optional
+graph export. No combined rule creates analysis implicitly. Multiple apply
+specs share one source-fact computation when their semantic projections match;
+different analysis premises require separate explicit analysis targets. Engine,
+source and projection compatibility checks remain mandatory. Each consumer
+declares its complete inputs; generated config and vendor-mark labels are
+supported, with module YAML inputs declared in `spec_tree_inputs`.
 
-The public `debundle_pipeline` rule's `analysis_threads` attr defaults to zero,
-omitting the override so `DebundleAnalyze` uses inherited `RAYON_NUM_THREADS`
-when set, or Rayon's default otherwise. A positive value sets the tracked
-`RAYON_NUM_THREADS` action environment for `DebundleAnalyze` only; projection,
-Pipeline and graph export keep their existing environments. Negative values fail
-during rule analysis. A nonzero value also fails when `analysis` is supplied;
-configure Analyze threads on the producing target instead.
+`analysis_threads` belongs only to `debundle_analysis` and defaults to zero,
+using inherited `RAYON_NUM_THREADS` or Rayon's default. Positive values set the
+tracked environment on `DebundleAnalyze` only; negative values fail. Apply and
+graph export do not own analyzer settings. Full exported dependency graphs
+remain spec-dependent apply outputs built from saved source facts.
 
 Staged `.analysis` headers carry `analysis_engine_sha256`, the generated
 configured compiled `staged_analysis` closure identity shared by the writer and

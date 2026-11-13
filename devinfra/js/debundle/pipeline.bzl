@@ -1,21 +1,12 @@
-"""Bazel-driven debundle pipeline rule.
+"""Explicit Debundle stages: analyze one input, then apply one or more specs.
 
-Runs the debundle projection, analysis and pipeline executables. All pipeline
-outputs (manifests, analysis, emitted JS) land under the rule's declared
-output directory in `bazel-bin/`. Each corpus may layer a `write_source_files`
-regen target on top to commit a subset of outputs into the source tree.
-
-By default, three actions: `DebundleProjectAnalysis` writes what analysis reads from the
-spec, `DebundleAnalyze` computes the analysis from that projection and the
-sources alone, and `DebundlePipeline` runs against the stored analysis. The
-`analysis` output group holds the projection and the analysis artifact. The
-`native_inputs` output group exposes the spec, source and package inputs without
-selecting analysis or pipeline actions.
-An explicit `analysis` input reuses another target's projection and analysis
-instead of registering those two actions. The CLI checks compatibility before
-using saved facts; assignment, gates and translation validation still run.
-When split_dependency_graphs is enabled, a separate DebundleExportGraphs action
-loads that exact artifact on demand; default outputs never serialize full graphs.
+`debundle_analysis` registers projection and source-analysis actions only.
+`debundle_apply` requires that target's typed provider and registers assignment,
+gates, translation validation and emission only. Declare a shared analysis target
+once for variants with the same semantic analysis projection; distinct source or
+analysis premises require a distinct target. Native compatibility checks remain
+mandatory. Full dependency-graph export is an optional apply-stage output group,
+because authored graph options and module ownership belong to that stage.
 """
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -24,46 +15,49 @@ load("@bazel_skylib//lib:shell.bzl", "shell")
 # Sync: `GATE_REJECTED_EXIT_CODE` in `pipeline.rs`.
 _GATE_REJECTED_EXIT_CODE = 3
 
-def _debundle_pipeline_impl(ctx):
-    if ctx.attr.analysis_threads < 0:
-        fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
-    if ctx.attr.analysis and ctx.attr.analysis_threads:
-        fail("analysis_threads cannot be set when reusing an analysis input")
+DebundleAnalysisInfo = provider(
+    doc = "Saved source facts and their canonical semantic input projection.",
+    fields = {
+        "analysis": "The saved .analysis artifact.",
+        "files": "Projection and saved analysis files.",
+        "projector": "The executable that projects semantic analysis inputs.",
+    },
+)
+
+def _debundle_apply_impl(ctx):
     if ctx.file.ownership_subset and ctx.attr.split_dependency_graphs:
         fail("ownership_subset does not support split_dependency_graphs")
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
-    plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
+    plan = _spec_plan(ctx, out_dir.short_path)
 
-    analysis_files = _pipeline_analysis(ctx, plan)
-    analysis = [file for file in analysis_files.to_list() if file.extension == "analysis"]
-    if len(analysis) != 1:
-        fail("analysis must expose exactly one .analysis artifact, got {}".format(len(analysis)))
-    analysis = analysis[0]
+    saved = ctx.attr.analysis[DebundleAnalysisInfo]
+    analysis_files = saved.files
+    analysis = saved.analysis
 
     output_groups = {
         "analysis": analysis_files,
         "debundler": depset([ctx.executable.debundler]),
-        "projector": depset([ctx.executable.projector]),
+        "projector": depset([saved.projector]),
         "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
     }
     _run_debundler(
         ctx,
         inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs]),
         outputs = [out_dir],
-        command = _pipeline_command(ctx, plan, analysis, []),
-        mnemonic = "DebundlePipeline",
-        progress = "Running debundle pipeline for %{label}",
+        command = _apply_command(ctx, plan, analysis, []),
+        mnemonic = "DebundleApply",
+        progress = "Applying debundle spec for %{label}",
     )
     if ctx.attr.split_dependency_graphs:
         # Register an independent, on-demand export. DefaultInfo never reaches
         # this action; it consumes the exact SAME Analyze artifact as Pipeline.
         graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
-        graph_plan = _debundle_pipeline_plan(ctx, graphs_dir.short_path, include_full_streams = False)
+        graph_plan = _spec_plan(ctx, graphs_dir.short_path)
         _run_debundler(
             ctx,
             inputs = depset([analysis], transitive = [graph_plan.inputs]),
             outputs = [graphs_dir],
-            command = _pipeline_command(ctx, graph_plan, analysis, [
+            command = _apply_command(ctx, graph_plan, analysis, [
                 "--graphs",
                 "--reports-only",
                 shell.quote(graphs_dir.short_path),
@@ -74,16 +68,17 @@ def _debundle_pipeline_impl(ctx):
         output_groups["dependency_graphs"] = depset([graphs_dir])
     return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
 
-def _pipeline_analysis(ctx, plan):
-    if ctx.attr.analysis:
-        return ctx.attr.analysis[DefaultInfo].files
+def _debundle_analysis_impl(ctx):
+    if ctx.attr.analysis_threads < 0:
+        fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
+    plan = _spec_plan(ctx, ctx.label.name + ".analysis_output")
 
     # Analysis is computed by its own action, keyed only by what it reads:
     # the projection, the sources and the package roots. An edit the
     # projection does not cover (module assignment, renames, notes,
     # `commuting_statements`) leaves the projection's bytes unchanged, so the
     # `DebundleAnalyze` action hits the action cache and only
-    # `DebundlePipeline` reruns.
+    # `DebundleApply` reruns.
     projection = ctx.actions.declare_file(ctx.label.name + ".analysis_projection")
     analysis = ctx.actions.declare_file(ctx.label.name + ".analysis")
     _run_debundler(
@@ -116,15 +111,20 @@ def _pipeline_analysis(ctx, plan):
         analysis_threads = ctx.attr.analysis_threads,
     )
 
-    return depset([projection, analysis])
+    files = depset([projection, analysis])
+    return [
+        DefaultInfo(files = files),
+        DebundleAnalysisInfo(analysis = analysis, files = files, projector = ctx.executable.projector),
+        OutputGroupInfo(analysis = files, projection = depset([projection])),
+    ]
 
-def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
-    run_flags = plan.run_flags
+def _apply_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
+    run_flags = _run_flags(ctx, include_full_streams = "--reports-only" not in extra_flags)
     if ctx.file.ownership_subset:
         run_flags = run_flags + ["--ownership-subset", _shell_source_path(ctx.file.ownership_subset.path)]
     if allow_gate_rejection and not ctx.attr.emit_on_rejection:
         run_flags = run_flags + ["--emit-on-rejection"]
-    command = plan.debundler + " " + " ".join(
+    command = "\"${{OLDPWD}}/{}\" ".format(ctx.executable.debundler.path) + " ".join(
         ["run"] + run_flags + plan.spec_args + plan.package_args +
         ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
     )
@@ -160,20 +160,7 @@ def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = Non
         mnemonic = mnemonic,
     )
 
-def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
-    bin_dir = ctx.bin_dir.path
-
-    has_flat = bool(ctx.file.spec)
-    tree_attrs = [ctx.attr.tree_config, ctx.attr.tree_modules, ctx.attr.tree_vendor_marks]
-    tree_set = len([s for s in tree_attrs if s])
-
-    if has_flat and tree_set:
-        fail("pass either spec or tree_config/tree_modules/tree_vendor_marks, not both")
-    if not has_flat and tree_set == 0:
-        fail("one of spec or tree_config/tree_modules/tree_vendor_marks is required")
-    if tree_set != 0 and tree_set != 3:
-        fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
-
+def _run_flags(ctx, include_full_streams = True):
     # Each entry is a fully-rendered shell token (already quoted/escaped).
     run_flags = []
     if ctx.attr.fail_fast:
@@ -194,6 +181,22 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
         run_flags.append("--effect-conflicts-jsonl")
     for chunk in ctx.attr.effect_conflicts_chunks if include_full_streams else []:
         run_flags.extend(["--effect-conflicts-chunk", shell.quote(chunk)])
+    return run_flags
+
+def _spec_plan(ctx, out_root):
+    bin_dir = ctx.bin_dir.path
+
+    has_flat = bool(ctx.file.spec)
+    tree_attrs = [ctx.attr.tree_config, ctx.attr.tree_modules, ctx.attr.tree_vendor_marks]
+    tree_set = len([s for s in tree_attrs if s])
+
+    if has_flat and tree_set:
+        fail("pass either spec or tree_config/tree_modules/tree_vendor_marks, not both")
+    if not has_flat and tree_set == 0:
+        fail("one of spec or tree_config/tree_modules/tree_vendor_marks is required")
+    if tree_set != 0 and tree_set != 3:
+        fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
+
     if has_flat:
         spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
 
@@ -245,8 +248,6 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
     )
 
     return struct(
-        debundler = "\"${{OLDPWD}}/{}\"".format(ctx.executable.debundler.path),
-        run_flags = run_flags,
         spec_args = spec_args,
         package_args = package_args,
         source_root = source_root,
@@ -301,19 +302,7 @@ def _shell_execroot_path(execroot_relative):
     """Shell expression referencing an execroot-relative path."""
     return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
 
-_DEBUNDLE_PIPELINE_ATTRS = {
-    "analysis": attr.label(
-        allow_files = [".analysis"],
-        doc = "Optional saved analysis file or filegroup selecting another pipeline's analysis output group. The CLI checks engine, source and projection compatibility. Only assignment, validation and emission actions are registered for this target.",
-    ),
-    "analysis_threads": attr.int(
-        default = 0,
-        doc = "Rayon worker limit for DebundleAnalyze; 0 omits the override, using inherited RAYON_NUM_THREADS or Rayon's default, and positive values set RAYON_NUM_THREADS for that action only.",
-    ),
-    "ownership_subset": attr.label(
-        allow_single_file = [".json"],
-        doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry, per_atomic_group, or coarse_atomic_groups and conflicts with split_dependency_graphs.",
-    ),
+_COMMON_ATTRS = {
     "spec": attr.label(
         allow_single_file = True,
         doc = "Optional flat transform spec YAML. Mutually exclusive with the tree_* attrs.",
@@ -332,24 +321,6 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "spec_tree_inputs": attr.label_list(
         allow_files = True,
         doc = "Source-tree inputs the tree-shaped spec compiler reads (typically a filegroup globbing the spec YAMLs).",
-    ),
-    "debundler": attr.label(
-        executable = True,
-        cfg = "exec",
-        default = Label("//devinfra/js/debundle:debundler"),
-        doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
-    ),
-    "analyzer": attr.label(
-        executable = True,
-        cfg = "exec",
-        default = Label("//devinfra/js/debundle:analyzer"),
-        doc = "Analysis-only binary; custom analyzers must share the CLI's compiled analysis identity.",
-    ),
-    "projector": attr.label(
-        executable = True,
-        cfg = "exec",
-        default = Label("//devinfra/js/debundle:projector"),
-        doc = "Small projection binary; custom projectors must write the canonical pipeline analysis projection.",
     ),
     "input_data": attr.label_list(
         allow_files = True,
@@ -370,48 +341,88 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         allow_files = True,
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
     ),
-    "emit_on_rejection": attr.bool(
-        default = False,
-        doc = (
-            "Pass --emit-on-rejection and succeed when the realizability gate's " +
-            "rejection is the run's only failure: the output is then a " +
-            "reading-only tree marked by a `GATE_REJECTED` file at its " +
-            "`write_js_tree` root, never a runnable bundle. Name such a target " +
-            "for that (`debundle_product`'s `<name>_readable`)."
-        ),
-    ),
-    "split_dependency_graphs": attr.bool(
-        default = False,
-        doc = (
-            "Expose full graphs as an on-demand dependency_graphs output group " +
-            "(`<name>.dependency_graphs/`, same report paths), using the same " +
-            "Analyze artifact. Default outputs never generate full graphs."
-        ),
-    ),
-    "full_reports": attr.string_list(
-        doc = "Complete diagnostic sinks to export (translation_validation, export_reentry, residual_atomic_groups, residual_extractions). Independent of full graphs; only Pipeline inputs change.",
-    ),
-    "full_report_chunks": attr.string_list(
-        doc = "Select only these full-report sinks; checks and bounded summaries still cover every configured chunk. Requires full_reports.",
-    ),
-    "residual_extraction_atoms": attr.string_list(
-        doc = "Probe only these atomic IDs in residual_extractions. Other residual groups are listed as unprobed.",
-    ),
-    "fail_fast": attr.bool(
-        default = False,
-        doc = "Pass --fail-fast to debundle run for debugging; by default broad pipeline runs aggregate supported diagnostics.",
-    ),
-    "effect_conflicts_jsonl": attr.bool(
-        default = False,
-        doc = "Stream full effect-conflict JSONL into the existing reports tree; disabled by default.",
-    ),
-    "effect_conflicts_chunks": attr.string_list(
-        default = [],
-        doc = "Restrict JSONL sinks to these materialized chunk IDs; requires effect_conflicts_jsonl. Empty selects all chunks. The CLI validates IDs.",
-    ),
 }
 
-debundle_pipeline = rule(
-    implementation = _debundle_pipeline_impl,
-    attrs = _DEBUNDLE_PIPELINE_ATTRS,
+debundle_analysis = rule(
+    implementation = _debundle_analysis_impl,
+    attrs = dict(_COMMON_ATTRS, **{
+        "analyzer": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:analyzer"),
+            doc = "Analysis-only binary; custom analyzers must share the CLI's compiled analysis identity.",
+        ),
+        "projector": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:projector"),
+            doc = "Small projection binary; custom projectors must write the canonical pipeline analysis projection.",
+        ),
+        "analysis_threads": attr.int(
+            default = 0,
+            doc = "Rayon worker limit for DebundleAnalyze; 0 omits the override, using inherited RAYON_NUM_THREADS or Rayon's default, and positive values set RAYON_NUM_THREADS for that action only.",
+        ),
+    }),
+    doc = "Project semantic analysis inputs and compute reusable source facts; never applies module ownership or emits JavaScript.",
+)
+
+debundle_apply = rule(
+    implementation = _debundle_apply_impl,
+    attrs = dict(_COMMON_ATTRS, **{
+        "analysis": attr.label(
+            mandatory = True,
+            providers = [DebundleAnalysisInfo],
+            doc = "Explicit debundle_analysis target. Source, engine and semantic projection compatibility are checked before using its saved facts.",
+        ),
+        "debundler": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:debundler"),
+            doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
+        ),
+        "ownership_subset": attr.label(
+            allow_single_file = [".json"],
+            doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry, per_atomic_group, or coarse_atomic_groups and conflicts with split_dependency_graphs.",
+        ),
+        "emit_on_rejection": attr.bool(
+            default = False,
+            doc = (
+                "Pass --emit-on-rejection and succeed when the realizability gate's " +
+                "rejection is the run's only failure: the output is then a " +
+                "reading-only tree marked by a `GATE_REJECTED` file at its " +
+                "`write_js_tree` root, never a runnable bundle. Name such a target " +
+                "for that (for example, `<name>_readable`)."
+            ),
+        ),
+        "split_dependency_graphs": attr.bool(
+            default = False,
+            doc = (
+                "Expose full graphs as an on-demand dependency_graphs output group " +
+                "(`<name>.dependency_graphs/`, same report paths), using the same " +
+                "Analyze artifact. Default outputs never generate full graphs."
+            ),
+        ),
+        "full_reports": attr.string_list(
+            doc = "Complete diagnostic sinks to export (translation_validation, export_reentry, residual_atomic_groups, residual_extractions). Independent of full graphs; only Pipeline inputs change.",
+        ),
+        "full_report_chunks": attr.string_list(
+            doc = "Select only these full-report sinks; checks and bounded summaries still cover every configured chunk. Requires full_reports.",
+        ),
+        "residual_extraction_atoms": attr.string_list(
+            doc = "Probe only these atomic IDs in residual_extractions. Other residual groups are listed as unprobed.",
+        ),
+        "fail_fast": attr.bool(
+            default = False,
+            doc = "Pass --fail-fast to debundle run for debugging; by default broad pipeline runs aggregate supported diagnostics.",
+        ),
+        "effect_conflicts_jsonl": attr.bool(
+            default = False,
+            doc = "Stream full effect-conflict JSONL into the existing reports tree; disabled by default.",
+        ),
+        "effect_conflicts_chunks": attr.string_list(
+            default = [],
+            doc = "Restrict JSONL sinks to these materialized chunk IDs; requires effect_conflicts_jsonl. Empty selects all chunks. The CLI validates IDs.",
+        ),
+    }),
+    doc = "Apply a spec to explicit saved source facts, checking gates and translation before emitting JavaScript. Never registers an Analyze action.",
 )
