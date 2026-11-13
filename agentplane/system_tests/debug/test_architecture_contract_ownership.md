@@ -1,12 +1,14 @@
 # Test architecture contract ownership
 
-This is a coverage index for [the fast-CI plan](../../plans/fast_ci.md), not a
-replacement suite design. The inventory was audited at source revision
+This index distinguishes owner, native-process and deployed acceptance coverage.
+The inventory was audited at source revision
 `91f72591a1eb45b848a707277623d6b491d4b537`. Commit `91b48eea67` subsequently
-added native Sampler authorization and History-outage witnesses; the current
-merged source head is `b30a2477a4e5a93212c30212643557794a351851`. The focused
-native test passed on the patched `91f` tree before that commit. Exact-head
-qualification of the current merged tree remains pending.
+added native Sampler authorization and History-outage witnesses. At literal source
+`66320ca9960967305b7683dbfbacae6456c46a1a`, six focused targets passed in fresh
+actions, including the native Sampler integration, recovery, admission-reply-loss,
+guest boot, render and Go startup targets. Python JUnit reported 25 cases with no
+failures, errors or skips; the Go target passed without case-level JUnit records.
+This is focused validation, not qualification of a smaller required gate.
 
 Keep three proof layers distinct. Go owner tests are the fastest place for state
 machine, authorization and cursor rules. Manual native contracts use production
@@ -17,7 +19,7 @@ projection, scheduling, storage, the integration app and guest lifecycle. Model
 responses are scripted in these tests; they do not prove external-provider
 behavior. The existing longer explanations and run evidence remain in
 [`test_architecture_iteration4.md`](test_architecture_iteration4.md),
-[`system_tests/README.md`](../README.md) and the plan.
+[`system_tests/README.md`](../README.md).
 
 ## Required K3s ownership
 
@@ -82,8 +84,9 @@ separate stack because its disruption is part of the assertion.
 
 `//agentplane/x/native_contracts:test_recovery` is a manual four-case target;
 `//agentplane/x/native_contracts:test_admission_reply_loss` is a separate
-manual case. Their fixture is
-[`native_service_fixtures.py`](../../testing/native_service_fixtures.py#L71):
+manual case. Their fixture composition is
+[`native_service_fixtures.py`](../../testing/native_service_fixtures.py), reusing
+[`native_gateway_fixtures.py`](../../testing/native_gateway_fixtures.py):
 production Gateway/Dispatcher and History processes, PostgreSQL, production
 Runtime PID1 container and native RPCs. Tokens and SVIDs come from the fixture's
 Kubernetes API server and test CA; Sandbox/controller facts are authored, not
@@ -98,8 +101,8 @@ reconciled by Agentplane controllers.
 | Wrong issuer / unauthorized delegation                         | Wrong-issuer K3s cases in `test_pod` and Firecracker create a valid cluster-CA-signed leaf with the exact peer URI, assert the forged credential is rejected, and check the real workload certificate succeeds (`workload_trust.py`); real rotation/reissue is covered by Pod and Firecracker. Auth owners include `identity/auth/auth/methods_test.go::TestDelegatedIdentityIsAdmittedOnlyAsItsLiveIncarnation`, `runner_gateway/environments/service_test.go::TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod`, and `runner_gateway/dispatcher/delegated_identity_integration_test.go::TestDelegatedIdentityActsOnlyOnItsIdentitysSessions`. Deployed external delegation and parent-Action cases prove caller-visible least privilege through real App/MCP routing. The native central integration now also checks that the real API-server TokenReview rejects the configured Sampler service account with a wrong audience (`UNAUTHENTICATED`) and an unauthorized account with the configured audience (`PERMISSION_DENIED`), with no event rows and `GetSession NOT_FOUND`; the allowed token then creates the session ([source](../../central_sampler/test_gateway_integration.py#L247)). | This native check covers token audience/account admission and its no-side-effect boundary; it does not mint an impostor TLS leaf, exercise cert-manager or projected Secret rotation, or exercise delegated App/MCP consent. Those remain owned by the Go auth tests and K3s wrong-issuer/delegation cases; do not add a duplicate native credential test without a specific missing behavior.                                                                                             |
 
 The existing `//agentplane/central_sampler:test_gateway_integration` is a useful
-middle layer, not a K3s replacement. The test passed on the patched `91f` tree
-before commit `91b48eea67`; exact-head qualification is pending. The test in
+middle layer, not a K3s replacement. Its expanded contract passed in the literal
+`66320ca9960967305b7683dbfbacae6456c46a1a` validation above. The test in
 [`test_gateway_integration.py`](../../central_sampler/test_gateway_integration.py#L112)
 composes the real central sampler, Gateway, Runtime, History and PostgreSQL
 against an API-server fixture. It checks executor loss, shell patch/read,
@@ -117,6 +120,20 @@ owns only current guest package boot: real kernel/initramfs/root/Runtime disk,
 seven mounts, host nonce over virtiofs and orderly shutdown; its empty config
 ISOs intentionally do not configure or authenticate Runtime. It cannot replace
 the VM or Firecracker acceptance above.
+
+The separate manual `//agentplane/x/direct_vm_boot:test_runtime_gateway` configures
+that fixture guest with the packaged Runtime, fixture-issued TLS and Sandbox launch
+identity. Its healthy working-tree probe passed authenticated Gateway status,
+running lifecycle, exact Sandbox/Pod/boot identity and a positive Lease transition
+epoch. It uses the narrow Gateway/envtest/PostgreSQL fixtures and creates no Session;
+the ingress endpoint is configured but unused. It covers packaged Runtime startup
+and transport without claiming real issuer, controller, KubeVirt, PVC, executor
+operation or App coverage. The opt-in wrong-client-CA control fails at the same
+readiness assertion after a real TLS rejection; both paths verify container removal,
+listener closure and restored state ownership. The working-tree witnesses are
+[`5dbc7412`](https://app.buildbuddy.io/invocation/5dbc7412-7db7-4922-a5a5-cba7d90d6d47)
+(positive) and [`9a028ac2`](https://app.buildbuddy.io/invocation/9a028ac2-095e-4fb3-85ca-29fe5047b702)
+(expected red), each one uncached physical action. This target remains manual.
 
 ## Promotion boundary
 
