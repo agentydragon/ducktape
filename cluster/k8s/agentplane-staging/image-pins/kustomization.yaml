@@ -5,9 +5,9 @@ images:
     newTag: devel-20261113082326-1516de8 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261113045330-3310d73 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261113104549-0a8452c # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
-    newTag: devel-20261113035641-811ead7 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
+    newTag: devel-20261113104544-0a8452c # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261113051520-2d6f09d # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
@@ -19,7 +19,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-app
     newTag: devel-20261113082348-1516de8 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
-    newTag: devel-20261113093119-f5237c1 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
+    newTag: devel-20261113104604-0a8452c # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261112103718-61a1079 # {"$imagepolicy": "flux-system:environment-tools:tag"}
