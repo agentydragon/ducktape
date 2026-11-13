@@ -1753,8 +1753,8 @@ debundle spec propose-commutations \
   chunk's tree (its authored module spelling comes from the tree), otherwise
   a `source_match` claiming the declared binding, or the exact statement for
   an anonymous one. An endpoint with no uniquely proving selector is reported
-  as `no_unique_selector` with the resolve's nearest miss, and the pair is not
-  emitted. Past the limit an anonymous endpoint is still proven (one resolve),
+  as `no_unique_selector` with a typed `detail` object retaining the resolve's
+  outcome or the endpoint failure, and the pair is not emitted. Past the limit an anonymous endpoint is still proven (one resolve),
   but a declared-binding endpoint (a minimizing search) is assumed
   selectable; each SCC row's `unproven_endpoints` counts those. A failed
   selector would only keep its pair's edges constraining, so

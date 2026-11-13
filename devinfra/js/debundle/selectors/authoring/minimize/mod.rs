@@ -59,6 +59,7 @@ use crate::render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
     hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
 };
+use crate::synthesis_failure::{ProofFailure, SynthesisSkipReason};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
@@ -196,13 +197,15 @@ pub(crate) fn exact_declaration_rejection(
     item: &ModuleItem,
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
-) -> Result<String> {
+) -> Result<SynthesisSkipReason> {
     let Some(source) = exact_declaration_source(item, targets)? else {
-        return Ok("the declaration cannot be represented as a source_match selector".into());
+        return Ok(SynthesisSkipReason::UnrepresentableDeclaration);
     };
     match prove_synthesized_selector(index, decl, targets, &source) {
-        Ok(()) => Ok("the exact declaration proves, but minimization discarded it".into()),
-        Err(error) => Ok(format!("the exact declaration does not prove: {error:#}")),
+        Ok(()) => Ok(SynthesisSkipReason::ExactSelectorDiscarded),
+        Err(error) => Ok(SynthesisSkipReason::ExactDeclarationRejected {
+            failure: ProofFailure::from_error(error)?,
+        }),
     }
 }
 

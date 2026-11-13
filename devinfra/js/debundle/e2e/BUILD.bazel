@@ -1570,3 +1570,11 @@ debundle_e2e_test(
     saved_analysis_tools = True,
     deps = ["@crates//:serde_json"],
 )
+
+debundle_e2e_test(
+    name = "synthesis_diagnostics_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
