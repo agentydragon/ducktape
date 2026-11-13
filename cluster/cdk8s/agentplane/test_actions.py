@@ -84,7 +84,9 @@ def test_mcp_edge_identity_reader_role_exists_without_oauth(scratch_app: App) ->
     binding = one(doc for doc in documents if doc["kind"] == "RoleBinding" and doc["metadata"]["name"] == mcp_edge.NAME)
     assert binding["metadata"]["namespace"] == env.namespace
     assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": mcp_edge.NAME}
-    assert binding["subjects"] == [{"kind": "ServiceAccount", "name": mcp_edge.NAME, "namespace": env.namespace}]
+    assert binding["subjects"] == [
+        {"apiGroup": "", "kind": "ServiceAccount", "name": mcp_edge.NAME, "namespace": env.namespace}
+    ]
 
 
 def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]]) -> None:
