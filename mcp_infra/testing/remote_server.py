@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Generator
+from contextlib import asynccontextmanager, contextmanager
 
 from fastmcp import FastMCP
 from fastmcp.mcp_config import RemoteMCPServer
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
-from util.testing.asgi import serve_fastmcp
+from util.testing.asgi import serve_app_sync
+
+
+@contextmanager
+def serve_fastmcp(server: FastMCP) -> Generator[str]:
+    """Serve a FastMCP app and yield its streamable HTTP URL, including ``/mcp``."""
+    mcp_app = server.http_app(path="/")
+    app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
+    with serve_app_sync(app) as origin:
+        yield f"{origin}/mcp"
 
 
 @asynccontextmanager

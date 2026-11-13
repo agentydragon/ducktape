@@ -13,8 +13,9 @@ Use `bind_http_server()` when app construction needs one or more origins first.
 The returned `BoundHTTPServer` exposes its cached `origin` and `port`, and can
 serve exactly once through `serve()`, `serve_in_loop()`, or `serve_sync()`. A
 wildcard bind such as `0.0.0.0` requires `advertised_host` so the origin is
-reachable by clients. `serve_fastmcp()` yields the streamable HTTP endpoint with
-its `/mcp` path.
+reachable by clients. MCP-specific helpers live in
+`mcp_infra.testing.remote_server`: `serve_fastmcp()` yields the streamable HTTP
+endpoint with its `/mcp` path, and `as_remote_server()` yields its server spec.
 
 ```python
 async with serve_app_in_loop(app) as origin:

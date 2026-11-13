@@ -8,7 +8,6 @@ import httpx
 import pytest
 import pytest_bazel
 import uvicorn
-from fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -217,12 +216,6 @@ def test_sync_helper_yields_a_ready_origin() -> None:
         response = client.get(origin)
 
     assert response.text == "pong"
-
-
-def test_fastmcp_helper_yields_the_mcp_path() -> None:
-    with asgi.serve_fastmcp(FastMCP("test")) as url:
-        assert url.startswith("http://127.0.0.1:")
-        assert url.endswith("/mcp")
 
 
 if __name__ == "__main__":

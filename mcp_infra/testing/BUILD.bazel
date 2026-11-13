@@ -52,6 +52,7 @@ py_library(
     deps = [
         "//util/testing:asgi",
         "@pypi//fastmcp_slim",
+        "@pypi//starlette",
     ],
 )
 
@@ -73,6 +74,18 @@ py_test(
         ":wedge_repro",
         "//:conftest",
         "//mcp_infra:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_remote_server",
+    srcs = ["test_remote_server.py"],
+    deps = [
+        ":remote_server",
+        "//:conftest",
+        "//mcp_infra:conftest",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )
