@@ -1,1230 +1,831 @@
 {
   "schema_version": 1,
-  "scope": "Final architecture report and modified root navigation; desktop/mobile light/dark, real pinned CDN loading, live preference changes, populated iteration3 suite/cadence/ordinary-CI tables and retained four-target/native ABBA progress, all selector states, coverage and six expanded implementation steps.",
-  "verified_at_utc": "2026-11-13T07:43:22.996039+00:00",
-  "invocation_url": "https://app.buildbuddy.io/invocation/5ce101c7-305d-4284-8783-c5b5553151ac",
-  "target": "//x/ci_reports_preview:visual_test",
+  "scope": "Architecture iteration4 snapshot only; root navigation/shared assets unchanged. Desktop1280x900 and mobile390x844 in light/dark; pinned real CDN assets, live OS theme change, populated native/ABBA/PVC/VM/CI tables, all3 selector states and all6 expanded implementation stages.",
+  "verified_at_utc": "2026-11-13T09:59:07.816544+00:00",
+  "invocation_url": "https://app.buildbuddy.io/invocation/cdaaeb05-6c5f-43c8-8047-340c992a0afd",
+  "target": "//x/ci_architecture_preview:test_report",
   "native_result": {
-    "status": "PASSED",
-    "pytest_passed_cases": 8,
-    "invocation": "5ce101c7-305d-4284-8783-c5b5553151ac",
-    "physical_executions": [
+    "attempt_count": 1,
+    "junit": {
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "tests": 4
+    },
+    "run_count": 1,
+    "shard_count": 1,
+    "status": "PASSED"
+  },
+  "physical_test_runner": {
+    "count": 1,
+    "executions": [
       {
-        "id": "/uploads/9a0be704-5368-4165-a703-c586de4b04fe/blobs/6265ee6d9b69c4e6641f8392c7c1d835e62c1c4e4c7b3beac4822aec7975f71e/501",
-        "action_digest": {
-          "hash": "6265ee6d9b69c4e6641f8392c7c1d835e62c1c4e4c7b3beac4822aec7975f71e",
-          "sizeBytes": "501"
-        },
-        "worker": "225218d8-2806-4f4c-9291-7f7d5543a20f",
-        "stage": "COMPLETED",
-        "status": {},
-        "queue_seconds": 0.062239,
-        "worker_prepare_seconds": 0.183871,
-        "input_fetch_seconds": 0.100333,
-        "process_seconds": 48.375318,
-        "cpu_seconds": 77.186824,
-        "reported_peak_memory_bytes": 932114432,
-        "io_stats": {
-          "fileDownloadCount": "3",
-          "fileDownloadSizeBytes": "271212",
-          "fileDownloadDurationUsec": "48403073",
-          "fileUploadCount": "103",
-          "fileUploadSizeBytes": "9168348",
-          "fileUploadDurationUsec": "370500"
-        }
+        "cpu_nanos": 42930714000,
+        "process_seconds": 34.220267,
+        "status": "COMPLETED",
+        "status_code": 0
       }
     ]
   },
   "final_asset_sha256": {
-    "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-    "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-    "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-    "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-    "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+    "agentplane-test-architecture/evidence.json": "8121c13890d5be64ca92c24f6bbe3400050e18937f2e6fa9fb8c2238a9704523",
+    "agentplane-test-architecture/index.html": "17153465dfe8b4aced43a814c00db02a48c25bac60eef11c94739c0c7acc4aec",
+    "agentplane-test-architecture/manifest.json": "683931578d0a2437fcd897648be50a80c08a6d989c692a7d119d947cec942b14",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
   },
   "cases": [
     {
-      "console_errors": [],
-      "coverage_table_rows": 6,
+      "asset_count": 5,
+      "console_error_count": 0,
       "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "evidence_keys": [
-        "adoption_protocol",
-        "contract_audit",
-        "current_static_graph",
-        "initial_scope",
-        "iteration2_ci",
-        "iteration2_comparison",
-        "iteration2_experiments",
-        "iteration2_final_validation",
-        "iteration2_native",
-        "iteration2_older_base_runs",
-        "iteration2_status",
-        "iteration2_submission_errors",
-        "iteration3",
-        "observed_at_utc",
-        "pilot",
-        "prior_work_disposition",
-        "retained_baseline",
-        "retained_pod_action",
-        "schema_version",
-        "scope",
-        "source_devel_commit",
-        "tracking_issue"
-      ],
-      "failed_requests": [],
-      "iteration3_run_rows": 4,
-      "iteration3_variant_rows": 3,
+      "failed_request_count": 0,
+      "http_error_response_count": 0,
       "live_theme_change": true,
-      "manifest_metadata": {
-        "attribution": "Three full-suite variants and six selected Secret-recovery actions preserve21cases. Different cache/load exposure and a variable unchanged case prevent causal whole-CI attribution;3per-arm cadence runs are not reliability evidence.",
-        "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "ci_synthetic_merge_base_commit": "a0456735d25a4a877729bc483d3ac66fa33469e8",
-        "ci_synthetic_merge_commit": "4e1a675306f3c4e95a9aad67f35d3ae552ee6095",
-        "evidence_sha256": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "implementation_head_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
-        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
-        "pilot_base_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "337aae97f1a5050260424f74bdb033df579687f0",
-        "previous_gh_pages_commit": "850b665c6b76eb06e43911023f6cb179d4974d11",
-        "published_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "report_sha256": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "scope": "Agentplane test architecture: initial pilot, iteration2 recovery profiles, iteration3 Pod service closure/concurrency and Secret-projection cadence spike. Experimental branch only; complete required-CI and reliability improvement not established.",
-        "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-        "visual_validation": "visual-validation.json"
-      },
-      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
-      "native_observation_rows": 4,
-      "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "progress_target_rows": 4,
-      "projection_run_rows": 6,
-      "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "report": "agentplane-test-architecture/index.html",
-      "rollout_expanded_panel_ids": [
-        "mantine-aylaai0lt-panel-p1",
-        "mantine-aylaai0lt-panel-p2",
-        "mantine-aylaai0lt-panel-p3",
-        "mantine-aylaai0lt-panel-p4",
-        "mantine-aylaai0lt-panel-p5",
-        "mantine-aylaai0lt-panel-p6"
-      ],
-      "rollout_item_count": 6,
-      "selected_contract_panels": {
-        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
-        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
-        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
-      },
-      "status": "passed",
-      "theme": "light",
-      "viewport": {
-        "height": 844,
-        "width": 390
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
-    },
-    {
-      "console_errors": [],
-      "coverage_table_rows": 6,
-      "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "evidence_keys": [
-        "adoption_protocol",
-        "contract_audit",
-        "current_static_graph",
-        "initial_scope",
-        "iteration2_ci",
-        "iteration2_comparison",
-        "iteration2_experiments",
-        "iteration2_final_validation",
-        "iteration2_native",
-        "iteration2_older_base_runs",
-        "iteration2_status",
-        "iteration2_submission_errors",
-        "iteration3",
-        "observed_at_utc",
-        "pilot",
-        "prior_work_disposition",
-        "retained_baseline",
-        "retained_pod_action",
-        "schema_version",
-        "scope",
-        "source_devel_commit",
-        "tracking_issue"
-      ],
-      "failed_requests": [],
-      "iteration3_run_rows": 4,
-      "iteration3_variant_rows": 3,
-      "live_theme_change": true,
-      "manifest_metadata": {
-        "attribution": "Three full-suite variants and six selected Secret-recovery actions preserve21cases. Different cache/load exposure and a variable unchanged case prevent causal whole-CI attribution;3per-arm cadence runs are not reliability evidence.",
-        "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "ci_synthetic_merge_base_commit": "a0456735d25a4a877729bc483d3ac66fa33469e8",
-        "ci_synthetic_merge_commit": "4e1a675306f3c4e95a9aad67f35d3ae552ee6095",
-        "evidence_sha256": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "implementation_head_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
-        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
-        "pilot_base_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "337aae97f1a5050260424f74bdb033df579687f0",
-        "previous_gh_pages_commit": "850b665c6b76eb06e43911023f6cb179d4974d11",
-        "published_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "report_sha256": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "scope": "Agentplane test architecture: initial pilot, iteration2 recovery profiles, iteration3 Pod service closure/concurrency and Secret-projection cadence spike. Experimental branch only; complete required-CI and reliability improvement not established.",
-        "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-        "visual_validation": "visual-validation.json"
-      },
-      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
-      "native_observation_rows": 4,
-      "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "progress_target_rows": 4,
-      "projection_run_rows": 6,
-      "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "report": "agentplane-test-architecture/index.html",
-      "rollout_expanded_panel_ids": [
-        "mantine-u6boexmrp-panel-p1",
-        "mantine-u6boexmrp-panel-p2",
-        "mantine-u6boexmrp-panel-p3",
-        "mantine-u6boexmrp-panel-p4",
-        "mantine-u6boexmrp-panel-p5",
-        "mantine-u6boexmrp-panel-p6"
-      ],
-      "rollout_item_count": 6,
-      "selected_contract_panels": {
-        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
-        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
-        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
-      },
-      "status": "passed",
-      "theme": "light",
-      "viewport": {
-        "height": 900,
-        "width": 1280
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
-    },
-    {
-      "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-      "console_errors": [],
-      "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "failed_requests": [],
-      "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T07:32:12.634737+00:00 \u00b7 devel 1e03f9e4fc",
-      "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-      "status": "passed",
-      "theme": "light",
-      "viewport": {
-        "height": 844,
-        "width": 390
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-mobile]",
-      "report": "index.html",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
-    },
-    {
-      "console_errors": [],
-      "coverage_table_rows": 6,
-      "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "evidence_keys": [
-        "adoption_protocol",
-        "contract_audit",
-        "current_static_graph",
-        "initial_scope",
-        "iteration2_ci",
-        "iteration2_comparison",
-        "iteration2_experiments",
-        "iteration2_final_validation",
-        "iteration2_native",
-        "iteration2_older_base_runs",
-        "iteration2_status",
-        "iteration2_submission_errors",
-        "iteration3",
-        "observed_at_utc",
-        "pilot",
-        "prior_work_disposition",
-        "retained_baseline",
-        "retained_pod_action",
-        "schema_version",
-        "scope",
-        "source_devel_commit",
-        "tracking_issue"
-      ],
-      "failed_requests": [],
-      "iteration3_run_rows": 4,
-      "iteration3_variant_rows": 3,
-      "live_theme_change": true,
-      "manifest_metadata": {
-        "attribution": "Three full-suite variants and six selected Secret-recovery actions preserve21cases. Different cache/load exposure and a variable unchanged case prevent causal whole-CI attribution;3per-arm cadence runs are not reliability evidence.",
-        "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "ci_synthetic_merge_base_commit": "a0456735d25a4a877729bc483d3ac66fa33469e8",
-        "ci_synthetic_merge_commit": "4e1a675306f3c4e95a9aad67f35d3ae552ee6095",
-        "evidence_sha256": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "implementation_head_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
-        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
-        "pilot_base_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "337aae97f1a5050260424f74bdb033df579687f0",
-        "previous_gh_pages_commit": "850b665c6b76eb06e43911023f6cb179d4974d11",
-        "published_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "report_sha256": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "scope": "Agentplane test architecture: initial pilot, iteration2 recovery profiles, iteration3 Pod service closure/concurrency and Secret-projection cadence spike. Experimental branch only; complete required-CI and reliability improvement not established.",
-        "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-        "visual_validation": "visual-validation.json"
-      },
-      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
-      "native_observation_rows": 4,
-      "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "progress_target_rows": 4,
-      "projection_run_rows": 6,
-      "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "report": "agentplane-test-architecture/index.html",
-      "rollout_expanded_panel_ids": [
-        "mantine-joza05uvj-panel-p1",
-        "mantine-joza05uvj-panel-p2",
-        "mantine-joza05uvj-panel-p3",
-        "mantine-joza05uvj-panel-p4",
-        "mantine-joza05uvj-panel-p5",
-        "mantine-joza05uvj-panel-p6"
-      ],
-      "rollout_item_count": 6,
-      "selected_contract_panels": {
-        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
-        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
-        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
-      },
-      "status": "passed",
-      "theme": "dark",
-      "viewport": {
-        "height": 900,
-        "width": 1280
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
-    },
-    {
-      "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-      "console_errors": [],
-      "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "failed_requests": [],
-      "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T07:32:12.634737+00:00 \u00b7 devel 1e03f9e4fc",
-      "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-      "status": "passed",
+      "page_error_count": 0,
+      "status_passed": true,
       "theme": "dark",
       "viewport": {
         "height": 844,
         "width": 390
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-mobile]",
-      "report": "index.html",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
+      }
     },
     {
-      "console_errors": [],
-      "coverage_table_rows": 6,
+      "asset_count": 5,
+      "console_error_count": 0,
       "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "evidence_keys": [
-        "adoption_protocol",
-        "contract_audit",
-        "current_static_graph",
-        "initial_scope",
-        "iteration2_ci",
-        "iteration2_comparison",
-        "iteration2_experiments",
-        "iteration2_final_validation",
-        "iteration2_native",
-        "iteration2_older_base_runs",
-        "iteration2_status",
-        "iteration2_submission_errors",
-        "iteration3",
-        "observed_at_utc",
-        "pilot",
-        "prior_work_disposition",
-        "retained_baseline",
-        "retained_pod_action",
-        "schema_version",
-        "scope",
-        "source_devel_commit",
-        "tracking_issue"
-      ],
-      "failed_requests": [],
-      "iteration3_run_rows": 4,
-      "iteration3_variant_rows": 3,
+      "failed_request_count": 0,
+      "http_error_response_count": 0,
       "live_theme_change": true,
-      "manifest_metadata": {
-        "attribution": "Three full-suite variants and six selected Secret-recovery actions preserve21cases. Different cache/load exposure and a variable unchanged case prevent causal whole-CI attribution;3per-arm cadence runs are not reliability evidence.",
-        "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "ci_synthetic_merge_base_commit": "a0456735d25a4a877729bc483d3ac66fa33469e8",
-        "ci_synthetic_merge_commit": "4e1a675306f3c4e95a9aad67f35d3ae552ee6095",
-        "evidence_sha256": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "implementation_head_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
-        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
-        "pilot_base_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "337aae97f1a5050260424f74bdb033df579687f0",
-        "previous_gh_pages_commit": "850b665c6b76eb06e43911023f6cb179d4974d11",
-        "published_at_utc": "2026-11-13T07:32:12.634737+00:00",
-        "report_sha256": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "scope": "Agentplane test architecture: initial pilot, iteration2 recovery profiles, iteration3 Pod service closure/concurrency and Secret-projection cadence spike. Experimental branch only; complete required-CI and reliability improvement not established.",
-        "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-        "visual_validation": "visual-validation.json"
-      },
-      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
-      "native_observation_rows": 4,
-      "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "progress_target_rows": 4,
-      "projection_run_rows": 6,
-      "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "90b0f685c48e71e0e43cd6d645b482a609212a5e383dcaa735e35ec2b8849334",
-        "agentplane-test-architecture/index.html": "7b3f5920ffcd0c6b349e75cec507958e28730f22d6eb4e2ce7ab66f1621a2942",
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-      },
-      "report": "agentplane-test-architecture/index.html",
-      "rollout_expanded_panel_ids": [
-        "mantine-b39ctys15-panel-p1",
-        "mantine-b39ctys15-panel-p2",
-        "mantine-b39ctys15-panel-p3",
-        "mantine-b39ctys15-panel-p4",
-        "mantine-b39ctys15-panel-p5",
-        "mantine-b39ctys15-panel-p6"
-      ],
-      "rollout_item_count": 6,
-      "selected_contract_panels": {
-        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
-        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
-        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
-      },
-      "status": "passed",
-      "theme": "dark",
-      "viewport": {
-        "height": 844,
-        "width": 390
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
-    },
-    {
-      "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-      "console_errors": [],
-      "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "failed_requests": [],
-      "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T07:32:12.634737+00:00 \u00b7 devel 1e03f9e4fc",
-      "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-      "status": "passed",
+      "page_error_count": 0,
+      "status_passed": true,
       "theme": "dark",
       "viewport": {
         "height": 900,
         "width": 1280
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-desktop]",
-      "report": "index.html",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
+      }
     },
     {
-      "audited_at_utc": "2026-11-13T07:32:12.634737+00:00",
-      "console_errors": [],
+      "asset_count": 5,
+      "console_error_count": 0,
       "document_overflow": false,
-      "esm_module_urls": [
-        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
-        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
-        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
-        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
-        "https://esm.sh/htm@3.1.1?target=es2022",
-        "https://esm.sh/node/async_hooks.mjs",
-        "https://esm.sh/node/events.mjs",
-        "https://esm.sh/node/process.mjs",
-        "https://esm.sh/node/tty.mjs",
-        "https://esm.sh/react-dom?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
-        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
-        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
-        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
-        "https://esm.sh/react@19.3.0/es2022/react.mjs",
-        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
-        "https://esm.sh/react@19.3.0?target=es2022",
-        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
-        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
-      ],
-      "failed_requests": [],
+      "failed_request_count": 0,
+      "http_error_response_count": 0,
       "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T07:32:12.634737+00:00 \u00b7 devel 1e03f9e4fc",
-      "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "page_errors": [],
-      "pinned_css_urls": [
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
-        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
-      ],
-      "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "5985d6af80831ac0342a9e968d41463815b0c8eeda1b1214ec7f243b3ed63bb4",
-        "index.html": "9a139066078b672e273e7a205a053b5eb7018ce3796833d976df3d685d80f46e",
-        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
-        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
-        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
-      },
-      "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
-      "status": "passed",
+      "page_error_count": 0,
+      "status_passed": true,
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "asset_count": 5,
+      "console_error_count": 0,
+      "document_overflow": false,
+      "failed_request_count": 0,
+      "http_error_response_count": 0,
+      "live_theme_change": true,
+      "page_error_count": 0,
+      "status_passed": true,
       "theme": "light",
       "viewport": {
         "height": 900,
         "width": 1280
-      },
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-desktop]",
-      "report": "index.html",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac"
+      }
     }
   ],
   "screenshots": [
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "rollout-expanded",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/398bcc246ec1ad463499be16dc0c1d23806e6169a037e782e57d3d39d27dd4dd.png",
-      "width": 1152,
-      "height": 1412,
-      "sha256": "90531f946a116c1644d05dc67f11c0555bc6bcab6e86fa11a2c7c51339e0ef10"
+      "artifact_path": "files/40eaaff55bf46b26a20ba15e7738595cace9b4f67ebc50fbd70c9a907e63d5bd.png",
+      "checkpoint": "abba-results",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "46682eb537a8706db4f98ed6fdef8d4ef464a37aed08e8049338a79dcb492c30",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "coverage",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/7c5eeda1fae2807e03464fe066acebf6823e84701b1a05fe920e5320dc5055f3.png",
-      "width": 358,
-      "height": 1104,
-      "sha256": "c8140084f7bdee63fa7ab2c7d7b1cbed63cfde1e571c4d0afbcc1c4647bc7912"
+      "artifact_path": "files/9089b488d02ddaf629b8f2658994a3d5a5f2810d196f6ed3253dfd7146529036.png",
+      "checkpoint": "candidate-graph",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "89cdad8cf64f10c04fb05f3ed15f5d73f58bfebd521f0555d6d10d884d2c5713",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "projection",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/ab4a3d3cf3f57b22a4ebad3e538eaae36d4983f1ed3cc629f73b32224cdd468a.png",
-      "width": 1152,
-      "height": 1815,
-      "sha256": "16c7c892c07f4045d3c7d007098564e6cb2bf17b8c409b6305cbf849b9f123ab"
+      "artifact_path": "files/0ccf3def970ebf5475298974d7e2bf76d8d2ade8a612ed5de3a72cf5ba2c4eae.png",
+      "checkpoint": "expanded-plan",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "5037c8e26ebadb2c6dc8a5bd15fde059a389b73de93eb96d6d480b5291e5db30",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "coverage",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/94261bdea4e83fe66771c9a8802462b66e92ce115a3b5053ecf90bd19bd57093.png",
-      "width": 1152,
-      "height": 706,
-      "sha256": "7cb9846dfd95f210bad139137578fb58188dc9d969200afe4cda01256793fbde"
+      "artifact_path": "files/9ce4cb839083396f49814d3304088eae3ac331ca2c4f25b902593a4ed31de0ac.png",
+      "checkpoint": "native-contracts",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "82547bcf3e60c89a7bbb0a9a19168d81ea7e179f75de95c67bb8ab0b7470e076",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "artifact_path": "files/0ed2983f9aae5954b300520ed604502aeb477e489bfd666d55cb53e093c39804.png",
+      "checkpoint": "native-repeat",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "9d522595c6e89517876a00890fd9ca35c5fecd2687793528531662fd540f04e5",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/c5c7cd5aa330b7c78a324ceddfc7d30868ed376e9cae11ca5094062250631ecd.png",
+      "checkpoint": "negative-controls",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "0d168c3334fc8449cdb081b195b4031fc0866414e33daea784c293e5263d67bc",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/3fda04c5aa1a020f4c523d2e9e65aa32332efd8592c596dd5ad605b1039da39a.png",
+      "checkpoint": "next-probe",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "816ae5dc53e437f76f07984c38e3681bd24bbe16f8d8b83dbfd2d2c4cb5ad9ae",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/55cbd63569f97043506d1224cfbebcb6189ef363ce91ff94f0c6ce733eaad35f.png",
+      "checkpoint": "pvc-reader-repair",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "e7f8700772a6ea88602a3540d20aca3723f2575ab39f22aa0fdec6c57d77372b",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/8f0b5f3f6f047d4aab6aea6b853a871288dfa28a65e56fba8d9b69f51eabbac7.png",
       "checkpoint": "selected-app",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/a11f4ba0efa0db40fb396babb78077a136681acb7d75e00ab8e5b77713d31184.png",
-      "width": 1152,
-      "height": 635,
-      "sha256": "028b68d316b065e542a6eb9b17b67f749f8d08552b9dd04ef74bb3f18cab497e"
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "0d20d818b0c2fb74e812f1c60fa99d427ffd4dbcbd4691bc5b9cc92819b6f9ba",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "selected-runtime",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/053703e8e341a6a9c685621deb19007b7bd488138afc9f353d33fef42b0f13e7.png",
-      "width": 1152,
-      "height": 635,
-      "sha256": "4ae626c9f24b647bd16ca33c156253c4e3f4fdf4c337b0a772d30781dd680cd6"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "iteration3",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/e1f12217c7cb1e6158d0306600b95a603e023803ff09d7059b727c67db98b429.png",
-      "width": 358,
-      "height": 8467,
-      "sha256": "c009606938df1f8ba652b0cc8cc938520d8c43c28274eb46bdac1a37ab2eb071"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "artifact_path": "files/227ff76d413c67dc12daa1a5b53f6a7490d1d678e49f1ee1bff96a7c36d407dd.png",
       "checkpoint": "selected-platform",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/00b08b65f77d82a7761d1a3da8ae4542ae9b78485d92d9622723b2fcbdc83279.png",
-      "width": 1152,
-      "height": 635,
-      "sha256": "ef085bfa76fcfa6349f1607c70a16dc2c33d8026796d192384c69cd2de2284c7"
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "02f04aeabfc20b6ef9ce842d2bf1a9ea633e56e0c143f2d24f0b7a7c232db1f3",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "artifact_path": "files/d71f53cc9afb7778b172f6927226a2a376ed1228e8a2105cc6e3e61f693bba58.png",
       "checkpoint": "selected-runtime",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/ccb051176a21f2d2a5bc0781b892aace6b456bf9c00b0b4510211a6a9ee3347b.png",
-      "width": 1152,
-      "height": 635,
-      "sha256": "7ba8ef3b7838306bce381b60be26855182e4f11882233999d1b141108b1b6284"
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "9501ab85458eafe46b57e6cbe42c572a7d21579f92e430d025e98db232e4a13c",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "coverage",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/342be99de53c5ffa0371766cfe1dd21ae02aaeb64beceb629b55594ba750ab16.png",
-      "width": 358,
-      "height": 1104,
-      "sha256": "99a72509c80e52bbe1eca3af82c41bd76081e2f447ca1b99fb62388001a8d619"
+      "artifact_path": "files/472477bf37b4edb5541cd7fed5be070c428488d174f1eba3dbd267cbdb9bc086.png",
+      "checkpoint": "stopping-rule",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "c53cc7010b0e35051f43d150ee182d7cfc28bb1897e8ffeabcd34fc2f6db960b",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "rollout-expanded",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/f948a1ecf921cbd2c160c95186ee452a35894b7f0b4006954c8a980c62422c20.png",
-      "width": 358,
-      "height": 2985,
-      "sha256": "70c6b9d89db2148cdd2cdb9b0b36342d0240f5c9e71e752ed3dcfdfa76a3eb95"
+      "artifact_path": "files/01be8bc263450704b8d8d9f7e59d608a04859a08b4c59c7d0186304356eef6f7.png",
+      "checkpoint": "vm-and-replay",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "8efa0a7290406c4d8920966264188550e284f27f699a0daae07f0efa34d2768c",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "artifact_path": "files/fc31980edd3a4d0114c2d8953793f28182a15017c2be1754134a02da238124cd.png",
+      "checkpoint": "abba-results",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "5719ff07800dfbf2e8f47166baa71ccc57ab02abd0df60e8965a3ebbefc5f469",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/86c1502e933079d8790131342809a520d52d8d541a8b9d720f745abc6c9609af.png",
+      "checkpoint": "candidate-graph",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "b6e3c0f5ac3d46351f98e851fcb0c7281bb3b05415bba20cde734461f671f77c",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/29929d7be7b3594d3ec3156dd404e0edd1e7d3d9259ceadf88fd5a899ea068e1.png",
+      "checkpoint": "expanded-plan",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "0e1334fb0f86bda26a27fcec11c4e582022f6211835f1517bec2e620890830fd",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/0040aca8fe2d2af77a22e10d5a72ee3ac34de223c58e4e6df82e461077808ccb.png",
+      "checkpoint": "native-contracts",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "9d0e7fa1f1eecba6e92c3df4cde8d9b9451cd38365bb401901203b95ac422b57",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/aeedf160fac1fc9d3c38ac238be129df9a650da095ea68ab720786dc93789383.png",
+      "checkpoint": "native-repeat",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "388387c5cd4a1d89ae311cda193d85517468bc8ce27005c0029d5e7951ae5a47",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/42ed5e6dad9ac2dd189907dd1134f68dfa9973e11c562e3896c75ce146b4536f.png",
+      "checkpoint": "negative-controls",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "a1ab432bc114f86c22069403a4e3531a99be374131b07773024c008185f90167",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/a6bd917c18d1fa0a60406d5aa5e0dc5904f5cdfbd3b2b5d476abf0dff3867aae.png",
+      "checkpoint": "next-probe",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "d245361f02ed26c0466b4c06d301b541908159f66c9f9717aaf6796e8e6ce051",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/57e8ed64a0419710f25191a9877d2612d767659431aeec53cb1edb0873774d2b.png",
+      "checkpoint": "pvc-reader-repair",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "9030cee6a491374e88a616d37bc4ab050ed87af252482869eba8d7014d46da9f",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/5026a8e53532069422bfd26767cb264906a3f15a24c83754c38236b305c10fff.png",
       "checkpoint": "selected-app",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/c261eb7d5b3ed0aafb00fbe15a9311f01617990bb6c564444c9e1740a2924b17.png",
-      "width": 358,
-      "height": 1106,
-      "sha256": "ea61aba370d8b983333adf9452ba441aa8ddd32e8b03d5329b61c668cd9c8534"
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "a762dd16febbff0886620af1a9f8d4b1762799bc44321c099db5bc2429964ccc",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-desktop]",
-      "checkpoint": "root-architecture-link",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/18016815ffd0f2b826cc7a3f3b1d2fc268edd5fee8de0c884d1043af2d43be15.png",
-      "width": 373,
-      "height": 339,
-      "sha256": "d5996eea3fbf6d80e037a8099cf92800a0992657e34418b009244985a83c23ae"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "architecture",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/38e12653e74bc4d45c421a21c441c4d42d651677f9becba61e27850d7eb2ffce.png",
-      "width": 1152,
-      "height": 931,
-      "sha256": "d250641d68fd28a44e60aee2b39c8bd4566c26fadd90a04010ffd667394d9eb9"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "overview",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/b70bcf070a3fd4545850857bb50d26ca6957686e05183dcbb34a56d2ba440282.png",
-      "width": 1280,
-      "height": 900,
-      "sha256": "b47dd155d0fd1df791ca7dd54c9c3fe9e13927cde3a0456675e58e0fc9468740"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "projection",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/529cf6615e405e5f8d06a82886f4d6c141570648c535739aa103bf3882351630.png",
-      "width": 358,
-      "height": 2409,
-      "sha256": "8cef4cc8461cefb0525deb2d57237bb0d4bd349a7004e4d1e837987527fd452c"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "architecture",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/82ef7d46a7e615985471875b300c1a9a2067c39f4fe07227b4d3ed3ccd62a3de.png",
-      "width": 1152,
-      "height": 931,
-      "sha256": "532a1bc9d5687b33823cc619d4e551f55f143de1718d25cb6ae6393fd3bbab69"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "overview",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/40df4201fd541a8da8fa6d6e68af3a1c9c698af96d97ceec115d740ff79c0565.png",
-      "width": 390,
-      "height": 844,
-      "sha256": "07ef3b5b2fa2baea7c8e2a01b37ff2b8f00cb104a2fe6f412a0674b68b1e9706"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "iteration3",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/c19666fc82163b0402ee5c3e4be004ddf43680e838c60ec6401d5983b5391a67.png",
-      "width": 1152,
-      "height": 5864,
-      "sha256": "5b729d668fe304239c7f91d009dad9edf83f6410b36afd37d5a912d080a8d5d1"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "progress",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/62197a4ae15384274bdadcfe5bedb5613deb4139ed43110b9d0b0c9a4e133da4.png",
-      "width": 1152,
-      "height": 2372,
-      "sha256": "43dd676ca7e09c51dae252de4d62f6781683ae4dd3e8aeb6a0170dd2482dcd1f"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "architecture",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/915d8bfc0cf854257856c4536593c6cab558a4482589fdb8d350b5d77bdfde81.png",
-      "width": 358,
-      "height": 2219,
-      "sha256": "95507a99680c1f4e80ea615a58cf7560cf9ac7ca995b469bcb5f8a4c21e317a2"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "architecture",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/04802cb2ebbc61dd96fac1376599f9dff39ec8f7848e4f2c593e26178ca5f3c3.png",
-      "width": 358,
-      "height": 2219,
-      "sha256": "e267ab72ccbb6f5f0415a3f869ef79dfba26c995cca7416d0f5bdcf9cf008c10"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "artifact_path": "files/fc0baf64e2da4d2a1c5d0d98ae2095365d8637103d7c5abf031c2a4fa98ae87b.png",
       "checkpoint": "selected-platform",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/eebfcd6f11f09e82a13f5032376fa82ef80b626f8d54505f96ec79c5753f6e38.png",
-      "width": 358,
-      "height": 1106,
-      "sha256": "9c227e018c885db01665cfbd6bee5ce0998bb2b3404dfc44340fa7cb059d3bf7"
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "53030d00fa3ae589d96e270ac444c97e2f51103a7c6a7016111a2c0cab1a4524",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-desktop]",
-      "checkpoint": "root-architecture-link",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/2c4d64183c39b870198e423b3e34dae43cb19d3097fa33847df46123bf65ce4a.png",
-      "width": 373,
-      "height": 339,
-      "sha256": "c2959193bdc3c7c67c38d56c795e58ed67e2619b1ace417b49ad32c00b69536d"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "projection",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/e80bafc38f395ca51873441f839d9df97e826b455bd0197fce150b06b4ead7a3.png",
-      "width": 1152,
-      "height": 1815,
-      "sha256": "d2c0f73c063332545a99a29f97944a6156be219cfd399639a7191db4df538e22"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "overview",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/f0db531260540a56e7e79152a14d7075e07148a294631b4f80b9f243ac09b276.png",
-      "width": 390,
-      "height": 844,
-      "sha256": "82412dab845a11ef5cd55012fd3108ff780035d1318c0e8574ada68539a7dea8"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "rollout-expanded",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/d286c34a9a4820cb6e9a796530df47440da39a6ce728f4f911152607d6a2b884.png",
-      "width": 358,
-      "height": 2985,
-      "sha256": "e8ae074e9170f6233a84366dc498251eb7c46c2573e1ab664fb3876de6507432"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "selected-app",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/bc0341953fce4c26fba4afdde0f1234318f39177ab2ba04ee0b8ef9ac2677469.png",
-      "width": 358,
-      "height": 1106,
-      "sha256": "f770eb6a2d081a95f3a86ced2d0262f5e44f75419737b00f977ae11e9bee9103"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "iteration3",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/3a04717389e1176c5068a3eff13185a60328d591b8193570ae3d770d67947274.png",
-      "width": 358,
-      "height": 8467,
-      "sha256": "9516ba69bf1cfcbbd260e51c14f72b21688132b3cc0458a04dc82145b09c546c"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "overview",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/feae4ed8b21861c36f2984c1c99b0e0173cbe9a0cb9395ea80d66ececd77584a.png",
-      "width": 1280,
-      "height": 900,
-      "sha256": "0beb69534442c57610c0b8948f0e469fa7d8e4eeff1921311bf7b60d1f6990b2"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "projection",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/a24c9f8a8645d2e0e8afdedd44df8f7d8d94e4b79080a3c054e5abe1cafde1c7.png",
-      "width": 358,
-      "height": 2409,
-      "sha256": "131010af0c504d7b23bad49f0593c6fc59521a64e47dd8358f5a0fc4d9a2854b"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "selected-app",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/a87d7589cc15e2f0019e8082c9b7160d560cb9314358d0aa2e8268ced8e31a8a.png",
-      "width": 1152,
-      "height": 635,
-      "sha256": "c9542722924c0cf9bde2337d648cb2bd8a7cb88174ddf1a0d9f670cf6f464ce2"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "coverage",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/affe05e26873f99928eda8c1636382fa7b5e2bf71621d3ac680680777572e3f4.png",
-      "width": 1152,
-      "height": 706,
-      "sha256": "a41da0373aa34b84cb703764ebb30ea67fff544e8bb23e4552479f758861b584"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "iteration3",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/59ec5bbfb591aa01f8f13e85de6c17fc3789e08053766efd61f3b85adbdf8f37.png",
-      "width": 1152,
-      "height": 5864,
-      "sha256": "bf8878eb411cc08da17e438dcf3fdbcd8dbacf7e33dfcbf24f633c63c9b16396"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "progress",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/98bc321bffcaba61763ea0957cb846b937afb7b1807e1e352d2b8b740f8d274e.png",
-      "width": 358,
-      "height": 3931,
-      "sha256": "659d66695227d73fa1cd35f396b283159e63a449044a88ec9e2c470a8fa53a6c"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "selected-platform",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/d56f2239dccd49d1d617970a325542999ae1146a350a871c1b5b724ad06c4cea.png",
-      "width": 1152,
-      "height": 635,
-      "sha256": "d9955df8b9d6ab645ccaed6e7cf3d46491dd09173e448cf83156d681b4fa254c"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-mobile]",
-      "checkpoint": "root-architecture-link",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/2935093af7a04b03c7d737bc3a65a334b031e22848984314e7339a58aae2a09f.png",
-      "width": 358,
-      "height": 339,
-      "sha256": "2da4723b6cbd4dbacf88ea6b46dd700287e46c42d0f24e98ef4bdca5de0363db"
-    },
-    {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "artifact_path": "files/afc66f8fe1578464e16571fcc2e997bc9f506b78b684909b7d034fad9b65223e.png",
       "checkpoint": "selected-runtime",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/4cc0d75a7bb33518212be09d2bb91b9db91813ff561c7ed1606ac46b6772b785.png",
-      "width": 358,
-      "height": 1130,
-      "sha256": "85ef44180bc216eb9dd80c52a21fb32fdecb2843043011d0453a43a7c693f9a3"
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "e7269ba9c2b14ce630414c370a402bb6493af8c434d42c0dbef9a31509f4184d",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "checkpoint": "progress",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/858677d460d60f16e4cabc11dd8b368dd13123585697d726603fba955209eeb2.png",
-      "width": 1152,
-      "height": 2372,
-      "sha256": "7b5b645b2fe052c0a994cc9c6d4bc3148851370aac65cae2fb7336b000dad94f"
+      "artifact_path": "files/c3cff321191a8b66142f367edac7baa91e94555bba6dad2ca7d3b734a1048c78.png",
+      "checkpoint": "stopping-rule",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "d245361f02ed26c0466b4c06d301b541908159f66c9f9717aaf6796e8e6ce051",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-mobile]",
-      "checkpoint": "root-architecture-link",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/c8a2e4c441247db89b5ef336dfb78a98890390b2e5cc2d68f7a2be27515ac149.png",
-      "width": 358,
-      "height": 339,
-      "sha256": "d238e662ad76ebaf4775afcfef4205cfef29f588ff50447080fbafe71fe410ea"
+      "artifact_path": "files/be41dcf107334217b45b5219bd7e561e93b04269cf6f40edb9dca96e6ba6e775.png",
+      "checkpoint": "vm-and-replay",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "9030cee6a491374e88a616d37bc4ab050ed87af252482869eba8d7014d46da9f",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "checkpoint": "rollout-expanded",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/b9fbf710267645a22b36ee44f117ac5bc98bfdeb58a876d05256f633aba3af03.png",
-      "width": 1152,
-      "height": 1412,
-      "sha256": "a1ca14c67930b684cbc938f2a0b408dc8dcede501814073bb91b5379d99f7026"
+      "artifact_path": "files/dcb0de9999a34a596cdc463f4f4c71364d4ef4473d9718b171eb21a2a8f20f3e.png",
+      "checkpoint": "abba-results",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "4dbc1865d41e17af3ad7dbcc230e7b9f40eac20f9cd340893196e580950b762b",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "checkpoint": "progress",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/d72be891bd8f12fb1c14adcdc6cd1b92d9143104b98c34a385ca6678ffec812a.png",
-      "width": 358,
-      "height": 3931,
-      "sha256": "e77b1f4a95ae409afe7cae595f655a3a9399fe91c6ae36c3b917aefec2a0bbae"
+      "artifact_path": "files/866e037922e3bba28836965761ac964be9ef83c357776b54f1f26205218f0961.png",
+      "checkpoint": "candidate-graph",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "452a0c7f2aadeb655ee5a3034f42bc91048eabd297f7c0ab3ce0090602ea6dcd",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "checkpoint": "selected-runtime",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/39ae73c8bba6bc8dd4a5215e5acaf5c955183eb08e79bb8f96636d92cc4afb5a.png",
-      "width": 358,
-      "height": 1130,
-      "sha256": "1cbd9e04e559c6351433aceb4bf673fc77a1d3b239684aff84b32c4f06ac4fee"
+      "artifact_path": "files/ffc03151cad99d885895da212137b1a95ee5ca8b564df1a83c56c5c1ad4c07f4.png",
+      "checkpoint": "expanded-plan",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "c68e26a491c81d9d81b715bbbb9f405a3f6d8a6795a1aefda996342e9217579f",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
     },
     {
-      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "artifact_path": "files/dcbf9332448bcaaa1c8200189a7e0ccc479eb4571dcef8ed78932e81eb790fb2.png",
+      "checkpoint": "native-contracts",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "6f7526e98442301dd2b803134a71e521d7bad25f3c4be8c658d393c442a3ae3d",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/e41c48b5cdb4e3030187e7a42b48f0d63c39901c0d39a3c86ac43ab4df907af3.png",
+      "checkpoint": "native-repeat",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "5caf8500099662028f6de1eb0dba2ca0cc35193799d3255febca10a073cf6f33",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/943ec7eb757246a39b05de387916fbe7a7d6ee5c29c1edac06fdafff566b1a41.png",
+      "checkpoint": "negative-controls",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "414f381c5286e7a304fd006224e12f4ee2261d329f178e3309ac726311496882",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/c3476c55697ad5416e185366e655c9f8159431f5d9c4c4f9ea4fd16b35ab6949.png",
+      "checkpoint": "next-probe",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "d1bfdc52f0d689166974b46672acdfe6900d197ef8a336fde41cf23e8537e1f9",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/1e1bde8aa921a70619e3a8e9088f552139752db4d9f5429b68f2bad94aabc7f0.png",
+      "checkpoint": "pvc-reader-repair",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "2e1a1674aa9014ab1ff9f61249a5b2fbcad667ef6b84b49baeaeaee057d688e0",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/37d5b9be6851161e3dd7c656b3ef97cf7822f24fd56c247602356bf1acce748d.png",
+      "checkpoint": "selected-app",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "50e647a312a3f45792b7666c8cb54b7cf365c08ad21f17669c8ea5b4ad86cbc1",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/a49c1b7302625c32e38430d7985b1aca05740e015d89f823bef109928fd692d6.png",
       "checkpoint": "selected-platform",
-      "invocation_id": "5ce101c7-305d-4284-8783-c5b5553151ac",
-      "artifact_path": "files/5085dc106452123215c6346e8daefd72d324d4acadad6890f747e93205a39032.png",
-      "width": 358,
-      "height": 1106,
-      "sha256": "8916a6ad6b5e5a56faa305d09b9c82e9662510e37eee6454d54dba79e19b8635"
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "6e4bc58dab2b8f020b096f88fe5479efe885f38b444abd5ba7081de07d1f8993",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/0708ade0c6eb443685d0902e40f4e9a8be3e9f37cc0fea8264775ec08e2056df.png",
+      "checkpoint": "selected-runtime",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "38bdb89a556c6f449003471e8cf8f5dff42c31569a430cda132936d8ccba3ca6",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/89953747f04e78ccdfe020349f6df8d6efc0b7e4a962e5afd5fe2bb8e0240bdc.png",
+      "checkpoint": "stopping-rule",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "6fb0fc44af6f21ebaba37d468e4b83717d5c5be285b6132e77c6c0b08ac82bac",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/d57d66ebf097ca21c03ac1fd091e880b5ba19bd7bd54d883bf944712c61e60bc.png",
+      "checkpoint": "vm-and-replay",
+      "dimensions": {
+        "height": 844,
+        "width": 390
+      },
+      "sha256": "cd9b2b9f9f7928559d2f5ddf51eea5cdc8f61e049337d2206a5239c4e550d339",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      }
+    },
+    {
+      "artifact_path": "files/c136e794dd50a1b1449abe5dd3e48ef2cface03f8cbaba66c98dc10e9c4228dc.png",
+      "checkpoint": "abba-results",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "5ae935a2acb9eb349b13b354d2d382312abb02e1300d27c0f1b2c9efba757ad0",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/0e5ea1fc24c96a215a3aa07cf077090b0195f5adc4949336dc5c13b9a7ba963c.png",
+      "checkpoint": "candidate-graph",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "74efa16964f03764963764842674f1ca68c738981810918d62c38e3822d270fa",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/ce729059c90092365143e48d6679073d66352e9ad5114f1553985db0b608ca1a.png",
+      "checkpoint": "expanded-plan",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "2502c6286bef843e1acc4b16b5648db45001bd61a38644ce6815066c1ed85768",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/63187874bcbe29f66cde940a7d94ccf1c0cb218870a013dc0725448c31b5b57d.png",
+      "checkpoint": "native-contracts",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "ab0b3aaa7b85685b6438e79a4f057b6ce37cbea407e053556075a45cfb2fedf9",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/ba3013681dcbe087cbfce70399a6e38a7a4b62bb6ab8625ad905b60f8ec4d9e8.png",
+      "checkpoint": "native-repeat",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "40a69a6df62947da4a1641f368a7551a52c8adb5a6060c05d9b801f455271b4a",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/fb41d47ea071102c6e3feda3f194d381ecd2f3b9b58015780d831f5032cf0778.png",
+      "checkpoint": "negative-controls",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "9523b1826468a5edf4bf618bcd3b8b06b148015aff9968adacdffb7bea03a079",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/224a18bc7b04f4166be5bc9496976475a9e24e63702c41fee3644daf5a71c2b2.png",
+      "checkpoint": "next-probe",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "46d80d6ca2cfe01a5d0e3817bfe71df065156ed7d976f150610a50bfb74b21d3",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/96cc3130f9e1cad87880f4490f4023893176db2955a755e210461e94e8a3a554.png",
+      "checkpoint": "pvc-reader-repair",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "b9a8d95dad93dd27531c8b00265329dc5fe490be35c7638d2f67d346542219d2",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/eac114736839ecc2e6dac7e043dda71becf3114074923f8ed2257bf1e3dee2fa.png",
+      "checkpoint": "selected-app",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "ce5535f4ec2f3ad3808397d0e06dc8495d46c11bbc6ffa5011476881e18625fb",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/eb7062ad74817e9a180d27f44d783258c3321e93211b5fd41e3dfccc057b4c16.png",
+      "checkpoint": "selected-platform",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "179508163677add231c1948ae3843a2bfb548c3a60d895f10a043006241c3e78",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/f0e3badf3bc4455a1bd60bebcacf583b5e68d889ca7ea144027334ffdabf8020.png",
+      "checkpoint": "selected-runtime",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "3fdd55fb6207ca0da5d08744bea586c63aa282b933bb74d53fca09b9ea463534",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/b8b6d99ce6c0b5a507e019f5fc5e239b7249814f7ae6e4c0eb989511a7fec9ab.png",
+      "checkpoint": "stopping-rule",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "46d80d6ca2cfe01a5d0e3817bfe71df065156ed7d976f150610a50bfb74b21d3",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
+    },
+    {
+      "artifact_path": "files/26469089bc8909ed14962ef8e5f38693f6b57b1d07ad713b50cb3c4409419b96.png",
+      "checkpoint": "vm-and-replay",
+      "dimensions": {
+        "height": 900,
+        "width": 1280
+      },
+      "sha256": "b9a8d95dad93dd27531c8b00265329dc5fe490be35c7638d2f67d346542219d2",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      }
     }
   ],
-  "screenshot_review": "Representative desktop/mobile, light/dark captures visually reviewed for populated iteration3 suite/cadence tables, effective kubelet settings, ordinary-CI provenance, progress tables and architecture panels, readable labels/tables, selector states, root navigation and expanded rollout. Horizontal tables scroll within their containers.",
-  "limits": "Visual proof checks rendering and controls, not architecture correctness, deployment or CI saving. Its own JSON is excluded from rendered asset hashes to avoid self-reference."
+  "screenshot_review": "Representative final desktop light and mobile dark screenshots were visually reviewed for readable populated ABBA failure rows, bounded PVC recovery controls, full VM provenance and phase table, and independent-fix/next-probe explanation. Earlier preliminary captures also established native case tables and expanded plan readability. Horizontal tables scroll inside their containers; the document has no horizontal overflow.",
+  "limits": "Browser/control/rendering proof does not establish CI improvement or architecture equivalence. The proof JSON excludes itself from asset hashes to avoid self-reference. Raw request/API payloads remain private."
 }

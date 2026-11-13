@@ -137,28 +137,28 @@
       };
       const lanes = [
         [
-          "P1 · Initial native recovery feasibility · historical",
-          "The original manual native-contract pilot used real Gateway and History processes, Runtime PID1 and PostgreSQL containers, with envtest for Kubernetes API behavior. It established fixture feasibility and its reported fault-control result; it did not measure a matched candidate gate. Treat the measurements below as historical evidence for that initial source state.",
+          "M1 · Native owner contracts · repeated at exact source",
+          "Keep the four Runtime/Gateway/History contracts on PR #16102. Their 25-run exact-head exposure passed; the sample is n=25 per contract and does not establish a failure rate. Preserve the real PostgreSQL, Runtime, service and identity boundaries.",
         ],
         [
-          "P2 · Owned contract fixtures · partial",
-          "The native helper no longer pulls Codex into the Claude-only pilot: the unique Codex input path count fell from 86 to 0 while Claude inputs remain. This counts declared input paths, not transferred bytes. The actual four central K3s cases and Pod-bound credentials are unchanged. Gateway fencing/reconnect, History cursor settlement and additional Runtime crash/journal contracts with positive controls remain follow-up work; keep the helpers owned by their contracts rather than starting a generic fixture framework.",
+          "M2 · MCP and central deployment slices · candidate",
+          "Keep the three MCP/OAuth cases and four real central-recovery cases separately selectable as manual candidate targets. Preserve real app, Actions, Gateway, History, sampler, controllers and PKI. The new profile is not an active devel selector.",
         ],
         [
-          "P3 · Deployment slices and image ownership · partial",
-          "The central profile is implemented for the same four cases: Gateway crash, retry-budget, sampler roll and History outage. It removes only the Dex/MCP Everything/OAuth fixture: rendered objects fall from 175 to 162 and Deployments from 15 to 12. Real app, Actions, MCP-edge, Gateway, History, sampler, controllers and PostgreSQL remain. The four cases and Pod-bound credentials are unchanged. This is a focused profile experiment, not a devel selector or a complete image-ownership split; compare the exact published candidate to the control and retain the real deployment acceptance. Held image split #15214 still needs its own measured saving.",
+          "M3 · Same-source selected graph and physical attempts",
+          "Compare A1/B1/B2/A2 at literal source 220. Preserve every physical interruption, retry and final result; a green target alone does not prove a clean execution. Final source-head required checks and the actual selection archive are separate evidence. No complete-CI saving is established.",
         ],
         [
-          "P4 · Shorten compound scenarios · partial",
-          "The budget case now configures a 45-second reconnect deadline against the 120-second production default. A 5-second trial failed real recovery while dialing the old Gateway address and was rejected. The 45-second trial passed the unchanged scenario, exercising its existing definitive-session-loss and fresh-session branch. The production default and Pod-bound credentials remain unchanged. The Secret-projection annotation trial was withdrawn: one pair changed the case from 23.4s to 25.5s, showing no observed saving. Continue by splitting owner contracts from real idle/resume acceptance while preserving the lifecycle, identity and recovery assertions.",
+          "M4 · Real acceptance and qualification · pending",
+          "Keep owner/native contracts, focused real deployment acceptance, and app/browser/MCP journeys required. Complete 30 pinned PR base/head pairs, three busy windows, a four-PR burst and the rerun-inclusive required-feedback distribution. The 100 native case executions are 25 per contract, not 100 independent reliability trials.",
         ],
         [
-          "P5 · Shadow the entire candidate gate · pending",
-          "Replay at least 30 pinned base/head pairs spanning Runtime, app, MCP and platform changes, plus three busy windows and a four-PR burst. Accumulate at least 100 fresh contract executions. Counterbalance control/candidate order and separate warm/cold fixtures, source/CAS, queues, CPU, retries, cancellations and missing results. Include the remaining required pre-commit and artifact/import gates; a faster isolated test is insufficient.",
+          "M5 · Prove a narrow frequency move · not enabled",
+          "Only after proof may repetitive fault × harness × platform combinations move to devel/nightly. Keep unknown or sensitive changes on the broad gate. Manual VM boot-only work has no equivalence claim for the full VM suite; actual selection snapshots are evidence, not a new selector.",
         ],
         [
-          "P6 · Adopt one proven boundary · not started",
-          "Review every unique assertion and fault witness, then change one selection/fixture boundary per PR. Initial screen: at least 25% lower median complete required feedback, p90 no more than 5% worse, no escaped reviewed fault, no new unexplained failure or cleanup signature. Publish all outcomes and sample intervals. Keep full current coverage for unknown mappings and revert that selection change on an escape. Only then evaluate larger architecture, resource and frequency changes.",
+          "M6 · Continue or stop on quarter payback",
+          "Continue while the best remaining candidate can repay implementation, review and maintenance within about one quarter. Stop dedicated work only when it cannot pay back within about one quarter and the two best probes fail to show worthwhile gain. Count developer waiting separately from total CI wall savings.",
         ],
       ];
       function Report() {
@@ -189,6 +189,185 @@
         const comparison = data?.iteration2_comparison;
         const nativeIteration = data?.iteration2_native;
         const iteration3 = data?.iteration3;
+        const seconds = (value) =>
+          Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
+        const iteration4 = data?.iteration4;
+        const iteration4Cases = iteration4?.native_contracts?.cases || [];
+        const iteration4Repeat = iteration4?.native_contracts?.repeat_run;
+        const iteration4NativeCaseRows = iteration4Cases.map((item) => [
+          item.contract,
+          item.exercise,
+        ]);
+        const iteration4RepeatRows = iteration4Repeat
+          ? [
+              [
+                "Exact source",
+                html`<${Anchor}
+                  href=${`${repo}/commit/${iteration4Repeat.source_commit}`}
+                  >${iteration4Repeat.source_commit}<//
+                >`,
+              ],
+              [
+                "BuildBuddy invocation",
+                html`<${Anchor} href=${iteration4Repeat.url}
+                  >${iteration4Repeat.invocation}<//
+                >`,
+              ],
+              [
+                "Physical TestRunner actions",
+                `${iteration4Repeat.physical_actions} NEW; attempt ${iteration4Repeat.test_runner_attempt_number}; ${iteration4Repeat.skips} skips`,
+              ],
+              [
+                "Case exposures",
+                `${iteration4Repeat.case_exposures} passing executions across four cases; ${iteration4Repeat.test_results} TestResults`,
+              ],
+              [
+                "Per-action process time",
+                `mean ${seconds(iteration4Repeat.process_seconds.mean)} · median ${seconds(iteration4Repeat.process_seconds.median)} · p90 ${seconds(iteration4Repeat.process_seconds.p90)} · range ${seconds(iteration4Repeat.process_seconds.min)}–${seconds(iteration4Repeat.process_seconds.max)}`,
+              ],
+              [
+                "Bounded repeat-job Bazel wall",
+                `${seconds(iteration4Repeat.bazel_wall_seconds)}; four-way 25-run job, not PR feedback time`,
+              ],
+              [
+                "Aggregate CPU and workers",
+                `${seconds(iteration4Repeat.total_cpu_seconds)} summed test CPU across ${iteration4Repeat.distinct_workers} workers`,
+              ],
+              ["Sample limit", iteration4Repeat.sample_limit],
+            ]
+          : [["Native repeat", "Evidence pending"]];
+        const iteration4NegativeRows = (
+          iteration4?.native_contracts?.negative_controls || []
+        ).map((control) => [
+          control.label,
+          html`<${Stack} gap="xs">
+            <${Text} size="sm">${control.outcome}<//>
+            <${Text} size="sm" c="dimmed"
+              >${control.interpretation || control.disposition}<//
+            >
+            <${Anchor} href=${control.url}>${control.invocation}<//>
+          <//>`,
+        ]);
+        const iteration4Mcp = iteration4?.mcp_candidate;
+        const iteration4Batch =
+          iteration4?.native_contracts?.case_batch_reliability;
+        const iteration4BatchRows = iteration4Batch
+          ? [
+              [
+                "Nested pytest result-waiter failure",
+                html`<${Anchor} href=${iteration4Batch.failure_url}
+                  >${iteration4Batch.failure_invocation}<//
+                >`,
+              ],
+              [
+                "Fix with complete pass",
+                html`<${Anchor}
+                  href=${`https://app.buildbuddy.io/invocation/${iteration4Batch.fixed_full_pass_invocation}`}
+                  >${iteration4Batch.fixed_full_pass_invocation}<//
+                >`,
+              ],
+              [
+                "Stronger fatal/cancel pass",
+                html`<${Anchor}
+                  href=${`https://app.buildbuddy.io/invocation/${iteration4Batch.stronger_fatal_cancel_pass_invocation}`}
+                  >${iteration4Batch.stronger_fatal_cancel_pass_invocation}<//
+                >`,
+              ],
+              ["Interpretation", iteration4Batch.interpretation],
+            ]
+          : [];
+        const iteration4McpRows = iteration4Mcp
+          ? [
+              ...(iteration4Mcp.whole_pr_ci.checks || []).map((check) => [
+                `${check.name} · head 220e6a5`,
+                check.conclusion,
+                html`<${Anchor} href=${check.url}
+                  >Workflow ${check.workflow_run_id}<//
+                >`,
+              ]),
+              [
+                "Manual MCP target",
+                iteration4Mcp.profile_split.mcp_target,
+                `${iteration4Mcp.profile_split.mcp_cases} MCP cases`,
+              ],
+              [
+                "Manual central target",
+                iteration4Mcp.profile_split.central_target,
+                `${iteration4Mcp.profile_split.central_recovery_cases} real central-recovery cases`,
+              ],
+              [
+                "Configured control closure",
+                iteration4Mcp.configured_graph_query.control.outcome,
+                html`<${Anchor}
+                  href=${iteration4Mcp.configured_graph_query.control.url}
+                  >${iteration4Mcp.configured_graph_query.control.invocation}<//
+                >`,
+              ],
+              [
+                "Configured candidate closure",
+                iteration4Mcp.configured_graph_query.candidate.outcome,
+                html`<${Anchor}
+                  href=${iteration4Mcp.configured_graph_query.candidate.url}
+                  >${iteration4Mcp.configured_graph_query.candidate.invocation}<//
+                >`,
+              ],
+              [
+                "MCP / central case collections",
+                iteration4Mcp.case_collections.outcome,
+                html`<${Anchor} href=${iteration4Mcp.case_collections.url}
+                  >${iteration4Mcp.case_collections.invocation}<//
+                >`,
+              ],
+              [
+                "Selected-target control",
+                iteration4Mcp.selected_graph_control.outcome,
+                html`<${Anchor} href=${iteration4Mcp.selected_graph_control.url}
+                  >${iteration4Mcp.selected_graph_control.invocation}<//
+                >`,
+              ],
+              [
+                "Selected-target B1 candidate",
+                iteration4Mcp.selected_graph_candidate.outcome,
+                html`<${Stack} gap="xs">
+                  <${Badge} color="teal"
+                    >${iteration4Mcp.selected_graph_candidate.status}<//
+                  >
+                  <${Anchor} href=${iteration4Mcp.selected_graph_candidate.url}
+                    >${iteration4Mcp.selected_graph_candidate.invocation}<//
+                  >
+                <//>`,
+              ],
+              [
+                "Ordinary PR CI · tested head 220e6a5",
+                iteration4Mcp.whole_pr_ci.interpretation,
+                html`<${Stack} gap="xs">
+                  <${Anchor} href=${iteration4Mcp.whole_pr_ci.workflow_url}
+                    >Workflow ${iteration4Mcp.whole_pr_ci.workflow_run_id}<//
+                  >
+                  <${Anchor} href=${iteration4Mcp.whole_pr_ci.buildbuddy_url}
+                    >BuildBuddy
+                    ${iteration4Mcp.whole_pr_ci.buildbuddy_invocation}<//
+                  >
+                <//>`,
+              ],
+              [
+                "Latest PR head",
+                html`<${Anchor}
+                  href=${`${repo}/commit/${iteration4.source_provenance.latest_source_head}`}
+                  >${iteration4.source_provenance.latest_source_head}<//
+                >`,
+                iteration4.source_provenance.latest_head_ci_status,
+              ],
+              [
+                "CaseBatch / render integration",
+                iteration4Mcp.case_batch_full_integration.status,
+                html`<${Anchor}
+                  href=${iteration4Mcp.case_batch_full_integration.url}
+                  >${iteration4Mcp.case_batch_full_integration.invocation}<//
+                >`,
+              ],
+            ]
+          : [];
         const iteration3StatusLabel = (iteration3?.status || "evidence pending")
           .replaceAll("_", " ")
           .toLowerCase();
@@ -201,8 +380,6 @@
           "//agentplane/system_tests/suites/mcp:test_sampler_roll",
           "//agentplane/system_tests/suites/mcp:test_history_outage",
         ];
-        const seconds = (value) =>
-          Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
         const comparisonRows = centralTargets.map((target) => {
           const targetName = target.split(":").pop();
           const row = comparison?.targets?.find(
@@ -645,26 +822,36 @@
           >
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
-            ><${Badge} color="blue">Iteration 2 implementation + experiments<//
+            ><${Badge} color="gray">Iteration 2 implementation history<//
             ><${Badge}
               color=${iteration3?.status === "COMPLETE" ? "green" : "orange"}
               >Iteration 3 ${iteration3StatusLabel}<//
             ><${Badge} color="orange">devel merge gate unchanged<//
-            ><${Badge} color="gray">Complete CI saving not established<//><//
+            ><${Badge} color="teal">Iteration 4 native repeat passed<//
+            ><${Badge} color="blue"
+              >Final source CI:
+              ${iteration4?.final_source_ci?.status || "Pending"}<//
+            ><//
           >
-          <${Text} size="sm" c="dimmed">${iteration3TopSummary}<//>
+          <${Text} size="sm"
+            >${iteration4?.finding || "Iteration 4 evidence is loading; no new result is inferred while evidence is unavailable."}<//
+          >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · current inspected base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · progress head ${manifest.pilot_head_commit?.slice(0, 10)} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
+            >Historical iteration 3: ${iteration3TopSummary}<//
+          >
+          <${Text} size="sm" c="dimmed"
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · iteration 4 devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration3", "Iteration 3"],
+              ["iteration4", "Iteration 4"],
+              ["iteration3", "Iteration 3 history"],
               ["progress", "Progress"],
               ["architecture", "Architecture"],
               ["change-selector", "PR selection"],
               ["coverage", "Coverage"],
               ["spike", "Measured spike"],
-              ["rollout", "Six steps"],
+              ["rollout", "Staged work"],
               ["acceptance", "Adoption gate"],
             ].map(
               ([id, label]) =>
@@ -672,11 +859,252 @@
             )}
           <//>
           <${Alert} color="blue" title="Current state">
-            PR #16102 on the existing experimental source branch is testing
-            partial P2/P3 work and P4 scenario work. The devel merge gate and
-            test frequency remain unchanged. The long-term target is routine
-            backend required-feedback mean below 4 minutes and p90 below 8
-            minutes, including reruns; these are design targets, not results.
+            Architecture work remains on draft PR #16102. Independent fixes
+            applicable to devel may be backported separately. The four native
+            outage contracts pass 25 exact-head repetitions each. Literal
+            selected graphs and ordinary required checks passed at source 220;
+            that workflow took 9m04s from creation to its last required check,
+            one observation with no reruns. Final source-head checks and the
+            full selected-graph comparison are recorded below. Required scenario
+            bodies and test frequency remain unchanged.
+          <//>
+          <${Section}
+            id="iteration4"
+            title="Iteration 4: native outage contracts and physical execution evidence"
+          >
+            <${Alert}
+              color="teal"
+              title="25 exact-head native repeats passed; candidate gate evidence remains open"
+            >
+              ${iteration4?.finding || "Iteration 4 result is loading."}
+            <//>
+            <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
+              <${Paper} withBorder p="md" radius="md">
+                <${Title} order=${3} mb="sm">One architecture PR<//>
+                ${p("The source branch is agent/test-architecture-pivot, PR #16102. Architecture changes stay there; commits and measurement runs are checkpoints. Independently useful fixes already applicable to devel may be backported in separate PRs.")}
+                <${Group} gap="md">
+                  <${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16102"
+                    >Draft PR #16102<//
+                  >
+                  <${Anchor}
+                    href=${`${repo}/commit/6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca`}
+                    >Devel base 6c5f5362<//
+                  >
+                  <${Anchor}
+                    href=${`${repo}/commit/2d2088855bfa6e7ce377cfc2e8885a211fd46816`}
+                    >Merge commit 2d208885<//
+                  >
+                  <${Anchor}
+                    href=${`${repo}/commit/d2508cbdd86b1be1ec186cb2e4656857c2be4129`}
+                    >Native contract commit<//
+                  >
+                  <${Anchor}
+                    href=${`${repo}/commit/220e6a5a732656f6359234b99d92ae8635f77a6b`}
+                    >MCP candidate commit<//
+                  >
+                <//>
+              <//>
+              <${Paper} withBorder p="md" radius="md">
+                <${Title} order=${3} mb="sm">Coverage stays owned<//>
+                ${p("Routine owner/native service contracts remain required, alongside focused real-deployment acceptance and real app, browser and MCP journeys. Repetitive fault × harness × platform combinations may move to devel/nightly only after proof; unknown or sensitive changes stay on the broad gate.")}
+                ${p("The first feedback target is rerun-inclusive mean below 4 minutes and p90 below 8 minutes. These are a first target, not a floor or forecast. Keep the current devel gate and frequency until the evidence supports a reviewed change.")}
+              <//>
+            <//>
+            <${Title} order=${3} mt="xl" mb="sm">Four real-service cases<//>
+            ${p("These four new contracts remain manual during qualification. The fixture uses production Gateway, Dispatcher and History services, PostgreSQL, Kubernetes envtest API behavior, a real Runtime PID1 container, and a real Claude CLI with a scripted model.")}
+            <${Rows}
+              headers=${["Contract", "Exercise"]}
+              rows=${iteration4NativeCaseRows}
+            />
+            <${Title} order=${3} mt="xl" mb="sm">Exact-head repeat<//>
+            <${Rows}
+              headers=${["Measure", "Observed result"]}
+              rows=${iteration4RepeatRows}
+            />
+            ${p("A separate earlier four-case pass took 81.093s process time, 87.893s Bazel wall and 63.570s pytest before the native contract commit. It was run on a pre-commit patched tree, so it is historical fixture evidence, not a matched timing comparison.")}
+            <${Anchor}
+              href="https://app.buildbuddy.io/invocation/d36e147d-7623-4d04-acc7-34036a34f2b5"
+              >Earlier four-case pass d36e147d<//
+            >
+            <${Title} order=${3} mt="xl" mb="sm"
+              >Negative controls and harness repair<//
+            >
+            <${Rows}
+              headers=${["Control", "Observed result and limit"]}
+              rows=${iteration4NegativeRows}
+            />
+            <${Rows}
+              headers=${["CaseBatch check", "Invocation or interpretation"]}
+              rows=${iteration4BatchRows}
+            />
+            ${p("Nested pytest BaseExceptionGroups wedged result waiters. The failure mechanism and cleanup path have a fix and stronger fatal/cancel pass; no recurrence-rate improvement has been measured.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >MCP / central deployment candidate<//
+            >
+            ${p("The manual profile separates three MCP/OAuth/consent/approval cases from four real central-recovery cases. The central profile removes only the MCP-edge image, Dex, MCP Everything and OAuth fixture while retaining real App, Actions, Gateway, History, sampler, controllers and PKI. This remains a candidate profile, not an enabled selector.")}
+            <${Rows}
+              headers=${["Evidence step", "Outcome", "Invocation or state"]}
+              rows=${iteration4McpRows}
+            />
+            ${p("At literal source 220e6a5, A1 passed three selected targets in 577.324s and B1 passed four in 564.211s, an observed difference of −13.113s. A1 overlapped the native-repeat and ordinary-CI workloads; B1 ran with less unrelated test load. This first pair cannot attribute the difference to the split or establish a whole-PR saving. Reverse-order results and physical interruptions are recorded separately below.")}
+            ${p("In A1/B1, the same seven MCP case IDs passed across the disjoint 3+4 split, and the identical 21 Pod and 1 VM case IDs passed. Those first two arms each ran every selected TestRunner once, uncached. VM was slowest (529.287s / 524.129s). The candidate MCP action walls summed to 526.310s, versus 356.719s control; those sums are not graph wall, and splitting creates a second fixture/setup opportunity.")}
+            <${Rows}
+              id="iteration4-abba"
+              headers=${["Arm", "Selected graph wall", "Final result", "Physical execution limit"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/3a80aeab-436c-4722-b3b7-5c1f88e2470d"
+                    >A1 control<//
+                  >`,
+                  "577.324s",
+                  "29 cases passed",
+                  "3 TestRunners",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/58400d80-c37c-42b1-be89-1b4ae905f562"
+                    >B1 split<//
+                  >`,
+                  "564.211s",
+                  "29 cases passed",
+                  "4 TestRunners",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/e9849ed3-da32-4372-b983-89269ab2ec4f"
+                    >B2 split<//
+                  >`,
+                  "789.035s",
+                  "29 final cases passed",
+                  "5 TestRunners: one VM interrupted after 199.912s, then re-executed",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/d4f6afa5-68e5-480b-b923-486ef3004ed8"
+                    >A2 control<//
+                  >`,
+                  "606.716s",
+                  "MCP/Pod passed; VM teardown error",
+                  "3 TestRunners; no test retry",
+                ],
+              ]}
+            />
+            ${p("B2's first VM execution failed while pausing BuildBuddy's Firecracker VM: local control socket connection refused (REAPI code 14, exit −2); the underlying cause is unknown. Its one final passing TestResult hides that physical interruption. A2's scenario bodies completed, but the block-storage fixture worker's read-only PVC LIST timed out and failed teardown. Both failures remain in the comparison. This four-launch screen does not establish a speedup, low failure rate, or the required 30 PR-pair qualification.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >PVC reader recovery without mutation replay<//
+            >
+            ${p("The A2 teardown failure led to a bounded repair of the read-only PVC LIST: three attempts, 0.1s backoff and the unchanged 10s per-request timeout, with warning diagnostics. StorageClass/PV creation and loop attachment remain outside retry. Stop, exhausted errors, authorization and cancellation retain explicit handling.")}
+            <${Group} gap="md">
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/66f569aa-3cf9-4ba7-a0c1-93bd0a4d7806"
+                >Real-apiserver red control<//
+              >
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/0ba70772-164b-45d4-9821-f994a8857836"
+                >Six passing recovery/control-flow cases<//
+              >
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/1249aacf-2eab-492c-97a2-eb27403ef13e"
+                >Fresh full VM validation<//
+              >
+            <//>
+            ${p("Recovery preserves exactly one StorageClass create, two PV creates and two loop attachments. The API stall's underlying cause and real recurrence-rate improvement remain unknown. The fresh literal-d717 full VM run passed: one physical TestRunner, 379.284s process, 359.159s JUnit suite. This validates retained behavior, not a recurrence rate. An independent devel backport is being prepared.")}
+            ${p("Ordinary required CI for the synthetic merge of head 220 passed all three checks in 9m04s, with no reruns on that attempt. This observation is not a causal saving; the iteration 3 9m49 result belongs to that earlier stage. Final head d717b425 passed all three required checks in 12m01s; the distinct 7d46adc2 observation took 10m21s. Neither is a matched improvement comparison.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >VM image ownership and replay evidence<//
+            >
+            <${Rows}
+              headers=${["Change", "Evidence and limit"]}
+              rows=${[
+                [
+                  "VM configured closure",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/f6a8625f-1a9f-4aa4-873d-242855c7565c"
+                    >No MCP-edge image path at 4c7731b1<//
+                  >`,
+                ],
+                [
+                  "Full unchanged VM scenario",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/4aec403d-812b-4367-8122-7c2385f0c068"
+                    >${iteration4Mcp?.vm_profile?.full_vm_status || "Pending reconciliation"}<//
+                  >`,
+                ],
+                [
+                  "Real VM boot candidate",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/af44c062-1628-424d-bc69-fdeb73bb0243"
+                    >Passed on 9bce; no harness turn or full-suite
+                    equivalence<//
+                  >`,
+                ],
+                [
+                  "Boot-only measured phases",
+                  "142.137s stack setup; 80.019s case (63.317s Sandbox readiness); 30.878s cleanup; 2.104s diagnostics; 0.793s manifest load. Named roots are disjoint; 33.610s JUnit time remains unattributed. One execution, no matched timing claim.",
+                ],
+                [
+                  "Actual selected-label archive",
+                  "Existing query output with source/merge/base and invocation IDs, before runtime tag filtering. No extra query or gate change.",
+                ],
+                [
+                  "Artifact failure isolation",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/fceed527-486a-41ff-b802-1d3829d479b2"
+                    >Write/upload errors preserve both passing and failing
+                    verdicts<//
+                  >`,
+                ],
+                [
+                  "Split MCP compute",
+                  "First pair: 839.653s control CPU versus 1,421.899s summed candidate CPU. Extra setup must earn its cost through actual change-class selectivity; this sum is not graph wall.",
+                ],
+                [
+                  "Final source required CI",
+                  html`<${Anchor}
+                    href=${iteration4?.final_source_ci?.workflow_url || "https://github.com/agentydragon/ducktape/actions/runs/43403429849"}
+                    >${iteration4?.final_source_ci?.status || "Pending"} ·
+                    12m01s<//
+                  >`,
+                ],
+              ]}
+            />
+            ${p("The VM profile removes only unused MCP-edge deployment/image inputs. Every retained rendered object and full existing VM scenario body is unchanged, including both harnesses, supervision, cgroups, egress, notifications and SVID continuity. It does not exercise external Connections. The separate manual boot-only contract does not replace full VM acceptance. No gate-frequency or static graph-remapping CLI is enabled. PR #15214 remains held.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >Independent fixes and next structural probe<//
+            >
+            <${Anchor}
+              href="https://github.com/agentydragon/ducktape/pull/16198"
+              >CaseBatch devel PR #16198<//
+            >
+            ${p("PR #16198 contains only the nested-outcome driver repair and its control tests; it is open and unmerged. The bounded PVC-read recovery backport is being prepared separately. Seeded controls establish the repaired behavior, not the incidence of future CI failures.")}
+            ${p("The next bounded probe boots the current guest kernel/initramfs/root/Runtime artifacts directly with declared QEMU tooling, avoiding K3s/KubeVirt setup for generic guest/systemd packaging guarantees. It must first prove real boot with explicit disk/config ownership. It cannot claim actual controller-issued identity, PKI, scheduling, storage, App routing or KubeVirt equivalence; those acceptance paths stay required.")}
+            ${p("App removal alone is lower priority: in the boot-candidate trace its image import was 2.207s, versus 28.284s guest-root and 14.782s virt-launcher imports. Setup children overlap. The trace was cold at source 9bce, not d717; it supplies a hypothesis, not additive savings or a forecast.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >Continue, then stop on evidence<//
+            >
+            <${Rows}
+              headers=${["Decision", "Accepted rule"]}
+              rows=${[
+                [
+                  "Continue",
+                  "Continue dedicated work while the best remaining candidate can repay implementation, review and maintenance within about one quarter.",
+                ],
+                [
+                  "Stop",
+                  "Stop when the best remaining candidate cannot repay those costs within about one quarter and the two best probes fail to show worthwhile gain.",
+                ],
+                [
+                  "Time accounting",
+                  "Separate developer waiting and iteration from total CI wall reduction; do not count all saved CI wall time as developer time saved.",
+                ],
+                [
+                  "Qualification still pending",
+                  "30 pinned PR base/head pairs, three busy windows, a four-PR burst, and exact rerun-inclusive whole-PR feedback. The 100 fresh native case exposures are 25 per contract, but are not 100 independent failure trials.",
+                ],
+              ]}
+            />
           <//>
           <${Section}
             id="iteration3"
@@ -694,7 +1122,7 @@
             >
               ${
                 iteration3?.finding ||
-                "Three full 21-case Pod-suite variants are under comparison: control 6369, concurrent-only defe54, and the combined profile at the next source head. The invocations were accepted; their results are pending. The required devel gate remains unchanged, and no CI saving is claimed from queued or partial evidence."
+                "At that stage, three full 21-case Pod-suite variants were under comparison: control 6369, concurrent-only defe54, and the combined profile at that iteration's next source head. Their results belong to the iteration 3 observation window. The required devel gate remains unchanged, and no CI saving is claimed from queued or partial evidence."
               }
             <//>
             ${p(iteration3?.comparison_scope_note || "This comparison is source-pinned to the published variant commits below. Keep each run, failure and pending result visible; one execution per variant is an exploratory screen, not a qualified performance delta or a complete-CI measurement.")}
@@ -924,7 +1352,7 @@
                 [
                   "P5 · Whole-PR shadow",
                   "Pending; the four-target experiment is not a whole-PR shadow.",
-                  "Current head passed all required checks in 10m39s; this is one head, not an improvement cohort. Next: at least 30 pinned pairs, 100 fresh contract executions, three busy windows and a four-PR burst.",
+                  "That iteration 2 head passed all required checks in 10m39s at that stage; this is a historical single-head observation, not current PR performance or an improvement cohort. Next: at least 30 pinned pairs, 100 fresh contract executions, three busy windows and a four-PR burst.",
                 ],
                 [
                   "P6 · Adoption",
@@ -934,7 +1362,7 @@
               ]}
             />
             ${p("Coverage boundary: the central profile supplies operator login through the existing pinned Ed25519 test issuer instead of Dex. These four scenarios do not use operator login: their native clients retain app/Gateway Pod-bound Kubernetes tokens. OAuth/browser acceptance stays in other targets. Only the budget profile changes the reconnect deadline; that shortens full-default-duration exposure, while the scenario assertions remain unchanged.")}
-            ${p(data?.iteration2_status?.source_note || "Current candidate source and exact-head check state will be recorded with the completed comparison.")}
+            ${p(data?.iteration2_status?.source_note || "That iteration 2 candidate source and its exact-head check state are historical; current-head evidence is recorded in iteration 4.")}
             <${Title} order=${3} mt="xl" mb="sm"
               >Matched comparison: four central K3s targets<//
             >
@@ -1165,8 +1593,11 @@
             ${p("A passing recovery test establishes that this fixture can exercise a production service boundary without the full cluster. Repeated physical passes test feasibility, not a low flake rate. An injected outage exercises an error path; the discarded-journal control was rejected at the retained Session inventory assertion. The outage starts after a completed turn and is a graceful listener stop, so active-turn recovery and abrupt crash remain untested. Neither is a complete historical-regression or mutant campaign.")}
             ${p("There is no valid subtraction between this small pilot's action time and the earlier 21-case Pod suite. The candidate gate still needs its other contracts and real acceptance. Complete feedback savings remain unmeasured until the shadow/replay phase.")}
           <//>
-          <${Section} id="rollout" title="Six concrete implementation steps">
-            ${p("P1 is historical feasibility evidence. P2, P3 and P4 are partial; their current implementation details and bounded comparison slots are summarized above. The devel gate stays unchanged while P5 runs the entire candidate graph. P6 is an explicit coverage and gate-policy decision after that evidence; no adoption or frequency change is active.")}
+          <${Section}
+            id="rollout"
+            title="One architecture PR, staged proof checkpoints"
+          >
+            ${p("Every source milestone stays on draft PR #16102. Use commits for implementation and measurement checkpoints; keep the existing required gate and frequency until the candidate graph, user-journey coverage and whole-PR evidence have been reviewed.")}
             <${Accordion} multiple variant="separated"
               >${lanes.map(([title, detail], i) => html`<${Accordion.Item} key=${i} value=${`p${i + 1}`}><${Accordion.Control}>${title}<//><${Accordion.Panel}>${p(detail)}<//><//>`)}<//
             >
@@ -1174,10 +1605,7 @@
               >#16099 tracks the deliverables and future measurements<//
             >
           <//>
-          <${Section}
-            id="acceptance"
-            title="What would justify adopting the new gate"
-          >
+          <${Section} id="acceptance" title="What evidence can change the gate">
             <${Rows}
               headers=${["Proof", "Experiment / required observation", "Stop or retain current gate if…"]}
               rows=${[
@@ -1188,27 +1616,27 @@
                 ],
                 [
                   "Physical feasibility",
-                  "Fresh repeats, fault-path cleanup, same-journal restart, independent case identities; cold and retained baselines recorded. Inspect dependency closure, generated inputs and actual service processes.",
+                  "Exact-source repeats, fault-path cleanup, same-journal restart, independent case identities, generated inputs and actual service processes. The native repeat has 25 exposures per contract; review shared-fixture correlation and negative-control reach.",
                   "State leaks, a hidden app/K3s dependency returns, a substituted service changes the guarantee, or setup shifts to an unmeasured layer.",
                 ],
                 [
                   "Whole-gate speed",
-                  "30 pinned base/head pairs and >=100 fresh contract executions, warm/cold strata, busy windows and four-PR bursts. Keep all three required contexts, reruns and failed/cancelled outcomes. Initial screen: median >=25% shorter; p90 <=5% worse.",
-                  "Only a phase is faster, the next gate becomes dominant, sample exposure is unmatched, or capacity merely moves the queue.",
+                  "30 pinned base/head pairs, 100 fresh contract executions, three busy windows and a four-PR burst. Keep required contexts, reruns and failed/cancelled outcomes; measure exact-head workflow creation through all required checks.",
+                  "Only a phase is faster, a required user journey is lost, sample exposure is unmatched, or capacity merely moves the queue.",
                 ],
                 [
                   "Reliability",
                   "Record fresh physical failures separately from result-stream false reds and cached results. Publish denominators, attempt counts, signatures, rerun delay and intervals. No blanket retry or raised timeout.",
-                  "A new unexplained failure/cleanup signature appears. Zero failures in 100 runs still permits about a 3% one-sided 95% upper failure bound.",
+                  "A new unexplained failure/cleanup signature appears. State the denominator and independence assumptions; 100 correlated case exposures do not equal 100 independent failure trials.",
                 ],
                 [
-                  "Longer-term target",
-                  "Routine backend mean <4m, p90 <8m, timed from exact-head workflow creation to all required successful checks; push timestamps where available. Report first-pass and rerun-inclusive distributions.",
-                  "The data do not meet the target; continue reducing physical work or identify the remaining gate/capacity limit. Do not label a plan a speedup.",
+                  "First feedback target",
+                  "First target: rerun-inclusive backend mean <4m and p90 <8m, timed from exact-head workflow creation to all required successful checks; use push timestamps where available. This is a target, not a floor or forecast.",
+                  "The data do not meet the target; continue while the best remaining candidate can repay within about a quarter, then apply the accepted two-probe stop rule.",
                 ],
               ]}
             />
-            ${p("For a matched gate replay, pin original base/head pairs and both architecture trees, preserve their merge-tree provenance, counterbalance candidate/control order, and retain all outcomes. Replays estimate graph behavior; live shadow PRs establish actual GitHub required-feedback clocks. Queue, worker preparation, execution, CPU and artifact gates remain separate lanes. Requested compute units are not observed capacity.")}
+            ${p("For matched gate evidence, pin original base/head pairs and both architecture trees, preserve merge-tree provenance, counterbalance control/candidate order, and retain all outcomes. Replays estimate graph behavior; live PRs establish required-feedback clocks. Queue, worker preparation, execution, CPU and artifact gates remain separate. Do not equate all saved CI wall time with developer time saved.")}
           <//>
           <${Section}
             id="prior-work"
