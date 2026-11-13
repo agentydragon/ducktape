@@ -99,9 +99,29 @@ generates (`oidc.static_ed25519_keys`); the test process signs the token, so no 
 fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
 grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
 
-The central-recovery suites use the plain operator-token fixture with the central sampler enabled.
-They retain the common services and MCP edge, while omitting the separate Dex, `mcp-everything` and
-OAuth fixture workloads; suites that exercise those OAuth and MCP servers keep the full MCP fixture.
+The `central` profile renders the ordinary chart with `central_sampler=True` into
+`rendered/local-model-central.json`. The four separate recovery suites
+`mcp:test_gateway_crash`, `mcp:test_gateway_budget`, `mcp:test_sampler_roll` and
+`mcp:test_history_outage` use this profile. They retain real k3s, controllers, PostgreSQL,
+app, Actions, MCP edge, LLM ingress, Gateway, sampler and History. Their scenario clients
+authenticate Dispatcher and History with app Pod-bound Kubernetes tokens and the sampler with a
+Gateway Pod-bound token; they do not use operator login or an upstream MCP server.
+The deployment still provides `Stack.token` through the ordinary test-operator signing mechanism
+above, instead of obtaining it from Dex. Thus this profile exercises the same native recovery
+paths with different operator authentication and excludes Dex, `mcp-everything` and the OAuth
+fixture workloads and images. It does not cover Dex discovery, login callbacks, upstream MCP
+OAuth or browser acceptance. The other MCP suites keep the `mcp` profile and its real OAuth
+services; app/browser acceptance targets keep their existing profiles.
+
+`mcp:test_gateway_budget` selects the `central_budget` variation,
+`rendered/local-model-central-budget.json`, whose only difference from `central` is an explicit
+45-second `executor_reconnect_timeout_seconds`, leaving room for gRPC's 30-second DNS refresh interval
+after Gateway replacement. This case checks exhaustion semantics through a
+real Gateway outage: unknown remote effect, no replay, a once-only mutation marker, retained History
+and successful next input. It no longer exposes the production default's full 120-second duration.
+The other central recovery suites keep the default reconnect deadline, including the abrupt Gateway
+crash case. The Go settings tests verify the independent 120-second default and configurable override;
+the rendered profile relation checks that the shortened budget changes no other setting or object.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
