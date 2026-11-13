@@ -10,9 +10,8 @@ import (
 	"unicode/utf8"
 )
 
-// Settings is the `github` block of the Notification service's settings file. The service config embeds it and
-// rejects unknown keys. The private key and webhook secret are Secrets, so a deployment supplies them as
-// environment variables rather than in the file.
+// Settings is the effective GitHub configuration. Static fields decode from the `github` YAML block; credentials are
+// populated from their explicit Secret-backed environment inputs after decoding.
 type Settings struct {
 	// APIURL is the trusted GitHub REST API base URL; it receives App JWTs and installation tokens. A path prefix
 	// (GitHub Enterprise's /api/v3) is allowed.
@@ -23,9 +22,9 @@ type Settings struct {
 	// AppID is the public numeric GitHub App ID, not a secret.
 	AppID int64 `mapstructure:"app_id"`
 	// PrivateKey is the App's PEM private key.
-	PrivateKey string `mapstructure:"private_key"`
+	PrivateKey string `mapstructure:"-"`
 	// WebhookSecret is the HMAC key GitHub signs webhook deliveries with.
-	WebhookSecret string `mapstructure:"webhook_secret"`
+	WebhookSecret string `mapstructure:"-"`
 	// FreshnessSeconds bounds the age of shared GitHub access validation and subject repair.
 	FreshnessSeconds int `mapstructure:"freshness_seconds"`
 	// MaxBodyBytes bounds a raw webhook request body.

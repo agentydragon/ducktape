@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/url"
@@ -17,7 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
@@ -25,16 +27,11 @@ const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
 // tokenAudience is what the TokenReview of a caller's bearer requires unless `token_audience` names another.
 const tokenAudience = "agentplane-notifications"
 
-// config is the Notification Service's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_NOTIFICATIONS_CONFIG_FILE, and each key, a nested one with its dots written as `__`, also names an
-// AGENTPLANE_NOTIFICATIONS_* environment variable that overrides it (`github.private_key` is
-// AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY). Unknown keys in the file are refused. Worker and GitHub settings
-// are the structs those packages own, at the keys their mapstructure tags name.
-//
-// The database URL, the GitHub private key and the webhook secret are Secrets, so a deployment supplies them as
-// environment variables.
+// config is the Notification Service's deployment contract. Static settings come only from the YAML file named by
+// AGENTPLANE_NOTIFICATIONS_CONFIG_FILE. The database URL, GitHub private key and webhook secret are narrow runtime
+// Secret inputs read explicitly from their existing environment keys after static settings are decoded.
 type config struct {
-	DatabaseURL string `mapstructure:"database_url"`
+	DatabaseURL string `mapstructure:"-"`
 	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
 	Namespace     string `mapstructure:"namespace"`
 	TokenAudience string `mapstructure:"token_audience"`
@@ -146,36 +143,53 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
+	path := strings.TrimSpace(os.Getenv(settingPrefix + "CONFIG_FILE"))
+	if path == "" {
+		return config{}, errors.New("Notification Service settings file path is required")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return config{}, errors.New("could not read Notification Service settings file")
+	}
+	var raw map[string]any
+	decoder := yaml.NewDecoder(bytes.NewReader(contents))
+	if err := decoder.Decode(&raw); err != nil {
+		return config{}, errors.New("could not decode Notification Service settings file")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return config{}, errors.New("could not decode Notification Service settings file")
+		}
+		return config{}, errors.New("Notification Service settings file must contain one YAML document")
+	}
+	if raw == nil {
+		return config{}, errors.New("Notification Service settings file must contain a YAML mapping")
+	}
+
 	c := defaultConfig()
-	// Without ExperimentalBindStruct, Unmarshal reads an environment variable only for a bound key.
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
-	settings.SetEnvPrefix("AGENTPLANE_NOTIFICATIONS")
-	settings.AutomaticEnv()
-	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
-		settings.SetConfigFile(path)
-		settings.SetConfigType("yaml")
-		if err := settings.ReadInConfig(); err != nil {
-			return config{}, errors.New("could not read Notification Service settings file")
-		}
-	}
-	// Viper omits explicit YAML nulls when unmarshalling over defaults. Preserve the distinction
-	// between an absent retention key (seven days) and an explicit null (no expiry).
-	const retentionKey = "github_delivery_retention_days"
-	for _, key := range settings.AllKeys() {
-		if key == retentionKey && settings.Get(key) == nil {
-			c.GitHubDeliveryRetentionDays = nil
-		}
-	}
-	// Environment variables are strings; accept the JSON null spelling as the nullable value.
-	// A typed nil overrides the string before mapstructure tries to decode it as an integer.
-	if os.Getenv(settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS") == "null" {
-		c.GitHubDeliveryRetentionDays = nil
-		settings.Set(retentionKey, (*int)(nil))
-	}
-	// The errors name no value: a setting can be a Secret.
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook))); err != nil {
+	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:      &c,
+		TagName:     "mapstructure",
+		ErrorUnused: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
+		),
+	})
+	if err != nil {
 		return config{}, errors.New("invalid Notification Service settings")
 	}
+	if err := mapDecoder.Decode(raw); err != nil {
+		return config{}, errors.New("invalid Notification Service settings")
+	}
+	// Preserve absent (default seven days) versus explicit YAML null (retain indefinitely).
+	if value, exists := raw["github_delivery_retention_days"]; exists && value == nil {
+		c.GitHubDeliveryRetentionDays = nil
+	}
+	// Only these runtime credentials are read from environment variables; static settings never consult the process environment.
+	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
+	c.GitHub.PrivateKey = os.Getenv(settingPrefix + "GITHUB__PRIVATE_KEY")
+	c.GitHub.WebhookSecret = os.Getenv(settingPrefix + "GITHUB__WEBHOOK_SECRET")
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}

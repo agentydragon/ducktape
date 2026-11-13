@@ -118,8 +118,8 @@ readiness, authorization, inbox reads, new writes, expiry and replay deduplicati
 verification also includes a fresh Action subscription and a real GitHub webhook delivery;
 database checks alone do not prove ingress or runner notice delivery.
 
-The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
-flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
+The service reads the settings file and explicit Secret inputs described in [Configuration](#configuration). It takes no
+flags; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
 and waiting for each watch write to clear transport backpressure. Watches revalidate the bearer and send heartbeats every 15 seconds.
 `message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
 Sends are refused until the PolicySet and PolicyBinding informers have synced, and while either fails to list or
@@ -141,8 +141,10 @@ its error and never its message.
 ## Configuration
 
 Set `AGENTPLANE_NOTIFICATIONS_CONFIG_FILE` to a YAML file; a missing file and unknown keys fail startup.
-Environment variables override YAML using `__` for nested fields. [settings.py](settings.py) defines the fields the
-manifests render and their descriptions, and `config.go` with the settings of its packages reads them.
+The file is the sole source for static settings; other environment variables cannot override its values.
+[settings.py](settings.py) defines the typed fields and defaults rendered by the manifests, while `config.go` and
+the settings owned by its packages decode and validate them. The database URL, GitHub private key, and webhook
+secret are read explicitly from their Secret-backed environment inputs and are not fields in the static file.
 Configuration changes require a service restart.
 
 `actions` retains its `url` and `token_file` settings, plus optional `request_timeout_s` (default 5).
@@ -177,19 +179,16 @@ quotas:
   unacknowledged_messages_per_sender: 128
 ```
 
-Each value must be positive. Environment overrides use the nested settings delimiter, for example
-`AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX=128`. Configure the same
-quotas on all replicas. Lowering a quota does not delete retained data; it blocks new allocations
+Each value must be positive and is set in the deployment YAML. Configure the same quotas on all replicas.
+Lowering a quota does not delete retained data; it blocks new allocations
 when capacity is exhausted. The inbox quota counts retained inboxes, and the entry quota counts
 distinct source-event identities over an inbox's lifetime, including payload-expiry tombstones. The message quota
 counts one sender's messages past the inbox's acknowledged cursor.
 
 ### GitHub event retention
 
-`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or `null` for infinite retention.
-Override it with `AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS` or deployment YAML.
-Use `github_delivery_retention_days: null` in YAML or the literal `null` in the environment variable
-to disable cleanup of both raw deliveries and generated mergeability transitions; zero remains invalid. Workers delete up to 1000 expired raw deliveries per cleanup pass, once a minute per worker,
+`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or explicit YAML `null` for infinite retention.
+The distinction is preserved: an omitted key uses seven days, while `github_delivery_retention_days: null` disables cleanup of both raw deliveries and generated mergeability transitions; zero remains invalid. Workers delete up to 1000 expired raw deliveries per cleanup pass, once a minute per worker,
 including their IDs, digests and subject links. This bounds source replay, late association
 matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
 keep their independent 30-day retention. The same setting also deletes up to 1000 expired generated
@@ -198,7 +197,7 @@ current pull-request snapshots remain. Old CI heads without active PR followers 
 current facts for an actively followed head and copied inbox payloads retain their independent lifetimes. Changing this setting does not enable the GitHub provider.
 
 Current check-run and commit-status repair follows `github.freshness_seconds` (default 600 seconds, configurable
-from 60 to 3600 seconds via `AGENTPLANE_NOTIFICATIONS_GITHUB__FRESHNESS_SECONDS`). Worker scheduling, GitHub API
+from 60 to 3600 seconds in static YAML). Worker scheduling, GitHub API
 or access failures, and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed
 settling time. It observes current facts for followed PR heads, not full event or action history. PR defaults
 continue to report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter
@@ -227,8 +226,7 @@ unannounced entry, subject to the maximum wait from the oldest unannounced entry
 `quiet_seconds: 0` to disable batching delays. Both settings accept fractional seconds; the
 maximum wait must be positive.
 
-They apply to all sources, not individual subscriptions. Environment overrides use e.g.
-`AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS`.
+They apply to all sources, not individual subscriptions, and are set in deployment YAML.
 
 Only preparing new runner notices is delayed: payload persistence and inbox reads remain immediate.
 The deadline is derived from durable entry timestamps and scheduled through the existing PostgreSQL
@@ -239,15 +237,15 @@ The maximum bounds the batching delay, not source processing, runner outages or 
 
 ## GitHub App setup
 
-GitHub is disabled when `github` is absent from both YAML and environment. To enable it, put the public
-`github.app_id` in YAML and supply these Secret-backed environment variables:
+GitHub is disabled when `github` is absent from YAML. To enable it, put the public
+`github.app_id` and any non-default provider settings in YAML, and supply these Secret-backed environment variables:
 
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`: PEM App private key.
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET`: random webhook signing secret, at least 16 characters.
 
-The private key and the webhook secret are validated at startup and never printed. Environment settings turn the
-source on even if YAML has no `github`; remove both to disable it. No fixed installation ID or OAuth client secret
-is needed.
+The private key and webhook secret are read explicitly, validated with the static settings at startup, and never
+printed. Remove the `github` block and its Secret references together to disable the source. No fixed installation
+ID or OAuth client secret is needed.
 
 Staging is enabled and the operator has installed the App; see the
 [live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
@@ -275,11 +273,9 @@ review fact, not an aggregate approval result or an evaluation of repository rev
 
 ### GitHub API transport overrides
 
-The optional `github` settings also own `api_url` (default `https://api.github.com`),
+The `github` settings also own `api_url` (default `https://api.github.com`),
 `request_timeout_s` (default 5, positive and finite), and `api_version` (default `2022-11-28`).
-Set them in deployment YAML or override them with
-`AGENTPLANE_NOTIFICATIONS_GITHUB__API_URL`, `AGENTPLANE_NOTIFICATIONS_GITHUB__REQUEST_TIMEOUT_S`,
-and `AGENTPLANE_NOTIFICATIONS_GITHUB__API_VERSION`. Restart the service after changes.
+Set them in deployment YAML. Restart the service after changes.
 HTTP(S) mock endpoints and REST path prefixes such as `/api/v3` are supported. URLs with
 embedded credentials, query strings or fragments are rejected; redirects remain disabled.
 The configured endpoint receives App JWTs and installation tokens: only use trusted endpoints,
