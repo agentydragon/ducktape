@@ -25,7 +25,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		return nil, err
 	}
 	var admission *eventlogpb.EventEntry
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, session, err := lockSession(ctx, tx, id)
 		if err != nil {
 			return err
@@ -117,6 +117,8 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 }
 
 func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerpb.GetCommandResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	var wire []byte
 	var outcome int32
 	var failure sql.NullString
@@ -142,6 +144,8 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 }
 
 func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	if limit <= 0 || limit > 4096 {
 		return nil, protocol.ErrInvalid
 	}
@@ -167,6 +171,8 @@ func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) 
 
 // Checkpoint is the last snapshot whose entries and metadata completed export to target.
 func (s *Store) Checkpoint(ctx context.Context, id, target string) (*uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	var cursor int64
 	err := s.db.QueryRowContext(ctx, `SELECT cursor FROM sampler_export_checkpoint WHERE session_id=$1 AND destination=$2`, id, target).Scan(&cursor)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -180,7 +186,7 @@ func (s *Store) Checkpoint(ctx context.Context, id, target string) (*uint64, err
 }
 
 func (s *Store) CommitCheckpoint(ctx context.Context, id, target string, cursor uint64) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, _, err := lockSession(ctx, tx, id); err != nil {
 			return err
 		}

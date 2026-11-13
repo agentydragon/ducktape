@@ -44,7 +44,7 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 		return nil, err
 	}
 	var opened *Session
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, request.SessionId); err != nil {
 			return err
 		}
@@ -139,6 +139,8 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 }
 
 func (s *Store) GetSession(ctx context.Context, id, ownerUID string) (*Session, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	session, err := scanSession(s.db.QueryRowContext(ctx, `SELECT id, conversation_id, account_uid, configuration, model, effort, source_id, cursor,
 		active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason FROM sampler_session WHERE id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -156,7 +158,7 @@ func (s *Store) GetSession(ctx context.Context, id, ownerUID string) (*Session, 
 // CodeSessionEpoch returns the durable logical JavaScript-session generation for a live owner.
 func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) {
 	var epoch int
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -171,7 +173,7 @@ func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instance
 	if _, err := uuid.Parse(instanceID); err != nil {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -191,6 +193,8 @@ func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instance
 }
 
 func (s *Store) ListSessions(ctx context.Context, ownerUID string) ([]*Session, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	query := `SELECT id, conversation_id, account_uid, configuration, model, effort, source_id, cursor,
 		active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason FROM sampler_session`
 	args := []any{}

@@ -100,7 +100,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		return false, protocol.ErrInvalid
 	}
 	changed := false
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -342,7 +342,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		return nil, protocol.ErrInvalid
 	}
 	var recovered *Session
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, session, err := lockSession(ctx, tx, id)
 		if err != nil {
 			return err
@@ -587,7 +587,7 @@ func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sess
 	if sessionID == "" {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -623,7 +623,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 	if sandboxUID == "" || previousUID == "" || replacementUID == "" || previousUID == replacementUID {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -745,7 +745,7 @@ func (s *Store) checkRecovery(ctx context.Context, tx *sql.Tx, owner Owner) erro
 }
 
 func (s *Store) CheckRecovery(ctx context.Context, owner Owner) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}

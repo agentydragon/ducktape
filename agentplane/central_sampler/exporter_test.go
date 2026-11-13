@@ -315,7 +315,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 			}
 		}
 		// A separate Store represents another replica committing during an idle or disconnected LISTEN.
-		writer := New(store.DB())
+		writer := New(store.DB(), 30*time.Second)
 		if err := admitExportEvent(ctx, writer, session.ID, i); err != nil {
 			t.Fatal(err)
 		}

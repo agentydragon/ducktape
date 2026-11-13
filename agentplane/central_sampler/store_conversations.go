@@ -12,7 +12,7 @@ import (
 
 func (s *Store) Read(ctx context.Context, owner Owner) (*Conversation, error) {
 	var result *Conversation
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		result, err = lockOwner(ctx, tx, owner)
 		return err
@@ -32,7 +32,7 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
 		return "", err
 	}
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
    executor_session,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err
@@ -43,6 +43,8 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 }
 
 func (s *Store) Status(ctx context.Context, conversationID string) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	conversation, err := scanConversation(s.db.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1`, conversationID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, protocol.ErrMissing
@@ -61,6 +63,8 @@ func (s *Store) Status(ctx context.Context, conversationID string) (map[string]a
 }
 
 func (s *Store) ProviderMetadata(ctx context.Context, owner Owner) (protocol.SessionAttribution, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
 	var sessionID string
 	var activeTurn sql.NullString
 	if err := s.db.QueryRowContext(ctx, `SELECT id,active_turn FROM sampler_session WHERE conversation_id=$1`, owner.ConversationID).Scan(&sessionID, &activeTurn); err != nil {

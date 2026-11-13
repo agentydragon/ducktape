@@ -9,7 +9,7 @@ import (
 
 func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *ExecutionState) (*Conversation, error) {
 	var conversation *Conversation
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		conversation, err = lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -35,7 +35,7 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 
 func (s *Store) GetSessionForConversation(ctx context.Context, owner Owner) (*Session, error) {
 	var session *Session
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
