@@ -422,7 +422,7 @@ func main() {
 	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL", migrations.Up); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], dispatcherDatabaseURLEnv, migrations.Up); handled {
 		if err != nil {
 			slog.Error("Runner Gateway migration failed", "error", err)
 			os.Exit(1)

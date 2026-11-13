@@ -179,7 +179,7 @@ go_library(
         "@com_github_go_logr_logr//:logr",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
-        "@com_github_spf13_viper//:viper",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -246,9 +246,7 @@ py_library(
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/identity/auth:listener",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 

@@ -37,15 +37,14 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
 
 
 def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]) -> dict[str, Any]:
-    """Each setting as the Gateway reads it: the container's literal env var, else the mounted file's key."""
-    file = yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+    """The Gateway's static settings come from its mounted file, without scalar environment overrides."""
+    file = cast(
+        dict[str, Any],
+        yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]),
+    )
     env = {entry["name"]: entry["value"] for entry in container["env"] if "value" in entry}
-    return {
-        **file,
-        **{
-            field: env[env_name(Settings, field)] for field in Settings.model_fields if env_name(Settings, field) in env
-        },
-    }
+    assert all(env_name(Settings, field) not in env for field in Settings.model_fields)
+    return file
 
 
 def _gateway_objects(app: App) -> list[dict[str, Any]]:

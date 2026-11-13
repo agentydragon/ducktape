@@ -145,7 +145,7 @@ py_test(
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/identity/auth:audience",
         "//agentplane/mcp_edge:oauth_settings",
-        "//agentplane/runner_gateway:settings",
+        "//agentplane/mcp_edge:settings",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:namespaces",
