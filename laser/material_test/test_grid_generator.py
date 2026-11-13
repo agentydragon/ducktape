@@ -380,9 +380,7 @@ def test_generate_rd_zero_padding_and_no_border_keep_cell_origins():
 
     plain_cells = plain_job.rects
     zero_padding_cells = zero_padding_job.rects[:-1]
-    assert [(r.x_mm, r.y_mm) for r in zero_padding_cells] == [
-        (r.x_mm, r.y_mm) for r in plain_cells
-    ]
+    assert [(r.x_mm, r.y_mm) for r in zero_padding_cells] == [(r.x_mm, r.y_mm) for r in plain_cells]
     assert (zero_padding_job.rects[-1].x_mm, zero_padding_job.rects[-1].y_mm) == (0, 0)
 
     for job in (plain_job, zero_padding_job):
