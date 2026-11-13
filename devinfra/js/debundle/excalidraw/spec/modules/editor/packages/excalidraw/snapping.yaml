@@ -1,0 +1,162 @@
+# Original home: packages/excalidraw/snapping.ts
+source_matches:
+  - match: |
+      var selected = (app) => app.props.gridModeEnabled ?? app.state.gridModeEnabled;
+    bindings:
+      - local: selected
+        name: isGridModeEnabled
+  - match: |
+      var selected = ({ event: event, app: app, selectedElements: elements }) => EXPR;
+    bindings:
+      - local: selected
+        name: isSnappingEnabled
+  - match: |
+      var selected = (a, b, precision = .01) => Math.abs(a - b) <= precision;
+    bindings:
+      - local: selected
+        name: areRoughlyEqual
+  - match: |
+      var selected = (elements, elementsMap, {
+        omitCenter: omitCenter, boundingBoxCorners: boundingBoxCorners, dragOffset: dragOffset
+      } = { omitCenter: !1, boundingBoxCorners: !1 }) => { STMT_LIST; };
+    bindings:
+      - local: selected
+        name: getElementsCorners
+  - match: |
+      var selected = (elements, selectedElements, appState, elementsMap) => {
+        let frames = selectedElements.filter((element) => EXPR(element)).map((frame) => frame.id);
+        return EXPR(elements, selectedElements, appState, elementsMap).filter(
+          (element) => !(element.frameId && frames.includes(element.frameId))
+        );
+      };
+    bindings:
+      - local: selected
+        name: getReferenceElements
+  - match: |
+      var selected = (elements, selectedElements, appState, elementsMap) => {
+        let reference = getReferenceElements(elements, selectedElements, appState, elementsMap),
+          bounds = EXPR(reference, elementsMap).filter(EXPR).map(EXPR), DECLARATORS;
+        STMT_LIST;
+        return { horizontalGaps: horizontal, verticalGaps: vertical };
+      };
+    bindings:
+      - local: selected
+        name: getVisibleGaps
+  - match: |
+      var selected = (elements, offset, app, event, horizontal, vertical, distance) => {
+        if (!isSnappingEnabled({app: app, event: event, selectedElements: elements})) return [];
+        if (elements.length === 0) return [];
+        let gaps = EXPR.getVisibleGaps();
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: getGapSnaps
+  - match: |
+      var selected = (elements, selectedElements, appState, elementsMap) => {
+        let reference = getReferenceElements(elements, selectedElements, appState, elementsMap);
+        return EXPR(reference, elementsMap).filter(EXPR).flatMap((group) => getElementsCorners(group, elementsMap));
+      };
+    bindings:
+      - local: selected
+        name: getReferenceSnapPoints
+  - match: |
+      var selected = (elements, points, app, event, horizontal, vertical, distance) => {
+        if (!isSnappingEnabled({app: app, event: event, selectedElements: elements}) ||
+          elements.length === 0 && points.length === 0) return [];
+        let reference = EXPR.getReferenceSnapPoints();
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: getPointSnaps
+  - match: |
+      var selected = (elements, offset, app, event, elementsMap) => {
+        let appState = app.state, selectedElements = EXPR(elements, appState);
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: snapDraggedElements
+  - match: |
+      var selected = (value) => Math.round(value * 10 ** 6) / 10 ** 6;
+    bindings:
+      - local: selected
+        name: round
+  - match: |
+      var selected = (points) => {
+        let unique = new Map;
+        for (let point of points) {
+          let key = point.join(",");
+          unique.has(key) || unique.set(key, point);
+        }
+        return Array.from(unique.values());
+      };
+    bindings:
+      - local: selected
+        name: dedupePoints
+  - match: |
+      var selected = (horizontal, vertical) => {
+        let byX = {}, byY = {};
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: createPointSnapLines
+  - match: |
+      var selected = (lines) => {
+        let unique = new Map;
+        for (let line of lines) {
+          let key = line.points.flat().map((value) => [round(value)]).join(",");
+          unique.has(key) || unique.set(key, line);
+        }
+        return Array.from(unique.values());
+      };
+    bindings:
+      - local: selected
+        name: dedupeGapSnapLines
+  - match: |
+      var selected = (elements, offset, snaps) => {
+        STMT_LIST;
+        return dedupeGapSnapLines(lines.map((line) => ({
+          ...line, points: line.points.map((point) => EXPR(round(point[0]), round(point[1])))
+        })));
+      };
+    bindings:
+      - local: selected
+        name: createGapSnapLines
+  - match: |
+      var selected = (elements, originalElements, app, event, offset, handle) => {
+        if (!isSnappingEnabled({event: event, selectedElements: elements, app: app}) ||
+          elements.length === 0 || elements.length === 1 && !areRoughlyEqual(elements[0].angle, 0))
+          return {snapOffset: {x: 0, y: 0}, snapLines: []};
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: snapResizingElements
+  - match: |
+      var selected = (element, app, event, origin, offset, elementsMap) => {
+        if (!isSnappingEnabled({event: event, selectedElements: [element], app: app}))
+          return {snapOffset: {x: 0, y: 0}, snapLines: []};
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: snapNewElement
+  - match: |
+      var selected = (elements, app, pointer, event, elementsMap) => {
+        if (!isSnappingEnabled({event: event, selectedElements: [], app: app}))
+          return {originOffset: {x: 0, y: 0}, snapLines: []};
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: getSnapLinesAtPointer
+  - match: |
+      var selected = (tool) => tool === tools.rectangle || tool === tools.ellipse ||
+        tool === tools.diamond || tool === tools.frame || tool === tools.magicframe ||
+        tool === tools.image || tool === tools.text;
+    bindings:
+      - local: selected
+        name: isActiveToolNonLinearSnappable
