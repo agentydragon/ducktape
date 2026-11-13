@@ -747,7 +747,7 @@
             ><${Title} order=${2} mt="lg" mb="xs"
               >${"Move useful code now; keep decisions separate"}<//
             ><${Text} component="p" my="sm"
-              >${"The inventory and the three focused test suites establish a bounded starting point. The first moves below are independent, reviewable PRs: none requires resolving command outcome retention, identity cutover, Session database ownership, or the Runtime shutdown investigation. Recheck the latest base and open work before dispatch. The first two PRs are open for review; other slices remain proposals."}<//
+              >${"The inventory and the three focused test suites establish a bounded starting point. The first moves below are independent, reviewable PRs: none requires resolving command outcome retention, identity cutover, Session database ownership, or the Runtime shutdown investigation. Recheck the latest base and open work before dispatch. The first two PRs have been opened; follow their links for current status. Other slices remain proposals."}<//
             >${"\n"}<${Blockquote} color=${"teal"} my="md"
               ><strong>${"Rules for every move:"}</strong
               >${" preserve behavior, authentication, gRPC method and protobuf package names, schemas, identities and persisted data; update every caller, generated binding, Bazel label and relevant documentation in the same change. No transitional shims. Run the checks that cover the actual diff, open a PR and report its exact CI status. A package move is not an authorization to change rollout or security semantics."}<//
