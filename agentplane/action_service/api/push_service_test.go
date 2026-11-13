@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/push"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"google.golang.org/grpc"
