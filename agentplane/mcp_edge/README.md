@@ -29,11 +29,17 @@ instructions point to the guide reader, while detailed workflows stay out of sta
 
 ## Authority
 
-The Connection API verifies the app's request-bound operator OIDC bearer independently of MCP
-OAuth. Each MCP request resolves its issued bearer through the current grant and Connection
-binding. Consent and operator rebind choose a live Identity in the Action policy namespace and pin
-its exact Kubernetes UID. Resolution checks that UID directly; an unavailable, deleted or replaced
-Identity refuses the request. The operator-facing picker also requires a current Identity watch.
+The MCP edge's admission gate protects the nine `ConnectionService` methods with the configured
+operator OIDC issuer. It accepts one valid bearer from that issuer, rejects workload and delegated
+credentials and SVID peers on protected calls, and binds the verified issuer and subject to the
+request. A client certificate cannot be combined with a bearer or delegation header on any RPC.
+`Health.Check`, `Health.List` and `Health.Watch` remain public; every other registered RPC is denied.
+The gate re-verifies the bearer for a watch and requires the same operator. Its drain context ends
+active watches and refuses new protected calls. Each MCP request resolves its issued bearer through
+the current grant and Connection binding. Consent and operator rebind choose a live Identity in the
+Action policy namespace and pin its exact Kubernetes UID. Resolution checks that UID directly; an
+unavailable, deleted or replaced Identity refuses the request. The operator-facing picker also
+requires a current Identity watch.
 
 For each admitted Action RPC, the edge sends its own projected `agentplane-egress` audience token
 plus typed Connection ID, grant ID and effective Identity provenance. Action middleware reviews the

@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/mcp_edge:__subpackages__"])
+
+go_library(
+    name = "admission",
+    srcs = ["gate.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/admission",
+    deps = [
+        "//agentplane/identity/auth",
+        "//agentplane/identity/operator",
+        "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = ["gate_test.go"],
+    embed = [":admission"],
+    deps = [
+        "//agentplane/identity/auth",
+        "//agentplane/identity/operator",
+        "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
+        "//agentplane/testing/grpcmethods",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//interop/grpc_testing",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
+        "@org_golang_google_grpc//status",
+    ],
+)

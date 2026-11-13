@@ -56,8 +56,7 @@ var (
 	unavailableIdentity = auth.Identity{Name: "test-unavailable", UID: "uid-test-unavailable"}
 )
 
-// testGate stands in for the Action Service's Gate, which admits only operators: it takes every call's bearer
-// `Bearer <subject>` as proof of that operator of testIssuer, until the test refuses the subject.
+// testGate controls the operator admission that Connection service integration tests depend on.
 type testGate struct {
 	mu       sync.Mutex
 	refused  map[string]bool
