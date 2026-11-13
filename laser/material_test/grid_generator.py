@@ -907,7 +907,8 @@ def generate_rd(config: GridConfig) -> RdJob:
     """Build an RdJob from the grid configuration (no text labels, cells + border only).
 
     Uses the same energy-based sort ordering as generate(). Coordinates are in
-    Ruida's Y-down system (Y increases downward, origin at top-left).
+    Ruida's Y-down system (Y increases downward, origin at top-left). With a
+    border, translate the cells so its unsigned absolute coordinates start at zero.
     """
     n_outer_cols = len(config.cols.values) if config.cols is not None else 1
     n_outer_rows = len(config.rows.values) if config.rows is not None else 1
@@ -956,11 +957,24 @@ def generate_rd(config: GridConfig) -> RdJob:
     # Optional border (last layer)
     if config.border.enabled:
         border_idx = len(layers)
+        p = config.border.padding_mm
+        if p < 0:
+            raise ValueError("RD border padding_mm must be non-negative")
+
+        all_x_min = min(r.x_mm for r in rects)
+        all_y_min = min(r.y_mm for r in rects)
+        offset_x = p - all_x_min
+        offset_y = p - all_y_min
+        # Absolute Ruida coordinates are unsigned, so move the whole grid to
+        # keep the padded border at (0, 0) without clipping its top or left edge.
+        for rect in rects:
+            rect.x_mm += offset_x
+            rect.y_mm += offset_y
+
         all_x_min = min(r.x_mm for r in rects)
         all_y_min = min(r.y_mm for r in rects)
         all_x_max = max(r.x_mm + r.width_mm for r in rects)
         all_y_max = max(r.y_mm + r.height_mm for r in rects)
-        p = config.border.padding_mm
         layers.append(
             RdLayer(
                 index=border_idx,
@@ -1018,8 +1032,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.fmt == "rd":
         rd_job = generate_rd(config)
-        with Path(output_path).open("wb") as fb:
-            fb.write(rd_job.to_bytes())
+        rd_data = rd_job.to_bytes()
+        Path(output_path).write_bytes(rd_data)
     else:
         project = generate(config)
         with Path(output_path).open("w", encoding="utf-8") as f:

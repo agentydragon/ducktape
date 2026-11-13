@@ -55,12 +55,22 @@ def unscramble_bytes(data: bytes) -> bytes:
 
 
 def encode_number(value_mm: float, length: int = 5, scale: int = 1000) -> bytes:
-    """Encode a value as a multi-byte 7-bit integer.
+    """Encode a non-negative value as an unsigned multi-byte 7-bit integer.
 
     Default: 5 bytes (35-bit), scale x1000 converts mm to micrometers.
     Each byte uses bits 0-6 for data, big-endian order.
     """
+    if length < 1:
+        raise ValueError("length must be positive")
+    if scale <= 0:
+        raise ValueError("scale must be positive")
+    if value_mm < 0:
+        raise ValueError("absolute values must be non-negative")
+
     n = int(value_mm * scale)
+    if n >= 1 << (7 * length):
+        raise ValueError(f"{value_mm} does not fit in {length} 7-bit bytes")
+
     result: list[int] = []
     while n > 0:
         result.append(n & 0x7F)

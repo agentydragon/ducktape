@@ -40,6 +40,28 @@ def test_encode_number_zero():
     assert encode_number(0.0) == bytes([0, 0, 0, 0, 0])
 
 
+@pytest.mark.parametrize("value_mm", [-3.0, -0.0001], ids=["negative", "negative-below-scale"])
+def test_encode_number_rejects_negative_absolute_values(value_mm: float):
+    with pytest.raises(ValueError, match="non-negative"):
+        encode_number(value_mm)
+
+
+def test_encode_number_rejects_values_that_do_not_fit():
+    assert encode_number((1 << 35) - 1, length=5, scale=1) == bytes([0x7F] * 5)
+    with pytest.raises(ValueError, match="fit in 5 7-bit bytes"):
+        encode_number(1 << 35, length=5, scale=1)
+
+
+def test_rd_job_rejects_negative_absolute_coordinates():
+    job = RdJob(
+        layers=[RdLayer(index=0, min_power_pct=50, max_power_pct=50, speed_mm_s=100)],
+        rects=[RdRect(layer_index=0, x_mm=-1, y_mm=0, width_mm=10, height_mm=10)],
+    )
+
+    with pytest.raises(ValueError, match="absolute values must be non-negative"):
+        job.to_bytes()
+
+
 @pytest.mark.parametrize(
     ("percentage", "expected"),
     [(100.0, bytes([0x7F, 0x7F])), (0.0, bytes([0, 0])), (50.0, bytes([0x3F, 0x7F]))],

@@ -26,6 +26,7 @@ from laser.material_test.grid_generator import (
     generate_rd,
     main,
 )
+from laser.ruida.rd_format import RdJob, unscramble_bytes
 
 # ── fmt_val ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,25 @@ def _minimal_config(**kwargs) -> GridConfig:
             **kwargs,
         }
     )
+
+
+def _rd_move_origins(job: RdJob) -> list[tuple[float, float]]:
+    raw = unscramble_bytes(job.to_bytes())
+    body_start = len(job._header())
+    body_end = len(raw) - len(job._trailer())
+    body = raw[body_start:body_end]
+
+    def decode_mm(encoded: bytes) -> float:
+        value = 0
+        for byte in encoded:
+            value = (value << 7) | byte
+        return value / 1000
+
+    return [
+        (decode_mm(body[i + 1 : i + 6]), decode_mm(body[i + 6 : i + 11]))
+        for i, opcode in enumerate(body[:-10])
+        if opcode == 0x88
+    ]
 
 
 @pytest.mark.parametrize(
@@ -329,6 +349,78 @@ def test_generate_3d_border():
     rects = [s for s in project.shapes if isinstance(s, RectShape)]
     inner_rects = 3 * 2 * 2  # x * y * outer_cols
     assert len(rects) == inner_rects + 1  # +1 for border
+
+
+def test_generate_rd_border_offsets_cells_inside_nonnegative_border():
+    padding = 3.0
+    config = _minimal_config(border=BorderConfig(enabled=True, padding_mm=padding))
+    plain_cells = generate_rd(_minimal_config()).rects
+
+    job = generate_rd(config)
+    cells = job.rects[:-1]
+    border = job.rects[-1]
+
+    assert [(r.x_mm, r.y_mm, r.width_mm, r.height_mm) for r in cells] == [
+        (r.x_mm + padding, r.y_mm + padding, r.width_mm, r.height_mm) for r in plain_cells
+    ]
+    assert border.x_mm == pytest.approx(0)
+    assert border.y_mm == pytest.approx(0)
+    assert min(r.x_mm for r in cells) == pytest.approx(padding)
+    assert min(r.y_mm for r in cells) == pytest.approx(padding)
+    origins = _rd_move_origins(job)
+    assert len(origins) == len(job.rects)
+    for (actual_x, actual_y), rect in zip(origins, job.rects, strict=True):
+        assert actual_x == pytest.approx(rect.x_mm, abs=0.001)
+        assert actual_y == pytest.approx(rect.y_mm, abs=0.001)
+
+
+def test_generate_rd_zero_padding_and_no_border_keep_cell_origins():
+    plain_job = generate_rd(_minimal_config())
+    zero_padding_job = generate_rd(_minimal_config(border=BorderConfig(enabled=True, padding_mm=0)))
+
+    plain_cells = plain_job.rects
+    zero_padding_cells = zero_padding_job.rects[:-1]
+    assert [(r.x_mm, r.y_mm) for r in zero_padding_cells] == [(r.x_mm, r.y_mm) for r in plain_cells]
+    assert (zero_padding_job.rects[-1].x_mm, zero_padding_job.rects[-1].y_mm) == (0, 0)
+
+    for job in (plain_job, zero_padding_job):
+        origins = _rd_move_origins(job)
+        assert len(origins) == len(job.rects)
+        for (actual_x, actual_y), rect in zip(origins, job.rects, strict=True):
+            assert actual_x == pytest.approx(rect.x_mm, abs=0.001)
+            assert actual_y == pytest.approx(rect.y_mm, abs=0.001)
+
+
+def test_generate_rd_rejects_negative_border_padding():
+    config = _minimal_config(border=BorderConfig(enabled=True, padding_mm=-1.0))
+    with pytest.raises(ValueError, match="padding_mm must be non-negative"):
+        generate_rd(config)
+
+
+def test_rd_validation_failure_preserves_existing_output(tmp_path):
+    config_path = tmp_path / "oversized.toml"
+    config_path.write_text(
+        """[x]
+param = "power_pct"
+values = [10.0]
+
+[y]
+param = "speed_mm_s"
+values = [50.0]
+
+[geometry]
+cell_size_mm = 40000000.0
+""",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "existing.rd"
+    original = b"preserve this output"
+    output_path.write_bytes(original)
+
+    with pytest.raises(ValueError, match="fit in 5 7-bit bytes"):
+        main([str(config_path), "--format", "rd", "--output", str(output_path)])
+
+    assert output_path.read_bytes() == original
 
 
 def test_auto_subtitle_excludes_outer_axes():
