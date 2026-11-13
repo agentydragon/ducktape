@@ -1,0 +1,50 @@
+# Original home: packages/excalidraw/element/newElement.ts
+source_matches:
+  - match: |
+      var selected = AST_CONTAINS_STRING("New element size or position is too large");
+    bindings:
+      - local: selected
+        name: _newElementBase
+  - match: |
+      var selected = (element) => _newElementBase(element.type, element);
+    bindings:
+      - local: selected
+        name: newElement
+  - match: |
+      var selected = (opts) => {
+        let fontFamily = opts.fontFamily || EXPR,
+          fontSize = opts.fontSize || EXPR,
+          lineHeight = opts.lineHeight || EXPR,
+          text = EXPR(opts.text),
+          metrics = EXPR(
+            text,
+            EXPR({ fontFamily: fontFamily, fontSize: fontSize }),
+            lineHeight,
+          ),
+          textAlign = opts.textAlign || EXPR,
+          verticalAlign = opts.verticalAlign || EXPR,
+          offsets = EXPR(
+            { textAlign: textAlign, verticalAlign: verticalAlign },
+            metrics,
+          ),
+          textElementProps = {
+            ..._newElementBase("text", opts),
+            text: text,
+            fontSize: fontSize,
+            fontFamily: fontFamily,
+            textAlign: textAlign,
+            verticalAlign: verticalAlign,
+            x: opts.x - offsets.x,
+            y: opts.y - offsets.y,
+            width: metrics.width,
+            height: metrics.height,
+            containerId: opts.containerId || null,
+            originalText: opts.originalText ?? text,
+            autoResize: opts.autoResize ?? !0,
+            lineHeight: lineHeight,
+          };
+        return EXPR(textElementProps, {});
+      };
+    bindings:
+      - local: selected
+        name: newTextElement
