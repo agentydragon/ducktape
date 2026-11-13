@@ -579,7 +579,7 @@ async def test_font_face_class(playwright_driver: Playwright, origin: str) -> No
             }"""
         )
         assert result == {
-            "descriptors": ["Debundle Probe", "italic", "700"],
+            "descriptors": ['"Debundle Probe"', "italic", "700"],
             "dataUrls": ["data:font/woff2;base64,AQID"],
             "localUrls": [],
             "remoteUrls": ["https://example.invalid/font.woff2"],
