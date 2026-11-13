@@ -25,8 +25,8 @@
       "sha256": "f5CrRvuvhIMAi338lNsFwV5W4P9Y7dUqv0N+DAEHC8k="
     },
     "difftree": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-189575f809f7/difftree-0.1.0-py3-none-any.whl",
-      "sha256": "GJV1+An3/C4rPUvPbfmpPk5CePLm1vmuetHnQDOznQs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-73b8b5f2e5c2/difftree-0.1.0-py3-none-any.whl",
+      "sha256": "c7i18uXCEW5cObzp2EW68JQMxVLyisZl+yeXRs6zGmU="
     },
     "gmail-archiver": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-a124089f33c4/gmail_archiver-0.1.0-py3-none-any.whl",
