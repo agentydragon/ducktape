@@ -75,9 +75,10 @@ class BazelLabel:
         Handles ``//pkg:target``, ``@repo//pkg:target`` and the Bzlmod
         canonical ``@@repo//pkg:target`` forms.
 
-        Raises :class:`ValueError` for bare package references (no ``:``)
-        and unrecognised formats.  Use :meth:`try_parse` if ``None`` is
-        preferred over an exception.
+        Also accepts short package forms such as ``//pkg``, where the target
+        name defaults to the final package component. Raises :class:`ValueError`
+        for unrecognised formats or empty short-form packages. Use
+        :meth:`try_parse` if ``None`` is preferred over an exception.
         """
         if s.startswith(_CANONICAL_SIGIL):
             rest_after_sigil = s.removeprefix(_CANONICAL_SIGIL)
@@ -172,7 +173,7 @@ def detect_bazel_backend() -> BazelBackend:
     ``.bazelversion`` to pin the exact Bazel release, while a system ``bazel``
     binary may be any version.
 
-    Raises ``RuntimeError`` if neither ``bbr`` nor ``bazelisk`` is on PATH.
+    Raises ``FileNotFoundError`` if no usable backend is available.
     """
     if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bbr"):
         return BazelBackend.BUILDBUDDY
