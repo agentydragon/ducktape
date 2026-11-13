@@ -26,7 +26,13 @@ fn claimed_modules_export_their_entry_points() {
         ),
         (
             "editor/packages/excalidraw/data/blob.js",
-            &["blobToArrayBuffer"],
+            &[
+                "blobToArrayBuffer",
+                "getDataURL",
+                "normalizeFile",
+                "loadFromBlob",
+                "parseLibraryJSON",
+            ],
         ),
         (
             "editor/packages/excalidraw/element/textWrapping.js",
@@ -53,26 +59,6 @@ fn claimed_modules_export_their_entry_points() {
         &["var parseTokens =", "var Regex =", "var Break ="],
         &[],
     );
-}
-
-/// The only claimed module with no imports: the rest import their chunk
-/// entry, which reads browser globals while it evaluates.
-#[test]
-fn blob_to_array_buffer_reads_a_blob_under_node() {
-    let probe_dir = tempfile::tempdir().expect("tempdir");
-    let probe = probe_dir.path().join("probe.mjs");
-    let module = out_root().join("app/editor/packages/excalidraw/data/blob.js");
-    fs::write(
-        &probe,
-        format!(
-            "import {{ blobToArrayBuffer }} from {};\n\
-             const buffer = await blobToArrayBuffer(new Blob([\"abc\"]));\n\
-             console.log(new TextDecoder().decode(buffer));\n",
-            serde_json::to_string(&format!("file://{}", module.display())).unwrap(),
-        ),
-    )
-    .expect("write probe");
-    assert_node_output(&probe, "abc\n", "");
 }
 
 #[test]

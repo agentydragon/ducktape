@@ -1,9 +1,207 @@
 source_matches:
   - match: |
       var ANYTHING = ANYTHING,
-        blobToArrayBuffer = (ANYTHING) =>
-          "arrayBuffer" in ANYTHING
-            ? ANYTHING
+        parseFileContents = AST_CONTAINS_STRING("Error: cannot restore image"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - parseFileContents
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        isImageFileHandleType = (type) => type === "png" || type === "svg",
+        ANYTHING = ANYTHING;
+    bindings:
+      - isImageFileHandleType
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        isSupportedImageFile = (blob) => {
+          let { type: type } = blob || {};
+          return isSupportedImageFileType(type);
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - isSupportedImageFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        loadSceneOrLibraryFromBlob = async (
+          blob,
+          localAppState,
+          localElements,
+          fileHandle,
+        ) => {
+          let contents = await parseFileContents(blob), data;
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - loadSceneOrLibraryFromBlob
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        loadFromBlob = async (blob, localAppState, localElements, fileHandle) => {
+          let ret = await loadSceneOrLibraryFromBlob(
+            blob,
+            localAppState,
+            localElements,
+            fileHandle,
+          );
+          if (ret.type !== MIME_TYPES.excalidraw)
+            throw new Error("Error: invalid file");
+          return ret.data;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - loadFromBlob
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        parseLibraryJSON = (json, defaultStatus = "unpublished") => {
+          let data = JSON.parse(json);
+          if (!isValidLibrary(data)) throw new Error("Invalid library");
+          let libraryItems = data.libraryItems || data.library;
+          return restoreLibraryItems(libraryItems, defaultStatus);
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - parseLibraryJSON
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        loadLibraryFromBlob = async (blob, defaultStatus = "unpublished") =>
+          parseLibraryJSON(await parseFileContents(blob), defaultStatus),
+        ANYTHING = ANYTHING;
+    bindings:
+      - loadLibraryFromBlob
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        canvasToBlob = AST_CONTAINS_STRING("CANVAS_POSSIBLY_TOO_BIG"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - canvasToBlob
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        generateIdFromFile = AST_CONTAINS_STRING("SHA-1"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - generateIdFromFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getDataURL = async (file) =>
+          new Promise((resolve, reject) => {
+            let reader = new FileReader();
+            reader.onload = () => { STMT_LIST; },
+            reader.onerror = (error) => reject(error),
+            reader.readAsDataURL(file);
+          }),
+        ANYTHING = ANYTHING;
+    bindings:
+      - getDataURL
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getDataURL_sync = (data, mimeType) =>
+          `data:${mimeType};base64,${EXPR}`,
+        ANYTHING = ANYTHING;
+    bindings:
+      - getDataURL_sync
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        dataURLToFile = (dataURL, filename = "") => {
+          STMT_LIST;
+          return new File([EXPR], filename, { type: EXPR });
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - dataURLToFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        dataURLToString = (dataURL) =>
+          EXPR(dataURL.slice(dataURL.indexOf(",") + 1)),
+        ANYTHING = ANYTHING;
+    bindings:
+      - dataURLToString
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        resizeImageFile = AST_CONTAINS_STRING("wasm"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - resizeImageFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        SVGStringToFile = (SVGString, filename = "") =>
+          new File(
+            [new TextEncoder().encode(SVGString)],
+            filename,
+            { type: MIME_TYPES.svg },
+          ),
+        ANYTHING = ANYTHING;
+    bindings:
+      - SVGStringToFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        ImageURLToFile = AST_CONTAINS_STRING("FETCH_ERROR"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - ImageURLToFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getFileFromEvent = async (event) => {
+          let file = event.dataTransfer.files.item(0),
+            fileHandle = await getFileHandle(event);
+          return {
+            file: file ? await normalizeFile(file) : null,
+            fileHandle: fileHandle,
+          };
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - getFileFromEvent
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getFileHandle = async (event) => {
+          if (nativeFileSystemSupported)
+            try {
+              return await event.dataTransfer.items[0].getAsFileSystemHandle() || null;
+            } catch (error) {
+              return console.warn(error.name, error.message), null;
+            }
+          return null;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - getFileHandle
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        getActualMimeTypeFromImage = AST_CONTAINS_STRING("137 80 78 71 13 10 26 10 "),
+        ANYTHING = ANYTHING;
+    bindings:
+      - getActualMimeTypeFromImage
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        normalizeFile = AST_CONTAINS_STRING(".excalidrawlib"),
+        ANYTHING = ANYTHING;
+    bindings:
+      - normalizeFile
+
+  - match: |
+      var ANYTHING = ANYTHING,
+        blobToArrayBuffer = (blob) =>
+          "arrayBuffer" in blob
+            ? blob.arrayBuffer()
             : AST_CONTAINS_STRING("Couldn't convert blob to ArrayBuffer"),
         ANYTHING = ANYTHING;
     bindings:
