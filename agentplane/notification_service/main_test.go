@@ -155,12 +155,8 @@ func acceptanceIdentityWorkloads(t *testing.T) *acceptanceWorkloadSet {
 		if err := client.IgnoreNotFound(apiClient.Delete(ctx, existing)); err != nil {
 			t.Fatal(err)
 		}
-		workload := workloadauthtesting.NewWorkload(t, kube, testNamespace, name)
-		identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: name}, Spec: policyapi.IdentitySpec{Description: "Notification test Identity"}}
-		if err := workload.Objects.Create(t.Context(), identity); err != nil {
-			t.Fatal(err)
-		}
-		result := workloadauthtesting.RunAs(t, workload, identity)
+		result := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, name, testNamespace)
+		identity := result.Identity
 		sandbox := result.Sandbox.DeepCopy()
 		sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: identity.Name}
 		if err := result.Objects.Update(t.Context(), sandbox); err != nil {
