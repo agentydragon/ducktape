@@ -32,8 +32,9 @@ and cleanly applied cumulative patch
 `a8aeaf750d01136d7decac3feeb80da2c62c7a0688d9cd29c4756a5ebd4ebdc4`.
 That patch includes reversions of intervening devel changes. To check the
 _tested_ inputs rather than trust the remote base, the three physical TestRunner
-actions were decoded and their CAS input trees compared recursively. Each pair
-had the same command, platform, timeout, and all common runfiles; the sole
+actions were decoded and their CAS input trees compared recursively. Each
+control/candidate pair for the _same suite_ had the same command, platform,
+timeout, and all common runfiles; the sole
 different file was `agentplane/system_tests/deployment/stack.py`. Its control
 SHA256 was `308fdf41c015c78e84b4ff003644d6ee3d6b55ba8f04d544eea74666e8281106`,
 matching `93f2ba8`, and its candidate SHA256 was
@@ -55,7 +56,8 @@ These are the returned TestRunner action records, not BuildBuddy billing or
 full-CI feedback. Queue is submission to worker start; process is the remote
 execution span; setup, case envelope and cleanup come from the test spans.
 Case envelopes overlap internal case work, so they must not be added to summed
-case durations. All actions requested four compute units on the same platform.
+case durations. The decoded actions requested four compute units for Pod and
+MCP Actions and eight for VM, identically within each control/candidate pair.
 
 | Suite       | Control queue / process | Candidate queue / process | Control setup / case envelope / cleanup | Candidate setup / case envelope / cleanup | Baseline    |
 | ----------- | ----------------------: | ------------------------: | --------------------------------------: | ----------------------------------------: | ----------- |
@@ -78,8 +80,9 @@ with import and readiness timing.
 
 Summing the three returned process spans gives 1197.617 seconds for control
 and 1137.119 for candidate; observed CPU sums were 3682.955 and 3607.033
-seconds. At four requested compute units per action, the returned execution
-spans correspond to 79.84 and 75.81 requested CU-minutes. These sums include
+seconds. Weighting each returned execution span by its decoded compute-unit
+request (Pod 4, MCP Actions 4, VM 8) gives 107.29 and 95.58 requested
+CU-minutes. These sums include
 parallel work and do not represent gate latency or a total cost comparison;
 the VM cold/warm mismatch and provider attempt visibility limit a cost claim.
 
