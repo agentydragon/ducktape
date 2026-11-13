@@ -600,7 +600,11 @@ fn ast_contains_string_matches_an_exact_descendant_literal() {
 #[test]
 fn invalid_selector_reports_keep_native_parser_diagnostics_and_source_context() {
     let (_dir, source) = fixture();
-    for (selector, minimum_diagnostics) in [("42 = 1; 43 = 2;", 2), ("const selected =", 1)] {
+    for (selector, minimum_diagnostics) in [
+        ("with (first) {} with (second) {}", 2),
+        ("42 = 1;", 1),
+        ("const selected =", 1),
+    ] {
         let report = run_match_selector(&source, selector, &["--no-slack"]);
         let invalid = &outcome(&report)["error"];
         assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
