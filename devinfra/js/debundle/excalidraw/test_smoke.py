@@ -936,7 +936,7 @@ async def test_library_and_icon_picker(playwright_driver: Playwright, origin: st
         await page.locator("label", has=library).click()
         await expect(library).to_be_checked()
         await expect(page.locator(".library-menu-items__no-items")).to_be_visible()
-        await page.locator("label", has=library).click()
+        await page.get_by_test_id("sidebar-close").click()
         await expect(library).not_to_be_checked()
         await expect(page.locator(".library-menu-items__no-items")).to_be_hidden()
 
