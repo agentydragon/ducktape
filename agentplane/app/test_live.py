@@ -130,6 +130,13 @@ async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, ob
             yield result
 
 
+async def _wait_updates_connected(stream: AsyncIterator[dict[str, object]], *, connected: bool) -> dict[str, object]:
+    async for result in stream:
+        if result["updatesConnected"] is connected:
+            return result
+    raise AssertionError(f"watch ended before updatesConnected became {connected}")
+
+
 async def test_the_streams_need_a_caller(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as unauthenticated:
         for route in (
@@ -271,10 +278,12 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
                 )
             )
             assert terminated.scalars().all() == [True]
-        assert (await anext(stream))["updatesConnected"] is False
+        # A healthy metadata invalidation may already be buffered before the listener loss.
+        # The watch reports current state on each wakeup, not only connection transitions.
+        await _wait_updates_connected(stream, connected=False)
         thread_id = await event_logs.seed("runner-1", "test-during-listener-gap")
         reconnect.set()
-        recovered = await anext(stream)
+        recovered = await _wait_updates_connected(stream, connected=True)
         assert recovered["updatesConnected"] is True
         page = (await http.get("/upstream/app/v1/threads")).json()
         assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
