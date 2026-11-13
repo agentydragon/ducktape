@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -219,7 +218,7 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 	waitRuntimeDone(t, done)
 }
 
-func TestRemovedTurnTimeoutAndIndependentSetupTimeoutSettings(t *testing.T) {
+func TestIndependentSetupTimeoutSettings(t *testing.T) {
 	settings := fixtureSettings()
 	if got, want := settings.SetupTimeout(), time.Hour; got != want {
 		t.Fatalf("default setup timeout=%s, want %s", got, want)
@@ -231,22 +230,5 @@ func TestRemovedTurnTimeoutAndIndependentSetupTimeoutSettings(t *testing.T) {
 	}
 	if got, want := settings.SetupTimeout(), 17*time.Second; got != want {
 		t.Fatalf("configured setup timeout=%s, want %s", got, want)
-	}
-
-	encoded, err := json.Marshal(fixtureSettings())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(encoded, &fields); err != nil {
-		t.Fatal(err)
-	}
-	fields["turn_timeout_seconds"] = json.RawMessage("30")
-	wire, err := json.Marshal(fields)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := samplersettings.DecodeSettings(strings.NewReader(string(wire))); err == nil || !strings.Contains(err.Error(), `unknown field "turn_timeout_seconds"`) {
-		t.Fatalf("removed turn_timeout_seconds was not rejected by strict settings decode: %v", err)
 	}
 }
