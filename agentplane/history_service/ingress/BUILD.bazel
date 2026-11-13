@@ -45,8 +45,8 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/central_sampler",
-        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/responses",

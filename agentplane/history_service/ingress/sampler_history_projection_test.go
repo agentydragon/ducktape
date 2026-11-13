@@ -279,7 +279,8 @@ func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, 
 				events = append(events, map[string]any{"type": "content_block_stop", "index": index})
 			}
 			if cut == "complete" {
-				events = append(events,
+				events = append(
+					events,
 					map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": "tool_use"}},
 					map[string]any{"type": "message_stop"},
 				)
