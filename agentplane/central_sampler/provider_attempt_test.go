@@ -186,7 +186,6 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 	}
 }
 
-
 func TestReadProviderFinishDistinguishesOpenAndCommittedIntent(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
