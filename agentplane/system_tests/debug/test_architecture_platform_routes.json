@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "source_head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+  "source_state": "Uncommitted worktree overlay; not literal HEAD194 or its required CI. Explicit child GO_TEST_WRAP=0 with unchanged10sTERM bound. Deployed candidate later extension is outside these test inputs.",
+  "invocation_id": "d68330b6-2d7c-4dbe-b3e7-ade6cd9fc5f7",
+  "bbr_exit_code": 0,
+  "bazel_elapsed_seconds": 239.693,
+  "test_actions": [
+    {
+      "label": "//agentplane/x/direct_vm_boot:test_runtime_codex_session",
+      "execution_id": "/uploads/bb57488d-f188-4e80-80f4-15ff78a8eaa2/blobs/7cf32f364ee96827acb8a1e9799ea801528716fd023c93a41033d4aecbeb01f7/581",
+      "action_digest": {
+        "hash": "7cf32f364ee96827acb8a1e9799ea801528716fd023c93a41033d4aecbeb01f7",
+        "sizeBytes": "581"
+      },
+      "stage": "COMPLETED",
+      "invocation_link_type": 1,
+      "status": {},
+      "exit_code": 0,
+      "start_utc": "2026-11-13T22:13:34.580334Z",
+      "end_utc": "2026-11-13T22:15:54.884244Z",
+      "process_seconds": 140.30391,
+      "cpu_seconds": 310.323445
+    },
+    {
+      "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+      "execution_id": "/uploads/2d3c8da1-e323-43f4-aa1e-d8784570981f/blobs/224fa16d7d5c70caf44978d20959206bfec1292870940c448a20aa730e183885/581",
+      "action_digest": {
+        "hash": "224fa16d7d5c70caf44978d20959206bfec1292870940c448a20aa730e183885",
+        "sizeBytes": "581"
+      },
+      "stage": "COMPLETED",
+      "invocation_link_type": 1,
+      "status": {},
+      "exit_code": 0,
+      "start_utc": "2026-11-13T22:13:41.637855Z",
+      "end_utc": "2026-11-13T22:17:00.032521Z",
+      "process_seconds": 198.394666,
+      "cpu_seconds": 411.909101
+    }
+  ],
+  "denominator": {
+    "unique_new_completed_test_actions": 2,
+    "merged_or_additional_test_actions": 0,
+    "junit_artifacts": {
+      "test_cases": [
+        {
+          "guest": "claude",
+          "name": "test_packaged_claude_session_runs_shell_and_accepts_next_input",
+          "seconds": 167.571
+        },
+        {
+          "guest": "codex",
+          "name": "test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input",
+          "seconds": 123.137
+        }
+      ],
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "empty_junit_files": 0
+    }
+  },
+  "scope": "Real Egress+Sidecar+Notification and packaged CLI in both guest Session contracts; setup/fence, History, same-boot, exact seeded ownership, host per-RPC old-SVID rejection with stable WCred/Pod UID, teardown. Not controller-issued rotation or post-rotation guest CLI.",
+  "claim_limits": [
+    "One successful composition invocation; no flake-rate or CI latency saving.",
+    "Earlier six failed physical guest actions retained separately.",
+    "Wrong Notification peer URI control d2cba508 fails interpreting a CLI error object as the required owned subscription; cleanup completes. Precise observed TLS error payload remains unknown.",
+    "Required full VM remains unchanged."
+  ],
+  "deployed_cli_witness": {
+    "invocation_id": "55e99bb9-23f1-47fd-9217-b6e2fc6c82ea",
+    "source_state": "Later uncommitted overlay on194, adding deployed CLI checks to the same workspace turn; no required fullVM change.",
+    "execution_id": "/uploads/74299bba-5ce9-4f89-b7a4-520978c770b0/blobs/597dba180dfd0a260a721a13e62c17725ca321161f01fd1ffe06661efe0969a3/1852",
+    "new_actions": 1,
+    "cases": 1,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "case_seconds": 233.964,
+    "test_summary_seconds": 255.6,
+    "invocation_elapsed_seconds": 291.939,
+    "cpu_seconds": 784.237352,
+    "coverage": "Both real deployed guest boot paths, exact Egress Identity and successful Notification CLI read in existing workspace tool turn; unchanged shared setup/fence, post-operation identity and trace assertions.",
+    "claim_limit": "No matched speed comparison; full required VM remains enabled."
+  }
+}

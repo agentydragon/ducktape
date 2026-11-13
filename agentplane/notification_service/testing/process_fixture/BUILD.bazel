@@ -5,7 +5,10 @@ py_library(
     name = "process",
     testonly = True,
     srcs = ["process.py"],
-    visibility = ["//agentplane/notification_service:__subpackages__"],
+    visibility = [
+        "//agentplane/notification_service:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = [
         "//agentplane/net/peertls:config",
         "//agentplane/notification_service/api/notifications:notifications_pb2",
@@ -32,7 +35,10 @@ go_test(
     embed = ["//agentplane/notification_service:main_lib"],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service",
     tags = ["requires_docker"],
-    visibility = ["//agentplane/notification_service:__subpackages__"],
+    visibility = [
+        "//agentplane/notification_service:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = [
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",

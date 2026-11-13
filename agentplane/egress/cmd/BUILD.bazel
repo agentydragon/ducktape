@@ -49,7 +49,10 @@ go_binary(
     name = "egress-proxy",
     embed = [":cmd"],
     pure = "on",
-    visibility = ["//agentplane/egress:__subpackages__"],
+    visibility = [
+        "//agentplane/egress:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
 )
 
 go_test(
