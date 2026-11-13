@@ -73,6 +73,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   design covers backend grants per operation and bounds on launcher delegation
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
   moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
+- [Storage representations and compression](storage_representations.md) — measured content copies
+  across sampler logs, History events/projections and webhooks; content ownership, deduplication,
+  compression and metadata work coordinated with the authored-conversation design
 - [Scoped Session reads](scoped_session_reads.md) — held broader cross-ServiceAccount read policy;
   narrow same-principal retained reads are implemented
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
