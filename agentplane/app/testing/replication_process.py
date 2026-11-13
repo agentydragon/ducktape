@@ -133,6 +133,7 @@ class AppProcess:
                 "phase": phase,
                 "method": request.method,
                 "host": request.url.host,
+                "port": request.url.port,
                 "path": request.url.path,
                 "status": status,
             }
@@ -384,9 +385,12 @@ async def oidc_provider(
         async def trace_provider(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
             trace_id = request.headers.get("X-Agentplane-Auth-Trace")
             path = request.url.path
+            origin = {"host": request.url.hostname, "port": request.url.port}
             with provider_trace.open("a") as output:
                 output.write(
-                    json.dumps({"time_ns": time.time_ns(), "phase": "request", "trace_id": trace_id, "path": path})
+                    json.dumps(
+                        {"time_ns": time.time_ns(), "phase": "request", "trace_id": trace_id, "path": path, **origin}
+                    )
                     + "\n"
                 )
             try:
@@ -399,6 +403,7 @@ async def oidc_provider(
                                 "phase": "response_headers",
                                 "trace_id": trace_id,
                                 "path": path,
+                                **origin,
                                 "status": response.status_code,
                             }
                         )
@@ -408,7 +413,9 @@ async def oidc_provider(
             except Exception:
                 with provider_trace.open("a") as output:
                     output.write(
-                        json.dumps({"time_ns": time.time_ns(), "phase": "failed", "trace_id": trace_id, "path": path})
+                        json.dumps(
+                            {"time_ns": time.time_ns(), "phase": "failed", "trace_id": trace_id, "path": path, **origin}
+                        )
                         + "\n"
                     )
                 raise
