@@ -1,5 +1,11 @@
 # Atlas GPU Strategy
 
+This is a historical investigation and plan, last updated during the July 2026 bring-up.
+The direct display was subsequently wired and tested; the later single-seat design and
+recovery notes are in <../../nix/debug/wyrm2/direct_display_bringup/README.md>, and the
+recorded cable layout is in <../../desk/README.md>. The plans and pending steps below
+describe the earlier state.
+
 ## Goal
 
 Use 2x RTX 5090 GPUs flexibly:
@@ -120,7 +126,7 @@ Goal is playing games on this machine; streaming was a workaround. Instead:
 Remaining work: plug 2 cables, OSD dual-KVM binding, `modeset` revert +
 rebuild + VM restart, `qm set` USB port passthrough, bench test.
 
-**Bring-up in progress** — running notes: <../../nix/debug/wyrm2/direct_display_bringup/README.md>.
+**Subsequent bring-up and design** — notes: <../../nix/debug/wyrm2/direct_display_bringup/README.md>.
 
 ## Prior State (Apr 2026)
 
