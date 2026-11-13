@@ -2016,25 +2016,26 @@ impl AnonymousStatement {
         match (&self.match_source, &self.source_match) {
             (Some(match_source), None) => Ok(AnonymousStatementSelector::exact(match_source)),
             (None, Some(source_match)) if source_match.target_binding.is_some() => {
-                Err(AnonymousStatementSelectorError {
-                    message: "anonymous_statements source_match cannot include `target_binding`",
-                })
+                Err(AnonymousStatementSelectorError::TargetBinding)
             }
             (None, Some(source_match)) => Ok(source_match.selector()),
-            (Some(_), Some(_)) => Err(AnonymousStatementSelectorError {
-                message: "anonymous_statements entry must use either `match` or `source_match`, not both",
-            }),
-            (None, None) => Err(AnonymousStatementSelectorError {
-                message: "anonymous_statements entry must include either `match` or `source_match.match`",
-            }),
+            (Some(_), Some(_)) => Err(AnonymousStatementSelectorError::MultipleSelectors),
+            (None, None) => Err(AnonymousStatementSelectorError::MissingSelector),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
-#[error("{message}")]
-pub struct AnonymousStatementSelectorError {
-    message: &'static str,
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, thiserror::Error,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AnonymousStatementSelectorError {
+    #[error("anonymous_statements source_match cannot include `target_binding`")]
+    TargetBinding,
+    #[error("anonymous_statements entry must use either `match` or `source_match`, not both")]
+    MultipleSelectors,
+    #[error("anonymous_statements entry must include either `match` or `source_match.match`")]
+    MissingSelector,
 }
 
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
@@ -2335,15 +2336,10 @@ impl CrossRefSelector {
             (Some(anchor), None) => (CrossRefRelation::References, anchor.clone()),
             (None, Some(anchor)) => (CrossRefRelation::Aliases, anchor.clone()),
             (None, None) => {
-                return Err(MemberSelectorError {
-                    message: "members[].selector.cross_ref must include `references` or `aliases`",
-                });
+                return Err(MemberSelectorError::MissingCrossRefTarget);
             }
             (Some(_), Some(_)) => {
-                return Err(MemberSelectorError {
-                    message: "members[].selector.cross_ref must use either `references` or \
-                              `aliases`, not both",
-                });
+                return Err(MemberSelectorError::MultipleCrossRefTargets);
             }
         };
         Ok(CrossRefTarget {
@@ -2648,16 +2644,8 @@ impl RawMemberSelector {
             (None, None, None, None, None, None, Some(intrinsic_alias)) => {
                 Ok(MemberSelectorSpec::IntrinsicAlias(intrinsic_alias.target()))
             }
-            (None, None, None, None, None, None, None) => Err(MemberSelectorError {
-                message: "members[].selector must include one of `binding`, `cross_ref`, \
-                          `reads_member`, `member_of_module`, `passed_to_call`, \
-                          `makes_decorate_call`, or `intrinsic_alias`",
-            }),
-            _ => Err(MemberSelectorError {
-                message: "members[].selector must use exactly one of `binding`, `cross_ref`, \
-                          `reads_member`, `member_of_module`, `passed_to_call`, \
-                          `makes_decorate_call`, or `intrinsic_alias`",
-            }),
+            (None, None, None, None, None, None, None) => Err(MemberSelectorError::MissingSelector),
+            _ => Err(MemberSelectorError::MultipleSelectors),
         }
     }
 }
@@ -2673,10 +2661,27 @@ pub enum MemberSelectorSpec {
     IntrinsicAlias(IntrinsicAliasTarget),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
-#[error("{message}")]
-pub struct MemberSelectorError {
-    message: &'static str,
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, thiserror::Error,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum MemberSelectorError {
+    #[error("members[].selector.cross_ref must include `references` or `aliases`")]
+    MissingCrossRefTarget,
+    #[error("members[].selector.cross_ref must use either `references` or `aliases`, not both")]
+    MultipleCrossRefTargets,
+    #[error(
+        "members[].selector must include one of `binding`, `cross_ref`, \
+             `reads_member`, `member_of_module`, `passed_to_call`, \
+             `makes_decorate_call`, or `intrinsic_alias`"
+    )]
+    MissingSelector,
+    #[error(
+        "members[].selector must use exactly one of `binding`, `cross_ref`, \
+             `reads_member`, `member_of_module`, `passed_to_call`, \
+             `makes_decorate_call`, or `intrinsic_alias`"
+    )]
+    MultipleSelectors,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]

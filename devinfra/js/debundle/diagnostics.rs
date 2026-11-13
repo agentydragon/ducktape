@@ -21,7 +21,7 @@ pub enum ChunkDiagnostic {
         export: String,
     },
     OpaqueEntry {
-        error: anyhow::Error,
+        error: js_ast::JsParseError,
     },
 }
 
